@@ -386,4 +386,160 @@ struct WarehouseFloorPlanTests {
         // Should not throw — guard let inside the function handles missing row
         try env.warehouse.updateFlowProgress(id: 99999, currentStep: 5)
     }
+
+    @Test("createFloorPlan throws requiredFieldEmpty when name is blank")
+    func testCreateFloorPlan_throwsForBlankName() throws {
+        let env = try freshEnv()
+        var threw = false
+        do {
+            _ = try env.warehouse.createFloorPlan(name: "   ", widthInches: 480, lengthInches: 360)
+        } catch WarehouseService.WarehouseError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "createFloorPlan must throw requiredFieldEmpty when name is whitespace-only")
+    }
+
+    @Test("addStorageUnit throws requiredFieldEmpty when name is blank")
+    func testAddStorageUnit_throwsForBlankName() throws {
+        let env = try freshEnv()
+        let plan = try env.warehouse.createFloorPlan(name: "WH", widthInches: 200, lengthInches: 200)
+        var threw = false
+        do {
+            _ = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "   ", unitType: "shelf")
+        } catch WarehouseService.WarehouseError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "addStorageUnit must throw requiredFieldEmpty when name is whitespace-only")
+    }
+
+    @Test("createTrailer throws requiredFieldEmpty when name is blank")
+    func testCreateTrailer_throwsForBlankName() throws {
+        let env = try freshEnv()
+        var threw = false
+        do {
+            _ = try env.warehouse.createTrailer(trailerCode: "T1", name: "   ")
+        } catch WarehouseService.WarehouseError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "createTrailer must throw requiredFieldEmpty when name is whitespace-only")
+    }
+
+    @Test("createTrailer throws requiredFieldEmpty when trailerCode is blank")
+    func testCreateTrailer_throwsForBlankTrailerCode() throws {
+        let env = try freshEnv()
+        var threw = false
+        do {
+            _ = try env.warehouse.createTrailer(trailerCode: "", name: "Trailer A")
+        } catch WarehouseService.WarehouseError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "createTrailer must throw requiredFieldEmpty when trailerCode is empty")
+    }
+
+    // MARK: - Dimension Validation (PE-040 extension)
+
+    @Test("createFloorPlan throws invalidDimension when widthInches is zero")
+    func testCreateFloorPlan_throwsForZeroWidth() throws {
+        let env = try freshEnv()
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            _ = try env.warehouse.createFloorPlan(name: "Bad Plan", widthInches: 0, lengthInches: 360)
+        }
+    }
+
+    @Test("createFloorPlan throws invalidDimension when lengthInches is negative")
+    func testCreateFloorPlan_throwsForNegativeLength() throws {
+        let env = try freshEnv()
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            _ = try env.warehouse.createFloorPlan(name: "Bad Plan", widthInches: 240, lengthInches: -1)
+        }
+    }
+
+    @Test("updateFloorPlanGrid throws invalidDimension when rows is zero")
+    func testUpdateFloorPlanGrid_throwsForZeroRows() throws {
+        let env = try freshEnv()
+        let plan = try env.warehouse.createFloorPlan(name: "Grid Test", widthInches: 240, lengthInches: 360)
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            try env.warehouse.updateFloorPlanGrid(floorPlanId: plan.id!, rows: 0, cols: 8)
+        }
+    }
+
+    @Test("addStorageLevel throws requiredFieldEmpty when levelCode is blank")
+    func testAddStorageLevel_throwsForBlankLevelCode() throws {
+        let env = try freshEnv()
+        let plan = try env.warehouse.createFloorPlan(name: "WH", widthInches: 200, lengthInches: 200)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "S1", unitType: "shelf")
+        #expect(throws: WarehouseService.WarehouseError.requiredFieldEmpty) {
+            _ = try env.warehouse.addStorageLevel(unitId: unit.id!, levelCode: "   ")
+        }
+    }
+
+    @Test("addBin throws invalidDimension when binNumber is zero")
+    func testAddBin_throwsForZeroBinNumber() throws {
+        let env = try freshEnv()
+        let plan = try env.warehouse.createFloorPlan(name: "WH", widthInches: 200, lengthInches: 200)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "S1", unitType: "shelf")
+        let level = try env.warehouse.addStorageLevel(unitId: unit.id!, levelCode: "L1")
+        let area = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: 1)
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            _ = try env.warehouse.addBin(areaId: area.id!, binNumber: 0)
+        }
+    }
+
+    @Test("updateStorageUnit is a no-op on soft-deleted unit")
+    func testUpdateStorageUnit_noOpOnSoftDeletedUnit() throws {
+        let env = try freshEnv()
+        let plan = try env.warehouse.createFloorPlan(name: "WH", widthInches: 200, lengthInches: 200)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "Original Name", unitType: "shelf")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE warehouse_storage_units SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [unit.id!])
+        }
+        // Should be a silent no-op — no throw, name unchanged
+        try env.warehouse.updateStorageUnit(id: unit.id!, name: "New Name")
+        let units = try env.warehouse.listStorageUnits(floorPlanId: plan.id!)
+        #expect(units.isEmpty, "soft-deleted unit should be invisible; name change should not resurrect it")
+    }
+
+    @Test("updateTrailer is a no-op on soft-deleted trailer")
+    func testUpdateTrailer_noOpOnSoftDeletedTrailer() throws {
+        let env = try freshEnv()
+        let trailerId = try env.warehouse.createTrailer(trailerCode: "T-UPD-SOFT", name: "Soft Trailer")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE job_trailers SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [trailerId])
+        }
+        // Should silently update 0 rows — no throw
+        try env.warehouse.updateTrailer(id: trailerId, status: "inactive")
+        let trailer = try env.warehouse.getTrailer(id: trailerId)
+        #expect(trailer == nil, "tombstoned trailer should not be returned by getTrailer")
+    }
+
+    // MARK: - Batch confidence query (#260)
+
+    @Test("getAllPartConfidenceLevels returns all levels in one query")
+    func testGetAllPartConfidenceLevels_returnsAllLevels() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId1 = try E2ETestHelpers.seedPart(env, name: "Conf Part A", categoryId: catId)
+        let partId2 = try E2ETestHelpers.seedPart(env, name: "Conf Part B", categoryId: catId)
+        let plan = try env.warehouse.createFloorPlan(name: "Test Plan", widthInches: 100, lengthInches: 100)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "Unit 1", unitType: "shelf")
+        let unitId = unit.id!
+        let level = try env.warehouse.addStorageLevel(unitId: unitId, levelCode: "L1", heightInches: 12)
+        let levelId = level.id!
+        let area = try env.warehouse.addStorageArea(levelId: levelId, areaNumber: 1)
+        let areaId = area.id!
+
+        try env.warehouse.setPartConfidence(partId: partId1, areaId: areaId, percent: 0.95)
+        try env.warehouse.setPartConfidence(partId: partId2, areaId: areaId, percent: 0.30)
+
+        let all = try env.warehouse.getAllPartConfidenceLevels()
+        // Sum per-level is the ground-truth total
+        let total = try (0...10).reduce(0) { acc, level in
+            acc + (try env.warehouse.getPartsAtLevel(level: level)).count
+        }
+        #expect(all.count == total,
+            "getAllPartConfidenceLevels must return the same total as 11 per-level calls")
+        #expect(all.count >= 2, "both inserted records should be present")
+    }
 }

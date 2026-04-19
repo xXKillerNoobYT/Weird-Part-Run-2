@@ -20,13 +20,21 @@ public final class WarehouseService: Sendable {
     // MARK: - Error Types
     // =========================================================================
 
-    public enum WarehouseError: Error, Sendable {
+    public enum WarehouseError: Error, Sendable, Equatable {
         case invalidMovementPath(from: String, to: String)
         case insufficientStock(available: Int, requested: Int)
         case partNotFound(Int64)
         case sessionNotFound(Int64)
         case sessionAlreadyCompleted
         case trailerNotFound(Int64)
+        case requiredFieldEmpty
+        case invalidDimension
+        case invalidQuantity
+        case jobNotFound(Int64)
+        case userNotFound(Int64)
+        case areaNotFound(Int64)
+        case unitNotFound(Int64)
+        case levelNotFound(Int64)
     }
 
     // =========================================================================
@@ -557,7 +565,35 @@ public final class WarehouseService: Sendable {
         unitCostAtMove: Double? = nil,
         unitSellAtMove: Double? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        // qty must be positive. Movement direction (pull vs. add) is determined by
+        // which of fromLocationType/toLocationType is non-nil, not by sign. A
+        // negative qty inverts the stock delta: `qty = qty - (-3)` = qty + 3.
+        guard qty > 0 else { throw WarehouseError.invalidQuantity }
+        guard !movementType.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw WarehouseError.requiredFieldEmpty
+        }
+        return try db.writer.write { dbConn in
+            // Guard: part must exist and not be tombstoned — otherwise the INSERT
+            // would create an orphan stock_movement against a soft-deleted part.
+            let partExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [partId]) ?? 0) > 0
+            guard partExists else { throw WarehouseError.partNotFound(partId) }
+
+            // Guard: performing user must exist and not be tombstoned.
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [performedBy]) ?? 0) > 0
+            guard userExists else { throw WarehouseError.userNotFound(performedBy) }
+
+            // Guard: when jobId is supplied, the job must exist and not be tombstoned.
+            if let jid = jobId {
+                let jobExists = (try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL
+                    """, arguments: [jid]) ?? 0) > 0
+                guard jobExists else { throw WarehouseError.jobNotFound(jid) }
+            }
+
             try dbConn.execute(
                 sql: """
                     INSERT INTO stock_movements
@@ -575,8 +611,20 @@ public final class WarehouseService: Sendable {
             )
             let movementId = dbConn.lastInsertedRowID
 
-            // Decrement source stock
+            // Decrement source stock (with underflow guard)
             if let fromType = fromLocationType, let fromId = fromLocationId {
+                let available = try Int.fetchOne(
+                    dbConn,
+                    sql: """
+                        SELECT qty FROM stock
+                        WHERE part_id = ? AND location_type = ? AND location_id = ?
+                          AND deleted_at IS NULL
+                        """,
+                    arguments: [partId, fromType, fromId]
+                ) ?? 0
+                guard available >= qty else {
+                    throw WarehouseError.insufficientStock(available: available, requested: qty)
+                }
                 try dbConn.execute(
                     sql: """
                         UPDATE stock SET qty = qty - ?, updated_at = datetime('now')
@@ -609,6 +657,126 @@ public final class WarehouseService: Sendable {
             }
 
             return movementId
+        }
+    }
+
+    /// Input spec for a single movement in a batch. Mirrors `createMovement` parameters
+    /// minus `performedBy` (passed once at the batch level).
+    public struct MovementInput: Sendable {
+        public let partId: Int64
+        public let qty: Int
+        public let fromLocationType: String?
+        public let fromLocationId: Int64?
+        public let toLocationType: String?
+        public let toLocationId: Int64?
+        public let movementType: String
+        public let reason: String?
+        public let notes: String?
+        public let jobId: Int64?
+        public let photoPath: String?
+        public let referenceNumber: String?
+        public let unitCostAtMove: Double?
+        public let unitSellAtMove: Double?
+
+        public init(
+            partId: Int64, qty: Int,
+            fromLocationType: String? = nil, fromLocationId: Int64? = nil,
+            toLocationType: String? = nil, toLocationId: Int64? = nil,
+            movementType: String,
+            reason: String? = nil, notes: String? = nil,
+            jobId: Int64? = nil, photoPath: String? = nil,
+            referenceNumber: String? = nil,
+            unitCostAtMove: Double? = nil, unitSellAtMove: Double? = nil
+        ) {
+            self.partId = partId; self.qty = qty
+            self.fromLocationType = fromLocationType; self.fromLocationId = fromLocationId
+            self.toLocationType = toLocationType; self.toLocationId = toLocationId
+            self.movementType = movementType
+            self.reason = reason; self.notes = notes
+            self.jobId = jobId; self.photoPath = photoPath
+            self.referenceNumber = referenceNumber
+            self.unitCostAtMove = unitCostAtMove; self.unitSellAtMove = unitSellAtMove
+        }
+    }
+
+    /// Create multiple stock movements in a single atomic transaction.
+    /// If any movement fails (invalid qty, tombstoned FK, insufficient stock),
+    /// the entire batch rolls back — no partial state is committed.
+    @discardableResult
+    public func createBatchMovements(movements: [MovementInput], performedBy: Int64) throws -> [Int64] {
+        guard !movements.isEmpty else { return [] }
+        for m in movements {
+            guard m.qty > 0 else { throw WarehouseError.invalidQuantity }
+            guard !m.movementType.trimmingCharacters(in: .whitespaces).isEmpty else {
+                throw WarehouseError.requiredFieldEmpty
+            }
+        }
+        return try db.writer.write { dbConn in
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [performedBy]) ?? 0) > 0
+            guard userExists else { throw WarehouseError.userNotFound(performedBy) }
+
+            var ids: [Int64] = []
+            for m in movements {
+                let partExists = (try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL
+                    """, arguments: [m.partId]) ?? 0) > 0
+                guard partExists else { throw WarehouseError.partNotFound(m.partId) }
+
+                if let jid = m.jobId {
+                    let jobExists = (try Int.fetchOne(dbConn, sql: """
+                        SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL
+                        """, arguments: [jid]) ?? 0) > 0
+                    guard jobExists else { throw WarehouseError.jobNotFound(jid) }
+                }
+
+                try dbConn.execute(sql: """
+                    INSERT INTO stock_movements
+                    (part_id, qty, from_location_type, from_location_id,
+                     to_location_type, to_location_id, movement_type,
+                     reason, notes, performed_by, job_id, photo_path,
+                     reference_number, unit_cost_at_move, unit_sell_at_move,
+                     created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                    """,
+                    arguments: [m.partId, m.qty, m.fromLocationType, m.fromLocationId,
+                                m.toLocationType, m.toLocationId, m.movementType,
+                                m.reason, m.notes, performedBy, m.jobId, m.photoPath,
+                                m.referenceNumber, m.unitCostAtMove, m.unitSellAtMove])
+                ids.append(dbConn.lastInsertedRowID)
+
+                if let fromType = m.fromLocationType, let fromId = m.fromLocationId {
+                    let available = try Int.fetchOne(dbConn, sql: """
+                        SELECT qty FROM stock
+                        WHERE part_id = ? AND location_type = ? AND location_id = ?
+                          AND deleted_at IS NULL
+                        """, arguments: [m.partId, fromType, fromId]) ?? 0
+                    guard available >= m.qty else {
+                        throw WarehouseError.insufficientStock(available: available, requested: m.qty)
+                    }
+                    try dbConn.execute(sql: """
+                        UPDATE stock SET qty = qty - ?, updated_at = datetime('now')
+                        WHERE part_id = ? AND location_type = ? AND location_id = ?
+                          AND deleted_at IS NULL
+                        """, arguments: [m.qty, m.partId, fromType, fromId])
+                }
+
+                if let toType = m.toLocationType, let toId = m.toLocationId {
+                    try dbConn.execute(sql: """
+                        UPDATE stock SET qty = qty + ?, updated_at = datetime('now')
+                        WHERE part_id = ? AND location_type = ? AND location_id = ?
+                          AND deleted_at IS NULL
+                        """, arguments: [m.qty, m.partId, toType, toId])
+                    if dbConn.changesCount == 0 {
+                        try dbConn.execute(sql: """
+                            INSERT INTO stock (part_id, location_type, location_id, qty, updated_at)
+                            VALUES (?, ?, ?, ?, datetime('now'))
+                            """, arguments: [m.partId, toType, toId, m.qty])
+                    }
+                }
+            }
+            return ids
         }
     }
 
@@ -791,7 +959,7 @@ public final class WarehouseService: Sendable {
                                COALESCE(u.display_name, u.email, 'Unknown') AS tagged_by_name,
                                pst.tagged_at
                         FROM pulled_staging_tags pst
-                        JOIN stock s ON s.id = pst.stock_id
+                        JOIN stock s ON s.id = pst.stock_id AND s.deleted_at IS NULL
                         LEFT JOIN parts p ON p.id = s.part_id AND p.deleted_at IS NULL
                         LEFT JOIN users u ON u.id = pst.tagged_by AND u.deleted_at IS NULL
                         WHERE pst.deleted_at IS NULL
@@ -830,6 +998,16 @@ public final class WarehouseService: Sendable {
         taggedBy: Int64
     ) throws -> Int64 {
         try db.writer.write { dbConn in
+            // Guard: the tagging user must exist and not be tombstoned.
+            // stockId points at the `stock` table which is soft-deletable but
+            // staging tags historically track pulls from specific stock rows —
+            // we retain the existing permissive behavior for stockId (tags may
+            // outlive their stock row). Only the user-FK is guarded.
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [taggedBy]) ?? 0) > 0
+            guard userExists else { throw WarehouseError.userNotFound(taggedBy) }
+
             try dbConn.execute(
                 sql: """
                     INSERT OR REPLACE INTO pulled_staging_tags
@@ -901,7 +1079,16 @@ public final class WarehouseService: Sendable {
         startedBy: Int64,
         mode: String = "packing_slip"
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        return try db.writer.write { dbConn in
+            // Guard: session-starter must not be tombstoned
+            guard let _ = try Row.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM users WHERE id = ? AND deleted_at IS NULL",
+                arguments: [startedBy]
+            ) else {
+                throw WarehouseError.userNotFound(startedBy)
+            }
+
             try dbConn.execute(
                 sql: """
                     INSERT INTO receiving_sessions (po_id, started_by, mode, status, created_at)
@@ -1044,12 +1231,13 @@ public final class WarehouseService: Sendable {
 
     /// Update a receiving session item's received quantity.
     public func updateSessionItem(itemId: Int64, receivedQty: Int, notes: String? = nil) throws {
+        guard receivedQty >= 0 else { throw WarehouseError.invalidQuantity }
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     UPDATE receiving_session_items
                     SET received_qty = ?, notes = COALESCE(?, notes), scanned_at = datetime('now')
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """,
                 arguments: [receivedQty, notes, itemId]
             )
@@ -1058,12 +1246,13 @@ public final class WarehouseService: Sendable {
 
     /// Record a scan for a receiving session item.
     public func recordScan(itemId: Int64, qty: Int = 1) throws {
+        guard qty > 0 else { throw WarehouseError.invalidQuantity }
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     UPDATE receiving_session_items
                     SET received_qty = received_qty + ?, scanned_at = datetime('now')
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """,
                 arguments: [qty, itemId]
             )
@@ -1073,6 +1262,15 @@ public final class WarehouseService: Sendable {
     /// Complete a receiving session: update status and create stock movements.
     public func completeSession(sessionId: Int64, completedBy: Int64) throws {
         try db.writer.write { dbConn in
+            // Guard: completing user must not be tombstoned (stock movements will reference them)
+            guard let _ = try Row.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM users WHERE id = ? AND deleted_at IS NULL",
+                arguments: [completedBy]
+            ) else {
+                throw WarehouseError.userNotFound(completedBy)
+            }
+
             // Verify session exists and is in progress
             guard let statusStr = try String.fetchOne(
                 dbConn,
@@ -1112,6 +1310,7 @@ public final class WarehouseService: Sendable {
             for item in items {
                 let partId: Int64 = item["part_id"] ?? 0
                 let receivedQty: Int = item["received_qty"] ?? 0
+                guard partId > 0, receivedQty > 0 else { continue }
                 let unitCost: Double? = item["actual_cost"] as Double?
 
                 // Insert movement
@@ -1292,14 +1491,27 @@ public final class WarehouseService: Sendable {
                 """
         )
 
-        let lastDate: String? = try? db.writer.read { dbConn in
-            try String.fetchOne(
-                dbConn,
-                sql: """
-                    SELECT MAX(last_counted) FROM stock
-                    WHERE last_counted IS NOT NULL AND deleted_at IS NULL
-                    """
-            )
+        // Previously used `try?` which silently swallowed any DB error as nil —
+        // a real schema/connection failure would be reported to the UI as "never
+        // audited" which is a compliance-critical false negative. Now wrapped with
+        // isTableNotFoundError guard; other errors propagate.
+        let lastDate: String?
+        do {
+            lastDate = try db.writer.read { dbConn in
+                try String.fetchOne(
+                    dbConn,
+                    sql: """
+                        SELECT MAX(last_counted) FROM stock
+                        WHERE last_counted IS NOT NULL AND deleted_at IS NULL
+                        """
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) {
+                lastDate = nil
+            } else {
+                throw error
+            }
         }
 
         return AuditSummary(
@@ -1315,6 +1527,7 @@ public final class WarehouseService: Sendable {
         stockId: Int64,
         countedQty: Int
     ) throws {
+        guard countedQty >= 0 else { throw WarehouseError.invalidQuantity }
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
@@ -1385,9 +1598,20 @@ public final class WarehouseService: Sendable {
         sampleSize: Int?,
         includeZeroStock: Bool,
         notes: String?,
-        userId: Int64 = 1
+        userId: Int64
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !scope.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw WarehouseError.requiredFieldEmpty
+        }
+        return try db.writer.write { dbConn in
+            // Guard: starter user must exist and not be tombstoned. Without this
+            // pre-check, an orphan audit session with an unresolvable `started_by`
+            // would appear in listAuditSessions' display joins as "Unknown" user.
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [userId]) ?? 0) > 0
+            guard userExists else { throw WarehouseError.userNotFound(userId) }
+
             try dbConn.execute(
                 sql: """
                     INSERT INTO audit_sessions_v2
@@ -1422,7 +1646,14 @@ public final class WarehouseService: Sendable {
         reason: String?,
         performedBy: Int64?
     ) throws {
+        guard newQty >= 0 else { throw WarehouseError.invalidQuantity }
         try db.writer.write { dbConn in
+            if let uid = performedBy {
+                let userExists = (try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                    """, arguments: [uid]) ?? 0) > 0
+                guard userExists else { throw WarehouseError.userNotFound(uid) }
+            }
             // Update the stock record
             try dbConn.execute(
                 sql: """
@@ -1554,7 +1785,11 @@ public final class WarehouseService: Sendable {
         status: String = "active",
         notes: String? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty,
+              !trailerCode.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw WarehouseError.requiredFieldEmpty
+        }
+        return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO job_trailers (trailer_code, name, status, notes, created_at, updated_at)
@@ -1587,7 +1822,7 @@ public final class WarehouseService: Sendable {
             setClauses.append("updated_at = datetime('now')")
             args.append(id)
 
-            let sql = "UPDATE job_trailers SET \(setClauses.joined(separator: ", ")) WHERE id = ?"
+            let sql = "UPDATE job_trailers SET \(setClauses.joined(separator: ", ")) WHERE id = ? AND deleted_at IS NULL"
             try dbConn.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
@@ -1605,6 +1840,28 @@ public final class WarehouseService: Sendable {
         notes: String? = nil
     ) throws -> Int64 {
         try db.writer.write { dbConn in
+            // Guard: trailer must exist and not be tombstoned — otherwise the
+            // INSERT creates an orphan trailer_location_events row against a
+            // decommissioned trailer (the FK constraint accepts the write).
+            let trailerExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM job_trailers WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [trailerId]) ?? 0) > 0
+            guard trailerExists else { throw WarehouseError.trailerNotFound(trailerId) }
+
+            // Guard: recording user must exist and not be tombstoned.
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [recordedBy]) ?? 0) > 0
+            guard userExists else { throw WarehouseError.userNotFound(recordedBy) }
+
+            // Guard: when jobId is supplied, the job must exist and not be tombstoned.
+            if let jid = jobId {
+                let jobExists = (try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL
+                    """, arguments: [jid]) ?? 0) > 0
+                guard jobExists else { throw WarehouseError.jobNotFound(jid) }
+            }
+
             try dbConn.execute(
                 sql: """
                     INSERT INTO trailer_location_events
@@ -1671,18 +1928,20 @@ public final class WarehouseService: Sendable {
         areaId: Int64? = nil
     ) throws -> StagingBox {
         try db.writer.write { dbConn in
-            // Fetch job info for label generation
-            let jobRow = try Row.fetchOne(
+            // Fetch job info for label generation. Throws if the job is tombstoned
+            // (previously fell through with empty-string jobName label, creating
+            // mystery boxes labelled with just a job number).
+            guard let jobRow = try Row.fetchOne(
                 dbConn,
                 sql: """
                     SELECT j.job_number, j.job_name
                     FROM jobs j WHERE j.id = ? AND j.deleted_at IS NULL
                     """,
                 arguments: [jobId]
-            )
+            ) else { throw WarehouseError.jobNotFound(jobId) }
 
-            let jobNumber = (jobRow?["job_number"] as String?) ?? "\(jobId)"
-            let jobName = (jobRow?["job_name"] as String?) ?? ""
+            let jobNumber = (jobRow["job_number"] as String?) ?? "\(jobId)"
+            let jobName = (jobRow["job_name"] as String?) ?? ""
 
             // Count existing boxes for this job to determine sequence
             let existingCount = try Int.fetchOne(
@@ -1773,37 +2032,86 @@ public final class WarehouseService: Sendable {
 
     /// Mark a box as full. Automatically creates the next box for the same job.
     ///
+    /// All three steps (read, mark-full, create-next) execute in a single
+    /// transaction so a failure mid-way never leaves a "full" box without a successor.
+    ///
     /// - Returns: The newly created next box (auto-incremented).
     @discardableResult
     public func markBoxFull(boxId: Int64) throws -> StagingBox {
-        // First mark the box as full
-        let (jobId, areaId, size): (Int64, Int64?, String) = try db.writer.read { dbConn in
+        return try db.writer.write { dbConn in
+            // Fetch current box + job info atomically
             guard let row = try Row.fetchOne(
                 dbConn,
-                sql: "SELECT job_id, area_id, box_size FROM staging_boxes WHERE id = ? AND deleted_at IS NULL",
+                sql: """
+                    SELECT sb.job_id, sb.area_id, sb.box_size,
+                           j.job_number, j.job_name
+                    FROM staging_boxes sb
+                    LEFT JOIN jobs j ON j.id = sb.job_id AND j.deleted_at IS NULL
+                    WHERE sb.id = ? AND sb.deleted_at IS NULL
+                    """,
                 arguments: [boxId]
             ) else {
                 throw WarehouseError.partNotFound(boxId)
             }
-            return (row["job_id"] as Int64, row["area_id"] as Int64?, (row["box_size"] as String?) ?? "normal")
-        }
 
-        try db.writer.write { dbConn in
+            let jobId = row["job_id"] as Int64
+            guard let jobNumber = row["job_number"] as String? else {
+                throw WarehouseError.jobNotFound(jobId)
+            }
+            let areaId = row["area_id"] as Int64?
+            let size = (row["box_size"] as String?) ?? "normal"
+            let jobName = (row["job_name"] as String?) ?? ""
+
+            // Mark this box as full
             try dbConn.execute(
                 sql: "UPDATE staging_boxes SET is_full = 1 WHERE id = ?",
                 arguments: [boxId]
             )
-        }
 
-        // Auto-create the next box
-        return try createStagingBox(jobId: jobId, size: size, areaId: areaId)
+            // Create next box (inlined for atomicity — no nested db.writer.write)
+            let existingCount = try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COUNT(*) FROM staging_boxes WHERE job_id = ? AND deleted_at IS NULL",
+                arguments: [jobId]
+            ) ?? 0
+
+            let seq = existingCount + 1
+            let seqStr = String(format: "%02d", seq)
+            let boxNumber = "\(jobNumber)-\(seqStr)"
+            let shortName = buildShortLabel(jobName: jobName)
+            let labelText = "\(shortName) \(boxNumber)"
+
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO staging_boxes
+                    (job_id, box_number, box_size, label_text, is_full, area_id, created_at)
+                    VALUES (?, ?, ?, ?, 0, ?, datetime('now'))
+                    """,
+                arguments: [jobId, boxNumber, size, labelText, areaId]
+            )
+
+            let newId = dbConn.lastInsertedRowID
+
+            return StagingBox(
+                id: newId,
+                jobId: jobId,
+                jobName: jobName,
+                jobNumber: jobNumber,
+                boxNumber: boxNumber,
+                boxSize: size,
+                labelText: labelText,
+                isFull: false,
+                areaId: areaId,
+                createdAt: nil
+            )
+        }
     }
 
     /// Mark a box as open (not full).
     public func markBoxOpen(boxId: Int64) throws {
         try db.writer.write { dbConn in
             try dbConn.execute(
-                sql: "UPDATE staging_boxes SET is_full = 0 WHERE id = ?",
+                sql: "UPDATE staging_boxes SET is_full = 0 WHERE id = ? AND deleted_at IS NULL",
                 arguments: [boxId]
             )
         }
@@ -2171,7 +2479,13 @@ public final class WarehouseService: Sendable {
 
     /// Create a new warehouse floor plan.
     public func createFloorPlan(name: String, widthInches: Int, lengthInches: Int) throws -> WarehouseFloorPlan {
-        try db.writer.write { dbConn in
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw WarehouseError.requiredFieldEmpty
+        }
+        guard widthInches > 0, lengthInches > 0 else {
+            throw WarehouseError.invalidDimension
+        }
+        return try db.writer.write { dbConn in
             var plan = WarehouseFloorPlan(
                 name: name,
                 widthInches: widthInches,
@@ -2194,6 +2508,9 @@ public final class WarehouseService: Sendable {
 
     /// Save user-defined grid dimensions to a floor plan (PE-040 — wizard dimensions form).
     public func updateFloorPlanGrid(floorPlanId: Int64, rows: Int, cols: Int) throws {
+        guard rows > 0, cols > 0 else {
+            throw WarehouseError.invalidDimension
+        }
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: "UPDATE warehouse_floor_plans SET grid_rows = ?, grid_cols = ?, updated_at = datetime('now') WHERE id = ?",
@@ -2231,7 +2548,10 @@ public final class WarehouseService: Sendable {
         floorPlanId: Int64, featureType: String, label: String?,
         gridX: Int, gridY: Int, gridWidth: Int = 1, gridHeight: Int = 1, rotation: Int = 0
     ) throws -> WarehouseFloorFeature {
-        try db.writer.write { dbConn in
+        guard !featureType.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw WarehouseError.requiredFieldEmpty
+        }
+        return try db.writer.write { dbConn in
             var feature = WarehouseFloorFeature(
                 floorPlanId: floorPlanId,
                 featureType: featureType,
@@ -2274,7 +2594,10 @@ public final class WarehouseService: Sendable {
         gridX: Int = 0, gridY: Int = 0, gridWidth: Int = 4, gridHeight: Int = 4,
         rotation: Int = 0, zoneOrder: Int = 0
     ) throws -> WarehouseZone {
-        try db.writer.write { dbConn in
+        guard !zoneType.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw WarehouseError.requiredFieldEmpty
+        }
+        return try db.writer.write { dbConn in
             var zone = WarehouseZone(
                 floorPlanId: floorPlanId,
                 zoneType: zoneType,
@@ -2424,7 +2747,10 @@ public final class WarehouseService: Sendable {
         rotation: Int = 0, frontFace: String? = "south",
         isMovable: Bool = false, isJobReady: Bool = false
     ) throws -> WarehouseStorageUnit {
-        try db.writer.write { dbConn in
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw WarehouseError.requiredFieldEmpty
+        }
+        return try db.writer.write { dbConn in
             var unit = WarehouseStorageUnit(
                 floorPlanId: floorPlanId,
                 name: name,
@@ -2469,7 +2795,8 @@ public final class WarehouseService: Sendable {
         isConfigured: Bool? = nil, zoneId: Int64? = nil
     ) throws {
         try db.writer.write { dbConn in
-            guard var unit = try WarehouseStorageUnit.fetchOne(dbConn, key: id) else { return }
+            guard var unit = try WarehouseStorageUnit.fetchOne(dbConn, key: id),
+                  unit.deletedAt == nil else { return }
             if let name = name { unit.name = name }
             if let unitType = unitType { unit.unitType = unitType }
             if let rowNumber = rowNumber { unit.rowNumber = rowNumber }
@@ -2554,7 +2881,14 @@ public final class WarehouseService: Sendable {
         unitId: Int64, levelCode: String, levelName: String? = nil,
         order: Int = 0, heightInches: Int? = nil, areaCount: Int = 1
     ) throws -> WarehouseStorageLevel {
-        try db.writer.write { dbConn in
+        guard !levelCode.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw WarehouseError.requiredFieldEmpty
+        }
+        return try db.writer.write { dbConn in
+            let unitExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM warehouse_storage_units WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [unitId]) ?? 0) > 0
+            guard unitExists else { throw WarehouseError.unitNotFound(unitId) }
             var level = WarehouseStorageLevel(
                 unitId: unitId,
                 levelCode: levelCode,
@@ -2596,7 +2930,12 @@ public final class WarehouseService: Sendable {
     public func addStorageArea(
         levelId: Int64, areaNumber: Int, widthInches: Int? = nil
     ) throws -> WarehouseStorageArea {
-        try db.writer.write { dbConn in
+        guard areaNumber > 0 else { throw WarehouseError.invalidDimension }
+        return try db.writer.write { dbConn in
+            let levelExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM warehouse_storage_levels WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [levelId]) ?? 0) > 0
+            guard levelExists else { throw WarehouseError.levelNotFound(levelId) }
             let areaCode = String(format: "A%02d", areaNumber)
             var area = WarehouseStorageArea(
                 levelId: levelId,
@@ -2647,7 +2986,14 @@ public final class WarehouseService: Sendable {
 
     /// Add a bin to an area.
     public func addBin(areaId: Int64, binNumber: Int, isFixed: Bool = false) throws -> WarehouseBin {
-        try db.writer.write { dbConn in
+        guard binNumber > 0 else {
+            throw WarehouseError.invalidDimension
+        }
+        return try db.writer.write { dbConn in
+            let areaExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM warehouse_storage_areas WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [areaId]) ?? 0) > 0
+            guard areaExists else { throw WarehouseError.areaNotFound(areaId) }
             let binCode = String(format: "B%02d", binNumber)
             var bin = WarehouseBin(
                 areaId: areaId,
@@ -2673,8 +3019,18 @@ public final class WarehouseService: Sendable {
     /// Assign a part to a bin.
     public func assignPartToBin(binId: Int64, partId: Int64) throws {
         try db.writer.write { dbConn in
+            // Guard: skip if the bin or part has been soft-deleted — stale UI could
+            // create a phantom assignment invisible to deleted_at IS NULL queries.
+            let binOk = (try Int.fetchOne(dbConn, sql:
+                "SELECT COUNT(*) FROM warehouse_bins WHERE id = ? AND deleted_at IS NULL",
+                arguments: [binId]) ?? 0) > 0
+            guard binOk else { return }
+            let partOk = (try Int.fetchOne(dbConn, sql:
+                "SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL",
+                arguments: [partId]) ?? 0) > 0
+            guard partOk else { return }
             try dbConn.execute(
-                sql: "UPDATE warehouse_bins SET assigned_part_id = ? WHERE id = ?",
+                sql: "UPDATE warehouse_bins SET assigned_part_id = ? WHERE id = ? AND deleted_at IS NULL",
                 arguments: [partId, binId]
             )
         }
@@ -2710,6 +3066,17 @@ public final class WarehouseService: Sendable {
     /// Assign a part to a storage area.
     public func assignPartToArea(partId: Int64, areaId: Int64, isHome: Bool = false) throws -> WarehousePartAssignment {
         try db.writer.write { dbConn in
+            // Guard: both part and area must be non-tombstoned before creating
+            // a warehouse_part_assignments row — orphan links violate the
+            // intent of deleted_at IS NULL filters on all downstream queries.
+            let partExists = (try Int.fetchOne(dbConn, sql:
+                "SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL",
+                arguments: [partId]) ?? 0) > 0
+            guard partExists else { throw WarehouseError.partNotFound(partId) }
+            let areaExists = (try Int.fetchOne(dbConn, sql:
+                "SELECT COUNT(*) FROM warehouse_storage_areas WHERE id = ? AND deleted_at IS NULL",
+                arguments: [areaId]) ?? 0) > 0
+            guard areaExists else { throw WarehouseError.areaNotFound(areaId) }
             var assignment = WarehousePartAssignment(
                 partId: partId,
                 areaId: areaId,
@@ -3128,7 +3495,13 @@ public final class WarehouseService: Sendable {
         countedBy: Int64,
         unitCostDollars: Double = 0
     ) throws -> AuditCount {
-        try db.writer.write { dbConn in
+        guard userCount >= 0 else { throw WarehouseError.invalidQuantity }
+        guard systemCount >= 0 else { throw WarehouseError.invalidQuantity }
+        return try db.writer.write { dbConn in
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [countedBy]) ?? 0) > 0
+            guard userExists else { throw WarehouseError.userNotFound(countedBy) }
             let variance = userCount - systemCount
             let varianceDollars = Double(abs(variance)) * unitCostDollars
             let variancePercent: Double = systemCount > 0 ? (Double(abs(variance)) / Double(systemCount)) * 100.0 : (variance == 0 ? 0 : 100)
@@ -3245,6 +3618,21 @@ public final class WarehouseService: Sendable {
                 .filter(Column("reliability_level") == level)
                 .order(Column("confidence_percent").desc)
                 .fetchAll(dbConn)
+        }
+    }
+
+    /// Returns all PartConfidence records across every reliability level (0–10) in a single query.
+    /// Use instead of calling `getPartsAtLevel` 11 times in a loop.
+    public func getAllPartConfidenceLevels() throws -> [PartConfidence] {
+        do {
+            return try db.writer.read { dbConn in
+                try PartConfidence
+                    .order(Column("reliability_level").asc, Column("confidence_percent").desc)
+                    .fetchAll(dbConn)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 
@@ -3587,7 +3975,14 @@ public final class WarehouseService: Sendable {
         qtyFound: Int,
         foundBy: Int64
     ) throws -> MisplacedPartsLog {
-        try db.writer.write { dbConn in
+        guard qtyFound > 0 else { throw WarehouseError.invalidQuantity }
+        return try db.writer.write { dbConn in
+            // Guard: reporter must be a non-tombstoned user — orphan foundBy would
+            // produce Unknown-user entries in the misplaced-parts dashboard.
+            let userOk = (try Int.fetchOne(dbConn, sql:
+                "SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL",
+                arguments: [foundBy]) ?? 0) > 0
+            guard userOk else { throw WarehouseError.userNotFound(foundBy) }
             var log = MisplacedPartsLog(
                 id: nil, partId: partId,
                 foundAtAreaId: foundAtAreaId, homeAreaId: homeAreaId,
@@ -3623,11 +4018,20 @@ public final class WarehouseService: Sendable {
 
     /// Resolve a misplaced part entry.
     public func resolveMisplacedPart(logId: Int64, resolution: String, resolvedBy: Int64) throws {
+        guard !resolution.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw WarehouseError.requiredFieldEmpty
+        }
         try db.writer.write { dbConn in
+            // Guard: resolver must be non-tombstoned — a blank resolved_by would
+            // make the resolution appear as "Unknown" on the audit dashboard.
+            let userOk = (try Int.fetchOne(dbConn, sql:
+                "SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL",
+                arguments: [resolvedBy]) ?? 0) > 0
+            guard userOk else { throw WarehouseError.userNotFound(resolvedBy) }
             try dbConn.execute(sql: """
                 UPDATE misplaced_parts_log
                 SET resolution = ?, resolved_by = ?, resolved_at = datetime('now')
-                WHERE id = ?
+                WHERE id = ? AND resolution = 'pending'
                 """, arguments: [resolution, resolvedBy, logId])
         }
     }
@@ -4045,6 +4449,7 @@ public final class WarehouseService: Sendable {
         userId: Int64,
         notes: String? = nil
     ) throws {
+        guard quantity >= 0 else { throw WarehouseError.invalidQuantity }
         try db.writer.write { dbConn in
             // Verify the assignment exists and belongs to this user
             guard var assignment = try MultiUserAuditAssignment.fetchOne(dbConn, key: assignmentId) else {
@@ -4167,6 +4572,10 @@ public final class WarehouseService: Sendable {
         resolvedBy: Int64
     ) throws -> Int? {
         try db.writer.write { dbConn in
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [resolvedBy]) ?? 0) > 0
+            guard userExists else { throw WarehouseError.userNotFound(resolvedBy) }
             // Get all assignments for this part in this session
             let assignments = try MultiUserAuditAssignment
                 .filter(Column("part_id") == partId && Column("audit_session_id") == sessionId)
