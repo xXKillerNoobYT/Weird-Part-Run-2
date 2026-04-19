@@ -85,6 +85,8 @@ updated_by: UUID (user)
 
 ### Shortcut Commands
 
+> **Implementation note (2026-04-19):** The `/` command palette described below is the Phase 2 design target. The current implementation (Phase 4.5 complete) uses a **Picker dropdown** for block type selection + toolbar shortcut buttons for the most common types (heading, checklist, to-do, callout, divider). This is more iOS-native and is acceptable UX. The command palette can be added in a future polish pass.
+
 Typing `/` at the start of a new block opens a command palette showing all available block types. User can:
 1. Type to filter (e.g., `/h` shows h1, h2, h3)
 2. Tap to select
@@ -111,10 +113,12 @@ Notebooks sync via the standard sync engine. Conflicts are resolved **per-block*
 
 ### Conflict Resolution Flow
 
+> **Implementation note (2026-04-19):** Step 2 (AI Merge Attempt) is a Phase 2 design target requiring Foundation Models integration. Current implementation (Phase 4.5) skips the AI merge and goes directly to step 3 (User Review with local vs. remote choice). Foundation Models integration is planned for Phase 12 (AI Integration).
+
 When two devices edit the same block:
 
 1. **Detection:** Sync engine detects conflicting versions of the same `block_id`
-2. **AI Merge Attempt:** Apple Foundation Models attempts to merge the two versions
+2. **AI Merge Attempt:** Apple Foundation Models attempts to merge the two versions *(Phase 2 — not yet implemented)*
    - Shows with **Apple AI glow** (subtle animation indicating AI is working)
    - AI considers: which parts changed, context from surrounding blocks, block type
 3. **User Review:** After AI merge, user sees:
