@@ -390,4 +390,19 @@ Key service methods needed:
 
 ---
 
-*Last updated: 2026-03-23*
+## 12. Unplanned Files (Present in Codebase)
+
+These files exist in `Features/Jobs/` but were not in the original plan scope:
+
+| File | Role |
+|------|------|
+| `IOSEstimationQuestionnairePage.swift` | Pre-job estimation questionnaire |
+| `IOSEstimationReviewPage.swift` | Manager review of submitted estimations |
+| `IOSWeeklyReviewSheet.swift` | Weekly team review (schedule-adjacent) |
+| `JobsRouter.swift` | Standard routing boilerplate |
+
+**Status (2026-04-19 pass 1):** All confirmed implemented. Estimation pages tracked under `JobEstimationService` scope. No drift — code and plan aligned.
+
+---
+
+*Last updated: 2026-04-20 (pass 2 C1 — added unplanned files section)*
