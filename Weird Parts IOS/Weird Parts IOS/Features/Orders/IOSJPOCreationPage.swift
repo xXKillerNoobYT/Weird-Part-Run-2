@@ -764,6 +764,7 @@ struct IOSJPOCreationPage: View {
         } label: {
             HStack {
                 Image(systemName: "lightbulb")
+                    .accessibilityHidden(true)
                 Text("Suggestions")
                     .font(.headline)
                 if !companionSuggestions.isEmpty || !aiSuggestions.isEmpty {

@@ -657,6 +657,7 @@ struct IOSPODetailPage: View {
                         Image(systemName: "shippingbox")
                             .decorativeIconFont(48)
                             .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
                         Text("No receiving sessions recorded")
                             .font(.headline)
                         Text("Receiving sessions will appear here as shipments are checked in against this PO.")
@@ -721,6 +722,7 @@ struct IOSPODetailPage: View {
                                             HStack(spacing: 4) {
                                                 Image(systemName: "person.circle")
                                                     .font(.caption2)
+                                                    .accessibilityHidden(true)
                                                 Text(by)
                                                     .font(.caption2)
                                             }
@@ -901,6 +903,7 @@ struct IOSPODetailPage: View {
                         Image(systemName: "person.fill.questionmark")
                             .decorativeIconFont(48)
                             .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
                         Text("No linked Job Part Orders")
                             .font(.headline)
                         Text("This PO was not generated from a JPO, so there is no job creator to contact.")
@@ -1500,6 +1503,7 @@ struct IOSPODetailPage: View {
                                 HStack(spacing: 4) {
                                     Image(systemName: "exclamationmark.triangle.fill")
                                         .font(.caption2)
+                                        .accessibilityHidden(true)
                                     Text("\(discrepancyCount)")
                                         .font(.caption2)
                                         .fontWeight(.bold)
@@ -1597,6 +1601,7 @@ struct IOSPODetailPage: View {
                             HStack(spacing: 4) {
                                 Image(systemName: "person.circle")
                                     .font(.caption2)
+                                    .accessibilityHidden(true)
                                 Text(entry.receivedBy)
                                     .font(.caption2)
                             }
@@ -1615,6 +1620,7 @@ struct IOSPODetailPage: View {
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                         .padding(.top, 6)
+                        .accessibilityHidden(true)
                 }
             }
             .buttonStyle(.plain)
@@ -1783,6 +1789,7 @@ struct IOSPODetailPage: View {
                                     .font(.title3)
                                     .foregroundStyle(.green)
                             }
+                            .accessibilityLabel("Call supplier")
                         }
                         if let email = sup.email, !email.isEmpty,
                            let url = URL(string: "mailto:\(email)") {
@@ -1791,6 +1798,7 @@ struct IOSPODetailPage: View {
                                     .font(.title3)
                                     .foregroundStyle(.blue)
                             }
+                            .accessibilityLabel("Email supplier")
                         }
                         Button {
                             activeSheet = .contactSupplier
@@ -1799,6 +1807,7 @@ struct IOSPODetailPage: View {
                                 .font(.title3)
                                 .foregroundStyle(.orange)
                         }
+                        .accessibilityLabel("Message supplier")
                     }
                 }
             }
