@@ -72,6 +72,7 @@ struct CategoriesBrandSection: View {
             Image(systemName: isGeneralLinked ? "checkmark.square.fill" : "square")
                 .foregroundStyle(isGeneralLinked ? Color.accentColor : Color.secondary)
                 .font(.title3)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("General")
                     .font(.subheadline)
@@ -84,6 +85,9 @@ struct CategoriesBrandSection: View {
         }
         .frame(minHeight: 44)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAddTraits(isGeneralLinked ? .isSelected : [])
         .onTapGesture {
             isGeneralLinked.toggle()
         }
@@ -103,6 +107,7 @@ struct CategoriesBrandSection: View {
                 Image(systemName: isLinked ? "checkmark.square.fill" : "square")
                     .foregroundStyle(isLinked ? Color.accentColor : Color.secondary)
                     .font(.title3)
+                    .accessibilityHidden(true)
                 Text(brand.name)
                     .font(.subheadline)
                     .fontWeight(.medium)
@@ -116,6 +121,7 @@ struct CategoriesBrandSection: View {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundStyle(.orange)
                                 .font(.caption)
+                                .accessibilityHidden(true)
                             Text("Part # recommended")
                                 .font(.caption)
                                 .foregroundStyle(.orange)
@@ -125,6 +131,9 @@ struct CategoriesBrandSection: View {
             }
             .frame(minHeight: 44)
             .contentShape(Rectangle())
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAddTraits(isLinked ? .isSelected : [])
             .onTapGesture {
                 Task { await toggleBrand(brandId: brandId, isLinked: isLinked) }
             }
