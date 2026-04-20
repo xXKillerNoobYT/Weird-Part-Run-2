@@ -91,6 +91,7 @@ struct IOSTeamsPage: View {
                 HStack(spacing: 4) {
                     Image(systemName: icon)
                         .font(.caption2)
+                        .accessibilityHidden(true)
                     Text("\(count)")
                         .font(.system(.title3, weight: .bold))
                         .monospacedDigit()
@@ -224,6 +225,7 @@ struct IOSTeamsPage: View {
         return HStack(spacing: 4) {
             Image(systemName: "person.2.fill")
                 .font(.caption2)
+                .accessibilityHidden(true)
             Text("\(count)")
                 .font(.system(.caption2, weight: .semibold))
         }
