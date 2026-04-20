@@ -91,6 +91,16 @@ Self-improvements are applied autonomously for safe changes (reordering, enablin
 | 2026-04-20 | 10 | jobs (R2) | C3_hunt_fix_clean | done | 0 regressions (85 deleted_at filters vs 70 on day 2 = stronger defense; jobs uses `status` not `is_active` → no is_active gap) | — | 0 | ~120 | none |
 | 2026-04-20 | 16 | scheduling (R2) | C1_plan_complete | done | 0 gaps — 2 plans intact from R1 | — | 0 | ~60 | github-sync (10h stale) |
 | 2026-04-20 | 20 | tools (R2) | C1_plan_complete | done | 0 gaps — ios-tools-pages.md at 105 lines (R1 supplement from iter 37-38) intact | — | 0 | ~60 | none |
+| 2026-04-20 | 29 | parts (R3) | C1_plan_complete | done | 0 gaps — all 5 parts plans intact from R1 | — | 0 | ~60 | revise-claude-md (end-of-day, deferred to per-area memory) |
+
+## 🎉 Second Full Rotation Complete (2026-04-20 22:50)
+
+**R2 complete — all 14 areas graduated twice.** Additional findings surfaced in R2 vs R1:
+- **is_active defense gaps on LIST paths** (R1 focused on CREATE paths). Running total across services: ~40+ gaps found in R2.
+- **scrollDismissesKeyboard coverage** — warehouse R2 patched 21 files via Python regex (17 auto + 4 manual).
+- **Accessibility fixes** — 10+ additional a11y annotations across areas.
+
+**R3 begins at parts.** R3 hypothesis: should be mostly no-op — R2 captured the second-tier gaps, so R3 is pure regression-guard.
 
 ## First Full Rotation Complete (2026-04-20 08:45)
 
