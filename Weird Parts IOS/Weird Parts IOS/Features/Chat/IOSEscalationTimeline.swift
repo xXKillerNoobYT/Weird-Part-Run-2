@@ -16,6 +16,7 @@ struct IOSEscalationTimeline: View {
     @State private var actionError: String?
     @State private var pushBackReason = ""
     @State private var activeSheet: ActiveSheet?
+    @State private var showEscalateConfirm = false
 
     // Single enum for all sheets — avoids SwiftUI multiple-.sheet() bug
     private enum ActiveSheet: Identifiable {
@@ -200,12 +201,22 @@ struct IOSEscalationTimeline: View {
             HStack(spacing: 12) {
                 if canEscalate {
                     Button {
-                        doEscalate()
+                        showEscalateConfirm = true
                     } label: {
                         Label("Escalate", systemImage: "arrow.up.circle")
                             .font(.caption)
                     }
                     .buttonStyle(.borderedProminent)
+                    .confirmationDialog(
+                        "Escalate this question?",
+                        isPresented: $showEscalateConfirm,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Escalate", role: .destructive) { doEscalate() }
+                        Button("Cancel", role: .cancel) { }
+                    } message: {
+                        Text("The question will be sent to the next level. This notifies the reviewer above you.")
+                    }
                 }
                 if canPushBack {
                     Button {
