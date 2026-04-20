@@ -518,6 +518,40 @@ and flag when `AND v.is_active = 1` is missing. Same pattern applies to all `JOI
 
 ---
 
+## Area: jobs — pass 2 — 2026-04-20
+
+**Analyzed:** Full 17-check pass 2 (validation). No functional bugs found. 8 `scrollDismissesKeyboard` gaps + 2 accessibility fixes. All tests passing (137/137). 0 security/performance findings.
+
+### Key Findings
+
+**1. scrollDismissesKeyboard gap — 8 jobs files (confirms systemic pattern)**
+
+Parts pass 2 found 15 files; jobs pass 2 found 8. Together: 23 confirmed gaps across 2 areas, pattern clearly affects the entire app. The pending `scrollDismissesKeyboard` scanner proposal (parts pass 2 C13) is now higher priority — 2 areas × 8-15 files each strongly suggests 60–80 total files app-wide.
+
+**Updated scanner priority: Medium → Medium-High.** File Q&A addendum to the existing scrollDismissesKeyboard Q&A item (dev-qa.md `#149` tracking).
+
+**2. `quickAction()` helper pattern — icon+text button needs image hidden**
+
+Private view helper functions that build `Button { VStack { Image + Text } }` don't inherit accessibility from a named label. Without `.accessibilityHidden(true)` on the image, VoiceOver reads both the icon name and the button text. **Scanner rule:** For any private/internal view function returning `some View` that contains a `Button(action:) { ... }` with both `Image` and `Text` inside, verify the Image has `.accessibilityHidden(true)`.
+
+**3. jobs table uses `status` not `is_active` (pattern: not all tables follow is_active)**
+
+The is_active defense hook must be scoped to tables that actually have `is_active` columns. The `jobs` table uses a `status` enum ('active', 'on_hold', 'cancelled', etc.) as its lifecycle field. **Spec update for is_active hook:** Before flagging a `deleted_at IS NULL` query as missing `is_active`, verify the table has an `is_active` column in migrations. Exempt tables using status/state machines.
+
+### ⚡ Pattern Reinforcement: scrollDismissesKeyboard
+
+Running total: **23 confirmed gaps / 2 areas** (parts 15 + jobs 8). Scanner priority escalating. File this as an addendum to the Q&A item tracking issue #149.
+
+### Summary & Prioritization (pass 2 additions)
+
+| Recommendation | Type | Priority | Decision | Status |
+|---|---|---|---|---|
+| scrollDismissesKeyboard scanner (escalate to Medium-High) | Scanner | Medium-High | Update existing Q&A | ⏳ Addendum to #149 |
+| quickAction() helper accessibility spec | Scanner rule | Low | Additive to a11y scanner | ⏳ Future a11y scanner |
+| is_active hook: verify column exists before flagging | Spec update | Critical | Apply before building hook | ⏳ Update existing Q&A |
+
+---
+
 ## Area: parts — 2026-04-18
 
 **Analyzed:** iOS Parts Features directory (24 files), `PartsService.swift` (6,834 lines, 594 SQL statements), `parts-section-audit-fix-plan.md`, `colors-parts-redesign.md`
