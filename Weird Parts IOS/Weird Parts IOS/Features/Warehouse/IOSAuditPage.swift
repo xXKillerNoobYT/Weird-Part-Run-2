@@ -274,6 +274,7 @@ struct IOSAuditPage: View {
                         Image(systemName: "checkmark.seal")
                             .font(.title)
                             .foregroundStyle(.green)
+                            .accessibilityHidden(true)
                         Text(filter == .good ? "All parts are in good standing!" : "No parts match this filter")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -312,6 +313,7 @@ struct IOSAuditPage: View {
                         HStack {
                             Image(systemName: "cabinet.fill")
                                 .font(.caption)
+                                .accessibilityHidden(true)
                             Text("Shelf \(shelfKey)")
                                 .font(.subheadline)
                             Spacer()
@@ -360,6 +362,7 @@ struct IOSAuditPage: View {
                         Image(systemName: "chevron.right")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
                     }
                 }
             }
@@ -664,6 +667,7 @@ struct IOSAuditPage: View {
             Image(systemName: "chevron.right")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
                 .accessibilityHidden(true)
         }
         .padding(.vertical, 2)

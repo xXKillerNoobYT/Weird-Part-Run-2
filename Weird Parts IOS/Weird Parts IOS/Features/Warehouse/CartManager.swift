@@ -138,6 +138,7 @@ struct CartSheetView: View {
                         if placedItems.contains(item.id) {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
+                                .accessibilityHidden(true)
                         }
 
                         Text("×\(item.quantity)")
@@ -249,6 +250,7 @@ struct CartBadgeButton: View {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: "cart")
                     .font(.body)
+                    .accessibilityHidden(true)
 
                 if cartManager.itemCount > 0 {
                     Text("\(cartManager.itemCount)")
