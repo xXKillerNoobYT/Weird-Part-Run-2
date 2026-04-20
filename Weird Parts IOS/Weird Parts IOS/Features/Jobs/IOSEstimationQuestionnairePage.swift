@@ -115,6 +115,7 @@ struct IOSEstimationQuestionnairePage: View {
                             Image(systemName: "sparkles")
                                 .foregroundStyle(.purple)
                                 .font(.caption)
+                                .accessibilityHidden(true)
                             Text(suggestion)
                                 .font(.subheadline)
                         }
