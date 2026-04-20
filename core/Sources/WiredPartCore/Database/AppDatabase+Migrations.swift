@@ -112,6 +112,7 @@ extension AppDatabase {
         registerMigration073FloorPlanGridDimensions(&migrator)
         registerMigration074ColorBrandSKUs(&migrator)
         registerMigration075CompanionFeedbackNullableSuggestionId(&migrator)
+        registerMigration076StockMovementsCompositeIndex(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4932,6 +4933,16 @@ extension AppDatabase {
     }
 
     // MARK: - Migration 075: companion_feedback — make suggestion_id nullable
+
+    private static func registerMigration076StockMovementsCompositeIndex(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("076_stock_movements_composite_index") { db in
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_movements_part_date_type
+                ON stock_movements (part_id, created_at, movement_type)
+                WHERE deleted_at IS NULL
+                """)
+        }
+    }
 
     private static func registerMigration075CompanionFeedbackNullableSuggestionId(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("075_companion_feedback_nullable_suggestion_id") { db in
