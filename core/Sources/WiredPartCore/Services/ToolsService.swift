@@ -340,7 +340,7 @@ public final class ToolsService: Sendable {
             guard toolExists else { return }
 
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [userId]) ?? 0) > 0
             guard userExists else { throw ToolsError.userNotFound(userId) }
 
@@ -372,7 +372,7 @@ public final class ToolsService: Sendable {
             guard toolExists else { throw ToolsError.toolNotFound(toolId) }
 
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [userId]) ?? 0) > 0
             guard userExists else { throw ToolsError.userNotFound(userId) }
 
