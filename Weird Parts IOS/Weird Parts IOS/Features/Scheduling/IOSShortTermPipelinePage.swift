@@ -251,6 +251,7 @@ struct IOSShortTermPipelinePage: View {
             HStack {
                 Image(systemName: icon)
                     .foregroundStyle(color)
+                    .accessibilityHidden(true)
                 Text(title)
                 Spacer()
                 if let target {

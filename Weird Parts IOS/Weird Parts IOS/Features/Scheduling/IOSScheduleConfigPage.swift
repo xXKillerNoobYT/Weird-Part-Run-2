@@ -232,6 +232,7 @@ struct IOSScheduleConfigPage: View {
                             Image(systemName: "chevron.right")
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
+                                .accessibilityHidden(true)
                         }
                     }
                     .buttonStyle(.plain)
@@ -293,6 +294,7 @@ struct IOSScheduleConfigPage: View {
                                         Image(systemName: "arrow.triangle.2.circlepath")
                                             .font(.caption2)
                                             .foregroundStyle(.blue)
+                                            .accessibilityHidden(true)
                                     }
                                 }
                             }
@@ -300,6 +302,7 @@ struct IOSScheduleConfigPage: View {
                             Image(systemName: "chevron.right")
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
+                                .accessibilityHidden(true)
                         }
                     }
                     .buttonStyle(.plain)
