@@ -88,6 +88,7 @@ Self-improvements are applied autonomously for safe changes (reordering, enablin
 | 2026-04-19 | 50 | inventory | C1_plan_complete | done | 0 gaps — 4 plans totaling 1,213 lines cover forecasting/wishlist/procurement/MIN-TARGET-MAX | — | 0 | ~120 | github-sync |
 | 2026-04-19 | 52 | reports | C1_plan_complete | done | Plan thin (49 lines) vs 22 iOS files + 2 services; supplemented to 90 lines with file-mapping table + service API + current-status | Plan supplement | 0 | ~300 | revise-claude-md (end-of-day) |
 | 2026-04-20 | 1 | parts (R2) | C1_plan_complete | done (morning kickoff) | 0 gaps — all 5 parts plans intact from round 1 | — | 0 | ~120 | Gate C + morning-recommender + github-sync |
+| 2026-04-20 | 10 | jobs (R2) | C3_hunt_fix_clean | done | 0 regressions (85 deleted_at filters vs 70 on day 2 = stronger defense; jobs uses `status` not `is_active` → no is_active gap) | — | 0 | ~120 | none |
 
 ## First Full Rotation Complete (2026-04-20 08:45)
 
