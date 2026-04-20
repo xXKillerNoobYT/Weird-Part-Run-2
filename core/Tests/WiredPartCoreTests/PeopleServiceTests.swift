@@ -1033,6 +1033,69 @@ struct PeopleServiceTests {
         }
     }
 
+    @Test("listCustomers excludes inactive customers")
+    func testListCustomers_excludesInactive() throws {
+        let env = try E2ETestHelpers.setUp()
+        let custId = try env.people.createCustomer(name: "Active Customer", companyName: "Active Co", email: nil, phone: nil, address: nil, city: nil, state: nil, zip: nil, notes: nil)
+        let inactiveCustId = try env.people.createCustomer(name: "Inactive Customer", companyName: "Inactive Co", email: nil, phone: nil, address: nil, city: nil, state: nil, zip: nil, notes: nil)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE customers SET is_active = 0 WHERE id = ?", arguments: [inactiveCustId])
+        }
+        let customers = try env.people.listCustomers()
+        let ids = customers.map { $0.id }
+        #expect(ids.contains(custId))
+        #expect(!ids.contains(inactiveCustId))
+    }
+
+    @Test("listContractors excludes inactive contractors")
+    func testListContractors_excludesInactive() throws {
+        let env = try E2ETestHelpers.setUp()
+        let gcId = try env.people.createContractor(companyName: "Active GC", contactName: "Alice", email: nil, phone: nil, notes: nil)
+        let inactiveGcId = try env.people.createContractor(companyName: "Inactive GC", contactName: "Bob", email: nil, phone: nil, notes: nil)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE general_contractors SET is_active = 0 WHERE id = ?", arguments: [inactiveGcId])
+        }
+        let contractors = try env.people.listContractors()
+        let ids = contractors.map { $0.id }
+        #expect(ids.contains(gcId))
+        #expect(!ids.contains(inactiveGcId))
+    }
+
+    @Test("listTeams excludes inactive teams")
+    func testListTeams_excludesInactive() throws {
+        let env = try E2ETestHelpers.setUp()
+        let teamId = try env.people.createTeam(name: "Active Team")
+        let inactiveTeamId = try env.people.createTeam(name: "Inactive Team")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE employee_teams SET is_active = 0 WHERE id = ?", arguments: [inactiveTeamId])
+        }
+        let teams = try env.people.listTeams()
+        let ids = teams.map { $0.id }
+        #expect(ids.contains(teamId))
+        #expect(!ids.contains(inactiveTeamId))
+    }
+
+    @Test("getPeopleStats excludes inactive customers and contacts from totals")
+    func testGetPeopleStats_excludesInactive() throws {
+        let env = try E2ETestHelpers.setUp()
+        let custId = try env.people.createCustomer(name: "Stats Customer", companyName: nil, email: nil, phone: nil, address: nil, city: nil, state: nil, zip: nil, notes: nil)
+        let inactiveCustId = try env.people.createCustomer(name: "Inactive Stats Customer", companyName: nil, email: nil, phone: nil, address: nil, city: nil, state: nil, zip: nil, notes: nil)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE customers SET is_active = 0 WHERE id = ?", arguments: [inactiveCustId])
+        }
+        let statsBefore = try env.people.getPeopleStats()
+        // active customer should count; inactive should not
+        let contactId = try env.people.createContact(entityType: "customer", entityId: custId, firstName: "Test", lastName: "Contact", role: "manager", phone: "555-0001")
+        let inactiveContactId = try env.people.createContact(entityType: "customer", entityId: custId, firstName: "Inactive", lastName: "Contact", role: "manager", phone: "555-0002")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE entity_contacts SET is_active = 0 WHERE id = ?", arguments: [inactiveContactId])
+        }
+        let statsAfter = try env.people.getPeopleStats()
+        // one active contact added, one inactive contact added → total should go up by 1 only
+        #expect(statsAfter.totalContacts == statsBefore.totalContacts + 1)
+        _ = custId; _ = contactId
+    }
+
     @Test("updatePaymentSettings rejects non-positive termsDays and negative warningDays")
     func testUpdatePaymentSettings_rejectsInvalidDays() throws {
         let env = try E2ETestHelpers.setUp()

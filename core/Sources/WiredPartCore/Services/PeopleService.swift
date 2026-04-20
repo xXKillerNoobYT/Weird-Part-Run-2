@@ -410,7 +410,7 @@ public final class PeopleService: Sendable {
     public func listCustomers(search: String? = nil) throws -> [CustomerListItem] {
         do {
             return try db.writer.read { dbConn -> [CustomerListItem] in
-                var whereClauses = ["c.deleted_at IS NULL"]
+                var whereClauses = ["c.deleted_at IS NULL", "c.is_active = 1"]
                 var args: [DatabaseValueConvertible?] = []
 
                 if let search, !search.isEmpty {
@@ -455,7 +455,7 @@ public final class PeopleService: Sendable {
     public func listContractors(search: String? = nil) throws -> [ContractorListItem] {
         do {
             return try db.writer.read { dbConn -> [ContractorListItem] in
-                var whereClauses = ["gc.deleted_at IS NULL"]
+                var whereClauses = ["gc.deleted_at IS NULL", "gc.is_active = 1"]
                 var args: [DatabaseValueConvertible?] = []
 
                 if let search, !search.isEmpty {
@@ -504,7 +504,7 @@ public final class PeopleService: Sendable {
     ) throws -> [ContactListItem] {
         do {
             return try db.writer.read { dbConn -> [ContactListItem] in
-                var whereClauses = ["co.deleted_at IS NULL"]
+                var whereClauses = ["co.deleted_at IS NULL", "co.is_active = 1"]
                 var args: [DatabaseValueConvertible?] = []
 
                 if let search, !search.isEmpty {
@@ -562,7 +562,7 @@ public final class PeopleService: Sendable {
                                      WHERE tm.team_id = t.id AND tm.deleted_at IS NULL), 0) AS member_count
                     FROM employee_teams t
                     LEFT JOIN users u ON u.id = t.lead_user_id AND u.deleted_at IS NULL
-                    WHERE t.deleted_at IS NULL
+                    WHERE t.deleted_at IS NULL AND t.is_active = 1
                     ORDER BY t.name ASC
                     """
 
@@ -661,10 +661,10 @@ public final class PeopleService: Sendable {
             sql: "SELECT COUNT(*) FROM users WHERE is_active = 1 AND deleted_at IS NULL"
         )
         let totalCustomers = try safeCount(
-            sql: "SELECT COUNT(*) FROM customers WHERE deleted_at IS NULL"
+            sql: "SELECT COUNT(*) FROM customers WHERE deleted_at IS NULL AND is_active = 1"
         )
         let totalContacts = try safeCount(
-            sql: "SELECT COUNT(*) FROM entity_contacts WHERE deleted_at IS NULL"
+            sql: "SELECT COUNT(*) FROM entity_contacts WHERE deleted_at IS NULL AND is_active = 1"
         )
         return PeopleStats(
             totalEmployees: totalEmployees,
