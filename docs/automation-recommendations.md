@@ -680,3 +680,28 @@ New gap category identified (not previously tracked in automation-recommendation
 |---|---|---|---|---|
 | scrollDismissesKeyboard scanner (file-level) | Scanner | Medium | Pending Q&A | ⏳ New — file as Q&A cluster |
 | is_active hierarchy-builder multi-query spec update | Spec update | Critical | Must apply before building hook | ⏳ Update existing Q&A item |
+
+---
+
+## Area: warehouse — pass 2 — 2026-04-20
+
+**Analyzed:** WarehouseService.swift (5 is_active gaps fixed), 21 iOS warehouse pages (scrollDismissesKeyboard), C7b partial accessibility fix.
+
+### Key Findings
+
+**1. is_active defense — single-ID lookup exemption rule**
+Pass 2 confirmed the rule: `WHERE id = ? AND deleted_at IS NULL` (point lookups by PK) must NOT get `AND is_active = 1` added. The automated is_active scanner must detect PK equality in WHERE clause and skip those queries. This is the third confirmation of this boundary (also observed in WarehouseService line 433, 579, 723, 4410). **Scanner rule update:** Exempt any SELECT where the WHERE clause includes `id = ?` with no other source filters.
+
+**2. Python regex approach for scrollDismissesKeyboard batch-fix**
+`re.sub(r'(\s+)(\.listStyle\(\.insetGrouped\))', r'\1\2\1.scrollDismissesKeyboard(.interactively)', content)` correctly handles indentation-matched multi-occurrence insertion. Patched 17/21 files in one bash loop. The remaining 4 needed manual handling (2 `Form {}` without `.listStyle`, 2 `List {}` without `.listStyle`). **Automation rule: a scanner that auto-applies the Python regex fix is safe to automate — the pattern is exact and reversible.**
+
+**3. Large iOS pages with many nested private structs (WarehouseLocationsPage.swift)**
+WarehouseLocationsPage has 5+ private struct Views. Each struct is a separate scroll container that needs its own `scrollDismissesKeyboard` — a file-level grep passes if any one struct has it. The accessibility gap count in this area (21 files, ~68 icons) confirms the same decomposition problem. **Scanner recommendation:** Add a per-struct boundary scanner (Python with brace-depth tracking) that reports per-struct missing modifiers, not just per-file.
+
+### Summary & Prioritization
+
+| Recommendation | Type | Priority | Decision | Status |
+|---|---|---|---|---|
+| is_active point-lookup exemption rule | Spec update | Critical | Must apply before building hook | ⏳ Update Q&A spec |
+| scrollDismissesKeyboard auto-fix script | Automation | Medium | PENDING Q&A | ⏳ Add to existing scrollDismissesKeyboard Q&A |
+| Per-struct boundary scanner for modifier completeness | New Scanner | Medium | PENDING | ⏳ File as Q&A — complements dismiss-safety scanner |

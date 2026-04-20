@@ -1,9 +1,57 @@
 # Inventory Intelligence System — Draft Plan
 
-> **Status:** DRAFT — Core design confirmed, implementation details refined per page review
+> **Status:** IMPLEMENTATION COMPLETE (core) / DESIGN TBD (advanced features in Part F)
 > **Scope:** Forecasting backbone + Wishlist + Procurement Planner redesign + movement suggestions + smart pull
-> **Related:** `ios-page-review-tracker.md`, forecasting prompts 23A-23D, procurement/wishlist prompts TBD
-> **Last updated:** 2026-03-21
+> **Related:** `ios-page-review-tracker.md`, `forecasting-page-redesign.md`
+> **Last updated:** 2026-04-19
+
+## Current Implementation Status (as of 2026-04-19)
+
+**DB Migrations:** 029 (`location_stock_targets`), 030 (`forecast_settings`, `location_free_space`), 031 (`target_recommendations`), 057 (`wishlist_items`), 070 (`wishlist_items_v2` — adds `dismiss_reason`, `auto_approve_at`, `certainty_score`). All in `AppDatabase+Migrations.swift`.
+
+**PartsService methods implemented:** `listForecastDataWithStock`, `listForecastData`, `recalculateForecasts`, `recalculateForecastsPerLocation`, `getForecastSettings`, `saveForecastSettings`, `getFreeSpaceRating`, `setFreeSpaceRating`, `listAllForecastSettings`, `generateDailyRecommendation`, `listPendingRecommendations`, `approveRecommendation`, `dismissRecommendation`, `pendingRecommendationCount`, location stock target CRUD.
+
+**WishlistService methods:** `listItems`, `getItem`, `approveItem`, `dismissItem`, `sendToProcurement`, `reopenItem`, `getSectionedItems`, `addItem`, and supporting CRUD. 46 dedicated tests in `WishlistServiceTests.swift`.
+
+**iOS pages:** `PartsForecastingPage.swift`, `ForecastSettingsSheet.swift`, `IOSWishlistPage.swift`, `IOSForecastSettingsPage.swift`, `IOSInventoryGridPage.swift`, `StockLevelChart.swift` (shared).
+
+**Advanced features still TBD:** Background task dashboard cards, movement suggestion engine, truck HAUL vs. inventory flag, certainty rating algorithm (see Part F table below for full status).
+
+---
+
+## Security & Access Control
+
+- **view_inventory / view_forecasting** — read access to forecast data, wishlist list view
+- **manage_inventory** — approve/dismiss recommendations, set free-space ratings, send items to procurement
+- **manage_orders** — approve wishlist items, create PO from wishlist
+- No forecast data contains PII; location data is internal warehouse topology only.
+- `wishlist_items.added_by_id` references `users.id` — soft-delete defense applies (deleted users' wishlist items stay visible under system attribution).
+
+## User Roles
+
+| Role | Access |
+|------|--------|
+| Any user | View forecasting page, add to wishlist |
+| Warehouse manager | Approve/dismiss stock recommendations, set free-space ratings |
+| Purchasing / office | Approve wishlist items, send to procurement, create POs |
+| Driver / field | View their truck's stock health via forecasting location filter |
+
+## HIG / Accessibility Notes
+
+- Forecasting stat cards are tappable filters — must use `.accessibilityAddTraits(.isSelected)` when active.
+- Health-bar visualizations use color only (red/orange/green) — must have text fallback (e.g. "Below minimum: 3 remaining").
+- Recommendation dismiss requires a reason — `TextField` must use `accessibilityLabel`.
+- `StockLevelChart` is a SwiftUI Chart — must have `.accessibilityLabel` on chart marks for VoiceOver.
+
+## Test Plan
+
+- Unit: every PartsService forecasting method is covered in `PartsServiceCoverageTests.swift` (recalculate, list, settings, recommendation CRUD).
+- Unit: WishlistService — 46 tests in `WishlistServiceTests.swift` covering full lifecycle (add → approve/dismiss → send to procurement).
+- Integration: `recalculateForecasts` and `recalculateForecastsPerLocation` must run without throwing on empty DB AND on DB with stock movement history.
+- Edge cases: 90-day minimum data threshold, 60-day recommendation cooldown, MIN < TARGET < MAX validation.
+- UI: PartsForecastingPage location picker, stat card filter toggle, detail panel editor round-trip (edit MIN/TARGET → save → reload).
+
+---
 
 ---
 

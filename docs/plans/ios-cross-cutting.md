@@ -87,6 +87,15 @@ Reusable components used across all 87 pages:
 - `HelpContentRegistry.swift` — centralized help content
 - `OnboardingBanner.swift`, `OnboardingProgress.swift`, `OnboardingProgressManager.swift`, `OnboardingTasks.swift`, `FirstVisitHint.swift`, `SkippedModuleHint.swift` — onboarding system
 
+### DesignSystem/ (20 files — unplanned extras, correctly present)
+Full design token + component library added outside the original plan scope:
+- **Components/**: ActionIndicator, ActivityRow, AlertBanner, AvatarView, FilterChip, KPICard, LoadingState, QuickActionButton, SubTabPicker
+- **Foundation/**: SystemIntegration (feature detection, environment bridging)
+- **Styles/**: ButtonStyles, CardStyles, ListRowStyles, SectionHeaderStyle
+- **Tokens/**: Animation, CornerRadius, Elevation, SemanticColors, Spacing, Typography
+
+*C1b drift note (2026-04-20): DesignSystem was built alongside the app but never documented in any plan file. It's correctly implemented — it just needs to be tracked here going forward.*
+
 ### Sync/ (7 files)
 | File | Purpose |
 |------|---------|
