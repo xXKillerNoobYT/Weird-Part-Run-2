@@ -369,9 +369,11 @@ struct IOSJPODetailPage: View {
                     Image(systemName: selectedLineIds.contains(line.id) ? "checkmark.circle.fill" : "circle")
                         .foregroundStyle(selectedLineIds.contains(line.id) ? Color.accentColor : .secondary)
                         .font(.title3)
+                        .accessibilityHidden(true)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(selectedLineIds.contains(line.id) ? "Deselect line item" : "Select line item")
+                .accessibilityAddTraits(selectedLineIds.contains(line.id) ? .isSelected : [])
 
                 // Status icon
                 lineStatusIcon(line.lineStatus)

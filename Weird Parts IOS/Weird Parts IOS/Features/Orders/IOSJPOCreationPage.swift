@@ -448,9 +448,11 @@ struct IOSJPOCreationPage: View {
                 Image(systemName: alreadyInCart(partId: part.id) ? "checkmark.circle.fill" : "plus.circle.fill")
                     .font(.title3)
                     .foregroundStyle(alreadyInCart(partId: part.id) ? .green : Color.accentColor)
+                    .accessibilityHidden(true)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(alreadyInCart(partId: part.id) ? "Already in cart" : "Add to cart")
+            .accessibilityAddTraits(alreadyInCart(partId: part.id) ? .isSelected : [])
         }
         .padding(.vertical, 4)
     }

@@ -285,9 +285,11 @@ struct IOSProcurementPage: View {
                 } label: {
                     Image(systemName: checkedParts.contains(item.id) ? "checkmark.square.fill" : "square")
                         .foregroundStyle(checkedParts.contains(item.id) ? Color.accentColor : Color.secondary)
+                        .accessibilityHidden(true)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(checkedParts.contains(item.id) ? "Deselect part" : "Select part")
+                .accessibilityAddTraits(checkedParts.contains(item.id) ? .isSelected : [])
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.partName)
@@ -667,6 +669,7 @@ struct IOSProcurementPage: View {
             Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
                 .foregroundStyle(Color.accentColor)
                 .font(.caption)
+                .accessibilityHidden(true)
 
             // Preferred star
             if supplier.isPreferred {
@@ -851,6 +854,7 @@ struct IOSProcurementPage: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.red)
                             .font(.caption2)
+                            .accessibilityHidden(true)
                         Text("Over MAX by \(forcePull) — must pull at least \(forcePull)")
                             .font(.caption2)
                             .foregroundStyle(.red)

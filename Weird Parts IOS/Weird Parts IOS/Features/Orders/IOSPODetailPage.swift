@@ -1511,6 +1511,7 @@ struct IOSPODetailPage: View {
                         Image(systemName: isReceiptHistoryExpanded ? "chevron.up" : "chevron.down")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
                     }
                 }
                 .buttonStyle(.plain)
@@ -1574,6 +1575,7 @@ struct IOSPODetailPage: View {
                                 HStack(spacing: 2) {
                                     Image(systemName: "exclamationmark.triangle.fill")
                                         .font(.caption)
+                                        .accessibilityHidden(true)
                                     Text("Discrepancy")
                                         .font(.caption)
                                         .fontWeight(.semibold)
@@ -1586,6 +1588,7 @@ struct IOSPODetailPage: View {
                             HStack(spacing: 4) {
                                 Image(systemName: "shippingbox")
                                     .font(.caption2)
+                                    .accessibilityHidden(true)
                                 Text("\(entry.totalItemsReceived) units")
                                     .font(.caption2)
                             }
