@@ -705,3 +705,23 @@ WarehouseLocationsPage has 5+ private struct Views. Each struct is a separate sc
 | is_active point-lookup exemption rule | Spec update | Critical | Must apply before building hook | ⏳ Update Q&A spec |
 | scrollDismissesKeyboard auto-fix script | Automation | Medium | PENDING Q&A | ⏳ Add to existing scrollDismissesKeyboard Q&A |
 | Per-struct boundary scanner for modifier completeness | New Scanner | Medium | PENDING | ⏳ File as Q&A — complements dismiss-safety scanner |
+
+---
+
+## Area: scheduling — pass 2 — 2026-04-20
+
+**Analyzed:** SchedulingService.swift (0 new gaps), 15 iOS scheduling pages (pass 2 clean).
+
+### Key Findings
+
+**1. Callback-based sheet dismiss-safety pattern is distinct from isSaving pattern**
+Confirmed in ShiftTemplateEditSheet + HolidayEditSheet. When a sheet uses `onSave: (Data) -> Void` callback (parent handles the DB write), there's no `@State private var isSaving`. The correct dismiss-safety guard is isDirty tracking, not isSaving. **Scanner rule update:** A dismiss-safety scanner must handle BOTH patterns: (a) async-save pattern with `isSaving`, (b) callback pattern with `isDirty`. Detecting only `isSaving` would miss all callback sheets.
+
+**2. Scheduling pass 2 is the cleanest pass-2 sweep so far**
+Only 2 dismiss-safety gaps (both callback-based nested structs), 0 is_active gaps, 4 accessibility gaps (all inline). Parts had 8+15+3+5 fixes, jobs had 8+2+1, warehouse had 5+21+5+2, scheduling had 2+1+4. The decreasing severity suggests areas are genuinely converging. **Loop-self-improve signal: areas completing pass 2 with < 5 total fixes should spend 0.5× iterations in pass 3 — less work to do.**
+
+### Summary & Prioritization
+
+| Recommendation | Type | Priority | Decision | Status |
+|---|---|---|---|---|
+| Dismiss-safety scanner: callback-sheet pattern | Spec update | High | Add to existing dismiss-safety Q&A | ⏳ Update existing Q&A spec |
