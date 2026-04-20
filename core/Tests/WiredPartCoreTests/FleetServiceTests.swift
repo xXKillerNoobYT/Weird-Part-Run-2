@@ -656,4 +656,35 @@ struct FleetServiceTests {
         let after = try env.fleet.getFleetStats()
         #expect(after.totalVehicles == before.totalVehicles - 1, "is_active=0 vehicle must reduce totalVehicles count")
     }
+
+    @Test("getVehicleStatusList excludes is_active = 0 vehicles")
+    func testVehicleStatusList_excludesInactive() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-STS-INACTIVE", vehicleName: "Inactive Status", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE vehicles SET is_active = 0 WHERE id = ?", arguments: [vehicleId])
+        }
+        let list = try env.fleet.getVehicleStatusList()
+        #expect(!list.contains(where: { $0.id == vehicleId }), "is_active=0 vehicle must not appear in status list")
+    }
+
+    @Test("getUpcomingFleetMaintenance excludes is_active = 0 vehicles")
+    func testUpcomingFleetMaintenance_excludesInactive() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-MAINT-INACTIVE", vehicleName: "Inactive Maint", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE vehicles SET is_active = 0, next_maintenance_date = date('now', '+1 day')
+                WHERE id = ?
+                """, arguments: [vehicleId])
+        }
+        let upcoming = try env.fleet.getUpcomingFleetMaintenance(limit: 50)
+        #expect(!upcoming.contains(where: { $0.id == vehicleId }), "is_active=0 vehicle must not appear in upcoming maintenance")
+    }
 }

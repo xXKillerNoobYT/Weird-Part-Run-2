@@ -704,7 +704,7 @@ public final class FleetService: Sendable {
         // Overdue inspections: active vehicles with no inspection today
         let overdueInspections = try safeCount(sql: """
             SELECT COUNT(*) FROM vehicles v
-            WHERE v.status = 'active' AND v.deleted_at IS NULL
+            WHERE v.status = 'active' AND v.deleted_at IS NULL AND v.is_active = 1
               AND v.id IN (SELECT vehicle_id FROM vehicle_assignments WHERE is_active = 1 AND deleted_at IS NULL)
               AND v.id NOT IN (
                   SELECT vehicle_id FROM inspection_records
@@ -786,7 +786,7 @@ public final class FleetService: Sendable {
                     FROM vehicles v
                     LEFT JOIN vehicle_assignments va ON v.id = va.vehicle_id AND va.is_active = 1 AND va.deleted_at IS NULL
                     LEFT JOIN users u ON va.user_id = u.id AND u.deleted_at IS NULL
-                    WHERE v.status != 'retired' AND v.deleted_at IS NULL
+                    WHERE v.status != 'retired' AND v.deleted_at IS NULL AND v.is_active = 1
                     ORDER BY v.vehicle_name
                     """)
 
@@ -818,7 +818,7 @@ public final class FleetService: Sendable {
                            julianday(v.next_maintenance_date) - julianday('now') AS days_until
                     FROM vehicles v
                     WHERE v.next_maintenance_date IS NOT NULL
-                      AND v.status != 'retired' AND v.deleted_at IS NULL
+                      AND v.status != 'retired' AND v.deleted_at IS NULL AND v.is_active = 1
                     ORDER BY v.next_maintenance_date ASC
                     LIMIT ?
                     """, arguments: [limit])
