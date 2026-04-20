@@ -45,6 +45,8 @@
    > _If APPROVE:_ AUTO GO will extend `.claude/hooks/parts-sql-check.sh` to also grep for the is_active defense pattern in create*/update* function bodies.
    >
    > **⚠️ Note (added reports C13):** `ReportsService.swift` must be EXEMPT from this hook. Historical reports intentionally retain records from inactive entities — adding `is_active = 1` to report JOINs would hide valid historical data. The hook should skip any file whose path contains `ReportsService` or add a `# is_active-exempt` comment to exempt specific queries.
+   >
+   > **⚠️ Note (added parts pass 2 C13):** The scanner must check **every individual SELECT statement** within a function body, not just detect `is_active = 1` somewhere in the function. `getHierarchy()` had 5 sub-queries across 5 tables — the review passed it as "actively filters hierarchy items" without checking each sub-query individually. A function-level presence check would miss the per-sub-query gaps. Recommended rule: for functions containing 3+ SELECTs, assert each SELECT independently has `AND is_active = 1` (or is exempted).
 
 ---
 

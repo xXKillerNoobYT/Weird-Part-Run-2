@@ -605,3 +605,44 @@ and flag when `AND v.is_active = 1` is missing. Same pattern applies to all `JOI
 | `parts-drift-detector` subagent | Subagent | Medium | DEFERRED 2026-04-18 | ⏸ Revisit when PE-COLORS Phase 2 code starts landing (#256) |
 
 **Want more?** Run `/claude-automation-recommender` scoped to a different area or category.
+
+---
+
+## Area: parts — pass 2 — 2026-04-20
+
+**Analyzed:** Full 17-check pass 2 (validation pass after first-rotation graduation). 3 real bug categories found: (1) 8 is_active defense gaps in catalog hierarchy queries, (2) 1 dismiss-safety gap in QuickEditSheet (pre-populated form), (3) 3 accessibility gaps in CategoriesBrandSection checkbox toggles. 4 new tests added. All green at pass end.
+
+### Key Findings
+
+**1. `scrollDismissesKeyboard` — 15 parts files still missing it (new gap category)**
+
+C7 fixed `CategoriesFormSheets` (4 structs). C7b found 15 additional parts iOS files with `TextField` but no `.scrollDismissesKeyboard(.interactively)`. This is distinct from the dismiss-safety scanner: dismiss-safety covers `interactiveDismissDisabled` on modal sheets; scrollDismissesKeyboard covers keyboard behavior when the user scrolls a `List` or `Form` that contains text fields.
+
+The proposed dismiss-safety scanner (see warehouse C13 Q&A) doesn't cover this pattern. A separate lightweight scanner is needed:
+
+**Scanner rule:** For every SwiftUI file containing `TextField` or `TextEditor`, check if the enclosing `Form`, `List`, or `ScrollView` (direct or ancestor within same view body) has `.scrollDismissesKeyboard(.interactively)`. Flag if missing.
+
+**Implementation:** 2-pass Python script: (1) find all files with `TextField`/`TextEditor`, (2) for each, check if `.scrollDismissesKeyboard` appears in the same file. Quick-and-dirty 90%+ catch rate.
+
+**Estimated remaining gap:** 30–40 files across all areas (15 in parts alone; prior areas found similar counts).
+
+**Priority: Medium** — UX improvement (keyboard hides content; users have to tap elsewhere to dismiss). Not a crash. But systemic enough that a scanner is worth the 30-minute investment.
+
+**2. Hierarchy-builder multi-query is_active gap (new sub-pattern of is_active defense)**
+
+`getHierarchy()` had 5 sub-queries, each on a different catalog table. The is_active gap was missed in pass 1 because the method was reviewed as a unit ("fetches hierarchy of active items") not query-by-query. The is_active defense scanner (in Q&A as Critical) must check **every SELECT within a single function**, not just the function's primary query.
+
+**Scanner rule update:** When a function body contains 3+ `SELECT` statements, each must independently have `AND is_active = 1` (or be explicitly exempted as historical/reporting). A function-level "is_active = 1 present somewhere" check is insufficient.
+
+**This is additive context for the existing is_active defense Q&A item** — update its specification before building the hook.
+
+### ⚡ Pattern Reinforcement: scrollDismissesKeyboard
+
+New gap category identified (not previously tracked in automation-recommendations). Cross-area estimate: **30–40 files** still missing `.scrollDismissesKeyboard(.interactively)`. This is the first time it's been quantified. Consider adding a dedicated Q&A item for the scrollDismissesKeyboard scanner alongside the existing dismiss-safety scanner Q&A.
+
+### Summary & Prioritization (pass 2 additions)
+
+| Recommendation | Type | Priority | Decision | Status |
+|---|---|---|---|---|
+| scrollDismissesKeyboard scanner (file-level) | Scanner | Medium | Pending Q&A | ⏳ New — file as Q&A cluster |
+| is_active hierarchy-builder multi-query spec update | Spec update | Critical | Must apply before building hook | ⏳ Update existing Q&A item |
