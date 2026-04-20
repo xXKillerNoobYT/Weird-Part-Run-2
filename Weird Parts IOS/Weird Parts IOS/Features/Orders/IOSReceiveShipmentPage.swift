@@ -464,6 +464,7 @@ struct IOSReceiveShipmentPage: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollDismissesKeyboard(.interactively)
             .onChange(of: highlightedItemId) { _, newId in
                 // Auto-scroll to highlighted item on barcode scan (61K)
                 if let id = newId {

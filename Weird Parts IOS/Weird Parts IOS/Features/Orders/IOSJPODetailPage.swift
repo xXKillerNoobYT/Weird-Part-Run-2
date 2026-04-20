@@ -220,6 +220,8 @@ struct IOSJPODetailPage: View {
                         .disabled(bulkHoldReason.trimmingCharacters(in: .whitespaces).isEmpty || isBulkHolding)
                     }
                 }
+                .scrollDismissesKeyboard(.interactively)
+                .interactiveDismissDisabled(!bulkHoldReason.trimmingCharacters(in: .whitespaces).isEmpty || isBulkHolding)
             }
         case .help:
             PageHelpSheet(
@@ -1084,6 +1086,8 @@ private struct AddJPOLineItemSheet: View {
                         .disabled(selectedPart == nil)
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
+            .interactiveDismissDisabled(selectedPart != nil || !notes.isEmpty)
         }
     }
 
