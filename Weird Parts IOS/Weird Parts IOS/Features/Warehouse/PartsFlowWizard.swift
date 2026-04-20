@@ -152,6 +152,7 @@ struct PartsFlowWizard: View {
                             if partCounts[partId] != nil || partLocations[partId] != nil {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundStyle(.green)
+                                    .accessibilityHidden(true)
                             }
                         }
                     }
@@ -223,6 +224,7 @@ struct PartsFlowWizard: View {
                                !text.isEmpty, Int(text) != nil {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundStyle(.green)
+                                    .accessibilityHidden(true)
                             }
                         }
                     }

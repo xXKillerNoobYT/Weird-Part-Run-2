@@ -165,6 +165,7 @@ struct IOSMovementWizard: View {
                                 .font(.caption2)
                                 .fontWeight(.bold)
                                 .foregroundStyle(.white)
+                                .accessibilityHidden(true)
                         } else {
                             Text("\(step)")
                                 .font(.caption2)
@@ -408,6 +409,7 @@ struct IOSMovementWizard: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
             }
         }
         .padding(10)
@@ -456,6 +458,7 @@ struct IOSMovementWizard: View {
                 }
                 Image(systemName: alreadyAdded ? "checkmark.circle.fill" : "plus.circle")
                     .foregroundStyle(alreadyAdded ? .green : Color.accentColor)
+                    .accessibilityHidden(true)
             }
             .padding(.vertical, 10)
             .padding(.horizontal, 12)
@@ -493,6 +496,7 @@ struct IOSMovementWizard: View {
                                 .foregroundStyle(.red.opacity(0.7))
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Remove \(part.name)")
                     }
                     .padding(.vertical, 10)
                     .padding(.horizontal, 12)
@@ -561,6 +565,7 @@ struct IOSMovementWizard: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(part.wrappedValue.qty <= 1)
+                .accessibilityLabel("Decrease quantity")
 
                 Text("\(part.wrappedValue.qty)")
                     .font(.title2)
@@ -577,6 +582,7 @@ struct IOSMovementWizard: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(part.wrappedValue.qty >= part.wrappedValue.availableQty)
+                .accessibilityLabel("Increase quantity")
             }
             .frame(maxWidth: .infinity)
 
@@ -660,6 +666,7 @@ struct IOSMovementWizard: View {
                     Image(systemName: "checkmark.circle.fill")
                         .decorativeIconFont(56)
                         .foregroundStyle(.green)
+                        .accessibilityHidden(true)
                     Text("Movement Complete!")
                         .font(.title2)
                         .fontWeight(.bold)
@@ -693,6 +700,7 @@ struct IOSMovementWizard: View {
                     Image(systemName: "xmark.circle.fill")
                         .decorativeIconFont(56)
                         .foregroundStyle(.red)
+                        .accessibilityHidden(true)
                     Text("Movement Failed")
                         .font(.title2)
                         .fontWeight(.bold)
@@ -715,6 +723,7 @@ struct IOSMovementWizard: View {
                     flowBadge(fromLocationType, color: .blue)
                     Image(systemName: "arrow.right")
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                     flowBadge(toLocationType, color: .green)
                     Spacer()
                     Text(movementType.replacingOccurrences(of: "_", with: " ").capitalized)
@@ -793,6 +802,7 @@ struct IOSMovementWizard: View {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
+                        .accessibilityHidden(true)
                     Text("This action cannot be undone.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -815,6 +825,7 @@ struct IOSMovementWizard: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left")
+                            .accessibilityHidden(true)
                         Text("Back")
                     }
                     .font(.subheadline)
@@ -831,6 +842,7 @@ struct IOSMovementWizard: View {
                     HStack(spacing: 4) {
                         Text("Next")
                         Image(systemName: "chevron.right")
+                            .accessibilityHidden(true)
                     }
                     .font(.subheadline)
                     .fontWeight(.semibold)

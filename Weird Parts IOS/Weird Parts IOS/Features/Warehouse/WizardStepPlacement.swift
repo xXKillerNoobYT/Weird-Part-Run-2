@@ -386,6 +386,7 @@ struct WizardStepPlacement: View {
         HStack(spacing: 8) {
             Image(systemName: "cart.fill")
                 .foregroundStyle(.orange)
+                .accessibilityHidden(true)
             Text("Tap bins to add them to your cart, then place them in a new area.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -429,15 +430,18 @@ struct WizardStepPlacement: View {
                                     Image(systemName: "checkmark.circle.fill")
                                         .foregroundStyle(.orange)
                                         .imageScale(.large)
+                                        .accessibilityHidden(true)
                                 } else {
                                     Image(systemName: "circle")
                                         .foregroundStyle(.secondary)
                                         .imageScale(.large)
+                                        .accessibilityHidden(true)
                                 }
                             }
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityAddTraits(info.bin.id.map { cartBinIds.contains($0) } ?? false ? .isSelected : [])
                     }
                 }
                 .listStyle(.plain)
@@ -474,6 +478,7 @@ struct WizardStepPlacement: View {
                             if selectedAreaId == area.id {
                                 Image(systemName: "checkmark")
                                     .foregroundStyle(.blue)
+                                    .accessibilityHidden(true)
                             }
                         }
                         .contentShape(Rectangle())

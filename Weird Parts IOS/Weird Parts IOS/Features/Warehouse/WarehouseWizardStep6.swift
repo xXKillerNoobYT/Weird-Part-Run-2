@@ -87,6 +87,7 @@ struct WarehouseWizardStep6: View {
                     HStack {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)
+                            .accessibilityHidden(true)
                         Text("Targets saved successfully")
                             .font(.caption)
                             .foregroundStyle(.green)

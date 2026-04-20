@@ -164,6 +164,7 @@ struct WarehouseOnboardingWizard: View {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
                 Text(error)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -173,6 +174,7 @@ struct WarehouseOnboardingWizard: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss error")
             }
             .padding(.horizontal)
             .padding(.vertical, 6)

@@ -51,6 +51,7 @@ struct WarehouseWizardStep2: View {
                             Spacer()
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
+                                .accessibilityHidden(true)
                         }
                     }
                     .onDelete { offsets in

@@ -157,6 +157,7 @@ struct ReceivingRoutingFlow: View {
                 .frame(width: 40, height: 40)
                 .background(Color.blue.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.partName)
@@ -272,6 +273,7 @@ struct ReceivingRoutingFlow: View {
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(condition.color)
+                        .accessibilityHidden(true)
                 }
             }
             .padding(12)
@@ -285,6 +287,7 @@ struct ReceivingRoutingFlow: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func conditionDescription(_ condition: PartCondition) -> String {
@@ -343,6 +346,7 @@ struct ReceivingRoutingFlow: View {
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.red)
+                        .accessibilityHidden(true)
                 }
             }
             .padding(10)
@@ -356,6 +360,7 @@ struct ReceivingRoutingFlow: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - Used Routing View
@@ -446,6 +451,7 @@ struct ReceivingRoutingFlow: View {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.title2)
                             .foregroundStyle(.green)
+                            .accessibilityHidden(true)
                         Text("Correct Part")
                             .font(.subheadline)
                             .fontWeight(.medium)
@@ -475,6 +481,7 @@ struct ReceivingRoutingFlow: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.title2)
                             .foregroundStyle(.red)
+                            .accessibilityHidden(true)
                         Text("Wrong Part")
                             .font(.subheadline)
                             .fontWeight(.medium)
@@ -804,6 +811,7 @@ struct ReceivingRoutingFlow: View {
             Image(systemName: "checkmark.circle.fill")
                 .decorativeIconFont(48)
                 .foregroundStyle(.green)
+                .accessibilityHidden(true)
 
             Text("Routing Complete")
                 .font(.headline)

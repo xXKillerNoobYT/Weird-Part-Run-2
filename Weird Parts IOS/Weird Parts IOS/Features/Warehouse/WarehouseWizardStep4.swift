@@ -108,6 +108,7 @@ struct WarehouseWizardStep4: View {
                         HStack {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
+                                .accessibilityHidden(true)
                             Text(part.partName)
                                 .font(.subheadline)
                         }

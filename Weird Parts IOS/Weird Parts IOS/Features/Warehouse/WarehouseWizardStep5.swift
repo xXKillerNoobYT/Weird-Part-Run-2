@@ -67,6 +67,7 @@ struct WarehouseWizardStep5: View {
                 Image(systemName: "tray")
                     .font(.title)
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
                 Text("No parts assigned to this area")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -100,6 +101,7 @@ struct WarehouseWizardStep5: View {
                            !text.isEmpty, Int(text) != nil {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
+                                .accessibilityHidden(true)
                         }
                     }
                 }
@@ -120,6 +122,7 @@ struct WarehouseWizardStep5: View {
             HStack {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
+                    .accessibilityHidden(true)
                 Text("Counts submitted")
                     .font(.caption)
                     .foregroundStyle(.green)
