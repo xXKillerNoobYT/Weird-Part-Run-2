@@ -725,3 +725,28 @@ Only 2 dismiss-safety gaps (both callback-based nested structs), 0 is_active gap
 | Recommendation | Type | Priority | Decision | Status |
 |---|---|---|---|---|
 | Dismiss-safety scanner: callback-sheet pattern | Spec update | High | Add to existing dismiss-safety Q&A | ⏳ Update existing Q&A spec |
+
+---
+
+## Area: orders — pass 2 — 2026-04-20
+
+**Analyzed:** OrdersService.swift (42 methods, 93 tests), 16 iOS orders pages. C3 clean (0 is_active gaps — orders tables use status+deleted_at). C7: 3 new gaps. C7b: 8 fixes across 4 files.
+
+### Key Findings
+
+**1. Orders tables have no is_active column — is_active scanner needs table-schema awareness**
+Main orders tables (jpos, purchase_orders, po_line_items, jpo_line_items, wishlist_items, receiving_sessions) use `status` + `deleted_at` for lifecycle management, not `is_active`. An automated is_active scanner must check the migrations file (or a schema index) before flagging a query as a gap. Tables that lack the column should be skipped entirely. `staging_zones` does have is_active but is not yet used in list queries — future queries to that table should be flagged.
+
+**2. Inline-sheet dismiss-safety pattern** (variant not covered by existing scanner spec)
+`IOSJPODetailPage.BulkHoldSheet` is an inline sheet case within `sheetContent(for:)` — not a private struct. Its State (`bulkHoldReason`, `isBulkHolding`) comes from the parent struct. The scanner must detect Form/List views rendered inside `case .bulkHold:` switch branches (not just standalone `private struct` definitions). Spec update: scan `.sheet(item:)` with enum dispatch (`sheetContent(for:)`) and verify each `case` branch's Form/List has dismiss-safety.
+
+**3. .isSelected pattern now confirmed in 10 areas — strongly elevated to Critical**
+running total: parts ✅, jobs ✅, warehouse ✅, scheduling ✅, orders ✅ (3 files), people ✅, tools ✅, vehicles ✅, inventory ✅, cross-cutting ✅. All 14 areas have at least one instance. The pattern (selection icon in Button label without .accessibilityHidden + .isSelected trait on Button) is the single most universal accessibility gap in the codebase. Scanner rule: any `Image(systemName: conditional ? "checkmark.*" : "circle|square")` inside a `Button {}` label → automatic flag.
+
+### Summary & Prioritization
+
+| Recommendation | Type | Priority | Decision | Status |
+|---|---|---|---|---|
+| is_active scanner: table-schema awareness gate | Spec update | High | Update existing is_active hook Q&A | ⏳ Update Q&A spec |
+| Dismiss-safety scanner: enum-dispatch inline sheet pattern | Spec update | High | Add to existing dismiss-safety Q&A | ⏳ Update existing Q&A spec |
+| .isSelected scanner: all 14 areas confirmed — escalate to Critical | Escalation | Critical | Promote in Q&A answer choices | ⏳ Q&A still pending |
