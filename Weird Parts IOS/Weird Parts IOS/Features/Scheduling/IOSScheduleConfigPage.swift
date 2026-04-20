@@ -163,6 +163,8 @@ struct IOSScheduleConfigPage: View {
                                 .clipShape(Circle())
                         }
                         .buttonStyle(.plain)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                         .accessibilityLabel("\(label) \(workDays.contains(day) ? "selected" : "not selected")")
                     }
                 }
@@ -615,6 +617,10 @@ struct ShiftTemplateEditSheet: View {
     @State private var overtimeRule = "company_default"
     @State private var showDeleteConfirm = false
 
+    @State private var originalName = ""
+
+    private var isDirty: Bool { name.trimmingCharacters(in: .whitespaces) != originalName }
+
     private let dayOrder = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
     private let dayLabels = ["M", "T", "W", "Th", "F", "Sa", "Su"]
 
@@ -651,6 +657,8 @@ struct ShiftTemplateEditSheet: View {
                                         .clipShape(Circle())
                                 }
                                 .buttonStyle(.plain)
+                                .frame(minWidth: 44, minHeight: 44)
+                                .contentShape(Rectangle())
                             }
                         }
                     }
@@ -701,6 +709,8 @@ struct ShiftTemplateEditSheet: View {
                         .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
+            .interactiveDismissDisabled(isDirty)
             .onAppear { populateFromExisting() }
             .confirmationDialog("Delete this template?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
                 Button("Delete Template", role: .destructive) {
@@ -717,6 +727,7 @@ struct ShiftTemplateEditSheet: View {
     private func populateFromExisting() {
         guard let t = existing else { return }
         name = t.name
+        originalName = t.name
         selectedHatId = t.hatId ?? 0
         // Parse work days JSON
         if let data = t.workDays.data(using: .utf8),
@@ -772,6 +783,10 @@ struct HolidayEditSheet: View {
     @State private var isRecurring = false
     @State private var showDeleteConfirm = false
 
+    @State private var originalName = ""
+
+    private var isDirty: Bool { name.trimmingCharacters(in: .whitespaces) != originalName }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -795,6 +810,8 @@ struct HolidayEditSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
+            .interactiveDismissDisabled(isDirty)
             .navigationTitle(existing != nil ? "Edit Holiday" : "New Holiday")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -822,6 +839,7 @@ struct HolidayEditSheet: View {
     private func populateFromExisting() {
         guard let h = existing else { return }
         name = h.name
+        originalName = h.name
         isPaid = h.isPaid
         isRecurring = h.isRecurring
         if let d = Formatters.localDateFormatter.date(from: h.date) { selectedDate = d }

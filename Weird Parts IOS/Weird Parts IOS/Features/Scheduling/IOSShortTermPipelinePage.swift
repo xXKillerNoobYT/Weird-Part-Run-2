@@ -223,6 +223,7 @@ struct IOSShortTermPipelinePage: View {
             }
         }
         .listStyle(.insetGrouped)
+        .scrollDismissesKeyboard(.interactively)
     }
 
     // MARK: - Pipeline Section
@@ -504,6 +505,7 @@ struct IOSShortTermPipelinePage: View {
                     }
                 }
                 .listStyle(.insetGrouped)
+                .scrollDismissesKeyboard(.interactively)
             }
         }
         .navigationTitle("AI Suggestions")
@@ -632,6 +634,7 @@ private struct CallbackSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Callback")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
