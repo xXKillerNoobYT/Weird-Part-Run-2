@@ -82,6 +82,7 @@ public final class WarehouseService: Sendable {
             sql: """
                 SELECT COUNT(*) FROM parts p
                 WHERE p.deleted_at IS NULL
+                  AND p.is_active = 1
                   AND p.min_stock_level > 0
                   AND (
                     SELECT COALESCE(SUM(s.qty), 0)
@@ -92,7 +93,7 @@ public final class WarehouseService: Sendable {
         )
 
         let totalWithMin = try safeCount(
-            sql: "SELECT COUNT(*) FROM parts WHERE deleted_at IS NULL AND min_stock_level > 0"
+            sql: "SELECT COUNT(*) FROM parts WHERE deleted_at IS NULL AND is_active = 1 AND min_stock_level > 0"
         )
 
         let healthPercent: Int
@@ -217,7 +218,7 @@ public final class WarehouseService: Sendable {
     ) throws -> [InventoryItem] {
         do {
             return try db.writer.read { dbConn -> [InventoryItem] in
-                var whereClauses = ["p.deleted_at IS NULL"]
+                var whereClauses = ["p.deleted_at IS NULL", "p.is_active = 1"]
                 var args: [DatabaseValueConvertible?] = []
 
                 if let search, !search.isEmpty {
@@ -2686,7 +2687,7 @@ public final class WarehouseService: Sendable {
             // Check if any parts have shelf/bin locations or stock entries
             let partsWithLocations = try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM parts
-                WHERE deleted_at IS NULL
+                WHERE deleted_at IS NULL AND is_active = 1
                   AND (shelf_location IS NOT NULL OR bin_location IS NOT NULL)
                 """) ?? 0
             let stockCount = try Int.fetchOne(dbConn, sql: """
@@ -3729,6 +3730,11 @@ public final class WarehouseService: Sendable {
     /// result: "accurate", "inaccurate" (for audits)
     public func updateUserRating(userId: Int64, action: String, result: String? = nil) throws {
         try db.writer.write { dbConn in
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [userId]) ?? 0) > 0
+            guard userExists else { throw WarehouseError.userNotFound(userId) }
+
             // Ensure record exists
             var rating: UserWarehouseRating
             if let existing = try UserWarehouseRating
@@ -3823,6 +3829,16 @@ public final class WarehouseService: Sendable {
         similarPartsNearby: Bool = false
     ) throws {
         try db.writer.write { dbConn in
+            let areaExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM warehouse_storage_areas WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [areaId]) ?? 0) > 0
+            guard areaExists else { throw WarehouseError.areaNotFound(areaId) }
+
+            let checkerExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [checkedBy]) ?? 0) > 0
+            guard checkerExists else { throw WarehouseError.userNotFound(checkedBy) }
+
             var rating: OrganizationRating
             if let existing = try OrganizationRating
                 .filter(Column("area_id") == areaId)
@@ -3910,6 +3926,16 @@ public final class WarehouseService: Sendable {
     /// Cast a user's vote on a consolidation suggestion.
     public func castConsolidationVote(voteId: Int64, userId: Int64, chosenAreaId: Int64) throws {
         try db.writer.write { dbConn in
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [userId]) ?? 0) > 0
+            guard userExists else { throw WarehouseError.userNotFound(userId) }
+
+            let areaExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM warehouse_storage_areas WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [chosenAreaId]) ?? 0) > 0
+            guard areaExists else { throw WarehouseError.areaNotFound(chosenAreaId) }
+
             var entry = ConsolidationVoteEntry(
                 id: nil, voteId: voteId, userId: userId,
                 chosenAreaId: chosenAreaId, votedAt: nil
@@ -3925,7 +3951,7 @@ public final class WarehouseService: Sendable {
                 UPDATE consolidation_votes
                 SET chosen_area_id = ?, status = 'decided', manager_override = 1,
                     decided_at = datetime('now')
-                WHERE id = ?
+                WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [chosenAreaId, voteId])
         }
     }
@@ -3949,7 +3975,7 @@ public final class WarehouseService: Sendable {
                 UPDATE consolidation_votes
                 SET status = 'dismissed', dismiss_reason = ?,
                     ignore_count = ignore_count + 1
-                WHERE id = ?
+                WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [reason, voteId])
         }
     }
@@ -4196,7 +4222,7 @@ public final class WarehouseService: Sendable {
                     JOIN stock_movements sm ON sm.part_id = p.id
                         AND sm.deleted_at IS NULL
                         AND date(sm.created_at) >= ? AND date(sm.created_at) <= ?
-                    WHERE p.deleted_at IS NULL
+                    WHERE p.deleted_at IS NULL AND p.is_active = 1
                     GROUP BY p.id
                     ORDER BY movement_count DESC
                     LIMIT 50
