@@ -353,6 +353,7 @@ struct IOSStagingPage: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollDismissesKeyboard(.interactively)
         }
     }
 
@@ -490,6 +491,7 @@ struct IOSStagingPage: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollDismissesKeyboard(.interactively)
         }
     }
 

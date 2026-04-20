@@ -379,6 +379,7 @@ struct IOSAuditPage: View {
             }
         }
         .listStyle(.insetGrouped)
+        .scrollDismissesKeyboard(.interactively)
     }
 
     // MARK: - Smart Card

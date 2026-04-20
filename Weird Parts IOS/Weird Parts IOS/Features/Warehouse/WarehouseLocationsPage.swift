@@ -743,6 +743,7 @@ private struct AddStorageUnitSheet: View {
                     Section { Text(error).foregroundStyle(.red).font(.caption) }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Add \(unitType.replacingOccurrences(of: "_", with: " ").capitalized)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -876,6 +877,7 @@ private struct EditStorageUnitSheet: View {
                     Section { Text(error).foregroundStyle(.red).font(.caption) }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Edit Unit")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1015,6 +1017,7 @@ private struct StorageUnitDetailSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle(unit.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1277,6 +1280,7 @@ private struct StickerChecklistSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Sticker Checklist")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

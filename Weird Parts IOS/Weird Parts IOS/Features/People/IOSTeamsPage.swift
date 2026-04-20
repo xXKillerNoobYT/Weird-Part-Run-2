@@ -263,16 +263,20 @@ private struct AddTeamSheet: View {
     @State private var teamName = ""
     @State private var teamDescription = ""
     @State private var errorMessage: String?
+    @State private var isDirty = false
+    @State private var showDiscardAlert = false
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Required") {
                     TextField("Team Name", text: $teamName)
+                        .onChange(of: teamName) { _, _ in isDirty = true }
                 }
                 Section("Optional") {
                     TextField("Description", text: $teamDescription, axis: .vertical)
                         .lineLimit(3...6)
+                        .onChange(of: teamDescription) { _, _ in isDirty = true }
                 }
                 if let error = errorMessage {
                     Section {
@@ -280,18 +284,28 @@ private struct AddTeamSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Add Team")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showDiscardAlert = true } else { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
                         .disabled(teamName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
+            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved changes will be lost.")
+            }
         }
+        .interactiveDismissDisabled(isDirty)
     }
 
     private func save() {

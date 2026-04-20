@@ -59,6 +59,7 @@ struct WarehouseWizardStep2: View {
                     }
                 }
                 .listStyle(.insetGrouped)
+                .scrollDismissesKeyboard(.interactively)
                 .confirmationDialog(
                     "Remove Storage Unit?",
                     isPresented: $showDeleteConfirmation,

@@ -224,6 +224,7 @@ struct IOSReceivingPage: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollDismissesKeyboard(.interactively)
         }
     }
 

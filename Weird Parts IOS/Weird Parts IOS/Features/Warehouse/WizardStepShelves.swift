@@ -46,6 +46,7 @@ struct WizardStepShelves: View {
                     }
                 }
                 .listStyle(.insetGrouped)
+                .scrollDismissesKeyboard(.interactively)
             }
         }
         .task { loadData() }

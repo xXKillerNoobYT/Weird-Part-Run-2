@@ -192,6 +192,7 @@ struct IOSWarehouseReturnsPage: View {
                     }
             }
             .listStyle(.insetGrouped)
+            .scrollDismissesKeyboard(.interactively)
         }
     }
 

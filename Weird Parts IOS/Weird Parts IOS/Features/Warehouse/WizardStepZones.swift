@@ -76,6 +76,7 @@ struct WizardStepZones: View {
                     }
                 }
                 .listStyle(.insetGrouped)
+                .scrollDismissesKeyboard(.interactively)
             }
         }
         .task { loadZones() }

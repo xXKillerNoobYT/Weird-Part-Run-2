@@ -97,6 +97,7 @@ struct WarehouseWizardStep4: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollDismissesKeyboard(.interactively)
         }
 
         // Assigned parts
@@ -114,6 +115,7 @@ struct WarehouseWizardStep4: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollDismissesKeyboard(.interactively)
         }
 
         Spacer()

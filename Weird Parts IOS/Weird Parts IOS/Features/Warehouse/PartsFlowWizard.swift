@@ -158,6 +158,7 @@ struct PartsFlowWizard: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollDismissesKeyboard(.interactively)
 
             Text("\(filteredParts.count) parts in catalog")
                 .font(.caption)
@@ -228,6 +229,7 @@ struct PartsFlowWizard: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollDismissesKeyboard(.interactively)
         }
     }
 
@@ -290,6 +292,7 @@ struct PartsFlowWizard: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollDismissesKeyboard(.interactively)
 
             // Save all button
             Button {

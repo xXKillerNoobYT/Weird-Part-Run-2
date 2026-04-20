@@ -236,6 +236,7 @@ struct WarehouseOnboardingWizard: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .scrollDismissesKeyboard(.interactively)
     }
 
     // MARK: - Navigation Buttons

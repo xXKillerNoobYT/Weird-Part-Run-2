@@ -215,6 +215,7 @@ struct WarehouseMovementsPage: View {
             }
         }
         .listStyle(.insetGrouped)
+        .scrollDismissesKeyboard(.interactively)
     }
 
     @ViewBuilder

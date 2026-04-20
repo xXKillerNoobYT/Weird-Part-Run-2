@@ -178,6 +178,7 @@ struct IOSWarehouseSettingsPage: View {
                 .disabled(isSaving)
             }
         }
+        .scrollDismissesKeyboard(.interactively)
     }
 
     private func saveSettings() {

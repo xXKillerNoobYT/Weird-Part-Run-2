@@ -165,6 +165,7 @@ struct CartSheetView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .scrollDismissesKeyboard(.interactively)
     }
 
     // MARK: - Place All

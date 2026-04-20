@@ -137,6 +137,7 @@ struct WarehouseWizardStep6: View {
             }
         }
         .listStyle(.insetGrouped)
+        .scrollDismissesKeyboard(.interactively)
     }
 
     // MARK: - Target Input

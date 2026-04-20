@@ -164,6 +164,7 @@ struct IOSAuditSummaryView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .scrollDismissesKeyboard(.interactively)
     }
 
     private func statRow(label: String, value: String, icon: String, color: Color) -> some View {

@@ -151,6 +151,7 @@ struct IOSWarehouseLeaderboardPage: View {
             }
         }
         .listStyle(.insetGrouped)
+        .scrollDismissesKeyboard(.interactively)
     }
 
     // MARK: - Podium

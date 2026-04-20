@@ -294,6 +294,8 @@ private struct AddContactSheet: View {
     @State private var email = ""
     @State private var contactType = "other"
     @State private var errorMessage: String?
+    @State private var isDirty = false
+    @State private var showDiscardAlert = false
 
     private let typeOptions = ["gc", "contractor", "supplier", "vendor", "owner", "other"]
 
@@ -303,22 +305,27 @@ private struct AddContactSheet: View {
                 Section("Required") {
                     TextField("First Name", text: $firstName)
                         .textContentType(.givenName)
+                        .onChange(of: firstName) { _, _ in isDirty = true }
                     TextField("Phone", text: $phone)
                         .textContentType(.telephoneNumber)
                         .keyboardType(.phonePad)
+                        .onChange(of: phone) { _, _ in isDirty = true }
                 }
                 Section("Details") {
                     TextField("Last Name", text: $lastName)
                         .textContentType(.familyName)
+                        .onChange(of: lastName) { _, _ in isDirty = true }
                     TextField("Email", text: $email)
                         .textContentType(.emailAddress)
                         .keyboardType(.emailAddress)
                         .autocapitalization(.none)
+                        .onChange(of: email) { _, _ in isDirty = true }
                     Picker("Type", selection: $contactType) {
                         ForEach(typeOptions, id: \.self) { type in
                             Text(type.uppercased()).tag(type)
                         }
                     }
+                    .onChange(of: contactType) { _, _ in isDirty = true }
                 }
                 if let error = errorMessage {
                     Section {
@@ -326,18 +333,28 @@ private struct AddContactSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Add Contact")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showDiscardAlert = true } else { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
                         .disabled(firstName.trimmingCharacters(in: .whitespaces).isEmpty || phone.isEmpty)
                 }
             }
+            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved changes will be lost.")
+            }
         }
+        .interactiveDismissDisabled(isDirty)
     }
 
     private func save() {

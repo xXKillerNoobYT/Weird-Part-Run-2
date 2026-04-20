@@ -170,6 +170,8 @@ private struct AddCustomerSheet: View {
     @State private var phone = ""
     @State private var address = ""
     @State private var errorMessage: String?
+    @State private var isDirty = false
+    @State private var showDiscardAlert = false
 
     var body: some View {
         NavigationStack {
@@ -177,19 +179,24 @@ private struct AddCustomerSheet: View {
                 Section("Required") {
                     TextField("Contact Name", text: $name)
                         .textContentType(.name)
+                        .onChange(of: name) { _, _ in isDirty = true }
                 }
                 Section("Details") {
                     TextField("Company Name", text: $companyName)
                         .textContentType(.organizationName)
+                        .onChange(of: companyName) { _, _ in isDirty = true }
                     TextField("Email", text: $email)
                         .textContentType(.emailAddress)
                         .keyboardType(.emailAddress)
                         .autocapitalization(.none)
+                        .onChange(of: email) { _, _ in isDirty = true }
                     TextField("Phone", text: $phone)
                         .textContentType(.telephoneNumber)
                         .keyboardType(.phonePad)
+                        .onChange(of: phone) { _, _ in isDirty = true }
                     TextField("Address", text: $address)
                         .textContentType(.fullStreetAddress)
+                        .onChange(of: address) { _, _ in isDirty = true }
                 }
                 if let error = errorMessage {
                     Section {
@@ -197,18 +204,28 @@ private struct AddCustomerSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Add Customer")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showDiscardAlert = true } else { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
                         .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
+            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved changes will be lost.")
+            }
         }
+        .interactiveDismissDisabled(isDirty)
     }
 
     private func save() {

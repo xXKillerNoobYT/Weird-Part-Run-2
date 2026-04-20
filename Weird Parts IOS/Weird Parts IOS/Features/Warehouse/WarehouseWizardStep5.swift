@@ -105,6 +105,7 @@ struct WarehouseWizardStep5: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollDismissesKeyboard(.interactively)
 
             // Submit button
             Button("Submit Counts for This Area") {

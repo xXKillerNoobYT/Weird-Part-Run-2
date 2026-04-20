@@ -177,23 +177,30 @@ private struct EditContactSheet: View {
     @State private var email = ""
     @State private var role = ""
     @State private var errorMessage: String?
+    @State private var isDirty = false
+    @State private var showDiscardAlert = false
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Name") {
                     TextField("First Name", text: $firstName)
+                        .onChange(of: firstName) { _, _ in isDirty = true }
                     TextField("Last Name", text: $lastName)
+                        .onChange(of: lastName) { _, _ in isDirty = true }
                 }
                 Section("Contact") {
                     TextField("Phone", text: $phone)
                         .keyboardType(.phonePad)
+                        .onChange(of: phone) { _, _ in isDirty = true }
                     TextField("Email", text: $email)
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
+                        .onChange(of: email) { _, _ in isDirty = true }
                 }
                 Section("Details") {
                     TextField("Role / Company", text: $role)
+                        .onChange(of: role) { _, _ in isDirty = true }
                 }
                 if let error = errorMessage {
                     Section {
@@ -202,19 +209,29 @@ private struct EditContactSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Edit Contact")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showDiscardAlert = true } else { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { saveContact() }
                         .disabled(firstName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
+            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved changes will be lost.")
+            }
             .task { loadContact() }
         }
+        .interactiveDismissDisabled(isDirty)
     }
 
     private func loadContact() {
@@ -226,6 +243,7 @@ private struct EditContactSheet: View {
                 phone = c.phone ?? ""
                 email = c.email ?? ""
                 role = c.company ?? ""
+                isDirty = false
             }
         } catch {
             errorMessage = "Could not load contact"

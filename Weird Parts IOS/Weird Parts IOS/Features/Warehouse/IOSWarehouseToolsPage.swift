@@ -155,6 +155,7 @@ struct IOSWarehouseToolsPage: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollDismissesKeyboard(.interactively)
         }
     }
 

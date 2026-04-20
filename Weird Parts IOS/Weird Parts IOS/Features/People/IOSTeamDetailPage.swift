@@ -302,6 +302,8 @@ private struct EditTeamSheet: View {
     @State var name: String
     @State var description: String
     @State private var errorMessage: String?
+    @State private var isDirty = false
+    @State private var showDiscardAlert = false
     let onSave: () -> Void
 
     init(teamId: Int64, currentName: String, currentDescription: String?, onSave: @escaping () -> Void) {
@@ -316,10 +318,12 @@ private struct EditTeamSheet: View {
             Form {
                 Section("Required") {
                     TextField("Team Name", text: $name)
+                        .onChange(of: name) { _, _ in isDirty = true }
                 }
                 Section("Optional") {
                     TextField("Description", text: $description, axis: .vertical)
                         .lineLimit(3...6)
+                        .onChange(of: description) { _, _ in isDirty = true }
                 }
                 if let error = errorMessage {
                     Section {
@@ -327,18 +331,28 @@ private struct EditTeamSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Edit Team")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showDiscardAlert = true } else { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
                         .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
+            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved changes will be lost.")
+            }
         }
+        .interactiveDismissDisabled(isDirty)
     }
 
     private func save() {

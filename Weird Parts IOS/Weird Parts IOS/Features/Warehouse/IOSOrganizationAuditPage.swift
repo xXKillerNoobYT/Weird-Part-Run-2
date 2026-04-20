@@ -161,6 +161,7 @@ struct IOSOrganizationAuditPage: View {
             }
         }
         .listStyle(.insetGrouped)
+        .scrollDismissesKeyboard(.interactively)
     }
 
     // MARK: - Ratings Section

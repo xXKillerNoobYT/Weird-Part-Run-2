@@ -281,6 +281,7 @@ struct IOSInventoryGridPage: View {
                 }
         }
         .listStyle(.insetGrouped)
+        .scrollDismissesKeyboard(.interactively)
     }
 
     private var displayedItems: [WarehouseService.LocationStock] {
