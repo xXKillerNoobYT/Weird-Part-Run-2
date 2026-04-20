@@ -1518,6 +1518,38 @@ struct ToolsServiceTests {
         }
     }
 
+    @Test func testCheckoutTool_rejectsInactiveUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-CHKOUT-INACTIVE")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [env.adminUserId])
+        }
+        defer {
+            try? env.db.writer.write { db in
+                try db.execute(sql: "UPDATE users SET is_active = 1 WHERE id = ?", arguments: [env.adminUserId])
+            }
+        }
+        #expect(throws: ToolsService.ToolsError.userNotFound(env.adminUserId)) {
+            try env.tools.checkoutTool(toolId: toolId, userId: env.adminUserId)
+        }
+    }
+
+    @Test func testReturnTool_rejectsInactiveUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-RET-INACTIVE")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [env.adminUserId])
+        }
+        defer {
+            try? env.db.writer.write { db in
+                try db.execute(sql: "UPDATE users SET is_active = 1 WHERE id = ?", arguments: [env.adminUserId])
+            }
+        }
+        #expect(throws: ToolsService.ToolsError.userNotFound(env.adminUserId)) {
+            try env.tools.returnTool(toolId: toolId, userId: env.adminUserId)
+        }
+    }
+
     @Test func testCheckoutToolWithCondition_rejectsBlankCondition() throws {
         let env = try E2ETestHelpers.setUp()
         let toolId = try insertTool(env, toolNumber: "T-COND-01")
