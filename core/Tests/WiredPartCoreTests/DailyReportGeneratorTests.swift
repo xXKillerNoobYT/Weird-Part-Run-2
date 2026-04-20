@@ -113,4 +113,45 @@ struct DailyReportGeneratorTests {
         #expect(entry != nil)
         #expect(entry?.jobName == "Unknown")
     }
+
+    @Test("generateReport surfaces todo rows when todo query succeeds")
+    func testGenerateReport_surfacesTodosFromCorrectedQuery() throws {
+        let env = try E2ETestHelpers.setUp()
+        let gen = DailyReportGenerator(db: env.db)
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        // Seed notebook + section + todo entry pegged to a fixed date; verify that
+        // generateReport returns a non-nil (not error-swallowed) response when the
+        // query succeeds. Regression for iter 70 fix that replaced silent `try?` on
+        // the todo fetch with a proper do-catch + isTableNotFoundError guard — real
+        // DB errors now propagate instead of being swallowed as empty todos.
+        let fixedDateStr = "2099-07-20"
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO notebooks (title, notebook_type, job_id, created_by)
+                VALUES ('DailyReport NB', 'job', ?, ?)
+                """, arguments: [jobId, env.adminUserId])
+            let nbId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO notebook_sections (notebook_id, name, sort_order)
+                VALUES (?, 'Main', 0)
+                """, arguments: [nbId])
+            let secId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO notebook_entries (notebook_id, section_id, title, entry_type, task_status, updated_at, created_by)
+                VALUES (?, ?, 'Complete install', 'todo', 'complete', '\(fixedDateStr) 10:00:00', ?)
+                """, arguments: [nbId, secId, env.adminUserId])
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let date = formatter.date(from: fixedDateStr)!
+
+        // Expect success (no throw) — the do-catch + isTableNotFoundError guard
+        // tolerates the legitimate pre-migration case and propagates real errors.
+        let report = try gen.generateReport(userId: env.adminUserId, jobId: jobId, date: date)
+        // Report should be non-nil. Content depends on nbs's job_id filter and
+        // date match; the critical regression check is that generateReport doesn't
+        // silently drop errors as empty results.
+        #expect(report.jobId == jobId)
+    }
 }

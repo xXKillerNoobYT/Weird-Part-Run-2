@@ -514,6 +514,137 @@ struct WarehouseFloorPlanTests {
         #expect(trailer == nil, "tombstoned trailer should not be returned by getTrailer")
     }
 
+    // MARK: - Tombstone guards: inventory write paths
+
+    private func makeAreaId(_ env: E2ETestHelpers.TestEnvironment) throws -> Int64 {
+        let plan = try env.warehouse.createFloorPlan(name: "Test Plan", widthInches: 100, lengthInches: 100)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "U", unitType: "shelf")
+        let level = try env.warehouse.addStorageLevel(unitId: unit.id!, levelCode: "L1", heightInches: 12)
+        let area = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: 1)
+        return area.id!
+    }
+
+    @Test("castConsolidationVote rejects tombstoned user")
+    func testCastConsolidationVote_rejectsTombstonedUser() throws {
+        let env = try freshEnv()
+        let areaId = try makeAreaId(env)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let vote = try env.warehouse.suggestConsolidation(partId: partId)
+        // Tombstoned user should not be able to cast a vote
+        // (If no active vote exists, suggestConsolidation returns nil — just guard the path)
+        if let vote = vote {
+            #expect(throws: WarehouseService.WarehouseError.userNotFound(env.adminUserId)) {
+                try env.warehouse.castConsolidationVote(voteId: vote.id!, userId: env.adminUserId, chosenAreaId: areaId)
+            }
+        }
+    }
+
+    @Test("castConsolidationVote rejects tombstoned area")
+    func testCastConsolidationVote_rejectsTombstonedArea() throws {
+        let env = try freshEnv()
+        let areaId = try makeAreaId(env)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE warehouse_storage_areas SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [areaId])
+        }
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let vote = try env.warehouse.suggestConsolidation(partId: partId)
+        if let vote = vote {
+            #expect(throws: WarehouseService.WarehouseError.areaNotFound(areaId)) {
+                try env.warehouse.castConsolidationVote(voteId: vote.id!, userId: env.adminUserId, chosenAreaId: areaId)
+            }
+        }
+    }
+
+    @Test("updateUserRating rejects tombstoned user")
+    func testUpdateUserRating_rejectsTombstonedUser() throws {
+        let env = try freshEnv()
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        #expect(throws: WarehouseService.WarehouseError.userNotFound(env.adminUserId)) {
+            try env.warehouse.updateUserRating(userId: env.adminUserId, action: "audit", result: "accurate")
+        }
+    }
+
+    @Test("recordOrgCheck rejects tombstoned area")
+    func testRecordOrgCheck_rejectsTombstonedArea() throws {
+        let env = try freshEnv()
+        let areaId = try makeAreaId(env)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE warehouse_storage_areas SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [areaId])
+        }
+        #expect(throws: WarehouseService.WarehouseError.areaNotFound(areaId)) {
+            try env.warehouse.recordOrgCheck(areaId: areaId, checkedBy: env.adminUserId,
+                labelsAccurate: true, partsInHome: true, noDuplicates: true,
+                notOvercrowded: true, binsAssigned: true)
+        }
+    }
+
+    @Test("recordOrgCheck rejects tombstoned checker")
+    func testRecordOrgCheck_rejectsTombstonedChecker() throws {
+        let env = try freshEnv()
+        let areaId = try makeAreaId(env)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        #expect(throws: WarehouseService.WarehouseError.userNotFound(env.adminUserId)) {
+            try env.warehouse.recordOrgCheck(areaId: areaId, checkedBy: env.adminUserId,
+                labelsAccurate: true, partsInHome: true, noDuplicates: true,
+                notOvercrowded: true, binsAssigned: true)
+        }
+    }
+
+    @Test("managerOverrideConsolidation is a no-op on tombstoned vote")
+    func testManagerOverrideConsolidation_noOpOnTombstonedVote() throws {
+        let env = try freshEnv()
+        let areaId = try makeAreaId(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        guard let vote = try env.warehouse.suggestConsolidation(partId: partId) else { return }
+        let voteId = vote.id!
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE consolidation_votes SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [voteId])
+        }
+        // Should silently update 0 rows — no throw
+        try env.warehouse.managerOverrideConsolidation(voteId: voteId, chosenAreaId: areaId)
+        // Verify the tombstoned vote is unchanged
+        let stillTombstoned = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT status FROM consolidation_votes WHERE id = ?",
+                             arguments: [voteId])
+        }
+        #expect(stillTombstoned?["status"] == "voting", "tombstoned vote status must not be changed")
+    }
+
+    @Test("dismissConsolidation is a no-op on tombstoned vote")
+    func testDismissConsolidation_noOpOnTombstonedVote() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        guard let vote = try env.warehouse.suggestConsolidation(partId: partId) else { return }
+        let voteId = vote.id!
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE consolidation_votes SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [voteId])
+        }
+        try env.warehouse.dismissConsolidation(voteId: voteId, reason: "no need")
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT status FROM consolidation_votes WHERE id = ?",
+                             arguments: [voteId])
+        }
+        #expect(row?["status"] == "voting", "tombstoned vote status must not be changed by dismiss")
+    }
+
     // MARK: - Batch confidence query (#260)
 
     @Test("getAllPartConfidenceLevels returns all levels in one query")

@@ -479,7 +479,7 @@ public enum ConflictResolver {
             // Fix #220: No local record AND no full recordData — cannot apply safely.
             // Throw a specific error so the caller can count this as skipped (not errored)
             // and trigger a full-record resync for this (table, id).
-            print("[Sync] Skipped UPDATE for missing record: table=\(table) id=\(recordId) from device=\(change.deviceId)")
+            Self.logger.info("Skipped UPDATE for missing record: table=\(table, privacy: .public) id=\(recordId) from device=\(change.deviceId, privacy: .public)")
             throw ApplyError.missingLocalRecord(table: table, recordId: recordId)
         }
 
