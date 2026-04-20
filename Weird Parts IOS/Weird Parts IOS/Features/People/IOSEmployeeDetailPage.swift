@@ -381,6 +381,7 @@ private struct EditEmployeeContactSheet: View {
                         .onChange(of: phone) { _, _ in isDirty = true }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Edit Contact Info")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

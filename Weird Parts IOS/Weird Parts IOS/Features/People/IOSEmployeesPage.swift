@@ -305,6 +305,7 @@ private struct AddEmployeeSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Add Employee")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
