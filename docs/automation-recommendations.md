@@ -750,3 +750,28 @@ running total: parts ✅, jobs ✅, warehouse ✅, scheduling ✅, orders ✅ (3
 | is_active scanner: table-schema awareness gate | Spec update | High | Update existing is_active hook Q&A | ⏳ Update Q&A spec |
 | Dismiss-safety scanner: enum-dispatch inline sheet pattern | Spec update | High | Add to existing dismiss-safety Q&A | ⏳ Update existing Q&A spec |
 | .isSelected scanner: all 14 areas confirmed — escalate to Critical | Escalation | Critical | Promote in Q&A answer choices | ⏳ Q&A still pending |
+
+---
+
+## Area: people — pass 2 — 2026-04-20
+
+**Analyzed:** PeopleService.swift (6 is_active gaps), 14 iOS people pages (2 a11y fixes).
+
+### Key Findings
+
+**1. is_active scanner must distinguish CREATE-function gaps from LIST-function gaps**
+Pass 1 found 5 is_active gaps in CREATE functions (user-existence guard pattern). Pass 2 found 6 NEW gaps in LIST functions (`listCustomers`, `listContractors`, `listContacts`, `listTeams`, `getPeopleStats` counts). These are architecturally different: CREATE guards check if a referenced entity is active before linking; LIST queries should default-filter to show only active records to the user. An automated scanner should flag both patterns, but the fix hint should differ (CREATE: "check user existence with is_active", LIST: "add is_active=1 to default WHERE clause").
+
+**2. Python 4-line window false-positive rate is significant (~75% in people)**
+The accessibility gap detector using `lines[i:i+4]` reported 8 gaps but only 2 were real. The window should be extended to 6 lines to catch `.accessibilityHidden(true)` annotations that follow indented modifier chains. Alternatively, scan the whole swift expression (until the next unindented line).
+
+**3. `Label { } icon: { }` is a safe pattern that already handles accessibility**
+SwiftUI's `Label` with `icon:` closure suppresses the icon from VoiceOver automatically. The scanner should NOT flag images inside `icon:` closures of `Label` views. Add exclusion rule: `icon: { Image(systemName:` → skip.
+
+### Summary & Prioritization
+
+| Recommendation | Type | Priority | Decision | Status |
+|---|---|---|---|---|
+| is_active scanner: separate CREATE-guard vs LIST-query pattern specs | Spec update | High | Update is_active hook Q&A | ⏳ Update Q&A spec |
+| A11y scanner: extend window from 4 to 6 lines | Bug fix | Medium | Fix Python script when approved | ⏳ Q&A still pending |
+| A11y scanner: exclude Label icon: { } pattern | Spec update | Medium | Add exclusion rule to scanner | ⏳ Q&A still pending |
