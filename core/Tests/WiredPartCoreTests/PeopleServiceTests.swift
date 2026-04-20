@@ -1099,21 +1099,111 @@ struct PeopleServiceTests {
     @Test("updatePaymentSettings rejects non-positive termsDays and negative warningDays")
     func testUpdatePaymentSettings_rejectsInvalidDays() throws {
         let env = try E2ETestHelpers.setUp()
-        // Zero termsDays — payment terms of 0 days means due immediately on creation
         #expect(throws: PeopleService.PeopleError.invalidAmount(0.0)) {
             try env.people.updatePaymentSettings(termsDays: 0, warningDays: 7, autoHold: false)
         }
-        // Negative termsDays — makes new invoices immediately overdue
         #expect(throws: PeopleService.PeopleError.invalidAmount(-30.0)) {
             try env.people.updatePaymentSettings(termsDays: -30, warningDays: 7, autoHold: false)
         }
-        // Negative warningDays — nonsensical warning threshold
         #expect(throws: PeopleService.PeopleError.invalidAmount(-1.0)) {
             try env.people.updatePaymentSettings(termsDays: 30, warningDays: -1, autoHold: false)
         }
-        // warningDays = 0 is valid (warn on the due date itself)
         #expect(throws: Never.self) {
             try env.people.updatePaymentSettings(termsDays: 30, warningDays: 0, autoHold: false)
         }
+    }
+
+    @Test("addCertification rejects blank fields and tombstoned user")
+    func testAddCertification_rejectsInvalidInputs() throws {
+        let env = try E2ETestHelpers.setUp()
+        let userId = try env.auth.createUser(displayName: "Cert User", pin: "1234", email: "cert@test.com")
+
+        #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("certType")) {
+            try env.people.addCertification(userId: userId, certType: "", certName: "OSHA 10")
+        }
+        #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("certName")) {
+            try env.people.addCertification(userId: userId, certType: "safety", certName: "  ")
+        }
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?", arguments: [userId])
+        }
+        #expect(throws: PeopleService.PeopleError.employeeNotFound(userId)) {
+            try env.people.addCertification(userId: userId, certType: "safety", certName: "OSHA 10")
+        }
+    }
+
+    @Test("addCertification stores cert and getEmployeeCertifications retrieves it")
+    func testAddCertification_roundTrip() throws {
+        let env = try E2ETestHelpers.setUp()
+        let userId = try env.auth.createUser(displayName: "Cert User", pin: "1234", email: "cert2@test.com")
+
+        let cert = try env.people.addCertification(
+            userId: userId, certType: "safety", certName: "OSHA 10", expiryDate: "2027-01-01"
+        )
+        #expect(cert.id != nil)
+        #expect(cert.certName == "OSHA 10")
+
+        let fetched = try env.people.getEmployeeCertifications(userId: userId)
+        #expect(fetched.count == 1)
+        #expect(fetched[0].certName == "OSHA 10")
+
+        try env.people.removeCertification(id: cert.id!)
+        let afterRemove = try env.people.getEmployeeCertifications(userId: userId)
+        #expect(afterRemove.isEmpty)
+    }
+
+    @Test("addSkill rejects blank fields and tombstoned user")
+    func testAddSkill_rejectsInvalidInputs() throws {
+        let env = try E2ETestHelpers.setUp()
+        let userId = try env.auth.createUser(displayName: "Skill User", pin: "1234", email: "skill@test.com")
+
+        #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("skillName")) {
+            try env.people.addSkill(userId: userId, skillName: "", proficiency: "expert")
+        }
+        #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("proficiency")) {
+            try env.people.addSkill(userId: userId, skillName: "Welding", proficiency: "  ")
+        }
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?", arguments: [userId])
+        }
+        #expect(throws: PeopleService.PeopleError.employeeNotFound(userId)) {
+            try env.people.addSkill(userId: userId, skillName: "Welding", proficiency: "expert")
+        }
+    }
+
+    @Test("addSkill stores skill and getEmployeeSkills retrieves it")
+    func testAddSkill_roundTrip() throws {
+        let env = try E2ETestHelpers.setUp()
+        let userId = try env.auth.createUser(displayName: "Skill User", pin: "1234", email: "skill2@test.com")
+
+        let skill = try env.people.addSkill(
+            userId: userId, skillName: "Welding", proficiency: "expert", yearsExperience: 5.0
+        )
+        #expect(skill.id != nil)
+        #expect(skill.skillName == "Welding")
+        #expect(skill.proficiency == "expert")
+
+        let fetched = try env.people.getEmployeeSkills(userId: userId)
+        #expect(fetched.count == 1)
+        #expect(fetched[0].skillName == "Welding")
+
+        try env.people.removeSkill(id: skill.id!)
+        let afterRemove = try env.people.getEmployeeSkills(userId: userId)
+        #expect(afterRemove.isEmpty)
+    }
+
+    @Test("getEmployeeDetail includes certifications and skills")
+    func testGetEmployeeDetail_includesCertsAndSkills() throws {
+        let env = try E2ETestHelpers.setUp()
+        let userId = try env.auth.createUser(displayName: "Detail User", pin: "1234", email: "detail@test.com")
+
+        _ = try env.people.addCertification(userId: userId, certType: "safety", certName: "OSHA 30")
+        _ = try env.people.addSkill(userId: userId, skillName: "Carpentry", proficiency: "intermediate")
+
+        let detail = try env.people.getEmployeeDetail(id: userId)
+        #expect(detail.certifications.count == 1)
+        #expect(detail.certifications[0].certName == "OSHA 30")
+        #expect(detail.skills.count == 1)
+        #expect(detail.skills[0].skillName == "Carpentry")
     }
 }

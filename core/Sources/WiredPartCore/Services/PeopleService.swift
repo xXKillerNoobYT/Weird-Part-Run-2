@@ -74,12 +74,16 @@ public final class PeopleService: Sendable {
         public let deletedAt: String?
         public let hats: [HatInfo]
         public let teams: [TeamMembershipInfo]
+        public let certifications: [Certification]
+        public let skills: [UserSkill]
 
         public init(
             id: Int64, displayName: String, email: String, phone: String?,
             status: String, role: String,
             createdAt: String?, updatedAt: String?, deletedAt: String?,
-            hats: [HatInfo], teams: [TeamMembershipInfo]
+            hats: [HatInfo], teams: [TeamMembershipInfo],
+            certifications: [Certification] = [],
+            skills: [UserSkill] = []
         ) {
             self.id = id
             self.displayName = displayName
@@ -92,6 +96,8 @@ public final class PeopleService: Sendable {
             self.deletedAt = deletedAt
             self.hats = hats
             self.teams = teams
+            self.certifications = certifications
+            self.skills = skills
         }
     }
 
@@ -379,7 +385,31 @@ public final class PeopleService: Sendable {
                     )
                 }
             } catch {
-                // If teams/team_members tables don't exist yet, leave empty
+                if !isTableNotFoundError(error) { throw error }
+            }
+
+            // Fetch certifications for this user
+            var certifications: [Certification] = []
+            do {
+                certifications = try Certification
+                    .filter(Column("user_id") == id)
+                    .filter(Column("deleted_at") == nil)
+                    .filter(Column("is_active") == 1)
+                    .order(Column("expiry_date").asc)
+                    .fetchAll(dbConn)
+            } catch {
+                if !isTableNotFoundError(error) { throw error }
+            }
+
+            // Fetch skills for this user
+            var skills: [UserSkill] = []
+            do {
+                skills = try UserSkill
+                    .filter(Column("user_id") == id)
+                    .filter(Column("deleted_at") == nil)
+                    .order(Column("skill_name").asc)
+                    .fetchAll(dbConn)
+            } catch {
                 if !isTableNotFoundError(error) { throw error }
             }
 
@@ -394,11 +424,134 @@ public final class PeopleService: Sendable {
                 updatedAt: userRow["updated_at"] as String?,
                 deletedAt: userRow["deleted_at"] as String?,
                 hats: hats,
-                teams: teams
+                teams: teams,
+                certifications: certifications,
+                skills: skills
             )
         }
         guard let result else { throw PeopleError.employeeNotFound(id) }
         return result
+    }
+
+    /// Fetch active certifications for a specific employee.
+    public func getEmployeeCertifications(userId: Int64) throws -> [Certification] {
+        do {
+            return try db.writer.read { dbConn in
+                try Certification
+                    .filter(Column("user_id") == userId)
+                    .filter(Column("deleted_at") == nil)
+                    .filter(Column("is_active") == 1)
+                    .order(Column("expiry_date").asc)
+                    .fetchAll(dbConn)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Add a certification to an employee.
+    public func addCertification(
+        userId: Int64,
+        certType: String,
+        certName: String,
+        issuingAuthority: String? = nil,
+        certNumber: String? = nil,
+        issuedDate: String? = nil,
+        expiryDate: String? = nil,
+        notes: String? = nil
+    ) throws -> Certification {
+        guard !certType.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw PeopleError.requiredFieldEmpty("certType")
+        }
+        guard !certName.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw PeopleError.requiredFieldEmpty("certName")
+        }
+        try db.writer.read { dbConn in
+            guard try Row.fetchOne(dbConn, sql: "SELECT id FROM users WHERE id = ? AND deleted_at IS NULL", arguments: [userId]) != nil else {
+                throw PeopleError.employeeNotFound(userId)
+            }
+        }
+        return try db.writer.write { dbConn in
+            var cert = Certification(
+                id: nil, userId: userId, certType: certType, certName: certName,
+                issuingAuthority: issuingAuthority, certNumber: certNumber,
+                issuedDate: issuedDate, expiryDate: expiryDate, isActive: 1,
+                notes: notes, documentPath: nil, deletedAt: nil,
+                createdAt: ISO8601DateFormatter().string(from: Date()),
+                updatedAt: ISO8601DateFormatter().string(from: Date())
+            )
+            try cert.insert(dbConn)
+            return cert
+        }
+    }
+
+    /// Soft-delete a certification.
+    public func removeCertification(id: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE certifications SET deleted_at = datetime('now'), is_active = 0 WHERE id = ? AND deleted_at IS NULL",
+                arguments: [id]
+            )
+        }
+    }
+
+    /// Fetch skills for a specific employee.
+    public func getEmployeeSkills(userId: Int64) throws -> [UserSkill] {
+        do {
+            return try db.writer.read { dbConn in
+                try UserSkill
+                    .filter(Column("user_id") == userId)
+                    .filter(Column("deleted_at") == nil)
+                    .order(Column("skill_name").asc)
+                    .fetchAll(dbConn)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Add a skill to an employee.
+    public func addSkill(
+        userId: Int64,
+        skillName: String,
+        proficiency: String,
+        yearsExperience: Double? = nil,
+        verifiedBy: Int64? = nil
+    ) throws -> UserSkill {
+        guard !skillName.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw PeopleError.requiredFieldEmpty("skillName")
+        }
+        guard !proficiency.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw PeopleError.requiredFieldEmpty("proficiency")
+        }
+        try db.writer.read { dbConn in
+            guard try Row.fetchOne(dbConn, sql: "SELECT id FROM users WHERE id = ? AND deleted_at IS NULL", arguments: [userId]) != nil else {
+                throw PeopleError.employeeNotFound(userId)
+            }
+        }
+        return try db.writer.write { dbConn in
+            var skill = UserSkill(
+                id: nil, userId: userId, skillName: skillName, proficiency: proficiency,
+                yearsExperience: yearsExperience, verifiedBy: verifiedBy,
+                verifiedAt: verifiedBy != nil ? ISO8601DateFormatter().string(from: Date()) : nil,
+                deletedAt: nil,
+                createdAt: ISO8601DateFormatter().string(from: Date())
+            )
+            try skill.insert(dbConn)
+            return skill
+        }
+    }
+
+    /// Soft-delete a skill.
+    public func removeSkill(id: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE user_skills SET deleted_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
+                arguments: [id]
+            )
+        }
     }
 
     // =========================================================================
