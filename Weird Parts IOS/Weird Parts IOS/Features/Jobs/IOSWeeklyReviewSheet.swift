@@ -78,6 +78,7 @@ struct IOSWeeklyReviewSheet: View {
                     formContent
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Weekly Review")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -44,6 +44,7 @@ struct IOSQuestionnairePage: View {
     var body: some View {
         NavigationStack {
             questionnaireContent
+                .scrollDismissesKeyboard(.interactively)
                 .navigationTitle("Clock-Out Questions")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {

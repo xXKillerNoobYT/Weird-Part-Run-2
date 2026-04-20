@@ -1436,6 +1436,7 @@ private struct CreateJobSupplierChannelSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Supplier Channel")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

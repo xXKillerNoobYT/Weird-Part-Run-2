@@ -83,6 +83,7 @@ struct IOSEstimationReviewPage: View {
                 }
             }
         }
+        .scrollDismissesKeyboard(.interactively)
         .navigationTitle("Estimation Reviews")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -232,6 +233,7 @@ private struct WeeklyReviewSheet: View {
                         .font(.caption2)
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Weekly Review")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -329,6 +331,7 @@ private struct EndOfJobReviewSheet: View {
                         .font(.caption2)
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("End-of-Job Review")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

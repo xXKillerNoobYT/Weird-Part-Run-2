@@ -107,6 +107,7 @@ struct IOSEditJobSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Edit Job")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

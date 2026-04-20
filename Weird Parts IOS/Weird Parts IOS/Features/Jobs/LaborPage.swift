@@ -236,6 +236,7 @@ struct LaborPage: View {
                     TextField("Optional notes...", text: $clockInNote)
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Clock In")
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled(isClockingIn)

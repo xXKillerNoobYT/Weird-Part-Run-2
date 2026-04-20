@@ -133,6 +133,7 @@ struct IOSCreateJobSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Create Job")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

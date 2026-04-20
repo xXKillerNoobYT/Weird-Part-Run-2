@@ -124,6 +124,7 @@ struct IOSEstimationQuestionnairePage: View {
                 }
             }
         }
+        .scrollDismissesKeyboard(.interactively)
         .navigationTitle("Estimation — \(stageLabel)")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
