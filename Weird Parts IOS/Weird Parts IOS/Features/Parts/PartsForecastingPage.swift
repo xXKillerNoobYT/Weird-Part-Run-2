@@ -176,14 +176,11 @@ struct PartsForecastingPage: View {
         case .all:
             break
         case .critical:
-            result = result.filter { ($0.part.forecastDaysUntilLow ?? 999) <= 7 }
+            result = result.filter { UrgencyFilter.classify($0.part.forecastDaysUntilLow ?? 999) == .critical }
         case .warning:
-            result = result.filter {
-                let days = $0.part.forecastDaysUntilLow ?? 999
-                return days > 7 && days <= 30
-            }
+            result = result.filter { UrgencyFilter.classify($0.part.forecastDaysUntilLow ?? 999) == .warning }
         case .healthy:
-            result = result.filter { ($0.part.forecastDaysUntilLow ?? 999) > 30 }
+            result = result.filter { UrgencyFilter.classify($0.part.forecastDaysUntilLow ?? 999) == .healthy }
         }
 
         if !searchText.isEmpty {
@@ -209,19 +206,19 @@ struct PartsForecastingPage: View {
                 HStack(spacing: 12) {
                     statCard(
                         label: "Critical",
-                        count: forecastRows.filter { ($0.part.forecastDaysUntilLow ?? 999) <= 7 }.count,
+                        count: forecastRows.filter { UrgencyFilter.classify($0.part.forecastDaysUntilLow ?? 999) == .critical }.count,
                         color: .red,
                         filter: .critical
                     )
                     statCard(
                         label: "Warning",
-                        count: forecastRows.filter { let d = $0.part.forecastDaysUntilLow ?? 999; return d > 7 && d <= 30 }.count,
+                        count: forecastRows.filter { UrgencyFilter.classify($0.part.forecastDaysUntilLow ?? 999) == .warning }.count,
                         color: .orange,
                         filter: .warning
                     )
                     statCard(
                         label: "Healthy",
-                        count: forecastRows.filter { ($0.part.forecastDaysUntilLow ?? 999) > 30 }.count,
+                        count: forecastRows.filter { UrgencyFilter.classify($0.part.forecastDaysUntilLow ?? 999) == .healthy }.count,
                         color: .green,
                         filter: .healthy
                     )
@@ -350,7 +347,7 @@ struct PartsForecastingPage: View {
     private func forecastRowView(_ row: PartsService.ForecastDataRow) -> some View {
         HStack(spacing: 12) {
             // Urgency indicator
-            let urgencyText = row.part.forecastDaysUntilLow.map { $0 <= 7 ? "Critical" : ($0 <= 30 ? "Warning" : "Healthy") } ?? "Unknown"
+            let urgencyText = row.part.forecastDaysUntilLow.map { UrgencyFilter.classify($0).label } ?? "Unknown"
             VStack(spacing: 2) {
                 Circle()
                     .fill(urgencyColor(row.part.forecastDaysUntilLow))
@@ -450,9 +447,7 @@ struct PartsForecastingPage: View {
 
     private func urgencyColor(_ daysUntilLow: Int?) -> Color {
         guard let days = daysUntilLow else { return .secondary }
-        if days <= 7 { return .red }
-        if days <= 30 { return .orange }
-        return .green
+        return UrgencyFilter.classify(days).color
     }
 
     // MARK: - Empty State
@@ -531,11 +526,8 @@ struct PartsForecastingPage: View {
     // MARK: - AI Context
 
     private func postForecastContext() {
-        let critical = forecastRows.filter { ($0.part.forecastDaysUntilLow ?? 999) <= 7 }
-        let warning = forecastRows.filter {
-            let d = $0.part.forecastDaysUntilLow ?? 999
-            return d > 7 && d <= 30
-        }
+        let critical = forecastRows.filter { UrgencyFilter.classify($0.part.forecastDaysUntilLow ?? 999) == .critical }
+        let warning = forecastRows.filter { UrgencyFilter.classify($0.part.forecastDaysUntilLow ?? 999) == .warning }
 
         var context = "User is on the Forecasting page. "
         context += "Total parts: \(forecastRows.count). "
@@ -787,6 +779,12 @@ private enum UrgencyFilter: CaseIterable {
         case .warning: return .orange
         case .healthy: return .green
         }
+    }
+
+    static func classify(_ days: Int) -> UrgencyFilter {
+        if days <= 7 { return .critical }
+        if days <= 30 { return .warning }
+        return .healthy
     }
 }
 
