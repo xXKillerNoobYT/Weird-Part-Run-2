@@ -1593,4 +1593,194 @@ struct ToolsServiceTests {
             try env.tools.createMaintenanceConfig(toolId: 9999, type: "time_based")
         }
     }
+
+    // =========================================================================
+    // MARK: - Iter 94: Trade / Report / Edit-Verification FK-orphan guards
+    // =========================================================================
+
+    @Test func testReportToolLostOrStolen_rejectsBlankReportType() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-LOSTA-BLANK")
+        #expect(throws: ToolsService.ToolsError.requiredFieldEmpty("reportType")) {
+            try env.tools.reportToolLostOrStolen(
+                toolId: toolId, reportedBy: env.adminUserId, reportType: "",
+                description: "Missing from site"
+            )
+        }
+        #expect(throws: ToolsService.ToolsError.requiredFieldEmpty("reportType")) {
+            try env.tools.reportToolLostOrStolen(
+                toolId: toolId, reportedBy: env.adminUserId, reportType: "   ",
+                description: "Missing from site"
+            )
+        }
+    }
+
+    @Test func testReportToolLostOrStolen_rejectsInvalidReportType() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-LOSTA-INVALID")
+        // reportType must be exactly "lost" or "stolen" — any other value would
+        // silently rewrite tools.status to the arbitrary string passed in.
+        #expect(throws: ToolsService.ToolsError.requiredFieldEmpty("reportType")) {
+            try env.tools.reportToolLostOrStolen(
+                toolId: toolId, reportedBy: env.adminUserId, reportType: "misplaced",
+                description: "Missing from site"
+            )
+        }
+    }
+
+    @Test func testReportToolLostOrStolen_rejectsBlankDescription() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-LOSTA-BLANKD")
+        #expect(throws: ToolsService.ToolsError.requiredFieldEmpty("description")) {
+            try env.tools.reportToolLostOrStolen(
+                toolId: toolId, reportedBy: env.adminUserId, reportType: "lost",
+                description: ""
+            )
+        }
+    }
+
+    @Test func testReportToolLostOrStolen_rejectsTombstonedReporter() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-LOSTA-GHOST")
+        // Without this guard, tool_change_log.changed_by would FK-orphan to a tombstoned user.
+        #expect(throws: ToolsService.ToolsError.userNotFound(9999)) {
+            try env.tools.reportToolLostOrStolen(
+                toolId: toolId, reportedBy: 9999, reportType: "stolen",
+                description: "Taken overnight"
+            )
+        }
+    }
+
+    @Test func testInitiateTrade_rejectsBlankCondition() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(
+            env, toolNumber: "T-TRADE-BLANK",
+            status: "checked_out", assignedTo: env.adminUserId
+        )
+        let recipientId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO users (display_name, pin_hash, is_active, created_at, updated_at)
+                VALUES ('Recipient', 'hash', 1, datetime('now'), datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+        #expect(throws: ToolsService.ToolsError.requiredFieldEmpty("condition")) {
+            try env.tools.initiateTrade(
+                toolId: toolId, fromUserId: env.adminUserId,
+                toUserId: recipientId, condition: ""
+            )
+        }
+    }
+
+    @Test func testInitiateTrade_rejectsSelfTrade() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(
+            env, toolNumber: "T-TRADE-SELF",
+            status: "checked_out", assignedTo: env.adminUserId
+        )
+        // Self-trade would leave a pending trade row that can never legitimately resolve.
+        #expect(throws: ToolsService.ToolsError.requiredFieldEmpty("toUserId")) {
+            try env.tools.initiateTrade(
+                toolId: toolId, fromUserId: env.adminUserId,
+                toUserId: env.adminUserId, condition: "Good"
+            )
+        }
+    }
+
+    @Test func testInitiateTrade_rejectsTombstonedReceiver() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(
+            env, toolNumber: "T-TRADE-GHOST",
+            status: "checked_out", assignedTo: env.adminUserId
+        )
+        // Receiver userId=9999 doesn't exist → tombstone guard throws.
+        #expect(throws: ToolsService.ToolsError.userNotFound(9999)) {
+            try env.tools.initiateTrade(
+                toolId: toolId, fromUserId: env.adminUserId,
+                toUserId: 9999, condition: "Good"
+            )
+        }
+    }
+
+    @Test func testRespondToTrade_acceptRejectsTombstonedReceiver() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(
+            env, toolNumber: "T-RESPOND-GHOST",
+            status: "checked_out", assignedTo: env.adminUserId
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO tool_checkouts
+                (tool_id, checked_out_by, checked_out_at, checkout_condition, created_at)
+                VALUES (?, ?, datetime('now'), 'Good', datetime('now'))
+                """, arguments: [toolId, env.adminUserId])
+        }
+        let recipientId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO users (display_name, pin_hash, is_active, created_at, updated_at)
+                VALUES ('WillBeTombstoned', 'hash', 1, datetime('now'), datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+        let tradeId = try env.tools.initiateTrade(
+            toolId: toolId, fromUserId: env.adminUserId,
+            toUserId: recipientId, condition: "Good"
+        )
+        // Tombstone the receiver AFTER the trade was initiated — simulating the race where
+        // a user is deleted during the 7-day trade window.
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [recipientId])
+        }
+        #expect(throws: ToolsService.ToolsError.userNotFound(recipientId)) {
+            try env.tools.respondToTrade(tradeId: tradeId, accepted: true,
+                                         condition: "Good", notes: nil)
+        }
+    }
+
+    @Test func testEditToolWithVerification_rejectsTombstonedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-EDIT-GHOST")
+        // userId=9999 doesn't exist → tool_change_log.changed_by would orphan without this guard.
+        #expect(throws: ToolsService.ToolsError.userNotFound(9999)) {
+            _ = try env.tools.editToolWithVerification(
+                toolId: toolId, userId: 9999,
+                changes: ["name": "Renamed"], hasPermission: true
+            )
+        }
+    }
+
+    @Test func testApproveToolEdit_rejectsTombstonedApprover() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-APPROVE-GHOST")
+        _ = try env.tools.editToolWithVerification(
+            toolId: toolId, userId: env.adminUserId,
+            changes: ["name": "Pending"], hasPermission: false
+        )
+        let editId = try env.db.writer.read { db -> Int64 in
+            try Int64.fetchOne(db, sql:
+                "SELECT id FROM tool_change_log WHERE tool_id = ? LIMIT 1", arguments: [toolId]) ?? 0
+        }
+        // A tombstoned manager must not be able to approve — the audit trail would read
+        // "approved by <ghost>" and the FK would orphan.
+        #expect(throws: ToolsService.ToolsError.userNotFound(9999)) {
+            try env.tools.approveToolEdit(editId: editId, approverId: 9999)
+        }
+    }
+
+    @Test func testRejectToolEdit_rejectsTombstonedRejecter() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-REJECT-GHOST")
+        _ = try env.tools.editToolWithVerification(
+            toolId: toolId, userId: env.adminUserId,
+            changes: ["name": "Pending"], hasPermission: false
+        )
+        let editId = try env.db.writer.read { db -> Int64 in
+            try Int64.fetchOne(db, sql:
+                "SELECT id FROM tool_change_log WHERE tool_id = ? LIMIT 1", arguments: [toolId]) ?? 0
+        }
+        #expect(throws: ToolsService.ToolsError.userNotFound(9999)) {
+            try env.tools.rejectToolEdit(editId: editId, rejectedBy: 9999)
+        }
+    }
 }

@@ -847,6 +847,23 @@ public final class ToolsService: Sendable {
     ) throws -> ToolEditResult {
         let status = hasPermission ? "approved" : "pending_verification"
         try db.writer.write { dbConn in
+            // Guard: tool must exist and not be tombstoned — silent no-op keeps existing
+            // semantics (matches `testEditToolWithVerification_noOpOnSoftDeletedTool`); the
+            // per-field `oldRow == nil` check below was the only prior defense and only
+            // ran lazily inside the loop, so an empty `changes` dict did nothing.
+            let toolExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [toolId]) ?? 0) > 0
+            guard toolExists else { return }
+
+            // Guard: editor must exist and be active — tool_change_log.changed_by
+            // REFERENCES users but doesn't enforce soft-delete state; a tombstoned
+            // editor would create orphan pending-verification rows.
+            let editorExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [userId]) ?? 0) > 0
+            guard editorExists else { throw ToolsError.userNotFound(userId) }
+
             for (field, value) in changes {
                 guard Self.allowedToolEditFields.contains(field) else { continue }
 
@@ -878,6 +895,14 @@ public final class ToolsService: Sendable {
     /// Approve a pending tool edit (manager QR scan verification).
     public func approveToolEdit(editId: Int64, approverId: Int64) throws {
         try db.writer.write { dbConn in
+            // Guard: approver must exist and be active — `verified_by` is FK→users,
+            // but the FK only checks row existence. A tombstoned/inactive approver
+            // would taint the audit trail and let deleted accounts approve edits.
+            let approverExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [approverId]) ?? 0) > 0
+            guard approverExists else { throw ToolsError.userNotFound(approverId) }
+
             guard let row = try Row.fetchOne(dbConn, sql: """
                 SELECT tool_id, field_name, new_value FROM tool_change_log
                 WHERE id = ? AND verification_status = 'pending_verification'
@@ -963,6 +988,12 @@ public final class ToolsService: Sendable {
     /// Reject a pending tool edit verification.
     public func rejectToolEdit(editId: Int64, rejectedBy: Int64) throws {
         try db.writer.write { dbConn in
+            // Guard: rejecter must exist and be active — same FK-orphan class as approveToolEdit.
+            let rejecterExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [rejectedBy]) ?? 0) > 0
+            guard rejecterExists else { throw ToolsError.userNotFound(rejectedBy) }
+
             try dbConn.execute(sql: """
                 UPDATE tool_change_log SET verification_status = 'rejected',
                 verified_by = ?, verified_at = datetime('now')
@@ -1013,7 +1044,17 @@ public final class ToolsService: Sendable {
         toolId: Int64, fromUserId: Int64, toUserId: Int64,
         condition: String, notes: String? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        // tool_trades.condition_at_send is NOT NULL — a blank string passes the constraint
+        // but poisons every downstream UI that shows the "condition at send" column.
+        guard !condition.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw ToolsError.requiredFieldEmpty("condition")
+        }
+        // A self-trade is nonsensical (tool already assigned to fromUser) and the tool
+        // checkout check below would pass, leaving a pending trade that can never resolve.
+        guard fromUserId != toUserId else {
+            throw ToolsError.requiredFieldEmpty("toUserId")
+        }
+        return try db.writer.write { dbConn in
             // Verify tool is currently assigned to sender
             let assigned = try Row.fetchOne(dbConn, sql: """
                 SELECT id FROM tools
@@ -1023,6 +1064,14 @@ public final class ToolsService: Sendable {
             guard assigned != nil else {
                 throw ToolsServiceError.toolNotCheckedOutToUser
             }
+
+            // Guard: receiver must exist and be active — tool_trades.to_user_id REFERENCES users
+            // only enforces row existence, not soft-delete/active state. Without this guard,
+            // a pending trade can be initiated to a tombstoned user and never legally resolved.
+            let receiverExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [toUserId]) ?? 0) > 0
+            guard receiverExists else { throw ToolsError.userNotFound(toUserId) }
 
             // Check no pending trades for this tool
             let pending = try Int.fetchOne(dbConn, sql: """
@@ -1082,6 +1131,15 @@ public final class ToolsService: Sendable {
                     // is kept closed and no new orphan checkout is created.
                     return
                 }
+
+                // Guard: receiver must still be active — between trade-initiation and response
+                // the user may have been soft-deleted or deactivated. Without this, the tool's
+                // `assigned_to` would be updated to a ghost user, and that tool would become
+                // un-returnable through any normal UI path (returnTool tombstone guard would reject).
+                let receiverExists = (try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                    """, arguments: [toUserId]) ?? 0) > 0
+                guard receiverExists else { throw ToolsError.userNotFound(toUserId) }
 
                 // Close sender's checkout
                 try dbConn.execute(sql: """
@@ -1191,13 +1249,35 @@ public final class ToolsService: Sendable {
         toolId: Int64, reportedBy: Int64, reportType: String,
         description: String, lastKnownLocation: String? = nil
     ) throws {
+        // A blank reportType would silently overwrite tools.status with "" and file
+        // a useless audit entry; a blank description makes the audit trail meaningless.
+        guard !reportType.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw ToolsError.requiredFieldEmpty("reportType")
+        }
+        // Enforce the valid reportType set — the value is written straight into
+        // tools.status, so any string would get accepted by the column.
+        let validReportTypes: Set<String> = ["lost", "stolen"]
+        guard validReportTypes.contains(reportType) else {
+            throw ToolsError.requiredFieldEmpty("reportType")
+        }
+        guard !description.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw ToolsError.requiredFieldEmpty("description")
+        }
         try db.writer.write { dbConn in
-            // Guard: tool must exist and not be tombstoned — otherwise the
-            // INSERT INTO tool_change_log below would create an orphan audit entry.
+            // Guard: tool must exist and not be tombstoned — silent no-op preserves
+            // existing semantics (matches `testReportToolLostOrStolen_noOrphanForSoftDeletedTool`).
             let exists = (try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [toolId]) ?? 0) > 0
             guard exists else { return }
+
+            // Guard: reporter must exist and be active — otherwise tool_change_log.changed_by
+            // becomes an orphan FK pointing at a tombstoned user (the `REFERENCES users`
+            // constraint only enforces row existence, not soft-delete state).
+            let reporterExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [reportedBy]) ?? 0) > 0
+            guard reporterExists else { throw ToolsError.userNotFound(reportedBy) }
 
             // Update tool status
             try dbConn.execute(sql: """
