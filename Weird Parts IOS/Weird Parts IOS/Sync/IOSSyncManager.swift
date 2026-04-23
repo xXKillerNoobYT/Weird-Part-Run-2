@@ -36,7 +36,6 @@ final class IOSSyncManager {
 
     private let logger = Logger(subsystem: "com.wiredpart.ios", category: "IOSSyncManager")
 
-    // nonisolated(unsafe) so deinit can access without actor isolation errors.
     nonisolated(unsafe) private var syncTimer: Timer?
     private var syncIntervalSeconds: TimeInterval = 60
 

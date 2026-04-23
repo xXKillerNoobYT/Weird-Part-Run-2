@@ -102,13 +102,15 @@ struct CreateReturnSheet: View {
             saveError = "Orders service not available"
             return
         }
+        guard let userId = appCore.currentUser?.id else { return }
         isSaving = true
         saveError = nil
         do {
             _ = try service.createReturn(
                 returnType: returnType,
                 reason: reason,
-                supplierId: selectedSupplierId
+                supplierId: selectedSupplierId,
+                initiatedBy: userId
             )
             dismiss()
             onSave()

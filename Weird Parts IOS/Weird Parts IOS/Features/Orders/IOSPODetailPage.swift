@@ -2072,8 +2072,9 @@ struct IOSPODetailPage: View {
             actionMessage = "Service not available"
             return
         }
+        guard let userId = appCore.currentUser?.id else { return }
         do {
-            try service.updatePOStatus(id: poId, status: newStatus)
+            try service.updatePOStatus(id: poId, status: newStatus, userId: userId)
             loadData()
             if newStatus == "submitted" {
                 actionMessage = "PO marked as Submitted. Remember to send the order to the supplier."

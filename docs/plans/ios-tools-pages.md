@@ -77,7 +77,7 @@ Tools: Dashboard, All Tools (renamed from Registry), Checkouts, Kits, Maintenanc
 | `IOSToolAdminPage.swift` | Bulk management, categories, policies |
 | `IOSToolsRouter.swift` | NavigationStack routing |
 
-### ToolsService API Surface (31 public methods)
+### ToolsService API Surface (30 public methods)
 
 | Section | Methods |
 |---|---|

@@ -452,11 +452,12 @@ struct IOSPurchaseOrdersPage: View {
             actionMessage = "Service not available"
             return
         }
+        guard let userId = appCore.currentUser?.id else { return }
         do {
             if po.status == "draft" {
                 try service.deletePO(id: po.id)
             } else {
-                try service.updatePOStatus(id: po.id, status: "cancelled")
+                try service.updatePOStatus(id: po.id, status: "cancelled", userId: userId)
             }
             loadData()
         } catch {

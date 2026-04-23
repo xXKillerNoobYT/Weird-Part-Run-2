@@ -213,7 +213,7 @@ The 11 old scheduled tasks are consolidated into **two continuous heartbeat rout
 - **`HUNT FIX`** (or `/hunt-fix`) — one iteration of the dedicated bug-exterminator, focused on AUTO GO's current area.
 - **`HUNT FIX STOP`** / **`HUNT FIX RESUME`** — shared with AUTO GO.
 
-**Cadence:** 30-min cadence with a 15-min offset. AUTO GO fires at `:00,:30` (cron `0,30 6-22 * * *`); HUNT FIX fires at `:15,:45` (cron `15,45 6-22 * * *`). Each routine has a full 15-minute clear window before the other starts, so they never collide. Both stop overnight (22:xx is the last firing). Trigger phrases also work typed directly — a `UserPromptSubmit` hook at `~/.claude/hooks/auto-go-trigger.sh` catches exact phrases.
+**Cadence (updated 2026-04-23 — budget-aware default):** 6-hour cadence with a 3-hour offset. AUTO GO fires at 6AM/12PM/6PM local (cron `0 6,12,18 * * *`); HUNT FIX fires at 9AM/3PM/9PM local (cron `0 9,15,21 * * *`). Six total fires/day, interleaved every 3 hours — roughly **11× fewer fires** than the old 30-min cadence (68/day → 6/day). **Each fire does ONE iteration**, not a continuous `/loop` — this replaces the prior "fire once at 9AM, self-pace all day" design after hitting Claude weekly caps (2026-04-21). If the current area isn't done in one iteration, the next cron fire picks up where it left off. Trigger phrases still work typed directly (`AUTO GO`, `HUNT FIX`, `AUTO GO STOP/RESUME`) via `~/.claude/hooks/auto-go-trigger.sh`.
 
 Escalation paths preserved: Q&A → `docs/dev-qa.md`, Xcode UI → `xcode-ai/fix-prompts/` + `00-fix-order.md`, cannot-do → `docs/DevTODO/`.
 
