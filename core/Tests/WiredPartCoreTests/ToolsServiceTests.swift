@@ -989,10 +989,49 @@ struct ToolsServiceTests {
         let env = try E2ETestHelpers.setUp()
         let toolId = try insertTool(env, toolNumber: "T-MTM", name: "Maintenance Tool", status: "available")
 
-        try env.tools.markToolMaintenance(toolId: toolId)
+        try env.tools.markToolMaintenance(toolId: toolId, performedBy: env.adminUserId)
 
         let detail = try env.tools.getToolDetail(toolId: toolId)
         #expect(detail?.status == "maintenance")
+    }
+
+    @Test("markToolMaintenance writes audit log entry (#272)")
+    func testMarkToolMaintenanceAuditLog() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-MTM-LOG", name: "Audit Tool", status: "available")
+
+        try env.tools.markToolMaintenance(toolId: toolId, performedBy: env.adminUserId)
+
+        let logRow = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT change_type, field_name, old_value, new_value, changed_by
+                FROM tool_change_log
+                WHERE tool_id = ? AND change_type = 'maintenance'
+                """, arguments: [toolId])
+        }
+        #expect(logRow != nil, "Audit log entry must exist for maintenance status change")
+        #expect(logRow?["change_type"] == "maintenance")
+        #expect(logRow?["field_name"] == "status")
+        #expect(logRow?["old_value"] == "available")
+        #expect(logRow?["new_value"] == "maintenance")
+        #expect((logRow?["changed_by"] as Int64?) == env.adminUserId)
+    }
+
+    @Test("markToolMaintenance rejects unknown user (FK guard)")
+    func testMarkToolMaintenanceRejectsUnknownUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-MTM-NU", name: "Tool", status: "available")
+        #expect(throws: ToolsService.ToolsError.userNotFound(99999)) {
+            try env.tools.markToolMaintenance(toolId: toolId, performedBy: 99999)
+        }
+    }
+
+    @Test("markToolMaintenance rejects unknown tool (FK guard)")
+    func testMarkToolMaintenanceRejectsUnknownTool() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(throws: ToolsService.ToolsError.toolNotFound(99999)) {
+            try env.tools.markToolMaintenance(toolId: 99999, performedBy: env.adminUserId)
+        }
     }
 
     // =========================================================================

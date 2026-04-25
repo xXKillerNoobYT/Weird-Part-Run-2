@@ -396,8 +396,26 @@ public final class ToolsService: Sendable {
     }
 
     /// Mark a tool for maintenance.
-    public func markToolMaintenance(toolId: Int64) throws {
+    ///
+    /// Logs the status change in `tool_change_log` with `performedBy` for
+    /// audit traceability (#272).
+    public func markToolMaintenance(toolId: Int64, performedBy: Int64) throws {
         try db.writer.write { dbConn in
+            // FK-orphan guards mirror the pattern in other write methods.
+            let toolExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [toolId]) ?? 0) > 0
+            guard toolExists else { throw ToolsError.toolNotFound(toolId) }
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [performedBy]) ?? 0) > 0
+            guard userExists else { throw ToolsError.userNotFound(performedBy) }
+
+            // Capture old status before flipping so the log entry is meaningful.
+            let oldStatus = try String.fetchOne(dbConn, sql: """
+                SELECT status FROM tools WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [toolId]) ?? ""
+
             try dbConn.execute(
                 sql: """
                     UPDATE tools SET status = 'maintenance', updated_at = datetime('now')
@@ -405,6 +423,13 @@ public final class ToolsService: Sendable {
                     """,
                 arguments: [toolId]
             )
+
+            try dbConn.execute(sql: """
+                INSERT INTO tool_change_log
+                (tool_id, changed_by, change_type, field_name, old_value, new_value,
+                 changed_at, verification_status)
+                VALUES (?, ?, 'maintenance', 'status', ?, 'maintenance', datetime('now'), 'approved')
+                """, arguments: [toolId, performedBy, oldStatus])
         }
     }
 

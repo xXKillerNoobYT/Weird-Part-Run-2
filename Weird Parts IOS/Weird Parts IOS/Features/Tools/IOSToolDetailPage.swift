@@ -1190,7 +1190,7 @@ struct ToolReportIssueSheet: View {
                 hasPermission: true
             )
             if severity == "critical" {
-                try service.markToolMaintenance(toolId: tool.id)
+                try service.markToolMaintenance(toolId: tool.id, performedBy: userId)
             }
             isDirty = false
             onComplete()

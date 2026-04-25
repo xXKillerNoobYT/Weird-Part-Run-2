@@ -280,8 +280,12 @@ struct IOSWarehouseToolsPage: View {
             actionError = "Service not available"
             return
         }
+        guard let userId = appCore.currentUser?.id else {
+            actionError = "You must be signed in to flag a tool for maintenance."
+            return
+        }
         do {
-            try service.markToolMaintenance(toolId: tool.id)
+            try service.markToolMaintenance(toolId: tool.id, performedBy: userId)
             loadData()
         } catch {
             actionError = userFriendlyError(error, context: "complete action")
