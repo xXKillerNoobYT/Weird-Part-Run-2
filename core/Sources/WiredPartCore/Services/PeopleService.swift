@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import CryptoKit
 
 /// People Service — read-only queries for employees, customers, contractors,
 /// contacts, teams, hats, and aggregate people stats.
@@ -12,8 +13,31 @@ import GRDB
 public final class PeopleService: Sendable {
     private let db: AppDatabase
 
+    private enum EncryptionError: Error {
+        case missingKey
+        case invalidKey
+    }
+
     public init(db: AppDatabase) {
         self.db = db
+    }
+
+    private func encryptionKey() throws -> SymmetricKey {
+        guard let b64 = ProcessInfo.processInfo.environment["PEOPLE_DB_ENCRYPTION_KEY"],
+              let keyData = Data(base64Encoded: b64) else {
+            throw EncryptionError.missingKey
+        }
+        guard keyData.count == 32 else {
+            throw EncryptionError.invalidKey
+        }
+        return SymmetricKey(data: keyData)
+    }
+
+    private func encryptOptional(_ value: String?) throws -> String? {
+        guard let value, !value.isEmpty else { return value }
+        let box = try AES.GCM.seal(Data(value.utf8), using: try encryptionKey())
+        guard let combined = box.combined else { return nil }
+        return combined.base64EncodedString()
     }
 
     // =========================================================================
@@ -879,13 +903,14 @@ public final class PeopleService: Sendable {
         guard !firstName.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw PeopleError.requiredFieldEmpty("firstName")
         }
+        let encryptedEmail = try encryptOptional(email)
         return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO entity_contacts (entity_type, entity_id, first_name, last_name, role, phone, email, is_primary, notes)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                arguments: [entityType, entityId, firstName, lastName, role, phone, email, isPrimary ? 1 : 0, notes]
+                arguments: [entityType, entityId, firstName, lastName, role, phone, encryptedEmail, isPrimary ? 1 : 0, notes]
             )
             return dbConn.lastInsertedRowID
         }
@@ -903,6 +928,7 @@ public final class PeopleService: Sendable {
         guard !firstName.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw PeopleError.requiredFieldEmpty("firstName")
         }
+        let encryptedEmail = try encryptOptional(email)
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
@@ -911,7 +937,7 @@ public final class PeopleService: Sendable {
                         updated_at = datetime('now')
                     WHERE id = ? AND deleted_at IS NULL
                     """,
-                arguments: [firstName, lastName, phone, email, role, id]
+                arguments: [firstName, lastName, phone, encryptedEmail, role, id]
             )
         }
     }
