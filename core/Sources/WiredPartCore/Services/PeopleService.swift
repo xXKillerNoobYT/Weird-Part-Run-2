@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import CryptoKit
 
 /// People Service — read-only queries for employees, customers, contractors,
 /// contacts, teams, hats, and aggregate people stats.
@@ -14,6 +15,22 @@ public final class PeopleService: Sendable {
 
     public init(db: AppDatabase) {
         self.db = db
+    }
+
+    private static func peopleEncryptionKey() -> SymmetricKey {
+        let secret = ProcessInfo.processInfo.environment["WIREDPART_DB_FIELD_KEY"] ?? "wiredpart-default-field-key"
+        let digest = SHA256.hash(data: Data(secret.utf8))
+        return SymmetricKey(data: Data(digest))
+    }
+
+    private static func encryptOptionalField(_ value: String?) throws -> String? {
+        guard let value, !value.isEmpty else { return value }
+        let key = peopleEncryptionKey()
+        let sealed = try AES.GCM.seal(Data(value.utf8), using: key)
+        guard let combined = sealed.combined else {
+            throw PeopleError.requiredFieldEmpty("encryptedField")
+        }
+        return combined.base64EncodedString()
     }
 
     // =========================================================================
@@ -1226,13 +1243,15 @@ public final class PeopleService: Sendable {
         phone: String?,
         email: String?
     ) throws {
+        let encryptedEmail = try Self.encryptOptionalField(email)
+        let encryptedPhone = try Self.encryptOptionalField(phone)
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     UPDATE users SET display_name = ?, email = ?, phone = ?, updated_at = datetime('now')
                     WHERE id = ? AND deleted_at IS NULL
                     """,
-                arguments: [displayName, email, phone, employeeId]
+                arguments: [displayName, encryptedEmail, encryptedPhone, employeeId]
             )
         }
     }
