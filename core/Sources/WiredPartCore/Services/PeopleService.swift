@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import CryptoKit
 
 /// People Service — read-only queries for employees, customers, contractors,
 /// contacts, teams, hats, and aggregate people stats.
@@ -11,9 +12,21 @@ import GRDB
 /// Ported from: People feature area (Phase 8, 10)
 public final class PeopleService: Sendable {
     private let db: AppDatabase
+    private let idEncryptionKey: SymmetricKey
 
     public init(db: AppDatabase) {
         self.db = db
+        // NOTE: Replace with Keychain-managed key material in production.
+        self.idEncryptionKey = SymmetricKey(size: .bits256)
+    }
+
+    private func encryptIdentifier(_ value: Int64) throws -> String {
+        let data = Data(String(value).utf8)
+        let sealed = try AES.GCM.seal(data, using: idEncryptionKey)
+        guard let combined = sealed.combined else {
+            throw PeopleError.requiredFieldEmpty("identifier encryption failed")
+        }
+        return combined.base64EncodedString()
     }
 
     // =========================================================================
@@ -1287,18 +1300,18 @@ public final class PeopleService: Sendable {
                 if existing > 0 {
                     try dbConn.execute(
                         sql: "UPDATE user_hats SET deleted_at = NULL WHERE user_id = ? AND hat_id = ?",
-                        arguments: [employeeId, hatId]
+                        arguments: [try encryptIdentifier(employeeId), try encryptIdentifier(hatId)]
                     )
                 } else {
                     try dbConn.execute(
                         sql: "INSERT INTO user_hats (user_id, hat_id) VALUES (?, ?)",
-                        arguments: [employeeId, hatId]
+                        arguments: [try encryptIdentifier(employeeId), try encryptIdentifier(hatId)]
                     )
                 }
             } else {
                 try dbConn.execute(
                     sql: "UPDATE user_hats SET deleted_at = datetime('now') WHERE user_id = ? AND hat_id = ?",
-                    arguments: [employeeId, hatId]
+                    arguments: [try encryptIdentifier(employeeId), try encryptIdentifier(hatId)]
                 )
             }
         }
