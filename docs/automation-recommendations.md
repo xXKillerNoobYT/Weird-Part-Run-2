@@ -4,6 +4,68 @@
 
 ---
 
+## Area: tools — 2026-04-25 (rotation 2)
+
+**Analyzed:** Re-audit of `ToolsService.swift` + 8 iOS tools pages after full rotation 1. Iter 7 C7b filed 2 net-new automation candidates (#269, #270). Iter 9 C9 surfaced 1 schema-level perf candidate (#273). All 3 cross 4+ areas, qualifying as project-wide pattern automations.
+
+### Codebase Profile Update (Tools Area, 2nd Pass)
+
+- **Tests:** 71 → 111 (test-coverage-maintenance auto-extended in iter 4 C4)
+- **Build warnings:** 0 (clean both passes)
+- **Dismiss-safety:** still 0 gaps in tools (PE-051 queued for the 5 IOSToolDetailPage sheets identified in iter 6 C7 — gated on PE-COLORS Phase 2 UI)
+- **is_active:** 0 new gaps this rotation (rotation 1's 6 gaps fixed)
+- **Net-new findings this rotation:** main-thread audit gap (P1, #269), datetime-format duplication (P2, #270), correlated-subquery hot-path (P2, #273)
+
+---
+
+### ⚡ New Recommendation: Main-Thread GRDB Read Scanner
+
+**Why:** `IOSToolRegistryPage.swift`, `IOSToolCheckoutsPage.swift`, `IOSToolKitsPage.swift`, `IOSToolMaintenancePage.swift`, `IOSToolsDashboardPage.swift`, `IOSToolAdminPage.swift` (6 pages in tools alone) call `try? service.listTools()` / `listCheckouts()` directly inside `.task { }` modifiers. GRDB's `dbQueue.read` blocks the calling thread. On `.task` (main actor), this is a UI hitch on every navigation. Pattern is **not unique to tools** — same shape exists in parts/jobs/warehouse list pages (already noted in those C7b runs).
+
+**Proposed automation:** New scanner `~/.claude/scheduled-tasks/main-thread-grdb-scanner/SKILL.md` — grep for `\.task\s*\{[^}]*try\?\s+\w+Service\.\w+\(` and flag occurrences. Wire into C7b (dev-improvement) phase 1 (runtime safety).
+
+**Cross-area evidence:** Tools (6), Parts (~4 already noted in iter 7), Warehouse (~3 in earlier rotation), Jobs (~5). Estimated 18+ pages across 4 areas.
+
+---
+
+### ⚡ New Recommendation: Formatters.formatSQLiteDatetime Helper
+
+**Why:** Iter 7 C7b found 10+ duplicate `DateFormatter` instantiations across tools pages — each parsing the same SQLite "yyyy-MM-dd HH:mm:ss" format. Same duplication shape exists across all areas (last seen flagged in scheduling C7b rotation 1).
+
+**Proposed automation:** Add `Formatters.formatSQLiteDatetime(_:)` static helper in `core/Sources/WiredPartCore/Utilities/Formatters.swift` (or create file if missing). One-line replacement at every call site. Easy mechanical migration via Sonnet sub-agent.
+
+**Cross-area evidence:** Tools (10+), Reports (lots — every report uses datetime), Jobs (~6), Warehouse (~4). 30+ call sites across the codebase.
+
+---
+
+### ⚡ New Recommendation: Correlated-Subquery + Index Audit
+
+**Why:** Iter 9 C9 found `getToolsStats()` uses correlated `NOT EXISTS` subquery against `tool_movements` table without index on `(tool_id)` or `(movement_type)` — O(n²) at scale. Same query shape likely exists in inventory (movement queries), warehouse (pull queries), reports (aggregation queries).
+
+**Proposed automation:** New scanner `~/.claude/scheduled-tasks/sql-perf-audit/SKILL.md` that:
+1. Greps service files for `NOT EXISTS\|EXISTS\s*\(SELECT` patterns inside loops or list functions
+2. Cross-references referenced tables against `AppDatabase+Migrations.swift` for index coverage
+3. Flags missing indexes as P2 perf finding
+
+Wire into C9 (performance) dispatch.
+
+**Cross-area evidence:** Tools (1 confirmed, #273), Inventory (likely — uses similar movement patterns), Warehouse (likely — pull staging), Reports (likely — pre-billing aggregations). Probably 4–6 hot spots project-wide.
+
+---
+
+### Summary: Running Totals After Tools (Rotation 2)
+
+| Recommendation | Areas Hit | Gaps Found | Priority | Status |
+|---|---|---|---|---|
+| is_active defense auditor hook | 4/14 | 18 | 🔴 High | ⏳ Q&A pending (scheduling C13) |
+| Dismiss-safety struct-aware scanner | 5/14 | 22+ | 🟡 Medium-High | ⏳ Q&A pending (warehouse C13) |
+| accessibilityAddTraits(.isSelected) scanner | 7/14 | 13+ | 🟡 Medium | ⏳ Q&A pending (chat C13 escalation) |
+| **Main-thread GRDB read scanner** | 4/14 | 18+ | 🟡 Medium | 🆕 NEW — Q&A this iter |
+| **Formatters.formatSQLiteDatetime helper** | 4/14 | 30+ | 🟢 Low (mechanical) | 🆕 NEW — Q&A this iter |
+| **SQL perf-audit scanner (NOT EXISTS + index)** | 1/14 confirmed, ~3 likely | 1+ | 🟢 Low | 🆕 NEW — Q&A this iter |
+
+---
+
 ## Area: settings — 2026-04-20
 
 **Analyzed:** `SettingsService.swift` (22+ subsystems, 53 tests), 35 iOS Settings pages. C7b: 4 accessibility fixes; C8: clean; C9: clean; ThemesPage HIG fix; 5 GitHub issues tracked.
