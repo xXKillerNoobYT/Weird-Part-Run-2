@@ -775,3 +775,26 @@ SwiftUI's `Label` with `icon:` closure suppresses the icon from VoiceOver automa
 | is_active scanner: separate CREATE-guard vs LIST-query pattern specs | Spec update | High | Update is_active hook Q&A | ⏳ Update Q&A spec |
 | A11y scanner: extend window from 4 to 6 lines | Bug fix | Medium | Fix Python script when approved | ⏳ Q&A still pending |
 | A11y scanner: exclude Label icon: { } pattern | Spec update | Medium | Add exclusion rule to scanner | ⏳ Q&A still pending |
+
+---
+
+## Area: tools — C7b dev-improvement audit — 2026-04-24
+
+**Analyzed:** ToolsService.swift (1,731 lines), 8 iOS Tools pages.
+
+### Key Findings
+
+**1. Synchronous loadData() blocks cooperative main-actor task — recurs across ALL 6 list pages**
+Every Tools list page (Dashboard, Registry, Checkouts, Kits, Maintenance, Admin) calls `service.listTools()` / `service.listCheckouts()` etc. synchronously from `.task {}` and `.refreshable {}`. GRDB `DatabasePool.writer.read` dispatches to a reader thread internally, but the Swift callsite blocks. Under DB load this can stutter/freeze the UI. The fix pattern is to wrap loadData in `Task { @MainActor in ... }` or convert to `async func`. This pattern recurs across the entire app — a scanner that flags synchronous GRDB service calls within `.task {}` closures would catch all instances.
+
+**Recommended helper:** A `C7b-main-thread-safety-scanner` that identifies `private func loadData()` bodies calling `try service.*()` without `await` or `Task { }` wrapping, specifically when called from `.task {}` or `.refreshable {}`. Filed as GitHub #269.
+
+**2. formatDate() duplicated — Shared/Formatters.swift exists but is incomplete for this use case**
+`IOSToolsDashboardPage` and `IOSToolCheckoutsPage` each implement `private func formatDate(_ dateString: String) -> String` with identical ISO + SQLite datetime parsing logic (20+ lines each). The same function appears in 10+ other feature areas. `Formatters.formatDateString()` only truncates to 10 chars, not the full parse-then-display-format pattern needed. A new `Formatters.formatSQLiteDatetime(_ str: String) -> String` helper would consolidate this pattern across ~12+ pages. Filed as GitHub #270.
+
+### Summary & Prioritization
+
+| Recommendation | Type | Priority | Decision | Status |
+|---|---|---|---|---|
+| C7b scanner: flag synchronous service calls in .task{} / .refreshable{} | New scanner | High | Add to dev-improvement-scanner or standalone | ⏳ Pending loop-self-improve review |
+| Formatters: add formatSQLiteDatetime helper to eliminate ~12 duplicate formatDate() functions | Refactor | Medium | Add to Shared/Formatters.swift when approved | ⏳ Pending approval |
