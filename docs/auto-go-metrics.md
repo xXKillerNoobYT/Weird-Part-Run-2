@@ -121,3 +121,4 @@ Self-improvements are applied autonomously for safe changes (reordering, enablin
 | 2026-04-24 | 10 | tools | C10 | done | N/A — iOS-only arch (Tauri/React retired per CLAUDE.md) | 0 | 0 | ~10s | none |
 | 2026-04-25 | 1 | tools | C11 | done | 7 issues (#268-#274) given explicit C11 deferral comments; #58 stays open by design | 7 comments | 0 | ~3min | none (deferred to 12:11) |
 | 2026-04-25 | 2 | tools | C11b | done | No process gaps unique to tools; all surfaces clean (plan/Q&A/DevTODO/Xcode prompts/issues) | 0 | 0 | ~2min | none |
+| 2026-04-25 | 3 | tools | C12 | done | CLAUDE.md already covers tools (Phase 9 complete + ToolsService listed); per soul rule code patterns belong in code, not memory | 0 | 0 | ~1min | none |
