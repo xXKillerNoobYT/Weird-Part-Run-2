@@ -119,3 +119,4 @@ Self-improvements are applied autonomously for safe changes (reordering, enablin
 | 2026-04-24 | 8 | tools | C8 | done | 0 Critical/High; 2 Medium auth-gaps (#271 respondToTrade, #272 markToolMaintenance) | 0 | 0 | ~5min | none |
 | 2026-04-24 | 9 | tools | C9 | done | 1 High (Registry double-fetch) inline fix; 2 Medium/Low (#273 correlated subquery + indexes, #274 unbounded checkout fetch) | 1 | 0 | ~6min | none |
 | 2026-04-24 | 10 | tools | C10 | done | N/A — iOS-only arch (Tauri/React retired per CLAUDE.md) | 0 | 0 | ~10s | none |
+| 2026-04-25 | 1 | tools | C11 | done | 7 issues (#268-#274) given explicit C11 deferral comments; #58 stays open by design | 7 comments | 0 | ~3min | none (deferred to 12:11) |
