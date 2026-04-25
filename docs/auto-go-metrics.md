@@ -113,3 +113,4 @@ Self-improvements are applied autonomously for safe changes (reordering, enablin
 | 2026-04-24 | 2 | tools | C3 | done | 3 FK-orphan gaps (ToolsService checkout/return/maintenance) — Sonnet sub-agent scan | 3 | 4 | ~8min | none |
 | 2026-04-24 | 3 | tools | C4 | done | 0 missing-method gaps (30/30 covered before); 15 edge-case gaps filled | 0 | 15 | ~14min | github-issues-sync (4h+ pulse, 0 new) |
 | 2026-04-24 | 4 | tools | C5 | done | 0 failures (111/111 ToolsServiceTests green) | 0 | 0 | ~10s | none |
+| 2026-04-24 | 5 | tools | C6 | done | 0 build warnings (tools-scoped & global) | 0 | 0 | ~30s | none |
