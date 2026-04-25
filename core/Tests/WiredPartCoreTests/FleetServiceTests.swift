@@ -631,6 +631,22 @@ struct FleetServiceTests {
         #expect(!vehicles.contains(where: { $0.id == vehicleId }), "is_active=0 vehicle must not appear in listVehicles")
     }
 
+    @Test("getVehicleDetail returns nil for is_active = 0 vehicles")
+    func testGetVehicleDetailExcludesInactive() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-DETAIL-INACTIVE", vehicleName: "Detail Inactive", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        // Confirm visible while active.
+        #expect(try env.fleet.getVehicleDetail(id: vehicleId) != nil, "Active vehicle should be retrievable by id")
+        // Soft-deactivate.
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE vehicles SET is_active = 0 WHERE id = ?", arguments: [vehicleId])
+        }
+        #expect(try env.fleet.getVehicleDetail(id: vehicleId) == nil, "is_active=0 vehicle must not be returned by getVehicleDetail")
+    }
+
     @Test("listTrailers excludes is_active = 0 trailers")
     func testListTrailersExcludesInactive() throws {
         let env = try E2ETestHelpers.setUp()
