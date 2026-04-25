@@ -159,7 +159,11 @@ struct IOSMaintenancePage: View {
         isLoading = records.isEmpty
         loadError = nil
         do {
-            records = try service.listMaintenanceRecords()
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            let startStr = formatter.string(from: effectiveStart)
+            let endStr = formatter.string(from: effectiveEnd)
+            records = try service.listMaintenanceRecords(start: startStr, end: endStr)
         } catch {
             loadError = userFriendlyError(error, context: "load maintenance data")
         }

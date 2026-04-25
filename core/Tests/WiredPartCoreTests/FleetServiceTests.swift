@@ -153,6 +153,78 @@ struct FleetServiceTests {
         #expect(logs.isEmpty)
     }
 
+    // MARK: - Date Range Filtering (#276)
+
+    @Test("listFuelLogs filters by start/end date range")
+    func testListFuelLogsDateRange() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-FUEL-DR", vehicleName: "Fuel DR", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let userId = try env.auth.createUser(displayName: "Fuel DR User", pin: "1234")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO fuel_logs (vehicle_id, user_id, log_date, gallons, total_cost, station)
+                VALUES (?, ?, '2026-01-15', 10.0, 35.00, 'Old Station')
+                """, arguments: [vehicleId, userId])
+            try db.execute(sql: """
+                INSERT INTO fuel_logs (vehicle_id, user_id, log_date, gallons, total_cost, station)
+                VALUES (?, ?, '2026-04-20', 12.0, 42.00, 'Recent Station')
+                """, arguments: [vehicleId, userId])
+        }
+        let recent = try env.fleet.listFuelLogs(start: "2026-04-01", end: "2026-04-30")
+        #expect(recent.count == 1, "Date filter should only include April logs")
+        #expect(recent.first?.station == "Recent Station")
+        let all = try env.fleet.listFuelLogs()
+        #expect(all.count == 2, "No filter should return both logs")
+    }
+
+    @Test("listMileageLogs filters by start/end date range")
+    func testListMileageLogsDateRange() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-MIL-DR", vehicleName: "Mileage DR", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let userId = try env.auth.createUser(displayName: "Mileage DR User", pin: "1234")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO mileage_logs (vehicle_id, user_id, log_date, total_miles, purpose)
+                VALUES (?, ?, '2026-01-10', 100.0, 'Old trip')
+                """, arguments: [vehicleId, userId])
+            try db.execute(sql: """
+                INSERT INTO mileage_logs (vehicle_id, user_id, log_date, total_miles, purpose)
+                VALUES (?, ?, '2026-04-22', 50.0, 'Recent trip')
+                """, arguments: [vehicleId, userId])
+        }
+        let recent = try env.fleet.listMileageLogs(start: "2026-04-01", end: "2026-04-30")
+        #expect(recent.count == 1, "Date filter should only include April logs")
+        #expect(recent.first?.purpose == "Recent trip")
+    }
+
+    @Test("listMaintenanceRecords filters by start/end date range")
+    func testListMaintenanceRecordsDateRange() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-MNT-DR", vehicleName: "Maint DR", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO maintenance_records (vehicle_id, performed_at, cost, odometer_reading)
+                VALUES (?, '2026-01-05', 150.0, 30000)
+                """, arguments: [vehicleId])
+            try db.execute(sql: """
+                INSERT INTO maintenance_records (vehicle_id, performed_at, cost, odometer_reading)
+                VALUES (?, '2026-04-18', 250.0, 32000)
+                """, arguments: [vehicleId])
+        }
+        let recent = try env.fleet.listMaintenanceRecords(start: "2026-04-01", end: "2026-04-30")
+        #expect(recent.count == 1, "Date filter should only include April records")
+        #expect(recent.first?.cost == 250.0)
+    }
+
     @Test("Upcoming fleet maintenance empty")
     func testUpcomingMaintenance() throws {
         let env = try E2ETestHelpers.setUp()

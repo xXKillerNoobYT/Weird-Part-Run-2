@@ -153,7 +153,11 @@ struct IOSFuelPage: View {
         isLoading = fuelLogs.isEmpty
         loadError = nil
         do {
-            fuelLogs = try service.listFuelLogs()
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            let startStr = formatter.string(from: effectiveStart)
+            let endStr = formatter.string(from: effectiveEnd)
+            fuelLogs = try service.listFuelLogs(start: startStr, end: endStr)
         } catch {
             loadError = userFriendlyError(error, context: "load fuel data")
         }

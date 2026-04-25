@@ -394,7 +394,12 @@ public final class FleetService: Sendable {
     // =========================================================================
 
     /// List maintenance records, optionally filtered by vehicle.
-    public func listMaintenanceRecords(vehicleId: Int64? = nil, limit: Int = 50) throws -> [MaintenanceRow] {
+    public func listMaintenanceRecords(
+        vehicleId: Int64? = nil,
+        start: String? = nil,
+        end: String? = nil,
+        limit: Int = 50
+    ) throws -> [MaintenanceRow] {
         do {
             return try db.writer.read { dbConn -> [MaintenanceRow] in
                 var whereClauses = ["mr.deleted_at IS NULL"]
@@ -403,6 +408,14 @@ public final class FleetService: Sendable {
                 if let vehicleId {
                     whereClauses.append("mr.vehicle_id = ?")
                     args.append(vehicleId)
+                }
+                if let start {
+                    whereClauses.append("mr.performed_at >= ?")
+                    args.append(start)
+                }
+                if let end {
+                    whereClauses.append("mr.performed_at <= ?")
+                    args.append(end)
                 }
 
                 args.append(limit)
@@ -445,7 +458,13 @@ public final class FleetService: Sendable {
     // =========================================================================
 
     /// List mileage logs, optionally filtered by vehicle and/or user.
-    public func listMileageLogs(vehicleId: Int64? = nil, userId: Int64? = nil, limit: Int = 50) throws -> [MileageRow] {
+    public func listMileageLogs(
+        vehicleId: Int64? = nil,
+        userId: Int64? = nil,
+        start: String? = nil,
+        end: String? = nil,
+        limit: Int = 50
+    ) throws -> [MileageRow] {
         do {
             return try db.writer.read { dbConn -> [MileageRow] in
                 var whereClauses = ["ml.deleted_at IS NULL"]
@@ -458,6 +477,14 @@ public final class FleetService: Sendable {
                 if let userId {
                     whereClauses.append("ml.user_id = ?")
                     args.append(userId)
+                }
+                if let start {
+                    whereClauses.append("ml.log_date >= ?")
+                    args.append(start)
+                }
+                if let end {
+                    whereClauses.append("ml.log_date <= ?")
+                    args.append(end)
                 }
 
                 args.append(limit)
@@ -497,7 +524,12 @@ public final class FleetService: Sendable {
     // =========================================================================
 
     /// List fuel logs, optionally filtered by vehicle.
-    public func listFuelLogs(vehicleId: Int64? = nil, limit: Int = 50) throws -> [FuelRow] {
+    public func listFuelLogs(
+        vehicleId: Int64? = nil,
+        start: String? = nil,
+        end: String? = nil,
+        limit: Int = 50
+    ) throws -> [FuelRow] {
         do {
             return try db.writer.read { dbConn -> [FuelRow] in
                 var whereClauses = ["fl.deleted_at IS NULL"]
@@ -506,6 +538,14 @@ public final class FleetService: Sendable {
                 if let vehicleId {
                     whereClauses.append("fl.vehicle_id = ?")
                     args.append(vehicleId)
+                }
+                if let start {
+                    whereClauses.append("fl.log_date >= ?")
+                    args.append(start)
+                }
+                if let end {
+                    whereClauses.append("fl.log_date <= ?")
+                    args.append(end)
                 }
 
                 args.append(limit)
