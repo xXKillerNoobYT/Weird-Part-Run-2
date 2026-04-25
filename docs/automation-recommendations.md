@@ -4,6 +4,37 @@
 
 ---
 
+## Area: vehicles — 2026-04-25
+
+**Analyzed:** AUTO GO iter 14 C7b (dev-improvement-scanner phase 5 — skill-creation gaps) on FleetService + 18 Fleet iOS files. Two net-new patterns repeated 6+ times each.
+
+### 🛠️ New Recommendation: `LoadableList<T>` reusable view
+
+**Why:** Six Fleet list pages share the identical 4-state skeleton:
+```swift
+if isLoading { ProgressView }
+else if let error { ErrorStateView(message: error) { reload() } }
+else if items.isEmpty { ContentUnavailableView(...) }
+else { List(items, id: \.id) { row in ... } }
+```
+Sites: `IOSVehiclesPage`, `IOSFuelPage`, `IOSMaintenancePage`, `IOSMileagePage`, `IOSInspectionsPage`, `IOSTrailersPage`. Same pattern likely repeats in Parts, Jobs, Warehouse, Tools list pages — that's another ~30+ sites project-wide.
+
+**Proposed automation:** New `core/Sources/WiredPartCore/UI/LoadableList.swift` (or app-side equivalent) generic view. Pairs with the `ListLoadState<T>` enum proposed in #280. Once landed, the per-page boilerplate drops from ~20 lines to ~5.
+
+**Cross-area applicability:** ⭐⭐⭐⭐⭐ (project-wide — every list page).
+
+---
+
+### 🛠️ New Recommendation: `.errorBanner(error)` view modifier
+
+**Why:** `Text(error).foregroundStyle(.red)` inline error display repeated 7 times across 5 Fleet files (IOSMyTruckPage ×2, PreTripInspectionView ×2, IOSCreateVehicleSheet, IOSVehicleDetailPage, IOSAssignDriverSheet). Inconsistent capitalization, no SF Symbol, no dismiss affordance. A single `.errorBanner(error)` modifier or `InlineErrorBanner(message:)` view would standardize the look + add `.role(.alert)` for VoiceOver.
+
+**Proposed automation:** Add `core/Sources/WiredPartCore/UI/InlineErrorBanner.swift` + `View+errorBanner` modifier. Mention in dev-improvement-scanner phase 4 as a candidate for cross-area unification.
+
+**Cross-area applicability:** ⭐⭐⭐⭐ (every form sheet that shows errors).
+
+---
+
 ## Area: tools — 2026-04-25 (rotation 2)
 
 **Analyzed:** Re-audit of `ToolsService.swift` + 8 iOS tools pages after full rotation 1. Iter 7 C7b filed 2 net-new automation candidates (#269, #270). Iter 9 C9 surfaced 1 schema-level perf candidate (#273). All 3 cross 4+ areas, qualifying as project-wide pattern automations.

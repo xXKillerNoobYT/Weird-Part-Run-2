@@ -8,6 +8,7 @@ import WiredPartCore
 /// Supports pull-to-refresh and search filtering.
 struct IOSMaintenancePage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.scenePhase) private var scenePhase
 
     // MARK: - State
 
@@ -41,6 +42,9 @@ struct IOSMaintenancePage: View {
             .searchable(text: $searchText, prompt: "Search maintenance records...")
             .refreshable { loadData() }
             .task { loadData() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { loadData() }
+            }
             .onChange(of: dateRange) { loadData() }
             .onChange(of: customStart) { loadData() }
             .onChange(of: customEnd) { loadData() }

@@ -8,6 +8,7 @@ import WiredPartCore
 /// status-based filtering.
 struct IOSVehiclesPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.scenePhase) private var scenePhase
 
     // MARK: - State
 
@@ -45,6 +46,9 @@ struct IOSVehiclesPage: View {
         .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { loadData() }
+        }
         .onAppear {
             NotificationCenter.default.post(
                 name: .vehiclesPageActive,

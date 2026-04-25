@@ -8,6 +8,7 @@ import WiredPartCore
 /// Uses FleetService.listTrailers(). Supports pull-to-refresh and search.
 struct IOSTrailersPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.scenePhase) private var scenePhase
 
     // MARK: - State
 
@@ -34,6 +35,9 @@ struct IOSTrailersPage: View {
             .searchable(text: $searchText, prompt: "Search trailers...")
             .refreshable { loadData() }
             .task { loadData() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { loadData() }
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {

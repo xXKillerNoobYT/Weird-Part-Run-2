@@ -8,6 +8,7 @@ import WiredPartCore
 /// Uses FleetService.listInspections() for data access.
 struct IOSInspectionsPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.scenePhase) private var scenePhase
 
     // MARK: - State
 
@@ -28,6 +29,9 @@ struct IOSInspectionsPage: View {
             .searchable(text: $searchText, prompt: "Search inspections...")
             .refreshable { loadData() }
             .task { loadData() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { loadData() }
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {

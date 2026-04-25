@@ -8,6 +8,7 @@ import WiredPartCore
 /// Supports pull-to-refresh and search filtering.
 struct IOSFuelPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.scenePhase) private var scenePhase
 
     // MARK: - State
 
@@ -39,6 +40,9 @@ struct IOSFuelPage: View {
             .searchable(text: $searchText, prompt: "Search fuel logs...")
             .refreshable { loadData() }
             .task { loadData() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { loadData() }
+            }
             .onChange(of: dateRange) { loadData() }
             .onChange(of: customStart) { loadData() }
             .onChange(of: customEnd) { loadData() }
