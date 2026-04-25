@@ -1541,9 +1541,15 @@ struct TradeResponseSheet: View {
             isSaving = false
             return
         }
+        guard let userId = appCore.currentUser?.id else {
+            saveError = "You must be signed in to respond to a trade."
+            isSaving = false
+            return
+        }
         do {
             try service.respondToTrade(
                 tradeId: trade.id,
+                responderId: userId,
                 accepted: accepted,
                 condition: accepted ? condition.rawValue : nil,
                 notes: notes.isEmpty ? nil : notes

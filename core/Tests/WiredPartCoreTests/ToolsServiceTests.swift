@@ -1109,7 +1109,8 @@ struct ToolsServiceTests {
         let env = try E2ETestHelpers.setUp()
         let (toolId, tradeId, recipientId) = try setupPendingTrade(env)
 
-        try env.tools.respondToTrade(tradeId: tradeId, accepted: true, condition: "Good", notes: nil)
+        try env.tools.respondToTrade(tradeId: tradeId, responderId: recipientId,
+                                     accepted: true, condition: "Good", notes: nil)
 
         let detail = try env.tools.getToolDetail(toolId: toolId)
         #expect(detail?.assignedTo == recipientId)
@@ -1118,13 +1119,27 @@ struct ToolsServiceTests {
     @Test("respondToTrade decline leaves tool unchanged and closes trade")
     func testRespondToTradeDeclined() throws {
         let env = try E2ETestHelpers.setUp()
-        let (toolId, tradeId, _) = try setupPendingTrade(env)
+        let (toolId, tradeId, recipientId) = try setupPendingTrade(env)
 
-        try env.tools.respondToTrade(tradeId: tradeId, accepted: false, condition: nil, notes: "Not needed")
+        try env.tools.respondToTrade(tradeId: tradeId, responderId: recipientId,
+                                     accepted: false, condition: nil, notes: "Not needed")
 
         // Tool stays assigned to sender
         let detail = try env.tools.getToolDetail(toolId: toolId)
         #expect(detail?.assignedTo == env.adminUserId)
+    }
+
+    @Test("respondToTrade rejects non-recipient (security gate #271)")
+    func testRespondToTradeRejectsNonRecipient() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, tradeId, _) = try setupPendingTrade(env)
+        // Attacker is the sender (env.adminUserId), not the recipient.
+        #expect(throws: ToolsService.ToolsServiceError.tradeNotFound) {
+            try env.tools.respondToTrade(
+                tradeId: tradeId, responderId: env.adminUserId,
+                accepted: true, condition: "Good", notes: nil
+            )
+        }
     }
 
     @Test("expireOldTrades returns 0 when no trades exist")
@@ -1733,8 +1748,8 @@ struct ToolsServiceTests {
                            arguments: [recipientId])
         }
         #expect(throws: ToolsService.ToolsError.userNotFound(recipientId)) {
-            try env.tools.respondToTrade(tradeId: tradeId, accepted: true,
-                                         condition: "Good", notes: nil)
+            try env.tools.respondToTrade(tradeId: tradeId, responderId: recipientId,
+                                         accepted: true, condition: "Good", notes: nil)
         }
     }
 
@@ -1908,7 +1923,8 @@ struct ToolsServiceTests {
     func testRespondToTrade_throwsTradeNotFound() throws {
         let env = try E2ETestHelpers.setUp()
         #expect(throws: ToolsService.ToolsServiceError.tradeNotFound) {
-            try env.tools.respondToTrade(tradeId: 99999, accepted: true, condition: "Good", notes: nil)
+            try env.tools.respondToTrade(tradeId: 99999, responderId: env.adminUserId,
+                                         accepted: true, condition: "Good", notes: nil)
         }
     }
 

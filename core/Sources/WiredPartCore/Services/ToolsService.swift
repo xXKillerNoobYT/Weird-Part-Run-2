@@ -1115,8 +1115,12 @@ public final class ToolsService: Sendable {
     }
 
     /// Respond to a pending trade (accept or decline).
+    ///
+    /// Only the designated recipient (`to_user_id`) may respond. Any other caller
+    /// is rejected with `ToolsServiceError.tradeNotFound` to avoid leaking trade
+    /// existence to non-recipients.
     public func respondToTrade(
-        tradeId: Int64, accepted: Bool, condition: String?, notes: String?
+        tradeId: Int64, responderId: Int64, accepted: Bool, condition: String?, notes: String?
     ) throws {
         try db.writer.write { dbConn in
             guard let trade = try Row.fetchOne(dbConn, sql: """
@@ -1128,6 +1132,13 @@ public final class ToolsService: Sendable {
             let toolId: Int64 = trade["tool_id"]
             let fromUserId: Int64 = trade["from_user_id"]
             let toUserId: Int64 = trade["to_user_id"]
+
+            // Recipient gate (#271): UI gate is not authoritative — service layer
+            // must enforce that only `to_user_id` can accept/decline this trade.
+            guard responderId == toUserId else {
+                throw ToolsServiceError.tradeNotFound
+            }
+
             let newStatus = accepted ? "accepted" : "declined"
 
             try dbConn.execute(sql: """
