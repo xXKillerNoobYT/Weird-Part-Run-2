@@ -129,3 +129,4 @@ Self-improvements are applied autonomously for safe changes (reordering, enablin
 | 2026-04-25 | 8 | vehicles | C2b | done | Only #57 (parent program-review tracker, stays open by design) matches; zero new issues to ingest | 0 | 0 | ~1min | none |
 | 2026-04-25 | 9 | vehicles | C3 | done | 5 findings (0 T1 / 4 T2 / 1 T3); 3 inline fixes (getVehicleDetail is_active, maintenance_types JOIN ×2, IOSMyTruckPage vehicleId guard); #275 filed; #269 already covers main-thread reads | #275 (1 new) | 0 | ~10min | 45/45 FleetService tests pass |
 | 2026-04-25 | 10 | vehicles | C4 | done | 33/33 FleetService public methods have explicit tests (cross-verified by name); added 1 new test for getVehicleDetail is_active guard (locks in C3 fix); 46 tests / 33 methods = 1.39× | 0 | 1 new test | ~3min | 1/1 new test pass |
+| 2026-04-25 | 11 | vehicles | C5 | done | swift test full suite: 1737/1737 pass (57 suites, 134s); +308 tests since 2026-04-19 baseline | 0 | 0 | ~3min | green |
