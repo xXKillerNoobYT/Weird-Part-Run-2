@@ -323,7 +323,7 @@ public final class FleetService: Sendable {
                     sql: """
                         SELECT v.*
                         FROM vehicles v
-                        WHERE v.id = ? AND v.deleted_at IS NULL
+                        WHERE v.id = ? AND v.deleted_at IS NULL AND v.is_active = 1
                         """,
                     arguments: [id]
                 ) else { return nil }
@@ -413,7 +413,7 @@ public final class FleetService: Sendable {
                            COALESCE(u.display_name, u.email) AS performed_by_name
                     FROM maintenance_records mr
                     LEFT JOIN vehicles v ON v.id = mr.vehicle_id AND v.deleted_at IS NULL AND v.is_active = 1
-                    LEFT JOIN maintenance_types mt ON mt.id = mr.maintenance_type_id
+                    LEFT JOIN maintenance_types mt ON mt.id = mr.maintenance_type_id AND mt.deleted_at IS NULL AND mt.is_active = 1
                     LEFT JOIN users u ON u.id = mr.performed_by AND u.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY mr.performed_at DESC
@@ -1982,8 +1982,8 @@ public final class FleetService: Sendable {
                            COALESCE(mr.cost, 0) AS cost,
                            COALESCE(mr.performed_at, mr.created_at, '') AS performed_at
                     FROM maintenance_records mr
-                    LEFT JOIN vehicles v ON v.id = mr.vehicle_id AND v.deleted_at IS NULL
-                    LEFT JOIN maintenance_types mt ON mt.id = mr.maintenance_type_id
+                    LEFT JOIN vehicles v ON v.id = mr.vehicle_id AND v.deleted_at IS NULL AND v.is_active = 1
+                    LEFT JOIN maintenance_types mt ON mt.id = mr.maintenance_type_id AND mt.deleted_at IS NULL AND mt.is_active = 1
                     WHERE mr.deleted_at IS NULL
                       AND mr.performed_at >= ? AND mr.performed_at <= ?
                     ORDER BY mr.performed_at DESC

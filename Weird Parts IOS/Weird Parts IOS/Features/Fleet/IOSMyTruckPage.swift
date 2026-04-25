@@ -395,14 +395,18 @@ struct IOSMyTruckPage: View {
     private func sheetContent(_ sheet: ActiveSheet) -> some View {
         switch sheet {
         case .logFuel:
-            LogFuelSheet(
-                vehicleId: vehicleStats?.vehicleId ?? 0,
-                onComplete: {
-                    activeSheet = nil
-                    loadData()
-                }
-            )
-            .environmentObject(appCore)
+            if let vid = vehicleStats?.vehicleId, vid > 0 {
+                LogFuelSheet(
+                    vehicleId: vid,
+                    onComplete: {
+                        activeSheet = nil
+                        loadData()
+                    }
+                )
+                .environmentObject(appCore)
+            } else {
+                ContentUnavailableView("No vehicle assigned", systemImage: "car.2", description: Text("Assign a vehicle before logging fuel."))
+            }
 
         case .reportIssue:
             ReportVehicleIssueSheet(
@@ -413,14 +417,18 @@ struct IOSMyTruckPage: View {
             )
 
         case .addTransferItem:
-            AddTransferItemSheet(
-                vehicleId: vehicleStats?.vehicleId ?? 0,
-                onComplete: {
-                    activeSheet = nil
-                    loadData()
-                }
-            )
-            .environmentObject(appCore)
+            if let vid = vehicleStats?.vehicleId, vid > 0 {
+                AddTransferItemSheet(
+                    vehicleId: vid,
+                    onComplete: {
+                        activeSheet = nil
+                        loadData()
+                    }
+                )
+                .environmentObject(appCore)
+            } else {
+                ContentUnavailableView("No vehicle assigned", systemImage: "car.2", description: Text("Assign a vehicle before transferring parts."))
+            }
 
         case .help:
             PageHelpSheet(

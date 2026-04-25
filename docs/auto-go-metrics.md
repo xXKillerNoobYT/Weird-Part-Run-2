@@ -127,3 +127,4 @@ Self-improvements are applied autonomously for safe changes (reordering, enablin
 | 2026-04-25 | 6 | vehicles | C1b | done | 18/18 iOS Fleet files match plan exactly; FleetService method count 33 matches plan; zero drift | 0 | 0 | ~1min | none |
 | 2026-04-25 | 7 | vehicles | C2 | done | 0 vehicles-specific pending Q&A; only cross-area dismiss-safety reference (already answered) | 0 | 0 | ~1min | none |
 | 2026-04-25 | 8 | vehicles | C2b | done | Only #57 (parent program-review tracker, stays open by design) matches; zero new issues to ingest | 0 | 0 | ~1min | none |
+| 2026-04-25 | 9 | vehicles | C3 | done | 5 findings (0 T1 / 4 T2 / 1 T3); 3 inline fixes (getVehicleDetail is_active, maintenance_types JOIN ×2, IOSMyTruckPage vehicleId guard); #275 filed; #269 already covers main-thread reads | #275 (1 new) | 0 | ~10min | 45/45 FleetService tests pass |
