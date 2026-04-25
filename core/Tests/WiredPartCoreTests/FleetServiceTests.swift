@@ -617,6 +617,74 @@ struct FleetServiceTests {
 
     // MARK: - is_active Defense
 
+    @Test("reportVehicleIssue persists row to vehicle_issue_reports with FK guards and validation")
+    func testReportVehicleIssue() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-ISSUE-1", vehicleName: "Issue Test Truck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+
+        // Happy path — write succeeds, returns rowid, row visible in DB.
+        let rowId = try env.fleet.reportVehicleIssue(
+            vehicleId: vehicleId, reportedBy: env.adminUserId,
+            severity: "high", description: "  Brake pedal soft — needs immediate inspection.  "
+        )
+        #expect(rowId > 0)
+        try env.db.writer.read { db in
+            let count = try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM vehicle_issue_reports
+                WHERE id = ? AND vehicle_id = ? AND reported_by = ?
+                  AND severity = 'high' AND status = 'open'
+                  AND description = 'Brake pedal soft — needs immediate inspection.'
+                """, arguments: [rowId, vehicleId, env.adminUserId]) ?? 0
+            #expect(count == 1, "row must persist with trimmed description and default status='open'")
+        }
+
+        // Validation: empty / whitespace-only description rejected.
+        #expect(throws: FleetService.FleetError.invalidIssueReport("description cannot be empty")) {
+            try env.fleet.reportVehicleIssue(
+                vehicleId: vehicleId, reportedBy: env.adminUserId,
+                severity: "low", description: "   \n  "
+            )
+        }
+
+        // Validation: invalid severity rejected.
+        #expect(throws: FleetService.FleetError.invalidIssueReport("invalid severity: bogus")) {
+            try env.fleet.reportVehicleIssue(
+                vehicleId: vehicleId, reportedBy: env.adminUserId,
+                severity: "bogus", description: "anything"
+            )
+        }
+
+        // FK guard: missing vehicle rejected.
+        #expect(throws: FleetService.FleetError.vehicleNotFound(99_999)) {
+            try env.fleet.reportVehicleIssue(
+                vehicleId: 99_999, reportedBy: env.adminUserId,
+                severity: "low", description: "fake vehicle"
+            )
+        }
+
+        // FK guard: missing user rejected.
+        #expect(throws: FleetService.FleetError.userNotFound(99_999)) {
+            try env.fleet.reportVehicleIssue(
+                vehicleId: vehicleId, reportedBy: 99_999,
+                severity: "low", description: "fake reporter"
+            )
+        }
+
+        // FK guard: tombstoned vehicle rejected.
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE vehicles SET is_active = 0 WHERE id = ?", arguments: [vehicleId])
+        }
+        #expect(throws: FleetService.FleetError.vehicleNotFound(vehicleId)) {
+            try env.fleet.reportVehicleIssue(
+                vehicleId: vehicleId, reportedBy: env.adminUserId,
+                severity: "low", description: "issue on deactivated vehicle"
+            )
+        }
+    }
+
     @Test("listVehicles excludes is_active = 0 vehicles")
     func testListVehiclesExcludesInactive() throws {
         let env = try E2ETestHelpers.setUp()

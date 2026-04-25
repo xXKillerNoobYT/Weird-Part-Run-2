@@ -113,6 +113,7 @@ extension AppDatabase {
         registerMigration074ColorBrandSKUs(&migrator)
         registerMigration075CompanionFeedbackNullableSuggestionId(&migrator)
         registerMigration076StockMovementsCompositeIndex(&migrator)
+        registerMigration077VehicleIssueReports(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4941,6 +4942,24 @@ extension AppDatabase {
                 ON stock_movements (part_id, created_at, movement_type)
                 WHERE deleted_at IS NULL
                 """)
+        }
+    }
+
+    private static func registerMigration077VehicleIssueReports(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("077_vehicle_issue_reports") { db in
+            try db.create(table: "vehicle_issue_reports") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("vehicle_id", .integer).notNull().references("vehicles", onDelete: .cascade)
+                t.column("reported_by", .integer).notNull().references("users")
+                t.column("severity", .text).notNull()
+                t.column("description", .text).notNull()
+                t.column("status", .text).notNull().defaults(to: "open")
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_vehicle_issue_reports_vehicle", on: "vehicle_issue_reports", columns: ["vehicle_id"])
+            try db.create(index: "idx_vehicle_issue_reports_status", on: "vehicle_issue_reports", columns: ["status"])
         }
     }
 

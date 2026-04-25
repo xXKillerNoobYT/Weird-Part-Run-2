@@ -27,6 +27,7 @@ public final class FleetService: Sendable {
         case invalidQuantity(Int)
         case invalidFuelLevel(Double)
         case requiredFieldEmpty(String)
+        case invalidIssueReport(String)
     }
 
     // =========================================================================
@@ -1368,6 +1369,43 @@ public final class FleetService: Sendable {
                     """,
                 arguments: [fuelLevel, vehicleId]
             )
+        }
+    }
+
+    /// Allowed severity values for a reported vehicle issue.
+    public static let validIssueSeverities: Set<String> = ["low", "medium", "high", "critical"]
+
+    /// Record a user-reported vehicle issue. Routes to the `vehicle_issue_reports`
+    /// table for fleet-management triage. FK-guards both vehicle and reporter so
+    /// soft-deleted parents can't orphan the audit trail.
+    @discardableResult
+    public func reportVehicleIssue(
+        vehicleId: Int64,
+        reportedBy: Int64,
+        severity: String,
+        description: String
+    ) throws -> Int64 {
+        let trimmed = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw FleetError.invalidIssueReport("description cannot be empty") }
+        guard FleetService.validIssueSeverities.contains(severity) else {
+            throw FleetError.invalidIssueReport("invalid severity: \(severity)")
+        }
+        return try db.writer.write { dbConn -> Int64 in
+            let vehicleExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM vehicles WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [vehicleId]) ?? 0) > 0
+            guard vehicleExists else { throw FleetError.vehicleNotFound(vehicleId) }
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [reportedBy]) ?? 0) > 0
+            guard userExists else { throw FleetError.userNotFound(reportedBy) }
+
+            try dbConn.execute(sql: """
+                INSERT INTO vehicle_issue_reports
+                    (vehicle_id, reported_by, severity, description, status)
+                VALUES (?, ?, ?, ?, 'open')
+                """, arguments: [vehicleId, reportedBy, severity, trimmed])
+            return dbConn.lastInsertedRowID
         }
     }
 

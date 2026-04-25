@@ -404,12 +404,19 @@ struct IOSMyTruckPage: View {
             }
 
         case .reportIssue:
-            ReportVehicleIssueSheet(
-                vehicleName: vehicle?.vehicleName ?? "Vehicle",
-                onComplete: {
-                    activeSheet = nil
-                }
-            )
+            if let vid = vehicleStats?.vehicleId, vid > 0 {
+                ReportVehicleIssueSheet(
+                    vehicleId: vid,
+                    vehicleName: vehicle?.vehicleName ?? "Vehicle",
+                    onComplete: {
+                        activeSheet = nil
+                        loadData()
+                    }
+                )
+                .environmentObject(appCore)
+            } else {
+                ContentUnavailableView("No vehicle assigned", systemImage: "car.2", description: Text("Assign a vehicle before reporting an issue."))
+            }
 
         case .addTransferItem:
             if let vid = vehicleStats?.vehicleId, vid > 0 {
@@ -626,10 +633,14 @@ private struct LogFuelSheet: View {
 // MARK: - Report Vehicle Issue Sheet
 
 private struct ReportVehicleIssueSheet: View {
+    let vehicleId: Int64
     let vehicleName: String
     let onComplete: () -> Void
+    @EnvironmentObject private var appCore: AppCore
     @State private var description: String = ""
     @State private var severity: String = "low"
+    @State private var isSaving = false
+    @State private var saveError: String?
 
     var body: some View {
         NavigationStack {
@@ -653,6 +664,12 @@ private struct ReportVehicleIssueSheet: View {
                         .lineLimit(3...6)
                 }
 
+                if let error = saveError {
+                    Section {
+                        Text(error).foregroundStyle(.red)
+                    }
+                }
+
                 Section {
                     Text("This will be sent to fleet management for review.")
                         .font(.caption)
@@ -663,12 +680,39 @@ private struct ReportVehicleIssueSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onComplete() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Submit") { onComplete() }
-                        .disabled(description.isEmpty)
+                    Button("Submit") { submit() }
+                        .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
                 }
             }
+        }
+    }
+
+    private func submit() {
+        guard let service = appCore.fleetService else {
+            saveError = "Fleet service not available"
+            return
+        }
+        guard let userId = appCore.currentUser?.id else {
+            saveError = "You must be signed in to report an issue."
+            return
+        }
+        isSaving = true
+        saveError = nil
+        do {
+            _ = try service.reportVehicleIssue(
+                vehicleId: vehicleId,
+                reportedBy: userId,
+                severity: severity,
+                description: description
+            )
+            isSaving = false
+            onComplete()
+        } catch {
+            isSaving = false
+            saveError = userFriendlyError(error, context: "report vehicle issue")
         }
     }
 }
