@@ -233,27 +233,7 @@ struct IOSToolCheckoutsPage: View {
     // MARK: - Helpers
 
     private func formatDate(_ dateString: String) -> String {
-        // Try ISO datetime format first, fall back to showing raw string
-        let isoFormatter = DateFormatter()
-        isoFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        let displayFormatter = DateFormatter()
-        displayFormatter.dateStyle = .short
-
-        if let date = isoFormatter.date(from: dateString) {
-            return displayFormatter.string(from: date)
-        }
-
-        // Try SQLite datetime format
-        isoFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        if let date = isoFormatter.date(from: dateString) {
-            return displayFormatter.string(from: date)
-        }
-
-        // Fall back to first 10 chars (date portion)
-        if dateString.count >= 10 {
-            return String(dateString.prefix(10))
-        }
-        return dateString
+        Formatters.formatSQLiteDate(dateString)
     }
 
     private func isOverdue(_ dueDateString: String, returnedAt: String?) -> Bool {

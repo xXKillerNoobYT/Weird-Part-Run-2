@@ -198,22 +198,7 @@ struct IOSToolsDashboardPage: View {
     // MARK: - Helpers
 
     private func formatDate(_ dateString: String) -> String {
-        let isoFormatter = DateFormatter()
-        isoFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        let displayFormatter = DateFormatter()
-        displayFormatter.dateStyle = .short
-
-        if let date = isoFormatter.date(from: dateString) {
-            return displayFormatter.string(from: date)
-        }
-        isoFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        if let date = isoFormatter.date(from: dateString) {
-            return displayFormatter.string(from: date)
-        }
-        if dateString.count >= 10 {
-            return String(dateString.prefix(10))
-        }
-        return dateString
+        Formatters.formatSQLiteDate(dateString)
     }
 
     // MARK: - Data Loading

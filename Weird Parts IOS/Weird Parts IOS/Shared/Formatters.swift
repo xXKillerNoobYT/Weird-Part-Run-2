@@ -164,6 +164,18 @@ enum Formatters {
         return dateStr
     }
 
+    /// Parse an ISO/SQLite datetime string and reformat as a short date (e.g. "4/12/26").
+    /// Falls back to a 10-char truncation, then to the original string.
+    static func formatSQLiteDate(_ dateString: String) -> String {
+        if let date = localDateTimeFormatter.date(from: dateString) {
+            return shortDateDisplayFormatter.string(from: date)
+        }
+        if let date = sqlDateTimeFormatter.date(from: dateString) {
+            return shortDateDisplayFormatter.string(from: date)
+        }
+        return formatDateString(dateString)
+    }
+
     /// Format a `Date` as a short time string (e.g., "2:30 PM").
     static func formatTime(_ date: Date) -> String {
         timeFormatter.string(from: date)
