@@ -296,57 +296,6 @@ struct IOSFleetDashboardPage: View {
         .padding(.vertical, 10)
     }
 
-    // MARK: - Cost Summary Section (Hat-Gated)
-
-    @ViewBuilder
-    private var costSummarySection: some View {
-        if appCore.hasPermission("view_fleet_financials"), let stats = dashStats {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Cost Summary — This Month")
-                    .font(.headline)
-                    .padding(.horizontal, 4)
-
-                HStack(spacing: 12) {
-                    costSummaryCard(
-                        title: "Fuel",
-                        value: stats.fuelCostMTD ?? 0,
-                        icon: "fuelpump.fill",
-                        color: .orange
-                    )
-                    costSummaryCard(
-                        title: "Maintenance",
-                        value: stats.maintenanceCostMTD ?? 0,
-                        icon: "wrench.fill",
-                        color: .red
-                    )
-                }
-
-                Text("Detailed cost analysis available in Fleet Reports")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
-            }
-        }
-    }
-
-    private func costSummaryCard(title: String, value: Double, icon: String, color: Color) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon)
-                .foregroundStyle(color)
-                .accessibilityHidden(true)
-            Text(String(format: "$%.2f", value))
-                .font(.headline)
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .background(color.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .accessibilityElement(children: .combine)
-    }
-
     // MARK: - Upcoming Maintenance
 
     @ViewBuilder

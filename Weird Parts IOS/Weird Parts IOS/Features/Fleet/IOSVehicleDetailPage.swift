@@ -136,6 +136,7 @@ struct IOSVehicleDetailPage: View {
                             .foregroundStyle(selectedTab == tab ? .white : .primary)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
                 }
             }
             .padding(.horizontal)

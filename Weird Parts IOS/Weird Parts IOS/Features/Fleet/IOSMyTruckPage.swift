@@ -310,11 +310,6 @@ struct IOSMyTruckPage: View {
                             .font(.caption).foregroundStyle(.green)
                     }
                     Spacer()
-                    // Navigation to trailer detail (48C)
-                    Image(systemName: "chevron.right")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                        .accessibilityHidden(true)
                 }
             } header: {
                 Text("Trailer")
