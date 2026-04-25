@@ -756,6 +756,14 @@ public final class ToolsService: Sendable {
                 """, arguments: [toolId]) ?? 0) > 0
             guard exists else { return }
 
+            // Guard: user must exist and be active — tool_checkouts.checked_out_by and
+            // tool_change_log.changed_by both REFERENCE users but only enforce row existence,
+            // not soft-delete state. A tombstoned user would orphan both FK columns.
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [userId]) ?? 0) > 0
+            guard userExists else { throw ToolsError.userNotFound(userId) }
+
             // Update tool status + condition rating
             let conditionRating = Self.conditionToRating(condition)
             try dbConn.execute(sql: """
@@ -792,6 +800,14 @@ public final class ToolsService: Sendable {
                 SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [toolId]) ?? 0) > 0
             guard toolExists else { throw ToolsError.toolNotFound(toolId) }
+
+            // Guard: returning user must exist and be active — tool_checkouts.checked_in_by
+            // and tool_change_log.changed_by both REFERENCE users but only enforce row
+            // existence; a tombstoned user would orphan both FK columns.
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [userId]) ?? 0) > 0
+            guard userExists else { throw ToolsError.userNotFound(userId) }
 
             let conditionRating = Self.conditionToRating(condition)
             try dbConn.execute(sql: """
@@ -1420,6 +1436,14 @@ public final class ToolsService: Sendable {
                 SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [toolId]) ?? 0) > 0
             guard exists else { return 0 }
+
+            // Guard: performer must exist and be active — tool_maintenance_records.performed_by
+            // REFERENCES users but only enforces row existence, not soft-delete/active state.
+            // A tombstoned or deactivated user would create an orphan FK and taint audit trails.
+            let performerExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [performedBy]) ?? 0) > 0
+            guard performerExists else { throw ToolsError.userNotFound(performedBy) }
 
             // Ensure a default maintenance type exists for the FK constraint
             let typeCount = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM tool_maintenance_types") ?? 0

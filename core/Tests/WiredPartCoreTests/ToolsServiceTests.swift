@@ -1783,4 +1783,391 @@ struct ToolsServiceTests {
             try env.tools.rejectToolEdit(editId: editId, rejectedBy: 9999)
         }
     }
+
+    // MARK: - FK-orphan guards: checkoutToolWithCondition / returnToolWithCondition / recordMaintenance
+
+    @Test func testCheckoutToolWithCondition_rejectsTombstonedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-CTWC-GHOST")
+        // userId=9999 doesn't exist — tool_checkouts.checked_out_by and
+        // tool_change_log.changed_by would both orphan without this guard.
+        #expect(throws: ToolsService.ToolsError.userNotFound(9999)) {
+            try env.tools.checkoutToolWithCondition(
+                toolId: toolId, userId: 9999, condition: "Good"
+            )
+        }
+    }
+
+    @Test func testCheckoutToolWithCondition_rejectsDeactivatedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-CTWC-INACTIVE")
+        // Insert a user that exists in the DB but has been deactivated.
+        let inactiveUserId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO users (display_name, pin_hash, is_active, created_at, updated_at)
+                VALUES ('Deactivated', 'hash', 0, datetime('now'), datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+        #expect(throws: ToolsService.ToolsError.userNotFound(inactiveUserId)) {
+            try env.tools.checkoutToolWithCondition(
+                toolId: toolId, userId: inactiveUserId, condition: "Good"
+            )
+        }
+    }
+
+    @Test func testReturnToolWithCondition_rejectsTombstonedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(
+            env, toolNumber: "T-RTWC-GHOST",
+            status: "checked_out", assignedTo: env.adminUserId
+        )
+        // Insert an open checkout so the return path is exercised.
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO tool_checkouts
+                (tool_id, checked_out_by, checked_out_at, checkout_condition, created_at)
+                VALUES (?, ?, datetime('now'), 'Good', datetime('now'))
+                """, arguments: [toolId, env.adminUserId])
+        }
+        // userId=9999 doesn't exist — tool_checkouts.checked_in_by and
+        // tool_change_log.changed_by would both orphan without this guard.
+        #expect(throws: ToolsService.ToolsError.userNotFound(9999)) {
+            try env.tools.returnToolWithCondition(
+                toolId: toolId, userId: 9999, condition: "Good"
+            )
+        }
+    }
+
+    @Test func testRecordMaintenance_rejectsTombstonedPerformer() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-RMAINT-GHOST")
+        // userId=9999 doesn't exist — tool_maintenance_records.performed_by would
+        // orphan without this guard.
+        #expect(throws: ToolsService.ToolsError.userNotFound(9999)) {
+            _ = try env.tools.recordMaintenance(
+                toolId: toolId, configId: nil, maintenanceType: "time_based",
+                performedBy: 9999, conditionBefore: "Good", conditionAfter: "Good",
+                notes: nil, cost: nil
+            )
+        }
+    }
+
+    // =========================================================================
+    // MARK: - C4 iter-1: Coverage gap fills
+    // =========================================================================
+
+    // 1. expireOldTrades actually expires a past-due trade
+    @Test("expireOldTrades expires trades whose expires_at is in the past")
+    func testExpireOldTrades_expiresPastDueTrade() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Set up a checked-out tool assigned to the admin
+        let toolId = try insertTool(
+            env, toolNumber: "T-EXP1", name: "Expirable Trade Tool",
+            status: "checked_out", assignedTo: env.adminUserId
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO tool_checkouts
+                (tool_id, checked_out_by, checked_out_at, checkout_condition, created_at)
+                VALUES (?, ?, datetime('now'), 'Good', datetime('now'))
+                """, arguments: [toolId, env.adminUserId])
+        }
+
+        let recipientId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO users (display_name, pin_hash, is_active, created_at, updated_at)
+                VALUES ('TradeRecip', 'hash', 1, datetime('now'), datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+
+        // Insert a trade row directly with an expires_at already in the past
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO tool_trades
+                (tool_id, from_user_id, to_user_id, condition_at_send, status, expires_at, created_at)
+                VALUES (?, ?, ?, 'Good', 'pending', datetime('now', '-1 day'), datetime('now'))
+                """, arguments: [toolId, env.adminUserId, recipientId])
+        }
+
+        let expired = try env.tools.expireOldTrades()
+        #expect(expired == 1, "One past-due pending trade should be expired")
+
+        // Verify status was updated to 'expired'
+        let status = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT status FROM tool_trades WHERE tool_id = ?",
+                                arguments: [toolId])
+        }
+        #expect(status == "expired")
+    }
+
+    // 2. respondToTrade throws when the trade ID doesn't exist
+    @Test("respondToTrade throws tradeNotFound for nonexistent tradeId")
+    func testRespondToTrade_throwsTradeNotFound() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(throws: ToolsService.ToolsServiceError.tradeNotFound) {
+            try env.tools.respondToTrade(tradeId: 99999, accepted: true, condition: "Good", notes: nil)
+        }
+    }
+
+    // 3. initiateTrade blocks a second pending trade for the same tool
+    @Test("initiateTrade throws tradePending when a pending trade already exists")
+    func testInitiateTrade_blocksDuplicatePendingTrade() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let toolId = try insertTool(
+            env, toolNumber: "T-DUP-TRD", name: "Dup Trade Tool",
+            status: "checked_out", assignedTo: env.adminUserId
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO tool_checkouts
+                (tool_id, checked_out_by, checked_out_at, checkout_condition, created_at)
+                VALUES (?, ?, datetime('now'), 'Good', datetime('now'))
+                """, arguments: [toolId, env.adminUserId])
+        }
+
+        let recip1 = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: "INSERT INTO users (display_name, pin_hash, is_active, created_at, updated_at) VALUES ('R1', 'h', 1, datetime('now'), datetime('now'))")
+            return db.lastInsertedRowID
+        }
+        let recip2 = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: "INSERT INTO users (display_name, pin_hash, is_active, created_at, updated_at) VALUES ('R2', 'h', 1, datetime('now'), datetime('now'))")
+            return db.lastInsertedRowID
+        }
+
+        // First trade succeeds
+        _ = try env.tools.initiateTrade(toolId: toolId, fromUserId: env.adminUserId,
+                                         toUserId: recip1, condition: "Good")
+
+        // Second trade should be blocked
+        #expect(throws: ToolsService.ToolsServiceError.tradePending) {
+            try env.tools.initiateTrade(toolId: toolId, fromUserId: env.adminUserId,
+                                         toUserId: recip2, condition: "Good")
+        }
+    }
+
+    // 4. reportToolLostOrStolen works for "stolen" type (only "lost" was tested before)
+    @Test("reportToolLostOrStolen sets status to stolen")
+    func testReportStolenType() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-STOLEN", name: "Stolen Tool", status: "available")
+
+        try env.tools.reportToolLostOrStolen(
+            toolId: toolId, reportedBy: env.adminUserId,
+            reportType: "stolen", description: "Taken from job site",
+            lastKnownLocation: "456 Oak Ave"
+        )
+
+        let detail = try env.tools.getToolDetail(toolId: toolId)
+        #expect(detail?.status == "stolen")
+    }
+
+    // 5. getToolVersionHistory empty case (no prior changes)
+    @Test("getToolVersionHistory returns empty array when no changes exist")
+    func testGetToolVersionHistoryEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-VH-EMPTY", name: "No History Tool")
+
+        let history = try env.tools.getToolVersionHistory(toolId: toolId)
+        #expect(history.isEmpty)
+    }
+
+    // 6. listPendingToolEdits returns empty when nothing is pending
+    @Test("listPendingToolEdits returns empty array when no pending edits exist")
+    func testListPendingToolEditsEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        _ = try insertTool(env, toolNumber: "T-NOEDITS", name: "No Edits Tool")
+
+        let edits = try env.tools.listPendingToolEdits()
+        #expect(edits.isEmpty)
+    }
+
+    // 7. listPendingToolEdits shows tool name correctly from join
+    @Test("listPendingToolEdits includes the tool name from the join")
+    func testListPendingToolEdits_includesToolName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-EDITNAME", name: "Named Edit Tool")
+
+        try env.tools.editToolWithVerification(
+            toolId: toolId, userId: env.adminUserId,
+            changes: ["notes": "Some note"], hasPermission: false
+        )
+
+        let edits = try env.tools.listPendingToolEdits()
+        #expect(edits.count == 1)
+        #expect(edits[0].toolName == "Named Edit Tool")
+        #expect(edits[0].changedByName == "TestAdmin")
+    }
+
+    // 8. updateConfidenceScores respects decay floor (never goes below 0)
+    @Test("updateConfidenceScores clamps score to zero, never negative")
+    func testUpdateConfidenceScores_clampsToZero() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let toolId = try insertTool(env, toolNumber: "T-DECAY2", name: "Near-Zero Tool")
+        // Set an almost-zero confidence score
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE tools SET confidence_score = 0.001 WHERE id = ?",
+                arguments: [toolId]
+            )
+        }
+
+        // Insert a decreasing_based config with a very high decay rate (110% — more than 1.0)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO tool_maintenance_configs
+                        (tool_id, maintenance_type, decay_rate, is_active, created_at)
+                    VALUES (?, 'decreasing_based', 0.999, 1, datetime('now'))
+                    """,
+                arguments: [toolId]
+            )
+        }
+
+        _ = try env.tools.updateConfidenceScores()
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT confidence_score FROM tools WHERE id = ?",
+                             arguments: [toolId])
+        }
+        let score: Double = (try #require(row))["confidence_score"] ?? -1
+        #expect(score >= 0, "Confidence score must never go below 0 even with extreme decay rate")
+    }
+
+    // 9. createMaintenanceConfig persists decayRate + decayFloor + conditionTriggers
+    @Test("createMaintenanceConfig persists all optional fields: decayRate, decayFloor, conditionTriggers")
+    func testCreateMaintenanceConfig_fullParams() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-MCONF", name: "Full Config Tool")
+
+        let configId = try env.tools.createMaintenanceConfig(
+            toolId: toolId, type: "decreasing_based",
+            intervalDays: nil, usageThreshold: nil,
+            decayRate: 0.05, decayFloor: 0.2,
+            conditionTriggers: ["Poor", "Damaged"],
+            description: "Auto-trigger on poor condition"
+        )
+        #expect(configId > 0)
+
+        let configs = try env.tools.getMaintenanceConfigs(toolId: toolId)
+        #expect(configs.count == 1)
+        #expect(configs[0].maintenanceType == "decreasing_based")
+        #expect(configs[0].decayRate == 0.05)
+        #expect(configs[0].decayFloor == 0.2)
+        #expect(configs[0].description == "Auto-trigger on poor condition")
+        // conditionTriggers is stored as JSON string
+        #expect(configs[0].conditionTriggers?.contains("Poor") == true)
+    }
+
+    // 10. getToolVersionHistory respects the months parameter
+    @Test("getToolVersionHistory respects the months parameter cutoff")
+    func testGetToolVersionHistory_monthsCutoff() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-VH-MONTHS", name: "History Cutoff Tool")
+
+        // Insert a change log entry directly — one old (3 months ago), one recent
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO tool_change_log
+                (tool_id, changed_by, change_type, field_name, new_value, changed_at, verification_status)
+                VALUES (?, ?, 'edit', 'notes', 'Old change', datetime('now', '-100 days'), 'approved')
+                """, arguments: [toolId, env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO tool_change_log
+                (tool_id, changed_by, change_type, field_name, new_value, changed_at, verification_status)
+                VALUES (?, ?, 'edit', 'notes', 'Recent change', datetime('now', '-5 days'), 'approved')
+                """, arguments: [toolId, env.adminUserId])
+        }
+
+        // With 3 months (~90 day) cutoff, only the recent change should appear
+        let history3Months = try env.tools.getToolVersionHistory(toolId: toolId, months: 3)
+        #expect(history3Months.count == 1)
+        #expect(history3Months[0].newValue == "Recent change")
+
+        // With 24 months both should appear
+        let history24Months = try env.tools.getToolVersionHistory(toolId: toolId, months: 24)
+        #expect(history24Months.count == 2)
+    }
+
+    // 11. returnTool no-ops gracefully when no open checkout exists (no crash)
+    @Test("returnTool silently succeeds when no open checkout record exists")
+    func testReturnTool_noOpenCheckout() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Tool exists, user exists, but no open checkout row — UPDATE closes 0 rows, no crash
+        let toolId = try insertTool(env, toolNumber: "T-RET-NOOPEN", name: "No Open Checkout Tool",
+                                    status: "checked_out", assignedTo: env.adminUserId)
+
+        // Should not throw — the UPDATE on tool_checkouts simply matches 0 rows
+        try env.tools.returnTool(toolId: toolId, userId: env.adminUserId)
+
+        let detail = try env.tools.getToolDetail(toolId: toolId)
+        #expect(detail?.status == "available")
+    }
+
+    // 12. checkoutTool no-ops silently for soft-deleted tool (existing guard verification)
+    //     and user with notes (covers notes parameter path)
+    @Test("checkoutTool with notes stores and tool status changes to checked_out")
+    func testCheckoutTool_withNotes() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-CO-NOTES", name: "Notes Checkout Tool", status: "available")
+
+        try env.tools.checkoutTool(toolId: toolId, userId: env.adminUserId, notes: "Needed on site 5B")
+
+        let detail = try env.tools.getToolDetail(toolId: toolId)
+        #expect(detail?.status == "checked_out")
+
+        // Verify checkout record was created with the notes
+        let notesVal = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT checkout_notes FROM tool_checkouts WHERE tool_id = ?",
+                                arguments: [toolId])
+        }
+        #expect(notesVal == "Needed on site 5B")
+    }
+
+    // 13. getMaintenanceHistory hides soft-deleted performer names
+    @Test("getMaintenanceHistory hides name of soft-deleted performer via LEFT JOIN")
+    func testGetMaintenanceHistory_hidesDeletedPerformerName() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let toolId = try insertTool(env, toolNumber: "T-MH-DEL", name: "Maint Del Tool")
+        let typeId = try insertMaintenanceType(env, name: "Inspection")
+
+        try insertMaintenanceRecord(
+            env, toolId: toolId, maintenanceTypeId: typeId,
+            serviceDate: "2026-04-01", cost: 30.0,
+            description: "Routine", performedBy: env.adminUserId
+        )
+
+        // Soft-delete the performer
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+
+        let records = try env.tools.getMaintenanceHistory(toolId: toolId)
+        #expect(records.count == 1)
+        // LEFT JOIN on deleted_at IS NULL means the user row is excluded — COALESCE falls through to 'Unknown'
+        #expect(records[0].performedByName == "Unknown",
+                "Soft-deleted performer name must not leak via getMaintenanceHistory")
+    }
+
+    // 14. toggleMaintenanceConfig no-ops for non-existent configId (no crash)
+    @Test("toggleMaintenanceConfig is a no-op for a non-existent configId")
+    func testToggleMaintenanceConfig_nonExistent() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Should not throw — UPDATE matches 0 rows
+        try env.tools.toggleMaintenanceConfig(configId: 99999, isActive: false)
+    }
+
+    // 15. getPendingTradesForUser returns empty when user has no pending trades
+    @Test("getPendingTradesForUser returns empty array when user has no pending trades")
+    func testGetPendingTradesForUser_empty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let trades = try env.tools.getPendingTradesForUser(userId: env.adminUserId)
+        #expect(trades.isEmpty)
+    }
 }

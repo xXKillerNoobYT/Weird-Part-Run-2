@@ -109,3 +109,6 @@ Self-improvements are applied autonomously for safe changes (reordering, enablin
 
 **🎉 ALL 14 AREAS GRADUATED IN FIRST ROTATION** — parts → jobs → warehouse → scheduling → orders → people → tools → vehicles → inventory → reports → notebooks → chat → settings → cross-cutting. Loop now begins round-2 validation pass starting at parts again. Total iterations: ~58 over 3 days (2026-04-18 through 2026-04-20).
 | 2026-04-23 | 1 (day1) | tools | C1b | done | 1 doc error (31→30 methods); 3 ?? 0 anti-pattern fixes in orders callers | 3 | 0 | ~15min | github-issues-sync |
+| 2026-04-24 | 1 (day1) | tools | C2+C2b | done | 0 pending Q&A for tools; 1 open issue (#58 parent tracker) | 0 | 0 | ~2min | none (deferred github-sync, recommender past window) |
+| 2026-04-24 | 2 | tools | C3 | done | 3 FK-orphan gaps (ToolsService checkout/return/maintenance) — Sonnet sub-agent scan | 3 | 4 | ~8min | none |
+| 2026-04-24 | 3 | tools | C4 | done | 0 missing-method gaps (30/30 covered before); 15 edge-case gaps filled | 0 | 15 | ~14min | github-issues-sync (4h+ pulse, 0 new) |
