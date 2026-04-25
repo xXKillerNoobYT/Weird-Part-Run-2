@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import CryptoKit
 
 /// Local Settings Service — theme, app configuration, company profiles, billing/pay cycles.
 ///
@@ -749,8 +750,14 @@ public final class SettingsService: Sendable {
     /// Load wizard draft (returns nil if no draft has been started).
     public func loadSetupDraft() throws -> CompanySetupDraft? {
         try db.writer.read { dbConnection in
-            try Row.fetchOne(dbConnection, sql: "SELECT * FROM company_setup_draft LIMIT 1")
-                .map { CompanySetupDraft(row: $0) }
+            guard let row = try Row.fetchOne(dbConnection, sql: "SELECT * FROM company_setup_draft LIMIT 1") else {
+                return nil
+            }
+            var draft = CompanySetupDraft(row: row)
+            if !draft.email.isEmpty {
+                draft.email = try decryptString(draft.email)
+            }
+            return draft
         }
     }
 
@@ -760,6 +767,7 @@ public final class SettingsService: Sendable {
             .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
         let skippedJSON = (try? JSONEncoder().encode(draft.skippedSteps))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        let encryptedEmail = try encryptString(draft.email)
 
         try db.writer.write { dbConnection in
             // Delete any existing row then insert fresh — simple single-row upsert
@@ -775,7 +783,7 @@ public final class SettingsService: Sendable {
                 draft.name,
                 draft.address,
                 draft.phone,
-                draft.email,
+                encryptedEmail,
                 draft.selectedState
             ])
         }
@@ -797,6 +805,40 @@ public final class SettingsService: Sendable {
     }
 
     // MARK: - Helpers
+
+    private enum CryptoError: Error {
+        case invalidCipherText
+        case invalidPlainTextEncoding
+    }
+
+    private func settingsEncryptionKey() -> SymmetricKey {
+        // TODO: Replace with a stable key loaded from Keychain.
+        // This placeholder keeps encryption logic localized for immediate at-rest protection work.
+        let keyData = Data("wiredpart-settings-email-key-32bytes".utf8).prefix(32)
+        return SymmetricKey(data: keyData)
+    }
+
+    private func encryptString(_ plaintext: String) throws -> String {
+        let key = settingsEncryptionKey()
+        let sealedBox = try AES.GCM.seal(Data(plaintext.utf8), using: key)
+        guard let combined = sealedBox.combined else {
+            throw CryptoError.invalidCipherText
+        }
+        return combined.base64EncodedString()
+    }
+
+    private func decryptString(_ cipherTextBase64: String) throws -> String {
+        let key = settingsEncryptionKey()
+        guard let combined = Data(base64Encoded: cipherTextBase64) else {
+            throw CryptoError.invalidCipherText
+        }
+        let sealedBox = try AES.GCM.SealedBox(combined: combined)
+        let decrypted = try AES.GCM.open(sealedBox, using: key)
+        guard let plaintext = String(data: decrypted, encoding: .utf8) else {
+            throw CryptoError.invalidPlainTextEncoding
+        }
+        return plaintext
+    }
 
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
