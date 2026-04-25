@@ -667,6 +667,8 @@ public final class AuthService: Sendable {
             throw AuthError.invalidPin("PIN must be 4–8 digits")
         }
 
+        let encryptedEmail = try Self.encryptSensitiveOptional(email)
+        let encryptedPhone = try Self.encryptSensitiveOptional(phone)
         let salt = Self.generateSalt()
         let pinHash = Self.hashPin(pin, salt: salt)
         let now = Self.currentTimestamp()
@@ -676,13 +678,73 @@ public final class AuthService: Sendable {
                     INSERT INTO users (display_name, pin_hash, pin_salt, email, phone, is_active, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, 1, ?, ?)
                     """,
-                arguments: [displayName, pinHash, salt, email, phone, now, now]
+                arguments: [displayName, pinHash, salt, encryptedEmail, encryptedPhone, now, now]
             )
             return dbConn.lastInsertedRowID
         }
     }
 
     // MARK: - Internal Helpers
+
+    private static let piiKeychainService = "com.wiredpart.core.authservice.pii"
+    private static let piiKeychainAccount = "local-db-aes-gcm-key-v1"
+
+    private static func encryptionKey() throws -> SymmetricKey {
+        try loadOrCreateEncryptionKey()
+    }
+
+    private static func encryptSensitiveOptional(_ value: String?) throws -> String? {
+        guard let value else { return nil }
+        let key = try encryptionKey()
+        let sealedBox = try AES.GCM.seal(Data(value.utf8), using: key)
+        guard let combined = sealedBox.combined else {
+            throw AuthError.invalidCredentials
+        }
+        return combined.base64EncodedString()
+    }
+
+    private static func loadOrCreateEncryptionKey() throws -> SymmetricKey {
+        if let existing = try readKeychainData(service: piiKeychainService, account: piiKeychainAccount) {
+            return SymmetricKey(data: existing)
+        }
+
+        let newKey = SymmetricKey(size: .bits256)
+        let keyData = newKey.withUnsafeBytes { Data($0) }
+        try writeKeychainData(keyData, service: piiKeychainService, account: piiKeychainAccount)
+        return newKey
+    }
+
+    private static func readKeychainData(service: String, account: String) throws -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = item as? Data else {
+            throw AuthError.invalidCredentials
+        }
+        return data
+    }
+
+    private static func writeKeychainData(_ data: Data, service: String, account: String) throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        ]
+        let status = SecItemAdd(query as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw AuthError.invalidCredentials
+        }
+    }
 
     /// Verify a PIN against a stored hash.
     /// Supports both legacy (fixed salt) and new (per-user salt + key stretching) formats.
