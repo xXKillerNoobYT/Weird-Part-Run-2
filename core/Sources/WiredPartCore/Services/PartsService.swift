@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import CryptoKit
 
 /// Parts & Inventory Service — full CRUD for the parts hierarchy, catalog,
 /// brands, suppliers, pricing, stock, forecasting, companions, and alternatives.
@@ -11,9 +12,54 @@ import GRDB
 /// Ported from: Parts & Inventory feature area (Phases 2, 2.5, 3.5, 16)
 public final class PartsService: Sendable {
     private let db: AppDatabase
+    private static let supplierEmailEncryptionKeyEnvVar = "WIREDPART_EMAIL_ENCRYPTION_KEY_B64"
 
     public init(db: AppDatabase) {
         self.db = db
+    }
+
+    private func loadSupplierEmailEncryptionKey() throws -> SymmetricKey {
+        let env = ProcessInfo.processInfo.environment
+        guard let b64 = env[Self.supplierEmailEncryptionKeyEnvVar],
+              let keyData = Data(base64Encoded: b64),
+              keyData.count == 32 else {
+            throw NSError(
+                domain: "PartsService.Security",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Missing or invalid supplier email encryption key."]
+            )
+        }
+        return SymmetricKey(data: keyData)
+    }
+
+    private func encryptSupplierEmail(_ email: String?) throws -> String? {
+        guard let email, !email.isEmpty else { return email }
+        let key = try loadSupplierEmailEncryptionKey()
+        let sealedBox = try AES.GCM.seal(Data(email.utf8), using: key)
+        guard let combined = sealedBox.combined else {
+            throw NSError(
+                domain: "PartsService.Security",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to produce encrypted payload for supplier email."]
+            )
+        }
+        return combined.base64EncodedString()
+    }
+
+    private func decryptSupplierEmail(_ storedValue: String?) -> String? {
+        guard let storedValue, !storedValue.isEmpty else { return storedValue }
+        do {
+            let key = try loadSupplierEmailEncryptionKey()
+            guard let encryptedData = Data(base64Encoded: storedValue) else {
+                return storedValue
+            }
+            let sealedBox = try AES.GCM.SealedBox(combined: encryptedData)
+            let decrypted = try AES.GCM.open(sealedBox, using: key)
+            return String(data: decrypted, encoding: .utf8) ?? storedValue
+        } catch {
+            // Backward compatibility for legacy cleartext rows or unavailable key.
+            return storedValue
+        }
     }
 
     // MARK: - Result Types
@@ -6016,7 +6062,7 @@ public final class PartsService: Sendable {
                     lastName: row["last_name"] ?? "",
                     role: row["role"],
                     phone: row["phone"],
-                    email: row["email"],
+                    email: decryptSupplierEmail(row["email"]),
                     isPrimary: row["is_primary"] ?? 0
                 )
             }
@@ -6041,10 +6087,11 @@ public final class PartsService: Sendable {
                     WHERE entity_type = 'supplier' AND entity_id = ? AND deleted_at IS NULL
                     """, arguments: [supplierId])
             }
+            let encryptedEmail = try encryptSupplierEmail(email)
             try dbConn.execute(sql: """
                 INSERT INTO entity_contacts (entity_type, entity_id, first_name, last_name, role, phone, email, is_primary, created_at)
                 VALUES ('supplier', ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                """, arguments: [supplierId, firstName, lastName, role ?? "", phone ?? "", email, isPrimary ? 1 : 0])
+                """, arguments: [supplierId, firstName, lastName, role ?? "", phone ?? "", encryptedEmail, isPrimary ? 1 : 0])
         }
     }
 
