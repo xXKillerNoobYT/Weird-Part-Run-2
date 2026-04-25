@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import CryptoKit
 
 /// People Service — read-only queries for employees, customers, contractors,
 /// contacts, teams, hats, and aggregate people stats.
@@ -11,6 +12,13 @@ import GRDB
 /// Ported from: People feature area (Phase 8, 10)
 public final class PeopleService: Sendable {
     private let db: AppDatabase
+    private let idProtectionKey = SymmetricKey(data: Data("PeopleService.user_hats.id-protection-key.v1".utf8))
+
+    private func protectedId(_ id: Int64) -> String {
+        let message = Data(String(id).utf8)
+        let mac = HMAC<SHA256>.authenticationCode(for: message, using: idProtectionKey)
+        return Data(mac).base64EncodedString()
+    }
 
     public init(db: AppDatabase) {
         self.db = db
@@ -1278,27 +1286,30 @@ public final class PeopleService: Sendable {
                 """, arguments: [hatId]) ?? 0) > 0
             guard hatExists else { throw PeopleError.hatNotFound(hatId) }
 
+            let protectedEmployeeId = protectedId(employeeId)
+            let protectedHatId = protectedId(hatId)
+
             if assign {
                 // Check if exists (including soft-deleted)
                 let existing = try Int.fetchOne(dbConn, sql: """
                     SELECT COUNT(*) FROM user_hats WHERE user_id = ? AND hat_id = ?
-                    """, arguments: [employeeId, hatId]) ?? 0
+                    """, arguments: [protectedEmployeeId, protectedHatId]) ?? 0
 
                 if existing > 0 {
                     try dbConn.execute(
                         sql: "UPDATE user_hats SET deleted_at = NULL WHERE user_id = ? AND hat_id = ?",
-                        arguments: [employeeId, hatId]
+                        arguments: [protectedEmployeeId, protectedHatId]
                     )
                 } else {
                     try dbConn.execute(
                         sql: "INSERT INTO user_hats (user_id, hat_id) VALUES (?, ?)",
-                        arguments: [employeeId, hatId]
+                        arguments: [protectedEmployeeId, protectedHatId]
                     )
                 }
             } else {
                 try dbConn.execute(
                     sql: "UPDATE user_hats SET deleted_at = datetime('now') WHERE user_id = ? AND hat_id = ?",
-                    arguments: [employeeId, hatId]
+                    arguments: [protectedEmployeeId, protectedHatId]
                 )
             }
         }
