@@ -282,11 +282,21 @@ struct IOSToolRegistryPage: View {
                 search: searchText.isEmpty ? nil : searchText,
                 status: statusFilter == "all" ? nil : statusFilter
             )
-            // Load status counts for SmartFilterCard
+            // Populate status counts for SmartFilterCard.
+            // When no filter is active the current `tools` result is already the full
+            // unfiltered set — derive counts from it to avoid a second DB round-trip.
+            // When a filter IS active we still need a separate full fetch for accurate
+            // badge counts, but that only happens after the user taps a filter pill, not
+            // on the initial page load (which is the hot path).
             if statusCounts.isEmpty {
-                let allTools = try service.listTools(search: nil, status: nil)
+                let sourceForCounts: [ToolsService.ToolListItem]
+                if searchText.isEmpty && statusFilter == "all" {
+                    sourceForCounts = tools // re-use the result we already have
+                } else {
+                    sourceForCounts = try service.listTools(search: nil, status: nil)
+                }
                 var counts: [String: Int] = [:]
-                for tool in allTools {
+                for tool in sourceForCounts {
                     counts[tool.status, default: 0] += 1
                 }
                 statusCounts = counts

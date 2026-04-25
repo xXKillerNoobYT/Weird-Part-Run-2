@@ -2,6 +2,42 @@
 
 > Auto-maintained by `performance-review` SKILL.md body (invoked via `/auto-go` C9 check).
 
+---
+
+## 2026-04-24 — Tools area (AUTO GO R4 iter C9)
+
+**Files scanned (10 files):**
+- `core/Sources/WiredPartCore/Services/ToolsService.swift` (1 731 lines)
+- `Weird Parts IOS/.../Features/Tools/` — 8 iOS pages
+
+### Phase results
+
+- **P1 — N+1 queries:** ✅ CLEAN — all list queries use JOIN/IN. One N+1-adjacent pattern found (double `listTools` in `IOSToolRegistryPage.loadData`) — **fixed inline** (High).
+- **P2 — Missing indexes:** FINDING — `tool_movements` has no indexes at all (`tool_id`, `movement_type` unindexed). Filed as #273 (Medium).
+- **P3 — SELECT * / over-fetching:** FINDING — `IOSToolsDashboardPage` fetches all checkout history with no LIMIT for a ~10-row display. Filed as #274 (Low). `getToolDetail` uses `SELECT t.*` on a single-row `WHERE id = ?` lookup — acceptable.
+- **P4 — Repeated DateFormatter:** Already tracked — issue #270 covers duplicate `formatDate()` helpers across tools pages. Not re-filed.
+- **P5 — Sync on main thread:** Already tracked — issue #269. Not re-filed.
+- **P6 — Large in-memory collections:** ✅ CLEAN — all large lists use SwiftUI `List` (virtualized). `ForEach` only used for small fixed sets (kit contents ≤ ~20 items, version history prefixed to 5).
+- **P7 — Redundant computation:** ✅ CLEAN — `filteredTools` / `filteredCheckouts` computed properties are simple single-pass `.filter()`.
+- **P8 — Correlated subquery:** FINDING — `getToolsStats()` `checkedOut` count uses `NOT EXISTS` correlated subquery on unindexed `tool_movements`. Filed as #273 (Medium).
+
+### Fixes applied inline
+
+| File:line | What |
+|---|---|
+| `Weird Parts IOS/.../Tools/IOSToolRegistryPage.swift:281` | Initial load no longer issues two `listTools` calls — counts derived from first result when no filter is active (High: P1-adjacent double-fetch on every page open) |
+
+### Issues filed
+
+| # | Title | Severity |
+|---|---|---|
+| #273 | `getToolsStats` O(n²) correlated NOT EXISTS + missing `tool_movements` indexes | Medium |
+| #274 | `IOSToolsDashboardPage` loads all checkouts unbounded (no LIMIT) | Low |
+
+**Status:** PASS — no Critical or High remain after inline fix.
+
+---
+
 ## Bundle Size Baseline
 
 *(Not yet measured — Tauri frontend bundle; pending first clean-run baseline.)*
