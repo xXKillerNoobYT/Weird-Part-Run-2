@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import CryptoKit
 
 /// People Service — read-only queries for employees, customers, contractors,
 /// contacts, teams, hats, and aggregate people stats.
@@ -11,9 +12,20 @@ import GRDB
 /// Ported from: People feature area (Phase 8, 10)
 public final class PeopleService: Sendable {
     private let db: AppDatabase
+    private let encryptionKey: SymmetricKey
 
-    public init(db: AppDatabase) {
+    public init(db: AppDatabase, encryptionKey: SymmetricKey = SymmetricKey(size: .bits256)) {
         self.db = db
+        self.encryptionKey = encryptionKey
+    }
+
+    private func encryptSensitive(_ value: String?) throws -> String? {
+        guard let value else { return nil }
+        let sealedBox = try AES.GCM.seal(Data(value.utf8), using: encryptionKey)
+        guard let combined = sealedBox.combined else {
+            throw PeopleError.requiredFieldEmpty("email")
+        }
+        return combined.base64EncodedString()
     }
 
     // =========================================================================
@@ -929,13 +941,14 @@ public final class PeopleService: Sendable {
         guard !companyName.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw PeopleError.requiredFieldEmpty("companyName")
         }
+        let encryptedEmail = try encryptSensitive(email)
         return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO general_contractors (company_name, contact_name, email, phone, notes)
                     VALUES (?, ?, ?, ?, ?)
                     """,
-                arguments: [companyName, contactName, email, phone, notes]
+                arguments: [companyName, contactName, encryptedEmail, phone, notes]
             )
             return dbConn.lastInsertedRowID
         }
