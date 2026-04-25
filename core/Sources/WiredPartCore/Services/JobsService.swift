@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import CryptoKit
 
 /// Jobs & Labor Service — full CRUD for jobs, labor/clock in-out, questionnaires,
 /// one-time questions, daily reports, team members, job parts, and dashboard KPIs.
@@ -12,8 +13,20 @@ import GRDB
 public final class JobsService: Sendable {
     private let db: AppDatabase
 
+    // NOTE: Replace with secure key management (e.g., Keychain-provisioned key).
+    // This placeholder keeps the fix self-contained in this file.
+    private let billingRateEncryptionKey = SymmetricKey(size: .bits256)
+
     public init(db: AppDatabase) {
         self.db = db
+    }
+
+    private func encryptSensitiveDouble(_ value: Double?) throws -> String? {
+        guard let value else { return nil }
+        let plaintext = String(value)
+        let sealedBox = try AES.GCM.seal(Data(plaintext.utf8), using: billingRateEncryptionKey)
+        guard let combined = sealedBox.combined else { return nil }
+        return combined.base64EncodedString()
     }
 
     // =========================================================================
@@ -539,6 +552,7 @@ public final class JobsService: Sendable {
     ) throws -> Int64 {
         guard !jobName.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
         guard !jobNumber.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
+        let encryptedBillingRate = try encryptSensitiveDouble(billingRate)
         return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
@@ -559,7 +573,7 @@ public final class JobsService: Sendable {
                     jobNumber, jobName, customerName,
                     addressLine1, addressLine2, city, state, zip,
                     gpsLat, gpsLng, status, priority, jobType,
-                    billRateTypeId, billingRate, estimatedHours,
+                    billRateTypeId, encryptedBillingRate, estimatedHours,
                     leadUserId, onCallType,
                     warrantyStartDate, warrantyEndDate,
                     startDate, dueDate, notes,
