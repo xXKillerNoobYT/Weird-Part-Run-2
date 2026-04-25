@@ -114,3 +114,4 @@ Self-improvements are applied autonomously for safe changes (reordering, enablin
 | 2026-04-24 | 3 | tools | C4 | done | 0 missing-method gaps (30/30 covered before); 15 edge-case gaps filled | 0 | 15 | ~14min | github-issues-sync (4h+ pulse, 0 new) |
 | 2026-04-24 | 4 | tools | C5 | done | 0 failures (111/111 ToolsServiceTests green) | 0 | 0 | ~10s | none |
 | 2026-04-24 | 5 | tools | C6 | done | 0 build warnings (tools-scoped & global) | 0 | 0 | ~30s | none |
+| 2026-04-24 | 6 | tools | C7 | done | 18 polish findings (10 dismiss-safety, 7 detents, 1 empty-state) — 1 inline fix, 17 deferred | 1 | 0 | ~6min | none |

@@ -65,9 +65,15 @@ struct IOSToolAdminPage: View {
             }
 
             Section("All Tools (\(filteredTools.count))") {
-                ForEach(filteredTools, id: \.id) { tool in
-                    NavigationLink(destination: IOSToolDetailPage(toolId: tool.id).environmentObject(appCore)) {
-                        toolRow(tool)
+                if filteredTools.isEmpty {
+                    Text(searchText.isEmpty ? "No tools registered yet." : "No tools match \"\(searchText)\".")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(filteredTools, id: \.id) { tool in
+                        NavigationLink(destination: IOSToolDetailPage(toolId: tool.id).environmentObject(appCore)) {
+                            toolRow(tool)
+                        }
                     }
                 }
             }

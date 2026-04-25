@@ -809,3 +809,4 @@ Replaced `isPresented: .constant(var != nil)` (read-only, non-dismissable) with 
 | 2026-04-14 | **Usability Hunter** Run 3 — full behavioral pass + 18 modified iOS files | 0 new fixes | 0 | 0 | 0 |
 | 2026-04-15 | **Usability Enforcer** Run 9 — 23 modified iOS pages + core changes (CoreFormatters, sync, FoundationModels) | 0 new fixes; PE-043 marked DONE | 0 | 0 | 0 |
 | 2026-04-15 | **Usability Hunter** Run 4 — 13 modified iOS files (Fix #148 + #149 batch) | 1 suppression added | 0 | 1 (#244) | 0 |
+| 2026-04-24 | **Usability Enforcer** C7 Tools (AUTO GO) — 8 tools iOS pages; S1 dismiss-safety (10 sheets, Phase 1D campaign — PE-051 Xcode prompt filed); S7 empty-state fix (IOSToolAdminPage search); S5 detents filed (#268) | 1 inline fix + 1 Xcode prompt + 1 GitHub issue | 1 (IOSToolAdminPage empty state) | 1 (#268 detents) | 0 |
