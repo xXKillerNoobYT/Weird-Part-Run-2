@@ -376,7 +376,7 @@ public final class FleetService: Sendable {
                     ownerUserId: row["owner_user_id"] as Int64?,
                     notes: row["notes"] as String?,
                     photoPath: row["photo_path"] as String?,
-                    isActive: row["is_active"] ?? 1,
+                    isActive: (row["is_active"] as Int?) ?? 0,
                     deletedAt: row["deleted_at"] as String?,
                     createdAt: row["created_at"] as String?,
                     updatedAt: row["updated_at"] as String?,

@@ -969,6 +969,9 @@ struct ToolEditSheet: View {
     @State private var notes: String = ""
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var isDirty = false
+    @State private var showDiscardAlert = false
+    @State private var isInitialized = false
 
     private var hasManagePermission: Bool {
         appCore.hasPermission("manage_tools")
@@ -979,10 +982,15 @@ struct ToolEditSheet: View {
             Form {
                 Section {
                     TextField("Name", text: $name)
+                        .onChange(of: name) { _, _ in if isInitialized { isDirty = true } }
                     TextField("Category", text: $category)
+                        .onChange(of: category) { _, _ in if isInitialized { isDirty = true } }
                     TextField("Brand", text: $brand)
+                        .onChange(of: brand) { _, _ in if isInitialized { isDirty = true } }
                     TextField("Model Number", text: $modelNumber)
+                        .onChange(of: modelNumber) { _, _ in if isInitialized { isDirty = true } }
                     TextField("Serial Number", text: $serialNumber)
+                        .onChange(of: serialNumber) { _, _ in if isInitialized { isDirty = true } }
                 } header: {
                     Text("Tool Details")
                 }
@@ -990,6 +998,7 @@ struct ToolEditSheet: View {
                 Section {
                     TextField("Notes", text: $notes, axis: .vertical)
                         .lineLimit(3...6)
+                        .onChange(of: notes) { _, _ in if isInitialized { isDirty = true } }
                 } header: {
                     Text("Notes")
                 }
@@ -1011,11 +1020,13 @@ struct ToolEditSheet: View {
                 }
             }
             .navigationTitle("Edit Tool")
-            .interactiveDismissDisabled(isSaving)
+            .interactiveDismissDisabled(isDirty || isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .disabled(isSaving)
+                    Button("Cancel") {
+                        if isDirty { showDiscardAlert = true } else { dismiss() }
+                    }
+                    .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(hasManagePermission ? "Save" : "Submit for Verification") {
@@ -1024,6 +1035,12 @@ struct ToolEditSheet: View {
                     .disabled(isSaving)
                 }
             }
+            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved changes will be lost.")
+            }
             .onAppear {
                 name = tool.name
                 category = tool.category
@@ -1031,6 +1048,7 @@ struct ToolEditSheet: View {
                 modelNumber = tool.modelNumber ?? ""
                 serialNumber = tool.serialNumber ?? ""
                 notes = tool.notes ?? ""
+                Task { @MainActor in isInitialized = true }
             }
         }
     }
@@ -1060,6 +1078,7 @@ struct ToolEditSheet: View {
         if notes != (tool.notes ?? "") { changes["notes"] = notes }
 
         guard !changes.isEmpty else {
+            isDirty = false
             dismiss()
             return
         }
@@ -1071,6 +1090,7 @@ struct ToolEditSheet: View {
                 changes: changes,
                 hasPermission: hasManagePermission
             )
+            isDirty = false
             onComplete(result)
         } catch {
             saveError = userFriendlyError(error, context: "save data")
@@ -1090,6 +1110,8 @@ struct ToolReportIssueSheet: View {
     @State private var severity: String = "minor"
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var isDirty = false
+    @State private var showDiscardAlert = false
 
     var body: some View {
         NavigationStack {
@@ -1105,9 +1127,11 @@ struct ToolReportIssueSheet: View {
                         Text("Critical").tag("critical")
                     }
                     .pickerStyle(.segmented)
+                    .onChange(of: severity) { _, _ in isDirty = true }
 
                     TextField("Describe the issue...", text: $issueDescription, axis: .vertical)
                         .lineLimit(4...8)
+                        .onChange(of: issueDescription) { _, _ in isDirty = true }
                 } header: {
                     Text("Issue Details")
                 }
@@ -1117,11 +1141,13 @@ struct ToolReportIssueSheet: View {
                 }
             }
             .navigationTitle("Report Issue")
-            .interactiveDismissDisabled(isSaving)
+            .interactiveDismissDisabled(isDirty || isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .disabled(isSaving)
+                    Button("Cancel") {
+                        if isDirty { showDiscardAlert = true } else { dismiss() }
+                    }
+                    .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Submit") {
@@ -1129,6 +1155,12 @@ struct ToolReportIssueSheet: View {
                     }
                     .disabled(isSaving || issueDescription.isEmpty)
                 }
+            }
+            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved changes will be lost.")
             }
         }
     }
@@ -1160,6 +1192,7 @@ struct ToolReportIssueSheet: View {
             if severity == "critical" {
                 try service.markToolMaintenance(toolId: tool.id)
             }
+            isDirty = false
             onComplete()
         } catch {
             saveError = userFriendlyError(error, context: "save data")
@@ -1295,6 +1328,8 @@ struct ToolTradeSheet: View {
     @State private var employees: [PeopleService.EmployeeListItem] = []
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var isDirty = false
+    @State private var showDiscardAlert = false
 
     var body: some View {
         NavigationStack {
@@ -1313,9 +1348,11 @@ struct ToolTradeSheet: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                    .onChange(of: condition) { _, _ in isDirty = true }
 
                     TextField("Notes (optional)", text: $notes, axis: .vertical)
                         .lineLimit(2...4)
+                        .onChange(of: notes) { _, _ in isDirty = true }
                 } header: {
                     Text("Condition Check (Required)")
                 }
@@ -1351,11 +1388,13 @@ struct ToolTradeSheet: View {
                 }
             }
             .navigationTitle("Trade Tool")
-            .interactiveDismissDisabled(isSaving)
+            .interactiveDismissDisabled(isDirty || isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .disabled(isSaving)
+                    Button("Cancel") {
+                        if isDirty { showDiscardAlert = true } else { dismiss() }
+                    }
+                    .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Send Request") {
@@ -1363,6 +1402,12 @@ struct ToolTradeSheet: View {
                     }
                     .disabled(selectedUser == nil || isSaving)
                 }
+            }
+            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved changes will be lost.")
             }
             .task { loadEmployees() }
         }
@@ -1391,6 +1436,7 @@ struct ToolTradeSheet: View {
                 condition: condition.rawValue,
                 notes: notes.isEmpty ? nil : notes
             )
+            isDirty = false
             onComplete()
         } catch {
             saveError = userFriendlyError(error, context: "save data")
@@ -1522,6 +1568,8 @@ struct LostStolenReportSheet: View {
     @State private var lastLocation: String = ""
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var isDirty = false
+    @State private var showDiscardAlert = false
 
     var body: some View {
         NavigationStack {
@@ -1539,12 +1587,15 @@ struct LostStolenReportSheet: View {
                         Text("Stolen").tag("stolen")
                     }
                     .pickerStyle(.segmented)
+                    .onChange(of: reportType) { _, _ in isDirty = true }
                 }
 
                 Section("Details") {
                     TextField("What happened?", text: $description, axis: .vertical)
                         .lineLimit(3...6)
+                        .onChange(of: description) { _, _ in isDirty = true }
                     TextField("Last known location", text: $lastLocation)
+                        .onChange(of: lastLocation) { _, _ in isDirty = true }
                 }
 
                 Section {
@@ -1563,11 +1614,13 @@ struct LostStolenReportSheet: View {
                 }
             }
             .navigationTitle("Report \(reportType.capitalized)")
-            .interactiveDismissDisabled(isSaving)
+            .interactiveDismissDisabled(isDirty || isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .disabled(isSaving)
+                    Button("Cancel") {
+                        if isDirty { showDiscardAlert = true } else { dismiss() }
+                    }
+                    .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Submit Report") {
@@ -1575,6 +1628,12 @@ struct LostStolenReportSheet: View {
                     }
                     .disabled(description.isEmpty || isSaving)
                 }
+            }
+            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved changes will be lost.")
             }
         }
     }
@@ -1601,6 +1660,7 @@ struct LostStolenReportSheet: View {
                 description: description,
                 lastKnownLocation: lastLocation.isEmpty ? nil : lastLocation
             )
+            isDirty = false
             onComplete()
         } catch {
             saveError = userFriendlyError(error, context: "save data")
@@ -1626,6 +1686,8 @@ struct MaintenanceConfigSheet: View {
     @State private var description: String = ""
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var isDirty = false
+    @State private var showDiscardAlert = false
 
     private let maintenanceTypes = [
         ("time_based", "Time-Based", "clock.fill"),
@@ -1644,6 +1706,7 @@ struct MaintenanceConfigSheet: View {
                             Label(label, systemImage: icon).tag(value)
                         }
                     }
+                    .onChange(of: selectedType) { _, _ in isDirty = true }
                 }
 
                 typeSpecificSection
@@ -1651,6 +1714,7 @@ struct MaintenanceConfigSheet: View {
                 Section("Description") {
                     TextField("What maintenance is needed?", text: $description, axis: .vertical)
                         .lineLimit(2...4)
+                        .onChange(of: description) { _, _ in isDirty = true }
                 }
 
                 if let error = saveError {
@@ -1658,11 +1722,13 @@ struct MaintenanceConfigSheet: View {
                 }
             }
             .navigationTitle("Add Maintenance Rule")
-            .interactiveDismissDisabled(isSaving)
+            .interactiveDismissDisabled(isDirty || isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .disabled(isSaving)
+                    Button("Cancel") {
+                        if isDirty { showDiscardAlert = true } else { dismiss() }
+                    }
+                    .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
@@ -1670,6 +1736,12 @@ struct MaintenanceConfigSheet: View {
                     }
                     .disabled(isSaving)
                 }
+            }
+            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved changes will be lost.")
             }
         }
     }
@@ -1680,6 +1752,7 @@ struct MaintenanceConfigSheet: View {
         case "time_based":
             Section("Interval") {
                 Stepper("Every \(intervalDays) days", value: $intervalDays, in: 1...365)
+                    .onChange(of: intervalDays) { _, _ in isDirty = true }
             }
         case "usage_based":
             Section("Usage Threshold") {
@@ -1689,12 +1762,14 @@ struct MaintenanceConfigSheet: View {
                         .keyboardType(.decimalPad)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
+                        .onChange(of: usageThreshold) { _, _ in isDirty = true }
                     Text("hours of use")
                 }
             }
         case "schedule_based":
             Section("Schedule") {
                 Stepper("Every \(intervalDays) days", value: $intervalDays, in: 1...730)
+                    .onChange(of: intervalDays) { _, _ in isDirty = true }
                 Text("Maintenance on a fixed calendar schedule")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -1703,12 +1778,14 @@ struct MaintenanceConfigSheet: View {
                 HStack {
                     Text("Decay rate:")
                     Slider(value: $decayRate, in: 0.001...0.1, step: 0.001)
+                        .onChange(of: decayRate) { _, _ in isDirty = true }
                     Text("\(String(format: "%.1f", decayRate * 100))%/day")
                         .font(.caption).monospacedDigit()
                 }
                 HStack {
                     Text("Maintenance floor:")
                     Slider(value: $decayFloor, in: 0.1...0.9, step: 0.05)
+                        .onChange(of: decayFloor) { _, _ in isDirty = true }
                     Text("\(Int(decayFloor * 100))%")
                         .font(.caption).monospacedDigit()
                 }
@@ -1729,6 +1806,7 @@ struct MaintenanceConfigSheet: View {
                         }
                     ))
                 }
+                .onChange(of: conditionTriggers) { _, _ in isDirty = true }
                 Text("Maintenance flagged when condition check returns any selected level")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -1757,6 +1835,7 @@ struct MaintenanceConfigSheet: View {
                 conditionTriggers: selectedType == "condition_triggered" ? Array(conditionTriggers) : nil,
                 description: description.isEmpty ? nil : description
             )
+            isDirty = false
             onComplete()
         } catch {
             saveError = userFriendlyError(error, context: "save data")

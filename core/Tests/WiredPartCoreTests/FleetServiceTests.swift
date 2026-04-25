@@ -715,6 +715,21 @@ struct FleetServiceTests {
         #expect(try env.fleet.getVehicleDetail(id: vehicleId) == nil, "is_active=0 vehicle must not be returned by getVehicleDetail")
     }
 
+    @Test("getVehicleDetail hydrates isActive strictly (no silent default to 1)")
+    func testGetVehicleDetailIsActiveStrictDefault() throws {
+        // Regression for #275: previously `row["is_active"] ?? 1` would default
+        // NULL to 1 (active). Now uses `(row["is_active"] as Int?) ?? 0` —
+        // strict typed extraction with a safe default.
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-ISACTIVE-HYD", vehicleName: "Hydration Test", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let detail = try env.fleet.getVehicleDetail(id: vehicleId)
+        #expect(detail != nil, "Active vehicle must be retrievable")
+        #expect(detail?.isActive == 1, "Active vehicle must hydrate isActive = 1 (matches WHERE filter)")
+    }
+
     @Test("listTrailers excludes is_active = 0 trailers")
     func testListTrailersExcludesInactive() throws {
         let env = try E2ETestHelpers.setUp()
