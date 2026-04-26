@@ -1,6 +1,5 @@
 import Foundation
 import GRDB
-import CryptoKit
 
 /// Parts & Inventory Service — full CRUD for the parts hierarchy, catalog,
 /// brands, suppliers, pricing, stock, forecasting, companions, and alternatives.
@@ -12,52 +11,78 @@ import CryptoKit
 /// Ported from: Parts & Inventory feature area (Phases 2, 2.5, 3.5, 16)
 public final class PartsService: Sendable {
     private let db: AppDatabase
-    private static let supplierEmailEncryptionKeyEnvVar = "WIREDPART_EMAIL_ENCRYPTION_KEY_B64"
 
     public init(db: AppDatabase) {
         self.db = db
     }
 
-    private func loadSupplierEmailEncryptionKey() throws -> SymmetricKey {
-        let env = ProcessInfo.processInfo.environment
-        guard let b64 = env[Self.supplierEmailEncryptionKeyEnvVar],
-              let keyData = Data(base64Encoded: b64),
-              keyData.count == 32 else {
-            throw NSError(
-                domain: "PartsService.Security",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Missing or invalid supplier email encryption key."]
-            )
-        }
-        return SymmetricKey(data: keyData)
-    }
+    // MARK: - Supplier Contact Email Encryption
 
+    /// Device-specific AES-GCM key for supplier contact email fields.
+    /// Persisted in the Keychain (same pattern as AuthService.signingKey) so the
+    /// key survives app restarts. On first launch a cryptographically random
+    /// 256-bit key is generated and stored; subsequent launches reload the same key.
+    private static let supplierEmailKey: Data = {
+        let service = "com.wiredpart.supplier-email-key"
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecReturnData: true,
+            kSecMatchLimit: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        if SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+           let data = result as? Data, data.count == 32 {
+            return data
+        }
+        // Generate a new 256-bit key. SecRandomCopyBytes must succeed;
+        // a zero key would be catastrophically insecure.
+        var keyBytes = [UInt8](repeating: 0, count: 32)
+        let rngStatus = SecRandomCopyBytes(kSecRandomDefault, 32, &keyBytes)
+        guard rngStatus == errSecSuccess else {
+            fatalError("SecRandomCopyBytes failed (OSStatus \(rngStatus)) — cannot generate a secure supplier-email encryption key")
+        }
+        let keyData = Data(keyBytes)
+        let addQuery: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecValueData: keyData,
+            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        ]
+        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        if addStatus != errSecSuccess && addStatus != errSecDuplicateItem {
+            // Key generated but not persisted — encrypted emails will be unreadable after
+            // app restart. errSecDuplicateItem is benign (race on first launch).
+            print("PartsService: SecItemAdd failed (OSStatus \(addStatus)) — supplier email key in memory only; encrypted emails will not survive app restart.")
+        }
+        return keyData
+    }()
+
+    /// Encrypts `email` using the Keychain-backed device key via SyncCrypto (AES-GCM).
+    /// Returns base64-encoded combined bytes (nonce + ciphertext + tag), or nil/empty
+    /// unchanged for nil/empty inputs. Throws `SyncCrypto.CryptoError.encryptionFailed`
+    /// only if the AES-GCM sealed box cannot produce a combined representation
+    /// (which should not occur in practice with a valid 256-bit key).
     private func encryptSupplierEmail(_ email: String?) throws -> String? {
         guard let email, !email.isEmpty else { return email }
-        let key = try loadSupplierEmailEncryptionKey()
-        let sealedBox = try AES.GCM.seal(Data(email.utf8), using: key)
-        guard let combined = sealedBox.combined else {
-            throw NSError(
-                domain: "PartsService.Security",
-                code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "Failed to produce encrypted payload for supplier email."]
-            )
-        }
+        let combined = try SyncCrypto.encryptAESGCM(data: Data(email.utf8), keyData: Self.supplierEmailKey)
         return combined.base64EncodedString()
     }
 
+    /// Decrypts a stored email value using the Keychain-backed device key via SyncCrypto.
+    /// Falls back to the raw stored value for legacy cleartext rows or rows from a
+    /// different device key — this is the read path so the fallback preserves
+    /// backward compatibility without introducing new cleartext writes.
     private func decryptSupplierEmail(_ storedValue: String?) -> String? {
         guard let storedValue, !storedValue.isEmpty else { return storedValue }
+        guard let encryptedData = Data(base64Encoded: storedValue) else {
+            return storedValue  // Legacy cleartext row — not valid base64.
+        }
         do {
-            let key = try loadSupplierEmailEncryptionKey()
-            guard let encryptedData = Data(base64Encoded: storedValue) else {
-                return storedValue
-            }
-            let sealedBox = try AES.GCM.SealedBox(combined: encryptedData)
-            let decrypted = try AES.GCM.open(sealedBox, using: key)
+            let decrypted = try SyncCrypto.decryptAESGCM(data: encryptedData, keyData: Self.supplierEmailKey)
             return String(data: decrypted, encoding: .utf8) ?? storedValue
         } catch {
-            // Backward compatibility for legacy cleartext rows or unavailable key.
+            // Backward compatibility: legacy cleartext or rows encrypted with a different key.
             return storedValue
         }
     }
@@ -6091,7 +6116,7 @@ public final class PartsService: Sendable {
             try dbConn.execute(sql: """
                 INSERT INTO entity_contacts (entity_type, entity_id, first_name, last_name, role, phone, email, is_primary, created_at)
                 VALUES ('supplier', ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                """, arguments: [supplierId, firstName, lastName, role ?? "", phone ?? "", encryptedEmail, isPrimary ? 1 : 0])
+                """, arguments: [supplierId, firstName, lastName, role ?? "", phone ?? "", encryptedEmail, isPrimary ? 1 : 0]) // codeql[swift/cleartext-storage-database] — email is AES-GCM encrypted via Keychain-backed key before this INSERT; `encryptedEmail` contains ciphertext, not plaintext
         }
     }
 
