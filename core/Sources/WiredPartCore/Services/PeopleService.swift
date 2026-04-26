@@ -1,6 +1,7 @@
 import Foundation
 import GRDB
 import CryptoKit
+import Security
 
 /// People Service — read-only queries for employees, customers, contractors,
 /// contacts, teams, hats, and aggregate people stats.
@@ -12,20 +13,67 @@ import CryptoKit
 /// Ported from: People feature area (Phase 8, 10)
 public final class PeopleService: Sendable {
     private let db: AppDatabase
-    private let encryptionKey: SymmetricKey
 
-    public init(db: AppDatabase, encryptionKey: SymmetricKey = SymmetricKey(size: .bits256)) {
+    /// Device-specific field-level encryption key persisted in the Keychain so
+    /// encrypted `general_contractors.email` values survive app restarts.
+    /// On first launch a cryptographically random 256-bit key is generated and
+    /// stored; subsequent launches load the same key.
+    private static let encryptionKey: SymmetricKey = {
+        let service = "com.wiredpart.people-encryption-key"
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecReturnData: true,
+            kSecMatchLimit: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecSuccess, let data = result as? Data, data.count == 32 {
+            return SymmetricKey(data: data)
+        }
+        // Generate a new 256-bit key and persist it.
+        var keyBytes = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(kSecRandomDefault, 32, &keyBytes) == errSecSuccess else {
+            fatalError("PeopleService: SecRandomCopyBytes failed — cannot generate encryption key")
+        }
+        let keyData = Data(keyBytes)
+        let addQuery: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecValueData: keyData,
+            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        ]
+        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        if addStatus != errSecSuccess && addStatus != errSecDuplicateItem {
+            // Non-fatal: key works in memory but won't survive app restart.
+        }
+        return SymmetricKey(data: keyData)
+    }()
+
+    public init(db: AppDatabase) {
         self.db = db
-        self.encryptionKey = encryptionKey
     }
 
     private func encryptSensitive(_ value: String?) throws -> String? {
         guard let value else { return nil }
-        let sealedBox = try AES.GCM.seal(Data(value.utf8), using: encryptionKey)
+        let sealedBox = try AES.GCM.seal(Data(value.utf8), using: PeopleService.encryptionKey)
         guard let combined = sealedBox.combined else {
-            throw PeopleError.requiredFieldEmpty("email")
+            throw PeopleError.encryptionFailed
         }
         return combined.base64EncodedString()
+    }
+
+    private func decryptSensitive(_ value: String?) throws -> String? {
+        guard let value else { return nil }
+        guard let combined = Data(base64Encoded: value) else {
+            throw PeopleError.encryptionFailed
+        }
+        let sealedBox = try AES.GCM.SealedBox(combined: combined)
+        let plainData = try AES.GCM.open(sealedBox, using: PeopleService.encryptionKey)
+        guard let plainText = String(data: plainData, encoding: .utf8) else {
+            throw PeopleError.encryptionFailed
+        }
+        return plainText
     }
 
     // =========================================================================
@@ -43,6 +91,7 @@ public final class PeopleService: Sendable {
         case hatNotFound(Int64)
         case invalidScore(Double)
         case invalidAmount(Double)
+        case encryptionFailed
     }
 
     // =========================================================================
@@ -624,9 +673,8 @@ public final class PeopleService: Sendable {
                 var args: [DatabaseValueConvertible?] = []
 
                 if let search, !search.isEmpty {
-                    whereClauses.append("(gc.company_name LIKE ? OR gc.contact_name LIKE ? OR gc.email LIKE ?)")
+                    whereClauses.append("(gc.company_name LIKE ? OR gc.contact_name LIKE ?)")
                     let pattern = "%\(search)%"
-                    args.append(pattern)
                     args.append(pattern)
                     args.append(pattern)
                 }
@@ -639,7 +687,7 @@ public final class PeopleService: Sendable {
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
-                return rows.map { row in
+                return try rows.map { row in
                     let contactName = (row["contact_name"] as String?) ?? ""
                     let parts = contactName.split(separator: " ", maxSplits: 1)
                     return ContractorListItem(
@@ -647,7 +695,7 @@ public final class PeopleService: Sendable {
                         firstName: parts.first.map(String.init) ?? contactName,
                         lastName: parts.count > 1 ? String(parts[1]) : "",
                         company: row["company_name"] as String?,
-                        email: row["email"] as String?,
+                        email: try decryptSensitive(row["email"] as String?),
                         phone: row["phone"] as String?
                     )
                 }

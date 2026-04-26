@@ -104,6 +104,53 @@ struct PeopleServiceTests {
         #expect(contractors.contains(where: { $0.company == "SubCo Electric" }))
     }
 
+    @Test("Contractor email is stored encrypted and decrypted on list read")
+    func testContractorEmailEncryptedAtRest() throws {
+        let env = try E2ETestHelpers.setUp()
+        let plainEmail = "encrypted@test.com"
+        let id = try env.people.createContractor(
+            companyName: "Cipher Co",
+            contactName: "Eve",
+            email: plainEmail
+        )
+
+        // The raw value in the database must NOT equal the plaintext email.
+        let rawStored = try env.db.writer.read { db -> String? in
+            let row = try Row.fetchOne(db, sql: "SELECT email FROM general_contractors WHERE id = ?", arguments: [id])
+            return row?["email"] as String?
+        }
+        #expect(rawStored != nil)
+        #expect(rawStored != plainEmail, "email should be stored as ciphertext, not plaintext")
+
+        // listContractors must return the decrypted plaintext email.
+        let contractors = try env.people.listContractors()
+        let contractor = contractors.first(where: { $0.id == id })
+        #expect(contractor != nil)
+        #expect(contractor?.email == plainEmail, "listContractors should return the decrypted email")
+    }
+
+    @Test("Contractor search by company and contact name, not by email ciphertext")
+    func testContractorSearchByNameNotEmail() throws {
+        let env = try E2ETestHelpers.setUp()
+        _ = try env.people.createContractor(
+            companyName: "SearchableGC",
+            contactName: "Alice Search",
+            email: "alice@searchable.com"
+        )
+
+        // Search by company name should find the contractor.
+        let byCompany = try env.people.listContractors(search: "SearchableGC")
+        #expect(byCompany.contains(where: { $0.company == "SearchableGC" }))
+
+        // Search by contact name should also find it.
+        let byContact = try env.people.listContractors(search: "Alice")
+        #expect(byContact.contains(where: { $0.company == "SearchableGC" }))
+
+        // Searching the plaintext email should NOT match (email is stored encrypted).
+        let byEmail = try env.people.listContractors(search: "alice@searchable.com")
+        #expect(!byEmail.contains(where: { $0.company == "SearchableGC" }))
+    }
+
     // MARK: - Contact CRUD
 
     @Test("Create and list contacts")
