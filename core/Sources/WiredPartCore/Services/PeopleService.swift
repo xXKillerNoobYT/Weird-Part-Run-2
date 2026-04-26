@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import CryptoKit
 
 /// People Service — read-only queries for employees, customers, contractors,
 /// contacts, teams, hats, and aggregate people stats.
@@ -11,9 +12,20 @@ import GRDB
 /// Ported from: People feature area (Phase 8, 10)
 public final class PeopleService: Sendable {
     private let db: AppDatabase
+    private let contactFieldEncryptionKey: SymmetricKey
 
-    public init(db: AppDatabase) {
+    public init(db: AppDatabase, contactFieldEncryptionKey: SymmetricKey) {
         self.db = db
+        self.contactFieldEncryptionKey = contactFieldEncryptionKey
+    }
+
+    private func encryptSensitiveField(_ value: String?) throws -> String? {
+        guard let value, !value.isEmpty else { return value }
+        let sealedBox = try AES.GCM.seal(Data(value.utf8), using: contactFieldEncryptionKey)
+        guard let combined = sealedBox.combined else {
+            throw NSError(domain: "PeopleService.Encryption", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to combine sealed box"])
+        }
+        return combined.base64EncodedString()
     }
 
     // =========================================================================
@@ -903,6 +915,7 @@ public final class PeopleService: Sendable {
         guard !firstName.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw PeopleError.requiredFieldEmpty("firstName")
         }
+        let encryptedEmail = try encryptSensitiveField(email)
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
@@ -911,7 +924,7 @@ public final class PeopleService: Sendable {
                         updated_at = datetime('now')
                     WHERE id = ? AND deleted_at IS NULL
                     """,
-                arguments: [firstName, lastName, phone, email, role, id]
+                arguments: [firstName, lastName, phone, encryptedEmail, role, id]
             )
         }
     }
