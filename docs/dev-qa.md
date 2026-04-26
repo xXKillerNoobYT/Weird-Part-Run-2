@@ -20,6 +20,25 @@
 
 ## Pending Questions
 
+### Email-at-Rest Encryption — CodeQL `cleartext-storage-database` (2026-04-25)
+
+**Source:** Iter 101 triage of CodeQL Code Scanning issues #292, #294, #296, #298, #303. All flag `email` columns stored plaintext in local SQLite (entity_contacts, general_contractors, users.email, company_setup_draft.email).
+
+**Current State:** Emails are stored plaintext alongside other contact info. iOS Data Protection encrypts the SQLite file on-disk while the device is locked, but plaintext is readable to any process running as the app while unlocked.
+
+**Plan:** None yet — this is a pre-beta security decision.
+
+1. **As an Owner:** This is a single-user, single-device local app heading to BETA. Beta testers will have their own devices. Is email encryption-at-rest worth shipping before beta, or accept iOS Data Protection as the security boundary?
+   > **Answer:** _pending_ — A (SQLCipher whole-DB) / B (per-field AES-GCM on email) / C (accept as-is, close 5 issues)
+   >
+   > _If A:_ Add SQLCipher dependency, migrate AppDatabase init, derive key from user PIN + Keychain salt. Adds ~1MB binary, modest perf hit on every read/write.
+   >
+   > _If B:_ Add per-field AES-GCM helper, encrypt only \`email\` columns at write, decrypt at read. Targeted but every email-touching service/UI needs migration.
+   >
+   > _If C:_ Close issues #292/#294/#296/#298/#303 with rationale (iOS Data Protection + single-device app). Suppress \`swift/cleartext-storage-database\` for email columns in CodeQL config.
+
+---
+
 ### Orders Area C1b — Plan-vs-Code Drift (2026-04-19)
 
 **Source:** AUTO GO day 2 iter 29 (C1b). Drift check across 5 orders plan files (1,025 lines) vs 16 iOS orders files.
