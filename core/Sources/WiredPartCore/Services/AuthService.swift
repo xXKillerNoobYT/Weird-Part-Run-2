@@ -327,13 +327,17 @@ public final class AuthService: Sendable {
 
     /// Get a single user by ID.
     public func getUser(_ userId: Int64) throws -> User? {
-        try db.writer.read { dbConnection in
+        let raw = try db.writer.read { dbConnection in
             try User.fetchOne(
                 dbConnection,
                 sql: "SELECT * FROM users WHERE id = ?",
                 arguments: [userId]
             )
         }
+        guard var user = raw else { return nil }
+        user.email = Self.decryptSensitiveOptional(user.email)
+        user.phone = Self.decryptSensitiveOptional(user.phone)
+        return user
     }
 
     /// Get permissions for a user (from user_hats + hat_permissions).
@@ -689,28 +693,73 @@ public final class AuthService: Sendable {
     private static let piiKeychainService = "com.wiredpart.core.authservice.pii"
     private static let piiKeychainAccount = "local-db-aes-gcm-key-v1"
 
+    /// Internal errors for Keychain and AES-GCM PII operations.
+    /// Kept private to avoid expanding the public `AuthError` enum.
+    private enum PIIEncryptionError: Error {
+        case invalidKeySize
+        case keychainReadFailed(OSStatus)
+        case keychainWriteFailed(OSStatus)
+    }
+
     private static func encryptionKey() throws -> SymmetricKey {
         try loadOrCreateEncryptionKey()
     }
 
+    /// Encrypt an optional string using the AES-GCM PII key.
+    /// Returns a base64-encoded combined (nonce + ciphertext + tag) string, or nil for nil input.
+    /// Delegates to `SyncCrypto.encryptAESGCM` to keep the encryption format consistent
+    /// across the codebase.
     private static func encryptSensitiveOptional(_ value: String?) throws -> String? {
         guard let value else { return nil }
         let key = try encryptionKey()
-        let sealedBox = try AES.GCM.seal(Data(value.utf8), using: key)
-        guard let combined = sealedBox.combined else {
-            throw AuthError.invalidCredentials
-        }
+        let keyData = key.withUnsafeBytes { Data($0) }
+        let combined = try SyncCrypto.encryptAESGCM(data: Data(value.utf8), keyData: keyData)
         return combined.base64EncodedString()
+    }
+
+    /// Decrypt an optional base64 ciphertext using the AES-GCM PII key.
+    /// Falls back to returning the raw value when it cannot be decrypted
+    /// (e.g., legacy plaintext rows created before encryption was enabled).
+    /// Non-throwing for safe use in read paths.
+    private static func decryptSensitiveOptional(_ value: String?) -> String? {
+        guard let value else { return nil }
+        guard let combined = Data(base64Encoded: value) else {
+            // Not valid base64 — treat as legacy plaintext.
+            return value
+        }
+        do {
+            let key = try encryptionKey()
+            let keyData = key.withUnsafeBytes { Data($0) }
+            let decrypted = try SyncCrypto.decryptAESGCM(data: combined, keyData: keyData)
+            return String(data: decrypted, encoding: .utf8) ?? value
+        } catch {
+            // Decryption failed — likely a legacy plaintext row stored before encryption was
+            // introduced. Return the raw value rather than surfacing an error.
+            logger.debug("PII decryption fallback (possibly legacy plaintext): \(error.localizedDescription, privacy: .public)")
+            return value
+        }
     }
 
     private static func loadOrCreateEncryptionKey() throws -> SymmetricKey {
         if let existing = try readKeychainData(service: piiKeychainService, account: piiKeychainAccount) {
+            guard existing.count == 32 else {
+                throw PIIEncryptionError.invalidKeySize
+            }
             return SymmetricKey(data: existing)
         }
 
         let newKey = SymmetricKey(size: .bits256)
         let keyData = newKey.withUnsafeBytes { Data($0) }
-        try writeKeychainData(keyData, service: piiKeychainService, account: piiKeychainAccount)
+        let writeStatus = try writeKeychainData(keyData, service: piiKeychainService, account: piiKeychainAccount)
+        if writeStatus == errSecDuplicateItem {
+            // Race: another caller persisted the key between our read and write.
+            // Re-read from Keychain so all callers share the same key material.
+            guard let existing = try readKeychainData(service: piiKeychainService, account: piiKeychainAccount),
+                  existing.count == 32 else {
+                throw PIIEncryptionError.invalidKeySize
+            }
+            return SymmetricKey(data: existing)
+        }
         return newKey
     }
 
@@ -727,23 +776,29 @@ public final class AuthService: Sendable {
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         if status == errSecItemNotFound { return nil }
         guard status == errSecSuccess, let data = item as? Data else {
-            throw AuthError.invalidCredentials
+            throw PIIEncryptionError.keychainReadFailed(status)
         }
         return data
     }
 
-    private static func writeKeychainData(_ data: Data, service: String, account: String) throws {
+    /// Writes key material to the Keychain.
+    /// Returns `errSecSuccess` on success, or `errSecDuplicateItem` when the item already
+    /// exists (non-fatal race — caller should re-read). Throws `PIIEncryptionError.keychainWriteFailed`
+    /// for all other non-success statuses.
+    @discardableResult
+    private static func writeKeychainData(_ data: Data, service: String, account: String) throws -> OSStatus {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         ]
         let status = SecItemAdd(query as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw AuthError.invalidCredentials
+        guard status == errSecSuccess || status == errSecDuplicateItem else {
+            throw PIIEncryptionError.keychainWriteFailed(status)
         }
+        return status
     }
 
     /// Verify a PIN against a stored hash.
