@@ -674,16 +674,17 @@ public final class AuthService: Sendable {
         let salt = Self.generateSalt()
         let pinHash = Self.hashPin(pin, salt: salt)
         let now = Self.currentTimestamp()
-        // Encrypt sensitive fields before persisting.
-        let encryptedEmail = try? FieldEncryption.encrypt(email)
-        let encryptedPhone = try? FieldEncryption.encrypt(phone)
+        // Encrypt sensitive fields before persisting. Propagate errors — callers should
+        // know when encryption is unavailable rather than silently falling back to plaintext.
+        let encryptedEmail = try FieldEncryption.encrypt(email)
+        let encryptedPhone = try FieldEncryption.encrypt(phone)
         return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO users (display_name, pin_hash, pin_salt, email, phone, is_active, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, 1, ?, ?)
                     """,
-                arguments: [displayName, pinHash, salt, encryptedEmail ?? email, encryptedPhone ?? phone, now, now]
+                arguments: [displayName, pinHash, salt, encryptedEmail, encryptedPhone, now, now]
             )
             return dbConn.lastInsertedRowID
         }

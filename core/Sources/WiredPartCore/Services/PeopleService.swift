@@ -16,11 +16,6 @@ public final class PeopleService: Sendable {
         self.db = db
     }
 
-    private static func peopleEncryptionKey() -> SymmetricKey {
-        // Replaced by FieldEncryption.key — kept for migration awareness only.
-        fatalError("peopleEncryptionKey should never be called; use FieldEncryption helpers instead")
-    }
-
     // =========================================================================
     // MARK: - Error Types
     // =========================================================================
