@@ -49,8 +49,21 @@ jobs:
           # both vulnerabilities and code-smell patterns.
           queries: security-and-quality
 
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+      - name: Resolve Swift Package Dependencies
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -workspace "Wierd Parts.xcworkspace" \
+            -scheme "WiredPart-iOS"
+
+      - name: Build for CodeQL
+        run: |
+          xcodebuild build \
+            -workspace "Wierd Parts.xcworkspace" \
+            -scheme "WiredPart-iOS" \
+            -destination "generic/platform=iOS Simulator" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
