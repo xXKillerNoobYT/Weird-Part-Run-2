@@ -1,6 +1,5 @@
 import Foundation
 import GRDB
-import CryptoKit
 
 /// Jobs & Labor Service — full CRUD for jobs, labor/clock in-out, questionnaires,
 /// one-time questions, daily reports, team members, job parts, and dashboard KPIs.
@@ -13,20 +12,8 @@ import CryptoKit
 public final class JobsService: Sendable {
     private let db: AppDatabase
 
-    // NOTE: Replace with secure key management (e.g., Keychain-provisioned key).
-    // This placeholder keeps the fix self-contained in this file.
-    private let billingRateEncryptionKey = SymmetricKey(size: .bits256)
-
     public init(db: AppDatabase) {
         self.db = db
-    }
-
-    private func encryptSensitiveDouble(_ value: Double?) throws -> String? {
-        guard let value else { return nil }
-        let plaintext = String(value)
-        let sealedBox = try AES.GCM.seal(Data(plaintext.utf8), using: billingRateEncryptionKey)
-        guard let combined = sealedBox.combined else { return nil }
-        return combined.base64EncodedString()
     }
 
     // =========================================================================
@@ -493,7 +480,7 @@ public final class JobsService: Sendable {
                 priority: row["priority"] ?? "normal",
                 jobType: row["job_type"] ?? "service",
                 billRateTypeId: row["bill_rate_type_id"] as Int64?,
-                billingRate: row["billing_rate"] as Double?,
+                billingRate: BillingRateCrypto.decryptOrFallback(encrypted: row["billing_rate_encrypted"] as String?, legacy: row["billing_rate"] as Double?),
                 estimatedHours: row["estimated_hours"] as Double?,
                 leadUserId: row["lead_user_id"] as Int64?,
                 leadUserName: row["lead_user_name"] as String?,
@@ -552,7 +539,7 @@ public final class JobsService: Sendable {
     ) throws -> Int64 {
         guard !jobName.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
         guard !jobNumber.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
-        let encryptedBillingRate = try encryptSensitiveDouble(billingRate)
+        let encryptedBillingRate = try BillingRateCrypto.encrypt(billingRate)
         return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
@@ -560,7 +547,7 @@ public final class JobsService: Sendable {
                     (job_number, job_name, customer_name,
                      address_line1, address_line2, city, state, zip,
                      gps_lat, gps_lng, status, priority, job_type,
-                     bill_rate_type_id, billing_rate, estimated_hours,
+                     bill_rate_type_id, billing_rate_encrypted, estimated_hours,
                      lead_user_id, on_call_type,
                      warranty_start, warranty_end,
                      start_date, due_date, notes,
@@ -620,6 +607,7 @@ public final class JobsService: Sendable {
         if let status, status.trimmingCharacters(in: .whitespaces).isEmpty {
             throw JobsError.requiredFieldEmpty
         }
+        let encryptedBillingRate = try BillingRateCrypto.encrypt(billingRate)
         try db.writer.write { dbConn in
             var setClauses: [String] = []
             var args: [DatabaseValueConvertible?] = []
@@ -637,7 +625,7 @@ public final class JobsService: Sendable {
             if let priority { setClauses.append("priority = ?"); args.append(priority) }
             if let jobType { setClauses.append("job_type = ?"); args.append(jobType) }
             if let billRateTypeId { setClauses.append("bill_rate_type_id = ?"); args.append(billRateTypeId) }
-            if let billingRate { setClauses.append("billing_rate = ?"); args.append(billingRate) }
+            if let encryptedBillingRate { setClauses.append("billing_rate_encrypted = ?"); args.append(encryptedBillingRate) }
             if let estimatedHours { setClauses.append("estimated_hours = ?"); args.append(estimatedHours) }
             if let leadUserId { setClauses.append("lead_user_id = ?"); args.append(leadUserId) }
             if let onCallType { setClauses.append("on_call_type = ?"); args.append(onCallType) }

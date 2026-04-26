@@ -296,9 +296,14 @@ public final class ReportsService: Sendable {
             return try db.writer.read { dbConn -> [JobProfitRow] in
                 // Fix #164: Labor cost must use employee pay_rate (what we pay them),
                 // NOT billing_rate (what we charge the customer). Overtime at 1.5x.
+                // billing_rate_encrypted stores the AES-GCM ciphertext (migration 077);
+                // billing_rate holds a legacy plaintext fallback for rows written before
+                // the encryption migration. Revenue is computed in Swift after decryption.
                 let sql = """
                     SELECT j.id, j.job_name,
-                           COALESCE(j.estimated_hours, 0) * COALESCE(j.billing_rate, 0) AS revenue,
+                           j.estimated_hours,
+                           j.billing_rate_encrypted,
+                           j.billing_rate,
                            COALESCE((SELECT SUM(le.regular_hours * COALESCE(u.pay_rate, 0) +
                                                 le.overtime_hours * COALESCE(u.pay_rate, 0) * 1.5)
                                      FROM labor_entries le
@@ -309,14 +314,19 @@ public final class ReportsService: Sendable {
                                      WHERE jp.job_id = j.id AND jp.deleted_at IS NULL), 0) AS material_cost
                     FROM jobs j
                     WHERE j.deleted_at IS NULL
-                    ORDER BY revenue DESC
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql)
-                return rows.map { row in
+                let mapped: [JobProfitRow] = rows.map { row in
                     let id: Int64 = row["id"] ?? 0
                     let jobName: String = row["job_name"] ?? ""
-                    let revenue: Double = row["revenue"] ?? 0.0
+                    let estimatedHours: Double = row["estimated_hours"] ?? 0.0
+                    // Prefer the encrypted column; fall back to legacy plaintext for old rows.
+                    let rate: Double = BillingRateCrypto.decryptOrFallback(
+                        encrypted: row["billing_rate_encrypted"] as String?,
+                        legacy: row["billing_rate"] as Double?
+                    ) ?? 0.0
+                    let revenue = estimatedHours * rate
                     let laborCost: Double = row["labor_cost"] ?? 0.0
                     let materialCost: Double = row["material_cost"] ?? 0.0
                     let profit = revenue - laborCost - materialCost
@@ -332,6 +342,7 @@ public final class ReportsService: Sendable {
                         margin: margin
                     )
                 }
+                return mapped.sorted { $0.revenue > $1.revenue }
             }
         } catch {
             if isTableNotFoundError(error) { return [] }

@@ -113,6 +113,7 @@ extension AppDatabase {
         registerMigration074ColorBrandSKUs(&migrator)
         registerMigration075CompanionFeedbackNullableSuggestionId(&migrator)
         registerMigration076StockMovementsCompositeIndex(&migrator)
+        registerMigration077BillingRateEncrypted(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4971,6 +4972,22 @@ extension AppDatabase {
                 """)
             try db.execute(sql: "DROP TABLE companion_feedback")
             try db.execute(sql: "ALTER TABLE companion_feedback_new RENAME TO companion_feedback")
+        }
+    }
+
+    // MARK: - Migration 077: Encrypted billing rate column
+
+    private static func registerMigration077BillingRateEncrypted(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("077_billing_rate_encrypted") { db in
+            // Add a TEXT column to hold the AES-GCM encrypted billing rate.
+            // The existing numeric billing_rate column is preserved for backward
+            // compatibility; new rows store the encrypted value here and NULL in
+            // billing_rate. Legacy rows keep their plaintext value in billing_rate
+            // until they are next updated, at which point the encrypted column is
+            // populated and billing_rate can be set to NULL.
+            try db.execute(sql: """
+                ALTER TABLE jobs ADD COLUMN billing_rate_encrypted TEXT
+                """)
         }
     }
 }
