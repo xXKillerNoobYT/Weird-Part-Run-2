@@ -277,7 +277,9 @@ Like a JPO list for a specific job, showing ALL parts across ALL JPOs, grouped b
 - Platform guard removal
 - Smart cards (replace capsule chips)
 
-### IOSApprovalsPage (191 lines) — Becomes Quick Approval Dashboard
+### IOSUnifiedApprovalsPage (in `Features/Office/`, 191 lines) — Quick Approval Dashboard
+
+> **Naming note (Q&A 2026-04-25):** Earlier plan revisions referenced this as `IOSApprovalsPage`. The actual file is `IOSUnifiedApprovalsPage.swift` in `Weird Parts IOS/Features/Office/`. The router (`orders-approvals`) maps to it correctly. Unified page used across both Office and Orders tabs.
 - Keep as quick-approval view for managers
 - Shows what needs attention across ALL approval types (not just JPOs)
 - Fix: `actionError` never displayed
