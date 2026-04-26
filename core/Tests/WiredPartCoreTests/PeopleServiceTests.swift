@@ -45,6 +45,44 @@ struct PeopleServiceTests {
         #expect(detail.displayName == "Updated Admin")
     }
 
+    @Test("email and phone round-trip through AES-GCM encryption via updateEmployeeContact + getEmployeeDetail")
+    func testUpdateEmployeeContact_emailPhoneRoundTrip() throws {
+        let env = try E2ETestHelpers.setUp()
+        try env.people.updateEmployeeContact(
+            employeeId: env.adminUserId,
+            displayName: "Enc Admin",
+            phone: "555-9999",
+            email: "enc@example.com"
+        )
+        // getEmployeeDetail must return plaintext, not base64 ciphertext.
+        let detail = try env.people.getEmployeeDetail(id: env.adminUserId)
+        #expect(detail.email == "enc@example.com")
+        #expect(detail.phone == "555-9999")
+        // The raw DB value must NOT be the plaintext (it is encrypted).
+        let rawEmail = try env.db.writer.read { db in
+            try String?.fetchOne(db, sql: "SELECT email FROM users WHERE id = ?", arguments: [env.adminUserId])
+        }
+        #expect(rawEmail != "enc@example.com", "email should be encrypted at rest, not stored as plaintext")
+    }
+
+    @Test("listEmployees search by email works after encryption (in-memory filter on decrypted values)")
+    func testListEmployees_searchByEmailAfterEncryption() throws {
+        let env = try E2ETestHelpers.setUp()
+        try env.people.updateEmployeeContact(
+            employeeId: env.adminUserId,
+            displayName: "SearchableAdmin",
+            phone: "555-1234",
+            email: "searchable@domain.com"
+        )
+        // In-memory search must match on decrypted email.
+        let results = try env.people.listEmployees(search: "searchable@domain.com")
+        #expect(results.count >= 1)
+        #expect(results.contains(where: { $0.email == "searchable@domain.com" }))
+        // An unrelated search term must return zero.
+        let none = try env.people.listEmployees(search: "nobody@nowhere.invalid")
+        #expect(none.isEmpty)
+    }
+
     // MARK: - Customer CRUD
 
     @Test("Create and list customers")

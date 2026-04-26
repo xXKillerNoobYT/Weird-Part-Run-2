@@ -1,6 +1,5 @@
 import Foundation
 import GRDB
-import CryptoKit
 
 /// People Service — read-only queries for employees, customers, contractors,
 /// contacts, teams, hats, and aggregate people stats.
@@ -18,19 +17,8 @@ public final class PeopleService: Sendable {
     }
 
     private static func peopleEncryptionKey() -> SymmetricKey {
-        let secret = ProcessInfo.processInfo.environment["WIREDPART_DB_FIELD_KEY"] ?? "wiredpart-default-field-key"
-        let digest = SHA256.hash(data: Data(secret.utf8))
-        return SymmetricKey(data: Data(digest))
-    }
-
-    private static func encryptOptionalField(_ value: String?) throws -> String? {
-        guard let value, !value.isEmpty else { return value }
-        let key = peopleEncryptionKey()
-        let sealed = try AES.GCM.seal(Data(value.utf8), using: key)
-        guard let combined = sealed.combined else {
-            throw PeopleError.requiredFieldEmpty("encryptedField")
-        }
-        return combined.base64EncodedString()
+        // Replaced by FieldEncryption.key — kept for migration awareness only.
+        fatalError("peopleEncryptionKey should never be called; use FieldEncryption helpers instead")
     }
 
     // =========================================================================
@@ -48,6 +36,25 @@ public final class PeopleService: Sendable {
         case hatNotFound(Int64)
         case invalidScore(Double)
         case invalidAmount(Double)
+        case encryptionFailed
+    }
+
+    // MARK: - Field encryption helpers
+
+    /// Encrypt a sensitive field using the device-specific Keychain-backed AES-GCM key.
+    /// Throws `PeopleError.encryptionFailed` if encryption fails (distinct from input-validation errors).
+    private static func encryptField(_ value: String?) throws -> String? {
+        do {
+            return try FieldEncryption.encrypt(value)
+        } catch {
+            throw PeopleError.encryptionFailed
+        }
+    }
+
+    /// Decrypt a sensitive field. Returns the original value as-is on decryption failure to
+    /// preserve backward compatibility with rows written before encryption was introduced.
+    private static func decryptField(_ value: String?) -> String? {
+        FieldEncryption.decrypt(value)
     }
 
     // =========================================================================
@@ -284,16 +291,12 @@ public final class PeopleService: Sendable {
     ) throws -> [EmployeeListItem] {
         do {
             return try db.writer.read { dbConn -> [EmployeeListItem] in
+                // email/phone are stored encrypted; SQL LIKE won't match ciphertext.
+                // Only display_name uses a SQL filter; email/phone are filtered in-memory
+                // after decryption so that searches like "user@example.com" still work.
                 var whereClauses = ["u.deleted_at IS NULL"]
                 var args: [DatabaseValueConvertible?] = []
 
-                if let search, !search.isEmpty {
-                    whereClauses.append("(u.display_name LIKE ? OR u.email LIKE ? OR u.phone LIKE ?)")
-                    let pattern = "%\(search)%"
-                    args.append(pattern)
-                    args.append(pattern)
-                    args.append(pattern)
-                }
                 if let status, !status.isEmpty {
                     if status == "active" {
                         whereClauses.append("u.is_active = 1")
@@ -312,21 +315,33 @@ public final class PeopleService: Sendable {
                     LEFT JOIN hats h ON h.id = uh.hat_id
                     WHERE \(whereClauses.joined(separator: " AND "))
                     GROUP BY u.id
-                    ORDER BY u.display_name ASC, u.email ASC
+                    ORDER BY u.display_name ASC
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
-                return rows.map { row in
-                    EmployeeListItem(
+                var items = rows.map { row -> EmployeeListItem in
+                    let decryptedEmail = Self.decryptField(row["email"] as String?)
+                    let decryptedPhone = Self.decryptField(row["phone"] as String?)
+                    return EmployeeListItem(
                         id: row["id"] ?? 0,
-                        displayName: row["display_name"] ?? row["email"] ?? "Unknown",
-                        email: row["email"] ?? "",
-                        phone: row["phone"] as String?,
+                        displayName: row["display_name"] ?? decryptedEmail ?? "Unknown",
+                        email: decryptedEmail ?? "",
+                        phone: decryptedPhone,
                         status: row["status"] ?? "active",
                         role: row["role"] ?? "user",
                         hatNames: row["hat_names"] as String?
                     )
                 }
+                // In-memory filter runs after decryption so email/phone searches work.
+                if let search, !search.isEmpty {
+                    let term = search.lowercased()
+                    items = items.filter { item in
+                        item.displayName.lowercased().contains(term) ||
+                        item.email.lowercased().contains(term) ||
+                        (item.phone?.lowercased().contains(term) ?? false)
+                    }
+                }
+                return items
             }
         } catch {
             if isTableNotFoundError(error) { return [] }
@@ -430,11 +445,13 @@ public final class PeopleService: Sendable {
                 if !isTableNotFoundError(error) { throw error }
             }
 
+            let decryptedEmail = Self.decryptField(userRow["email"] as String?)
+            let decryptedPhone = Self.decryptField(userRow["phone"] as String?)
             return EmployeeDetail(
                 id: userRow["id"] ?? 0,
-                displayName: userRow["display_name"] ?? userRow["email"] ?? "Unknown",
-                email: userRow["email"] ?? "",
-                phone: userRow["phone"] as String?,
+                displayName: userRow["display_name"] ?? decryptedEmail ?? "Unknown",
+                email: decryptedEmail ?? "",
+                phone: decryptedPhone,
                 status: userRow["status"] ?? "active",
                 role: hats.first?.name ?? "user",
                 createdAt: userRow["created_at"] as String?,
@@ -580,13 +597,13 @@ public final class PeopleService: Sendable {
     public func listCustomers(search: String? = nil) throws -> [CustomerListItem] {
         do {
             return try db.writer.read { dbConn -> [CustomerListItem] in
+                // email/phone are stored encrypted; only name/company_name use SQL LIKE.
                 var whereClauses = ["c.deleted_at IS NULL", "c.is_active = 1"]
                 var args: [DatabaseValueConvertible?] = []
 
                 if let search, !search.isEmpty {
-                    whereClauses.append("(c.company_name LIKE ? OR c.name LIKE ? OR c.email LIKE ?)")
+                    whereClauses.append("(c.company_name LIKE ? OR c.name LIKE ?)")
                     let pattern = "%\(search)%"
-                    args.append(pattern)
                     args.append(pattern)
                     args.append(pattern)
                 }
@@ -601,15 +618,26 @@ public final class PeopleService: Sendable {
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
-                return rows.map { row in
+                var items = rows.map { row -> CustomerListItem in
                     CustomerListItem(
                         id: row["id"] ?? 0,
                         companyName: row["company_name"] as String?,
                         contactName: row["contact_name"] as String?,
-                        email: row["email"] as String?,
-                        phone: row["phone"] as String?
+                        email: Self.decryptField(row["email"] as String?),
+                        phone: Self.decryptField(row["phone"] as String?)
                     )
                 }
+                // In-memory filter for encrypted email/phone fields.
+                if let search, !search.isEmpty {
+                    let term = search.lowercased()
+                    items = items.filter { item in
+                        (item.companyName?.lowercased().contains(term) ?? false) ||
+                        (item.contactName?.lowercased().contains(term) ?? false) ||
+                        (item.email?.lowercased().contains(term) ?? false) ||
+                        (item.phone?.lowercased().contains(term) ?? false)
+                    }
+                }
+                return items
             }
         } catch {
             if isTableNotFoundError(error) { return [] }
@@ -625,13 +653,13 @@ public final class PeopleService: Sendable {
     public func listContractors(search: String? = nil) throws -> [ContractorListItem] {
         do {
             return try db.writer.read { dbConn -> [ContractorListItem] in
+                // email/phone are stored encrypted; only company_name/contact_name use SQL LIKE.
                 var whereClauses = ["gc.deleted_at IS NULL", "gc.is_active = 1"]
                 var args: [DatabaseValueConvertible?] = []
 
                 if let search, !search.isEmpty {
-                    whereClauses.append("(gc.company_name LIKE ? OR gc.contact_name LIKE ? OR gc.email LIKE ?)")
+                    whereClauses.append("(gc.company_name LIKE ? OR gc.contact_name LIKE ?)")
                     let pattern = "%\(search)%"
-                    args.append(pattern)
                     args.append(pattern)
                     args.append(pattern)
                 }
@@ -644,7 +672,7 @@ public final class PeopleService: Sendable {
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
-                return rows.map { row in
+                var items = rows.map { row -> ContractorListItem in
                     let contactName = (row["contact_name"] as String?) ?? ""
                     let parts = contactName.split(separator: " ", maxSplits: 1)
                     return ContractorListItem(
@@ -652,10 +680,22 @@ public final class PeopleService: Sendable {
                         firstName: parts.first.map(String.init) ?? contactName,
                         lastName: parts.count > 1 ? String(parts[1]) : "",
                         company: row["company_name"] as String?,
-                        email: row["email"] as String?,
-                        phone: row["phone"] as String?
+                        email: Self.decryptField(row["email"] as String?),
+                        phone: Self.decryptField(row["phone"] as String?)
                     )
                 }
+                // In-memory filter for encrypted email/phone fields.
+                if let search, !search.isEmpty {
+                    let term = search.lowercased()
+                    items = items.filter { item in
+                        item.firstName.lowercased().contains(term) ||
+                        item.lastName.lowercased().contains(term) ||
+                        (item.company?.lowercased().contains(term) ?? false) ||
+                        (item.email?.lowercased().contains(term) ?? false) ||
+                        (item.phone?.lowercased().contains(term) ?? false)
+                    }
+                }
+                return items
             }
         } catch {
             if isTableNotFoundError(error) { return [] }
@@ -674,13 +714,13 @@ public final class PeopleService: Sendable {
     ) throws -> [ContactListItem] {
         do {
             return try db.writer.read { dbConn -> [ContactListItem] in
+                // email/phone are stored encrypted; only name/role fields use SQL LIKE.
                 var whereClauses = ["co.deleted_at IS NULL", "co.is_active = 1"]
                 var args: [DatabaseValueConvertible?] = []
 
                 if let search, !search.isEmpty {
-                    whereClauses.append("(co.first_name LIKE ? OR co.last_name LIKE ? OR co.role LIKE ? OR co.email LIKE ?)")
+                    whereClauses.append("(co.first_name LIKE ? OR co.last_name LIKE ? OR co.role LIKE ?)")
                     let pattern = "%\(search)%"
-                    args.append(pattern)
                     args.append(pattern)
                     args.append(pattern)
                     args.append(pattern)
@@ -699,17 +739,29 @@ public final class PeopleService: Sendable {
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
-                return rows.map { row in
+                var items = rows.map { row -> ContactListItem in
                     ContactListItem(
                         id: row["id"] ?? 0,
                         firstName: row["first_name"] ?? "",
                         lastName: row["last_name"] ?? "",
                         company: row["role"] as String?,
-                        email: row["email"] as String?,
-                        phone: row["phone"] as String?,
+                        email: Self.decryptField(row["email"] as String?),
+                        phone: Self.decryptField(row["phone"] as String?),
                         contactType: row["entity_type"] as String?
                     )
                 }
+                // In-memory filter for encrypted email/phone fields.
+                if let search, !search.isEmpty {
+                    let term = search.lowercased()
+                    items = items.filter { item in
+                        item.firstName.lowercased().contains(term) ||
+                        item.lastName.lowercased().contains(term) ||
+                        (item.company?.lowercased().contains(term) ?? false) ||
+                        (item.email?.lowercased().contains(term) ?? false) ||
+                        (item.phone?.lowercased().contains(term) ?? false)
+                    }
+                }
+                return items
             }
         } catch {
             if isTableNotFoundError(error) { return [] }
@@ -806,8 +858,8 @@ public final class PeopleService: Sendable {
                     HatMember(
                         id: row["id"] ?? 0,
                         displayName: row["display_name"] ?? "",
-                        phone: row["phone"] as String?,
-                        email: row["email"] as String?,
+                        phone: Self.decryptField(row["phone"] as String?),
+                        email: Self.decryptField(row["email"] as String?),
                         assignedAt: row["assigned_at"] as String?
                     )
                 }
@@ -864,13 +916,15 @@ public final class PeopleService: Sendable {
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw PeopleError.requiredFieldEmpty("name")
         }
+        let encryptedEmail = try Self.encryptField(email)
+        let encryptedPhone = try Self.encryptField(phone)
         return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO customers (name, company_name, email, phone, address, city, state, zip, notes)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                arguments: [name, companyName, email, phone, address, city, state, zip, notes]
+                arguments: [name, companyName, encryptedEmail, encryptedPhone, address, city, state, zip, notes]
             )
             return dbConn.lastInsertedRowID
         }
@@ -896,13 +950,15 @@ public final class PeopleService: Sendable {
         guard !firstName.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw PeopleError.requiredFieldEmpty("firstName")
         }
+        let encryptedPhone = try Self.encryptField(phone)
+        let encryptedEmail = try Self.encryptField(email)
         return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO entity_contacts (entity_type, entity_id, first_name, last_name, role, phone, email, is_primary, notes)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                arguments: [entityType, entityId, firstName, lastName, role, phone, email, isPrimary ? 1 : 0, notes]
+                arguments: [entityType, entityId, firstName, lastName, role, encryptedPhone, encryptedEmail, isPrimary ? 1 : 0, notes]
             )
             return dbConn.lastInsertedRowID
         }
@@ -920,6 +976,8 @@ public final class PeopleService: Sendable {
         guard !firstName.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw PeopleError.requiredFieldEmpty("firstName")
         }
+        let encryptedPhone = try Self.encryptField(phone)
+        let encryptedEmail = try Self.encryptField(email)
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
@@ -928,7 +986,7 @@ public final class PeopleService: Sendable {
                         updated_at = datetime('now')
                     WHERE id = ? AND deleted_at IS NULL
                     """,
-                arguments: [firstName, lastName, phone, email, role, id]
+                arguments: [firstName, lastName, encryptedPhone, encryptedEmail, role, id]
             )
         }
     }
@@ -946,13 +1004,15 @@ public final class PeopleService: Sendable {
         guard !companyName.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw PeopleError.requiredFieldEmpty("companyName")
         }
+        let encryptedEmail = try Self.encryptField(email)
+        let encryptedPhone = try Self.encryptField(phone)
         return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO general_contractors (company_name, contact_name, email, phone, notes)
                     VALUES (?, ?, ?, ?, ?)
                     """,
-                arguments: [companyName, contactName, email, phone, notes]
+                arguments: [companyName, contactName, encryptedEmail, encryptedPhone, notes]
             )
             return dbConn.lastInsertedRowID
         }
@@ -1182,8 +1242,8 @@ public final class PeopleService: Sendable {
                     EmployeeListItem(
                         id: row["id"] ?? 0,
                         displayName: row["display_name"] ?? "",
-                        email: row["email"] ?? "",
-                        phone: row["phone"] as String?,
+                        email: Self.decryptField(row["email"] as String?) ?? "",
+                        phone: Self.decryptField(row["phone"] as String?),
                         status: row["status"] ?? "active",
                         role: "user",
                         hatNames: nil
@@ -1243,8 +1303,8 @@ public final class PeopleService: Sendable {
         phone: String?,
         email: String?
     ) throws {
-        let encryptedEmail = try Self.encryptOptionalField(email)
-        let encryptedPhone = try Self.encryptOptionalField(phone)
+        let encryptedEmail = try Self.encryptField(email)
+        let encryptedPhone = try Self.encryptField(phone)
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
@@ -1599,8 +1659,8 @@ public final class PeopleService: Sendable {
                     id: r["id"] as Int64? ?? 0,
                     name: r["name"] as String? ?? "",
                     role: r["role"] as String?,
-                    phone: r["phone"] as String?,
-                    email: r["email"] as String?
+                    phone: Self.decryptField(r["phone"] as String?),
+                    email: Self.decryptField(r["email"] as String?)
                 )
             }
 
@@ -1677,8 +1737,8 @@ public final class PeopleService: Sendable {
                 customerId: customerId,
                 companyName: row["company_name"] as String?,
                 contactName: row["contact_name"] as String?,
-                email: row["email"] as String?,
-                phone: row["phone"] as String?,
+                email: Self.decryptField(row["email"] as String?),
+                phone: Self.decryptField(row["phone"] as String?),
                 address: row["address"] as String?,
                 customerType: row["customer_type"] as String?,
                 contacts: contacts, jobHistory: jobHistory,
@@ -1913,8 +1973,8 @@ public final class PeopleService: Sendable {
                     firstName: r["first_name"] as String? ?? "",
                     lastName: r["last_name"] as String? ?? "",
                     company: r["company"] as String?,
-                    email: r["email"] as String?,
-                    phone: r["phone"] as String?,
+                    email: Self.decryptField(r["email"] as String?),
+                    phone: Self.decryptField(r["phone"] as String?),
                     contactType: r["contact_type"] as String?
                 )
                 let isActive = (r["is_active"] as Int?) ?? 1
@@ -1949,8 +2009,8 @@ public final class PeopleService: Sendable {
                 firstName: r["first_name"] as String? ?? "",
                 lastName: r["last_name"] as String? ?? "",
                 company: r["company"] as String?,
-                email: r["email"] as String?,
-                phone: r["phone"] as String?,
+                email: Self.decryptField(r["email"] as String?),
+                phone: Self.decryptField(r["phone"] as String?),
                 contactType: r["contact_type"] as String?
             )
         }

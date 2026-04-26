@@ -184,7 +184,11 @@ public final class AuthService: Sendable {
 
         Self.clearFailedAttempts(userId: userId)
         let token = Self.generateLocalToken(userId: userId)
-        return AuthResult(success: true, user: user, token: token, message: "Authenticated")
+        // Decrypt email/phone before returning to callers so they receive plaintext.
+        var decryptedUser = user
+        decryptedUser.email = FieldEncryption.decrypt(user.email)
+        decryptedUser.phone = FieldEncryption.decrypt(user.phone)
+        return AuthResult(success: true, user: decryptedUser, token: token, message: "Authenticated")
     }
 
     /// Get list of active users for the login screen.
@@ -478,8 +482,8 @@ public final class AuthService: Sendable {
         return UserProfile(
             id: profileId,
             displayName: user.displayName,
-            email: user.email,
-            phone: user.phone,
+            email: FieldEncryption.decrypt(user.email),
+            phone: FieldEncryption.decrypt(user.phone),
             avatarURL: user.avatarUrl,
             certification: user.certification,
             hireDate: user.hireDate,
@@ -670,13 +674,16 @@ public final class AuthService: Sendable {
         let salt = Self.generateSalt()
         let pinHash = Self.hashPin(pin, salt: salt)
         let now = Self.currentTimestamp()
+        // Encrypt sensitive fields before persisting.
+        let encryptedEmail = try? FieldEncryption.encrypt(email)
+        let encryptedPhone = try? FieldEncryption.encrypt(phone)
         return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO users (display_name, pin_hash, pin_salt, email, phone, is_active, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, 1, ?, ?)
                     """,
-                arguments: [displayName, pinHash, salt, email, phone, now, now]
+                arguments: [displayName, pinHash, salt, encryptedEmail ?? email, encryptedPhone ?? phone, now, now]
             )
             return dbConn.lastInsertedRowID
         }
