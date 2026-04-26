@@ -327,13 +327,16 @@ public final class AuthService: Sendable {
 
     /// Get a single user by ID.
     public func getUser(_ userId: Int64) throws -> User? {
-        try db.writer.read { dbConnection in
+        var user = try db.writer.read { dbConnection in
             try User.fetchOne(
                 dbConnection,
                 sql: "SELECT * FROM users WHERE id = ?",
                 arguments: [userId]
             )
         }
+        user?.email = try FieldEncryption.decrypt(user?.email)
+        user?.phone = try FieldEncryption.decrypt(user?.phone)
+        return user
     }
 
     /// Get permissions for a user (from user_hats + hat_permissions).
@@ -670,13 +673,15 @@ public final class AuthService: Sendable {
         let salt = Self.generateSalt()
         let pinHash = Self.hashPin(pin, salt: salt)
         let now = Self.currentTimestamp()
+        let encEmail = try FieldEncryption.encrypt(email)
+        let encPhone = try FieldEncryption.encrypt(phone)
         return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO users (display_name, pin_hash, pin_salt, email, phone, is_active, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, 1, ?, ?)
                     """,
-                arguments: [displayName, pinHash, salt, email, phone, now, now]
+                arguments: [displayName, pinHash, salt, encEmail, encPhone, now, now]
             )
             return dbConn.lastInsertedRowID
         }

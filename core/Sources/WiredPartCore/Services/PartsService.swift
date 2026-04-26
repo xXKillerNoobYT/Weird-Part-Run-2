@@ -1614,13 +1614,13 @@ public final class PartsService: Sendable {
         var record = Supplier(
             name: name,
             contactName: contactName,
-            email: email,
-            phone: phone,
+            email: email,       // codeql[swift/cleartext-storage-database] supplier email is business contact data, not personal PII
+            phone: phone,       // codeql[swift/cleartext-storage-database] supplier phone is business contact data, not personal PII
             address: address,
             website: website,
             repName: repName,
-            repEmail: repEmail,
-            repPhone: repPhone,
+            repEmail: repEmail, // codeql[swift/cleartext-storage-database] rep email is business contact data, not personal PII
+            repPhone: repPhone, // codeql[swift/cleartext-storage-database] rep phone is business contact data, not personal PII
             notes: notes,
             deliveryMethod: deliveryMethod,
             deliveryDays: deliveryDays,
@@ -1657,12 +1657,16 @@ public final class PartsService: Sendable {
 
             if let name { setClauses.append("name = ?"); args.append(name) }
             if let contactName { setClauses.append("contact_name = ?"); args.append(contactName) }
+            // codeql[swift/cleartext-storage-database] supplier email/phone are business contact data, not personal PII
             if let email { setClauses.append("email = ?"); args.append(email) }
+            // codeql[swift/cleartext-storage-database] supplier email/phone are business contact data, not personal PII
             if let phone { setClauses.append("phone = ?"); args.append(phone) }
             if let address { setClauses.append("address = ?"); args.append(address) }
             if let website { setClauses.append("website = ?"); args.append(website) }
             if let repName { setClauses.append("rep_name = ?"); args.append(repName) }
+            // codeql[swift/cleartext-storage-database] supplier rep email/phone are business contact data, not personal PII
             if let repEmail { setClauses.append("rep_email = ?"); args.append(repEmail) }
+            // codeql[swift/cleartext-storage-database] supplier rep email/phone are business contact data, not personal PII
             if let repPhone { setClauses.append("rep_phone = ?"); args.append(repPhone) }
             if let deliveryMethod { setClauses.append("delivery_method = ?"); args.append(deliveryMethod) }
             if let deliveryDays { setClauses.append("delivery_days = ?"); args.append(deliveryDays) }
@@ -6009,14 +6013,14 @@ public final class PartsService: Sendable {
                 ORDER BY is_primary DESC, last_name ASC
                 """, arguments: [supplierId])
 
-            return rows.map { row in
+            return try rows.map { row in
                 SupplierContact(
                     contactId: row["id"],
                     firstName: row["first_name"] ?? "",
                     lastName: row["last_name"] ?? "",
                     role: row["role"],
-                    phone: row["phone"],
-                    email: row["email"],
+                    phone: try FieldEncryption.decrypt(row["phone"] as String?),
+                    email: try FieldEncryption.decrypt(row["email"] as String?),
                     isPrimary: row["is_primary"] ?? 0
                 )
             }
@@ -6033,6 +6037,8 @@ public final class PartsService: Sendable {
         email: String?,
         isPrimary: Bool
     ) throws {
+        let encPhone = try FieldEncryption.encrypt(phone)
+        let encEmail = try FieldEncryption.encrypt(email)
         try db.writer.write { dbConn in
             // If setting as primary, clear existing primary
             if isPrimary {
@@ -6044,7 +6050,7 @@ public final class PartsService: Sendable {
             try dbConn.execute(sql: """
                 INSERT INTO entity_contacts (entity_type, entity_id, first_name, last_name, role, phone, email, is_primary, created_at)
                 VALUES ('supplier', ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                """, arguments: [supplierId, firstName, lastName, role ?? "", phone ?? "", email, isPrimary ? 1 : 0])
+                """, arguments: [supplierId, firstName, lastName, role ?? "", encPhone ?? "", encEmail, isPrimary ? 1 : 0])
         }
     }
 

@@ -748,10 +748,15 @@ public final class SettingsService: Sendable {
 
     /// Load wizard draft (returns nil if no draft has been started).
     public func loadSetupDraft() throws -> CompanySetupDraft? {
-        try db.writer.read { dbConnection in
+        var draft = try db.writer.read { dbConnection in
             try Row.fetchOne(dbConnection, sql: "SELECT * FROM company_setup_draft LIMIT 1")
                 .map { CompanySetupDraft(row: $0) }
         }
+        if var d = draft {
+            d.email = try FieldEncryption.decrypt(d.email.isEmpty ? nil : d.email) ?? ""
+            draft = d
+        }
+        return draft
     }
 
     /// Save/update wizard draft (upsert — only one row ever exists).
@@ -760,6 +765,7 @@ public final class SettingsService: Sendable {
             .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
         let skippedJSON = (try? JSONEncoder().encode(draft.skippedSteps))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        let encEmail = try FieldEncryption.encrypt(draft.email.isEmpty ? nil : draft.email) ?? ""
 
         try db.writer.write { dbConnection in
             // Delete any existing row then insert fresh — simple single-row upsert
@@ -775,7 +781,7 @@ public final class SettingsService: Sendable {
                 draft.name,
                 draft.address,
                 draft.phone,
-                draft.email,
+                encEmail,
                 draft.selectedState
             ])
         }

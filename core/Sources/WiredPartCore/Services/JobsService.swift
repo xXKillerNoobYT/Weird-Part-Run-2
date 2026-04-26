@@ -540,6 +540,9 @@ public final class JobsService: Sendable {
         guard !jobName.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
         guard !jobNumber.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
         return try db.writer.write { dbConn in
+            // codeql[swift/cleartext-storage-database] billing_rate is a per-job numeric rate
+            // (Double), not PII. Encrypting a REAL column would require a schema migration
+            // and break all SQL arithmetic. False-positive alert.
             try dbConn.execute(
                 sql: """
                     INSERT INTO jobs
@@ -623,6 +626,7 @@ public final class JobsService: Sendable {
             if let priority { setClauses.append("priority = ?"); args.append(priority) }
             if let jobType { setClauses.append("job_type = ?"); args.append(jobType) }
             if let billRateTypeId { setClauses.append("bill_rate_type_id = ?"); args.append(billRateTypeId) }
+            // codeql[swift/cleartext-storage-database] billing_rate is a numeric job rate (Double), not PII. FP.
             if let billingRate { setClauses.append("billing_rate = ?"); args.append(billingRate) }
             if let estimatedHours { setClauses.append("estimated_hours = ?"); args.append(estimatedHours) }
             if let leadUserId { setClauses.append("lead_user_id = ?"); args.append(leadUserId) }
