@@ -12,16 +12,40 @@ import CryptoKit
 /// Ported from: People feature area (Phase 8, 10)
 public final class PeopleService: Sendable {
     private let db: AppDatabase
-    private let contactFieldEncryptionKey: SymmetricKey
 
-    public init(db: AppDatabase, contactFieldEncryptionKey: SymmetricKey) {
+    public init(db: AppDatabase) {
         self.db = db
-        self.contactFieldEncryptionKey = contactFieldEncryptionKey
     }
+
+    private static let contactFieldEncryptionKey: SymmetricKey = {
+        let service = "com.wiredpart.people.contact-field-encryption-key"
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecReturnData: true,
+            kSecMatchLimit: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecSuccess, let data = result as? Data, data.count == 32 {
+            return SymmetricKey(data: data)
+        }
+        var keyBytes = [UInt8](repeating: 0, count: 32)
+        _ = SecRandomCopyBytes(kSecRandomDefault, 32, &keyBytes)
+        let keyData = Data(keyBytes)
+        let addQuery: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecValueData: keyData,
+            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        ]
+        _ = SecItemAdd(addQuery as CFDictionary, nil)
+        return SymmetricKey(data: keyData)
+    }()
 
     private func encryptSensitiveField(_ value: String?) throws -> String? {
         guard let value, !value.isEmpty else { return value }
-        let sealedBox = try AES.GCM.seal(Data(value.utf8), using: contactFieldEncryptionKey)
+        let sealedBox = try AES.GCM.seal(Data(value.utf8), using: Self.contactFieldEncryptionKey)
         guard let combined = sealedBox.combined else {
             throw NSError(domain: "PeopleService.Encryption", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to combine sealed box"])
         }
