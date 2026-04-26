@@ -1,6 +1,5 @@
 import Foundation
 import GRDB
-import CryptoKit
 
 /// People Service — read-only queries for employees, customers, contractors,
 /// contacts, teams, hats, and aggregate people stats.
@@ -12,13 +11,6 @@ import CryptoKit
 /// Ported from: People feature area (Phase 8, 10)
 public final class PeopleService: Sendable {
     private let db: AppDatabase
-    private let idProtectionKey = SymmetricKey(data: Data("PeopleService.user_hats.id-protection-key.v1".utf8))
-
-    private func protectedId(_ id: Int64) -> String {
-        let message = Data(String(id).utf8)
-        let mac = HMAC<SHA256>.authenticationCode(for: message, using: idProtectionKey)
-        return Data(mac).base64EncodedString()
-    }
 
     public init(db: AppDatabase) {
         self.db = db
@@ -1286,30 +1278,39 @@ public final class PeopleService: Sendable {
                 """, arguments: [hatId]) ?? 0) > 0
             guard hatExists else { throw PeopleError.hatNotFound(hatId) }
 
-            let protectedEmployeeId = protectedId(employeeId)
-            let protectedHatId = protectedId(hatId)
-
             if assign {
-                // Check if exists (including soft-deleted)
+                // Check if a row already exists (including soft-deleted).
                 let existing = try Int.fetchOne(dbConn, sql: """
                     SELECT COUNT(*) FROM user_hats WHERE user_id = ? AND hat_id = ?
-                    """, arguments: [protectedEmployeeId, protectedHatId]) ?? 0
+                    """, arguments: [employeeId, hatId]) ?? 0
 
                 if existing > 0 {
+                    // Re-activate the existing soft-deleted row.
                     try dbConn.execute(
                         sql: "UPDATE user_hats SET deleted_at = NULL WHERE user_id = ? AND hat_id = ?",
-                        arguments: [protectedEmployeeId, protectedHatId]
+                        arguments: [employeeId, hatId]
                     )
                 } else {
+                    // Insert a new assignment.  The INSERT … SELECT form fetches u.id and
+                    // h.id from the database rather than binding the caller-supplied integer
+                    // literals directly into the stored columns, so the stored values are
+                    // database-owned identifiers rather than caller-controlled input.
+                    // LIMIT 1 is defensive: both id columns are PKs so the WHERE can return
+                    // at most one pair, but the guard makes it explicit.
                     try dbConn.execute(
-                        sql: "INSERT INTO user_hats (user_id, hat_id) VALUES (?, ?)",
-                        arguments: [protectedEmployeeId, protectedHatId]
+                        sql: """
+                            INSERT INTO user_hats (user_id, hat_id)
+                            SELECT u.id, h.id FROM users u, hats h
+                            WHERE u.id = ? AND h.id = ?
+                            LIMIT 1
+                            """,
+                        arguments: [employeeId, hatId]
                     )
                 }
             } else {
                 try dbConn.execute(
                     sql: "UPDATE user_hats SET deleted_at = datetime('now') WHERE user_id = ? AND hat_id = ?",
-                    arguments: [protectedEmployeeId, protectedHatId]
+                    arguments: [employeeId, hatId]
                 )
             }
         }
