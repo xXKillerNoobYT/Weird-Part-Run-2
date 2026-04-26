@@ -11,7 +11,11 @@ let package = Package(
         .library(name: "WiredPartCore", targets: ["WiredPartCore"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/groue/GRDB.swift", from: "7.0.0"),
+        // DuckDuckGo fork bundles GRDB 7.4.1 + SQLCipher 4.7.0 as a prebuilt XCFramework.
+        // Chosen over plain groue/GRDB.swift + separate sqlcipher-swift because it keeps
+        // the same `GRDB` product name — smallest possible diff to existing import sites.
+        // Closes CodeQL cleartext-storage-database alerts by encrypting the whole DB.
+        .package(url: "https://github.com/duckduckgo/GRDB.swift", from: "3.0.0"),
     ],
     targets: [
         .target(

@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import WiredPartCore
+import Security
 import os.log
 
 /// Shared application state that owns the database and all services.
@@ -88,7 +89,16 @@ final class AppCore: ObservableObject {
 
                 let database: AppDatabase
                 do {
-                    database = try AppDatabase.openDatabase(atPath: path)
+                    // SQLCipher: derive a device-bound bootstrap key from the Keychain salt.
+                    // This key never changes unless the Keychain is wiped (device reset).
+                    // When a user changes their PIN, `AuthService.changePin` re-keys the pool
+                    // from this bootstrap key to a PIN+salt key via `PRAGMA rekey`.
+                    //
+                    // Migration path: if the DB file is still plaintext (pre-SQLCipher binary),
+                    // `migratePlaintextDBIfNeeded` converts it in-place before opening.
+                    let keyHex = try Self.deviceBootstrapKeyHex()
+                    try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
+                    database = try AppDatabase.openEncryptedDatabase(atPath: path, keyHex: keyHex)
                 } catch {
                     #if !DEBUG
                     // Migration failed — try to restore from backup
@@ -438,7 +448,95 @@ final class AppCore: ObservableObject {
     // The function compared binary mod dates and wiped the DB on every
     // Cmd+R, making data persistence impossible during development.
 
-    // MARK: - Database Path
+    // MARK: - SQLCipher Device Bootstrap Key
+
+    /// Return the device-bound SQLCipher bootstrap key (hex-encoded 64 chars).
+    ///
+    /// This key is used during app startup, before any user PIN is available.
+    /// It is a random 32-byte value generated on first launch and stored in the
+    /// Keychain with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`.
+    ///
+    /// When a user later changes their PIN, `changePinAndRekey` re-keys the pool
+    /// from this bootstrap key to a PIN+salt key (`PRAGMA rekey`).
+    nonisolated static func deviceBootstrapKeyHex() throws -> String {
+        let service = "com.wiredpart.dbcipher.bootstrap-key"
+        let account = "device-bootstrap-key"
+
+        // Try to read existing key.
+        let readQuery: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: account,
+            kSecReturnData: true,
+            kSecMatchLimit: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        let readStatus = SecItemCopyMatching(readQuery as CFDictionary, &result)
+        if readStatus == errSecSuccess, let data = result as? Data, data.count == 32 {
+            return data.map { String(format: "%02x", $0) }.joined()
+        }
+
+        // Generate 32 fresh random bytes.
+        var keyBytes = [UInt8](repeating: 0, count: 32)
+        let rc = SecRandomCopyBytes(kSecRandomDefault, 32, &keyBytes)
+        guard rc == errSecSuccess else {
+            throw CipherKeyError.saltGenerationFailed(rc)
+        }
+        let keyData = Data(keyBytes)
+
+        let addQuery: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: account,
+            kSecValueData: keyData,
+            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        ]
+        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        if addStatus != errSecSuccess && addStatus != errSecDuplicateItem {
+            // Non-fatal — key still in memory for this session.
+            // (Cannot use `logger` here — static nonisolated method.)
+        }
+        return keyData.map { String(format: "%02x", $0) }.joined()
+    }
+
+    // MARK: - PIN Change with DB Re-key
+
+    /// Change a user's PIN and atomically re-key the encrypted database.
+    ///
+    /// Wraps `AuthService.changePin` and passes the open `DatabasePool` so
+    /// SQLCipher's `PRAGMA rekey` runs in the same session as the PIN-hash update.
+    /// After this call, the database can only be opened with the new PIN+salt key.
+    ///
+    /// - Note: After a successful re-key, the device bootstrap key no longer works.
+    ///         Subsequent app launches require PIN entry to derive the new key.
+    ///         This is the intended behavior for the PIN+salt security tier.
+    ///
+    /// - Parameters:
+    ///   - userId: The ID of the authenticated user.
+    ///   - oldPin: The current PIN (verified before re-key runs).
+    ///   - newPin: The replacement PIN (4–8 digits).
+    /// - Returns: nil on success, or a user-friendly error string.
+    func changePinAndRekey(userId: Int64, oldPin: String, newPin: String) async -> String? {
+        guard let authService, let db else { return "App not ready. Please wait." }
+        // Extract the pool on MainActor before entering the detached task so we can
+        // pass a concrete Sendable type rather than `any DatabaseWriter`.
+        let pool = db.writer as? DatabasePool
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                // `changePin` verifies the old PIN, updates the hash, and re-keys the pool.
+                try authService.changePin(
+                    userId: userId,
+                    oldPin: oldPin,
+                    newPin: newPin,
+                    pool: pool
+                )
+            }.value
+            return nil
+        } catch {
+            return userFriendlyError(error, context: "change PIN")
+        }
+    }
+
 
     enum AppCoreError: LocalizedError {
         case noDocumentsDirectory

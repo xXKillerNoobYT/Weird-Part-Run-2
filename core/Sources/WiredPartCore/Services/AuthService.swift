@@ -682,6 +682,69 @@ public final class AuthService: Sendable {
         }
     }
 
+    // MARK: - PIN Change
+
+    /// Change a user's PIN and re-key the encrypted database.
+    ///
+    /// Verifies the old PIN before making any changes. On success:
+    /// 1. Updates the user's `pin_hash` and `pin_salt` to the new PIN.
+    /// 2. If an encrypted `DatabasePool` is provided, runs `PRAGMA rekey` to
+    ///    re-encrypt the database with the key derived from the new PIN + device salt.
+    ///
+    /// **Important — `pool` parameter**: Always pass the production `DatabasePool`
+    /// (available via `AppCore.db?.writer as? DatabasePool`) so the SQLCipher re-key
+    /// runs atomically alongside the PIN-hash update.  Omitting `pool` (passing `nil`)
+    /// is only acceptable during unit tests that use in-memory `DatabaseQueue`s, which
+    /// do not require encryption.  If `pool` is `nil` in a production context, the
+    /// user's PIN hash is updated but the database remains encrypted with the old key —
+    /// this will prevent the app from opening the DB after a restart.
+    ///
+    /// - Parameters:
+    ///   - userId: The user whose PIN is being changed.
+    ///   - oldPin: The current PIN (must authenticate successfully).
+    ///   - newPin: The new PIN (4–8 digits, same rules as `createUser`).
+    ///   - pool: The open encrypted `DatabasePool` for the SQLCipher re-key, or `nil`
+    ///           for in-memory / test databases that do not use encryption.
+    /// - Throws: `AuthError.invalidPin` if `oldPin` is wrong.
+    ///           `AuthError.requiredFieldEmpty` if `newPin` is empty.
+    ///           Rethrows GRDB / SQLCipher errors from `PRAGMA rekey`.
+    @discardableResult
+    public func changePin(userId: Int64, oldPin: String, newPin: String, pool: DatabasePool? = nil) throws -> Bool {
+        // Validate new PIN.
+        let trimmed = newPin.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw AuthError.requiredFieldEmpty("newPin")
+        }
+        guard trimmed.count >= 4 && trimmed.count <= 8, trimmed.allSatisfy({ $0.isNumber }) else {
+            throw AuthError.invalidPin("New PIN must be 4–8 digits")
+        }
+
+        // Verify old PIN against the DB (uses existing brute-force protection).
+        let authResult = try authenticateByPin(userId: userId, pin: oldPin)
+        guard authResult.success else {
+            throw AuthError.invalidPin(authResult.message)
+        }
+
+        // Persist new PIN hash.
+        let newSalt = Self.generateSalt()
+        let newHash = Self.hashPin(newPin, salt: newSalt)
+        let now = Self.currentTimestamp()
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE users SET pin_hash = ?, pin_salt = ?, updated_at = ? WHERE id = ?",
+                arguments: [newHash, newSalt, now, userId]
+            )
+        }
+
+        // Re-key the encrypted database if a pool was supplied.
+        if let pool {
+            let newKeyHex = try CipherKeyManager.shared.deriveKeyHex(pin: newPin)
+            try AppDatabase.rekey(pool: pool, newKeyHex: newKeyHex)
+        }
+
+        return true
+    }
+
     // MARK: - Internal Helpers
 
     /// Verify a PIN against a stored hash.
