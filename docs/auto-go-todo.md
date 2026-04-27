@@ -20,7 +20,16 @@
 
 > Work flagged as in-progress at the end of the previous AUTO GO iteration. Agent inspects this file before deciding whether to continue prior work or advance the rotation.
 
-- [ ] **2026-04-26 — Watch Copilot PR for issue #282** (recordedBy FK + free-text caps + userFriendlyError audit). Branch `copilot/fix-recordedby-fk-validation` created at 22:25 with "Initial plan" commit. Draft PR expected within ~15 min of branch creation. **Action when draft PR opens:** read every commit + diff, verify all 3 acceptance criteria covered (FK guard on updateTrailerLocation, free-text caps on addVehicleStockItem, userFriendlyError audit), `cd core && swift build && swift test` locally on the branch, then either squash-merge or post one consolidated review comment. Reference: [feedback_copilot_delegation_workflow.md](../../../.claude/projects/-Users-IA-GitHub-Weird-Part-Run-2/memory/feedback_copilot_delegation_workflow.md).
+- [ ] **2026-04-26 — Drive PR #321 (issue #282) to merge.** Draft `[WIP]` PR opened at ~22:30 from branch `copilot/fix-recordedby-fk-validation`, currently 0 file changes (Copilot still implementing). **Protocol per owner directive 2026-04-26:**
+  1. Wait for implementation commits to land (poll `gh pr view 321 --json additions,deletions` — non-zero = code exists).
+  2. Once code exists, **post `@copilot please review your own implementation against the acceptance criteria in #282…` comment** — Copilot's auto-review is unreliable, force the lens shift. Wait for its self-review + cleanup commits.
+  3. When Copilot marks ready (or it lingers in WIP without progress for >30 min), do my own review: read every commit + diff, verify each of the 3 acceptance criteria (FK guard on updateTrailerLocation / free-text caps on addVehicleStockItem / userFriendlyError audit) actually covered in code, not just claimed in summary.
+  4. Local verification: `git fetch && git checkout copilot/fix-recordedby-fk-validation && cd core && swift build && swift test`. Build = 0 warnings. Tests = all pass.
+  5. Decide: squash-merge with `gh pr merge 321 --squash --delete-branch`, OR post ONE consolidated review comment listing concrete gaps + tag `@copilot`.
+  
+  Reference: [feedback_copilot_delegation_workflow.md](../../../.claude/projects/-Users-IA-GitHub-Weird-Part-Run-2/memory/feedback_copilot_delegation_workflow.md).
+
+- [ ] **2026-04-26 — Investigate stale Copilot branches.** Two orphan branches with no associated open PRs: `copilot/fix-bugs-in-code` (last commit 2026-04-26 00:56Z) and `copilot/refactor-sensitive-field-encryption` (2026-04-26 01:18Z). Likely abandoned Copilot attempts from prior delegations. **Don't delete blindly.** Run `gh api repos/xXKillerNoobYT/Weird-Part-Run-2/branches/<name> --jq '.commit'` + check if any closed PR points at them. If genuinely abandoned + no closed-PR backreference, delete with `git push origin --delete <branch>` to keep the branch list tidy.
 
 ## Agent-discovered (awaiting owner ratification or scheduling)
 
