@@ -1382,6 +1382,7 @@ public final class FleetService: Sendable {
         }
         let sanitizedSource = sanitizeLocation(sourceLocation)
         let sanitizedDestination = sanitizeLocation(destinationLocation)
+        let sanitizedReason = sanitizeLocation(transferReason)
 
         try db.writer.write { dbConn in
             // Guard: vehicle must exist and not be tombstoned — otherwise the INSERT
@@ -1401,7 +1402,7 @@ public final class FleetService: Sendable {
                     """,
                 arguments: [vehicleId, partId, partName, quantity, stockType,
                             minQty, targetQty, maxQty,
-                            sanitizedSource, sanitizedDestination, transferReason]
+                            sanitizedSource, sanitizedDestination, sanitizedReason]
             )
         }
     }

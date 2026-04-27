@@ -770,6 +770,36 @@ struct FleetServiceTests {
         #expect(dst == "Truck Bay 3")
     }
 
+    @Test("addVehicleStockItem caps transfer_reason to 100 characters")
+    func testAddVehicleStockItem_transferReasonCappedAt100Chars() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-TR-CAP", vehicleName: "TrReasonTruck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let longReason = String(repeating: "X", count: 150)
+        let exactReason = String(repeating: "Y", count: 100)
+        // Insert with the long reason, then read back
+        try env.fleet.addVehicleStockItem(
+            vehicleId: vehicleId, partName: "Cap Test", quantity: 2, stockType: "standard",
+            transferReason: longReason
+        )
+        // Insert a second item with exactly-100 reason
+        try env.fleet.addVehicleStockItem(
+            vehicleId: vehicleId, partName: "Cap Test 2", quantity: 1, stockType: "standard",
+            transferReason: exactReason
+        )
+        let rows = try env.db.writer.read { db in
+            try Row.fetchAll(db, sql: "SELECT part_name, transfer_reason FROM vehicle_stock WHERE vehicle_id = ? ORDER BY id",
+                             arguments: [vehicleId])
+        }
+        #expect(rows.count == 2)
+        let r1: String? = rows[0]["transfer_reason"]
+        let r2: String? = rows[1]["transfer_reason"]
+        #expect(r1?.count == 100, "150-char transferReason must be truncated to 100")
+        #expect(r2?.count == 100, "Exactly-100-char transferReason must be stored as-is")
+    }
+
     // MARK: - Input validation — create paths (iter 68)
 
     @Test("createVehicle rejects blank vehicleNumber and vehicleName")
