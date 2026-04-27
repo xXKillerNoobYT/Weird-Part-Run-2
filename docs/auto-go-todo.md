@@ -20,7 +20,7 @@
 
 > Work flagged as in-progress at the end of the previous AUTO GO iteration. Agent inspects this file before deciding whether to continue prior work or advance the rotation.
 
-- [ ] _(empty — agents add when an iteration runs out of time mid-check)_
+- [ ] **2026-04-26 — Watch Copilot PR for issue #282** (recordedBy FK + free-text caps + userFriendlyError audit). Branch `copilot/fix-recordedby-fk-validation` created at 22:25 with "Initial plan" commit. Draft PR expected within ~15 min of branch creation. **Action when draft PR opens:** read every commit + diff, verify all 3 acceptance criteria covered (FK guard on updateTrailerLocation, free-text caps on addVehicleStockItem, userFriendlyError audit), `cd core && swift build && swift test` locally on the branch, then either squash-merge or post one consolidated review comment. Reference: [feedback_copilot_delegation_workflow.md](../../../.claude/projects/-Users-IA-GitHub-Weird-Part-Run-2/memory/feedback_copilot_delegation_workflow.md).
 
 ## Agent-discovered (awaiting owner ratification or scheduling)
 
