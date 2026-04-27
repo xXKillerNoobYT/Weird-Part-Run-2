@@ -1372,6 +1372,17 @@ public final class FleetService: Sendable {
         }
         guard quantity > 0 else { throw FleetError.invalidQuantity(quantity) }
 
+        // Trim free-text location strings and cap to 100 chars.
+        // Coerce empty/whitespace-only values to nil so the column stays clean.
+        func sanitizeLocation(_ raw: String?) -> String? {
+            guard let s = raw else { return nil }
+            let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { return nil }
+            return trimmed.count > 100 ? String(trimmed.prefix(100)) : trimmed
+        }
+        let sanitizedSource = sanitizeLocation(sourceLocation)
+        let sanitizedDestination = sanitizeLocation(destinationLocation)
+
         try db.writer.write { dbConn in
             // Guard: vehicle must exist and not be tombstoned — otherwise the INSERT
             // would create an orphan vehicle_stock row against a decommissioned truck.
@@ -1390,7 +1401,7 @@ public final class FleetService: Sendable {
                     """,
                 arguments: [vehicleId, partId, partName, quantity, stockType,
                             minQty, targetQty, maxQty,
-                            sourceLocation, destinationLocation, transferReason]
+                            sanitizedSource, sanitizedDestination, transferReason]
             )
         }
     }
@@ -1688,6 +1699,13 @@ public final class FleetService: Sendable {
         jobId: Int64? = nil, recordedBy: Int64
     ) throws {
         try db.writer.write { dbConn in
+            // Guard: recording user must exist and not be tombstoned — otherwise
+            // a spoofed/wrong recordedBy would land in the audit trail unchecked.
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [recordedBy]) ?? 0) > 0
+            guard userExists else { throw FleetError.userNotFound(recordedBy) }
+
             // Close previous location
             try dbConn.execute(sql: """
                 UPDATE trailer_location_history SET departed_at = datetime('now')

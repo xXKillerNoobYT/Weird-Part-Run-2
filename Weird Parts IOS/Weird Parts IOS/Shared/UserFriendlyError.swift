@@ -1,6 +1,11 @@
 import Foundation
 
 /// Wraps a raw error into a user-friendly message for display in loadError states.
+///
+/// Security audit (issue #282, 2026-04-27): this helper never returns raw GRDB error text
+/// or DB row contents. Every code path maps to a fixed, generic string. The final fallback
+/// uses only the caller-supplied `context` label — no sensitive field values (VINs, licence
+/// plates, driver names) can leak into user-facing banners.
 func userFriendlyError(_ error: Error, context: String = "load data") -> String {
     let raw = error.localizedDescription
     if raw.contains("no such table") {
