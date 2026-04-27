@@ -1699,6 +1699,16 @@ public final class FleetService: Sendable {
         jobId: Int64? = nil, recordedBy: Int64
     ) throws {
         try db.writer.write { dbConn in
+            // Guard: trailer must be active and not tombstoned — inserting history
+            // against a soft-deleted trailer creates an orphan audit row and leaves
+            // is_active / is_at_shop in an inconsistent state (is_active ⊥ deleted_at;
+            // both must be checked per feedback_deleted_at_defense_in_depth.md).
+            let trailerExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM job_trailers
+                WHERE id = ? AND is_active = 1 AND deleted_at IS NULL
+                """, arguments: [trailerId]) ?? 0) > 0
+            guard trailerExists else { throw FleetError.trailerNotFound(trailerId) }
+
             // Guard: recording user must exist and not be tombstoned — otherwise
             // a spoofed/wrong recordedBy would land in the audit trail unchecked.
             let userExists = (try Int.fetchOne(dbConn, sql: """

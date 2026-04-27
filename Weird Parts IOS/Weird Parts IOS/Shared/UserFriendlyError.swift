@@ -3,9 +3,19 @@ import Foundation
 /// Wraps a raw error into a user-friendly message for display in loadError states.
 ///
 /// Security audit (issue #282, 2026-04-27): this helper never returns raw GRDB error text
-/// or DB row contents. Every code path maps to a fixed, generic string. The final fallback
-/// uses only the caller-supplied `context` label — no sensitive field values (VINs, licence
-/// plates, driver names) can leak into user-facing banners.
+/// or DB row contents. Every explicit mapping below returns a fixed, generic string.
+/// The final fallback interpolates only the caller-supplied `context` label.
+/// **Callers must pass a fixed, non-sensitive label** (e.g. "load vehicles", "save inspection")
+/// rather than dynamic identifiers or user data such as VINs, licence plates, or driver names.
+///
+/// Fleet callsite audit (all confirmed safe fixed labels):
+///   "load driver data", "assign driver", "create trailer", "create vehicle",
+///   "load fleet dashboard", "load fuel data", "load inspections",
+///   "load maintenance data", "load mileage data", "load truck data",
+///   "save vehicle data", "report vehicle issue", "load telematics data",
+///   "load trailer details", "load trailer locations", "load trailers",
+///   "load truck tools", "load vehicle details", "load vehicles",
+///   "load inspection data", "save inspection"
 func userFriendlyError(_ error: Error, context: String = "load data") -> String {
     let raw = error.localizedDescription
     if raw.contains("no such table") {

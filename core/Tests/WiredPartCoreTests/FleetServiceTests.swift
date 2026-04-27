@@ -523,8 +523,8 @@ struct FleetServiceTests {
         #expect(v?.assignedUserName == nil)
     }
 
-    @Test("updateTrailerLocation is a no-op on a soft-deleted trailer")
-    func testUpdateTrailerLocation_noOpOnSoftDeletedTrailer() throws {
+    @Test("updateTrailerLocation throws trailerNotFound for a soft-deleted trailer")
+    func testUpdateTrailerLocation_throwsForSoftDeletedTrailer() throws {
         let env = try E2ETestHelpers.setUp()
         let trailerId = try env.db.writer.write { db -> Int64 in
             try db.execute(sql: """
@@ -533,20 +533,29 @@ struct FleetServiceTests {
                 """)
             return db.lastInsertedRowID
         }
-        // Set a known is_at_shop state then soft-delete the trailer
+        // Soft-delete the trailer
         try env.db.writer.write { db in
             try db.execute(sql: "UPDATE job_trailers SET is_at_shop = 0, deleted_at = datetime('now') WHERE id = ?",
                            arguments: [trailerId])
         }
-        // Stale dispatcher marks trailer as at-shop — must not mutate a tombstoned row
-        try env.fleet.updateTrailerLocation(trailerId: trailerId, locationType: "shop", locationLabel: "Yard", jobId: nil, recordedBy: env.adminUserId)
-
+        // The guard must fire before any history row is inserted
+        #expect(throws: FleetService.FleetError.trailerNotFound(trailerId)) {
+            try env.fleet.updateTrailerLocation(trailerId: trailerId, locationType: "shop", locationLabel: "Yard", jobId: nil, recordedBy: env.adminUserId)
+        }
+        // No orphan audit row must have been inserted
+        let historyCount = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM trailer_location_history WHERE trailer_id = ?",
+                             arguments: [trailerId]) ?? 0
+        }
+        #expect(historyCount == 0,
+            "Soft-deleted trailer must not receive a history row — guard must fire before INSERT")
+        // is_at_shop must remain unchanged (0)
         let row = try env.db.writer.read { db in
             try Row.fetchOne(db, sql: "SELECT is_at_shop FROM job_trailers WHERE id = ?", arguments: [trailerId])
         }
         let isAtShop: Int = row?["is_at_shop"] ?? -1
         #expect(isAtShop == 0,
-            "Soft-deleted trailer is_at_shop must not change — UPDATE must guard AND deleted_at IS NULL")
+            "Soft-deleted trailer is_at_shop must not change")
     }
 
     @Test("logFuelLevel is a no-op on a soft-deleted vehicle")
