@@ -614,6 +614,8 @@ private struct AddWishlistItemSheet: View {
     @State private var notes = ""
     @State private var saveError: String?
     @State private var isSaving = false
+    @State private var isDirty = false
+    @State private var showCancelConfirmation = false
 
     private let priorities = ["urgent", "high", "normal", "low"]
 
@@ -623,8 +625,10 @@ private struct AddWishlistItemSheet: View {
                 Section("Part Information") {
                     TextField("Part Name", text: $partName)
                         .textContentType(.none)
+                        .onChange(of: partName) { _ in isDirty = true }
 
                     Stepper("Quantity: \(qtySuggested)", value: $qtySuggested, in: 1...9999)
+                        .onChange(of: qtySuggested) { _ in isDirty = true }
                 }
 
                 Section("Priority") {
@@ -635,14 +639,17 @@ private struct AddWishlistItemSheet: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                    .onChange(of: priority) { _ in isDirty = true }
                 }
 
                 Section("Details") {
                     TextField("Reason (optional)", text: $reason, axis: .vertical)
                         .lineLimit(2...4)
+                        .onChange(of: reason) { _ in isDirty = true }
 
                     TextField("Notes (optional)", text: $notes, axis: .vertical)
                         .lineLimit(2...4)
+                        .onChange(of: notes) { _ in isDirty = true }
                 }
 
                 if let error = saveError {
@@ -656,11 +663,21 @@ private struct AddWishlistItemSheet: View {
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Add Wishlist Item")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(isSaving)
+            .interactiveDismissDisabled(isDirty || isSaving)
+            .confirmationDialog(
+                "Discard changes?",
+                isPresented: $showCancelConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) {}
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .disabled(isSaving)
+                    Button("Cancel") {
+                        if isDirty { showCancelConfirmation = true } else { dismiss() }
+                    }
+                    .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isSaving {
@@ -710,6 +727,7 @@ private struct AddWishlistItemSheet: View {
                 requestedBy: appCore.currentUser?.displayName,
                 notes: notes.isEmpty ? nil : notes
             )
+            isDirty = false
             dismiss()
             onSave()
         } catch {
