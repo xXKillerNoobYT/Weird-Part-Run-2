@@ -8,16 +8,11 @@ import CryptoKit
 
 /// Unit tests for SQLCipher whole-database encryption.
 ///
-/// These tests validate:
-///  1. Key derivation is deterministic (same PIN + salt → same hex key).
-///  2. Key derivation is sensitive to PIN and salt changes.
-///  3. Plaintext-to-encrypted migration roundtrip preserves all rows.
-///  4. Migration rolls back (original preserved) on export failure.
-///  5. (Salt persistence across "sessions" is covered by `testSaltLoadOrCreate`.)
-///
-/// Tests use temporary files in the system temp directory.
-/// Keychain I/O in `CipherKeyManager.loadOrCreateSalt()` is tested separately via the
-/// `testSaltLoadOrCreate` helper which exercises the real Keychain API on macOS/iOS.
+/// Covers:
+///  - Key derivation determinism and sensitivity (PIN / salt).
+///  - Salt persistence (Keychain idempotency).
+///  - Option B migration: fresh install skip, empty DB, populated DB with row-count
+///    verification, idempotency, and failure-rollback guarantees.
 @Suite("AppDatabase Cipher Tests", .serialized)
 struct AppDatabaseCipherTests {
 
@@ -31,9 +26,10 @@ struct AppDatabaseCipherTests {
     private func cleanup(_ paths: String...) {
         let fm = FileManager.default
         for p in paths {
-            try? fm.removeItem(atPath: p)
-            try? fm.removeItem(atPath: p + "-wal")
-            try? fm.removeItem(atPath: p + "-shm")
+            for suffix in ["", "-wal", "-shm", ".encrypted-tmp", ".encrypted-tmp-wal",
+                           ".encrypted-tmp-shm", ".unencrypted.bak"] {
+                try? fm.removeItem(atPath: p + suffix)
+            }
         }
     }
 
@@ -68,8 +64,6 @@ struct AppDatabaseCipherTests {
 
     @Test("testSaltLoadOrCreate — generates 32-byte salt and is idempotent")
     func testSaltLoadOrCreate() throws {
-        // Use shared CipherKeyManager — on a real device / simulator the Keychain is available.
-        // This test verifies the salt is always 32 bytes and stable across two calls.
         let manager = CipherKeyManager.shared
         let salt1 = try manager.loadOrCreateSalt()
         let salt2 = try manager.loadOrCreateSalt()
@@ -77,128 +71,190 @@ struct AppDatabaseCipherTests {
         #expect(salt1 == salt2)  // idempotent — same salt on second call
     }
 
-    // MARK: - Migration Roundtrip
+    // MARK: - Option B Migration Tests
 
-    @Test("testPlaintextToEncryptedMigrationRoundtrip — all rows readable after migration")
-    func testPlaintextToEncryptedMigrationRoundtrip() throws {
-        let path = tmpPath("migrate")
+    @Test("testFreshInstallNoUnencryptedDBSkipsMigration — non-existent path is a no-op")
+    func testFreshInstallNoUnencryptedDBSkipsMigration() throws {
+        let path = tmpPath("fresh")
         defer { cleanup(path) }
 
-        // 1. Create a plaintext DB with a known row.
-        // Use file-based plaintext DB for the migration test.
-        let plainPool = try DatabasePool(path: path)
-        try plainPool.write { db in
-            // Create a minimal table and insert a sentinel row.
+        let salt = Data(repeating: 0x11, count: 32)
+        let keyHex = CipherKeyManager.deriveKey(pin: "0000", salt: salt)
+
+        // Must not throw and must not create any file.
+        try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
+
+        #expect(!FileManager.default.fileExists(atPath: path),
+                "No file should be created for a fresh-install path")
+    }
+
+    @Test("testEmptyUnencryptedDBMigratesSuccessfully — schema-only plaintext DB opens encrypted")
+    func testEmptyUnencryptedDBMigratesSuccessfully() throws {
+        let path = tmpPath("empty")
+        defer { cleanup(path) }
+
+        // Create a full-schema plaintext AppDatabase (all migrations, no user rows).
+        let plainDB = try AppDatabase.openDatabase(atPath: path)
+        _ = plainDB  // ensure migrator ran
+        // Close the database writer before migration.
+        try (plainDB.writer as? DatabasePool)?.close()
+
+        let salt = Data(repeating: 0x22, count: 32)
+        let keyHex = CipherKeyManager.deriveKey(pin: "1111", salt: salt)
+
+        try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
+
+        // Must open as encrypted without error.
+        let encDB = try AppDatabase.openEncryptedDatabase(atPath: path, keyHex: keyHex)
+        let version: String? = try encDB.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT value FROM settings WHERE key = 'db_schema_version'")
+        }
+        #expect(version == "\(AppDatabase.schemaVersion)",
+                "Schema version should match after migration of empty DB")
+    }
+
+    @Test("testPopulatedUnencryptedDBMigratesAllTablesWithRowCountVerification — user data preserved")
+    func testPopulatedUnencryptedDBMigratesAllTablesWithRowCountVerification() throws {
+        let path = tmpPath("populated")
+        defer { cleanup(path) }
+
+        // 1. Create a full-schema plaintext AppDatabase and insert test rows into two tables.
+        let plainDB = try AppDatabase.openDatabase(atPath: path)
+        // Insert a custom settings entry (no FK dependency).
+        try plainDB.writer.write { db in
             try db.execute(sql: """
-                CREATE TABLE IF NOT EXISTS _test_cipher (id INTEGER PRIMARY KEY, value TEXT)
+                INSERT OR REPLACE INTO settings (key, value, category)
+                VALUES ('cipher_migration_test', 'hello_option_b', 'test')
             """)
-            try db.execute(sql: "INSERT INTO _test_cipher (value) VALUES ('hello encrypted world')")
         }
-        // Close the plaintext pool.
-        try plainPool.close()
+        // Insert a part_category (no FK dependency).
+        try plainDB.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO part_categories (name, icon, color, description)
+                VALUES ('MigrationTestCat', '⚙️', '#FF0000', 'cipher test row')
+            """)
+        }
+        let plainSettingsCount = try plainDB.writer.read { db in
+            (try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM settings")) ?? 0
+        }
+        let plainCatCount = try plainDB.writer.read { db in
+            (try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM part_categories")) ?? 0
+        }
+        try (plainDB.writer as? DatabasePool)?.close()
 
-        // 2. Run migration.
-        let salt = Data(repeating: 0xAA, count: 32)
-        let keyHex = CipherKeyManager.deriveKey(pin: "9876", salt: salt)
+        // 2. Migrate to encrypted.
+        let salt = Data(repeating: 0x33, count: 32)
+        let keyHex = CipherKeyManager.deriveKey(pin: "2222", salt: salt)
         try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
 
-        // 3. Open encrypted DB and verify row is present.
-        let encPool = try AppDatabase.makeEncryptedPool(path: path, keyHex: keyHex)
-        let value: String? = try encPool.read { db in
-            let row = try Row.fetchOne(db, sql: "SELECT value FROM _test_cipher LIMIT 1")
-            return row?["value"]
+        // 3. Verify data is present in the encrypted DB.
+        let encDB = try AppDatabase.openEncryptedDatabase(atPath: path, keyHex: keyHex)
+        let testValue: String? = try encDB.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT value FROM settings WHERE key = 'cipher_migration_test'")
         }
-        try encPool.close()
+        let encSettingsCount = try encDB.writer.read { db in
+            (try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM settings")) ?? 0
+        }
+        let encCatCount = try encDB.writer.read { db in
+            (try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM part_categories")) ?? 0
+        }
 
-        #expect(value == "hello encrypted world")
+        #expect(testValue == "hello_option_b", "Custom settings row must survive migration")
+        #expect(encSettingsCount == plainSettingsCount, "settings row count must match")
+        #expect(encCatCount == plainCatCount, "part_categories row count must match")
     }
 
-    @Test("testMigrationIsIdempotent — calling migrate twice does not corrupt DB")
-    func testMigrationIsIdempotent() throws {
-        let path = tmpPath("idem")
+    @Test("testIdempotencyAlreadyEncryptedSkipsMigration — second call is a no-op")
+    func testIdempotencyAlreadyEncryptedSkipsMigration() throws {
+        let path = tmpPath("idempotent")
         defer { cleanup(path) }
 
-        // Seed a plaintext DB.
-        let plainPool = try DatabasePool(path: path)
-        try plainPool.write { db in
-            try db.execute(sql: "CREATE TABLE _t (n INTEGER PRIMARY KEY)")
-            try db.execute(sql: "INSERT INTO _t (n) VALUES (42)")
+        // 1. Create a full-schema plaintext DB and migrate to encrypted.
+        let plainDB = try AppDatabase.openDatabase(atPath: path)
+        try plainDB.writer.write { db in
+            try db.execute(sql: """
+                INSERT OR REPLACE INTO settings (key, value, category)
+                VALUES ('idempotency_test', 'still_here', 'test')
+            """)
         }
-        try plainPool.close()
+        try (plainDB.writer as? DatabasePool)?.close()
 
-        let salt = Data(repeating: 0xBB, count: 32)
-        let keyHex = CipherKeyManager.deriveKey(pin: "4321", salt: salt)
+        let salt = Data(repeating: 0x44, count: 32)
+        let keyHex = CipherKeyManager.deriveKey(pin: "3333", salt: salt)
 
-        // First migration.
-        try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
-        // Second call — should be a no-op (file already encrypted).
         try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
 
-        let encPool = try AppDatabase.makeEncryptedPool(path: path, keyHex: keyHex)
-        let n: Int? = try encPool.read { db in
-            try Int.fetchOne(db, sql: "SELECT n FROM _t LIMIT 1")
+        // 2. Call a second time — must be a no-op (DB is already encrypted).
+        try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
+
+        // 3. Verify the encrypted DB still works and data is intact.
+        let encDB = try AppDatabase.openEncryptedDatabase(atPath: path, keyHex: keyHex)
+        let value: String? = try encDB.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT value FROM settings WHERE key = 'idempotency_test'")
         }
-        try encPool.close()
-
-        #expect(n == 42)
+        #expect(value == "still_here", "Data must be intact after idempotent second migration call")
     }
 
-    @Test("testMigrationRollbackOnFailure — original DB preserved when temp path is unwritable")
-    func testMigrationRollbackOnFailure() throws {
-        // We simulate failure by using a path whose parent directory doesn't exist, so
-        // the ATTACH for the temp file fails.  The original DB must remain intact.
+    @Test("testFailureMidImportLeavesOriginalDBIntact — original plaintext DB preserved on error")
+    func testFailureMidImportLeavesOriginalDBIntact() throws {
+        // Simulate a migration failure by making the parent directory read-only so the
+        // encrypted temp file cannot be created. The original plaintext DB must remain
+        // untouched and still be readable as a plaintext SQLite file.
         let parentDir = (NSTemporaryDirectory() as NSString)
-            .appendingPathComponent("WPCipherTest_NoSuchDir_\(UUID().uuidString)")
+            .appendingPathComponent("WPCipherTest_Rollback_\(UUID().uuidString)")
         let path = (parentDir as NSString).appendingPathComponent("db.sqlite")
         let fm = FileManager.default
 
-        // Create the directory, seed plaintext DB, then remove the directory so ATTACH fails.
         try fm.createDirectory(atPath: parentDir, withIntermediateDirectories: true)
-        let pool = try DatabasePool(path: path)
-        try pool.write { db in
-            try db.execute(sql: "CREATE TABLE _r (v TEXT)")
-            try db.execute(sql: "INSERT INTO _r (v) VALUES ('original')")
-        }
-        try pool.close()
-
-        // Read original content for comparison.
-        let originalPool = try DatabasePool(path: path)
-        let originalValue: String? = try originalPool.read { db in
-            let row = try Row.fetchOne(db, sql: "SELECT v FROM _r LIMIT 1")
-            return row?["v"]
-        }
-        try originalPool.close()
-
-        // Simulate migration failure by removing write permission on the parent directory.
-        // This makes the temp file (db.sqlite.encrypted.tmp) unwritable so ATTACH fails.
-        try fm.setAttributes([.posixPermissions: 0o555], ofItemAtPath: parentDir)
         defer {
-            // Restore so cleanup works.
             try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: parentDir)
             try? fm.removeItem(atPath: parentDir)
         }
 
-        let salt = Data(repeating: 0xCC, count: 32)
-        let keyHex = CipherKeyManager.deriveKey(pin: "0000", salt: salt)
+        // Seed a full-schema plaintext DB with a sentinel row.
+        let plainDB = try AppDatabase.openDatabase(atPath: path)
+        try plainDB.writer.write { db in
+            try db.execute(sql: """
+                INSERT OR REPLACE INTO settings (key, value, category)
+                VALUES ('rollback_sentinel', 'original_value', 'test')
+            """)
+        }
+        try (plainDB.writer as? DatabasePool)?.close()
 
-        // Migration MUST fail (temp path is not writable).
+        // Record original settings row count for comparison.
+        let origPool = try DatabasePool(path: path)
+        let origCount = try origPool.read { db in
+            (try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM settings")) ?? 0
+        }
+        try origPool.close()
+
+        // Make the directory non-writable so creating the encrypted temp file fails.
+        try fm.setAttributes([.posixPermissions: 0o555], ofItemAtPath: parentDir)
+
+        let salt = Data(repeating: 0x55, count: 32)
+        let keyHex = CipherKeyManager.deriveKey(pin: "4444", salt: salt)
+
         var didThrow = false
         do {
             try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
         } catch {
             didThrow = true
         }
-        #expect(didThrow, "Expected migration to throw when temp path is unwritable")
+        #expect(didThrow, "Migration must throw when the temp path is unwritable")
 
-        // Restore permissions and verify original DB is intact.
+        // Restore permissions and verify the original plaintext DB is intact.
         try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: parentDir)
+
         let checkPool = try DatabasePool(path: path)
-        let checkValue: String? = try checkPool.read { db in
-            let row = try Row.fetchOne(db, sql: "SELECT v FROM _r LIMIT 1")
-            return row?["v"]
+        let checkCount = try checkPool.read { db in
+            (try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM settings")) ?? 0
+        }
+        let sentinel: String? = try checkPool.read { db in
+            try String.fetchOne(db, sql: "SELECT value FROM settings WHERE key = 'rollback_sentinel'")
         }
         try checkPool.close()
 
-        #expect(checkValue == originalValue, "Original plaintext DB must be unmodified after migration failure")
+        #expect(checkCount == origCount, "Row count must be unchanged after failed migration")
+        #expect(sentinel == "original_value", "Sentinel row must be intact in original DB")
     }
 }

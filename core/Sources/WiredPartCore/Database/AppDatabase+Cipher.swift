@@ -28,7 +28,7 @@ extension AppDatabase {
     /// Build a `DatabasePool` configured for SQLCipher encryption.
     ///
     /// Prefer `openEncryptedDatabase(atPath:keyHex:)` which additionally runs migrations.
-    /// Call this directly only when you need a raw pool (e.g. for `sqlcipher_export`).
+    /// Call this directly only when you need a raw pool (e.g. for import operations).
     public static func makeEncryptedPool(path: String, keyHex: String) throws -> DatabasePool {
         var config = Configuration()
         config.foreignKeysEnabled = true
@@ -47,90 +47,186 @@ extension AppDatabase {
         return try DatabasePool(path: path, configuration: config)
     }
 
-    // MARK: - One-Time Plaintext → Encrypted Migration
+    // MARK: - One-Time Plaintext → Encrypted Migration (Option B)
 
-    /// Migrate a plaintext SQLite database to SQLCipher in-place.
+    /// Migrate a plaintext SQLite database to a new SQLCipher-encrypted database.
     ///
     /// Run this **before** calling `openEncryptedDatabase(atPath:keyHex:)`.
     /// If the file does not exist, or is already encrypted, this is a no-op.
     ///
-    /// Migration steps:
+    /// **Option B algorithm** (atomic new-DB-with-import):
     /// 1. Probe-open without a key → success means file is plaintext.
-    /// 2. Open an encrypted temp file via `ATTACH ... KEY`.
-    /// 3. `SELECT sqlcipher_export('encrypted')` copies all pages.
-    /// 4. `DETACH encrypted`.
-    /// 5. Atomic rename: temp → original path (original is preserved until rename succeeds).
+    /// 2. Create a fresh SQLCipher-encrypted DB at `<path>.encrypted-tmp`.
+    /// 3. Run the full `AppDatabase` schema migrator on the new encrypted DB.
+    /// 4. ATTACH the old plaintext DB read-only as `old_db` (SQLCipher `KEY ''`).
+    /// 5. Copy every user-data table via `INSERT OR REPLACE INTO main.<t> SELECT * FROM old_db.<t>`.
+    ///    FK checks are disabled for the bulk import so order does not matter.
+    /// 6. Verify per-table row counts match.
+    /// 7. Detach old DB.
+    /// 8. Restore the current schema-version record (may have been overwritten by the copy).
+    /// 9. Close the new pool.
+    /// 10. Atomic rename: `path` → `path.unencrypted.bak` (preserved), `path.encrypted-tmp` → `path`.
     ///
-    /// On any failure: the temp file is deleted and the original plaintext DB is untouched.
+    /// On any failure the temp file is removed and the original plaintext DB is untouched.
     ///
     /// - Parameters:
-    ///   - path: Path to the database file.
+    ///   - path: Canonical database file path.
     ///   - keyHex: 64-char hex key for the destination encrypted database.
-    /// - Throws: Rethrows filesystem or SQLite errors. Callers should wrap in try/catch
-    ///           and refuse to proceed if this fails.
+    /// - Throws: Rethrows filesystem or SQLite errors.
     public static func migratePlaintextDBIfNeeded(atPath path: String, keyHex: String) throws {
         let fm = FileManager.default
 
-        // No file → nothing to migrate (fresh install; encryption set up during creation).
+        // No file → fresh install; nothing to migrate.
         guard fm.fileExists(atPath: path) else { return }
 
-        // Probe: try opening WITHOUT a passphrase.
-        // If it succeeds, the file is plaintext and needs migration.
-        // If it fails with SQLITE_NOTADB / wrong-key error, it is already encrypted.
-        var isPlaintext = false
+        // Idempotency probe: try opening WITHOUT a passphrase.
+        // Success → file is plaintext → proceed with migration.
+        // Any error → already encrypted (or corrupt) → skip.
         do {
             let probe = try DatabaseQueue(path: path)
             try probe.read { db in
                 _ = try Row.fetchOne(db, sql: "SELECT 1 FROM sqlite_master LIMIT 1")
             }
-            isPlaintext = true
+            try probe.close()
         } catch {
-            // Any error here means the DB is already encrypted (or corrupt).
-            // Either way, we skip the migration and let the encrypted open handle it.
             return
         }
 
-        guard isPlaintext else { return }
+        let tempPath = path + ".encrypted-tmp"
+        let bakPath  = path + ".unencrypted.bak"
 
-        let tempPath = path + ".encrypted.tmp"
-
-        // Clean up any leftover temp file from a previous failed attempt.
-        try? fm.removeItem(atPath: tempPath)
-
-        // Open the plaintext DB and export via sqlcipher_export.
-        let plaintextPool = try DatabasePool(path: path)
-        do {
-            try plaintextPool.writeWithoutTransaction { db in
-                // ATTACH creates the encrypted destination and sets its key.
-                try db.execute(
-                    sql: "ATTACH DATABASE ? AS encrypted KEY ?",
-                    arguments: [tempPath, "x'\(keyHex)'"]
-                )
-                // Copy all content from main DB into the encrypted DB.
-                try db.execute(sql: "SELECT sqlcipher_export('encrypted')")
-                try db.execute(sql: "DETACH DATABASE encrypted")
-            }
-            // Explicitly close all file handles before the atomic rename
-            // to avoid 'file is busy' errors.
-            try plaintextPool.close()
-        } catch {
-            // Export failed — clean up temp and preserve the original plaintext DB.
-            try? plaintextPool.close()
-            try? fm.removeItem(atPath: tempPath)
-            throw CipherMigrationError.exportFailed(error)
+        // Remove any leftover temp file from a previous failed attempt.
+        for p in [tempPath, tempPath + "-wal", tempPath + "-shm"] {
+            try? fm.removeItem(atPath: p)
         }
 
-        // Atomic rename: temp → original (WAL/SHM files are no longer valid after export).
+        // --- Step 1: Create fresh encrypted DB with full current schema ---
+        let newPool = try makeEncryptedPool(path: tempPath, keyHex: keyHex)
         do {
-            // Remove WAL/SHM before rename to avoid leaving stale journal files.
-            try? fm.removeItem(atPath: path + "-wal")
-            try? fm.removeItem(atPath: path + "-shm")
-            try fm.removeItem(atPath: path)
+            var migrator = DatabaseMigrator()
+            AppDatabase.registerMigrations(&migrator)
+            try migrator.migrate(newPool)
+
+            // --- Step 2: ATTACH old plaintext DB and copy all user-data tables ---
+            try newPool.writeWithoutTransaction { db in
+                // Disable FK checks for bulk import (parent/child copy order irrelevant).
+                // PRAGMA foreign_keys can only be changed outside of a transaction.
+                try db.execute(sql: "PRAGMA foreign_keys = OFF")
+
+                // Attach old plaintext DB. SQLCipher uses KEY '' for unencrypted attachments.
+                try db.execute(
+                    sql: "ATTACH DATABASE ? AS old_db KEY ''",
+                    arguments: [path]
+                )
+
+                // Enumerate tables present in the old DB (excluding SQLite internals and
+                // grdb_migrations — the new DB's migration tracking is already correct).
+                let oldTables = try String.fetchAll(
+                    db,
+                    sql: """
+                        SELECT name FROM old_db.sqlite_master
+                        WHERE type = 'table'
+                          AND name NOT LIKE 'sqlite_%'
+                          AND name != 'grdb_migrations'
+                        ORDER BY rowid
+                    """
+                )
+
+                // Tables present in the new encrypted DB (to guard against schema drift).
+                let newTables = Set(try String.fetchAll(
+                    db,
+                    sql: """
+                        SELECT name FROM main.sqlite_master
+                        WHERE type = 'table'
+                          AND name NOT LIKE 'sqlite_%'
+                    """
+                ))
+
+                // Copy data for every table that exists in both the old and new DB.
+                // INSERT OR REPLACE handles rows that the migrator may have seeded.
+                var mismatchedTables: [String] = []
+                for table in oldTables where newTables.contains(table) {
+                    // Escape table name with double quotes to handle reserved words.
+                    let q = "\"\(table.replacingOccurrences(of: "\"", with: "\"\""))\""
+                    try db.execute(sql: "INSERT OR REPLACE INTO main.\(q) SELECT * FROM old_db.\(q)")
+
+                    // --- Step 3: Verify row counts ---
+                    let oldCount = (try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM old_db.\(q)")) ?? 0
+                    let newCount = (try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM main.\(q)")) ?? 0
+                    if oldCount != newCount {
+                        mismatchedTables.append(table)
+                    }
+                }
+
+                try db.execute(sql: "DETACH DATABASE old_db")
+
+                if !mismatchedTables.isEmpty {
+                    throw CipherMigrationError.rowCountMismatch(mismatchedTables)
+                }
+
+                // Re-enable FK checks.
+                try db.execute(sql: "PRAGMA foreign_keys = ON")
+            }
+
+            // --- Step 4: Stamp current schema version (data copy may have overwritten it) ---
+            try newPool.write { db in
+                try db.execute(
+                    sql: """
+                        INSERT OR REPLACE INTO settings (key, value, category, updated_at)
+                        VALUES ('db_schema_version', ?, 'system', datetime('now')),
+                               ('last_migration_date', datetime('now'), 'system', datetime('now'))
+                    """,
+                    arguments: ["\(AppDatabase.schemaVersion)"]
+                )
+            }
+
+            try newPool.close()
+        } catch {
+            try? newPool.close()
+            for p in [tempPath, tempPath + "-wal", tempPath + "-shm"] {
+                try? fm.removeItem(atPath: p)
+            }
+            throw error
+        }
+
+        // --- Step 5: Atomic rename ---
+        // Original → .unencrypted.bak (preserved; deleted after 7 days by cleanupStaleBackup).
+        // Temp encrypted → canonical path.
+        do {
+            for suffix in ["-wal", "-shm"] { try? fm.removeItem(atPath: path + suffix) }
+            try? fm.removeItem(atPath: bakPath)      // Remove stale backup if present.
+            try fm.moveItem(atPath: path, toPath: bakPath)
             try fm.moveItem(atPath: tempPath, toPath: path)
         } catch {
-            // Rename failed — try to restore from the still-valid temp file if possible.
-            try? fm.removeItem(atPath: tempPath)
+            // Rename failed — temp is orphaned; clean it up. Original is still at `path`.
+            for p in [tempPath, tempPath + "-wal", tempPath + "-shm"] {
+                try? fm.removeItem(atPath: p)
+            }
             throw CipherMigrationError.renameFailed(error)
+        }
+    }
+
+    // MARK: - Backup Retention
+
+    /// Delete the `.unencrypted.bak` file once it is stale (older than `retentionDays`).
+    ///
+    /// Call on every successful app launch after `openEncryptedDatabase` succeeds.
+    /// The backup is retained for at least 7 days so the user can recover data if needed.
+    ///
+    /// - Parameters:
+    ///   - path: Canonical database path (not the backup path).
+    ///   - retentionDays: Number of days to keep the backup. Defaults to 7.
+    public static func cleanupStaleUnencryptedBackup(atPath path: String, retentionDays: Int = 7) {
+        let bakPath = path + ".unencrypted.bak"
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: bakPath),
+              let attrs = try? fm.attributesOfItem(atPath: bakPath),
+              let modified = attrs[.modificationDate] as? Date else { return }
+        let age = Date().timeIntervalSince(modified)
+        if age >= Double(retentionDays) * 86_400 {
+            try? fm.removeItem(atPath: bakPath)
+            try? fm.removeItem(atPath: bakPath + "-wal")
+            try? fm.removeItem(atPath: bakPath + "-shm")
         }
     }
 
@@ -162,6 +258,8 @@ extension AppDatabase {
 public enum CipherMigrationError: Error, Sendable {
     case exportFailed(Error)
     case renameFailed(Error)
+    /// One or more tables had a row-count mismatch after the import.
+    case rowCountMismatch([String])
 }
 
 extension CipherMigrationError: LocalizedError {
@@ -170,7 +268,9 @@ extension CipherMigrationError: LocalizedError {
         case .exportFailed(let underlying):
             return "SQLCipher export failed: \(underlying.localizedDescription)"
         case .renameFailed(let underlying):
-            return "Atomic rename failed after SQLCipher export: \(underlying.localizedDescription)"
+            return "Atomic rename failed after SQLCipher import: \(underlying.localizedDescription)"
+        case .rowCountMismatch(let tables):
+            return "Row-count mismatch after import for tables: \(tables.joined(separator: ", "))"
         }
     }
 }
