@@ -799,6 +799,8 @@ private struct ForecastDetailSheet: View {
     @State private var isLoadingLocations = true
     @State private var editError: String?
     @State private var isSaving = false
+    @State private var isDirty = false
+    @State private var showCancelConfirmation = false
 
     // Editable fields
     @State private var editName: String = ""
@@ -823,11 +825,21 @@ private struct ForecastDetailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                        .disabled(isSaving)
+                    Button("Done") {
+                        if isDirty { showCancelConfirmation = true } else { dismiss() }
+                    }
+                    .disabled(isSaving)
                 }
             }
-            .interactiveDismissDisabled(isSaving)
+            .interactiveDismissDisabled(isDirty || isSaving)
+            .confirmationDialog(
+                "Discard changes?",
+                isPresented: $showCancelConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) {}
+            }
             .alert("Error", isPresented: Binding(
                 get: { editError != nil },
                 set: { if !$0 { editError = nil } }
@@ -882,11 +894,13 @@ private struct ForecastDetailSheet: View {
             LabeledContent("Name") {
                 TextField("Name", text: $editName)
                     .multilineTextAlignment(.trailing)
+                    .onChange(of: editName) { _ in isDirty = true }
             }
             LabeledContent("Code") {
                 TextField("Code", text: $editCode)
                     .multilineTextAlignment(.trailing)
                     .monospaced()
+                    .onChange(of: editCode) { _ in isDirty = true }
             }
 
             LabeledContent("Min Stock (Global)") {
@@ -894,18 +908,21 @@ private struct ForecastDetailSheet: View {
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 60)
+                    .onChange(of: editMinStock) { _ in isDirty = true }
             }
             LabeledContent("Target Stock (Global)") {
                 TextField("0", text: $editTargetStock)
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 60)
+                    .onChange(of: editTargetStock) { _ in isDirty = true }
             }
             LabeledContent("Max Stock (Global)") {
                 TextField("0", text: $editMaxStock)
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 60)
+                    .onChange(of: editMaxStock) { _ in isDirty = true }
             }
 
             LabeledContent("Total Stock (All Locations)", value: "\(row.currentStock)")
@@ -1195,6 +1212,7 @@ private struct ForecastDetailSheet: View {
                 targetStockLevel: target
             )
             await MainActor.run {
+                isDirty = false
                 isSaving = false
             }
         } catch {

@@ -17,6 +17,8 @@ struct ForecastSettingsSheet: View {
     @State private var allSettings: [ForecastSettings] = []
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var isDirty = false
+    @State private var showCancelConfirmation = false
 
     // Editable fields — strings for TextField binding, parsed on save
     @State private var aduLookbackDays = "365"
@@ -62,7 +64,9 @@ struct ForecastSettingsSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showCancelConfirmation = true } else { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
@@ -74,7 +78,15 @@ struct ForecastSettingsSheet: View {
                 }
             }
             .task { await loadSettings() }
-            .interactiveDismissDisabled(isSaving)
+            .interactiveDismissDisabled(isDirty || isSaving)
+            .confirmationDialog(
+                "Discard changes?",
+                isPresented: $showCancelConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) {}
+            }
         }
     }
 
@@ -88,7 +100,10 @@ struct ForecastSettingsSheet: View {
                 Text("Trailer").tag("trailer")
             }
             .pickerStyle(.segmented)
-            .onChange(of: selectedLocationType) { _ in populateFields() }
+            .onChange(of: selectedLocationType) { _ in
+                populateFields()
+                isDirty = false
+            }
         } header: {
             Text("Location Type")
         } footer: {
@@ -122,6 +137,7 @@ struct ForecastSettingsSheet: View {
                         .multilineTextAlignment(.trailing)
                         .frame(maxWidth: 80)
                         .keyboardType(.numberPad)
+                        .onChange(of: aduLookbackDays) { _ in isDirty = true }
                     Text("days")
                 }
                 .frame(minHeight: 44)
@@ -133,6 +149,7 @@ struct ForecastSettingsSheet: View {
                         .multilineTextAlignment(.trailing)
                         .frame(maxWidth: 60)
                         .keyboardType(.numberPad)
+                        .onChange(of: windowWeeks) { _ in isDirty = true }
                     Text("weeks")
                 }
                 .frame(minHeight: 44)
@@ -145,6 +162,7 @@ struct ForecastSettingsSheet: View {
                     .multilineTextAlignment(.trailing)
                     .frame(maxWidth: 80)
                     .keyboardType(.numberPad)
+                    .onChange(of: minDataDays) { _ in isDirty = true }
                 Text("days")
             }
             .frame(minHeight: 44)
@@ -182,6 +200,7 @@ struct ForecastSettingsSheet: View {
                 .multilineTextAlignment(.trailing)
                 .frame(maxWidth: 80)
                 .keyboardType(.decimalPad)
+                .onChange(of: value.wrappedValue) { _ in isDirty = true }
             Text("x \(unitLabel)")
                 .foregroundStyle(.secondary)
         }
@@ -192,6 +211,7 @@ struct ForecastSettingsSheet: View {
         Section {
             Stepper("Suppress below: \(freeSpaceThreshold)", value: $freeSpaceThreshold, in: 1...10)
                 .frame(minHeight: 44)
+                .onChange(of: freeSpaceThreshold) { _ in isDirty = true }
         } header: {
             Text("Free Space Threshold")
         } footer: {
@@ -338,6 +358,7 @@ struct ForecastSettingsSheet: View {
 
         do {
             try service.saveForecastSettings(settings)
+            isDirty = false
             dismiss()
             await onSave()
         } catch {
