@@ -4,6 +4,55 @@
 
 ---
 
+## Area: vehicles — 2026-04-26 (C13 — process-automation lens)
+
+**Analyzed:** AUTO GO iter 20 C13 (`/claude-automation-recommender` scoped to FleetService + Fleet iOS files), reviewing the *full vehicles rotation* (iters 1–19) for hooks/skills/scanners — not code-level reusables (those went under iter 14 C7b below). Three net-new scanner candidates surfaced from C8/C9/C12 work.
+
+### 🔍 New Scanner: JOIN-side soft-delete guard
+
+**Why:** Iter 9 C3 found 3 sites where the primary-table soft-delete filter was correct but the JOIN-side filter was missing — `listMaintenanceRecords` and `getMaintenanceTrendsReport` both LEFT-JOINed `maintenance_types` without `mt.deleted_at IS NULL AND mt.is_active = 1`. The existing hunt-fix scanner only inspects WHERE clauses; JOIN ON-conditions slip through.
+
+**Proposed automation:** New `~/.claude/scheduled-tasks/join-side-soft-delete-scanner/SKILL.md` that:
+1. Parses every SQL string in `core/Sources/WiredPartCore/Services/*.swift`
+2. Identifies JOIN clauses (`LEFT|INNER|RIGHT JOIN <table>`)
+3. Cross-references the joined table against the soft-deletable list in `feedback_deleted_at_defense_in_depth.md`
+4. Flags any join where the ON-condition lacks `<alias>.deleted_at IS NULL` (and `is_active = 1` if the column exists)
+
+**Cross-area evidence:** Vehicles (3 sites), Tools (suspected 2+ from rotation 1), Parts (likely many — categorical joins everywhere). Estimated 15+ sites project-wide.
+
+**Cross-area applicability:** ⭐⭐⭐⭐⭐ (every service file with JOIN queries on soft-deletable tables).
+
+---
+
+### 🔍 New Scanner: Service-layer permission gate
+
+**Why:** Iter 15 C8 found that Fleet write paths (`logFuelLevel`, `addVehicleStockItem`, `updateTrailerLocation`) rely on UI-side permission gates from `IOSMyTruckPage` — but a direct service call bypasses those gates. UI-only authz is defense-in-breadth, not depth. Filed as #279 (T2) for vehicles, but the pattern is project-wide: service writers across Parts, Jobs, Warehouse, Tools likely have the same gap.
+
+**Proposed automation:** New `~/.claude/scheduled-tasks/service-permission-audit/SKILL.md` that:
+1. Greps service files for write methods (insert/update/delete SQL)
+2. Inspects each method's signature for a `userId:` or `actorId:` parameter
+3. Flags methods that mutate without taking an actor — those have no service-layer authz hook
+4. Optionally cross-checks against a `.allowAnonymousWrite` whitelist for legitimate cases (logging, telemetry)
+
+**Cross-area applicability:** ⭐⭐⭐⭐⭐ (every service writer is a candidate). Catches the systemic gap that #279 represents one instance of.
+
+---
+
+### 🔍 New Scanner: Status-field orthogonality
+
+**Why:** Iter 19 C12 codified the rule (now in `feedback_deleted_at_defense_in_depth.md`) that `status` columns (vehicles.status, jobs.status, orders.status, parts.status, etc.) are **independent** of `is_active` and `deleted_at`. List queries that should hide retired/sold/cancelled rows must add explicit `status IN (...)` filters. No existing scanner enforces this; it's discovered manually each rotation when an "I deleted it but it still shows" bug surfaces.
+
+**Proposed automation:** New `~/.claude/scheduled-tasks/status-orthogonality-scanner/SKILL.md` that:
+1. Identifies tables in `AppDatabase+Migrations.swift` with a `status` TEXT column AND a `deleted_at` column
+2. For each list-query method (returns array, no `WHERE id = ?` constraint), checks whether the SQL filters on `status`
+3. Flags missing `status` filter as a T2 finding with a "is this list intended to include retired/sold/cancelled rows?" prompt
+
+**Cross-area evidence:** Vehicles (status: active/retired/sold/in_shop), Jobs (status: open/closed/archived), Orders (status: draft/submitted/received/cancelled), Parts (status field per schema), Tools (status: active/lost/decommissioned). 5+ tables, 30+ list-query call sites.
+
+**Cross-area applicability:** ⭐⭐⭐⭐ (specific to soft-deletable tables with status fields, but those are most of the schema).
+
+---
+
 ## Area: vehicles — 2026-04-25
 
 **Analyzed:** AUTO GO iter 14 C7b (dev-improvement-scanner phase 5 — skill-creation gaps) on FleetService + 18 Fleet iOS files. Two net-new patterns repeated 6+ times each.

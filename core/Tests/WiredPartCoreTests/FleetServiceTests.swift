@@ -523,8 +523,8 @@ struct FleetServiceTests {
         #expect(v?.assignedUserName == nil)
     }
 
-    @Test("updateTrailerLocation is a no-op on a soft-deleted trailer")
-    func testUpdateTrailerLocation_noOpOnSoftDeletedTrailer() throws {
+    @Test("updateTrailerLocation throws trailerNotFound for a soft-deleted trailer")
+    func testUpdateTrailerLocation_throwsForSoftDeletedTrailer() throws {
         let env = try E2ETestHelpers.setUp()
         let trailerId = try env.db.writer.write { db -> Int64 in
             try db.execute(sql: """
@@ -533,20 +533,29 @@ struct FleetServiceTests {
                 """)
             return db.lastInsertedRowID
         }
-        // Set a known is_at_shop state then soft-delete the trailer
+        // Soft-delete the trailer
         try env.db.writer.write { db in
             try db.execute(sql: "UPDATE job_trailers SET is_at_shop = 0, deleted_at = datetime('now') WHERE id = ?",
                            arguments: [trailerId])
         }
-        // Stale dispatcher marks trailer as at-shop — must not mutate a tombstoned row
-        try env.fleet.updateTrailerLocation(trailerId: trailerId, locationType: "shop", locationLabel: "Yard", jobId: nil, recordedBy: env.adminUserId)
-
+        // The guard must fire before any history row is inserted
+        #expect(throws: FleetService.FleetError.trailerNotFound(trailerId)) {
+            try env.fleet.updateTrailerLocation(trailerId: trailerId, locationType: "shop", locationLabel: "Yard", jobId: nil, recordedBy: env.adminUserId)
+        }
+        // No orphan audit row must have been inserted
+        let historyCount = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM trailer_location_history WHERE trailer_id = ?",
+                             arguments: [trailerId]) ?? 0
+        }
+        #expect(historyCount == 0,
+            "Soft-deleted trailer must not receive a history row — guard must fire before INSERT")
+        // is_at_shop must remain unchanged (0)
         let row = try env.db.writer.read { db in
             try Row.fetchOne(db, sql: "SELECT is_at_shop FROM job_trailers WHERE id = ?", arguments: [trailerId])
         }
         let isAtShop: Int = row?["is_at_shop"] ?? -1
         #expect(isAtShop == 0,
-            "Soft-deleted trailer is_at_shop must not change — UPDATE must guard AND deleted_at IS NULL")
+            "Soft-deleted trailer is_at_shop must not change")
     }
 
     @Test("logFuelLevel is a no-op on a soft-deleted vehicle")
@@ -647,6 +656,148 @@ struct FleetServiceTests {
                 vehicleId: vehicleId, partName: "WireNut", quantity: 5, stockType: "standard"
             )
         }
+    }
+
+    // MARK: - Issue #282: Defense-in-depth hygiene fixes
+
+    @Test("updateTrailerLocation throws userNotFound for non-existent recordedBy")
+    func testUpdateTrailerLocation_throwsForNonExistentUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let trailerId = try env.fleet.createTrailer(trailerNumber: "T-FK-USER", trailerType: "flatbed", notes: nil)
+        let bogusUserId: Int64 = 999_999
+        #expect(throws: FleetService.FleetError.userNotFound(bogusUserId)) {
+            try env.fleet.updateTrailerLocation(
+                trailerId: trailerId,
+                locationType: "shop",
+                locationLabel: "Yard",
+                jobId: nil,
+                recordedBy: bogusUserId
+            )
+        }
+        // No row must have been inserted
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM trailer_location_history WHERE trailer_id = ?",
+                             arguments: [trailerId]) ?? 0
+        }
+        #expect(count == 0, "No audit row must land when recordedBy is not a valid user")
+    }
+
+    @Test("updateTrailerLocation throws userNotFound for soft-deleted recordedBy")
+    func testUpdateTrailerLocation_throwsForSoftDeletedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let trailerId = try env.fleet.createTrailer(trailerNumber: "T-FK-SDEL", trailerType: "flatbed", notes: nil)
+        // Soft-delete the admin user
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        #expect(throws: FleetService.FleetError.userNotFound(env.adminUserId)) {
+            try env.fleet.updateTrailerLocation(
+                trailerId: trailerId,
+                locationType: "job",
+                locationLabel: nil,
+                jobId: nil,
+                recordedBy: env.adminUserId
+            )
+        }
+    }
+
+    @Test("addVehicleStockItem coerces empty/whitespace location strings to nil")
+    func testAddVehicleStockItem_emptyLocationCoercedToNil() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-LOC-NIL", vehicleName: "LocNilTruck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        try env.fleet.addVehicleStockItem(
+            vehicleId: vehicleId, partName: "Bolt", quantity: 1, stockType: "standard",
+            sourceLocation: "   ", destinationLocation: ""
+        )
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT source_location, destination_location FROM vehicle_stock WHERE vehicle_id = ?",
+                             arguments: [vehicleId])
+        }
+        #expect(row != nil)
+        let src: String? = row?["source_location"]
+        let dst: String? = row?["destination_location"]
+        #expect(src == nil, "Whitespace-only sourceLocation must be stored as nil")
+        #expect(dst == nil, "Empty destinationLocation must be stored as nil")
+    }
+
+    @Test("addVehicleStockItem caps location strings to 100 characters")
+    func testAddVehicleStockItem_locationCappedAt100Chars() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-LOC-CAP", vehicleName: "LocCapTruck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let longString = String(repeating: "A", count: 150)
+        let exactly100 = String(repeating: "B", count: 100)
+        try env.fleet.addVehicleStockItem(
+            vehicleId: vehicleId, partName: "Cap Test Part", quantity: 1, stockType: "standard",
+            sourceLocation: longString, destinationLocation: exactly100
+        )
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT source_location, destination_location FROM vehicle_stock WHERE vehicle_id = ?",
+                             arguments: [vehicleId])
+        }
+        #expect(row != nil)
+        let src: String? = row?["source_location"]
+        let dst: String? = row?["destination_location"]
+        #expect(src?.count == 100, "150-char sourceLocation must be truncated to 100")
+        #expect(dst?.count == 100, "Exactly-100-char destinationLocation must be stored as-is")
+    }
+
+    @Test("addVehicleStockItem stores valid location strings unchanged")
+    func testAddVehicleStockItem_validLocationStoredUnchanged() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-LOC-OK", vehicleName: "LocOkTruck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        try env.fleet.addVehicleStockItem(
+            vehicleId: vehicleId, partName: "Nut", quantity: 5, stockType: "standard",
+            sourceLocation: "Warehouse A", destinationLocation: "Truck Bay 3"
+        )
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT source_location, destination_location FROM vehicle_stock WHERE vehicle_id = ?",
+                             arguments: [vehicleId])
+        }
+        #expect(row != nil)
+        let src: String? = row?["source_location"]
+        let dst: String? = row?["destination_location"]
+        #expect(src == "Warehouse A")
+        #expect(dst == "Truck Bay 3")
+    }
+
+    @Test("addVehicleStockItem caps transfer_reason to 100 characters")
+    func testAddVehicleStockItem_transferReasonCappedAt100Chars() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-TR-CAP", vehicleName: "TrReasonTruck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let longReason = String(repeating: "X", count: 150)
+        let exactReason = String(repeating: "Y", count: 100)
+        // Insert with the long reason, then read back
+        try env.fleet.addVehicleStockItem(
+            vehicleId: vehicleId, partName: "Cap Test", quantity: 2, stockType: "standard",
+            transferReason: longReason
+        )
+        // Insert a second item with exactly-100 reason
+        try env.fleet.addVehicleStockItem(
+            vehicleId: vehicleId, partName: "Cap Test 2", quantity: 1, stockType: "standard",
+            transferReason: exactReason
+        )
+        let rows = try env.db.writer.read { db in
+            try Row.fetchAll(db, sql: "SELECT part_name, transfer_reason FROM vehicle_stock WHERE vehicle_id = ? ORDER BY id",
+                             arguments: [vehicleId])
+        }
+        #expect(rows.count == 2)
+        let r1: String? = rows[0]["transfer_reason"]
+        let r2: String? = rows[1]["transfer_reason"]
+        #expect(r1?.count == 100, "150-char transferReason must be truncated to 100")
+        #expect(r2?.count == 100, "Exactly-100-char transferReason must be stored as-is")
     }
 
     // MARK: - Input validation — create paths (iter 68)

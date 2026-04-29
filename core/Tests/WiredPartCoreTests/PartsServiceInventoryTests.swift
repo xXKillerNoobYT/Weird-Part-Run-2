@@ -600,4 +600,180 @@ struct PartsServiceInventoryTests {
         }
         #expect(count == 0)
     }
+
+    // MARK: - Forecast Settings + Free Space coverage
+
+    /// Build a valid ForecastSettings struct for tests.
+    private func makeSettings(
+        locationType: String = "warehouse",
+        locationId: Int64? = nil,
+        aduLookbackDays: Int = 90,
+        commonMin: Double = 1.0,
+        commonTarget: Double = 2.0,
+        commonMax: Double = 3.0,
+        criticalMin: Double = 1.5,
+        criticalTarget: Double = 2.5,
+        criticalMax: Double = 4.0
+    ) -> ForecastSettings {
+        ForecastSettings(
+            locationType: locationType, locationId: locationId,
+            usageUnit: "days", aduLookbackDays: aduLookbackDays,
+            windowWeeks: 4, minDataDays: 7,
+            commonMinMultiplier: commonMin, commonTargetMultiplier: commonTarget,
+            commonMaxMultiplier: commonMax,
+            criticalMinMultiplier: criticalMin, criticalTargetMultiplier: criticalTarget,
+            criticalMaxMultiplier: criticalMax,
+            freeSpaceSuppressThreshold: 3
+        )
+    }
+
+    @Test("getForecastSettings returns nil for an unknown location type")
+    func testGetForecastSettings_nilForUnknownType() throws {
+        let env = try E2ETestHelpers.setUp()
+        let result = try env.parts.getForecastSettings(locationType: "nonexistent_type_xyz", locationId: nil)
+        #expect(result == nil)
+    }
+
+    @Test("saveForecastSettings updates an existing default when reloaded with mutations")
+    func testSaveAndGetForecastSettings_roundtrip() throws {
+        let env = try E2ETestHelpers.setUp()
+        guard var current = try env.parts.getForecastSettings(locationType: "warehouse", locationId: nil) else {
+            Issue.record("Expected seeded default warehouse settings to exist")
+            return
+        }
+        current.aduLookbackDays = 60
+        try env.parts.saveForecastSettings(current)
+
+        let loaded = try env.parts.getForecastSettings(locationType: "warehouse", locationId: nil)
+        #expect(loaded?.aduLookbackDays == 60)
+        #expect(loaded?.locationId == nil)
+    }
+
+    @Test("getForecastSettings prefers location-specific override over default")
+    func testGetForecastSettings_specificBeatsDefault() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Insert override for location 7 (default warehouse seed already exists with aduLookbackDays = 365).
+        try env.parts.saveForecastSettings(makeSettings(locationId: 7, aduLookbackDays: 90))
+
+        let loaded = try env.parts.getForecastSettings(locationType: "warehouse", locationId: 7)
+        #expect(loaded?.aduLookbackDays == 90)
+        #expect(loaded?.locationId == 7)
+    }
+
+    @Test("getForecastSettings falls back to default when no override exists for location")
+    func testGetForecastSettings_fallbackToDefault() throws {
+        let env = try E2ETestHelpers.setUp()
+        // No override saved for location 99 — should return the seeded default row.
+        let loaded = try env.parts.getForecastSettings(locationType: "warehouse", locationId: 99)
+        #expect(loaded != nil)
+        #expect(loaded?.locationId == nil) // returned the default row
+    }
+
+    @Test("saveForecastSettings rejects aduLookbackDays of 0")
+    func testSaveForecastSettings_rejectsZeroLookback() throws {
+        let env = try E2ETestHelpers.setUp()
+        let bad = makeSettings(aduLookbackDays: 0)
+        #expect(throws: PartsService.PartsError.self) {
+            try env.parts.saveForecastSettings(bad)
+        }
+    }
+
+    @Test("saveForecastSettings rejects out-of-order common multipliers")
+    func testSaveForecastSettings_rejectsCommonMultiplierOrder() throws {
+        let env = try E2ETestHelpers.setUp()
+        let bad = makeSettings(commonMin: 5.0, commonTarget: 2.0, commonMax: 3.0)
+        #expect(throws: PartsService.PartsError.self) {
+            try env.parts.saveForecastSettings(bad)
+        }
+    }
+
+    @Test("saveForecastSettings rejects out-of-order critical multipliers")
+    func testSaveForecastSettings_rejectsCriticalMultiplierOrder() throws {
+        let env = try E2ETestHelpers.setUp()
+        let bad = makeSettings(criticalMin: 5.0, criticalTarget: 2.0, criticalMax: 3.0)
+        #expect(throws: PartsService.PartsError.self) {
+            try env.parts.saveForecastSettings(bad)
+        }
+    }
+
+    @Test("getFreeSpaceRating returns 5 (middle) when not yet set")
+    func testGetFreeSpaceRating_defaultsToFive() throws {
+        let env = try E2ETestHelpers.setUp()
+        let rating = try env.parts.getFreeSpaceRating(locationType: "warehouse", locationId: 1)
+        #expect(rating == 5)
+    }
+
+    @Test("setFreeSpaceRating then getFreeSpaceRating round-trips a valid rating")
+    func testSetFreeSpaceRating_roundtrip() throws {
+        let env = try E2ETestHelpers.setUp()
+        try env.parts.setFreeSpaceRating(
+            locationType: "warehouse", locationId: 1, rating: 8, userId: env.adminUserId
+        )
+
+        let rating = try env.parts.getFreeSpaceRating(locationType: "warehouse", locationId: 1)
+        #expect(rating == 8)
+    }
+
+    @Test("setFreeSpaceRating clamps below 1 to 1 and above 10 to 10")
+    func testSetFreeSpaceRating_clampsRange() throws {
+        let env = try E2ETestHelpers.setUp()
+        try env.parts.setFreeSpaceRating(
+            locationType: "warehouse", locationId: 2, rating: -3, userId: env.adminUserId
+        )
+        #expect(try env.parts.getFreeSpaceRating(locationType: "warehouse", locationId: 2) == 1)
+
+        try env.parts.setFreeSpaceRating(
+            locationType: "warehouse", locationId: 3, rating: 99, userId: env.adminUserId
+        )
+        #expect(try env.parts.getFreeSpaceRating(locationType: "warehouse", locationId: 3) == 10)
+    }
+
+    @Test("setFreeSpaceRating updates an existing row instead of inserting a duplicate")
+    func testSetFreeSpaceRating_updatesExisting() throws {
+        let env = try E2ETestHelpers.setUp()
+        try env.parts.setFreeSpaceRating(
+            locationType: "warehouse", locationId: 1, rating: 4, userId: env.adminUserId
+        )
+        try env.parts.setFreeSpaceRating(
+            locationType: "warehouse", locationId: 1, rating: 7, userId: env.adminUserId
+        )
+
+        #expect(try env.parts.getFreeSpaceRating(locationType: "warehouse", locationId: 1) == 7)
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM location_free_space
+                WHERE location_type = 'warehouse' AND location_id = 1
+                """) ?? 0
+        }
+        #expect(count == 1)
+    }
+
+    @Test("listAllForecastSettings returns the three seeded defaults on a fresh DB")
+    func testListAllForecastSettings_seededDefaults() throws {
+        let env = try E2ETestHelpers.setUp()
+        let all = try env.parts.listAllForecastSettings()
+        #expect(all.count == 3)
+        let types = Set(all.map { $0.locationType })
+        #expect(types == ["warehouse", "truck", "trailer"])
+        // All seeded rows are defaults (location_id IS NULL).
+        #expect(all.allSatisfy { $0.locationId == nil })
+    }
+
+    @Test("listAllForecastSettings includes overrides alongside seeded defaults, ordered by location_type then location_id")
+    func testListAllForecastSettings_returnsOrdered() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Add 2 overrides on top of the 3 seeded defaults.
+        try env.parts.saveForecastSettings(makeSettings(locationType: "warehouse", locationId: 2))
+        try env.parts.saveForecastSettings(makeSettings(locationType: "truck", locationId: 5))
+
+        let all = try env.parts.listAllForecastSettings()
+        #expect(all.count == 5)
+        // Ordering: location_type ASC, then location_id ASC (nulls first in SQLite).
+        // Expected: trailer/null, truck/null, truck/5, warehouse/null, warehouse/2.
+        #expect(all[0].locationType == "trailer" && all[0].locationId == nil)
+        #expect(all[1].locationType == "truck" && all[1].locationId == nil)
+        #expect(all[2].locationType == "truck" && all[2].locationId == 5)
+        #expect(all[3].locationType == "warehouse" && all[3].locationId == nil)
+        #expect(all[4].locationType == "warehouse" && all[4].locationId == 2)
+    }
 }
