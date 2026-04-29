@@ -258,6 +258,8 @@ struct IOSProcurementPage: View {
 
     /// Updates the cached ready-to-generate list. Call whenever checkedParts, selectedSupplier,
     /// pullDecisions, or items change. Avoids repeated O(N) filter scans on every render.
+    /// Triggered by discrete user actions (checkbox tap, supplier pick, pull decision) — not
+    /// by a hot render path — so per-call O(N) work is acceptable without debouncing.
     private func updateReadyToGenerate() {
         cachedReadyToGenerate = items.filter { item in
             checkedParts.contains(item.id) &&
@@ -1055,7 +1057,9 @@ struct IOSProcurementPage: View {
                     selectedSupplier[item.id] = preferred.id
                 }
             }
-            // Single-pass source counts — avoids per-render filter scans in smart card filters
+            // Single-pass source counts — avoids per-render filter scans in smart card filters.
+            // seenTypes deduplicates per item: a part may have multiple JPO sources (one per job),
+            // but the card should count unique parts with that source type, not source instances.
             var counts: [String: Int] = [:]
             for item in items {
                 var seenTypes: Set<String> = []
