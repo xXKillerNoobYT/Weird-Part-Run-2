@@ -144,10 +144,19 @@ extension AppDatabase {
 
                 // Copy data for every table that exists in both the old and new DB.
                 // INSERT OR REPLACE handles rows that the migrator may have seeded.
+                //
+                // Table names come from sqlite_master on our own database files, so they are
+                // trusted. We additionally validate that each name contains only safe
+                // characters (alphanumeric + underscore) as a defense-in-depth measure before
+                // interpolating into SQL.
                 var mismatchedTables: [String] = []
                 for table in oldTables where newTables.contains(table) {
-                    // Escape table name with double quotes to handle reserved words.
-                    let q = "\"\(table.replacingOccurrences(of: "\"", with: "\"\""))\""
+                    // Validate table name: allow only alphanumeric characters and underscores.
+                    guard table.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.union(.init(charactersIn: "_")).contains($0) }) else {
+                        continue
+                    }
+                    // Quote the identifier to handle any reserved words (still safe after validation).
+                    let q = "\"\(table)\""
                     try db.execute(sql: "INSERT OR REPLACE INTO main.\(q) SELECT * FROM old_db.\(q)")
 
                     // --- Step 3: Verify row counts ---
@@ -208,6 +217,9 @@ extension AppDatabase {
 
     // MARK: - Backup Retention
 
+    /// Seconds in a day (used for backup retention calculation).
+    private static let secondsPerDay: Double = 86_400
+
     /// Delete the `.unencrypted.bak` file once it is stale (older than `retentionDays`).
     ///
     /// Call on every successful app launch after `openEncryptedDatabase` succeeds.
@@ -223,7 +235,7 @@ extension AppDatabase {
               let attrs = try? fm.attributesOfItem(atPath: bakPath),
               let modified = attrs[.modificationDate] as? Date else { return }
         let age = Date().timeIntervalSince(modified)
-        if age >= Double(retentionDays) * 86_400 {
+        if age >= Double(retentionDays) * Self.secondsPerDay {
             try? fm.removeItem(atPath: bakPath)
             try? fm.removeItem(atPath: bakPath + "-wal")
             try? fm.removeItem(atPath: bakPath + "-shm")
