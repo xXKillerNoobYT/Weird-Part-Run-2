@@ -88,7 +88,6 @@ struct IOSWishlistPage: View {
         } message: {
             Text("This item will be permanently removed from the wishlist.")
         }
-        .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }
     }
@@ -414,8 +413,8 @@ struct IOSWishlistPage: View {
         guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
         let approver = appCore.currentUser?.displayName ?? "Unknown"
         do {
-            try service.approveItem(id: id, by: approver)
-            loadData()
+            let updated = try service.approveItem(id: id, by: approver)
+            applyPartialUpdate(updated)
         } catch {
             loadError = userFriendlyError(error, context: "approve wishlist item")
         }
@@ -426,8 +425,8 @@ struct IOSWishlistPage: View {
         guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
         let dismisser = appCore.currentUser?.displayName ?? "Unknown"
         do {
-            try service.dismissItem(id: id, by: dismisser, reason: reason)
-            loadData()
+            let updated = try service.dismissItem(id: id, by: dismisser, reason: reason)
+            applyPartialUpdate(updated)
         } catch {
             loadError = userFriendlyError(error, context: "dismiss wishlist item")
         }
@@ -437,8 +436,8 @@ struct IOSWishlistPage: View {
         guard let service = appCore.wishlistService else { loadError = "Service not available"; return }
         guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
         do {
-            try service.sendToProcurement(id: id)
-            loadData()
+            let updated = try service.sendToProcurement(id: id)
+            applyPartialUpdate(updated)
         } catch {
             loadError = userFriendlyError(error, context: "send to procurement")
         }
@@ -448,8 +447,8 @@ struct IOSWishlistPage: View {
         guard let service = appCore.wishlistService else { loadError = "Service not available"; return }
         guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
         do {
-            try service.reopenItem(id: id)
-            loadData()
+            let updated = try service.reopenItem(id: id)
+            applyPartialUpdate(updated)
         } catch {
             loadError = userFriendlyError(error, context: "reopen wishlist item")
         }
@@ -460,10 +459,52 @@ struct IOSWishlistPage: View {
         guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
         do {
             try service.deleteItem(id: id)
-            loadData()
+            removeFromSections(item)
         } catch {
             loadError = userFriendlyError(error, context: "delete wishlist item")
         }
+    }
+
+    // MARK: - Partial Update Helpers
+
+    /// Apply a single-item diff: remove the old version from whichever section holds it,
+    /// then insert the updated item at the front of the section that matches its sourceType.
+    /// Only `loadData()` (initial load + pull-to-refresh) performs a full DB fetch.
+    private func applyPartialUpdate(_ updatedItem: WishlistItem) {
+        guard let id = updatedItem.id else { return }
+        let newUserAdded = sections.userAdded.filter { $0.id != id }
+        let newForecast = sections.forecastDemand.filter { $0.id != id }
+        let newAutoAdded = sections.autoAdded.filter { $0.id != id }
+        switch updatedItem.sourceType {
+        case "manual":
+            sections = WishlistService.WishlistSections(
+                userAdded: [updatedItem] + newUserAdded,
+                forecastDemand: newForecast,
+                autoAdded: newAutoAdded
+            )
+        case "forecast":
+            sections = WishlistService.WishlistSections(
+                userAdded: newUserAdded,
+                forecastDemand: [updatedItem] + newForecast,
+                autoAdded: newAutoAdded
+            )
+        default:
+            sections = WishlistService.WishlistSections(
+                userAdded: newUserAdded,
+                forecastDemand: newForecast,
+                autoAdded: [updatedItem] + newAutoAdded
+            )
+        }
+    }
+
+    /// Remove a deleted item from whichever section holds it, with no DB fetch.
+    private func removeFromSections(_ item: WishlistItem) {
+        guard let id = item.id else { return }
+        sections = WishlistService.WishlistSections(
+            userAdded: sections.userAdded.filter { $0.id != id },
+            forecastDemand: sections.forecastDemand.filter { $0.id != id },
+            autoAdded: sections.autoAdded.filter { $0.id != id }
+        )
     }
 
     // MARK: - Data Loading
