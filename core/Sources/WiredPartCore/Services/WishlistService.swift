@@ -10,9 +10,11 @@ import GRDB
 /// Tables that may not yet exist are handled gracefully.
 public final class WishlistService: Sendable {
     private let db: AppDatabase
+    private let auth: AuthService
 
-    public init(db: AppDatabase) {
+    public init(db: AppDatabase, auth: AuthService) {
         self.db = db
+        self.auth = auth
     }
 
     // =========================================================================
@@ -24,6 +26,7 @@ public final class WishlistService: Sendable {
         case invalidStatus(String)
         case alreadyProcessed(Int64, String)
         case dismissReasonRequired
+        case insufficientPermissions(required: String)
 
         public var errorDescription: String? {
             switch self {
@@ -33,6 +36,8 @@ public final class WishlistService: Sendable {
                 "Wishlist item #\(id) is already \(status)"
             case .dismissReasonRequired:
                 "A dismiss reason is required"
+            case .insufficientPermissions(let required):
+                "You don't have permission to perform this action (required: \(required))"
             }
         }
     }
@@ -206,49 +211,39 @@ public final class WishlistService: Sendable {
     // =========================================================================
 
     /// Approve a pending wishlist item.
+    /// Requires the caller to hold the `wishlist.approve` permission.
     @discardableResult
-    public func approveItem(id: Int64, by approver: String) throws -> WishlistItem {
-        try db.writer.write { dbConn in
-            guard var item = try WishlistItem.fetchOne(dbConn, key: id) else {
-                throw WishlistError.itemNotFound(id)
-            }
-            guard item.status == "pending" else {
-                throw WishlistError.alreadyProcessed(id, item.status)
-            }
-            item.status = "approved"
-            item.approvedBy = approver
-            item.approvedAt = Self.nowString()
-            try item.update(dbConn)
-            return item
+    public func approveItem(id: Int64, byUserId: Int64) throws -> WishlistItem {
+        guard try auth.hasPermission(byUserId, permissionKey: "wishlist.approve") else {
+            throw WishlistError.insufficientPermissions(required: "wishlist.approve")
         }
+        guard let userRecord = try auth.getUser(byUserId) else {
+            throw WishlistError.insufficientPermissions(required: "wishlist.approve")
+        }
+        return try _performApprove(id: id, approvedByName: userRecord.displayName)
     }
 
     /// Dismiss a pending wishlist item. A reason is required.
+    /// Requires the caller to hold the `wishlist.dismiss` permission.
     @discardableResult
-    public func dismissItem(id: Int64, by dismisser: String, reason: String) throws -> WishlistItem {
-        guard !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw WishlistError.dismissReasonRequired
+    public func dismissItem(id: Int64, byUserId: Int64, reason: String) throws -> WishlistItem {
+        guard try auth.hasPermission(byUserId, permissionKey: "wishlist.dismiss") else {
+            throw WishlistError.insufficientPermissions(required: "wishlist.dismiss")
         }
-        return try db.writer.write { dbConn in
-            guard var item = try WishlistItem.fetchOne(dbConn, key: id) else {
-                throw WishlistError.itemNotFound(id)
-            }
-            guard item.status == "pending" || item.status == "approved" else {
-                throw WishlistError.alreadyProcessed(id, item.status)
-            }
-            item.status = "dismissed"
-            item.dismissedBy = dismisser
-            item.dismissedAt = Self.nowString()
-            item.dismissReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
-            try item.update(dbConn)
-            return item
+        guard let userRecord = try auth.getUser(byUserId) else {
+            throw WishlistError.insufficientPermissions(required: "wishlist.dismiss")
         }
+        return try _performDismiss(id: id, dismissedByName: userRecord.displayName, reason: reason)
     }
 
     /// Mark an approved item as sent to procurement.
+    /// Requires the caller to hold the `wishlist.send_to_procurement` permission.
     @discardableResult
-    public func sendToProcurement(id: Int64) throws -> WishlistItem {
-        try db.writer.write { dbConn in
+    public func sendToProcurement(id: Int64, byUserId: Int64) throws -> WishlistItem {
+        guard try auth.hasPermission(byUserId, permissionKey: "wishlist.send_to_procurement") else {
+            throw WishlistError.insufficientPermissions(required: "wishlist.send_to_procurement")
+        }
+        return try db.writer.write { dbConn in
             guard var item = try WishlistItem.fetchOne(dbConn, key: id) else {
                 throw WishlistError.itemNotFound(id)
             }
@@ -264,9 +259,13 @@ public final class WishlistService: Sendable {
     }
 
     /// Reopen a dismissed item back to pending.
+    /// Requires the caller to hold the `wishlist.reopen` permission.
     @discardableResult
-    public func reopenItem(id: Int64) throws -> WishlistItem {
-        try db.writer.write { dbConn in
+    public func reopenItem(id: Int64, byUserId: Int64) throws -> WishlistItem {
+        guard try auth.hasPermission(byUserId, permissionKey: "wishlist.reopen") else {
+            throw WishlistError.insufficientPermissions(required: "wishlist.reopen")
+        }
+        return try db.writer.write { dbConn in
             guard var item = try WishlistItem.fetchOne(dbConn, key: id) else {
                 throw WishlistError.itemNotFound(id)
             }
@@ -278,6 +277,50 @@ public final class WishlistService: Sendable {
             item.status = "pending"
             item.dismissedBy = nil
             item.dismissedAt = nil
+            try item.update(dbConn)
+            return item
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Internal State-Mutation Helpers (no permission check)
+    // =========================================================================
+
+    /// Internal approve — called by `processAutoApprovals` (system path, no user permission check).
+    @discardableResult
+    private func _performApprove(id: Int64, approvedByName: String) throws -> WishlistItem {
+        try db.writer.write { dbConn in
+            guard var item = try WishlistItem.fetchOne(dbConn, key: id) else {
+                throw WishlistError.itemNotFound(id)
+            }
+            guard item.status == "pending" else {
+                throw WishlistError.alreadyProcessed(id, item.status)
+            }
+            item.status = "approved"
+            item.approvedBy = approvedByName
+            item.approvedAt = Self.nowString()
+            try item.update(dbConn)
+            return item
+        }
+    }
+
+    /// Internal dismiss — called by system paths that bypass the permission gate.
+    @discardableResult
+    private func _performDismiss(id: Int64, dismissedByName: String, reason: String) throws -> WishlistItem {
+        guard !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw WishlistError.dismissReasonRequired
+        }
+        return try db.writer.write { dbConn in
+            guard var item = try WishlistItem.fetchOne(dbConn, key: id) else {
+                throw WishlistError.itemNotFound(id)
+            }
+            guard item.status == "pending" || item.status == "approved" else {
+                throw WishlistError.alreadyProcessed(id, item.status)
+            }
+            item.status = "dismissed"
+            item.dismissedBy = dismissedByName
+            item.dismissedAt = Self.nowString()
+            item.dismissReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
             try item.update(dbConn)
             return item
         }
@@ -353,7 +396,7 @@ public final class WishlistService: Sendable {
             var count = 0
             for item in expiredItems {
                 guard let id = item.id else { continue }
-                _ = try approveItem(id: id, by: approver)
+                _ = try _performApprove(id: id, approvedByName: approver)
                 count += 1
             }
             return count

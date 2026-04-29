@@ -8,7 +8,7 @@ struct WishlistServiceTests {
 
     private func freshEnv() throws -> (E2ETestHelpers.TestEnvironment, WishlistService) {
         let env = try E2ETestHelpers.setUp()
-        let wishlist = WishlistService(db: env.db)
+        let wishlist = WishlistService(db: env.db, auth: env.auth)
         return (env, wishlist)
     }
 
@@ -68,39 +68,39 @@ struct WishlistServiceTests {
 
     @Test("Approve item changes status")
     func testApproveItem() throws {
-        let (_, wishlist) = try freshEnv()
+        let (env, wishlist) = try freshEnv()
 
         let item = try wishlist.addItem(partName: "Needs Approval")
-        let approved = try wishlist.approveItem(id: item.id!, by: "Manager")
+        let approved = try wishlist.approveItem(id: item.id!, byUserId: env.adminUserId)
         #expect(approved.status == "approved")
     }
 
     @Test("Dismiss item changes status")
     func testDismissItem() throws {
-        let (_, wishlist) = try freshEnv()
+        let (env, wishlist) = try freshEnv()
 
         let item = try wishlist.addItem(partName: "Not Needed")
-        let dismissed = try wishlist.dismissItem(id: item.id!, by: "Manager", reason: "No longer needed for this project")
+        let dismissed = try wishlist.dismissItem(id: item.id!, byUserId: env.adminUserId, reason: "No longer needed for this project")
         #expect(dismissed.status == "dismissed")
     }
 
     @Test("Send to procurement changes status")
     func testSendToProcurement() throws {
-        let (_, wishlist) = try freshEnv()
+        let (env, wishlist) = try freshEnv()
 
         let item = try wishlist.addItem(partName: "Ready to Order")
-        let approved = try wishlist.approveItem(id: item.id!, by: "Manager")
-        let sent = try wishlist.sendToProcurement(id: approved.id!)
+        let approved = try wishlist.approveItem(id: item.id!, byUserId: env.adminUserId)
+        let sent = try wishlist.sendToProcurement(id: approved.id!, byUserId: env.adminUserId)
         #expect(sent.status == "sent_to_procurement")
     }
 
     @Test("Reopen dismissed item")
     func testReopenItem() throws {
-        let (_, wishlist) = try freshEnv()
+        let (env, wishlist) = try freshEnv()
 
         let item = try wishlist.addItem(partName: "Reopen Me")
-        _ = try wishlist.dismissItem(id: item.id!, by: "Manager", reason: "Duplicate item in inventory")
-        let reopened = try wishlist.reopenItem(id: item.id!)
+        _ = try wishlist.dismissItem(id: item.id!, byUserId: env.adminUserId, reason: "Duplicate item in inventory")
+        let reopened = try wishlist.reopenItem(id: item.id!, byUserId: env.adminUserId)
         #expect(reopened.status == "pending")
     }
 
@@ -108,12 +108,12 @@ struct WishlistServiceTests {
 
     @Test("Status counts reflect actual data")
     func testStatusCounts() throws {
-        let (_, wishlist) = try freshEnv()
+        let (env, wishlist) = try freshEnv()
 
         _ = try wishlist.addItem(partName: "Pending 1")
         _ = try wishlist.addItem(partName: "Pending 2")
         let item3 = try wishlist.addItem(partName: "To Approve")
-        _ = try wishlist.approveItem(id: item3.id!, by: "Boss")
+        _ = try wishlist.approveItem(id: item3.id!, byUserId: env.adminUserId)
 
         let counts = try wishlist.getStatusCounts()
         #expect(counts.pending == 2)
@@ -124,11 +124,11 @@ struct WishlistServiceTests {
 
     @Test("List items with status filter")
     func testListWithFilter() throws {
-        let (_, wishlist) = try freshEnv()
+        let (env, wishlist) = try freshEnv()
 
         _ = try wishlist.addItem(partName: "Pending Item")
         let approved = try wishlist.addItem(partName: "Approved Item")
-        _ = try wishlist.approveItem(id: approved.id!, by: "Mgr")
+        _ = try wishlist.approveItem(id: approved.id!, byUserId: env.adminUserId)
 
         let pendingOnly = try wishlist.listItems(status: "pending")
         #expect(pendingOnly.count == 1)
@@ -167,25 +167,25 @@ struct WishlistServiceTests {
 
     @Test("Dismiss requires a reason — empty throws error")
     func testDismissRequiresReason() throws {
-        let (_, wishlist) = try freshEnv()
+        let (env, wishlist) = try freshEnv()
         let item = try wishlist.addItem(partName: "Test Item")
 
         #expect(throws: WishlistService.WishlistError.self) {
-            try wishlist.dismissItem(id: item.id!, by: "Manager", reason: "")
+            try wishlist.dismissItem(id: item.id!, byUserId: env.adminUserId, reason: "")
         }
 
         #expect(throws: WishlistService.WishlistError.self) {
-            try wishlist.dismissItem(id: item.id!, by: "Manager", reason: "   ")
+            try wishlist.dismissItem(id: item.id!, byUserId: env.adminUserId, reason: "   ")
         }
     }
 
     @Test("Dismiss with valid reason saves dismiss_reason")
     func testDismissWithReason() throws {
-        let (_, wishlist) = try freshEnv()
+        let (env, wishlist) = try freshEnv()
         let item = try wishlist.addItem(partName: "Dismiss Me")
         let reason = "Already have plenty in stock at the main warehouse"
 
-        let dismissed = try wishlist.dismissItem(id: item.id!, by: "Boss", reason: reason)
+        let dismissed = try wishlist.dismissItem(id: item.id!, byUserId: env.adminUserId, reason: reason)
         #expect(dismissed.status == "dismissed")
         #expect(dismissed.dismissReason == reason)
 
@@ -256,40 +256,40 @@ struct WishlistServiceTests {
 
     @Test("approveItem throws itemNotFound for missing item")
     func testApproveItemNotFound() throws {
-        let (_, wishlist) = try freshEnv()
+        let (env, wishlist) = try freshEnv()
         #expect(throws: WishlistService.WishlistError.itemNotFound(9999)) {
-            try wishlist.approveItem(id: 9999, by: "Admin")
+            try wishlist.approveItem(id: 9999, byUserId: env.adminUserId)
         }
     }
 
     @Test("approveItem throws alreadyProcessed when item is not pending")
     func testApproveItemAlreadyApproved() throws {
-        let (_, wishlist) = try freshEnv()
+        let (env, wishlist) = try freshEnv()
         let item = try wishlist.addItem(partName: "Double-Approve Part", sourceType: "manual")
-        _ = try wishlist.approveItem(id: item.id!, by: "First Approver")
+        _ = try wishlist.approveItem(id: item.id!, byUserId: env.adminUserId)
         // Approving again should throw alreadyProcessed with the item's id and current status
         #expect(throws: WishlistService.WishlistError.alreadyProcessed(item.id!, "approved")) {
-            _ = try wishlist.approveItem(id: item.id!, by: "Second Approver")
+            _ = try wishlist.approveItem(id: item.id!, byUserId: env.adminUserId)
         }
     }
 
     @Test("sendToProcurement throws invalidStatus when item is still pending")
     func testSendToProcurementNotApproved() throws {
-        let (_, wishlist) = try freshEnv()
+        let (env, wishlist) = try freshEnv()
         let item = try wishlist.addItem(partName: "Pending Part", sourceType: "manual")
         // Item is pending — can't send to procurement yet
         #expect(throws: (any Error).self) {
-            try wishlist.sendToProcurement(id: item.id!)
+            try wishlist.sendToProcurement(id: item.id!, byUserId: env.adminUserId)
         }
     }
 
     @Test("reopenItem throws invalidStatus when item is not dismissed")
     func testReopenItemNotDismissed() throws {
-        let (_, wishlist) = try freshEnv()
+        let (env, wishlist) = try freshEnv()
         let item = try wishlist.addItem(partName: "Active Part", sourceType: "manual")
         // Item is pending — reopen should throw invalidStatus
         #expect(throws: (any Error).self) {
-            try wishlist.reopenItem(id: item.id!)
+            try wishlist.reopenItem(id: item.id!, byUserId: env.adminUserId)
         }
     }
 
@@ -303,14 +303,58 @@ struct WishlistServiceTests {
 
     @Test("getSectionedItems with statusFilter only returns matching items")
     func testGetSectionedItemsWithFilter() throws {
-        let (_, wishlist) = try freshEnv()
+        let (env, wishlist) = try freshEnv()
         _ = try wishlist.addItem(partName: "Pending Manual", sourceType: "manual")
         let approved = try wishlist.addItem(partName: "Approved Manual", sourceType: "manual")
-        _ = try wishlist.approveItem(id: approved.id!, by: "Admin")
+        _ = try wishlist.approveItem(id: approved.id!, byUserId: env.adminUserId)
 
         // Filter to approved only — should not include pending item
         let sections = try wishlist.getSectionedItems(statusFilter: "approved")
         #expect(sections.userAdded.count == 1)
         #expect(sections.userAdded[0].partName == "Approved Manual")
+    }
+
+    // MARK: - Permission-Denied Tests
+
+    @Test("approveItem throws insufficientPermissions for user without capability")
+    func testApproveItemInsufficientPermissions() throws {
+        let (env, wishlist) = try freshEnv()
+        let unprivUserId = try env.auth.createUser(displayName: "Unprivileged User", pin: "5678")
+        let item = try wishlist.addItem(partName: "Locked Item")
+        #expect(throws: WishlistService.WishlistError.insufficientPermissions(required: "wishlist.approve")) {
+            try wishlist.approveItem(id: item.id!, byUserId: unprivUserId)
+        }
+    }
+
+    @Test("dismissItem throws insufficientPermissions for user without capability")
+    func testDismissItemInsufficientPermissions() throws {
+        let (env, wishlist) = try freshEnv()
+        let unprivUserId = try env.auth.createUser(displayName: "Unprivileged User", pin: "5678")
+        let item = try wishlist.addItem(partName: "Locked Item")
+        #expect(throws: WishlistService.WishlistError.insufficientPermissions(required: "wishlist.dismiss")) {
+            try wishlist.dismissItem(id: item.id!, byUserId: unprivUserId, reason: "Some reason")
+        }
+    }
+
+    @Test("sendToProcurement throws insufficientPermissions for user without capability")
+    func testSendToProcurementInsufficientPermissions() throws {
+        let (env, wishlist) = try freshEnv()
+        let unprivUserId = try env.auth.createUser(displayName: "Unprivileged User", pin: "5678")
+        let item = try wishlist.addItem(partName: "Ready to Order")
+        let approved = try wishlist.approveItem(id: item.id!, byUserId: env.adminUserId)
+        #expect(throws: WishlistService.WishlistError.insufficientPermissions(required: "wishlist.send_to_procurement")) {
+            try wishlist.sendToProcurement(id: approved.id!, byUserId: unprivUserId)
+        }
+    }
+
+    @Test("reopenItem throws insufficientPermissions for user without capability")
+    func testReopenItemInsufficientPermissions() throws {
+        let (env, wishlist) = try freshEnv()
+        let unprivUserId = try env.auth.createUser(displayName: "Unprivileged User", pin: "5678")
+        let item = try wishlist.addItem(partName: "Dismissed Item")
+        _ = try wishlist.dismissItem(id: item.id!, byUserId: env.adminUserId, reason: "Not needed")
+        #expect(throws: WishlistService.WishlistError.insufficientPermissions(required: "wishlist.reopen")) {
+            try wishlist.reopenItem(id: item.id!, byUserId: unprivUserId)
+        }
     }
 }
