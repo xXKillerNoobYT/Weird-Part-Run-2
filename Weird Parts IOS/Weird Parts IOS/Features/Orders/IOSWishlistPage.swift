@@ -412,9 +412,9 @@ struct IOSWishlistPage: View {
     private func approveItem(_ item: WishlistItem) {
         guard let service = appCore.wishlistService else { loadError = "Service not available"; return }
         guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
-        let approver = appCore.currentUser?.displayName ?? "Unknown"
+        guard let userId = appCore.currentUser?.id else { loadError = "Not authenticated"; return }
         do {
-            try service.approveItem(id: id, by: approver)
+            try service.approveItem(id: id, byUserId: userId)
             loadData()
         } catch {
             loadError = userFriendlyError(error, context: "approve wishlist item")
@@ -424,9 +424,9 @@ struct IOSWishlistPage: View {
     private func dismissItem(_ item: WishlistItem, reason: String) {
         guard let service = appCore.wishlistService else { loadError = "Service not available"; return }
         guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
-        let dismisser = appCore.currentUser?.displayName ?? "Unknown"
+        guard let userId = appCore.currentUser?.id else { loadError = "Not authenticated"; return }
         do {
-            try service.dismissItem(id: id, by: dismisser, reason: reason)
+            try service.dismissItem(id: id, byUserId: userId, reason: reason)
             loadData()
         } catch {
             loadError = userFriendlyError(error, context: "dismiss wishlist item")
@@ -436,8 +436,9 @@ struct IOSWishlistPage: View {
     private func sendToProcurement(_ item: WishlistItem) {
         guard let service = appCore.wishlistService else { loadError = "Service not available"; return }
         guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
+        guard let userId = appCore.currentUser?.id else { loadError = "Not authenticated"; return }
         do {
-            try service.sendToProcurement(id: id)
+            try service.sendToProcurement(id: id, byUserId: userId)
             loadData()
         } catch {
             loadError = userFriendlyError(error, context: "send to procurement")
@@ -447,8 +448,9 @@ struct IOSWishlistPage: View {
     private func reopenItem(_ item: WishlistItem) {
         guard let service = appCore.wishlistService else { loadError = "Service not available"; return }
         guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
+        guard let userId = appCore.currentUser?.id else { loadError = "Not authenticated"; return }
         do {
-            try service.reopenItem(id: id)
+            try service.reopenItem(id: id, byUserId: userId)
             loadData()
         } catch {
             loadError = userFriendlyError(error, context: "reopen wishlist item")
