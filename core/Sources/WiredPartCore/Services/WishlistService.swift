@@ -217,8 +217,10 @@ public final class WishlistService: Sendable {
         guard try auth.hasPermission(byUserId, permissionKey: "wishlist.approve") else {
             throw WishlistError.insufficientPermissions(required: "wishlist.approve")
         }
-        let displayName = (try? auth.getUser(byUserId))?.displayName ?? "User #\(byUserId)"
-        return try _performApprove(id: id, approvedByName: displayName)
+        guard let userRecord = try auth.getUser(byUserId) else {
+            throw WishlistError.insufficientPermissions(required: "wishlist.approve")
+        }
+        return try _performApprove(id: id, approvedByName: userRecord.displayName)
     }
 
     /// Dismiss a pending wishlist item. A reason is required.
@@ -228,8 +230,10 @@ public final class WishlistService: Sendable {
         guard try auth.hasPermission(byUserId, permissionKey: "wishlist.dismiss") else {
             throw WishlistError.insufficientPermissions(required: "wishlist.dismiss")
         }
-        let displayName = (try? auth.getUser(byUserId))?.displayName ?? "User #\(byUserId)"
-        return try _performDismiss(id: id, dismissedByName: displayName, reason: reason)
+        guard let userRecord = try auth.getUser(byUserId) else {
+            throw WishlistError.insufficientPermissions(required: "wishlist.dismiss")
+        }
+        return try _performDismiss(id: id, dismissedByName: userRecord.displayName, reason: reason)
     }
 
     /// Mark an approved item as sent to procurement.
