@@ -411,9 +411,9 @@ struct IOSWishlistPage: View {
     private func approveItem(_ item: WishlistItem) {
         guard let service = appCore.wishlistService else { loadError = "Service not available"; return }
         guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
-        let approver = appCore.currentUser?.displayName ?? "Unknown"
+        guard let userId = appCore.currentUser?.id else { loadError = "Not authenticated"; return }
         do {
-            let updated = try service.approveItem(id: id, by: approver)
+            let updated = try service.approveItem(id: id, byUserId: userId)
             applyPartialUpdate(updated)
         } catch {
             loadError = userFriendlyError(error, context: "approve wishlist item")
@@ -423,9 +423,9 @@ struct IOSWishlistPage: View {
     private func dismissItem(_ item: WishlistItem, reason: String) {
         guard let service = appCore.wishlistService else { loadError = "Service not available"; return }
         guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
-        let dismisser = appCore.currentUser?.displayName ?? "Unknown"
+        guard let userId = appCore.currentUser?.id else { loadError = "Not authenticated"; return }
         do {
-            let updated = try service.dismissItem(id: id, by: dismisser, reason: reason)
+            let updated = try service.dismissItem(id: id, byUserId: userId, reason: reason)
             applyPartialUpdate(updated)
         } catch {
             loadError = userFriendlyError(error, context: "dismiss wishlist item")
@@ -435,8 +435,9 @@ struct IOSWishlistPage: View {
     private func sendToProcurement(_ item: WishlistItem) {
         guard let service = appCore.wishlistService else { loadError = "Service not available"; return }
         guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
+        guard let userId = appCore.currentUser?.id else { loadError = "Not authenticated"; return }
         do {
-            let updated = try service.sendToProcurement(id: id)
+            let updated = try service.sendToProcurement(id: id, byUserId: userId)
             applyPartialUpdate(updated)
         } catch {
             loadError = userFriendlyError(error, context: "send to procurement")
@@ -446,8 +447,9 @@ struct IOSWishlistPage: View {
     private func reopenItem(_ item: WishlistItem) {
         guard let service = appCore.wishlistService else { loadError = "Service not available"; return }
         guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
+        guard let userId = appCore.currentUser?.id else { loadError = "Not authenticated"; return }
         do {
-            let updated = try service.reopenItem(id: id)
+            let updated = try service.reopenItem(id: id, byUserId: userId)
             applyPartialUpdate(updated)
         } catch {
             loadError = userFriendlyError(error, context: "reopen wishlist item")
@@ -655,6 +657,8 @@ private struct AddWishlistItemSheet: View {
     @State private var notes = ""
     @State private var saveError: String?
     @State private var isSaving = false
+    @State private var isDirty = false
+    @State private var showCancelConfirmation = false
 
     private let priorities = ["urgent", "high", "normal", "low"]
 
@@ -664,8 +668,10 @@ private struct AddWishlistItemSheet: View {
                 Section("Part Information") {
                     TextField("Part Name", text: $partName)
                         .textContentType(.none)
+                        .onChange(of: partName) { _ in isDirty = true }
 
                     Stepper("Quantity: \(qtySuggested)", value: $qtySuggested, in: 1...9999)
+                        .onChange(of: qtySuggested) { _ in isDirty = true }
                 }
 
                 Section("Priority") {
@@ -676,14 +682,17 @@ private struct AddWishlistItemSheet: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                    .onChange(of: priority) { _ in isDirty = true }
                 }
 
                 Section("Details") {
                     TextField("Reason (optional)", text: $reason, axis: .vertical)
                         .lineLimit(2...4)
+                        .onChange(of: reason) { _ in isDirty = true }
 
                     TextField("Notes (optional)", text: $notes, axis: .vertical)
                         .lineLimit(2...4)
+                        .onChange(of: notes) { _ in isDirty = true }
                 }
 
                 if let error = saveError {
@@ -697,11 +706,21 @@ private struct AddWishlistItemSheet: View {
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Add Wishlist Item")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(isSaving)
+            .interactiveDismissDisabled(isDirty || isSaving)
+            .confirmationDialog(
+                "Discard changes?",
+                isPresented: $showCancelConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) {}
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .disabled(isSaving)
+                    Button("Cancel") {
+                        if isDirty { showCancelConfirmation = true } else { dismiss() }
+                    }
+                    .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isSaving {
@@ -751,6 +770,7 @@ private struct AddWishlistItemSheet: View {
                 requestedBy: appCore.currentUser?.displayName,
                 notes: notes.isEmpty ? nil : notes
             )
+            isDirty = false
             dismiss()
             onSave()
         } catch {

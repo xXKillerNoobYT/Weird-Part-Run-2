@@ -45,6 +45,11 @@ struct PartsForecastingPage: View {
     @State private var showDismissAlert = false
     @State private var dismissingRecommendation: TargetRecommendation?
 
+    // Cached urgency counts and top-critical summaries — populated via single pass in loadData();
+    // avoids per-render filter scans in stat cards and eliminates a separate filter in postForecastContext.
+    @State private var urgencyCounts: [UrgencyFilter: Int] = [:]
+    @State private var topCriticalSummary: String = ""
+
     var body: some View {
         VStack(spacing: 0) {
             OnboardingBanner(pageId: "parts-forecasting")
@@ -161,7 +166,6 @@ struct PartsForecastingPage: View {
             await loadRecommendations()
             appCore.onboardingManager?.markCompleted("forecast-view")
         }
-        .onAppear { postForecastContext() }
         .onDisappear {
             NotificationCenter.default.post(name: .forecastingPageInactive, object: nil)
         }
@@ -206,19 +210,19 @@ struct PartsForecastingPage: View {
                 HStack(spacing: 12) {
                     statCard(
                         label: "Critical",
-                        count: forecastRows.filter { UrgencyFilter.classify($0.part.forecastDaysUntilLow ?? 999) == .critical }.count,
+                        count: urgencyCounts[.critical, default: 0],
                         color: .red,
                         filter: .critical
                     )
                     statCard(
                         label: "Warning",
-                        count: forecastRows.filter { UrgencyFilter.classify($0.part.forecastDaysUntilLow ?? 999) == .warning }.count,
+                        count: urgencyCounts[.warning, default: 0],
                         color: .orange,
                         filter: .warning
                     )
                     statCard(
                         label: "Healthy",
-                        count: forecastRows.filter { UrgencyFilter.classify($0.part.forecastDaysUntilLow ?? 999) == .healthy }.count,
+                        count: urgencyCounts[.healthy, default: 0],
                         color: .green,
                         filter: .healthy
                     )
@@ -492,6 +496,21 @@ struct PartsForecastingPage: View {
             )
             await MainActor.run {
                 forecastRows = rows
+                // Single-pass urgency counts and top-critical summary — avoids per-render filter
+                // scans in stat cards and removes a second filter in postForecastContext().
+                var counts: [UrgencyFilter: Int] = [.critical: 0, .warning: 0, .healthy: 0]
+                var criticalRows: [PartsService.ForecastDataRow] = []
+                for row in rows {
+                    let bucket = UrgencyFilter.classify(row.part.forecastDaysUntilLow ?? 999)
+                    counts[bucket, default: 0] += 1
+                    if bucket == .critical && criticalRows.count < 5 {
+                        criticalRows.append(row)
+                    }
+                }
+                urgencyCounts = counts
+                topCriticalSummary = criticalRows.map {
+                    "\($0.part.name) (\($0.part.forecastDaysUntilLow ?? 0)d, order \($0.part.forecastSuggestedOrder ?? 0))"
+                }.joined(separator: "; ")
                 isLoading = false
                 postForecastContext()
             }
@@ -526,20 +545,17 @@ struct PartsForecastingPage: View {
     // MARK: - AI Context
 
     private func postForecastContext() {
-        let critical = forecastRows.filter { UrgencyFilter.classify($0.part.forecastDaysUntilLow ?? 999) == .critical }
-        let warning = forecastRows.filter { UrgencyFilter.classify($0.part.forecastDaysUntilLow ?? 999) == .warning }
+        let criticalCount = urgencyCounts[.critical, default: 0]
+        let warningCount = urgencyCounts[.warning, default: 0]
 
         var context = "User is on the Forecasting page. "
         context += "Total parts: \(forecastRows.count). "
-        context += "Critical (≤7 days): \(critical.count). "
-        context += "Warning (7-30 days): \(warning.count). "
+        context += "Critical (≤7 days): \(criticalCount). "
+        context += "Warning (7-30 days): \(warningCount). "
         context += "Current filter: \(filterUrgency.label). "
 
-        if !critical.isEmpty {
-            let topCritical = critical.prefix(5).map {
-                "\($0.part.name) (\($0.part.forecastDaysUntilLow ?? 0)d, order \($0.part.forecastSuggestedOrder ?? 0))"
-            }
-            context += "Top critical: \(topCritical.joined(separator: "; ")). "
+        if criticalCount > 0 && !topCriticalSummary.isEmpty {
+            context += "Top critical: \(topCriticalSummary). "
         }
 
         if let lastRun = forecastRows.first(where: { $0.part.forecastLastRun != nil })?.part.forecastLastRun {
@@ -590,10 +606,9 @@ struct PartsForecastingPage: View {
         }
         do {
             let recs = try service.listPendingRecommendations()
-            let count = try service.pendingRecommendationCount()
             await MainActor.run {
                 recommendations = recs
-                recommendationCount = count
+                recommendationCount = recs.count
             }
         } catch {
             // Non-critical
@@ -799,6 +814,8 @@ private struct ForecastDetailSheet: View {
     @State private var isLoadingLocations = true
     @State private var editError: String?
     @State private var isSaving = false
+    @State private var isDirty = false
+    @State private var showCancelConfirmation = false
 
     // Editable fields
     @State private var editName: String = ""
@@ -823,11 +840,21 @@ private struct ForecastDetailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                        .disabled(isSaving)
+                    Button("Done") {
+                        if isDirty { showCancelConfirmation = true } else { dismiss() }
+                    }
+                    .disabled(isSaving)
                 }
             }
-            .interactiveDismissDisabled(isSaving)
+            .interactiveDismissDisabled(isDirty || isSaving)
+            .confirmationDialog(
+                "Discard changes?",
+                isPresented: $showCancelConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) {}
+            }
             .alert("Error", isPresented: Binding(
                 get: { editError != nil },
                 set: { if !$0 { editError = nil } }
@@ -882,11 +909,13 @@ private struct ForecastDetailSheet: View {
             LabeledContent("Name") {
                 TextField("Name", text: $editName)
                     .multilineTextAlignment(.trailing)
+                    .onChange(of: editName) { _ in isDirty = true }
             }
             LabeledContent("Code") {
                 TextField("Code", text: $editCode)
                     .multilineTextAlignment(.trailing)
                     .monospaced()
+                    .onChange(of: editCode) { _ in isDirty = true }
             }
 
             LabeledContent("Min Stock (Global)") {
@@ -894,18 +923,21 @@ private struct ForecastDetailSheet: View {
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 60)
+                    .onChange(of: editMinStock) { _ in isDirty = true }
             }
             LabeledContent("Target Stock (Global)") {
                 TextField("0", text: $editTargetStock)
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 60)
+                    .onChange(of: editTargetStock) { _ in isDirty = true }
             }
             LabeledContent("Max Stock (Global)") {
                 TextField("0", text: $editMaxStock)
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 60)
+                    .onChange(of: editMaxStock) { _ in isDirty = true }
             }
 
             LabeledContent("Total Stock (All Locations)", value: "\(row.currentStock)")
@@ -1195,6 +1227,7 @@ private struct ForecastDetailSheet: View {
                 targetStockLevel: target
             )
             await MainActor.run {
+                isDirty = false
                 isSaving = false
             }
         } catch {
