@@ -24,11 +24,20 @@ struct IOSProcurementPage: View {
     @State private var isGenerating = false
     @State private var searchText = ""
 
+    // Generate POs confirmation
+    @State private var showGeneratePOsConfirmation = false
+
     // Pull action tracking: partId -> (pullQty, orderQty)
     @State private var pullDecisions: [Int64: (pullQty: Int, orderQty: Int)] = [:]
     @State private var pullActionError: String?
     @State private var pullActionSuccess: String?
     @State private var isPulling: Set<Int64> = []  // parts currently being pulled
+
+    // Pull confirmation
+    @State private var showPullConfirmation = false
+    @State private var pendingPullItem: OrdersService.ProcurementItem? = nil
+    @State private var pendingPullQty: Int = 0
+    @State private var pendingPullOrderQty: Int = 0
 
     // Help
     @State private var activeSheet: ActiveSheet?
@@ -125,6 +134,33 @@ struct IOSProcurementPage: View {
             }
         } message: {
             Text(pullActionSuccess ?? "")
+        }
+        .confirmationDialog(
+            generatePOsConfirmationTitle,
+            isPresented: $showGeneratePOsConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Generate") { generatePOs() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text(generatePOsConfirmationMessage)
+        }
+        .confirmationDialog(
+            pullConfirmationTitle,
+            isPresented: $showPullConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Pull") {
+                if let item = pendingPullItem {
+                    executePullAction(item: item, pullQty: pendingPullQty, orderQty: pendingPullOrderQty)
+                }
+                pendingPullItem = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingPullItem = nil
+            }
+        } message: {
+            Text(pullConfirmationMessage)
         }
         .overlay(alignment: .bottom) {
             if showSavedToast {
@@ -490,7 +526,7 @@ struct IOSProcurementPage: View {
                 // Action buttons
                 HStack(spacing: 12) {
                     Button {
-                        generatePOs()
+                        showGeneratePOsConfirmation = true
                     } label: {
                         Label(
                             isGenerating ? "Generating..." : "Generate \(poPreviewGroups.count) PO\(poPreviewGroups.count == 1 ? "" : "s")",
@@ -551,6 +587,38 @@ struct IOSProcurementPage: View {
         }
         return groups.map { POPreviewGroup(supplierId: $0.key, supplierName: $0.value.name, parts: $0.value.parts) }
             .sorted { $0.supplierName < $1.supplierName }
+    }
+
+    // MARK: - Confirmation Dialog Content
+
+    private var generatePOsConfirmationTitle: String {
+        let count = poPreviewGroups.count
+        return "Generate \(count) Purchase Order\(count == 1 ? "" : "s")?"
+    }
+
+    private var generatePOsConfirmationMessage: String {
+        let totalCost = poPreviewGroups.flatMap(\.parts).compactMap { p in
+            p.unitCost.map { $0 * Double(p.quantity) }
+        }.reduce(0, +)
+        if totalCost > 0 {
+            return String(format: "This will create %d PO(s) totalling $%.2f. This action cannot be undone.", poPreviewGroups.count, totalCost)
+        }
+        return "This will create \(poPreviewGroups.count) PO(s). This action cannot be undone."
+    }
+
+    private var pullConfirmationTitle: String {
+        guard let item = pendingPullItem else { return "Pull Stock?" }
+        return "Pull \(pendingPullQty) \(item.partName)?"
+    }
+
+    private var pullConfirmationMessage: String {
+        guard let item = pendingPullItem else { return "" }
+        var msg = "Move \(pendingPullQty) unit(s) of \(item.partName) from Warehouse to Pulled Staging."
+        if pendingPullOrderQty > 0 {
+            msg += " \(pendingPullOrderQty) unit(s) will still need to be ordered."
+        }
+        msg += " This movement cannot be reversed without a manual return."
+        return msg
     }
 
     private func generatePOs() {
@@ -878,7 +946,7 @@ struct IOSProcurementPage: View {
         isLoading: Bool
     ) -> some View {
         Button {
-            executePullAction(item: item, pullQty: pullQty, orderQty: orderQty)
+            requestPullAction(item: item, pullQty: pullQty, orderQty: orderQty)
         } label: {
             HStack(spacing: 6) {
                 if isLoading {
@@ -923,14 +991,21 @@ struct IOSProcurementPage: View {
 
     // MARK: - Pull Action Execution
 
-    /// Executes a pull from warehouse shelf to pulled-staging and records the decision.
-    private func executePullAction(item: OrdersService.ProcurementItem, pullQty: Int, orderQty: Int) {
-        // If no pull needed (order-all), just record the decision
+    /// Stores the pending pull intent and shows the confirmation dialog.
+    private func requestPullAction(item: OrdersService.ProcurementItem, pullQty: Int, orderQty: Int) {
+        // If no pull needed (order-all), just record the decision — no confirmation required
         if pullQty == 0 {
             pullDecisions[item.id] = (pullQty: 0, orderQty: orderQty)
             return
         }
+        pendingPullItem = item
+        pendingPullQty = pullQty
+        pendingPullOrderQty = orderQty
+        showPullConfirmation = true
+    }
 
+    /// Executes a pull from warehouse shelf to pulled-staging and records the decision.
+    private func executePullAction(item: OrdersService.ProcurementItem, pullQty: Int, orderQty: Int) {
         guard let warehouseService = appCore.warehouseService else {
             pullActionError = "Warehouse service not available"
             return
