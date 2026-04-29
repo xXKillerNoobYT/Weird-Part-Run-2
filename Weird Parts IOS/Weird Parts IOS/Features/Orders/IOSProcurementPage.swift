@@ -36,6 +36,11 @@ struct IOSProcurementPage: View {
     // Toast
     @State private var showSavedToast = false
 
+    // Cached source counts and ready-to-generate list — populated in loadData() / on input change;
+    // avoids per-render filter scans in smart card filters and PO preview section.
+    @State private var sourceCounts: [String: Int] = [:]
+    @State private var cachedReadyToGenerate: [OrdersService.ProcurementItem] = []
+
     private enum ActiveSheet: Identifiable {
         case help
         var id: String { "help" }
@@ -88,6 +93,8 @@ struct IOSProcurementPage: View {
             loadData()
             appCore.onboardingManager?.markCompleted("procurement-view")
         }
+        .onChange(of: checkedParts) { updateReadyToGenerate() }
+        .onChange(of: selectedSupplier) { updateReadyToGenerate() }
         .alert("Error", isPresented: Binding(
             get: { generateError != nil },
             set: { if !$0 { generateError = nil } }
@@ -148,17 +155,12 @@ struct IOSProcurementPage: View {
     // MARK: - Smart Card Filters
 
     private var smartCardFilters: some View {
-        let jpoCount = items.filter { $0.sources.contains { $0.sourceType == "jpo" } }.count
-        let wishlistCount = items.filter { $0.sources.contains { $0.sourceType == "wishlist" } }.count
-        let forecastCount = items.filter { $0.sources.contains { $0.sourceType == "forecast" } }.count
-        let overstockCount = items.filter { $0.urgency == "overstock" }.count
-
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                smartCard("JPO Parts", count: jpoCount, icon: "doc.text.fill", filter: "jpo")
-                smartCard("Wishlist", count: wishlistCount, icon: "heart.fill", filter: "wishlist")
-                smartCard("Forecast", count: forecastCount, icon: "chart.line.uptrend.xyaxis", filter: "forecast")
-                smartCard("Overstock", count: overstockCount, icon: "exclamationmark.triangle.fill", filter: "overstock")
+                smartCard("JPO Parts", count: sourceCounts["jpo", default: 0], icon: "doc.text.fill", filter: "jpo")
+                smartCard("Wishlist", count: sourceCounts["wishlist", default: 0], icon: "heart.fill", filter: "wishlist")
+                smartCard("Forecast", count: sourceCounts["forecast", default: 0], icon: "chart.line.uptrend.xyaxis", filter: "forecast")
+                smartCard("Overstock", count: sourceCounts["overstock", default: 0], icon: "exclamationmark.triangle.fill", filter: "overstock")
                 smartCard("All", count: items.count, icon: "tray.full.fill", filter: nil)
             }
             .padding(.horizontal)
@@ -247,16 +249,17 @@ struct IOSProcurementPage: View {
             }
 
             // Preview + Generate section
-            if !readyToGenerateItems.isEmpty {
+            if !cachedReadyToGenerate.isEmpty {
                 poPreviewSection
             }
         }
         .listStyle(.insetGrouped)
     }
 
-    /// Items that have both a supplier selected AND are checked, with order qty > 0.
-    private var readyToGenerateItems: [OrdersService.ProcurementItem] {
-        items.filter { item in
+    /// Updates the cached ready-to-generate list. Call whenever checkedParts, selectedSupplier,
+    /// pullDecisions, or items change. Avoids repeated O(N) filter scans on every render.
+    private func updateReadyToGenerate() {
+        cachedReadyToGenerate = items.filter { item in
             checkedParts.contains(item.id) &&
             selectedSupplier[item.id] != nil &&
             effectiveOrderQty(for: item) > 0
@@ -533,7 +536,7 @@ struct IOSProcurementPage: View {
 
     private var poPreviewGroups: [POPreviewGroup] {
         var groups: [Int64: (name: String, parts: [POPreviewPart])] = [:]
-        for item in readyToGenerateItems {
+        for item in cachedReadyToGenerate {
             guard let supplierId = selectedSupplier[item.id] else { continue }
             let supplierName = item.suppliers.first(where: { $0.id == supplierId })?.name ?? "Unknown"
             let unitCost = item.suppliers.first(where: { $0.id == supplierId })?.unitPrice
@@ -578,7 +581,7 @@ struct IOSProcurementPage: View {
             let poNumbers = result.createdPOs.map(\.poNumber).joined(separator: ", ")
             generateSuccess = "Created \(result.createdPOs.count) PO(s): \(poNumbers) with \(result.totalLineItems) line items"
             // Clear checked items that were generated
-            for item in readyToGenerateItems {
+            for item in cachedReadyToGenerate {
                 checkedParts.remove(item.id)
             }
         } catch {
@@ -773,6 +776,7 @@ struct IOSProcurementPage: View {
                         Spacer()
                         Button {
                             pullDecisions.removeValue(forKey: item.id)
+                            updateReadyToGenerate()
                         } label: {
                             Text("Change")
                                 .font(.caption2)
@@ -928,6 +932,7 @@ struct IOSProcurementPage: View {
         // If no pull needed (order-all), just record the decision
         if pullQty == 0 {
             pullDecisions[item.id] = (pullQty: 0, orderQty: orderQty)
+            updateReadyToGenerate()
             return
         }
 
@@ -976,6 +981,7 @@ struct IOSProcurementPage: View {
 
             // Record the decision
             pullDecisions[item.id] = (pullQty: actualPull, orderQty: adjustedOrder)
+            updateReadyToGenerate()
 
             // Show confirmation
             if actualPull < pullQty {
@@ -1049,6 +1055,22 @@ struct IOSProcurementPage: View {
                     selectedSupplier[item.id] = preferred.id
                 }
             }
+            // Single-pass source counts — avoids per-render filter scans in smart card filters
+            var counts: [String: Int] = [:]
+            for item in items {
+                var seenTypes: Set<String> = []
+                for source in item.sources {
+                    let t = source.sourceType
+                    if seenTypes.insert(t).inserted {
+                        counts[t, default: 0] += 1
+                    }
+                }
+                if item.urgency == "overstock" {
+                    counts["overstock", default: 0] += 1
+                }
+            }
+            sourceCounts = counts
+            updateReadyToGenerate()
         } catch {
             loadError = userFriendlyError(error, context: "load procurement data")
         }

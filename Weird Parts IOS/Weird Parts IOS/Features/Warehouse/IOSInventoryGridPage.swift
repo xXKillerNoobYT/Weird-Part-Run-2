@@ -22,6 +22,9 @@ struct IOSInventoryGridPage: View {
     @AppStorage("lastInventoryLocationType") private var lastLocationType = "warehouse"
     @AppStorage("lastInventoryLocationId") private var lastLocationId: Int = 1
 
+    // Cached stock counts — populated via single pass in loadData(); avoids per-render filter scans
+    @State private var stockCounts: [StockFilter: Int] = [:]
+
     private enum ActiveSheet: Identifiable {
         case help
         var id: String { "help" }
@@ -177,23 +180,13 @@ struct IOSInventoryGridPage: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 ForEach(StockFilter.allCases, id: \.self) { filter in
-                    let count = countForFilter(filter)
+                    let count = stockCounts[filter, default: 0]
                     smartCard(filter: filter, count: count)
                 }
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
         }
-    }
-
-    private func countForFilter(_ filter: StockFilter) -> Int {
-        items.filter { item in
-            switch filter {
-            case .outOfStock: item.qty <= 0
-            case .lowStock: item.qty > 0 && item.qty <= 5
-            case .healthy: item.qty > 5
-            }
-        }.count
     }
 
     private func smartCard(filter: StockFilter, count: Int) -> some View {
@@ -395,6 +388,14 @@ struct IOSInventoryGridPage: View {
         loadError = nil
         do {
             items = try service.getStockAtLocation(locationType: selectedLocationType, locationId: selectedLocationId)
+            // Single-pass stock counts — avoids per-render filter scans in smart card filters
+            var counts: [StockFilter: Int] = [.outOfStock: 0, .lowStock: 0, .healthy: 0]
+            for item in items {
+                if item.qty <= 0 { counts[.outOfStock, default: 0] += 1 }
+                else if item.qty <= 5 { counts[.lowStock, default: 0] += 1 }
+                else { counts[.healthy, default: 0] += 1 }
+            }
+            stockCounts = counts
         } catch {
             loadError = userFriendlyError(error, context: "load inventory")
         }

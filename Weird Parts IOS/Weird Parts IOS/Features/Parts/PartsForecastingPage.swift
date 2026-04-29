@@ -45,6 +45,9 @@ struct PartsForecastingPage: View {
     @State private var showDismissAlert = false
     @State private var dismissingRecommendation: TargetRecommendation?
 
+    // Cached urgency counts — populated via single pass in loadData(); avoids per-render filter scans
+    @State private var urgencyCounts: [UrgencyFilter: Int] = [:]
+
     var body: some View {
         VStack(spacing: 0) {
             OnboardingBanner(pageId: "parts-forecasting")
@@ -161,7 +164,6 @@ struct PartsForecastingPage: View {
             await loadRecommendations()
             appCore.onboardingManager?.markCompleted("forecast-view")
         }
-        .onAppear { postForecastContext() }
         .onDisappear {
             NotificationCenter.default.post(name: .forecastingPageInactive, object: nil)
         }
@@ -206,19 +208,19 @@ struct PartsForecastingPage: View {
                 HStack(spacing: 12) {
                     statCard(
                         label: "Critical",
-                        count: forecastRows.filter { UrgencyFilter.classify($0.part.forecastDaysUntilLow ?? 999) == .critical }.count,
+                        count: urgencyCounts[.critical, default: 0],
                         color: .red,
                         filter: .critical
                     )
                     statCard(
                         label: "Warning",
-                        count: forecastRows.filter { UrgencyFilter.classify($0.part.forecastDaysUntilLow ?? 999) == .warning }.count,
+                        count: urgencyCounts[.warning, default: 0],
                         color: .orange,
                         filter: .warning
                     )
                     statCard(
                         label: "Healthy",
-                        count: forecastRows.filter { UrgencyFilter.classify($0.part.forecastDaysUntilLow ?? 999) == .healthy }.count,
+                        count: urgencyCounts[.healthy, default: 0],
                         color: .green,
                         filter: .healthy
                     )
@@ -492,6 +494,15 @@ struct PartsForecastingPage: View {
             )
             await MainActor.run {
                 forecastRows = rows
+                // Single-pass urgency counts — avoids per-render filter scans in stat cards
+                var counts: [UrgencyFilter: Int] = [.critical: 0, .warning: 0, .healthy: 0]
+                for row in rows {
+                    let bucket = UrgencyFilter.classify(row.part.forecastDaysUntilLow ?? 999)
+                    if bucket != .all {
+                        counts[bucket, default: 0] += 1
+                    }
+                }
+                urgencyCounts = counts
                 isLoading = false
                 postForecastContext()
             }
@@ -526,19 +537,22 @@ struct PartsForecastingPage: View {
     // MARK: - AI Context
 
     private func postForecastContext() {
-        let critical = forecastRows.filter { UrgencyFilter.classify($0.part.forecastDaysUntilLow ?? 999) == .critical }
-        let warning = forecastRows.filter { UrgencyFilter.classify($0.part.forecastDaysUntilLow ?? 999) == .warning }
+        let criticalCount = urgencyCounts[.critical, default: 0]
+        let warningCount = urgencyCounts[.warning, default: 0]
 
         var context = "User is on the Forecasting page. "
         context += "Total parts: \(forecastRows.count). "
-        context += "Critical (≤7 days): \(critical.count). "
-        context += "Warning (7-30 days): \(warning.count). "
+        context += "Critical (≤7 days): \(criticalCount). "
+        context += "Warning (7-30 days): \(warningCount). "
         context += "Current filter: \(filterUrgency.label). "
 
-        if !critical.isEmpty {
-            let topCritical = critical.prefix(5).map {
-                "\($0.part.name) (\($0.part.forecastDaysUntilLow ?? 0)d, order \($0.part.forecastSuggestedOrder ?? 0))"
-            }
+        if criticalCount > 0 {
+            let topCritical = forecastRows
+                .filter { UrgencyFilter.classify($0.part.forecastDaysUntilLow ?? 999) == .critical }
+                .prefix(5)
+                .map {
+                    "\($0.part.name) (\($0.part.forecastDaysUntilLow ?? 0)d, order \($0.part.forecastSuggestedOrder ?? 0))"
+                }
             context += "Top critical: \(topCritical.joined(separator: "; ")). "
         }
 
@@ -590,10 +604,9 @@ struct PartsForecastingPage: View {
         }
         do {
             let recs = try service.listPendingRecommendations()
-            let count = try service.pendingRecommendationCount()
             await MainActor.run {
                 recommendations = recs
-                recommendationCount = count
+                recommendationCount = recs.count
             }
         } catch {
             // Non-critical
