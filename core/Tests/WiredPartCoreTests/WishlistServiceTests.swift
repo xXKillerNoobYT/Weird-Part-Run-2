@@ -314,6 +314,62 @@ struct WishlistServiceTests {
         #expect(sections.userAdded[0].partName == "Approved Manual")
     }
 
+    // MARK: - Partial-Update / Perf (Issue #328)
+
+    @Test("Rapid-fire approve sequence: each mutation returns the correct updated item without re-fetching sections")
+    func testRapidFireApprovals() throws {
+        let (env, wishlist) = try freshEnv()
+
+        // Add 5 manual items
+        var items: [WishlistItem] = []
+        for i in 1...5 {
+            items.append(try wishlist.addItem(partName: "RapidPart \(i)", sourceType: "manual"))
+        }
+
+        // Approve all 5 in rapid succession — each returned value must be immediately correct
+        for item in items {
+            let updated = try wishlist.approveItem(id: item.id!, byUserId: env.adminUserId)
+            #expect(updated.status == "approved", "Returned item should be approved immediately")
+            #expect(updated.id == item.id, "Returned item ID must match")
+            #expect(updated.approvedBy != nil, "approvedBy should be populated")
+        }
+
+        // A single getSectionedItems call (simulating pull-to-refresh) should reflect all 5
+        let sections = try wishlist.getSectionedItems()
+        #expect(sections.userAdded.count == 5)
+        #expect(sections.userAdded.allSatisfy { $0.status == "approved" })
+    }
+
+    @Test("Pull-to-refresh after mutations reflects latest state across all sections")
+    func testPullToRefreshAfterMutations() throws {
+        let (env, wishlist) = try freshEnv()
+
+        let manual = try wishlist.addItem(partName: "Manual Part", sourceType: "manual")
+        let forecast = try wishlist.addItem(partName: "Forecast Part", sourceType: "forecast", certaintyScore: 0.9)
+        let system = try wishlist.addItem(partName: "System Part", sourceType: "system")
+
+        // Mutate each item using the mutation return values (partial-update path)
+        let approvedManual = try wishlist.approveItem(id: manual.id!, byUserId: env.adminUserId)
+        #expect(approvedManual.status == "approved")
+
+        let dismissedForecast = try wishlist.dismissItem(id: forecast.id!, byUserId: env.adminUserId, reason: "Not needed right now")
+        #expect(dismissedForecast.status == "dismissed")
+
+        let approvedSystem = try wishlist.approveItem(id: system.id!, byUserId: env.adminUserId)
+        let sentSystem = try wishlist.sendToProcurement(id: approvedSystem.id!, byUserId: env.adminUserId)
+        #expect(sentSystem.status == "sent_to_procurement")
+
+        // Pull-to-refresh: getSectionedItems must return the authoritative post-mutation state
+        let freshSections = try wishlist.getSectionedItems()
+        let manualItem = freshSections.userAdded.first { $0.id == manual.id }
+        let forecastItem = freshSections.forecastDemand.first { $0.id == forecast.id }
+        let systemItem = freshSections.autoAdded.first { $0.id == system.id }
+
+        #expect(manualItem?.status == "approved")
+        #expect(forecastItem?.status == "dismissed")
+        #expect(systemItem?.status == "sent_to_procurement")
+    }
+
     // MARK: - Permission-Denied Tests
 
     @Test("approveItem throws insufficientPermissions for user without capability")
