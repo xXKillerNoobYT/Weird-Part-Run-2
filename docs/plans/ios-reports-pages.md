@@ -1,9 +1,15 @@
 # iOS Reports Pages — Design Plan
 
+## What This Does
+The Reports area gives operators, supervisors, accounting, and admins read-only analytical views of the data captured elsewhere in the program — labor, financial, fleet, warehouse, scheduling — plus a Custom Report Builder and a Shared Reports surface for public links. Every report page exposes Smart Cards, a standard date-filter bar, page-specific filters, PDF/CSV export, and a Help button. Reports never mutate domain data; they aggregate it.
+
+## Why
+Operators and accounting need accurate, auditable views of historical activity for billing, payroll, fleet cost tracking, and management decisions. Without a unified Reports area each role would assemble these views ad-hoc from raw screens, with inconsistent filters and no export. Centralizing the views also lets us enforce permission gates uniformly (`view_financials`, `view_fleet_financials`) and apply the period-locking and 15-minute-rounding policies in one place. Reports is also the natural surface for the Report Builder V1 (configurable views) and Shared Reports (public links) — both of which need the standard filter/export plumbing as a foundation.
+
 ## Navigation (Categorized)
 Reports: Labor (Timesheets, Labor Overview, Daily Reports Summary), Financial (Spending, Profitability, Pre-Billing, Bookkeeper Export), Fleet (Fuel Costs, Maintenance Trends, Mileage/Cost Per Mile, Vehicle Utilization), Warehouse (Inventory Value, Backorders by supplier/brand, Turnover Rates), Scheduling (Crew Utilization, Dispatch Efficiency, Pipeline Status), Custom Reports (Report Builder), Shared Reports (public links)
 
-## Key Design Decisions
+## Proposed Changes / Key Design Decisions
 
 ### Every Report Page Gets
 - Smart cards at top
@@ -88,6 +94,42 @@ Reports is architecturally clean — zero GRDB imports in any UI file. Labor/Fin
 ### Known Issues
 
 - None outstanding for reports area as of 2026-04-19. CLAUDE.md Phase 8 complete, HUNT FIX converged on daily-report generator reliability in iter 70.
+
+---
+
+## Data Flow
+
+Reports is read-only — no INSERTs, no UPDATEs except `saveReportConfig`/`markReportRun`/`deleteSavedReport` for user-owned report configs.
+
+**Two-tier service routing (intentional):**
+
+1. **Labor / Financial / Custom / Shared** report pages → `appCore.reportsService` (the 13-method `ReportsService.swift`). These reports compose data across multiple domains (labor entries × jobs × employees × billing periods) and benefit from a centralized aggregator.
+2. **Fleet / Warehouse / Scheduling** report pages → the owning domain service directly (`appCore.fleetService`, `appCore.warehouseService`, `appCore.schedulingService`). The aggregate data for these reports is owned by the domain — duplicating the aggregations in ReportsService would create drift risk. UI calls the domain service's `get…ReportData(...)` style methods.
+
+**Per-page flow:**
+
+```
+IOSReportPage view
+  ↓ (date-range + page-specific filter state)
+service.getReportData(filters)        ← parameterized GRDB query
+  ↓
+List of typed rows / aggregate struct
+  ↓
+View renders Smart Cards + table + chart
+  ↓ (user taps Export PDF / Export CSV)
+ReportExportUtilities.swift           ← shared rendering helpers
+  ↓
+PDF/CSV file written to temp dir → share-sheet
+```
+
+**Period-locking interaction (Pre-Billing + Bookkeeper Export only):**
+`getPreBillingData` returns jobs+labor in the requested date range; the page filters out periods marked locked in `billing_periods` at the UI level (since `getPreBillingData` itself does NOT join `billing_periods` — see memory note 2026-04-19). Bookkeeper export queries DO join `billing_periods` directly.
+
+**Saved-report lifecycle:**
+`saveReportConfig` (new) → `getSavedReports` (list) → `markReportRun` (timestamp) → `deleteSavedReport` (soft-delete via `deleted_at`).
+
+**Historical-data is_active rule (memory):**
+Report JOINs to users/parts/jobs MUST NOT add `AND <table>.is_active = 1` — historical records remain valid regardless of current active status. Only soft-deletion (`deleted_at IS NULL`) is filtered. This is the inverse of the is_active defense-in-depth rule that applies to forward-creating queries elsewhere.
 
 ---
 

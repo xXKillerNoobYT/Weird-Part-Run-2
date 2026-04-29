@@ -264,7 +264,7 @@ See `docs/plans/github-flow.md` for full design.
 **Recently Completed (2026-03-07):**
 
 - Phase 7 Delta: People additions — PO naming convention, report filename naming (✅ complete — see `docs/plans/phase-7-people-delta.md`)
-- Phase 8: Reports & Pre-Billing — all 6 pages, period locking, bookkeeper exports (✅ complete — see `docs/plans/phase-11-reports-prebilling.md`)
+- Phase 8: Reports & Pre-Billing — all 6 pages, period locking, bookkeeper exports (✅ complete — see `docs/plans/ios-reports-pages.md`)
 - Legacy Cleanup — superseded pages removed/redirected (✅ complete — see `docs/plans/legacy-cleanup-plan.md`)
 - Testing Strategy — 119 tests across 10 files (✅ complete — see `docs/plans/testing-strategy.md`)
 - Feature Audits — all 13 areas audited (✅ complete — see `docs/plans/Audit/`)

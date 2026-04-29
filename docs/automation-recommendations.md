@@ -4,6 +4,53 @@
 
 ---
 
+## Area: inventory — 2026-04-27 (rotation 2 — C13 close)
+
+**Analyzed:** `PartsService.swift` forecasting methods (~3130–3650), `WishlistService.swift` (entire), `OrdersService.swift` procurement methods (~1100–1200), 5 inventory iOS pages (`PartsForecastingPage`, `ForecastSettingsSheet`, `IOSWishlistPage`, `IOSProcurementPage`, `IOSInventoryGridPage`). Two new scanner-promotion candidates surfaced this rotation; both have grep canaries proven against real findings (5 + 4 hits respectively in this single area).
+
+### ⚡ New Scanner: SwiftUI render-perf — `filter{...}.count` in `var body`
+
+**Pattern:** `array.filter { ... }.count` (or `.first(where:)`, `.count(where:)`) inline inside a SwiftUI `var body` block. Recomputed on every state change — O(N) per stat-card per render. Stat-card layouts that show 3-6 buckets pay 3-6 full scans per frame.
+
+**How to detect:** Python regex over iOS `*.swift` files with brace-depth tracking — find `var body: some View {` opening brace, walk forward, flag any line matching `\.filter\s*\{[^}]*\}\.count` (or `\.first\s*\(where:`) before body's closing brace. Same brace-depth approach as the dismiss-safety scanner.
+
+**Confirmed hits this rotation:** 5 instances across 3 inventory pages — PartsForecastingPage:209-223 (3 stat-card filter chains), PartsForecastingPage:585-601 (redundant pendingRecommendationCount), IOSInventoryGridPage:189-197 (smart-card buckets), IOSProcurementPage:258-264 (readyToGenerate dual-use). All bundled into [#328](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/328).
+
+**Likely systemic across 13 other areas** — same SwiftUI stat-card pattern appears in jobs (clock-in dashboard), people (employee status counts), orders (JPO/PO state buckets), warehouse (movement state). Pre-beta UI smoothness matters; this is the same class as the main-thread GRDB scanner approved 2026-04-25.
+
+**Fix pattern (canonical):** Replace inline `array.filter{...}.count` with `@State private var counts: [Bucket: Int] = [:]` populated once per data load via single-pass for-loop in `.task` or `.onChange(of: items)`.
+
+**Priority:** High — bundles cleanly with the main-thread-grdb-scanner's existing C7b dispatch slot. Cheap to add, demonstrably high-yield.
+
+### ⚡ New Scanner: Free-form identity-string T1 anti-pattern
+
+**Pattern:** Service-layer mutation methods that accept the actor identity as a free-form `String` parameter (e.g. `func approveItem(id: Int64, by approver: String)`) instead of a looked-up `Int64` user ID. The string is written to the audit field with **zero permission validation**. Any caller can populate the field with any name including a manager's name they don't possess — UI-layer permission gates do not protect the service layer.
+
+**How to detect:** Grep all `core/Sources/WiredPartCore/Services/*.swift` for the pattern `func \w+\(.*by \w+: String` (or `: String` followed by `audit`/`actor`/`user` semantics in the parameter name). Cross-reference with whether the method writes to an audit field.
+
+**Confirmed hits this rotation:** 4 instances in WishlistService alone — `approveItem(by: String)`, `dismissItem(by: String)`, `sendToProcurement` (no validation), `reopenItem` (no validation). Filed as [#327](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/327) (T1 security). Sister to Fleet's [#280](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/280) — same class, different surface.
+
+**Likely systemic** — quick informal grep suggests Tools (`checkoutTool(by:)`?), Notebooks (`resolveBlockConflict(by:)`?), and possibly Jobs all have similar shapes. Until scanned, count is unknown but the class is real.
+
+**Fix pattern (canonical):** Signature change to `byUserId: Int64`, service-layer capability lookup via `PermissionsService.canPerform(...)`, new `XError.insufficientPermissions` case, capability-denied tests added.
+
+**Priority:** Critical — T1 security class. Pre-beta posture says address now. Wire into C8 dispatch.
+
+### Pattern reinforcement: defensive-coding rules already approved
+
+The 2026-04-19 inventory rotation found the **GRDB Int? insert vs. SQL DEFAULT trap** and the **LEFT JOIN NULL propagation trap**. Neither has been promoted to a scanner yet. Reinforced this rotation: PartsService forecasting methods all benefited from the original fix (commit history confirms `record.isActive = 1` and `WHERE id IS NOT NULL` patterns are sticky). No new gaps in inventory — but the canaries should still be promoted to a scanner alongside the two new ones above. Folded into the new-scanner Q&A as a third companion item.
+
+### Summary: Running Totals After Inventory (rotation 2)
+
+| Recommendation | Areas Hit | Gaps Found | Priority | Status |
+|---|---|---|---|---|
+| SwiftUI `filter{}.count` render-perf scanner (new) | 1/14 (inventory) | 5 | 🔴 High | ⏳ Q&A pending |
+| Free-form identity-string T1 scanner (new) | 1/14 (inventory) | 4 (likely many more) | 🔴 Critical | ⏳ Q&A pending |
+| GRDB-Nil-Default scanner (carried from rot 1) | 1/14 | 1 | 🟠 High | ⏳ Q&A pending |
+| LEFT JOIN NULL propagation scanner (carried) | 1/14 | 1 | 🟠 Medium | ⏳ Q&A pending |
+
+---
+
 ## Area: vehicles — 2026-04-26 (C13 — process-automation lens)
 
 **Analyzed:** AUTO GO iter 20 C13 (`/claude-automation-recommender` scoped to FleetService + Fleet iOS files), reviewing the *full vehicles rotation* (iters 1–19) for hooks/skills/scanners — not code-level reusables (those went under iter 14 C7b below). Three net-new scanner candidates surfaced from C8/C9/C12 work.
