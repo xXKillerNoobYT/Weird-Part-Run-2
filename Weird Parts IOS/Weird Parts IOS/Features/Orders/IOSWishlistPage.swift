@@ -80,6 +80,7 @@ struct IOSWishlistPage: View {
         ) {
             if let item = itemToDelete {
                 Button("Delete \"\(item.partName)\"", role: .destructive) {
+                    Haptics.warning()
                     deleteItem(item)
                     itemToDelete = nil
                 }
@@ -230,6 +231,7 @@ struct IOSWishlistPage: View {
     private func leadingSwipeActions(_ item: WishlistItem) -> some View {
         if item.status == "pending" {
             Button {
+                Haptics.impact(.medium)
                 approveItem(item)
             } label: {
                 Label("Approve", systemImage: "checkmark.circle")
@@ -238,6 +240,7 @@ struct IOSWishlistPage: View {
         }
         if item.status == "approved" {
             Button {
+                Haptics.impact(.medium)
                 sendToProcurement(item)
             } label: {
                 Label("Send to PO", systemImage: "shippingbox")
@@ -250,6 +253,7 @@ struct IOSWishlistPage: View {
     private func trailingSwipeActions(_ item: WishlistItem) -> some View {
         if item.status == "pending" || item.status == "approved" {
             Button(role: .destructive) {
+                Haptics.impact(.medium)
                 activeSheet = .dismiss(item)
             } label: {
                 Label("Dismiss", systemImage: "xmark.circle")
@@ -257,6 +261,7 @@ struct IOSWishlistPage: View {
         }
         if item.status == "dismissed" {
             Button {
+                Haptics.impact(.medium)
                 reopenItem(item)
             } label: {
                 Label("Reopen", systemImage: "arrow.uturn.left")
@@ -414,6 +419,7 @@ struct IOSWishlistPage: View {
         guard let userId = appCore.currentUser?.id else { loadError = "Not authenticated"; return }
         do {
             let updated = try service.approveItem(id: id, byUserId: userId)
+            Haptics.success()
             applyPartialUpdate(updated)
         } catch {
             loadError = userFriendlyError(error, context: "approve wishlist item")
@@ -426,6 +432,7 @@ struct IOSWishlistPage: View {
         guard let userId = appCore.currentUser?.id else { loadError = "Not authenticated"; return }
         do {
             let updated = try service.dismissItem(id: id, byUserId: userId, reason: reason)
+            Haptics.success()
             applyPartialUpdate(updated)
         } catch {
             loadError = userFriendlyError(error, context: "dismiss wishlist item")
@@ -438,6 +445,7 @@ struct IOSWishlistPage: View {
         guard let userId = appCore.currentUser?.id else { loadError = "Not authenticated"; return }
         do {
             let updated = try service.sendToProcurement(id: id, byUserId: userId)
+            Haptics.success()
             applyPartialUpdate(updated)
         } catch {
             loadError = userFriendlyError(error, context: "send to procurement")
@@ -450,6 +458,7 @@ struct IOSWishlistPage: View {
         guard let userId = appCore.currentUser?.id else { loadError = "Not authenticated"; return }
         do {
             let updated = try service.reopenItem(id: id, byUserId: userId)
+            Haptics.success()
             applyPartialUpdate(updated)
         } catch {
             loadError = userFriendlyError(error, context: "reopen wishlist item")

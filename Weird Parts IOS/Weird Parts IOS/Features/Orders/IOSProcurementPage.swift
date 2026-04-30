@@ -650,6 +650,7 @@ struct IOSProcurementPage: View {
             let result = try service.generatePOsFromProcurement(items: generateItems)
             let poNumbers = result.createdPOs.map(\.poNumber).joined(separator: ", ")
             generateSuccess = "Created \(result.createdPOs.count) PO(s): \(poNumbers) with \(result.totalLineItems) line items"
+            Haptics.success()
             // Clear checked items that were generated
             for item in cachedReadyToGenerate {
                 checkedParts.remove(item.id)
@@ -1068,6 +1069,7 @@ struct IOSProcurementPage: View {
             } else {
                 pullActionSuccess = "Pulled \(actualPull) \(item.partName) to staging. No order needed."
             }
+            Haptics.success()
 
             // Reload to reflect updated stock levels
             loadData()
