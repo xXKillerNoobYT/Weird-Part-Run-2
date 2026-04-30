@@ -529,14 +529,15 @@ private struct DispatchAssignSheet: View {
     @State private var entryDate: Date = Date()
     @State private var timeSlot = "full"
     @State private var allEmployees: [PeopleService.EmployeeListItem] = []
+    @State private var cachedWorkerName = "Selected Worker"
+    @State private var cachedJobName = "Selected Job"
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Employee") {
                     if workerId != nil {
-                        let name = unassignedWorkers.first(where: { $0.id == workerId })?.name ?? "Selected Worker"
-                        Text(name).foregroundStyle(.primary)
+                        Text(cachedWorkerName).foregroundStyle(.primary)
                     } else {
                         Picker("Employee", selection: $selectedWorkerId) {
                             Text("Select...").tag(nil as Int64?)
@@ -549,8 +550,7 @@ private struct DispatchAssignSheet: View {
 
                 Section("Job") {
                     if jobId != nil {
-                        let name = jobRows.first(where: { $0.id == jobId })?.jobName ?? "Selected Job"
-                        Text(name).foregroundStyle(.primary)
+                        Text(cachedJobName).foregroundStyle(.primary)
                     } else {
                         Picker("Job", selection: $selectedJobId) {
                             Text("Select...").tag(nil as Int64?)
@@ -595,6 +595,8 @@ private struct DispatchAssignSheet: View {
             .onAppear {
                 selectedJobId = jobId
                 selectedWorkerId = workerId
+                cachedWorkerName = unassignedWorkers.first(where: { $0.id == workerId })?.name ?? "Selected Worker"
+                cachedJobName = jobRows.first(where: { $0.id == jobId })?.jobName ?? "Selected Job"
                 // Parse initial date
                 if let d = Formatters.localDateFormatter.date(from: date) { entryDate = d }
                 // Load employees

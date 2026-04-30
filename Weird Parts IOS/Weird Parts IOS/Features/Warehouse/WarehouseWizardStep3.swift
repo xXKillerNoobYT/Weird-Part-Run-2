@@ -12,6 +12,7 @@ struct WarehouseWizardStep3: View {
 
     @State private var allAreas: [WizardAreaInfo] = []
     @State private var checkedStickers: Set<String> = []
+    @State private var checkedCount: Int = 0
 
     private var stickerGroups: [(unitName: String, items: [WizardAreaInfo])] {
         Dictionary(grouping: allAreas, by: \.unitName)
@@ -34,13 +35,12 @@ struct WarehouseWizardStep3: View {
 
             // Progress bar
             let total = allAreas.count
-            let done = allAreas.filter { checkedStickers.contains($0.fullLocationCode) }.count
             HStack {
-                Text("\(done) of \(total) stickers placed")
+                Text("\(checkedCount) of \(total) stickers placed")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                ProgressView(value: Double(done), total: Double(max(total, 1)))
+                ProgressView(value: Double(checkedCount), total: Double(max(total, 1)))
                     .frame(width: 100)
             }
             .padding(.horizontal)
@@ -98,6 +98,7 @@ struct WarehouseWizardStep3: View {
             ) as? [String] {
                 checkedStickers = Set(saved)
             }
+            checkedCount = allAreas.filter { checkedStickers.contains($0.fullLocationCode) }.count
         } catch {
             stepError = userFriendlyError(error, context: "load areas")
         }
@@ -106,8 +107,10 @@ struct WarehouseWizardStep3: View {
     private func toggleSticker(_ code: String) {
         if checkedStickers.contains(code) {
             checkedStickers.remove(code)
+            checkedCount -= 1
         } else {
             checkedStickers.insert(code)
+            checkedCount += 1
         }
         // Persist progress
         UserDefaults.standard.set(
