@@ -286,7 +286,7 @@ public final class WishlistService: Sendable {
     // MARK: - Internal State-Mutation Helpers (no permission check)
     // =========================================================================
 
-    /// Internal approve — called by `processAutoApprovals` (system path, no user permission check).
+    /// Internal approve — called by `processAutoApprovals` (system or permissioned path).
     @discardableResult
     private func _performApprove(id: Int64, approvedByName: String) throws -> WishlistItem {
         try db.writer.write { dbConn in
@@ -359,7 +359,7 @@ public final class WishlistService: Sendable {
 
     /// Returns wishlist items split into 3 sections by source_type.
     /// Fetches wishlist items grouped into three sections: User Added, Forecast Demand, System Auto-Added.
-    /// Call `processAutoApprovals(by:)` before this method (in a background task) to keep auto-approval state current.
+    /// Call `processAutoApprovals(byUserId:)` before this method (in a background task) to keep auto-approval state current.
     public func getSectionedItems(statusFilter: String? = nil) throws -> WishlistSections {
         return try db.writer.read { dbConn in
             var base = WishlistItem
@@ -379,10 +379,29 @@ public final class WishlistService: Sendable {
         }
     }
 
-    /// Auto-approve any pending manual items whose auto_approve_at has passed.
-    /// Returns the count of items that were auto-approved.
+    /// Auto-approve any pending items whose auto_approve_at has passed.
+    ///
+    /// - Parameter byUserId: The ID of the user triggering auto-approval. When non-nil, the caller
+    ///   must hold the `wishlist.auto_approve` permission; otherwise
+    ///   `WishlistError.insufficientPermissions` is thrown. When nil (background/system path)
+    ///   the approval is attributed to `"System (Auto)"` with no permission check.
+    ///
+    /// - Returns: The count of items that were auto-approved.
     @discardableResult
-    public func processAutoApprovals(by approver: String) throws -> Int {
+    public func processAutoApprovals(byUserId: Int64?) throws -> Int {
+        let approverName: String
+        if let userId = byUserId {
+            guard try auth.hasPermission(userId, permissionKey: "wishlist.auto_approve") else {
+                throw WishlistError.insufficientPermissions(required: "wishlist.auto_approve")
+            }
+            guard let userRecord = try auth.getUser(userId) else {
+                throw WishlistError.insufficientPermissions(required: "wishlist.auto_approve")
+            }
+            approverName = userRecord.displayName
+        } else {
+            approverName = "System (Auto)"
+        }
+
         do {
             let now = Self.nowString()
             let expiredItems = try db.writer.read { dbConn in
@@ -396,7 +415,7 @@ public final class WishlistService: Sendable {
             var count = 0
             for item in expiredItems {
                 guard let id = item.id else { continue }
-                _ = try _performApprove(id: id, approvedByName: approver)
+                _ = try _performApprove(id: id, approvedByName: approverName)
                 count += 1
             }
             return count
