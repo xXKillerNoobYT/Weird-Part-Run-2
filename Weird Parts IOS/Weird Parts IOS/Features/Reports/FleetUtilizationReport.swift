@@ -10,6 +10,7 @@ struct FleetUtilizationReport: View {
     @State private var dateRange: ReportDateRange = .thisMonth
     @State private var startDate = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
     @State private var endDate = Date()
+    @State private var activeCount: Int = 0
     @State private var activeSheet: ActiveSheet?
 
     private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
@@ -108,9 +109,6 @@ struct FleetUtilizationReport: View {
         guard !utilizationData.isEmpty else { return 0 }
         return utilizationData.reduce(0) { $0 + $1.utilization } / Double(utilizationData.count)
     }
-    private var activeCount: Int {
-        utilizationData.filter { $0.daysActive > 0 }.count
-    }
 
     private func loadData() {
         isLoading = true
@@ -124,6 +122,7 @@ struct FleetUtilizationReport: View {
             utilizationData = try service.getVehicleUtilizationReport(
                 startDate: startDate, endDate: endDate
             )
+            activeCount = utilizationData.filter { $0.daysActive > 0 }.count
         } catch {
             loadError = userFriendlyError(error, context: "load reports")
         }

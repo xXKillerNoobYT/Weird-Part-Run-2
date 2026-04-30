@@ -24,15 +24,11 @@ struct IOSTimesheetsPage: View {
     private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
     private var startDateString: String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: startDate)
+        Formatters.localDateFormatter.string(from: startDate)
     }
 
     private var endDateString: String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: endDate)
+        Formatters.localDateFormatter.string(from: endDate)
     }
 
     var body: some View {
