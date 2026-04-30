@@ -1279,6 +1279,8 @@ public final class PartsService: Sendable {
             binLocation: binLocation
         )
         record.isActive = 1
+        record.isDeprecated = 0
+        record.isQrTagged = 0
         try db.writer.write { dbConn in
             try record.insert(dbConn)
         }
@@ -1626,6 +1628,7 @@ public final class PartsService: Sendable {
             deliveryDays: deliveryDays,
             accountNumber: accountNumber
         )
+        record.isActive = 1
         try db.writer.write { dbConn in
             try record.insert(dbConn)
         }
