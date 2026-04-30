@@ -10,6 +10,9 @@ build/
 .build/
 .swiftpm/
 Package.resolved
+# Exception: core/Package.resolved is committed to pin duckduckgo/GRDB.swift to a
+# specific revision that compiles cleanly on macOS and Linux (see core/Package.swift).
+!core/Package.resolved
 
 # Database
 *.db

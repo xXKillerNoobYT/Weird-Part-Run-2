@@ -1,0 +1,24 @@
+{
+  "originHash" : "d52b443394bb7aa1f46f4b22947687bcec96c8b33df2f3cd6f23874aab38c5a4",
+  "pins" : [
+    {
+      "identity" : "csqlite",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/groue/CSQLite.git",
+      "state" : {
+        "revision" : "3a405d0ebd8bf07d4c41a8b05a203e4d03415b5b",
+        "version" : "0.3.0"
+      }
+    },
+    {
+      "identity" : "grdb.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/duckduckgo/GRDB.swift",
+      "state" : {
+        "revision" : "cd6c4a423278bb671f81087c9e802b306df74738",
+        "version" : "3.7.0"
+      }
+    }
+  ],
+  "version" : 3
+}
