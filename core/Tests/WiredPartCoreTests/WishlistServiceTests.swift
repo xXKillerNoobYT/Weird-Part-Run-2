@@ -211,13 +211,13 @@ struct WishlistServiceTests {
         // Create another that's not yet expired
         _ = try wishlist.addItem(partName: "Not Yet Due", sourceType: "manual")
 
-        let count = try wishlist.processAutoApprovals(by: "System")
+        let count = try wishlist.processAutoApprovals(byUserId: nil)
         #expect(count == 1)
 
         // Verify the backdated one is now approved
         let approved = try wishlist.getItem(id: item.id!)
         #expect(approved?.status == "approved")
-        #expect(approved?.approvedBy == "System")
+        #expect(approved?.approvedBy == "System (Auto)")
 
         // The other should still be pending
         let allPending = try wishlist.listItems(status: "pending")
@@ -412,5 +412,63 @@ struct WishlistServiceTests {
         #expect(throws: WishlistService.WishlistError.insufficientPermissions(required: "wishlist.reopen")) {
             try wishlist.reopenItem(id: item.id!, byUserId: unprivUserId)
         }
+    }
+
+    @Test("processAutoApprovals succeeds for Owner (Admin) user")
+    func testProcessAutoApprovalsAsOwnerSucceeds() throws {
+        let (env, wishlist) = try freshEnv()
+
+        // Backdate an item's auto_approve_at so it is expired
+        let item = try wishlist.addItem(partName: "Auto-Approve Eligible", sourceType: "manual")
+        let pastDate = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3600))
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE wishlist_items SET auto_approve_at = ? WHERE id = ?",
+                arguments: [pastDate, item.id!]
+            )
+        }
+
+        // Admin user has wishlist.auto_approve — should succeed
+        let count = try wishlist.processAutoApprovals(byUserId: env.adminUserId)
+        #expect(count == 1)
+
+        let approved = try wishlist.getItem(id: item.id!)
+        #expect(approved?.status == "approved")
+        #expect(approved?.approvedBy == "TestAdmin")
+    }
+
+    @Test("processAutoApprovals throws insufficientPermissions for Office user")
+    func testProcessAutoApprovalsAsOfficeUserDeniedThrowsInsufficientPermissions() throws {
+        let (env, wishlist) = try freshEnv()
+
+        // Create an unprivileged user (no hats, no wishlist.auto_approve permission)
+        let officeUserId = try env.auth.createUser(displayName: "Office User", pin: "9999")
+
+        #expect(throws: WishlistService.WishlistError.insufficientPermissions(required: "wishlist.auto_approve")) {
+            try wishlist.processAutoApprovals(byUserId: officeUserId)
+        }
+    }
+
+    @Test("processAutoApprovals with nil userId uses System (Auto) attribution")
+    func testProcessAutoApprovalsWithNilUserIdUsesSystemAttribution() throws {
+        let (env, wishlist) = try freshEnv()
+
+        // Backdate an item's auto_approve_at so it is expired
+        let item = try wishlist.addItem(partName: "Background Auto-Approve", sourceType: "manual")
+        let pastDate = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3600))
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE wishlist_items SET auto_approve_at = ? WHERE id = ?",
+                arguments: [pastDate, item.id!]
+            )
+        }
+
+        // Nil userId — system path, no permission check
+        let count = try wishlist.processAutoApprovals(byUserId: nil)
+        #expect(count == 1)
+
+        let approved = try wishlist.getItem(id: item.id!)
+        #expect(approved?.status == "approved")
+        #expect(approved?.approvedBy == "System (Auto)")
     }
 }

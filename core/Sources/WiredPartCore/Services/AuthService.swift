@@ -851,6 +851,7 @@ public final class AuthService: Sendable {
                 "companion_vote_power", "vote_veto",
                 // Wishlist management
                 "wishlist.approve", "wishlist.dismiss", "wishlist.send_to_procurement", "wishlist.reopen",
+                "wishlist.auto_approve",
             ],
             "Manager": [
                 "view_parts_catalog", "edit_parts_catalog", "edit_pricing", "show_dollar_values",
@@ -873,6 +874,7 @@ public final class AuthService: Sendable {
                 "companion_vote_power",
                 // Wishlist management
                 "wishlist.approve", "wishlist.dismiss", "wishlist.send_to_procurement", "wishlist.reopen",
+                "wishlist.auto_approve",
             ],
             "Office": [
                 "view_parts_catalog", "edit_parts_catalog", "show_dollar_values",

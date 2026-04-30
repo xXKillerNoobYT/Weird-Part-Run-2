@@ -528,11 +528,12 @@ struct IOSWishlistPage: View {
         }
         isLoading = totalCount == 0
         loadError = nil
+        let currentUserId = appCore.currentUser?.id
         // Run auto-approvals in a background task before reading sections (DIS-006).
         // processAutoApprovals was removed from getSectionedItems() to avoid main-thread
         // DB writes inside a read; we fire it here as a detached utility task instead.
         Task.detached(priority: .utility) {
-            _ = try? service.processAutoApprovals(by: "System (Auto)")
+            _ = try? service.processAutoApprovals(byUserId: currentUserId)
             do {
                 let result = try service.getSectionedItems()
                 await MainActor.run {
