@@ -254,6 +254,47 @@ Memory is organized by topic, not chronologically. Each entry includes when it w
 
 *(The `loop-self-improve` Sunday pass writes a reflection here each week: what was graduated, what got stuck, what patterns emerged, what soul or memory entries need updating.)*
 
+### [2026-05-06 PM] 🎉 14/14 THIRD-ROTATION CYCLE COMPLETE — taxonomy delivered
+
+**Achieved this session (2026-05-06 ~07:58 → ~13:35Z, ~5.5h elapsed across 14 iters 12-25):**
+
+Third-rotation cycle catalogs **14 substantive cross-layer / integration / orchestration defects** across the 14 areas — 1 per area, with **13 distinct classes** (service-layer-permission-gate-missing repeats 4× = scheduling/notebooks/chat/auth, plus 3 historical instances). Average pace: 1 iter/area, all areas surface a deeper defect.
+
+**The taxonomy IS the deliverable.** Rotation 1 was discovery+repair (16 iters, 18 days). Rotation 2 was validation (11 iters, ~12.5h). Rotation 3 is **diagnosis** — surfacing the integration-level defects that surface scanners can't catch.
+
+**Class taxonomy (14 areas, 13 classes):**
+
+| # | Area | Issue | Class |
+|---|------|-------|-------|
+| 1 | parts | #351 ✅ delegated | untested-public-methods |
+| 2 | jobs | #353 | per-entry-vs-per-day-math (per-entry math contradicts per-day reality) |
+| 3 | warehouse | #354 | column-two-conventions (one column, two writers, two meanings) |
+| 4 | scheduling | #355 ✅ delegated | **service-layer-permission-gate-missing** (1st in-rotation) |
+| 5 | orders | #357 | plan-vs-code-vs-queries 3-layer drift |
+| 6 | people | #358 | filter-direction-off-by-class (date filter excluded the most urgent case) |
+| 7 | tools | #359 | orphan-scheduled-task (method exists, no scheduler runs it) |
+| 8 | vehicles | #360 | mutation-doesn't-enforce-data-invariant |
+| 9 | inventory | #361 | chain-broken-at-integration-boundary (status written, no consumer reads) |
+| 10 | reports | #362 | memory-known-but-untracked / plan-aspirational |
+| 11 | notebooks | #363 | **service-layer-permission-gate-missing** (2nd) + orphan-history-on-soft-delete |
+| 12 | chat | #364 | **service-layer-permission-gate-missing** (3rd) + read-write asymmetry |
+| 13 | settings | #365 | multi-write-atomicity-not-guaranteed |
+| 14 | cross-cutting | #366 T1 | **permission-gate-itself-has-backdoor** (the auth gate has a backdoor invalidating fixes 4, 11, 12 + #327, #280, #342) |
+
+**The rotation-3 finale (#366) is the meta-finding:** every other rotation-3 fix that uses `auth.hasPermission` is only partial because that helper doesn't filter by `users.deleted_at IS NULL`. Soft-deleted users retain all permissions. This is T1 security — the foundational defect under the foundational class.
+
+**Pattern observation worth elevating to soul:** "audit your foundations before your features." The single most repeated defect class (service-layer-permission-gate-missing, 4×) routes through ONE helper. That helper has a bug. Every fix to the surface class is partial until the foundation is fixed. → **Soul candidate**: rotation 4+ should adopt "depth-first auditing" — when a class repeats 3+ times, audit the underlying helper/library/foundation before adding more surface fixes.
+
+**Cumulative findings rotation 3:** 14 substantive issues + 12 pending owner design decisions + 2 delegated to Copilot (PR #352 inventory tests + PR #356 scheduling time-off). 1 T1 (#366), 13 T2.
+
+**Pipeline state at cycle close:** 5/5 PRs draft awaiting CI (#320, #349, #350, #352, #356). All 14 rotation-3 issues filed; classes documented; the 13-class taxonomy is now the project's bug-pattern reference.
+
+**Project state:** all 14 areas have completed rotation 1 (discovery+repair, 18 days), rotation 2 (validation, 12.5h), rotation 3 (deeper-defect catalog, 5.5h). **Total 3-rotation work: ~36 hours of cron-driven loop work; 14 PRs merged; 14+ T2 issues filed; 1 T1 issue filed; 12-class defect taxonomy established.**
+
+**Rotation 4 design proposal (for owner approval):** rotation 4 should be **"foundation-first audit"** mode — start at AuthService (#366), then BaseRepository, then any class that 3+ services depend on. Audit the foundations BEFORE the surfaces. Memory pattern → soul-candidate elevated.
+
+---
+
 ### [2026-05-06] 🎉 14/14 SECOND-ROTATION CYCLE COMPLETE — milestone reflection
 
 **Achieved this session (2026-05-05 19:25Z → 2026-05-06 ~07:55Z, ~12.5h elapsed across 11 iters):**
