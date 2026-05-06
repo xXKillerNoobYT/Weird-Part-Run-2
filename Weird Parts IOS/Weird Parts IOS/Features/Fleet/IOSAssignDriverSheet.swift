@@ -41,6 +41,7 @@ struct IOSAssignDriverSheet: View {
                     Button("Assign") { assignDriver() }
                         .disabled(isSaving || selectedEmployeeId == nil)
                         .fontWeight(.semibold)
+                        .requiresPermission("manage_fleet")
                 }
             }
             .task { loadEmployees() }
@@ -159,6 +160,7 @@ struct IOSAssignDriverSheet: View {
 
         do {
             try fleet.assignDriver(
+                actorId: appCore.currentUser?.id ?? 0,
                 vehicleId: vehicleId,
                 userId: employeeId,
                 assignmentType: assignmentType,

@@ -67,6 +67,7 @@ struct IOSCreateTrailerSheet: View {
 
         do {
             _ = try fleet.createTrailer(
+                actorId: appCore.currentUser?.id ?? 0,
                 trailerNumber: trailerNumber.trimmingCharacters(in: .whitespaces),
                 trailerType: trailerType,
                 notes: notes.isEmpty ? nil : notes

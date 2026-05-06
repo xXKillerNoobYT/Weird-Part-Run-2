@@ -105,6 +105,7 @@ struct IOSCreateVehicleSheet: View {
 
         do {
             _ = try fleet.createVehicle(
+                actorId: appCore.currentUser?.id ?? 0,
                 vehicleNumber: vehicleNumber.trimmingCharacters(in: .whitespaces),
                 vehicleName: vehicleName.trimmingCharacters(in: .whitespaces),
                 vehicleType: vehicleType,

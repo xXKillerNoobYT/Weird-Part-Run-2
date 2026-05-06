@@ -218,12 +218,14 @@ struct IOSMyTruckPage: View {
                 QuickActionBtn(title: "Log Fuel", icon: "fuelpump.fill", color: .blue) {
                     activeSheet = .logFuel
                 }
+                .requiresPermission("log_fleet")
                 QuickActionBtn(title: "Report Issue", icon: "exclamationmark.triangle.fill", color: .red) {
                     activeSheet = .reportIssue
                 }
                 QuickActionBtn(title: "Add Part", icon: "plus.circle.fill", color: .green) {
                     activeSheet = .addTransferItem
                 }
+                .requiresPermission("log_fleet")
             }
             .frame(maxWidth: .infinity)
         }
@@ -621,7 +623,7 @@ private struct LogFuelSheet: View {
         isSaving = true
         saveError = nil
         do {
-            try fleet.logFuelLevel(vehicleId: vehicleId, fuelLevel: fuelPercent / 100.0)
+            try fleet.logFuelLevel(actorId: appCore.currentUser?.id ?? 0, vehicleId: vehicleId, fuelLevel: fuelPercent / 100.0)
             onComplete()
         } catch {
             saveError = userFriendlyError(error, context: "save vehicle data")
@@ -781,6 +783,7 @@ private struct AddTransferItemSheet: View {
         saveError = nil
         do {
             try fleet.addVehicleStockItem(
+                actorId: appCore.currentUser?.id ?? 0,
                 vehicleId: vehicleId,
                 partName: partName,
                 quantity: quantity,

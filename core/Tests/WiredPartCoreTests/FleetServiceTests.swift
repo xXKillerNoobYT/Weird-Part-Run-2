@@ -12,6 +12,7 @@ struct FleetServiceTests {
     func testVehicleCRUD() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-TEST",
             vehicleName: "Test Truck",
             vehicleType: "truck",
@@ -33,6 +34,7 @@ struct FleetServiceTests {
     func testVehicleDetail() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-DET",
             vehicleName: "Detail Truck",
             vehicleType: "truck",
@@ -52,7 +54,7 @@ struct FleetServiceTests {
     @Test("Filter vehicles by status")
     func testFilterVehiclesByStatus() throws {
         let env = try E2ETestHelpers.setUp()
-        _ = try env.fleet.createVehicle(vehicleNumber: "V-ACT", vehicleName: "Active Truck", vehicleType: "truck", make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil)
+        _ = try env.fleet.createVehicle(actorId: env.adminUserId, vehicleNumber: "V-ACT", vehicleName: "Active Truck", vehicleType: "truck", make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil)
         let active = try env.fleet.listVehicles(status: "active")
         #expect(active.count >= 1)
     }
@@ -63,6 +65,7 @@ struct FleetServiceTests {
     func testTrailerCRUD() throws {
         let env = try E2ETestHelpers.setUp()
         let trailerId = try env.fleet.createTrailer(
+            actorId: env.adminUserId,
             trailerNumber: "T-001",
             trailerType: "flatbed",
             notes: "24ft flatbed"
@@ -76,7 +79,7 @@ struct FleetServiceTests {
     @Test("Get trailer detail")
     func testTrailerDetail() throws {
         let env = try E2ETestHelpers.setUp()
-        let trailerId = try env.fleet.createTrailer(trailerNumber: "T-DET", trailerType: "enclosed", notes: nil)
+        let trailerId = try env.fleet.createTrailer(actorId: env.adminUserId, trailerNumber: "T-DET", trailerType: "enclosed", notes: nil)
         let detail = try env.fleet.getTrailerDetail(trailerId: trailerId)
         #expect(detail?.trailerCode == "T-DET")
     }
@@ -86,8 +89,9 @@ struct FleetServiceTests {
     @Test("Assign driver to vehicle")
     func testAssignDriver() throws {
         let env = try E2ETestHelpers.setUp()
-        let vehicleId = try env.fleet.createVehicle(vehicleNumber: "V-DRV", vehicleName: "Driver Truck", vehicleType: "truck", make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil)
+        let vehicleId = try env.fleet.createVehicle(actorId: env.adminUserId, vehicleNumber: "V-DRV", vehicleName: "Driver Truck", vehicleType: "truck", make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil)
         try env.fleet.assignDriver(
+            actorId: env.adminUserId,
             vehicleId: vehicleId,
             userId: env.adminUserId,
             assignmentType: "primary",
@@ -100,8 +104,8 @@ struct FleetServiceTests {
     @Test("My vehicle stats")
     func testMyVehicleStats() throws {
         let env = try E2ETestHelpers.setUp()
-        let vehicleId = try env.fleet.createVehicle(vehicleNumber: "V-MY", vehicleName: "My Truck", vehicleType: "truck", make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil)
-        try env.fleet.assignDriver(vehicleId: vehicleId, userId: env.adminUserId, assignmentType: "primary", isTakeHome: true)
+        let vehicleId = try env.fleet.createVehicle(actorId: env.adminUserId, vehicleNumber: "V-MY", vehicleName: "My Truck", vehicleType: "truck", make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil)
+        try env.fleet.assignDriver(actorId: env.adminUserId, vehicleId: vehicleId, userId: env.adminUserId, assignmentType: "primary", isTakeHome: true)
         let stats = try env.fleet.getMyVehicleStats(userId: env.adminUserId)
         #expect(stats != nil)
     }
@@ -125,7 +129,7 @@ struct FleetServiceTests {
     @Test("Vehicle status list")
     func testVehicleStatusList() throws {
         let env = try E2ETestHelpers.setUp()
-        _ = try env.fleet.createVehicle(vehicleNumber: "V-STS", vehicleName: "Status Truck", vehicleType: "van", make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil)
+        _ = try env.fleet.createVehicle(actorId: env.adminUserId, vehicleNumber: "V-STS", vehicleName: "Status Truck", vehicleType: "van", make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil)
         let statuses = try env.fleet.getVehicleStatusList()
         #expect(statuses.count >= 1)
     }
@@ -159,6 +163,7 @@ struct FleetServiceTests {
     func testListFuelLogsDateRange() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-FUEL-DR", vehicleName: "Fuel DR", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
@@ -184,6 +189,7 @@ struct FleetServiceTests {
     func testListMileageLogsDateRange() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-MIL-DR", vehicleName: "Mileage DR", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
@@ -207,6 +213,7 @@ struct FleetServiceTests {
     func testListMaintenanceRecordsDateRange() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-MNT-DR", vehicleName: "Maint DR", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
@@ -254,7 +261,7 @@ struct FleetServiceTests {
     @Test("Vehicle stock empty on fresh DB")
     func testVehicleStockEmpty() throws {
         let env = try E2ETestHelpers.setUp()
-        let vehicleId = try env.fleet.createVehicle(vehicleNumber: "V-STK", vehicleName: "Stock Truck", vehicleType: "truck", make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil)
+        let vehicleId = try env.fleet.createVehicle(actorId: env.adminUserId, vehicleNumber: "V-STK", vehicleName: "Stock Truck", vehicleType: "truck", make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil)
         let stock = try env.fleet.getVehicleStock(vehicleId: vehicleId, stockType: "standard")
         #expect(stock.isEmpty)
     }
@@ -262,8 +269,8 @@ struct FleetServiceTests {
     @Test("Add vehicle stock item")
     func testAddVehicleStock() throws {
         let env = try E2ETestHelpers.setUp()
-        let vehicleId = try env.fleet.createVehicle(vehicleNumber: "V-ADD", vehicleName: "Add Truck", vehicleType: "truck", make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil)
-        try env.fleet.addVehicleStockItem(vehicleId: vehicleId, partName: "Wire Nuts", quantity: 100, stockType: "standard")
+        let vehicleId = try env.fleet.createVehicle(actorId: env.adminUserId, vehicleNumber: "V-ADD", vehicleName: "Add Truck", vehicleType: "truck", make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil)
+        try env.fleet.addVehicleStockItem(actorId: env.adminUserId, vehicleId: vehicleId, partName: "Wire Nuts", quantity: 100, stockType: "standard")
         let stock = try env.fleet.getVehicleStock(vehicleId: vehicleId, stockType: "standard")
         #expect(stock.count >= 1)
     }
@@ -273,7 +280,7 @@ struct FleetServiceTests {
     @Test("Update and get trailer location history")
     func testTrailerLocationHistory() throws {
         let env = try E2ETestHelpers.setUp()
-        let trailerId = try env.fleet.createTrailer(trailerNumber: "T-LOC", trailerType: "flatbed", notes: nil)
+        let trailerId = try env.fleet.createTrailer(actorId: env.adminUserId, trailerNumber: "T-LOC", trailerType: "flatbed", notes: nil)
         try env.fleet.updateTrailerLocation(
             trailerId: trailerId,
             locationType: "job",
@@ -300,6 +307,7 @@ struct FleetServiceTests {
     func testVehicleToolsEmpty() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-TOOL", vehicleName: "Tool Truck", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
@@ -313,15 +321,17 @@ struct FleetServiceTests {
     func testLogFuelLevel() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-FUEL", vehicleName: "Fuel Truck", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
         // Assign admin user so getMyVehicleStats returns the vehicle
         try env.fleet.assignDriver(
+            actorId: env.adminUserId,
             vehicleId: vehicleId, userId: env.adminUserId,
             assignmentType: "primary", isTakeHome: true
         )
-        try env.fleet.logFuelLevel(vehicleId: vehicleId, fuelLevel: 0.75)
+        try env.fleet.logFuelLevel(actorId: env.adminUserId, vehicleId: vehicleId, fuelLevel: 0.75)
         let stats = try env.fleet.getMyVehicleStats(userId: env.adminUserId)
         #expect(stats?.fuelLevel == 0.75)
     }
@@ -331,7 +341,7 @@ struct FleetServiceTests {
     @Test("Get trailer stock returns empty on fresh trailer")
     func testTrailerStockEmpty() throws {
         let env = try E2ETestHelpers.setUp()
-        let trailerId = try env.fleet.createTrailer(trailerNumber: "T-STK", trailerType: "enclosed", notes: nil)
+        let trailerId = try env.fleet.createTrailer(actorId: env.adminUserId, trailerNumber: "T-STK", trailerType: "enclosed", notes: nil)
         let stock = try env.fleet.getTrailerStock(trailerId: trailerId)
         #expect(stock.isEmpty)
     }
@@ -339,7 +349,7 @@ struct FleetServiceTests {
     @Test("Get trailer storage units returns empty on fresh trailer")
     func testTrailerStorageUnitsEmpty() throws {
         let env = try E2ETestHelpers.setUp()
-        let trailerId = try env.fleet.createTrailer(trailerNumber: "T-SU", trailerType: "enclosed", notes: nil)
+        let trailerId = try env.fleet.createTrailer(actorId: env.adminUserId, trailerNumber: "T-SU", trailerType: "enclosed", notes: nil)
         let units = try env.fleet.getTrailerStorageUnits(trailerId: trailerId)
         #expect(units.isEmpty)
     }
@@ -350,6 +360,7 @@ struct FleetServiceTests {
     func testSaveInspectionAndCheckRequired() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-INSP", vehicleName: "Inspection Truck", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
@@ -384,6 +395,7 @@ struct FleetServiceTests {
     func testInspectionRequiredBlockedOnFail() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-FAIL", vehicleName: "Failed Truck", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
@@ -409,6 +421,7 @@ struct FleetServiceTests {
     func testGetInspectionRecords() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-IREC", vehicleName: "Record Truck", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
@@ -465,6 +478,7 @@ struct FleetServiceTests {
     func testVehicleUtilizationReport() throws {
         let env = try E2ETestHelpers.setUp()
         _ = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-UTIL", vehicleName: "Util Truck", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
@@ -483,6 +497,7 @@ struct FleetServiceTests {
     func testMaintenanceTrendHidesDeletedVehicleName() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-MT-DEL", vehicleName: "Trend Truck", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
@@ -510,10 +525,11 @@ struct FleetServiceTests {
     func testListVehiclesHidesDeletedAssignedUserName() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-DEL-01", vehicleName: "Delete Test", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
-        try env.fleet.assignDriver(vehicleId: vehicleId, userId: env.adminUserId, assignmentType: "primary", isTakeHome: false)
+        try env.fleet.assignDriver(actorId: env.adminUserId, vehicleId: vehicleId, userId: env.adminUserId, assignmentType: "primary", isTakeHome: false)
         try env.db.writer.write { db in
             try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?", arguments: [env.adminUserId])
         }
@@ -562,20 +578,21 @@ struct FleetServiceTests {
     func testLogFuelLevel_noOpOnSoftDeletedVehicle() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-SOFT-DEL",
             vehicleName: "TombstonedTruck",
             vehicleType: "company_truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
         // Seed a known fuel reading, then soft-delete the vehicle
-        try env.fleet.logFuelLevel(vehicleId: vehicleId, fuelLevel: 0.25)
+        try env.fleet.logFuelLevel(actorId: env.adminUserId, vehicleId: vehicleId, fuelLevel: 0.25)
         try env.db.writer.write { db in
             try db.execute(sql: "UPDATE vehicles SET deleted_at = datetime('now') WHERE id = ?",
                            arguments: [vehicleId])
         }
         // Stale UI writes a new reading. Regression: UPDATE vehicles ... WHERE id = ?
         // had no deleted_at guard, so the write would persist on the tombstone.
-        try env.fleet.logFuelLevel(vehicleId: vehicleId, fuelLevel: 0.99)
+        try env.fleet.logFuelLevel(actorId: env.adminUserId, vehicleId: vehicleId, fuelLevel: 0.99)
 
         let row = try env.db.writer.read { db in
             try Row.fetchOne(db, sql: "SELECT fuel_level FROM vehicles WHERE id = ?", arguments: [vehicleId])
@@ -589,6 +606,7 @@ struct FleetServiceTests {
     func testAssignDriver_noOrphanForSoftDeletedVehicle() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-ASGN-SOFT", vehicleName: "TombstonedTruck", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
@@ -600,6 +618,7 @@ struct FleetServiceTests {
         // target vehicle exists and isn't tombstoned — the FK constraint allows
         // the write against a soft-deleted parent.
         try env.fleet.assignDriver(
+            actorId: env.adminUserId,
             vehicleId: vehicleId, userId: env.adminUserId,
             assignmentType: "primary", isTakeHome: false
         )
@@ -618,14 +637,15 @@ struct FleetServiceTests {
     func testLogFuelLevel_rejectsOutOfRange() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-FL-RANGE", vehicleName: "RangeTruck", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
         #expect(throws: FleetService.FleetError.invalidFuelLevel(-0.1)) {
-            try env.fleet.logFuelLevel(vehicleId: vehicleId, fuelLevel: -0.1)
+            try env.fleet.logFuelLevel(actorId: env.adminUserId, vehicleId: vehicleId, fuelLevel: -0.1)
         }
         #expect(throws: FleetService.FleetError.invalidFuelLevel(1.5)) {
-            try env.fleet.logFuelLevel(vehicleId: vehicleId, fuelLevel: 1.5)
+            try env.fleet.logFuelLevel(actorId: env.adminUserId, vehicleId: vehicleId, fuelLevel: 1.5)
         }
     }
 
@@ -633,16 +653,19 @@ struct FleetServiceTests {
     func testAddVehicleStockItem_rejectsInvalidInputs() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-STK-VAL", vehicleName: "ValTruck", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
         #expect(throws: FleetService.FleetError.self) {
             try env.fleet.addVehicleStockItem(
+                actorId: env.adminUserId,
                 vehicleId: vehicleId, partName: "   ", quantity: 5, stockType: "standard"
             )
         }
         #expect(throws: FleetService.FleetError.self) {
             try env.fleet.addVehicleStockItem(
+                actorId: env.adminUserId,
                 vehicleId: vehicleId, partName: "WireNut", quantity: 0, stockType: "standard"
             )
         }
@@ -653,6 +676,7 @@ struct FleetServiceTests {
         }
         #expect(throws: FleetService.FleetError.self) {
             try env.fleet.addVehicleStockItem(
+                actorId: env.adminUserId,
                 vehicleId: vehicleId, partName: "WireNut", quantity: 5, stockType: "standard"
             )
         }
@@ -663,7 +687,7 @@ struct FleetServiceTests {
     @Test("updateTrailerLocation throws userNotFound for non-existent recordedBy")
     func testUpdateTrailerLocation_throwsForNonExistentUser() throws {
         let env = try E2ETestHelpers.setUp()
-        let trailerId = try env.fleet.createTrailer(trailerNumber: "T-FK-USER", trailerType: "flatbed", notes: nil)
+        let trailerId = try env.fleet.createTrailer(actorId: env.adminUserId, trailerNumber: "T-FK-USER", trailerType: "flatbed", notes: nil)
         let bogusUserId: Int64 = 999_999
         #expect(throws: FleetService.FleetError.userNotFound(bogusUserId)) {
             try env.fleet.updateTrailerLocation(
@@ -685,7 +709,7 @@ struct FleetServiceTests {
     @Test("updateTrailerLocation throws userNotFound for soft-deleted recordedBy")
     func testUpdateTrailerLocation_throwsForSoftDeletedUser() throws {
         let env = try E2ETestHelpers.setUp()
-        let trailerId = try env.fleet.createTrailer(trailerNumber: "T-FK-SDEL", trailerType: "flatbed", notes: nil)
+        let trailerId = try env.fleet.createTrailer(actorId: env.adminUserId, trailerNumber: "T-FK-SDEL", trailerType: "flatbed", notes: nil)
         // Soft-delete the admin user
         try env.db.writer.write { db in
             try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
@@ -706,10 +730,12 @@ struct FleetServiceTests {
     func testAddVehicleStockItem_emptyLocationCoercedToNil() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-LOC-NIL", vehicleName: "LocNilTruck", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
         try env.fleet.addVehicleStockItem(
+            actorId: env.adminUserId,
             vehicleId: vehicleId, partName: "Bolt", quantity: 1, stockType: "standard",
             sourceLocation: "   ", destinationLocation: ""
         )
@@ -728,12 +754,14 @@ struct FleetServiceTests {
     func testAddVehicleStockItem_locationCappedAt100Chars() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-LOC-CAP", vehicleName: "LocCapTruck", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
         let longString = String(repeating: "A", count: 150)
         let exactly100 = String(repeating: "B", count: 100)
         try env.fleet.addVehicleStockItem(
+            actorId: env.adminUserId,
             vehicleId: vehicleId, partName: "Cap Test Part", quantity: 1, stockType: "standard",
             sourceLocation: longString, destinationLocation: exactly100
         )
@@ -752,10 +780,12 @@ struct FleetServiceTests {
     func testAddVehicleStockItem_validLocationStoredUnchanged() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-LOC-OK", vehicleName: "LocOkTruck", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
         try env.fleet.addVehicleStockItem(
+            actorId: env.adminUserId,
             vehicleId: vehicleId, partName: "Nut", quantity: 5, stockType: "standard",
             sourceLocation: "Warehouse A", destinationLocation: "Truck Bay 3"
         )
@@ -774,6 +804,7 @@ struct FleetServiceTests {
     func testAddVehicleStockItem_transferReasonCappedAt100Chars() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-TR-CAP", vehicleName: "TrReasonTruck", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
@@ -781,11 +812,13 @@ struct FleetServiceTests {
         let exactReason = String(repeating: "Y", count: 100)
         // Insert with the long reason, then read back
         try env.fleet.addVehicleStockItem(
+            actorId: env.adminUserId,
             vehicleId: vehicleId, partName: "Cap Test", quantity: 2, stockType: "standard",
             transferReason: longReason
         )
         // Insert a second item with exactly-100 reason
         try env.fleet.addVehicleStockItem(
+            actorId: env.adminUserId,
             vehicleId: vehicleId, partName: "Cap Test 2", quantity: 1, stockType: "standard",
             transferReason: exactReason
         )
@@ -807,12 +840,14 @@ struct FleetServiceTests {
         let env = try E2ETestHelpers.setUp()
         #expect(throws: FleetService.FleetError.requiredFieldEmpty("vehicleNumber")) {
             try env.fleet.createVehicle(
+                actorId: env.adminUserId,
                 vehicleNumber: "   ", vehicleName: "ValidName", vehicleType: "truck",
                 make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
             )
         }
         #expect(throws: FleetService.FleetError.requiredFieldEmpty("vehicleName")) {
             try env.fleet.createVehicle(
+                actorId: env.adminUserId,
                 vehicleNumber: "V-BLANK-NAME", vehicleName: "", vehicleType: "truck",
                 make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
             )
@@ -827,10 +862,10 @@ struct FleetServiceTests {
     func testCreateTrailer_rejectsBlankIdentifiers() throws {
         let env = try E2ETestHelpers.setUp()
         #expect(throws: FleetService.FleetError.requiredFieldEmpty("trailerNumber")) {
-            try env.fleet.createTrailer(trailerNumber: "", trailerType: "flatbed", notes: nil)
+            try env.fleet.createTrailer(actorId: env.adminUserId, trailerNumber: "", trailerType: "flatbed", notes: nil)
         }
         #expect(throws: FleetService.FleetError.requiredFieldEmpty("trailerType")) {
-            try env.fleet.createTrailer(trailerNumber: "TR-BLANK", trailerType: "   ", notes: nil)
+            try env.fleet.createTrailer(actorId: env.adminUserId, trailerNumber: "TR-BLANK", trailerType: "   ", notes: nil)
         }
         let count = try env.db.writer.read { db in
             try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM job_trailers WHERE trailer_code LIKE 'TR-BLANK%'") ?? 0
@@ -844,6 +879,7 @@ struct FleetServiceTests {
     func testReportVehicleIssue() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-ISSUE-1", vehicleName: "Issue Test Truck", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
@@ -912,6 +948,7 @@ struct FleetServiceTests {
     func testListVehiclesExcludesInactive() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-INACTIVE", vehicleName: "Inactive Truck", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
@@ -926,6 +963,7 @@ struct FleetServiceTests {
     func testGetVehicleDetailExcludesInactive() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-DETAIL-INACTIVE", vehicleName: "Detail Inactive", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
@@ -945,6 +983,7 @@ struct FleetServiceTests {
         // strict typed extraction with a safe default.
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-ISACTIVE-HYD", vehicleName: "Hydration Test", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
@@ -956,7 +995,7 @@ struct FleetServiceTests {
     @Test("listTrailers excludes is_active = 0 trailers")
     func testListTrailersExcludesInactive() throws {
         let env = try E2ETestHelpers.setUp()
-        let trailerId = try env.fleet.createTrailer(trailerNumber: "TR-INACTIVE", trailerType: "flatbed", notes: nil)
+        let trailerId = try env.fleet.createTrailer(actorId: env.adminUserId, trailerNumber: "TR-INACTIVE", trailerType: "flatbed", notes: nil)
         try env.db.writer.write { db in
             try db.execute(sql: "UPDATE job_trailers SET is_active = 0 WHERE id = ?", arguments: [trailerId])
         }
@@ -968,6 +1007,7 @@ struct FleetServiceTests {
     func testFleetStatsExcludesInactive() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-STATS-INACTIVE", vehicleName: "Stats Inactive", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
@@ -983,6 +1023,7 @@ struct FleetServiceTests {
     func testVehicleStatusList_excludesInactive() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-STS-INACTIVE", vehicleName: "Inactive Status", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
@@ -997,6 +1038,7 @@ struct FleetServiceTests {
     func testUpcomingFleetMaintenance_excludesInactive() throws {
         let env = try E2ETestHelpers.setUp()
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-MAINT-INACTIVE", vehicleName: "Inactive Maint", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
@@ -1008,5 +1050,117 @@ struct FleetServiceTests {
         }
         let upcoming = try env.fleet.getUpcomingFleetMaintenance(limit: 50)
         #expect(!upcoming.contains(where: { $0.id == vehicleId }), "is_active=0 vehicle must not appear in upcoming maintenance")
+    }
+
+    // MARK: - Permission enforcement
+
+    @Test("createVehicle throws insufficientPermissions when actor lacks manage_fleet")
+    func testCreateVehicle_insufficientPermissions() throws {
+        let env = try E2ETestHelpers.setUp()
+        // A freshly created user with no hat has no permissions
+        let unprivUserId = try env.auth.createUser(displayName: "Unprivileged User", pin: "5678")
+
+        #expect(throws: FleetService.FleetError.insufficientPermissions(required: "manage_fleet")) {
+            try env.fleet.createVehicle(
+                actorId: unprivUserId,
+                vehicleNumber: "V-NOPERM", vehicleName: "NoPerm Truck", vehicleType: "truck",
+                make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+            )
+        }
+    }
+
+    @Test("createTrailer throws insufficientPermissions when actor lacks manage_fleet")
+    func testCreateTrailer_insufficientPermissions() throws {
+        let env = try E2ETestHelpers.setUp()
+        let unprivUserId = try env.auth.createUser(displayName: "Unprivileged User", pin: "5678")
+
+        #expect(throws: FleetService.FleetError.insufficientPermissions(required: "manage_fleet")) {
+            try env.fleet.createTrailer(
+                actorId: unprivUserId,
+                trailerNumber: "T-NOPERM", trailerType: "flatbed", notes: nil
+            )
+        }
+    }
+
+    @Test("assignDriver throws insufficientPermissions when actor lacks manage_fleet")
+    func testAssignDriver_insufficientPermissions() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
+            vehicleNumber: "V-ASGN-NOPERM", vehicleName: "NoPerm Truck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let unprivUserId = try env.auth.createUser(displayName: "Unprivileged User", pin: "5678")
+
+        #expect(throws: FleetService.FleetError.insufficientPermissions(required: "manage_fleet")) {
+            try env.fleet.assignDriver(
+                actorId: unprivUserId,
+                vehicleId: vehicleId,
+                userId: unprivUserId,
+                assignmentType: "primary",
+                isTakeHome: false
+            )
+        }
+    }
+
+    @Test("logFuelLevel throws insufficientPermissions when actor lacks log_fleet")
+    func testLogFuelLevel_insufficientPermissions() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
+            vehicleNumber: "V-FUEL-NOPERM", vehicleName: "NoPerm Truck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        // User with no hat has no permissions
+        let unprivUserId = try env.auth.createUser(displayName: "Unprivileged User", pin: "5678")
+
+        #expect(throws: FleetService.FleetError.insufficientPermissions(required: "log_fleet")) {
+            try env.fleet.logFuelLevel(actorId: unprivUserId, vehicleId: vehicleId, fuelLevel: 0.5)
+        }
+    }
+
+    @Test("logFuelLevel succeeds for a user with the Worker hat (has log_fleet)")
+    func testLogFuelLevel_workerCanLog() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
+            vehicleNumber: "V-FUEL-WORKER", vehicleName: "Worker Truck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let workerId = try env.auth.createUser(displayName: "Worker User", pin: "5678")
+        // Assign the Worker hat via direct SQL (Worker hat includes log_fleet)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "INSERT INTO user_hats (user_id, hat_id, is_active) SELECT ?, id, 1 FROM hats WHERE name = 'Worker'",
+                arguments: [workerId]
+            )
+        }
+
+        // Workers have log_fleet — this must not throw
+        try env.fleet.logFuelLevel(actorId: workerId, vehicleId: vehicleId, fuelLevel: 0.6)
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT fuel_level FROM vehicles WHERE id = ?", arguments: [vehicleId])
+        }
+        let fuel: Double = row?["fuel_level"] ?? -1
+        #expect(fuel == 0.6, "Worker must be able to update fuel_level with log_fleet permission")
+    }
+
+    @Test("addVehicleStockItem throws insufficientPermissions when actor lacks log_fleet")
+    func testAddVehicleStockItem_insufficientPermissions() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
+            vehicleNumber: "V-STK-NOPERM", vehicleName: "NoPerm Truck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        // User with no hat has no permissions
+        let unprivUserId = try env.auth.createUser(displayName: "Unprivileged User", pin: "5678")
+
+        #expect(throws: FleetService.FleetError.insufficientPermissions(required: "log_fleet")) {
+            try env.fleet.addVehicleStockItem(
+                actorId: unprivUserId,
+                vehicleId: vehicleId, partName: "Wire Nut", quantity: 5, stockType: "standard"
+            )
+        }
     }
 }

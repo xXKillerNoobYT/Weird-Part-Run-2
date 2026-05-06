@@ -45,7 +45,7 @@ struct E2ETestHelpers {
         let warehouse = WarehouseService(db: db)
         let jobs = JobsService(db: db)
         let orders = OrdersService(db: db)
-        let fleet = FleetService(db: db)
+        let fleet = FleetService(db: db, auth: auth)
         let people = PeopleService(db: db)
         let scheduling = SchedulingService(db: db)
         let chat = ChatService(db: db)
