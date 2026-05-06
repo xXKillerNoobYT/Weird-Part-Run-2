@@ -254,6 +254,51 @@ Memory is organized by topic, not chronologically. Each entry includes when it w
 
 *(The `loop-self-improve` Sunday pass writes a reflection here each week: what was graduated, what got stuck, what patterns emerged, what soul or memory entries need updating.)*
 
+### [2026-05-06 EVE] Rotation-4 partial — foundation-first audit reaches natural close at 7 areas / 8 deliverables
+
+**Achieved iters 26-33 of 2026-05-06 (~3h):**
+
+Rotation-4 began as "foundation-first audit mode" per the rotation-3 weekly reflection. Goal: instead of filing more individual instances of recurring classes, build scanners and identify foundation defects.
+
+**Deliverables (7 iters, 8 outputs):**
+
+1. **service-permission-gate-scanner** (iter 26) — built at `~/.claude/scheduled-tasks/service-permission-gate-scanner/`. Detected 42 instances of the rotation-3 #1 class.
+2. **#367 parts** — sister to #368 umbrella (`approveRecommendation`/`dismissRecommendation` lack permission gates).
+3. **#368 umbrella** — 42-finding scanner output as one issue, batch-triage candidate.
+4. **#369 warehouse** — stringly-typed-enum-without-canonical-constants on `stock_movements.movement_type`. Sister to #354 at the values level.
+5. **#370 scheduling** — checkTimeOffConflict missing `is_approved=1` filter (sister to #358 — same class twice = filter-direction-off).
+6. **#371 orders** — `generatePOFromJPO` doesn't update `jpo_line_items.line_status` (two-writers-inconsistent-update — 3rd instance, scanner-eligible class).
+7. **#359 expansion comment** (iter 27) — orphan-scheduled-task list expanded from 2 → 5 instances.
+8. **#368 scanner enhancement** (iter 31) — actor-implicit-mutations sub-class (false negative).
+
+**Iters 32-33 = no-new-findings** (tools + vehicles areas confirmed already-covered by existing trackers). This is the **rotation-4 natural-close signal**: when 2 consecutive areas produce no new findings, the accumulated trackers absorb the systemic classes for the audited slice. Honest signal that filing more issues doesn't add value until owner triages the 7 accumulated items.
+
+**Comparison to rotation-3:**
+
+| Rotation | Iters | Findings | Mode |
+|----------|-------|----------|------|
+| 1 (discover+repair) | 16 | many fixes merged | construction |
+| 2 (validate) | 11 | 11 PR merges, 14 area graduations | confirmation |
+| 3 (diagnosis) | 14 | 14 issues / 12-class taxonomy | catalog |
+| 4 (foundation-first audit) | 7 (so far, partial) | 1 scanner + 6 issues + 2 enhancement comments + 2 honest-no-findings | tooling |
+
+**Rotation-4 thesis confirmed:** when a class repeats 3+ times, build a scanner. The service-permission-gate-scanner immediately surfaced 35 instances I'd never have found by manual reading. Scanners produce compound dividends.
+
+**Key memory candidates from rotation-4:**
+
+1. **build-the-scanner-not-the-fix** (iter 26) — when class N repeats 3+ times, automate detection.
+2. **extend-tracker-not-fragment** (iter 27, refined iter 31) — when an existing umbrella covers the class, comment-extend instead of filing new.
+3. **honest-no-findings** (iter 32-33) — confirmed-covered is a valid iter close. Don't manufacture findings to fill iters.
+4. **scanner-itself-can-have-blind-spots** (iter 31) — actor-implicit-mutations sub-class showed the scanner regex needs extension. Scanners need their own audits.
+
+**Pipeline state (end of rotation-4 partial):** 5/5 PRs draft for ~11 hours. No Copilot CI activity. The accumulated rotation-4 deliverables (scanner + 6 issues + #366 T1 from rotation-3 finale) await owner triage. 
+
+**Next phase recommendation:** rotation-5 should be **owner-triage-driven** — when owner returns, they triage the 7-issue queue + scanner umbrella + #366 T1. Until triage, additional sweep work has diminishing leverage. The loop's value during owner-absent periods is creating an actionable, prioritized inbox — not creating more raw findings to dilute it.
+
+**Rotation-4 effective close:** at 7 areas + 8 deliverables + 2 confirmed-covered no-finding iters. Could resume to sweep remaining 7 areas (inventory/reports/notebooks/chat/settings/cross-cutting) but momentum suggests honest pause is more truthful to the loop's current value-density.
+
+---
+
 ### [2026-05-06 PM] 🎉 14/14 THIRD-ROTATION CYCLE COMPLETE — taxonomy delivered
 
 **Achieved this session (2026-05-06 ~07:58 → ~13:35Z, ~5.5h elapsed across 14 iters 12-25):**
