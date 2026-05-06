@@ -472,11 +472,11 @@ struct IOSDispatchPage: View {
             return
         }
         do {
-            _ = try service.createScheduleEntry(
-                userId: userId,
+            _ = try service.createDispatch(
                 jobId: jobId,
+                userId: userId,
                 date: date,
-                timeSlot: timeSlot
+                forceCreateDespiteTimeOff: true
             )
             loadData()
         } catch {

@@ -25,6 +25,9 @@ public final class SchedulingService: Sendable {
         case invalidStatus(String)
         case insertFailed(String)
         case doubleBooking(userId: Int64, date: String)
+        /// Dispatcher attempted to create a dispatch for a user who has approved time-off on that date.
+        /// Fix #355: service-layer enforcement so all callers (sync, AI, future pages) are covered.
+        case timeOffConflict(userId: Int64, date: String, reason: String?)
         /// Approver attempted to approve time-off that conflicts with N existing dispatches.
         /// Fix #207: surfaces the conflict so UI can require cancellation/resolution first.
         case timeOffConflictsWithDispatch(conflicts: Int)
@@ -686,15 +689,29 @@ public final class SchedulingService: Sendable {
 
     /// Creates a new dispatch entry (assign user to job on a date).
     /// Checks for double-booking before inserting (fixes #198).
+    /// Checks for approved time-off conflict before inserting (fixes #355).
+    /// Pass `forceCreateDespiteTimeOff: true` for the explicit "Assign anyway?" UI override.
     @discardableResult
     public func createDispatch(
         jobId: Int64,
         userId: Int64,
         date: String,
-        notes: String? = nil
+        notes: String? = nil,
+        forceCreateDespiteTimeOff: Bool = false
     ) throws -> Int64 {
         guard !date.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw SchedulingError.requiredFieldEmpty
+        }
+        // Service-layer time-off conflict enforcement (fixes #355).
+        // Runs outside the write closure since checkTimeOffConflict uses db.writer.read.
+        if !forceCreateDespiteTimeOff {
+            if let conflict = try checkTimeOffConflict(employeeId: userId, date: date) {
+                throw SchedulingError.timeOffConflict(
+                    userId: userId,
+                    date: date,
+                    reason: conflict.reason
+                )
+            }
         }
         return try db.writer.write { dbConn -> Int64 in
             // Guard: job + user must exist and not be tombstoned — otherwise the
@@ -905,6 +922,7 @@ public final class SchedulingService: Sendable {
                     WHERE se.user_id = ?
                       AND se.exception_date = ?
                       AND se.exception_type = 'time_off'
+                      AND se.is_approved = 1
                       AND se.deleted_at IS NULL
                     LIMIT 1
                     """
