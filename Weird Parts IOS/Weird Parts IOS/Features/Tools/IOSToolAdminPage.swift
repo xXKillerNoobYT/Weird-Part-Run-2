@@ -23,7 +23,7 @@ struct IOSToolAdminPage: View {
                 ProgressView("Loading tools...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = loadError {
-                ErrorStateView(message: error) { loadData() }
+                ErrorStateView(message: error) { Task { await loadData() } }
             } else {
                 toolsContent
             }
@@ -50,8 +50,8 @@ struct IOSToolAdminPage: View {
                 ]
             )
         }
-        .refreshable { loadData() }
-        .task { loadData() }
+        .refreshable { await loadData() }
+        .task { await loadData() }
     }
 
     private var toolsContent: some View {
@@ -133,7 +133,7 @@ struct IOSToolAdminPage: View {
         }
     }
 
-    private func loadData() {
+    private func loadData() async {
         guard let service = appCore.toolsService else {
             isLoading = false
             loadError = "Tools service unavailable"

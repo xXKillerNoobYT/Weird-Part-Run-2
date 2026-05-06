@@ -88,8 +88,8 @@ struct IOSToolCheckoutsPage: View {
         } message: {
             Text(scannedToolName ?? "Unknown tool")
         }
-        .refreshable { loadData() }
-        .task { loadData() }
+        .refreshable { await loadData() }
+        .task { await loadData() }
     }
 
     // MARK: - Filter Toggle
@@ -98,7 +98,7 @@ struct IOSToolCheckoutsPage: View {
         HStack(spacing: 8) {
             Button {
                 showActiveOnly = true
-                loadData()
+                Task { await loadData() }
             } label: {
                 Text("Active")
                     .font(.caption)
@@ -115,7 +115,7 @@ struct IOSToolCheckoutsPage: View {
 
             Button {
                 showActiveOnly = false
-                loadData()
+                Task { await loadData() }
             } label: {
                 Text("All")
                     .font(.caption)
@@ -144,7 +144,7 @@ struct IOSToolCheckoutsPage: View {
             ProgressView("Loading checkouts...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
-            ErrorStateView(message: error) { loadData() }
+            ErrorStateView(message: error) { Task { await loadData() } }
         } else if filteredCheckouts.isEmpty {
             ContentUnavailableView {
                 Label("No Checkouts", systemImage: "arrow.up.right.circle")
@@ -248,7 +248,7 @@ struct IOSToolCheckoutsPage: View {
 
     // MARK: - Data Loading
 
-    private func loadData() {
+    private func loadData() async {
         guard let service = appCore.toolsService else {
             isLoading = false
             loadError = "Tools service unavailable"
