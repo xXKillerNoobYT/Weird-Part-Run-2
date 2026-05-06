@@ -620,10 +620,14 @@ private struct LogFuelSheet: View {
             saveError = "Fleet service not available"
             return
         }
+        guard let actorId = appCore.currentUser?.id else {
+            saveError = "Not signed in."
+            return
+        }
         isSaving = true
         saveError = nil
         do {
-            try fleet.logFuelLevel(actorId: appCore.currentUser?.id ?? 0, vehicleId: vehicleId, fuelLevel: fuelPercent / 100.0)
+            try fleet.logFuelLevel(actorId: actorId, vehicleId: vehicleId, fuelLevel: fuelPercent / 100.0)
             onComplete()
         } catch {
             saveError = userFriendlyError(error, context: "save vehicle data")
@@ -779,11 +783,15 @@ private struct AddTransferItemSheet: View {
             saveError = "Fleet service not available"
             return
         }
+        guard let actorId = appCore.currentUser?.id else {
+            saveError = "Not signed in."
+            return
+        }
         isSaving = true
         saveError = nil
         do {
             try fleet.addVehicleStockItem(
-                actorId: appCore.currentUser?.id ?? 0,
+                actorId: actorId,
                 vehicleId: vehicleId,
                 partName: partName,
                 quantity: quantity,

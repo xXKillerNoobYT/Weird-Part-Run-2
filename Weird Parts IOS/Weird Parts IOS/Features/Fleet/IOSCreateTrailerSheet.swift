@@ -62,12 +62,16 @@ struct IOSCreateTrailerSheet: View {
             errorMessage = "Fleet service not available."
             return
         }
+        guard let actorId = appCore.currentUser?.id else {
+            errorMessage = "Not signed in."
+            return
+        }
         isSaving = true
         errorMessage = nil
 
         do {
             _ = try fleet.createTrailer(
-                actorId: appCore.currentUser?.id ?? 0,
+                actorId: actorId,
                 trailerNumber: trailerNumber.trimmingCharacters(in: .whitespaces),
                 trailerType: trailerType,
                 notes: notes.isEmpty ? nil : notes

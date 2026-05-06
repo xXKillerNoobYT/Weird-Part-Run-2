@@ -154,13 +154,17 @@ struct IOSAssignDriverSheet: View {
             actionError = "Service not available"
             return
         }
+        guard let actorId = appCore.currentUser?.id else {
+            actionError = "Not signed in."
+            return
+        }
         guard let employeeId = selectedEmployeeId else { return }
         isSaving = true
         actionError = nil
 
         do {
             try fleet.assignDriver(
-                actorId: appCore.currentUser?.id ?? 0,
+                actorId: actorId,
                 vehicleId: vehicleId,
                 userId: employeeId,
                 assignmentType: assignmentType,
