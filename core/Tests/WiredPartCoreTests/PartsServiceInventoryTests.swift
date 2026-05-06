@@ -829,7 +829,7 @@ struct PartsServiceInventoryTests {
 
         let rows = try env.parts.getPartStock(partId: partId)
         #expect(rows.count == 3, "Expected one stock row per seeded location type")
-        let locationTypes = Set(rows.map { row -> String in row["location_type"] })
+        let locationTypes = Set(rows.map { $0["location_type"] as String })
         #expect(locationTypes.contains("warehouse"))
         #expect(locationTypes.contains("truck"))
         #expect(locationTypes.contains("trailer"))
@@ -964,7 +964,7 @@ struct PartsServiceInventoryTests {
         }
 
         let results = try env.parts.listPendingRecommendations(limit: 3)
-        #expect(results.count <= 3, "listPendingRecommendations must honour the limit parameter")
+        #expect(results.count <= 3, "listPendingRecommendations must honor the limit parameter")
     }
 
     // MARK: - approveRecommendation
