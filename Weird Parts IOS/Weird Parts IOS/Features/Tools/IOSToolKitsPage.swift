@@ -49,8 +49,8 @@ struct IOSToolKitsPage: View {
                     ]
                 )
             }
-            .refreshable { loadData() }
-            .task { loadData() }
+            .refreshable { await loadData() }
+            .task { await loadData() }
     }
 
     // MARK: - Content
@@ -61,7 +61,7 @@ struct IOSToolKitsPage: View {
             ProgressView("Loading tool kits...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
-            ErrorStateView(message: error) { loadData() }
+            ErrorStateView(message: error) { Task { await loadData() } }
         } else if filteredKits.isEmpty {
             ContentUnavailableView {
                 Label("No Kits", systemImage: "bag")
@@ -137,7 +137,7 @@ struct IOSToolKitsPage: View {
 
     // MARK: - Data Loading
 
-    private func loadData() {
+    private func loadData() async {
         guard let service = appCore.toolsService else {
             isLoading = false
             loadError = "Tools service is not available."
