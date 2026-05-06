@@ -444,17 +444,7 @@ public final class ToolsService: Sendable {
         )
 
         let checkedOut = try safeCount(
-            sql: """
-                SELECT COUNT(DISTINCT tm.tool_id) FROM tool_movements tm
-                WHERE tm.movement_type = 'checkout' AND tm.deleted_at IS NULL
-                AND NOT EXISTS (
-                    SELECT 1 FROM tool_movements ret
-                    WHERE ret.tool_id = tm.tool_id
-                    AND ret.movement_type = 'return'
-                    AND ret.deleted_at IS NULL
-                    AND ret.created_at > tm.created_at
-                )
-                """
+            sql: "SELECT COUNT(*) FROM tools WHERE status = 'checked_out' AND deleted_at IS NULL AND is_active = 1"
         )
 
         let inMaintenance = try safeCount(

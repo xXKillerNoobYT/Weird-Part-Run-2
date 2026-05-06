@@ -114,6 +114,7 @@ extension AppDatabase {
         registerMigration075CompanionFeedbackNullableSuggestionId(&migrator)
         registerMigration076StockMovementsCompositeIndex(&migrator)
         registerMigration077VehicleIssueReports(&migrator)
+        registerMigration078ToolMovementsIndex(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4960,6 +4961,17 @@ extension AppDatabase {
             }
             try db.create(index: "idx_vehicle_issue_reports_vehicle", on: "vehicle_issue_reports", columns: ["vehicle_id"])
             try db.create(index: "idx_vehicle_issue_reports_status", on: "vehicle_issue_reports", columns: ["status"])
+        }
+    }
+
+    // MARK: - Migration 078: tool_movements composite index
+
+    private static func registerMigration078ToolMovementsIndex(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("078_tool_movements_index") { db in
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_tool_movements_tool
+                ON tool_movements (tool_id, movement_type)
+                """)
         }
     }
 
