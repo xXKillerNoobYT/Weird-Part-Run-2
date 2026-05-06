@@ -1,5 +1,13 @@
 # iOS Scheduling Pages — Design Plan
 
+## What This Does
+
+The Scheduling area orchestrates *who is going where and when* — calendar visualization (per-employee + per-job), dispatch board (drag-drop assignment of workers to jobs), shift templates (recurring weekly patterns), time-off requests (with approval chain), flex pool (cross-shop worker availability), weekly availability tracking, sub-scheduling (custom templates), job estimation questionnaires, weekly + end-of-job AI reviews, and capacity planning. Backed by `SchedulingService.swift` (36 public methods, 2096 lines) + 15 iOS pages. Per memory: **highest test breadth in the project (4.1× ratio = 154 tests / 36 methods).**
+
+## Why
+
+Field operations break without disciplined scheduling: workers get double-booked, jobs sit idle waiting for unavailable workers, time-off conflicts erupt week-of, dispatch becomes a daily firefight. The Scheduling area exists to make these decisions explicit and visible: dispatchers see the whole shop's commitments at-a-glance; workers see their week before it starts; managers see capacity vs. demand for next month. The flex pool extends this across multi-shop networks. AI dispatch suggestions (Phase 12) will eventually automate the routine assignments freeing dispatchers to handle exceptions. Weekly/end-of-job review questions feed the daily-report and Q&A escalation systems. Scheduling is also one of the highest-stakes areas for data correctness — a bad availability lookup leads to a missed customer appointment which leads to lost revenue and angry customers. The 4.1× test breadth ratio reflects this: every method is well-tested precisely because the cost of bugs is high.
+
 > **Purpose:** Comprehensive design decisions for all Scheduling-related pages in the iOS app. Covers calendar, dispatch, pipelines (short-term + long-term), AI dispatch, flex pool, capacity planning, job estimation, weekly/end-of-job reviews, and the AI Smart Question System.
 >
 > **Source:** Design conversation 2026-03-23. Implements pages in `Weird Parts IOS/Features/Scheduling/`.

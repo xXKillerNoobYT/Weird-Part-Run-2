@@ -4,6 +4,14 @@
 > **Nav:** Warehouse → (Dashboard, Movements, Locations, Staging, Receiving, Audit, Inventory, Tools, Returns, Network, Settings)
 > **Status:** Review complete, design decisions captured (2026-03-22)
 
+## What This Does
+
+The Warehouse area is the program's physical-inventory-handling surface — managing the Guided Movement Wizard (the canonical multi-step flow for moving parts between locations: pick → confirm → arrive → place), per-warehouse Dashboard with smart cards, Pulled Staging (parts pulled but not yet moved to job/truck), Bin Locations and Floor Plan visualization, Receiving (incoming PO line items), Returns sorting, Audit System (count + organization with confidence scoring), Onboarding Wizard (6-step progressive setup for new shops), and per-truck/trailer stock views. Backed by `WarehouseService.swift` (140 public methods, 4761 lines — second largest service after PartsService) + 31 iOS files (most of any area for iOS volume).
+
+## Why
+
+Inventory accuracy is operational ground-truth — when the program says "12 of part X in bin A-3-2" the operator needs that to match physical reality. Without disciplined movement tracking, every other area's data degrades: orders ship the wrong parts, jobs charge for inventory that doesn't exist, scheduling sends technicians to empty trucks. The Guided Movement Wizard exists because freeform "edit stock" buttons cause data drift; forcing a multi-step pick-confirm-arrive-place flow makes movement an explicit auditable transaction rather than a typo. The Audit System with confidence scoring lets shops periodically re-verify (organization audits + count audits) without halting operations. Onboarding Wizard exists because empty warehouses are an anti-pattern — a 6-step progressive setup turns "configure 200 bins manually before you can use the app" into "create a unit → row → shelf → area → bin → use it" linear flow. Warehouse is the cleanest area for service-test breadth (1.36-1.4× ratio across rotations) precisely because data-correctness is non-negotiable.
+
 ## Design Decisions (Confirmed)
 
 ### Dashboard (CONFIRMED)

@@ -8,6 +8,16 @@
 
 ---
 
+## What This Does
+
+The Chat area is the operational communication surface — a unified inbox combining per-job group chat, direct messages, Q&A escalation chains, RFI (Request for Information) flows, and JPO-hold thread bridges. Every job spawns its own chat channel; users get DMs; Q&A questions and RFIs route through formal escalation ladders (Worker → Lead → Manager → Office). Attachments support photos, voice notes, file references, and structured Part/PO/Job links. Real-time sync via Multipeer keeps threads coherent across devices. The area also covers Channel Types (job/general/team/dm), Smart Cards filtering (urgency, status, category), and Auto-Fill Context (selecting a job populates its channel ID, hat permissions, and escalation chain).
+
+## Why
+
+Operators in the field need a single low-friction place to ask, answer, document, and escalate — without losing context. Chat succeeds because it's tied to the work: a job's chat thread is its institutional record of decisions, blockers, and status changes. Q&A formalizes the difference between "I have a question" and "this is now an escalation that needs management"; RFI does the same for formal information requests against contracts. JPO-hold chat threads ensure that when an order pauses, the conversation moves with it (dual-homed: visible in both the order screen AND the job channel). Real-time sync over Multipeer is essential because field teams work without reliable internet — local-first with peer sync beats cloud-dependent IM. Without chat, every operational decision lives in someone's head or in fragmentary text messages outside the program. Chat is also the entry point for the Q&A escalation chain that ultimately routes design decisions to the owner, mirroring the broader project's `docs/dev-qa.md` workflow at runtime.
+
+---
+
 ## 1. Unified Inbox
 
 All messaging is consolidated into a single sorted stream. No separate "Messages" and "Q&A" tabs at the top level — everything lives in one place with smart card filters.
