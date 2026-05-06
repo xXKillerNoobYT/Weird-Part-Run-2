@@ -7,7 +7,10 @@ import GRDB
 /// `returnInventoryLIFO`, `checkInventoryForDeletion`,
 /// `getLocationStockTarget`, `setLocationStockTarget`,
 /// `getSupplierPartCount`, `getSupplierRecentPOs`,
-/// `calculateSupplierScores`, `updateSupplierScores`.
+/// `calculateSupplierScores`, `updateSupplierScores`,
+/// `getPartStock`, `generateDailyRecommendation`,
+/// `listPendingRecommendations`, `approveRecommendation`,
+/// `dismissRecommendation`.
 
 @Suite("PartsService Inventory Tests")
 struct PartsServiceInventoryTests {
@@ -775,5 +778,297 @@ struct PartsServiceInventoryTests {
         #expect(all[2].locationType == "truck" && all[2].locationId == 5)
         #expect(all[3].locationType == "warehouse" && all[3].locationId == nil)
         #expect(all[4].locationType == "warehouse" && all[4].locationId == 2)
+    }
+
+    // MARK: - Recommendation Pipeline Helpers
+
+    /// Insert a pending `target_recommendations` row directly via SQL and return its ID.
+    /// Used to set up test state for listPendingRecommendations, approveRecommendation,
+    /// and dismissRecommendation tests without going through the full engine pipeline.
+    @discardableResult
+    private func insertPendingRecommendation(
+        _ env: E2ETestHelpers.TestEnvironment,
+        partId: Int64,
+        locationType: String = "warehouse",
+        locationId: Int64 = 1,
+        recommendationType: String = "adjust",
+        recommendedMin: Int = 2,
+        recommendedTarget: Int = 5,
+        recommendedMax: Int = 10,
+        status: String = "pending"
+    ) throws -> Int64 {
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO target_recommendations
+                    (part_id, location_type, location_id, recommendation_type,
+                     current_min, current_target, current_max,
+                     recommended_min, recommended_target, recommended_max,
+                     usage_value, usage_unit, data_days, impact_score,
+                     reason, cooldown_until, status)
+                VALUES (?, ?, ?, ?,  0, 0, 0,  ?, ?, ?,
+                        1.0, 'daily', 90, 5.0,
+                        'Test recommendation', datetime('now', '+60 days'), ?)
+                """,
+                arguments: [partId, locationType, locationId, recommendationType,
+                            recommendedMin, recommendedTarget, recommendedMax, status])
+            return db.lastInsertedRowID
+        }
+    }
+
+    // MARK: - getPartStock
+
+    @Test("getPartStock returns one row per active location where the part has stock")
+    func test_getPartStock_aggregatesAcrossLocations() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "PartStockCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "PartStockPart", categoryId: catId)
+
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10, locationType: "warehouse", locationId: 1)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 5, locationType: "truck", locationId: 1)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 3, locationType: "trailer", locationId: 1)
+
+        let rows = try env.parts.getPartStock(partId: partId)
+        #expect(rows.count == 3, "Expected one stock row per seeded location type")
+        let locationTypes = Set(rows.map { row -> String in row["location_type"] })
+        #expect(locationTypes.contains("warehouse"))
+        #expect(locationTypes.contains("truck"))
+        #expect(locationTypes.contains("trailer"))
+    }
+
+    @Test("getPartStock excludes soft-deleted stock rows")
+    func test_getPartStock_excludesDeletedStock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "PartStockDeletedCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "PartStockDeletedPart", categoryId: catId)
+
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10, locationType: "warehouse", locationId: 1)
+
+        // Soft-delete the stock row directly
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE stock SET deleted_at = datetime('now')
+                WHERE part_id = ? AND location_type = 'warehouse'
+                """, arguments: [partId])
+        }
+
+        let rows = try env.parts.getPartStock(partId: partId)
+        #expect(rows.isEmpty, "Soft-deleted stock rows must not be returned by getPartStock")
+    }
+
+    // MARK: - generateDailyRecommendation
+
+    @Test("generateDailyRecommendation inserts a pending recommendation when sufficient consumption data exists")
+    func test_generateDailyRecommendation_createsTargetRecommendation() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "DailyRecCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "DailyRecPart", categoryId: catId)
+
+        // Lower minDataDays to 7 so we can back-date movements by 10 days instead of 90.
+        guard var settings = try env.parts.getForecastSettings(locationType: "warehouse", locationId: nil) else {
+            Issue.record("Expected seeded default warehouse forecast_settings to exist")
+            return
+        }
+        settings.minDataDays = 7
+        try env.parts.saveForecastSettings(settings)
+
+        // Create a location_stock_targets row — the engine scans this table.
+        try env.parts.setLocationStockTarget(
+            partId: partId, locationType: "warehouse", locationId: 1,
+            minStock: 0, targetStock: 0, maxStock: 0
+        )
+
+        // Insert movements via raw SQL so we can set backdated created_at.
+        // First movement satisfies the "first_movement >= minDataDays" guard (10 > 7).
+        // Consume movement gives a non-trivial ADU for the recommendation engine.
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO stock_movements
+                    (part_id, from_location_type, from_location_id,
+                     to_location_type, to_location_id,
+                     qty, movement_type, performed_by, created_at, deleted_at)
+                VALUES (?, NULL, NULL, 'warehouse', 1,
+                        500, 'receive', ?, datetime('now', '-10 days'), NULL)
+                """, arguments: [partId, env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO stock_movements
+                    (part_id, from_location_type, from_location_id,
+                     to_location_type, to_location_id,
+                     qty, movement_type, performed_by, created_at, deleted_at)
+                VALUES (?, 'warehouse', 1, NULL, NULL,
+                        -300, 'consume', ?, datetime('now', '-5 days'), NULL)
+                """, arguments: [partId, env.adminUserId])
+        }
+
+        try env.parts.generateDailyRecommendation()
+
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM target_recommendations
+                WHERE part_id = ? AND status = 'pending' AND deleted_at IS NULL
+                """, arguments: [partId]) ?? 0
+        }
+        #expect(count == 1, "Engine should produce exactly one pending recommendation when data exceeds minDataDays")
+    }
+
+    @Test("generateDailyRecommendation skips parts with no stock movement history")
+    func test_generateDailyRecommendation_skipsWhenInsufficientData() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "DailyRecSkipCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "DailyRecSkipPart", categoryId: catId)
+
+        // Create a location_stock_targets row but do NOT insert any stock_movements.
+        // With no movement history, firstMovement is nil and the engine skips this combo.
+        try env.parts.setLocationStockTarget(
+            partId: partId, locationType: "warehouse", locationId: 1,
+            minStock: 0, targetStock: 0, maxStock: 0
+        )
+
+        try env.parts.generateDailyRecommendation()
+
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM target_recommendations
+                WHERE part_id = ? AND deleted_at IS NULL
+                """, arguments: [partId]) ?? 0
+        }
+        #expect(count == 0, "Engine must not produce a recommendation when there is no movement history")
+    }
+
+    // MARK: - listPendingRecommendations
+
+    @Test("listPendingRecommendations returns only pending status rows, excluding approved and dismissed")
+    func test_listPendingRecommendations_returnsOnlyPending() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "ListPendingCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "ListPendingPart", categoryId: catId)
+
+        try insertPendingRecommendation(env, partId: partId, status: "pending")
+        try insertPendingRecommendation(env, partId: partId, status: "approved")
+        try insertPendingRecommendation(env, partId: partId, status: "dismissed")
+
+        let results = try env.parts.listPendingRecommendations()
+        let forPart = results.filter { $0.partId == partId }
+        #expect(forPart.count == 1, "Only the pending row should be returned; approved/dismissed rows must be excluded")
+        #expect(forPart[0].status == "pending")
+    }
+
+    @Test("listPendingRecommendations respects the limit parameter")
+    func test_listPendingRecommendations_respectsLimit() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "LimitPendingCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "LimitPendingPart", categoryId: catId)
+
+        // Insert 8 pending recommendations for the same part (SQL allows duplicates here).
+        for _ in 1...8 {
+            try insertPendingRecommendation(env, partId: partId)
+        }
+
+        let results = try env.parts.listPendingRecommendations(limit: 3)
+        #expect(results.count <= 3, "listPendingRecommendations must honour the limit parameter")
+    }
+
+    // MARK: - approveRecommendation
+
+    @Test("approveRecommendation updates location_stock_targets with recommended values")
+    func test_approveRecommendation_appliesToLocationStockTargets() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "ApproveLSTCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "ApproveLSTPartStock", categoryId: catId)
+
+        // Seed a location_stock_targets row with zeroed values.
+        try env.parts.setLocationStockTarget(
+            partId: partId, locationType: "warehouse", locationId: 1,
+            minStock: 0, targetStock: 0, maxStock: 0
+        )
+
+        // Insert a pending recommendation that suggests raising the levels.
+        let recId = try insertPendingRecommendation(
+            env, partId: partId,
+            recommendationType: "adjust",
+            recommendedMin: 3, recommendedTarget: 8, recommendedMax: 15
+        )
+
+        try env.parts.approveRecommendation(id: recId, userId: env.adminUserId)
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT min_stock, target_stock, max_stock
+                FROM location_stock_targets
+                WHERE part_id = ? AND location_type = 'warehouse' AND location_id = 1
+                """, arguments: [partId])
+        }
+        let r = try #require(row)
+        #expect((r["min_stock"] as Int) == 3,    "min_stock must be updated to the recommended value")
+        #expect((r["target_stock"] as Int) == 8,  "target_stock must be updated to the recommended value")
+        #expect((r["max_stock"] as Int) == 15,   "max_stock must be updated to the recommended value")
+    }
+
+    @Test("approveRecommendation records the approving userId in approved_by")
+    func test_approveRecommendation_recordsApprover() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "ApproverCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "ApproverPart", categoryId: catId)
+
+        try env.parts.setLocationStockTarget(
+            partId: partId, locationType: "warehouse", locationId: 1,
+            minStock: 0, targetStock: 0, maxStock: 0
+        )
+        let recId = try insertPendingRecommendation(env, partId: partId)
+
+        try env.parts.approveRecommendation(id: recId, userId: env.adminUserId)
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT status, approved_by FROM target_recommendations WHERE id = ?
+                """, arguments: [recId])
+        }
+        let r = try #require(row)
+        #expect((r["status"] as String) == "approved",            "status must be 'approved' after approval")
+        #expect((r["approved_by"] as Int64?) == env.adminUserId,  "approved_by must record the userId passed to approveRecommendation")
+    }
+
+    // MARK: - dismissRecommendation
+
+    @Test("dismissRecommendation persists the dismiss reason in dismissed_reason")
+    func test_dismissRecommendation_setsDismissReason() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "DismissReasonCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "DismissReasonPart", categoryId: catId)
+
+        let recId = try insertPendingRecommendation(env, partId: partId)
+
+        let reason = "We are overstocked this quarter"
+        try env.parts.dismissRecommendation(id: recId, userId: env.adminUserId, reason: reason)
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT status, dismissed_reason FROM target_recommendations WHERE id = ?
+                """, arguments: [recId])
+        }
+        let r = try #require(row)
+        #expect((r["status"] as String) == "dismissed",   "status must be 'dismissed' after dismissal")
+        #expect((r["dismissed_reason"] as String?) == reason, "dismissed_reason must store the provided reason string")
+    }
+
+    @Test("dismissRecommendation records the dismissing userId in dismissed_by")
+    func test_dismissRecommendation_setsDismisser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "DismisserCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "DismisserPart", categoryId: catId)
+
+        let recId = try insertPendingRecommendation(env, partId: partId)
+
+        try env.parts.dismissRecommendation(
+            id: recId, userId: env.adminUserId, reason: "Not needed right now"
+        )
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT dismissed_by FROM target_recommendations WHERE id = ?
+                """, arguments: [recId])
+        }
+        let r = try #require(row)
+        #expect((r["dismissed_by"] as Int64?) == env.adminUserId,
+                "dismissed_by must record the userId passed to dismissRecommendation")
     }
 }
