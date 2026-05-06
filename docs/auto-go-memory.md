@@ -254,6 +254,43 @@ Memory is organized by topic, not chronologically. Each entry includes when it w
 
 *(The `loop-self-improve` Sunday pass writes a reflection here each week: what was graduated, what got stuck, what patterns emerged, what soul or memory entries need updating.)*
 
+### [2026-05-06] 🎉 14/14 SECOND-ROTATION CYCLE COMPLETE — milestone reflection
+
+**Achieved this session (2026-05-05 19:25Z → 2026-05-06 ~07:55Z, ~12.5h elapsed across 11 iters):**
+
+Second-rotation cycle graduates ALL 14 areas in 11 iters total = **1.27 iters/area average** (parts 3 iters → all 13 subsequent areas in 1 iter each, except cross-cutting which closed 17/17 today). This is **5× faster** than the first rotation's 18 days (parts 04-18 → cross-cutting 05-05 graduated in 16 iters across 17 days).
+
+**Why so fast:** the first rotation built the toolkit; the second rotation validated it. Specifically:
+1. **3 scanners as convergence engines** — render-perf, identity-string-audit, grdb-silent-bug. Each runs in <2s on a service or page. When all 3 return 0, an area can be batch-closed across C3+C8+C9 in one iter.
+2. **Memory-encoded false-positive classes** — `.onReceive`/`.onChange` lifecycle closures, trivial fixed-size arrays, code-comment grep matches, per-struct `@State` scoping, cached* assignment-as-fix. Documented once, applied across rotations.
+3. **Safe-pattern catalog** — `sql += " AND ... = ?"`-with-`?`-placeholder is safe across JobsService:628 / WarehouseService:1702 / OrdersService:796+2081 / PeopleService:1731 / PartsService 9-hits / NotebooksService:1079+1082. Recognized at sight, no need to re-audit.
+4. **Mature-area umbrella pattern** — close program-review parents with explicit dispositions for sub-issues. Closed during rotation: #52 (parts), #53 (jobs), #56 (warehouse), #58 (tools), #57 (vehicles), #54 (orders), #59 (scheduling), #55 (people), #62 (notebooks), #60 (reports), #61 (chat), #63 (settings), #66 (cross-cutting), plus #93 disposition for inventory.
+5. **Pull-first hygiene** — added STEP 1 `git pull --ff-only` discipline mid-cycle (iter 6) when a stale local main produced a false-positive grdb Check A. Saves ~10 min per iter when origin is ahead.
+
+**11 PRs merged this session:** #332/#331/#333/#334/#335/#336/#337/#339/#341/#343/#346/#348 — net +348 tests (1429 → 1777), 0 regressions.
+
+**Areas with their rotation-2 metrics:**
+| # | Area | Iters | Service breadth | iOS files | Notable |
+|---|------|-------|-----------------|-----------|---------|
+| 1 | parts | 3 | 248/177 = 1.40× | 24 | 6 plans + Plan-Family Index added |
+| 2 | jobs | 1 | 110/49 = 2.24× | 14 | First batch-close demonstration |
+| 3 | warehouse | 1 | 190/140 = 1.36× | 31 | Largest service (4761 lines) |
+| 4 | scheduling | 1 | 154/36 = 4.28× | 15 | **Highest test breadth in project** |
+| 5 | orders | 1 | 87/42 = 2.07× | 16 | 4-plan Plan-Family Index added |
+| 6 | people | 1 | 76/56 = 1.36× | 14 | |
+| 7 | tools | 1 | 115/30 = 3.83× | 8 | 2nd-highest breadth |
+| 8 | vehicles | 1 | 57/34 = 1.68× | 18 | #280 T1 security delegated |
+| 9 | inventory | 1 | 32/12 + 45/13 cross-area | 5 | Validated #344 GRDB fix on origin |
+| 10 | reports | 1 | 52/13 = 3.54× | 22 | |
+| 11 | notebooks | 1 | 56/37 = 1.51× | 8 | |
+| 12 | chat | 1 | 52/35 = 1.49× | 9 | |
+| 13 | settings | 1 | 68/43 = 1.58× | **35** | Largest by file count |
+| 14 | cross-cutting | 1 | 51+/18 (Auth) | 54 | App+DesignSystem+Nav+Sync+AI+Auth |
+
+**14/14 graduated. Next pass — third rotation — will be the deeper-defect-hunt phase**, looking past surface scanners into algorithmic correctness, race conditions, edge cases the test suite doesn't cover. The first rotation built. The second validated. The third refines.
+
+**Owner action items still queued post-cycle:** #320 SQLCipher (build broken, owner-pending), #345 LEFT JOIN candidates (owner-triage), #347 IOSMainView refactor (owner-review), #330 OrdersService.getProcurementDemand (delegation candidate), #280 Fleet T1 security (delegated → PR #349 draft).
+
 ---
 
 *Seeded 2026-04-18. First entry from the loop itself: pending.*
