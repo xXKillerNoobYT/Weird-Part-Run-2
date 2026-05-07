@@ -271,7 +271,9 @@ Rotation-4 began as "foundation-first audit mode" per the rotation-3 weekly refl
 7. **#359 expansion comment** (iter 27) — orphan-scheduled-task list expanded from 2 → 5 instances.
 8. **#368 scanner enhancement** (iter 31) — actor-implicit-mutations sub-class (false negative).
 
-**Iters 32-33 = no-new-findings** (tools + vehicles areas confirmed already-covered by existing trackers). This is the **rotation-4 natural-close signal**: when 2 consecutive areas produce no new findings, the accumulated trackers absorb the systemic classes for the audited slice. Honest signal that filing more issues doesn't add value until owner triages the 7 accumulated items.
+**Iters 32-39 = honest-no-findings sweep across remaining 7 areas** (tools, vehicles, inventory, reports, notebooks, chat, settings, cross-cutting all confirmed already-covered by existing trackers). 8 consecutive no-finding iters — the accumulated trackers absolutely absorb the systemic classes for every area in the rotation. Settings was qualitatively distinct (genuine 0 scanner findings vs "all in umbrella"); cross-cutting closed cleanly with #366 T1 still owner-pending.
+
+**🎉 ROTATION-4 14/14 COMPLETE.** Sweep total: 14 iters / 8 deliverables / 8 honest-no-findings closes (iter 26 was deliverable; iters 32-39 were honest-no-findings).
 
 **Comparison to rotation-3:**
 
@@ -280,22 +282,23 @@ Rotation-4 began as "foundation-first audit mode" per the rotation-3 weekly refl
 | 1 (discover+repair) | 16 | many fixes merged | construction |
 | 2 (validate) | 11 | 11 PR merges, 14 area graduations | confirmation |
 | 3 (diagnosis) | 14 | 14 issues / 12-class taxonomy | catalog |
-| 4 (foundation-first audit) | 7 (so far, partial) | 1 scanner + 6 issues + 2 enhancement comments + 2 honest-no-findings | tooling |
+| 4 (foundation-first audit) | 14 (complete) | 1 scanner + 6 issues + 2 enhancement comments + 8 honest-no-findings | tooling |
 
-**Rotation-4 thesis confirmed:** when a class repeats 3+ times, build a scanner. The service-permission-gate-scanner immediately surfaced 35 instances I'd never have found by manual reading. Scanners produce compound dividends.
+**Rotation-4 thesis fully confirmed:** when a class repeats 3+ times, build a scanner. The service-permission-gate-scanner immediately surfaced 35 instances I'd never have found by manual reading. Subsequent 8 area sweeps validated specificity — scanner found nothing in services without the actor-identity-write pattern (settings) and found only already-tracked instances elsewhere. Scanners produce compound dividends and converge cleanly.
 
-**Key memory candidates from rotation-4:**
+**Key memory candidates from rotation-4 (all validated):**
 
-1. **build-the-scanner-not-the-fix** (iter 26) — when class N repeats 3+ times, automate detection.
-2. **extend-tracker-not-fragment** (iter 27, refined iter 31) — when an existing umbrella covers the class, comment-extend instead of filing new.
-3. **honest-no-findings** (iter 32-33) — confirmed-covered is a valid iter close. Don't manufacture findings to fill iters.
+1. **build-the-scanner-not-the-fix** (iter 26) — when class N repeats 3+ times, automate detection. ✅ Validated: 1 scanner > 35 instance fixes.
+2. **extend-tracker-not-fragment** (iter 27, refined iter 31) — when an existing umbrella covers the class, comment-extend instead of filing new. ✅ Validated 2× (#359 expansion + #368 enhancement).
+3. **honest-no-findings** (iters 32-39) — confirmed-covered is a valid iter close. Don't manufacture findings to fill iters. ✅ Validated 8 consecutive iters.
 4. **scanner-itself-can-have-blind-spots** (iter 31) — actor-implicit-mutations sub-class showed the scanner regex needs extension. Scanners need their own audits.
+5. **scanner-specificity-validates-via-zero-false-positives** (iter 38) — when scanner returns 0 findings on a service that genuinely doesn't fit the pattern (SettingsService — system-context writes), that's a positive signal not a gap. Distinguish "0 because covered" from "0 because not applicable."
 
-**Pipeline state (end of rotation-4 partial):** 5/5 PRs draft for ~11 hours. No Copilot CI activity. The accumulated rotation-4 deliverables (scanner + 6 issues + #366 T1 from rotation-3 finale) await owner triage. 
+**Pipeline state (end of rotation-4):** 5/5 PRs still draft for ~13 hours. No Copilot CI activity throughout the entire rotation. The accumulated rotation-4 deliverables (scanner + 6 issues + scanner-enhancement comment + #359 expansion) plus rotation-3 finale (#366 T1) await owner triage. Total queue for owner: 7 rotation-4 items + 1 T1 + 5 stalled PRs.
 
-**Next phase recommendation:** rotation-5 should be **owner-triage-driven** — when owner returns, they triage the 7-issue queue + scanner umbrella + #366 T1. Until triage, additional sweep work has diminishing leverage. The loop's value during owner-absent periods is creating an actionable, prioritized inbox — not creating more raw findings to dilute it.
+**Next phase recommendation:** rotation-5 should be **owner-triage-driven** — when owner returns, triage the 8-item queue + 5 stalled PRs. Until triage, additional sweep work has zero marginal yield (proven by 8 consecutive no-finding iters). The loop's value during owner-absent periods is creating an actionable, prioritized inbox — not creating more raw findings to dilute it.
 
-**Rotation-4 effective close:** at 7 areas + 8 deliverables + 2 confirmed-covered no-finding iters. Could resume to sweep remaining 7 areas (inventory/reports/notebooks/chat/settings/cross-cutting) but momentum suggests honest pause is more truthful to the loop's current value-density.
+**Rotation-4 final close:** 14/14 areas swept, 8 deliverables landed, 8 honest-no-findings closes proved the convergence. Cumulative session: rotation-4 took 14 iters / ~4h elapsed (vs rotation-1 16 iters/18 days, rotation-2 11 iters/12.5h, rotation-3 14 iters/5.5h). Fastest rotation by elapsed time — because tooling (scanner) front-loaded the work.
 
 ---
 
