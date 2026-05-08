@@ -238,9 +238,7 @@ struct IOSToolCheckoutsPage: View {
 
     private func isOverdue(_ dueDateString: String, returnedAt: String?) -> Bool {
         guard returnedAt == nil else { return false }
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        if let due = f.date(from: String(dueDateString.prefix(10))) {
+        if let due = Formatters.localDateFormatter.date(from: String(dueDateString.prefix(10))) {
             return due < Date()
         }
         return false

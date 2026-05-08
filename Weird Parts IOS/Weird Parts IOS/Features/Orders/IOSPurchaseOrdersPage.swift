@@ -407,12 +407,8 @@ struct IOSPurchaseOrdersPage: View {
 
     private func formatDate(_ isoString: String?) -> String? {
         guard let str = isoString else { return nil }
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withFullDate]
-        guard let date = iso.date(from: String(str.prefix(10))) else { return str }
-        let display = DateFormatter()
-        display.dateStyle = .medium
-        return display.string(from: date)
+        guard let date = Formatters.iso8601DateOnly.date(from: String(str.prefix(10))) else { return str }
+        return Formatters.dateFormatter.string(from: date)
     }
 
     private func formatCurrency(_ value: Double) -> String {
