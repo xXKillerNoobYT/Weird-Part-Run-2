@@ -40,6 +40,7 @@ struct TabBarEditorView: View {
                         }
                         .onMove { from, to in
                             bottomIds.move(fromOffsets: from, toOffset: to)
+                            showDemoteMinimumWarning = false
                         }
                     } header: {
                         HStack {
@@ -79,6 +80,7 @@ struct TabBarEditorView: View {
                         }
                         .onMove { from, to in
                             moreIds.move(fromOffsets: from, toOffset: to)
+                            showDemoteMinimumWarning = false
                         }
                     } header: {
                         Text("More")
@@ -208,6 +210,7 @@ struct TabBarEditorView: View {
         guard let index = moreIds.firstIndex(of: id) else { return }
         moreIds.remove(at: index)
         bottomIds.append(id)
+        showDemoteMinimumWarning = false
 
         if bottomIds.count > 4 {
             showCapWarning = true
@@ -235,6 +238,7 @@ struct TabBarEditorView: View {
         let ids = ordered.map(\.id)
         bottomIds = Array(ids.prefix(min(4, ids.count)))
         moreIds = Array(ids.dropFirst(min(4, ids.count)))
+        showDemoteMinimumWarning = false
     }
 
     private func resetToDefaultsDraft() {
