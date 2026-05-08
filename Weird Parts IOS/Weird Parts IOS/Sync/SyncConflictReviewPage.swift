@@ -186,9 +186,10 @@ struct SyncConflictReviewPage: View {
             Text(label)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-            Text(truncateValue(value))
+            Text(value)
                 .font(.caption)
-                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
                 .padding(6)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
@@ -255,13 +256,6 @@ struct SyncConflictReviewPage: View {
 
     private func friendlyFieldName(_ name: String) -> String {
         name.replacingOccurrences(of: "_", with: " ").capitalized
-    }
-
-    private func truncateValue(_ value: String) -> String {
-        if value.count > 120 {
-            return String(value.prefix(120)) + "..."
-        }
-        return value
     }
 
     private func formatTimestamp(_ ts: String) -> String {
