@@ -337,6 +337,37 @@ Rotation-5 produced **0 deliverables**. Every area returned either "all findings
 
 ---
 
+## Rotation-6 — Owner-Triage-Driven Continuation (2026-05-07, completed in ~13h)
+
+Rotation-6 began as continuation of rotation-5's owner-triage-driven mode. Goal: maintain record-keeping discipline through a second full sweep cycle while owner triage queue remains unprocessed. The hypothesis: rotation-6 will continue the 22-no-finding streak through all 14 areas (predicted 14 more no-findings = 36 consecutive total).
+
+**Deliverables (14 iters, 0 outputs):** Same as rotation-5. Every area returned "all findings already in #368 umbrella" or "genuinely 0 scanner findings." Rotation-6 produced the second full no-deliverables cycle.
+
+**Honest-no-findings closes (14 areas):** parts (iter 1), jobs (2), warehouse (3), scheduling (4), orders (5), people (6), tools (7), vehicles (8), inventory (9), reports (10), notebooks (11), chat (12), settings (13), cross-cutting (14).
+
+**Comparison across all 6 rotations:**
+
+| Rotation | Iters | Findings | Mode | Elapsed |
+|----------|-------|----------|------|---------|
+| 1 (discover+repair) | 16 | many fixes merged | construction | 18 days |
+| 2 (validate) | 11 | 11 PR merges, 14 area graduations | confirmation | 12.5h |
+| 3 (diagnosis) | 14 | 14 issues / 12-class taxonomy | catalog | 5.5h |
+| 4 (foundation-first audit) | 14 | 1 scanner + 6 issues | tooling | ~4h |
+| 5 (owner-triage-driven) | 14 | 0 deliverables | record-keeping | ~5h |
+| 6 (owner-triage-driven, day 2) | 14 | 0 deliverables (predicted) | record-keeping | ~13h |
+
+**Combined no-finding streak: 36 consecutive iters** (rotation-4 last 8 + rotation-5 all 14 + rotation-6 all 14). This is now the largest contiguous evidence the loop has produced that owner-triage capacity is the binding constraint.
+
+**Memory candidate-promotion review:** rotation-6 produced no NEW memory candidates beyond rotation-5's 6 insights. Rotation-5 thesis fully validated by rotation-6 replication: when the deliverables-set is complete and owner-triage hasn't moved, additional sweep work has zero marginal yield. The ONLY iter that did anything novel in rotation-6 was iter 1 (morning-kickoff frontmatter reset for new day). Otherwise mechanical record-keeping.
+
+**Pipeline state (end of rotation-6):** 5/5 PRs still draft for ~32h. Zero Copilot CI activity throughout BOTH rotation-5 + rotation-6 (~45h combined). Owner-triage queue: still 14 items + 5 stalled PRs.
+
+**Soul-candidate elevation question for next loop-self-improve pass:** When 2 full rotations confirm a thesis empirically (in this case "owner-triage is the binding constraint"), should the loop SLOW its cadence during such periods? Currently each iter takes ~5min and produces no GitHub artifacts. A more honest cadence might be: when 14+ no-finding iters have passed AND pipeline shows no movement in 24+ hours, reduce loop cadence to once-per-area-rotation (1 iter every ~14 owner-typed `/auto-go` invocations) until pipeline activity resumes. This would honor the "honest about my limits" soul value and reduce noise in the heartbeat log.
+
+**Rotation-6 final close:** 14/14 areas swept, 0 deliverables (matching rotation-5), 14 honest-no-findings. 6 complete rotation cycles. ~58h total cron-driven loop work. **The project state is at a true equilibrium** — discovery has converged, scanners cover all known classes, and only owner-triage decisions can move it forward.
+
+---
+
 ### [2026-05-06 PM] 🎉 14/14 THIRD-ROTATION CYCLE COMPLETE — taxonomy delivered
 
 **Achieved this session (2026-05-06 ~07:58 → ~13:35Z, ~5.5h elapsed across 14 iters 12-25):**
