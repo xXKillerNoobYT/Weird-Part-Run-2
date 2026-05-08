@@ -19,6 +19,8 @@ struct TabBarEditorView: View {
 
     /// True when the user has tried to exceed the 4-slot limit.
     @State private var showCapWarning = false
+    @State private var showResetConfirmation = false
+    @State private var showDemoteMinimumWarning = false
 
     private var isOverCap: Bool { bottomIds.count > 4 }
 
@@ -56,6 +58,13 @@ struct TabBarEditorView: View {
                             )
                             .font(.caption)
                             .foregroundStyle(.red)
+                        } else if showDemoteMinimumWarning {
+                            Label(
+                                "Keep at least one module in Fast Access Bar.",
+                                systemImage: "info.circle.fill"
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.orange)
                         } else {
                             Text("These modules appear on the bottom tab bar for quick access.")
                         }
@@ -84,7 +93,7 @@ struct TabBarEditorView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Reset") {
-                        resetToDefaults()
+                        showResetConfirmation = true
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -97,6 +106,14 @@ struct TabBarEditorView: View {
             }
             .onAppear {
                 loadCurrentOrder()
+            }
+            .alert("Reset tab order?", isPresented: $showResetConfirmation) {
+                Button("Cancel", role: .cancel) {}
+                Button("Reset", role: .destructive) {
+                    resetToDefaultsDraft()
+                }
+            } message: {
+                Text("This resets your draft tab layout to defaults. Tap Done to save it.")
             }
         }
     }
@@ -201,10 +218,14 @@ struct TabBarEditorView: View {
     /// Requires at least 1 module remain in the bar.
     private func demoteModule(_ id: String) {
         guard let index = bottomIds.firstIndex(of: id) else { return }
-        guard bottomIds.count > 1 else { return }
+        guard bottomIds.count > 1 else {
+            showDemoteMinimumWarning = true
+            return
+        }
         bottomIds.remove(at: index)
         moreIds.insert(id, at: 0)
         showCapWarning = false
+        showDemoteMinimumWarning = false
     }
 
     // MARK: - Persistence
@@ -216,11 +237,12 @@ struct TabBarEditorView: View {
         moreIds = Array(ids.dropFirst(min(4, ids.count)))
     }
 
-    private func resetToDefaults() {
+    private func resetToDefaultsDraft() {
         let defaultIds = allVisibleModules.map(\.id)
         bottomIds = Array(defaultIds.prefix(min(4, defaultIds.count)))
         moreIds = Array(defaultIds.dropFirst(min(4, defaultIds.count)))
-        tabPrefs.reset()
+        showCapWarning = false
+        showDemoteMinimumWarning = false
     }
 
     private func saveAndDismiss() {
