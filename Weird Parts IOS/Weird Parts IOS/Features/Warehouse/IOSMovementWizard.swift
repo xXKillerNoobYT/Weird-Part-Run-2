@@ -40,6 +40,7 @@ struct IOSMovementWizard: View {
     @State private var isExecuting = false
     @State private var executeError: String?
     @State private var executeSuccess = false
+    @State private var showDiscardConfirmation = false
 
     // Draft restore banner
     @State private var hasDraftRestored = false
@@ -69,6 +70,17 @@ struct IOSMovementWizard: View {
         case 5: return false // final step
         default: return false
         }
+    }
+
+    private var isDirty: Bool {
+        !fromLocationType.isEmpty ||
+        fromLocationId != "1" ||
+        !toLocationType.isEmpty ||
+        toLocationId != "1" ||
+        !selectedParts.isEmpty ||
+        !reason.isEmpty ||
+        !notes.isEmpty ||
+        !referenceNumber.isEmpty
     }
 
     var body: some View {
@@ -116,7 +128,13 @@ struct IOSMovementWizard: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty {
+                            showDiscardConfirmation = true
+                        } else {
+                            dismiss()
+                        }
+                    }
                         .disabled(isExecuting)
                 }
                 // Fix #148: Save & Exit saves draft to UserDefaults so user can resume later
@@ -143,6 +161,18 @@ struct IOSMovementWizard: View {
                     }
                     .environmentObject(appCore)
                 }
+            }
+            .confirmationDialog(
+                "Discard this movement draft?",
+                isPresented: $showDiscardConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard Changes", role: .destructive) {
+                    dismiss()
+                }
+                Button("Keep Editing", role: .cancel) { }
+            } message: {
+                Text("Your partial progress in the wizard will be lost unless you use Save & Exit.")
             }
         }
     }
