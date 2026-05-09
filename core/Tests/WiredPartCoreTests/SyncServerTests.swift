@@ -4,6 +4,17 @@ import Foundation
 
 @Suite("LAN Sync Server Tests")
 struct SyncServerTests {
+    actor EventCollector {
+        private(set) var events: [SyncServerState.SecurityEvent] = []
+
+        func append(_ event: SyncServerState.SecurityEvent) {
+            events.append(event)
+        }
+
+        func snapshot() -> [SyncServerState.SecurityEvent] {
+            events
+        }
+    }
 
     private func makeState(
         deviceId: String = "test-device",
@@ -408,6 +419,10 @@ struct SyncServerTests {
     @Test("Signed sync request with replayed nonce is rejected")
     func testSignedRequestReplayNonceRejected() async throws {
         let state = makeState(companyId: "co-1")
+        let collector = EventCollector()
+        await state.setSecurityEventSink { event in
+            await collector.append(event)
+        }
         let server = LanSyncServer(state: state)
         let port = try await server.start()
         defer { Task { await server.stop() } }
@@ -440,5 +455,8 @@ struct SyncServerTests {
 
         let error = try JSONSerialization.jsonObject(with: data2) as? [String: Any]
         #expect(error?["error"] as? String == "replay_detected")
+
+        let events = await collector.snapshot()
+        #expect(events.contains(where: { $0.eventType == "sync_replay_rejected" }))
     }
 }
