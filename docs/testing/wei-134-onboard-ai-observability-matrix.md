@@ -30,8 +30,38 @@
 | 2026-05-08 | macOS arm64 test harness (WiredPartCore) | macOS 14.x | modelUnavailable | ~1 | `swift test --filter OnboardAIRuntimeBootstrapTests` |
 | 2026-05-08 | macOS arm64 test harness (WiredPartCore) | macOS 14.x | timeout | ~255 | Timeout route assertion run; test harness includes scheduling overhead |
 | 2026-05-08 | macOS arm64 test harness (WiredPartCore) | macOS 14.x | lowResource | ~1 | Low-resource short-circuit run |
-| Pending QA | iPhone 17 Pro Simulator | iOS 26.4.1 | ready + fallbacks | TBD | Capture via app log filter `[OnboardAI]` |
-| Pending QA | iPhone 17e Simulator | iOS 26.4.1 | ready + fallbacks | TBD | Lower-end profile in current runtime image |
+| 2026-05-09 | iPhone 17 Pro Simulator | iOS 26.4.1 | ready | 71-125 | `simctl launch ... -feature_onboard_ai_mvp_enabled YES`; repeated launches captured `route=ready` with `availability=available` |
+| 2026-05-09 | iPhone 17e Simulator | iOS 26.4.1 | ready | 70 | `simctl launch ... -feature_onboard_ai_mvp_enabled YES`; lower-end profile run captured `route=ready` with `availability=available` |
+
+## Runtime Evidence Snapshot (2026-05-09, America/Denver)
+| Evidence Type | Captured Routes | Missing Routes | Source |
+| --- | --- | --- | --- |
+| Filtered runtime-format `[OnboardAI]` logs (macOS harness) | ready, modelUnavailable, timeout, lowResource | iOS device/simulator-native logs | `docs/testing/artifacts/wei-191/wei-191-onboardai-filtered-runtime-2026-05-08.log` |
+| Filtered runtime-format `[OnboardAI]` logs (iPhone 17 Pro simulator) | ready | modelUnavailable, timeout, lowResource (not reproducible in this runtime run) | `docs/testing/artifacts/wei-245/iphone-17-pro-ios-26_4_1-onboardai-filtered.log` |
+| Filtered runtime-format `[OnboardAI]` logs (iPhone 17e simulator) | ready | modelUnavailable, timeout, lowResource (not reproducible in this runtime run) | `docs/testing/artifacts/wei-245/iphone-17e-ios-26_4_1-onboardai-filtered.log` |
+| macOS core bootstrap test run | ready, modelUnavailable, timeout, lowResource | n/a | `cd core && swift test --filter OnboardAIRuntimeBootstrapTests` |
+
+Command output excerpt from latest core run:
+```
+✔ Test "low resource route short-circuits availability check" passed after 0.001 seconds.
+✔ Test "ready route when model is available" passed after 0.001 seconds.
+✔ Test "model unavailable route when model is not available" passed after 0.001 seconds.
+✔ Test "timeout route when availability check exceeds timeout" passed after 0.255 seconds.
+✔ Test run with 4 tests in 1 suite passed after 0.256 seconds.
+```
+
+## WEI-191 Artifact Bundle (2026-05-08)
+- Bundle archive: `docs/testing/artifacts/wei-191/wei-191-artifact-bundle-2026-05-08.tgz`
+- Raw test output: `docs/testing/artifacts/wei-191/wei-191-swift-test-onboard-runtime-2026-05-08.log`
+- Filtered route logs (`[OnboardAI]` prefix): `docs/testing/artifacts/wei-191/wei-191-onboardai-filtered-runtime-2026-05-08.log`
+- Matrix snapshot for reviewers: `docs/testing/artifacts/wei-191/wei-191-matrix-snapshot-2026-05-08.md`
+
+## WEI-245 iOS Runtime Evidence (2026-05-09)
+- Build log: `docs/testing/artifacts/wei-245/wei-245-xcodebuild.log`
+- iPhone 17 Pro raw simulator log capture: `docs/testing/artifacts/wei-245/iphone-17-pro-ios-26_4_1-onboardai.log`
+- iPhone 17 Pro filtered `[OnboardAI]` lines: `docs/testing/artifacts/wei-245/iphone-17-pro-ios-26_4_1-onboardai-filtered.log`
+- iPhone 17e raw simulator log capture: `docs/testing/artifacts/wei-245/iphone-17e-ios-26_4_1-onboardai.log`
+- iPhone 17e filtered `[OnboardAI]` lines: `docs/testing/artifacts/wei-245/iphone-17e-ios-26_4_1-onboardai-filtered.log`
 
 ## Fallback Validation Checklist
 - [x] Model unavailable path telemetry includes `route=modelUnavailable`, `fallback_model_unavailable=true`, and onboarding remains safe/continuable.

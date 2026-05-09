@@ -1,0 +1,6 @@
+getpwuid_r did not find a match for uid 504
+Filtering the log data using "composedMessage CONTAINS "[OnboardAI]""
+Timestamp               Ty Process[PID:TID]
+2026-05-09 02:54:00.208 I  Weird Parts[6487:1c46cdc] [com.wiredpart.ios:AppCore] [OnboardAI] bootstrap route=ready latency_ms=125 availability=available timeout_budget_ms=800 did_timeout=false fallback_model_unavailable=false fallback_low_resource=false
+2026-05-09 02:54:06.907 I  Weird Parts[6660:1c470c6] [com.wiredpart.ios:AppCore] [OnboardAI] bootstrap route=ready latency_ms=72 availability=available timeout_budget_ms=800 did_timeout=false fallback_model_unavailable=false fallback_low_resource=false
+Child process terminated with signal 15: Terminated

@@ -1,0 +1,3 @@
+Filtering the log data using "composedMessage CONTAINS "[OnboardAI]""
+2026-05-09 02:54:46.108 I  Weird Parts[7110:1c48718] [com.wiredpart.ios:AppCore] [OnboardAI] bootstrap route=ready latency_ms=81 availability=available timeout_budget_ms=800 did_timeout=false fallback_model_unavailable=false fallback_low_resource=false
+2026-05-09 02:54:55.999 Db log[7176:1c48a35] [com.apple.defaults:User Defaults] setting new value process == "Weird Parts" AND eventMessage CONTAINS "[OnboardAI]" for key -predicate in CFPrefsSource<0x103864100> (Domain: Volatile, User: , ByHost: No, Container: , Contents Need Refresh: No)
