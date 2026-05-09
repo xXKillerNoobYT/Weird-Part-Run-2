@@ -1,0 +1,31 @@
+name: WiredPartCore Smoke
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "core/**"
+      - ".github/workflows/wiredpartcore-smoke.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "core/**"
+      - ".github/workflows/wiredpartcore-smoke.yml"
+  workflow_dispatch:
+
+jobs:
+  core-smoke:
+    name: Core auth smoke
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Show Swift toolchain
+        run: swift --version
+
+      - name: Run AuthService smoke tests
+        working-directory: core
+        run: swift test --filter AuthServiceTests
