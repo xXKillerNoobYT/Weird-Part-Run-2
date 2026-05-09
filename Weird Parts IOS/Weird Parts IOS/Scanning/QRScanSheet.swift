@@ -2,6 +2,7 @@ import SwiftUI
 import WiredPartCore
 #if os(iOS) && !targetEnvironment(macCatalyst)
 import UIKit
+import AVFoundation
 #endif
 #if !targetEnvironment(macCatalyst)
 import VisionKit
@@ -24,6 +25,7 @@ struct QRScanSheet: View {
     let onResult: (QRAutoFillResult) -> Void
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var isScanning = false
     @State private var scanError: String?
@@ -35,6 +37,7 @@ struct QRScanSheet: View {
     @State private var typeMismatch = false
     @State private var isProcessing = false
     @State private var isPermissionDenied = false
+    @State private var hasBackgroundedSincePermissionDenied = false
 
     // Manual entry
     @State private var manualCode = ""
@@ -76,6 +79,9 @@ struct QRScanSheet: View {
             }
             .onDisappear {
                 scanner?.stopScanning()
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                handleScenePhaseChange(newPhase)
             }
         }
     }
@@ -125,8 +131,7 @@ struct QRScanSheet: View {
                     HStack(spacing: 8) {
                         Button("Open Settings") { openAppSettings() }
                             .buttonStyle(.borderedProminent)
-                        Button("Try Again") { retryScanning() }
-                            .buttonStyle(.bordered)
+                            .accessibilityHint("Opens iOS Settings to enable Camera permission")
                     }
                     .padding(.horizontal)
                 }
@@ -136,13 +141,18 @@ struct QRScanSheet: View {
                         .foregroundStyle(resultIsFound ? .green : .orange)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(resultIsFound ? "Found: \(title)" : "Not found: \(resultCode ?? "")")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
                         if typeMismatch, let got = resultEntityType, let expected = expectedType {
-                            Text("Expected \(expected.rawValue), got \(got.rawValue)")
-                                .font(.caption)
+                            Text("Wrong type — expected \(expected.rawValue.capitalized), got \(got.rawValue.capitalized)")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
                                 .foregroundStyle(.orange)
+                            Text("Scanned: \(title)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text(resultIsFound ? "Found: \(title)" : "Not found: \(resultCode ?? "")")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
                         }
                     }
                 }
@@ -152,6 +162,7 @@ struct QRScanSheet: View {
                 if typeMismatch, expectedType != nil, resultIsFound {
                     mismatchRecoveryActions
                         .padding(.horizontal)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             } else {
                 HStack(spacing: 8) {
@@ -181,6 +192,7 @@ struct QRScanSheet: View {
             .padding(.horizontal)
             .padding(.bottom, 12)
         }
+        .animation(.easeInOut, value: typeMismatch)
         .background(Color(.systemBackground))
     }
 
@@ -235,12 +247,14 @@ struct QRScanSheet: View {
     @ViewBuilder
     private var mismatchRecoveryActions: some View {
         HStack(spacing: 8) {
-            Button("Use Scanned Result") { acceptCurrentResult() }
+            Button("Use Anyway") { acceptCurrentResult() }
                 .buttonStyle(.borderedProminent)
                 .disabled(resultData == nil)
+                .accessibilityHint("Continue with this scanned item even though its type does not match")
             Button("Scan Again") { retryScanning() }
                 .buttonStyle(.bordered)
                 .disabled(isProcessing)
+                .accessibilityHint("Clears current result and resumes camera scanning")
         }
     }
 
@@ -272,6 +286,7 @@ struct QRScanSheet: View {
                     case .permissionDenied:
                         scanError = "Camera permission required. Enable in Settings."
                         isPermissionDenied = true
+                        hasBackgroundedSincePermissionDenied = false
                         isScanning = false
                         return
                     }
@@ -380,5 +395,22 @@ struct QRScanSheet: View {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
         #endif
+    }
+
+    private func handleScenePhaseChange(_ phase: ScenePhase) {
+        guard isPermissionDenied else { return }
+        switch phase {
+        case .background, .inactive:
+            hasBackgroundedSincePermissionDenied = true
+        case .active:
+            guard hasBackgroundedSincePermissionDenied else { return }
+            #if os(iOS) && !targetEnvironment(macCatalyst)
+            if AVCaptureDevice.authorizationStatus(for: .video) == .authorized {
+                retryScanning()
+            }
+            #endif
+        @unknown default:
+            break
+        }
     }
 }
