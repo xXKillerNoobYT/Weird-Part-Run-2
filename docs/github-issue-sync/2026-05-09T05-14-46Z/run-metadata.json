@@ -1,0 +1,12 @@
+{
+  "repo": "xXKillerNoobYT/Weird-Part-Run-2",
+  "state": "all",
+  "timestampUtc": "2026-05-09T05-14-46Z",
+  "total": 339,
+  "open": 101,
+  "closed": 238,
+  "artifacts": {
+    "issuesJson": "docs/github-issue-sync/2026-05-09T05-14-46Z/issues.json",
+    "summaryMarkdown": "docs/github-issue-sync/2026-05-09T05-14-46Z/summary.md"
+  }
+}
