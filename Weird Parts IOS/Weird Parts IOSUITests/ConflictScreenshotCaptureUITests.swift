@@ -60,6 +60,7 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
     @discardableResult
     private func launchAndOpenConflictReview() throws -> XCUIApplication {
         let app = XCUIApplication()
+        app.launchArguments += ["-UITesting"]
         app.launch()
 
         let userRows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'loginUserRow_'"))
