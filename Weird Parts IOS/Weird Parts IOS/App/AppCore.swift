@@ -377,7 +377,7 @@ final class AppCore: ObservableObject {
 
         let latencyMs = Int(Date().timeIntervalSince(startedAt) * 1000)
         logger.info(
-            "[OnboardAI] bootstrap route=\(result.route.rawValue, privacy: .public) latency_ms=\(latencyMs, privacy: .public)"
+            "[OnboardAI] bootstrap route=\(result.route.rawValue, privacy: .public) latency_ms=\(latencyMs, privacy: .public) availability=\(result.availabilityLabel, privacy: .public) timeout_budget_ms=\(result.timeoutBudgetMs, privacy: .public) did_timeout=\(result.didTimeout, privacy: .public) fallback_model_unavailable=\(result.usedModelUnavailableFallback, privacy: .public) fallback_low_resource=\(result.usedLowResourceFallback, privacy: .public)"
         )
     }
 

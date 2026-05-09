@@ -17,11 +17,26 @@ public enum OnboardAIRuntimeRoute: String, Sendable {
 public struct OnboardAIRuntimeBootstrapResult: Sendable {
     public let route: OnboardAIRuntimeRoute
     public let availability: AIAvailability?
+    public let timeoutBudgetMs: Int
 
-    public init(route: OnboardAIRuntimeRoute, availability: AIAvailability? = nil) {
+    public init(
+        route: OnboardAIRuntimeRoute,
+        availability: AIAvailability? = nil,
+        timeoutBudgetMs: Int
+    ) {
         self.route = route
         self.availability = availability
+        self.timeoutBudgetMs = timeoutBudgetMs
     }
+
+    public var availabilityLabel: String {
+        guard let availability else { return "none" }
+        return String(describing: availability)
+    }
+
+    public var didTimeout: Bool { route == .timeout }
+    public var usedLowResourceFallback: Bool { route == .lowResource }
+    public var usedModelUnavailableFallback: Bool { route == .modelUnavailable }
 }
 
 public protocol AIAvailabilityChecking: Sendable {
@@ -57,20 +72,35 @@ public actor OnboardAIRuntimeBootstrapper {
     }
 
     public func bootstrap() async -> OnboardAIRuntimeBootstrapResult {
+        let timeoutBudgetMs = Int(timeoutNanoseconds / 1_000_000)
         if isLowResource() {
-            return OnboardAIRuntimeBootstrapResult(route: .lowResource)
+            return OnboardAIRuntimeBootstrapResult(
+                route: .lowResource,
+                timeoutBudgetMs: timeoutBudgetMs
+            )
         }
 
         let availability = await availabilityWithTimeout()
         guard let availability else {
-            return OnboardAIRuntimeBootstrapResult(route: .timeout)
+            return OnboardAIRuntimeBootstrapResult(
+                route: .timeout,
+                timeoutBudgetMs: timeoutBudgetMs
+            )
         }
 
         if availability == .available {
-            return OnboardAIRuntimeBootstrapResult(route: .ready, availability: availability)
+            return OnboardAIRuntimeBootstrapResult(
+                route: .ready,
+                availability: availability,
+                timeoutBudgetMs: timeoutBudgetMs
+            )
         }
 
-        return OnboardAIRuntimeBootstrapResult(route: .modelUnavailable, availability: availability)
+        return OnboardAIRuntimeBootstrapResult(
+            route: .modelUnavailable,
+            availability: availability,
+            timeoutBudgetMs: timeoutBudgetMs
+        )
     }
 
     private func availabilityWithTimeout() async -> AIAvailability? {

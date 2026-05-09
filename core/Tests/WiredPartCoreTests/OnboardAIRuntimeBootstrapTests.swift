@@ -27,6 +27,10 @@ struct OnboardAIRuntimeBootstrapTests {
         let result = await bootstrapper.bootstrap()
         #expect(result.route == .ready)
         #expect(result.availability == .available)
+        #expect(result.timeoutBudgetMs == 500)
+        #expect(result.didTimeout == false)
+        #expect(result.usedLowResourceFallback == false)
+        #expect(result.availabilityLabel == "available")
     }
 
     @Test("model unavailable route when model is not available")
@@ -40,6 +44,9 @@ struct OnboardAIRuntimeBootstrapTests {
         let result = await bootstrapper.bootstrap()
         #expect(result.route == .modelUnavailable)
         #expect(result.availability == .modelNotReady)
+        #expect(result.usedModelUnavailableFallback == true)
+        #expect(result.didTimeout == false)
+        #expect(result.availabilityLabel == "modelNotReady")
     }
 
     @Test("timeout route when availability check exceeds timeout")
@@ -53,6 +60,8 @@ struct OnboardAIRuntimeBootstrapTests {
         let result = await bootstrapper.bootstrap()
         #expect(result.route == .timeout)
         #expect(result.availability == nil)
+        #expect(result.didTimeout == true)
+        #expect(result.availabilityLabel == "none")
     }
 
     @Test("low resource route short-circuits availability check")
@@ -66,5 +75,8 @@ struct OnboardAIRuntimeBootstrapTests {
         let result = await bootstrapper.bootstrap()
         #expect(result.route == .lowResource)
         #expect(result.availability == nil)
+        #expect(result.usedLowResourceFallback == true)
+        #expect(result.didTimeout == false)
+        #expect(result.availabilityLabel == "none")
     }
 }
