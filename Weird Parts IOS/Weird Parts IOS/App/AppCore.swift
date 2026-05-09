@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import WiredPartCore
+import GRDB
 import os.log
 
 /// Shared application state that owns the database and all services.
@@ -9,6 +10,7 @@ import os.log
 /// can access services and the current user without prop-drilling.
 @MainActor
 final class AppCore: ObservableObject {
+    private static let uiTestingLaunchFlag = "-UITesting"
 
     // MARK: - Published State
 
@@ -69,13 +71,21 @@ final class AppCore: ObservableObject {
         }
     }
 
+    private var isUITestingMode: Bool {
+        ProcessInfo.processInfo.arguments.contains(Self.uiTestingLaunchFlag)
+    }
+
     private func bootstrap() async {
         do {
+            let uiTestingMode = isUITestingMode
             // Resolve the database path on the main actor (it accesses FileManager),
             // then perform all blocking database work off the main thread to avoid
             // priority inversion (user-interactive main thread waiting on
             // GRDB's default-QoS pool semaphore).
-            let path = try Self.databasePath()
+            let path = try Self.databasePath(isUITesting: uiTestingMode)
+            if uiTestingMode {
+                try Self.resetUITestDatabase(atPath: path)
+            }
 
             // NOTE: resetDatabaseIfNewBuild() was removed (GitHub #101).
             // It compared the binary's mod date and wiped the DB on every
@@ -104,6 +114,9 @@ final class AppCore: ObservableObject {
 
                 let auth = AuthService(db: database)
                 let settings = SettingsService(db: database)
+                if uiTestingMode {
+                    try Self.seedUITestingFixtures(db: database, authService: auth)
+                }
 
                 let theme = try? settings.getTheme()
                 let users = try auth.getActiveUsers()
@@ -468,12 +481,69 @@ final class AppCore: ObservableObject {
 
     /// Returns the path to the SQLite database file in the app's documents directory.
     /// On iOS this is the sandboxed Documents folder.
-    static func databasePath() throws -> String {
+    nonisolated static func databasePath() throws -> String {
+        try databasePath(isUITesting: false)
+    }
+
+    nonisolated static func databasePath(isUITesting: Bool) throws -> String {
         guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
             throw AppCoreError.noDocumentsDirectory
         }
         let dir = docs.appendingPathComponent("WiredPart")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("wiredpart.sqlite").path
+        let filename = isUITesting ? "wiredpart-uitesting.sqlite" : "wiredpart.sqlite"
+        return dir.appendingPathComponent(filename).path
+    }
+
+    nonisolated private static func resetUITestDatabase(atPath path: String) throws {
+        let fm = FileManager.default
+        for suffix in ["", "-wal", "-shm"] {
+            let file = path + suffix
+            if fm.fileExists(atPath: file) {
+                try fm.removeItem(atPath: file)
+            }
+        }
+    }
+
+    nonisolated private static func seedUITestingFixtures(db: AppDatabase, authService: AuthService) throws {
+        _ = try authService.seedFirstAdmin(displayName: "UITest Owner", pin: "1234")
+
+        let now = ISO8601DateFormatter().string(from: Date())
+        let longNotesLocal = String(repeating: "LOCAL_NOTES_SEGMENT_", count: 22)
+        let longNotesRemote = String(repeating: "REMOTE_NOTES_SEGMENT_", count: 22)
+        let priorityLocal = String(repeating: "LOCAL_PRIORITY_", count: 10)
+        let priorityRemote = String(repeating: "REMOTE_PRIORITY_", count: 10)
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: "DELETE FROM _conflict_log")
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO _conflict_log
+                    (table_name, record_id, field_name, local_value, remote_value, winner, local_device, remote_device, local_ts, remote_ts, reviewed)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    """,
+                arguments: ["jobs", "1001", "notes", longNotesLocal, longNotesRemote, "local", "UITEST-LOCAL", "UITEST-REMOTE", now, now]
+            )
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO _conflict_log
+                    (table_name, record_id, field_name, local_value, remote_value, winner, local_device, remote_device, local_ts, remote_ts, reviewed)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    """,
+                arguments: ["jobs", "1002", "priority_label", priorityLocal, priorityRemote, "remote", "UITEST-LOCAL", "UITEST-REMOTE", now, now]
+            )
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO _conflict_log
+                    (table_name, record_id, field_name, local_value, remote_value, winner, local_device, remote_device, local_ts, remote_ts, reviewed)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    """,
+                arguments: ["parts", "2001", "unit_cost", "17.45", "21.90", "remote", "UITEST-LOCAL", "UITEST-REMOTE", now, now]
+            )
+        }
+
+        UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+        UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
+        UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
     }
 }
