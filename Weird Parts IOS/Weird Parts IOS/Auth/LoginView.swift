@@ -6,6 +6,13 @@ import WiredPartCore
 /// Shows a list of active users fetched from the local database.
 /// The user taps their name, enters a 4+ digit PIN, and authenticates
 /// against the local SHA-256 hash.
+///
+/// Face ID / Touch ID flow (WEI-301):
+///   - On first successful PIN login, if biometry is available, the user is asked
+///     whether they want to enable Face ID for future logins.
+///   - On subsequent launches, if an opted-in user is known, biometric auth is
+///     attempted automatically; failure or cancellation falls back to the PIN flow
+///     with the user pre-selected.
 struct LoginView: View {
     @EnvironmentObject private var appCore: AppCore
     @State private var users: [User] = []
@@ -14,6 +21,21 @@ struct LoginView: View {
     @State private var errorMessage: String?
     @State private var isLoading = false
     @State private var usersLoaded = false
+
+    // MARK: - Biometric state (WEI-301)
+
+    private let biometricService = BiometricAuthService()
+
+    /// Controls the Face ID opt-in sheet shown after a successful PIN login.
+    @State private var isBiometricOptInSheetPresented = false
+    /// The userId that just completed a successful PIN login (used to record opt-in).
+    @State private var pendingOptInUserId: Int64?
+    /// Shown while the biometric prompt or biometric-based login is running.
+    @State private var isBiometricRunning = false
+    /// Controls the Forgot PIN help sheet.
+    @State private var showForgotPIN = false
+    /// Controls the Bootstrap setup sheet (shown when needsBootstrap is detected while on login screen).
+    @State private var showBootstrap = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,7 +54,16 @@ struct LoginView: View {
             .padding(.top, 40)
             .padding(.bottom, 24)
 
-            if let selected = selectedUser {
+            if isBiometricRunning {
+                // Shown briefly while the biometric prompt is being evaluated on launch.
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("Checking Face ID…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding()
+            } else if let selected = selectedUser {
                 // PIN entry for selected user
                 VStack(spacing: 16) {
                     HStack {
@@ -85,6 +116,16 @@ struct LoginView: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(pin.count < 4 || isLoading)
                     .accessibilityIdentifier("loginSignInButton")
+
+                    // Forgot PIN recovery
+                    Button {
+                        showForgotPIN = true
+                    } label: {
+                        Text("Forgot PIN?")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityIdentifier("loginForgotPINButton")
                 }
                 .padding()
             } else {
@@ -102,9 +143,9 @@ struct LoginView: View {
                         Image(systemName: "person.slash")
                             .font(.largeTitle)
                             .foregroundStyle(.secondary)
-                        Text("No Users Found")
+                        Text("No Accounts Found")
                             .font(.headline)
-                        Text("Create an admin account first using the onboarding flow.")
+                        Text("There are no active accounts on this device. Ask your supervisor or admin for help getting signed in.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -113,6 +154,15 @@ struct LoginView: View {
                             Text(error)
                                 .font(.caption)
                                 .foregroundStyle(.red)
+                        }
+                        // Show setup option only when the system detected a setup-required state
+                        // (business profile exists but no admin account has been created yet).
+                        if appCore.needsBootstrap {
+                            Button("Run Setup") {
+                                showBootstrap = true
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .accessibilityIdentifier("loginRunSetupButton")
                         }
                     }
                     .padding()
@@ -160,7 +210,36 @@ struct LoginView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityIdentifier("loginView")
         .background(Color(.systemBackground))
-        .onAppear { loadUsers() }
+        .onAppear {
+            loadUsers()
+            tryBiometricOnLaunch()
+        }
+        // MARK: Forgot PIN help sheet
+        .sheet(isPresented: $showForgotPIN) {
+            ForgotPINHelpView()
+                .environmentObject(appCore)
+        }
+        // MARK: Bootstrap setup sheet (edge case: profile exists, no accounts)
+        .sheet(isPresented: $showBootstrap) {
+            BootstrapView()
+                .environmentObject(appCore)
+        }
+        // MARK: Face ID opt-in sheet (WEI-301)
+        .sheet(isPresented: $isBiometricOptInSheetPresented) {
+            BiometricOptInSheet(
+                biometryKind: biometricService.availableBiometry,
+                onEnable: {
+                    if let uid = pendingOptInUserId {
+                        biometricService.setOptIn(userId: uid, enabled: true)
+                    }
+                    isBiometricOptInSheetPresented = false
+                },
+                onSkip: {
+                    isBiometricOptInSheetPresented = false
+                }
+            )
+            .presentationDetents([.medium])
+        }
     }
 
     // MARK: - Actions
@@ -199,7 +278,121 @@ struct LoginView: View {
             if let err = result {
                 errorMessage = err
                 pin = ""
+            } else {
+                // PIN auth succeeded — offer Face ID opt-in if available and not already set.
+                pin = ""
+                if biometricService.isBiometryAvailable && !biometricService.isOptedIn(userId: userId) {
+                    pendingOptInUserId = userId
+                    isBiometricOptInSheetPresented = true
+                }
             }
         }
+    }
+
+    // MARK: - Biometric Launch Flow (WEI-301)
+
+    /// Called on `.onAppear` — tries biometric auth if a user has opted in.
+    /// On success, logs the user in without PIN. On failure or cancel, pre-selects
+    /// the opted-in user in the PIN flow so they don't have to scroll the list.
+    private func tryBiometricOnLaunch() {
+        guard biometricService.preferredBiometricUserId != nil else { return }
+        isBiometricRunning = true
+        Task { @MainActor in
+            let biometricResult = await biometricService.attemptBiometricAuth()
+            isBiometricRunning = false
+            switch biometricResult {
+            case .success(let userId):
+                let loginError = await appCore.loginByBiometric(userId: userId)
+                if let err = loginError {
+                    // Biometric accepted by OS but user became inactive — rare, fall through to PIN.
+                    errorMessage = err
+                    preSelectUserById(userId)
+                }
+            case .fallback(let userId):
+                if let userId {
+                    preSelectUserById(userId)
+                }
+            case .notAvailable:
+                break
+            }
+        }
+    }
+
+    /// Pre-selects a user in the list by their ID (used for biometric fallback).
+    private func preSelectUserById(_ userId: Int64) {
+        guard let match = users.first(where: { $0.id == userId }) else { return }
+        withAnimation {
+            selectedUser = match
+            errorMessage = nil
+        }
+    }
+}
+
+// MARK: - BiometricOptInSheet
+
+/// Sheet presented after the first successful PIN login offering to enable Face ID.
+private struct BiometricOptInSheet: View {
+    let biometryKind: BiometricAuthService.BiometryKind
+    let onEnable: () -> Void
+    let onSkip: () -> Void
+
+    private var biometryName: String {
+        switch biometryKind {
+        case .faceID:  return "Face ID"
+        case .touchID: return "Touch ID"
+        case .none:    return "Biometrics"
+        }
+    }
+
+    private var biometryIcon: String {
+        switch biometryKind {
+        case .faceID:  return "faceid"
+        case .touchID: return "touchid"
+        case .none:    return "lock.shield"
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 24) {
+            Image(systemName: biometryIcon)
+                .font(.system(size: 52))
+                .foregroundStyle(Color.accentColor)
+                .padding(.top, 32)
+
+            VStack(spacing: 8) {
+                Text("Enable \(biometryName)?")
+                    .font(.title2)
+                    .fontWeight(.bold)
+
+                Text("Sign in faster next time with \(biometryName) instead of your PIN. You can always change this in Settings.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            }
+
+            VStack(spacing: 12) {
+                Button {
+                    onEnable()
+                } label: {
+                    Label("Enable \(biometryName)", systemImage: biometryIcon)
+                        .frame(maxWidth: .infinity)
+                        .fontWeight(.semibold)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .padding(.horizontal, 24)
+                .accessibilityIdentifier("biometricOptInEnableButton")
+
+                Button("Not Now") {
+                    onSkip()
+                }
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("biometricOptInSkipButton")
+            }
+
+            Spacer()
+        }
+        .accessibilityIdentifier("biometricOptInSheet")
     }
 }
