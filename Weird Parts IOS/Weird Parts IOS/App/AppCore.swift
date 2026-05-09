@@ -9,6 +9,26 @@ import os.log
 /// can access services and the current user without prop-drilling.
 @MainActor
 final class AppCore: ObservableObject {
+    /// UserDefaults keys that influence startup/login/onboarding routing.
+    private static let startupStateDefaultsKeys: [String] = [
+        "hasCompletedOnboarding",
+        "hasCompletedCompanySetup",
+        "hasSeenWelcome",
+        "hasSeenOnboardAIMVPEntry",
+        "hasSeenModuleTour",
+        "onboarding_skipped_modules",
+        "onboarding_completed_modules",
+        "onboarding_current_step",
+        "onboarding_visited_pages",
+        "onboarding_completed_actions"
+    ]
+
+    /// UserDefaults keys that can rehydrate prior device pairing/sync state.
+    private static let syncStateDefaultsKeys: [String] = [
+        "device_paired",
+        "bluetooth_sync_enabled",
+        "com.wiredpart.deviceId"
+    ]
 
     // MARK: - Published State
 
@@ -71,6 +91,8 @@ final class AppCore: ObservableObject {
 
     private func bootstrap() async {
         do {
+            Self.seedUITestingFixtures()
+
             // Resolve the database path on the main actor (it accesses FileManager),
             // then perform all blocking database work off the main thread to avoid
             // priority inversion (user-interactive main thread waiting on
@@ -170,9 +192,7 @@ final class AppCore: ObservableObject {
                 // Brand-new device — show two-path onboarding.
                 // Clear stale UserDefaults flags so a fresh-build DB doesn't
                 // inherit "already completed" flags from a previous install.
-                UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
-                UserDefaults.standard.removeObject(forKey: "hasCompletedCompanySetup")
-                UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+                Self.clearStartupStateDefaults()
                 needsOnboarding = true
                 needsBootstrap = false
             } else if result.users.isEmpty && result.hasProfile {
@@ -407,6 +427,9 @@ final class AppCore: ObservableObject {
             try? resetService.deactivateCurrentDevice()
         }
 
+        // Stop sync timers/peer sessions before state is wiped.
+        syncManager.cleanup()
+
         // 2. Release all services and database connection
         authService = nil
         settingsService = nil
@@ -439,9 +462,8 @@ final class AppCore: ObservableObject {
         currentUser = nil
         currentToken = nil
         permissions = []
-        UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
-        UserDefaults.standard.removeObject(forKey: "hasCompletedCompanySetup")
-        UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        Self.clearStartupStateDefaults()
+        Self.clearSyncStateDefaults()
 
         // 5. Re-bootstrap — will detect no users/profile and set needsOnboarding = true
         isReady = false
@@ -475,5 +497,28 @@ final class AppCore: ObservableObject {
         let dir = docs.appendingPathComponent("WiredPart")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("wiredpart.sqlite").path
+    }
+
+    private static func clearStartupStateDefaults() {
+        for key in startupStateDefaultsKeys {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
+    private static func clearSyncStateDefaults() {
+        for key in syncStateDefaultsKeys {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
+    /// Make UI test launch deterministic across dirty simulator state.
+    /// Only applies when tests pass the `-UITesting` launch argument.
+    private static func seedUITestingFixtures() {
+        guard ProcessInfo.processInfo.arguments.contains("-UITesting") else {
+            return
+        }
+
+        UserDefaults.standard.set(false, forKey: OnboardAIFeatureFlag.onboardingMVP)
+        UserDefaults.standard.set(true, forKey: "hasSeenOnboardAIMVPEntry")
     }
 }
