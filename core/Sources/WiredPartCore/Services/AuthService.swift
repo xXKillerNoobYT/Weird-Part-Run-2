@@ -187,6 +187,36 @@ public final class AuthService: Sendable {
         return AuthResult(success: true, user: user, token: token, message: "Authenticated")
     }
 
+    /// Authenticate a user via OS-verified biometric (Face ID / Touch ID).
+    ///
+    /// The caller **must** have already received a successful `LAContext.evaluatePolicy`
+    /// result before calling this method. This function only verifies that the user is
+    /// still active and issues a session token — the biometric challenge itself is
+    /// handled by the iOS layer (`BiometricAuthService`).
+    ///
+    /// Returns an `AuthResult` identical in shape to `authenticateByPin` so callers
+    /// can handle both paths uniformly.
+    public func loginByBiometric(userId: Int64) throws -> AuthResult {
+        let user: User? = try db.writer.read { dbConnection in
+            try User.fetchOne(
+                dbConnection,
+                sql: "SELECT * FROM users WHERE id = ? AND is_active = 1 AND deleted_at IS NULL",
+                arguments: [userId]
+            )
+        }
+
+        guard let user else {
+            return AuthResult(success: false, user: nil, token: nil, message: "User not found or inactive")
+        }
+
+        guard let uid = user.id else {
+            return AuthResult(success: false, user: nil, token: nil, message: "User record missing ID")
+        }
+
+        let token = Self.generateLocalToken(userId: uid)
+        return AuthResult(success: true, user: user, token: token, message: "Authenticated via biometric")
+    }
+
     /// Get list of active users for the login screen.
     public func getActiveUsers() throws -> [User] {
         try db.writer.read { dbConnection in

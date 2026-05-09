@@ -718,4 +718,87 @@ struct AuthServiceTests {
             try env.auth.addHatPermission(hatId: 99999, permissionKey: "manage_devices")
         }
     }
+
+    // MARK: - Biometric Login (WEI-301)
+
+    @Test("loginByBiometric succeeds for active user and returns a valid token")
+    func testLoginByBiometric_activeUser_returnsToken() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seedResult = try auth.seedFirstAdmin(displayName: "BiometricAdmin", pin: "1234")
+        guard let userId = seedResult.user?.id else {
+            Issue.record("seedFirstAdmin did not return a user id")
+            return
+        }
+
+        let result = try auth.loginByBiometric(userId: userId)
+
+        #expect(result.success == true)
+        #expect(result.user?.id == userId)
+        #expect(result.token != nil)
+        #expect(result.message == "Authenticated via biometric")
+
+        // Token must be a well-formed signed payload
+        let token = try #require(result.token)
+        let payload = AuthService.parseLocalToken(token)
+        #expect(payload?.sub == userId)
+    }
+
+    @Test("loginByBiometric returns failure for unknown user")
+    func testLoginByBiometric_unknownUser_returnsFailure() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+
+        let result = try auth.loginByBiometric(userId: 9999)
+
+        #expect(result.success == false)
+        #expect(result.token == nil)
+        #expect(result.user == nil)
+    }
+
+    @Test("loginByBiometric returns failure for soft-deleted user")
+    func testLoginByBiometric_deletedUser_returnsFailure() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seedResult = try auth.seedFirstAdmin(displayName: "GoneUser", pin: "5678")
+        guard let userId = seedResult.user?.id else {
+            Issue.record("seedFirstAdmin did not return a user id")
+            return
+        }
+
+        // Soft-delete the user directly
+        try db.writer.write { conn in
+            try conn.execute(
+                sql: "UPDATE users SET deleted_at = '2025-01-01 00:00:00' WHERE id = ?",
+                arguments: [userId]
+            )
+        }
+
+        let result = try auth.loginByBiometric(userId: userId)
+        #expect(result.success == false)
+        #expect(result.token == nil)
+    }
+
+    @Test("loginByBiometric returns failure for inactive user")
+    func testLoginByBiometric_inactiveUser_returnsFailure() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seedResult = try auth.seedFirstAdmin(displayName: "InactiveUser", pin: "4321")
+        guard let userId = seedResult.user?.id else {
+            Issue.record("seedFirstAdmin did not return a user id")
+            return
+        }
+
+        // Deactivate the user
+        try db.writer.write { conn in
+            try conn.execute(
+                sql: "UPDATE users SET is_active = 0 WHERE id = ?",
+                arguments: [userId]
+            )
+        }
+
+        let result = try auth.loginByBiometric(userId: userId)
+        #expect(result.success == false)
+        #expect(result.token == nil)
+    }
 }

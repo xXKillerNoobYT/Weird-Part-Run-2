@@ -323,6 +323,42 @@ final class AppCore: ObservableObject {
         }
     }
 
+    /// Authenticate a user whose identity was already verified by the OS via Face ID / Touch ID.
+    ///
+    /// The caller (`LoginView`) must have received a `.success` result from
+    /// `BiometricAuthService.attemptBiometricAuth()` before invoking this.
+    /// This method issues a session token without PIN verification.
+    ///
+    /// - Returns: nil on success; a user-facing error string on failure.
+    func loginByBiometric(userId: Int64) async -> String? {
+        guard let authService else { return "App not ready. Please wait." }
+        do {
+            let result = try await Task.detached(priority: .userInitiated) {
+                let authResult = try authService.loginByBiometric(userId: userId)
+                var perms: [String] = []
+                if authResult.success, let uid = authResult.user?.id {
+                    perms = try authService.getUserPermissions(uid)
+                }
+                return (auth: authResult, permissions: perms)
+            }.value
+
+            if result.auth.success {
+                currentUser = result.auth.user
+                currentToken = result.auth.token
+                permissions = result.permissions
+                if let uid = result.auth.user?.id {
+                    onboardingManager = OnboardingProgressManager(userId: uid)
+                    badgeCountManager.setUserId(uid)
+                }
+                return nil
+            } else {
+                return result.auth.message
+            }
+        } catch {
+            return userFriendlyError(error, context: "biometric login")
+        }
+    }
+
     /// Log out the current user and return to the login screen.
     func logout() {
         currentUser = nil
