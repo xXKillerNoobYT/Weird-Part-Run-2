@@ -56,13 +56,15 @@ struct IOSAIConfigPage: View {
             }
 
             if aiEnabled {
-                Section("Onboarding Rollout") {
+                Section {
                     Toggle("Enable Onboard AI MVP", isOn: $onboardAIMVPEnabled)
                         .onChange(of: onboardAIMVPEnabled) { _, newValue in
                             let raw = newValue ? "true" : "false"
                             UserDefaults.standard.set(newValue, forKey: OnboardAIFeatureFlag.onboardingMVP)
                             saveSetting(OnboardAIFeatureFlag.onboardingMVP, value: raw)
                         }
+                } header: {
+                    Text("Onboarding Rollout")
                 } footer: {
                     Text("Feature flag: \(OnboardAIFeatureFlag.onboardingMVP). Turn on to show the local AI onboarding entry on first-run flow.")
                 }
