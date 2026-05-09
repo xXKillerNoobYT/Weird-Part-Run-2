@@ -64,6 +64,33 @@ struct OnboardAIRuntimeBootstrapTests {
         #expect(result.availabilityLabel == "none")
     }
 
+    @Test("timeout hard-bounds return latency when checker blocks a thread")
+    func testTimeoutBoundUnderBlockingChecker() async {
+        // The checker blocks its thread for 2 s — far longer than the 50 ms
+        // budget. bootstrap() must return within timeout + 150 ms grace,
+        // proving the cooperative-pool starvation path is eliminated.
+        let timeoutNs: UInt64 = 50_000_000 // 50 ms
+        let bootstrapper = OnboardAIRuntimeBootstrapper(
+            aiChecker: StubChecker(value: .available, delayNs: 2_000_000_000),
+            timeoutNanoseconds: timeoutNs,
+            isLowResource: { false }
+        )
+
+        let clock = ContinuousClock()
+        let start = clock.now
+        let result = await bootstrapper.bootstrap()
+        let elapsed = clock.now - start
+
+        #expect(result.route == .timeout)
+        #expect(result.didTimeout == true)
+        // 150 ms grace on top of the 50 ms budget covers scheduler jitter.
+        let ceiling = Duration.nanoseconds(Int64(timeoutNs)) + .milliseconds(150)
+        #expect(
+            elapsed < ceiling,
+            "bootstrap() returned after \(elapsed), expected < \(ceiling)"
+        )
+    }
+
     @Test("low resource route short-circuits availability check")
     func testLowResourceRoute() async {
         let bootstrapper = OnboardAIRuntimeBootstrapper(

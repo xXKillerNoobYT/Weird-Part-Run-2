@@ -104,18 +104,44 @@ public actor OnboardAIRuntimeBootstrapper {
     }
 
     private func availabilityWithTimeout() async -> AIAvailability? {
-        await withTaskGroup(of: AIAvailability?.self) { group in
-            group.addTask { [aiChecker] in
-                aiChecker.checkAvailability()
-            }
-            group.addTask { [timeoutNanoseconds] in
+        // Run the checker on a real OS thread so a blocking implementation
+        // cannot occupy a cooperative-thread-pool worker and delay the
+        // timeout sentinel. The `_AvailabilityResumeOnce` actor serialises
+        // the race and guarantees the continuation is resumed exactly once.
+        return await withCheckedContinuation { continuation in
+            let once = _AvailabilityResumeOnce(continuation)
+
+            // Timeout sentinel — cooperative, does not hold a thread.
+            Task { [timeoutNanoseconds] in
                 try? await Task.sleep(nanoseconds: timeoutNanoseconds)
-                return nil
+                await once.resume(with: nil)
             }
 
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
+            // Checker on a real OS thread. Blocking calls here cannot starve
+            // the cooperative thread pool and delay the timeout above.
+            let checker = aiChecker
+            Thread.detachNewThread {
+                let value = checker.checkAvailability()
+                Task { await once.resume(with: value) }
+            }
         }
+    }
+}
+
+// MARK: - Private one-shot continuation guard
+
+/// Serialises the race between the timeout sentinel and the availability
+/// checker so that `CheckedContinuation.resume` is called exactly once.
+private actor _AvailabilityResumeOnce {
+    private var pending: CheckedContinuation<AIAvailability?, Never>?
+
+    init(_ continuation: CheckedContinuation<AIAvailability?, Never>) {
+        self.pending = continuation
+    }
+
+    func resume(with value: AIAvailability?) {
+        guard let c = pending else { return }
+        pending = nil
+        c.resume(returning: value)
     }
 }
