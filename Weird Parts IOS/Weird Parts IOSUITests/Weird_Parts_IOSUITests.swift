@@ -79,6 +79,39 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                       "Parts Categories page should appear after navigation")
     }
 
+    /// Navigates from the main tab bar to the Parts > Catalog page.
+    private func navigateToCatalog() {
+        let partsTab = app.tabBars.buttons["Parts"]
+        if partsTab.waitForExistence(timeout: 10) {
+            partsTab.tap()
+        } else {
+            let moreTab = app.tabBars.buttons["More"]
+            if moreTab.waitForExistence(timeout: 5) {
+                moreTab.tap()
+                let partsCell = app.cells.staticTexts["Parts"]
+                if partsCell.waitForExistence(timeout: 5) {
+                    partsCell.tap()
+                }
+            }
+        }
+
+        let catalogButton = app.buttons["Catalog"]
+        if catalogButton.waitForExistence(timeout: 5) {
+            catalogButton.tap()
+        } else {
+            let catalogText = app.staticTexts["Catalog"]
+            if catalogText.waitForExistence(timeout: 3) {
+                catalogText.tap()
+            }
+        }
+
+        XCTAssertTrue(
+            app.staticTexts["Smart search applied filters"].waitForExistence(timeout: 10)
+            || app.textFields["Search parts by name, code, or brand..."].waitForExistence(timeout: 10),
+            "Catalog page should appear after navigation"
+        )
+    }
+
     // MARK: - Helper: Wait for loading to complete
 
     /// Waits for the loading indicator to disappear, indicating data has loaded.
@@ -380,5 +413,37 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         measure(metrics: [XCTApplicationLaunchMetric()]) {
             XCUIApplication().launch()
         }
+    }
+
+    // MARK: - WEI-299 QA: NL banner show/clear behavior
+
+    @MainActor
+    func testCatalogNLSearchBannerEvidence() throws {
+        navigateToCatalog()
+
+        let searchField = app.textFields["Search parts by name, code, or brand..."]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 10), "Catalog search field should be visible")
+        searchField.tap()
+        searchField.typeText("low stock")
+
+        let bannerTitle = app.staticTexts["Smart search applied filters"]
+        XCTAssertTrue(bannerTitle.waitForExistence(timeout: 10), "NL filters banner should appear")
+
+        let shownAttachment = XCTAttachment(screenshot: app.screenshot())
+        shownAttachment.name = "WEI-299-banner-visible"
+        shownAttachment.lifetime = .keepAlways
+        add(shownAttachment)
+
+        let clearFiltersButton = app.buttons["Clear filters"]
+        XCTAssertTrue(clearFiltersButton.waitForExistence(timeout: 5), "Clear filters button should appear")
+        clearFiltersButton.tap()
+
+        XCTAssertFalse(bannerTitle.waitForExistence(timeout: 3), "Banner should clear after tapping Clear filters")
+        XCTAssertEqual(searchField.value as? String, "low stock", "Search text should remain after clearing NL filters")
+
+        let clearedAttachment = XCTAttachment(screenshot: app.screenshot())
+        clearedAttachment.name = "WEI-299-banner-cleared"
+        clearedAttachment.lifetime = .keepAlways
+        add(clearedAttachment)
     }
 }
