@@ -1,5 +1,8 @@
 import SwiftUI
 import WiredPartCore
+#if os(iOS) && !targetEnvironment(macCatalyst)
+import UIKit
+#endif
 #if !targetEnvironment(macCatalyst)
 import VisionKit
 #endif
@@ -28,8 +31,10 @@ struct QRScanSheet: View {
     @State private var resultIsFound = false
     @State private var resultEntityType: QREntityType?
     @State private var resultCode: String?
+    @State private var resultData: QRAutoFillResult?
     @State private var typeMismatch = false
     @State private var isProcessing = false
+    @State private var isPermissionDenied = false
 
     // Manual entry
     @State private var manualCode = ""
@@ -115,6 +120,16 @@ struct QRScanSheet: View {
                     .foregroundStyle(.red)
                     .padding(.horizontal)
                     .padding(.top, 12)
+
+                if isPermissionDenied {
+                    HStack(spacing: 8) {
+                        Button("Open Settings") { openAppSettings() }
+                            .buttonStyle(.borderedProminent)
+                        Button("Try Again") { retryScanning() }
+                            .buttonStyle(.bordered)
+                    }
+                    .padding(.horizontal)
+                }
             } else if let title = resultTitle {
                 HStack(spacing: 8) {
                     Image(systemName: resultIsFound ? "checkmark.circle.fill" : "questionmark.circle.fill")
@@ -133,6 +148,11 @@ struct QRScanSheet: View {
                 }
                 .padding(.horizontal)
                 .padding(.top, 12)
+
+                if typeMismatch, expectedType != nil, resultIsFound {
+                    mismatchRecoveryActions
+                        .padding(.horizontal)
+                }
             } else {
                 HStack(spacing: 8) {
                     Image(systemName: "viewfinder")
@@ -212,9 +232,22 @@ struct QRScanSheet: View {
         .background(Color(.systemBackground))
     }
 
+    @ViewBuilder
+    private var mismatchRecoveryActions: some View {
+        HStack(spacing: 8) {
+            Button("Use Scanned Result") { acceptCurrentResult() }
+                .buttonStyle(.borderedProminent)
+                .disabled(resultData == nil)
+            Button("Scan Again") { retryScanning() }
+                .buttonStyle(.bordered)
+                .disabled(isProcessing)
+        }
+    }
+
     // MARK: - Scanning
 
     private func startScanning() {
+        scanner?.stopScanning()
         let newScanner = IOSQRScanner()
         scanner = newScanner
 
@@ -225,6 +258,7 @@ struct QRScanSheet: View {
 
         isScanning = true
         scanError = nil
+        isPermissionDenied = false
 
         Task {
             do {
@@ -237,6 +271,7 @@ struct QRScanSheet: View {
                         scanError = msg
                     case .permissionDenied:
                         scanError = "Camera permission required. Enable in Settings."
+                        isPermissionDenied = true
                         isScanning = false
                         return
                     }
@@ -272,6 +307,7 @@ struct QRScanSheet: View {
             isProcessing = true
             scanError = nil
             typeMismatch = false
+            isPermissionDenied = false
         }
 
         do {
@@ -294,6 +330,7 @@ struct QRScanSheet: View {
                 resultIsFound = result.isFound
                 resultEntityType = result.entityType
                 resultCode = result.code
+                resultData = result
                 typeMismatch = gotMismatch
                 isProcessing = false
             }
@@ -318,5 +355,30 @@ struct QRScanSheet: View {
                 isProcessing = false
             }
         }
+    }
+
+    private func retryScanning() {
+        resultTitle = nil
+        resultIsFound = false
+        resultEntityType = nil
+        resultCode = nil
+        resultData = nil
+        typeMismatch = false
+        scanError = nil
+        isPermissionDenied = false
+        startScanning()
+    }
+
+    private func acceptCurrentResult() {
+        guard let result = resultData else { return }
+        dismiss()
+        onResult(result)
+    }
+
+    private func openAppSettings() {
+        #if os(iOS) && !targetEnvironment(macCatalyst)
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+        #endif
     }
 }
