@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import os
+import CryptoKit
 
 // MARK: - Wire-Format Types
 
@@ -133,6 +134,8 @@ public actor SyncServerState {
     public private(set) var outbox: [IncomingChange] = []
     public var companyPublicKey: String?     // nil = Phase 4 compat (no cert required)
     public var lastSyncAt: String?
+    private var idempotencyResults: [String: IdempotencyRecord] = [:]
+    private var replayNonceSeenAt: [String: Date] = [:]
 
     /// X25519 key agreement public key (base64). Shared with peers via GET /sync/key.
     /// Peers use this to derive a shared AES-GCM key for payload encryption.
@@ -173,6 +176,29 @@ public actor SyncServerState {
 
     public func setPort(_ port: UInt16) {
         self.port = port
+    }
+
+    public func idempotentResult(for key: String) -> IdempotencyRecord? {
+        idempotencyResults[key]
+    }
+
+    public func storeIdempotentResult(_ record: IdempotencyRecord, for key: String) {
+        idempotencyResults[key] = record
+    }
+
+    public func validateAndRememberNonce(
+        nonce: String,
+        now: Date,
+        ttlSeconds: TimeInterval
+    ) -> Bool {
+        let cutoff = now.addingTimeInterval(-ttlSeconds)
+        replayNonceSeenAt = replayNonceSeenAt.filter { $0.value >= cutoff }
+
+        if replayNonceSeenAt[nonce] != nil {
+            return false
+        }
+        replayNonceSeenAt[nonce] = now
+        return true
     }
 
     /// Filter outbox by vector clock (send only what the peer hasn't seen)
@@ -388,10 +414,10 @@ public final class LanSyncServer: Sendable {
             return await handleKeyExchange(headers: request.headers, state: state)
 
         case ("POST", "/sync/push"):
-            return await handlePush(body: request.body, headers: request.headers, state: state)
+            return await handlePush(body: request.body, headers: request.headers, state: state, logger: logger)
 
         case ("POST", "/sync/pull"):
-            return await handlePull(body: request.body, headers: request.headers, state: state)
+            return await handlePull(body: request.body, headers: request.headers, state: state, logger: logger)
 
         default:
             let json = #"{"error":"not_found"}"#
@@ -445,6 +471,7 @@ public final class LanSyncServer: Sendable {
     private static func buildHTTPResponse(status: Int, body: Data) -> Data {
         let statusText: String = switch status {
         case 200: "OK"
+        case 409: "Conflict"
         case 400: "Bad Request"
         case 401: "Unauthorized"
         case 403: "Forbidden"
@@ -508,7 +535,8 @@ public final class LanSyncServer: Sendable {
     private static func handlePush(
         body: Data,
         headers: [String: String],
-        state: SyncServerState
+        state: SyncServerState,
+        logger: Logger
     ) async -> (Int, Data) {
         // Decrypt body if sender used payload encryption
         let (plainBody, sharedKeyData) = await decryptIfNeeded(
@@ -526,6 +554,15 @@ public final class LanSyncServer: Sendable {
             return (400, Data(json.utf8))
         }
 
+        if let replayError = await validateReplayHeaders(
+            headers: headers,
+            auth: request.auth,
+            state: state,
+            logger: logger
+        ) {
+            return replayError
+        }
+
         // Auth check
         if let errorResponse = await checkAuth(
             auth: request.auth ?? SyncAuth(),
@@ -533,6 +570,17 @@ public final class LanSyncServer: Sendable {
             state: state
         ) {
             return errorResponse
+        }
+
+        let idempotencyKey = headers["x-idempotency-key"] ?? ""
+        let requestFingerprint = makeRequestFingerprint(body: plainBody)
+        if !idempotencyKey.isEmpty,
+           let existing = await state.idempotentResult(for: idempotencyKey) {
+            if existing.fingerprint != requestFingerprint {
+                let json = #"{"error":"idempotency_key_reused_with_different_payload"}"#
+                return (409, Data(json.utf8))
+            }
+            return encryptIfNeeded(existing.responseData, sharedKeyData: sharedKeyData)
         }
 
         // Accept changes into inbox
@@ -545,13 +593,20 @@ public final class LanSyncServer: Sendable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let responseData = (try? encoder.encode(response)) ?? Data()
+        if !idempotencyKey.isEmpty {
+            await state.storeIdempotentResult(
+                IdempotencyRecord(fingerprint: requestFingerprint, responseData: responseData),
+                for: idempotencyKey
+            )
+        }
         return encryptIfNeeded(responseData, sharedKeyData: sharedKeyData)
     }
 
     private static func handlePull(
         body: Data,
         headers: [String: String],
-        state: SyncServerState
+        state: SyncServerState,
+        logger: Logger
     ) async -> (Int, Data) {
         // Decrypt body if sender used payload encryption
         let (plainBody, sharedKeyData) = await decryptIfNeeded(
@@ -567,6 +622,15 @@ public final class LanSyncServer: Sendable {
         guard let request = try? JSONDecoder().decode(SyncPullRequest.self, from: plainBody) else {
             let json = #"{"error":"invalid_json"}"#
             return (400, Data(json.utf8))
+        }
+
+        if let replayError = await validateReplayHeaders(
+            headers: headers,
+            auth: request.auth,
+            state: state,
+            logger: logger
+        ) {
+            return replayError
         }
 
         // Auth check
@@ -593,6 +657,68 @@ public final class LanSyncServer: Sendable {
         encoder.outputFormatting = [.sortedKeys]
         let responseData = (try? encoder.encode(response)) ?? Data()
         return encryptIfNeeded(responseData, sharedKeyData: sharedKeyData)
+    }
+
+    private static func validateReplayHeaders(
+        headers: [String: String],
+        auth: SyncAuth?,
+        state: SyncServerState,
+        logger: Logger
+    ) async -> (Int, Data)? {
+        guard requiresReplayProtection(auth: auth) else {
+            return nil
+        }
+
+        guard let nonce = headers["x-sync-nonce"], !nonce.isEmpty,
+              let timestampRaw = headers["x-sync-timestamp"],
+              let timestamp = parseISO8601(timestampRaw) else {
+            logger.warning("Rejecting signed sync request: missing or invalid replay headers")
+            return jsonError(status: 401, code: "replay_headers_required")
+        }
+
+        let now = Date()
+        let maxSkew: TimeInterval = 5 * 60
+        let skew = abs(now.timeIntervalSince(timestamp))
+        guard skew <= maxSkew else {
+            logger.warning("Rejecting signed sync request: timestamp outside replay window")
+            return jsonError(status: 403, code: "replay_timestamp_expired")
+        }
+
+        let accepted = await state.validateAndRememberNonce(
+            nonce: nonce,
+            now: now,
+            ttlSeconds: maxSkew
+        )
+        guard accepted else {
+            logger.warning("Rejecting signed sync request: replay nonce already used")
+            return jsonError(status: 403, code: "replay_detected")
+        }
+
+        return nil
+    }
+
+    private static func requiresReplayProtection(auth: SyncAuth?) -> Bool {
+        guard let auth else { return false }
+        return auth.certificateData != nil || auth.certificateSignature != nil
+    }
+
+    private static func parseISO8601(_ raw: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let precise = formatter.date(from: raw) {
+            return precise
+        }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: raw)
+    }
+
+    private static func makeRequestFingerprint(body: Data) -> String {
+        SHA256.hash(data: body).compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func jsonError(status: Int, code: String) -> (Int, Data) {
+        let json = #"{"error":"\#(code)"}"#
+        return (status, Data(json.utf8))
     }
 
     /// Decrypt the body if the request carries encryption headers.
@@ -694,4 +820,9 @@ private struct HTTPRequest {
     let path: String
     let headers: [String: String]
     let body: Data
+}
+
+public struct IdempotencyRecord: Sendable {
+    let fingerprint: String
+    let responseData: Data
 }

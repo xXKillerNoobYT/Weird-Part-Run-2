@@ -153,6 +153,50 @@ struct SyncServerTests {
         await server.stop()
     }
 
+    @Test("POST /sync/push with idempotency key returns stable result on duplicate")
+    func testPushIdempotencyDuplicateReturnsSameResult() async throws {
+        let state = makeState(companyId: "co-1")
+        let server = LanSyncServer(state: state)
+        let port = try await server.start()
+        defer { Task { await server.stop() } }
+
+        let pushRequest = SyncPushRequest(
+            deviceId: "remote-dev",
+            companyId: "co-1",
+            changes: [
+                IncomingChange(
+                    deviceId: "remote-dev",
+                    tableName: "users",
+                    recordId: "1",
+                    operation: "INSERT",
+                    timestamp: "2026-03-14T10:00:00Z"
+                )
+            ]
+        )
+
+        let body = try JSONEncoder().encode(pushRequest)
+        var req1 = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/push")!)
+        req1.httpMethod = "POST"
+        req1.httpBody = body
+        req1.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req1.setValue("idem-123", forHTTPHeaderField: "X-Idempotency-Key")
+
+        let (data1, response1) = try await URLSession.shared.data(for: req1)
+        #expect((response1 as! HTTPURLResponse).statusCode == 200)
+        let parsed1 = try JSONDecoder().decode(SyncPushResponse.self, from: data1)
+
+        let req2 = req1
+        let (data2, response2) = try await URLSession.shared.data(for: req2)
+        #expect((response2 as! HTTPURLResponse).statusCode == 200)
+        let parsed2 = try JSONDecoder().decode(SyncPushResponse.self, from: data2)
+
+        #expect(parsed1.syncBatchId == parsed2.syncBatchId)
+        #expect(parsed1.accepted == parsed2.accepted)
+
+        let inbox = await state.drainInbox()
+        #expect(inbox.count == 1)
+    }
+
     // MARK: - POST /sync/pull
 
     @Test("POST /sync/pull returns outbox")
@@ -319,6 +363,9 @@ struct SyncServerTests {
         var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/push")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let now = ISO8601DateFormatter().string(from: Date())
+        req.setValue("nonce-cert-test", forHTTPHeaderField: "X-Sync-Nonce")
+        req.setValue(now, forHTTPHeaderField: "X-Sync-Timestamp")
         req.httpBody = bodyData
         req.timeoutInterval = 5
 
@@ -356,5 +403,42 @@ struct SyncServerTests {
         #expect(httpResponse.statusCode == 403)
 
         await server.stop()
+    }
+
+    @Test("Signed sync request with replayed nonce is rejected")
+    func testSignedRequestReplayNonceRejected() async throws {
+        let state = makeState(companyId: "co-1")
+        let server = LanSyncServer(state: state)
+        let port = try await server.start()
+        defer { Task { await server.stop() } }
+
+        let pushRequest = SyncPushRequest(
+            deviceId: "remote-dev",
+            companyId: "co-1",
+            changes: [],
+            auth: SyncAuth(certificateData: "dGVzdA==", certificateSignature: "dGVzdA==")
+        )
+        let body = try JSONEncoder().encode(pushRequest)
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let now = formatter.string(from: Date())
+
+        var req1 = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/push")!)
+        req1.httpMethod = "POST"
+        req1.httpBody = body
+        req1.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req1.setValue("nonce-1", forHTTPHeaderField: "X-Sync-Nonce")
+        req1.setValue(now, forHTTPHeaderField: "X-Sync-Timestamp")
+
+        let (_, response1) = try await URLSession.shared.data(for: req1)
+        #expect((response1 as! HTTPURLResponse).statusCode == 200)
+
+        let req2 = req1
+        let (data2, response2) = try await URLSession.shared.data(for: req2)
+        #expect((response2 as! HTTPURLResponse).statusCode == 403)
+
+        let error = try JSONSerialization.jsonObject(with: data2) as? [String: Any]
+        #expect(error?["error"] as? String == "replay_detected")
     }
 }
