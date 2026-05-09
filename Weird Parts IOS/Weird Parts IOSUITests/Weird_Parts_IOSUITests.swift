@@ -79,6 +79,33 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                       "Parts Categories page should appear after navigation")
     }
 
+    /// Navigates to the Parts Catalog sub-page.
+    private func navigateToCatalog() {
+        let partsTab = app.tabBars.buttons["Parts"]
+        if partsTab.waitForExistence(timeout: 10) {
+            partsTab.tap()
+        } else {
+            let moreTab = app.tabBars.buttons["More"]
+            if moreTab.waitForExistence(timeout: 5) {
+                moreTab.tap()
+                let partsCell = app.cells.staticTexts["Parts"]
+                if partsCell.waitForExistence(timeout: 5) {
+                    partsCell.tap()
+                }
+            }
+        }
+
+        let catalogButton = app.buttons["Catalog"]
+        if catalogButton.waitForExistence(timeout: 5) {
+            catalogButton.tap()
+        } else {
+            let catalogText = app.staticTexts["Catalog"]
+            if catalogText.waitForExistence(timeout: 3) {
+                catalogText.tap()
+            }
+        }
+    }
+
     // MARK: - Helper: Wait for loading to complete
 
     /// Waits for the loading indicator to disappear, indicating data has loaded.
@@ -380,5 +407,31 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         measure(metrics: [XCTApplicationLaunchMetric()]) {
             XCUIApplication().launch()
         }
+    }
+
+    // MARK: - Test 5: NL Search Applies Filters Banner + Clear
+
+    @MainActor
+    func testCatalogNLSearchShowsAndClearsAppliedFiltersBanner() throws {
+        navigateToCatalog()
+
+        let searchField = app.textFields["Search parts by name, code, or brand..."]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 10),
+                      "Catalog search field should be visible")
+
+        searchField.tap()
+        searchField.typeText("low stock")
+
+        let bannerText = app.staticTexts["Smart search applied filters"]
+        XCTAssertTrue(bannerText.waitForExistence(timeout: 10),
+                      "NL-applied filters banner should appear for structured query")
+
+        let clearFiltersButton = app.buttons["Clear filters"]
+        XCTAssertTrue(clearFiltersButton.waitForExistence(timeout: 5),
+                      "Clear filters action should be visible in NL banner")
+        clearFiltersButton.tap()
+
+        XCTAssertFalse(bannerText.waitForExistence(timeout: 3),
+                       "NL-applied filters banner should disappear after clearing filters")
     }
 }
