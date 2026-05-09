@@ -370,8 +370,15 @@ final class AppCore: ObservableObject {
             return
         }
 
+        let startedAt = Date()
         let bootstrapper = OnboardAIRuntimeBootstrapper()
-        onboardAIRuntimeBootstrap = await bootstrapper.bootstrap()
+        let result = await bootstrapper.bootstrap()
+        onboardAIRuntimeBootstrap = result
+
+        let latencyMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+        logger.info(
+            "[OnboardAI] bootstrap route=\(result.route.rawValue, privacy: .public) latency_ms=\(latencyMs, privacy: .public)"
+        )
     }
 
     /// Reload theme settings from the database and apply them.
