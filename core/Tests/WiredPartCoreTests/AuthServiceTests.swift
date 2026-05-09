@@ -184,6 +184,28 @@ struct AuthServiceTests {
         #expect(result.message == "Invalid PIN")
     }
 
+    @Test("authenticateByPin failed attempt emits security observability event")
+    func testAuthWrongPinEmitsSecurityEvent() throws {
+        AuthService.resetAllLoginAttempts()
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
+        let userId = seed.user!.id!
+
+        _ = try auth.authenticateByPin(userId: userId, pin: "0000")
+
+        let count = try db.writer.read { dbConn in
+            try Int.fetchOne(
+                dbConn,
+                sql: """
+                SELECT COUNT(*) FROM security_observability_events
+                WHERE event_type = 'auth_failed'
+                """
+            ) ?? 0
+        }
+        #expect(count >= 1)
+    }
+
     @Test("authenticateByPin rejects soft-deleted users even with correct PIN")
     func testAuthRejectsDeletedUser() throws {
         AuthService.resetAllLoginAttempts()

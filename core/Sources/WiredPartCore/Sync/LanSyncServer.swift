@@ -126,6 +126,14 @@ public struct SyncKeyResponse: Codable, Sendable {
 /// Manages the inbox (changes received from peers) and outbox (changes
 /// ready to send), along with device identity and auth configuration.
 public actor SyncServerState {
+    public struct SecurityEvent: Sendable {
+        public let eventType: String
+        public let source: String
+        public let severity: String
+        public let outcome: String
+        public let details: [String: String]
+    }
+
     public let deviceId: String
     public let deviceName: String
     public let companyId: String
@@ -136,6 +144,7 @@ public actor SyncServerState {
     public var lastSyncAt: String?
     private var idempotencyResults: [String: IdempotencyRecord] = [:]
     private var replayNonceSeenAt: [String: Date] = [:]
+    private var securityEventSink: (@Sendable (SecurityEvent) async -> Void)?
 
     /// X25519 key agreement public key (base64). Shared with peers via GET /sync/key.
     /// Peers use this to derive a shared AES-GCM key for payload encryption.
@@ -176,6 +185,15 @@ public actor SyncServerState {
 
     public func setPort(_ port: UInt16) {
         self.port = port
+    }
+
+    public func setSecurityEventSink(_ sink: (@Sendable (SecurityEvent) async -> Void)?) {
+        securityEventSink = sink
+    }
+
+    public func emitSecurityEvent(_ event: SecurityEvent) async {
+        guard let securityEventSink else { return }
+        await securityEventSink(event)
     }
 
     public func idempotentResult(for key: String) -> IdempotencyRecord? {
@@ -673,6 +691,15 @@ public final class LanSyncServer: Sendable {
               let timestampRaw = headers["x-sync-timestamp"],
               let timestamp = parseISO8601(timestampRaw) else {
             logger.warning("Rejecting signed sync request: missing or invalid replay headers")
+            await state.emitSecurityEvent(
+                .init(
+                    eventType: "sync_replay_rejected",
+                    source: "LanSyncServer.validateReplayHeaders",
+                    severity: "critical",
+                    outcome: "rejected",
+                    details: ["reason": "missing_or_invalid_headers"]
+                )
+            )
             return jsonError(status: 401, code: "replay_headers_required")
         }
 
@@ -681,6 +708,15 @@ public final class LanSyncServer: Sendable {
         let skew = abs(now.timeIntervalSince(timestamp))
         guard skew <= maxSkew else {
             logger.warning("Rejecting signed sync request: timestamp outside replay window")
+            await state.emitSecurityEvent(
+                .init(
+                    eventType: "sync_replay_rejected",
+                    source: "LanSyncServer.validateReplayHeaders",
+                    severity: "critical",
+                    outcome: "rejected",
+                    details: ["reason": "timestamp_outside_window"]
+                )
+            )
             return jsonError(status: 403, code: "replay_timestamp_expired")
         }
 
@@ -691,6 +727,15 @@ public final class LanSyncServer: Sendable {
         )
         guard accepted else {
             logger.warning("Rejecting signed sync request: replay nonce already used")
+            await state.emitSecurityEvent(
+                .init(
+                    eventType: "sync_replay_rejected",
+                    source: "LanSyncServer.validateReplayHeaders",
+                    severity: "critical",
+                    outcome: "rejected",
+                    details: ["reason": "nonce_reused"]
+                )
+            )
             return jsonError(status: 403, code: "replay_detected")
         }
 
@@ -777,6 +822,15 @@ public final class LanSyncServer: Sendable {
 
         // Company ID must match
         if requestCompanyId != serverCompanyId {
+            await state.emitSecurityEvent(
+                .init(
+                    eventType: "sync_auth_rejected",
+                    source: "LanSyncServer.checkAuth",
+                    severity: "warning",
+                    outcome: "rejected",
+                    details: ["reason": "company_id_mismatch"]
+                )
+            )
             let json = #"{"error":"company_id_mismatch"}"#
             return (403, Data(json.utf8))
         }
@@ -793,10 +847,28 @@ public final class LanSyncServer: Sendable {
             return nil // Auth passed
 
         case .required:
+            await state.emitSecurityEvent(
+                .init(
+                    eventType: "sync_auth_rejected",
+                    source: "LanSyncServer.checkAuth",
+                    severity: "critical",
+                    outcome: "rejected",
+                    details: ["reason": "certificate_required"]
+                )
+            )
             let json = #"{"error":"certificate_required"}"#
             return (401, Data(json.utf8))
 
         case .rejected(let reason):
+            await state.emitSecurityEvent(
+                .init(
+                    eventType: "sync_auth_rejected",
+                    source: "LanSyncServer.checkAuth",
+                    severity: "critical",
+                    outcome: "rejected",
+                    details: ["reason": reason]
+                )
+            )
             // Fix #184: reason comes from an untrusted certificate — encode with JSONEncoder
             // so special characters (", \, etc.) are escaped rather than injected into the string.
             struct CertRejectedError: Encodable { let error: String; let reason: String }

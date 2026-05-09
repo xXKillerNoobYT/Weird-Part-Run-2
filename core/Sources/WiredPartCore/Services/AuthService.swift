@@ -17,6 +17,7 @@ import os.log
 /// Ported from: `src/local/services/auth-service.ts`
 public final class AuthService: Sendable {
     private let db: AppDatabase
+    private let securityObservability: SecurityObservabilityService
 
     /// Structured logger for Keychain / token / auth warnings. Unified log replaces
     /// `print(...)` calls so warnings surface via Console.app/os_log with proper
@@ -25,6 +26,7 @@ public final class AuthService: Sendable {
 
     public init(db: AppDatabase) {
         self.db = db
+        self.securityObservability = SecurityObservabilityService(db: db)
     }
 
     // MARK: - Types
@@ -138,6 +140,13 @@ public final class AuthService: Sendable {
     public func authenticateByPin(userId: Int64, pin: String) throws -> AuthResult {
         // Check lockout before attempting authentication
         if let seconds = Self.lockoutSecondsRemaining(userId: userId) {
+            securityObservability.record(
+                eventType: .authLockout,
+                source: "AuthService.authenticateByPin",
+                severity: "warning",
+                outcome: "rejected",
+                details: ["user_id": String(userId), "seconds_remaining": String(seconds)]
+            )
             return AuthResult(success: false, user: nil, token: nil, message: "Too many failed attempts. Try again in \(seconds)s.")
         }
 
@@ -160,8 +169,22 @@ public final class AuthService: Sendable {
         let isValid = Self.verifyPinLocally(pin: pin, storedHash: pinHash, salt: user.pinSalt)
         guard isValid else {
             if let lockoutSeconds = Self.recordFailedAttempt(userId: userId) {
+                securityObservability.record(
+                    eventType: .authLockout,
+                    source: "AuthService.authenticateByPin",
+                    severity: "critical",
+                    outcome: "rejected",
+                    details: ["user_id": String(userId), "lockout_seconds": String(lockoutSeconds)]
+                )
                 return AuthResult(success: false, user: nil, token: nil, message: "Invalid PIN. Locked for \(lockoutSeconds)s.")
             }
+            securityObservability.record(
+                eventType: .authFailed,
+                source: "AuthService.authenticateByPin",
+                severity: "warning",
+                outcome: "rejected",
+                details: ["user_id": String(userId), "reason": "invalid_pin"]
+            )
             return AuthResult(success: false, user: nil, token: nil, message: "Invalid PIN")
         }
 
@@ -457,15 +480,36 @@ public final class AuthService: Sendable {
     /// Build a full UserProfile from a local token.
     public func getLocalUserProfile(token: String) throws -> UserProfile {
         guard let payload = Self.parseLocalToken(token) else {
+            securityObservability.record(
+                eventType: .tokenRejected,
+                source: "AuthService.getLocalUserProfile",
+                severity: "warning",
+                outcome: "rejected",
+                details: ["reason": "invalid_token_signature_or_format"]
+            )
             throw AuthError.invalidToken
         }
 
         let nowMs = Date().timeIntervalSince1970 * 1000
         guard payload.exp > nowMs else {
+            securityObservability.record(
+                eventType: .tokenRejected,
+                source: "AuthService.getLocalUserProfile",
+                severity: "warning",
+                outcome: "rejected",
+                details: ["reason": "token_expired", "user_id": String(payload.sub)]
+            )
             throw AuthError.tokenExpired
         }
 
         guard let user = try getUser(payload.sub) else {
+            securityObservability.record(
+                eventType: .tokenRejected,
+                source: "AuthService.getLocalUserProfile",
+                severity: "warning",
+                outcome: "rejected",
+                details: ["reason": "user_not_found", "user_id": String(payload.sub)]
+            )
             throw AuthError.userNotFound
         }
 

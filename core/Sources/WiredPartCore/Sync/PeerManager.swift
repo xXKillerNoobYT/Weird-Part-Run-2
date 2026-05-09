@@ -142,6 +142,11 @@ public actor PeerManager {
             deviceName: deviceName,
             companyId: companyId
         )
+        await sState.setSecurityEventSink { [weak self] event in
+            Task {
+                await self?.recordSecurityEvent(event)
+            }
+        }
         self.serverState = sState
 
         let server = LanSyncServer(state: sState)
@@ -205,6 +210,30 @@ public actor PeerManager {
 
         // Initial peer list merge
         mergePeerLists()
+    }
+
+    private func recordSecurityEvent(_ event: SyncServerState.SecurityEvent) async {
+        let service = SecurityObservabilityService(db: db)
+        service.record(
+            eventType: mappedSecurityEventType(event.eventType),
+            source: event.source,
+            severity: event.severity,
+            outcome: event.outcome,
+            details: event.details
+        )
+    }
+
+    private func mappedSecurityEventType(_ raw: String) -> SecurityObservabilityService.EventType {
+        switch raw {
+        case SecurityObservabilityService.EventType.replayRejected.rawValue:
+            return .replayRejected
+        case SecurityObservabilityService.EventType.syncAuthRejected.rawValue:
+            return .syncAuthRejected
+        case SecurityObservabilityService.EventType.syncDeadLetter.rawValue:
+            return .syncDeadLetter
+        default:
+            return .syncDeadLetter
+        }
     }
 
     /// Stop the P2P sync system.
@@ -606,6 +635,19 @@ public actor PeerManager {
             )
         } catch {
             // Non-critical — changes will be retried on next sync
+            await recordSecurityEvent(
+                .init(
+                    eventType: SecurityObservabilityService.EventType.syncDeadLetter.rawValue,
+                    source: "PeerManager.processInbox",
+                    severity: "critical",
+                    outcome: "detected",
+                    details: [
+                        "reason": "conflict_resolver_failed",
+                        "change_count": String(inbox.count),
+                        "error": error.localizedDescription
+                    ]
+                )
+            )
         }
     }
 
@@ -629,6 +671,19 @@ public actor PeerManager {
                 )
             } catch {
                 self.logger.error("ConflictResolver failed for peer \(String(did.prefix(8)), privacy: .public)...: \(error.localizedDescription, privacy: .public)")
+                await self.recordSecurityEvent(
+                    .init(
+                        eventType: SecurityObservabilityService.EventType.syncDeadLetter.rawValue,
+                        source: "PeerManager.handleMultipeerMessage",
+                        severity: "critical",
+                        outcome: "detected",
+                        details: [
+                            "reason": "multipeer_conflict_resolver_failed",
+                            "change_count": String(changes.count),
+                            "error": error.localizedDescription
+                        ]
+                    )
+                )
             }
         }
     }

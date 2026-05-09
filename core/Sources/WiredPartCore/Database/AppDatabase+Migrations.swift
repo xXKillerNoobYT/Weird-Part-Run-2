@@ -114,6 +114,7 @@ extension AppDatabase {
         registerMigration075CompanionFeedbackNullableSuggestionId(&migrator)
         registerMigration076StockMovementsCompositeIndex(&migrator)
         registerMigration077VehicleIssueReports(&migrator)
+        registerMigration078SecurityObservabilityEvents(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4960,6 +4961,23 @@ extension AppDatabase {
             }
             try db.create(index: "idx_vehicle_issue_reports_vehicle", on: "vehicle_issue_reports", columns: ["vehicle_id"])
             try db.create(index: "idx_vehicle_issue_reports_status", on: "vehicle_issue_reports", columns: ["status"])
+        }
+    }
+
+    private static func registerMigration078SecurityObservabilityEvents(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("078_security_observability_events") { db in
+            try db.create(table: "security_observability_events") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("event_type", .text).notNull()
+                t.column("source", .text).notNull()
+                t.column("severity", .text).notNull().defaults(to: "warning")
+                t.column("outcome", .text).notNull().defaults(to: "detected")
+                t.column("trace_id", .text)
+                t.column("details_json", .text).notNull().defaults(to: "{}")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_security_observability_events_type_time", on: "security_observability_events", columns: ["event_type", "created_at"])
+            try db.create(index: "idx_security_observability_events_outcome_time", on: "security_observability_events", columns: ["outcome", "created_at"])
         }
     }
 
