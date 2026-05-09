@@ -139,14 +139,15 @@ struct LoginView: View {
                     }
                     .padding()
                 } else if users.isEmpty && usersLoaded {
+                    // Empty-users state — worker-readable copy (WEI-302)
                     VStack(spacing: 12) {
                         Image(systemName: "person.slash")
                             .font(.largeTitle)
                             .foregroundStyle(.secondary)
-                        Text("No Accounts Found")
+                        Text("No accounts on this device yet.")
                             .font(.headline)
-                        Text("There are no active accounts on this device. Ask your supervisor or admin for help getting signed in.")
-                            .font(.caption)
+                        Text("Ask your supervisor to add you, or run setup.")
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 32)
@@ -155,13 +156,16 @@ struct LoginView: View {
                                 .font(.caption)
                                 .foregroundStyle(.red)
                         }
-                        // Show setup option only when the system detected a setup-required state
-                        // (business profile exists but no admin account has been created yet).
-                        if appCore.needsBootstrap {
+                        // Tertiary "Run setup" button — only when a setup token is present (WEI-302).
+                        // The setup token is written to UserDefaults by the pairing / bootstrap flow.
+                        if UserDefaults.standard.string(forKey: "setup_token") != nil {
                             Button("Run Setup") {
                                 showBootstrap = true
                             }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.tertiary)
+                            .font(.footnote)
+                            .padding(.top, 4)
                             .accessibilityIdentifier("loginRunSetupButton")
                         }
                     }
