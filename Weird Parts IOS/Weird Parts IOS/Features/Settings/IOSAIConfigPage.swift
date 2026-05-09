@@ -11,6 +11,7 @@ struct IOSAIConfigPage: View {
     @State private var isCheckingAvailability = false
     @State private var availabilityStatus: AIAvailability?
     @State private var aiLanguage = "en"
+    @State private var onboardAIMVPEnabled = false
     @State private var saveError: String?
     // Fix #192: gate the form behind a loading state so defaults don't flash
     // before loadSettings() populates the actual values.
@@ -55,6 +56,17 @@ struct IOSAIConfigPage: View {
             }
 
             if aiEnabled {
+                Section("Onboarding Rollout") {
+                    Toggle("Enable Onboard AI MVP", isOn: $onboardAIMVPEnabled)
+                        .onChange(of: onboardAIMVPEnabled) { _, newValue in
+                            let raw = newValue ? "true" : "false"
+                            UserDefaults.standard.set(newValue, forKey: OnboardAIFeatureFlag.onboardingMVP)
+                            saveSetting(OnboardAIFeatureFlag.onboardingMVP, value: raw)
+                        }
+                } footer: {
+                    Text("Feature flag: \(OnboardAIFeatureFlag.onboardingMVP). Turn on to show the local AI onboarding entry on first-run flow.")
+                }
+
                 Section("Model Selection") {
                     ForEach(modelOptions, id: \.0) { option in
                         Button {
@@ -195,6 +207,9 @@ struct IOSAIConfigPage: View {
         aiEnabled = (map["ai_enabled"] ?? "true") == "true"
         selectedModel = map["ai_model"] ?? "foundation"
         aiLanguage = map["ai_language"] ?? "en"
+        let aiMVPSetting = map[OnboardAIFeatureFlag.onboardingMVP] ?? (UserDefaults.standard.bool(forKey: OnboardAIFeatureFlag.onboardingMVP) ? "true" : "false")
+        onboardAIMVPEnabled = aiMVPSetting == "true"
+        UserDefaults.standard.set(onboardAIMVPEnabled, forKey: OnboardAIFeatureFlag.onboardingMVP)
         checkAvailability()
     }
 
