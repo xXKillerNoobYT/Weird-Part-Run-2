@@ -719,7 +719,39 @@ struct AuthServiceTests {
         }
     }
 
-    // MARK: - PIN Change + Re-key
+    // MARK: - PIN Change + SQLCipher
+
+    @Test("changePin keeps DB openable with device bootstrap key after restart")
+    func testChangePinKeepsBootstrapKeyAfterRestart() throws {
+        AuthService.resetAllLoginAttempts()
+
+        let tmpDir = NSTemporaryDirectory()
+        let dbPath = (tmpDir as NSString).appendingPathComponent("wp_pin_restart_test_\(UUID().uuidString).sqlite")
+        defer {
+            try? FileManager.default.removeItem(atPath: dbPath)
+            try? FileManager.default.removeItem(atPath: dbPath + "-wal")
+            try? FileManager.default.removeItem(atPath: dbPath + "-shm")
+        }
+
+        let bootstrapKeyHex = CipherKeyManager.deriveKey(
+            pin: "device-bootstrap",
+            salt: Data(repeating: 0x34, count: 32)
+        )
+        let db = try AppDatabase.openEncryptedDatabase(atPath: dbPath, keyHex: bootstrapKeyHex)
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
+        let userId = try #require(seed.user?.id)
+
+        #expect(try auth.changePin(userId: userId, oldPin: "1234", newPin: "9876"))
+        try (db.writer as? DatabasePool)?.close()
+
+        let reopened = try AppDatabase.openEncryptedDatabase(atPath: dbPath, keyHex: bootstrapKeyHex)
+        let reopenedAuth = AuthService(db: reopened)
+        let authResult = try reopenedAuth.authenticateByPin(userId: userId, pin: "9876")
+        try (reopened.writer as? DatabasePool)?.close()
+
+        #expect(authResult.success)
+    }
 
     @Test("testPINChangeRekeysDB — old key fails, new key works, rows preserved")
     func testPINChangeRekeysDB() throws {

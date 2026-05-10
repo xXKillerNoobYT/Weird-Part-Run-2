@@ -163,6 +163,60 @@ struct AppDatabaseCipherTests {
         #expect(encCatCount == plainCatCount, "part_categories row count must match")
     }
 
+    @Test("testOlderPlaintextSchemaMigratesBySharedColumns — missing current columns use defaults")
+    func testOlderPlaintextSchemaMigratesBySharedColumns() throws {
+        let path = tmpPath("older-schema")
+        defer { cleanup(path) }
+
+        let legacyDB = try DatabaseQueue(path: path)
+        try legacyDB.write { db in
+            try db.execute(sql: """
+                CREATE TABLE settings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    key TEXT NOT NULL UNIQUE,
+                    value TEXT
+                )
+            """)
+            try db.execute(sql: """
+                INSERT INTO settings (key, value)
+                VALUES ('legacy_setting', 'legacy_value')
+            """)
+            try db.execute(sql: """
+                CREATE TABLE part_categories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    description TEXT
+                )
+            """)
+            try db.execute(sql: """
+                INSERT INTO part_categories (name, description)
+                VALUES ('LegacyCat', 'legacy category row')
+            """)
+        }
+        try legacyDB.close()
+
+        let salt = Data(repeating: 0x66, count: 32)
+        let keyHex = CipherKeyManager.deriveKey(pin: "5555", salt: salt)
+        try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
+
+        let encDB = try AppDatabase.openEncryptedDatabase(atPath: path, keyHex: keyHex)
+        let legacySetting: String? = try encDB.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT value FROM settings WHERE key = 'legacy_setting'")
+        }
+        let legacyCategory: Row? = try encDB.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT name, description, sort_order, is_active
+                FROM part_categories
+                WHERE name = 'LegacyCat'
+            """)
+        }
+
+        #expect(legacySetting == "legacy_value")
+        #expect(legacyCategory?["description"] == "legacy category row")
+        #expect((legacyCategory?["sort_order"] as Int?) == 0)
+        #expect((legacyCategory?["is_active"] as Int?) == 1)
+    }
+
     @Test("testIdempotencyAlreadyEncryptedSkipsMigration — second call is a no-op")
     func testIdempotencyAlreadyEncryptedSkipsMigration() throws {
         let path = tmpPath("idempotent")

@@ -684,32 +684,23 @@ public final class AuthService: Sendable {
 
     // MARK: - PIN Change
 
-    /// Change a user's PIN and re-key the encrypted database.
+    /// Change a user's PIN.
     ///
     /// Verifies the old PIN before making any changes. On success:
-    /// 1. If an encrypted `DatabasePool` is provided, runs `PRAGMA rekey` to
-    ///    re-encrypt the database with the key derived from the new PIN + device salt.
-    /// 2. Updates the user's `pin_hash` and `pin_salt` to the new PIN.
+    /// 1. Updates the user's `pin_hash` and `pin_salt` to the new PIN.
     ///
-    /// **Important — `pool` parameter**: Always pass the production `DatabasePool`
-    /// (available via `AppCore.db?.writer as? DatabasePool`) so the SQLCipher re-key
-    /// runs atomically alongside the PIN-hash update.  Omitting `pool` (passing `nil`)
-    /// is only acceptable during unit tests that use in-memory `DatabaseQueue`s, which
-    /// do not require encryption.  If `pool` is `nil` in a production context, the
-    /// user's PIN hash is updated but the database remains encrypted with the old key —
-    /// this will prevent the app from opening the DB after a restart.
+    /// The SQLCipher app database remains encrypted with the device bootstrap key.
+    /// Re-keying it to a per-user PIN would make the next launch fail unless startup
+    /// had a pre-open unlock flow that can select the current DB key before login.
     ///
     /// - Parameters:
     ///   - userId: The user whose PIN is being changed.
     ///   - oldPin: The current PIN (must authenticate successfully).
     ///   - newPin: The new PIN (4–8 digits, same rules as `createUser`).
-    ///   - pool: The open encrypted `DatabasePool` for the SQLCipher re-key, or `nil`
-    ///           for in-memory / test databases that do not use encryption.
     /// - Throws: `AuthError.invalidPin` if `oldPin` is wrong.
     ///           `AuthError.requiredFieldEmpty` if `newPin` is empty.
-    ///           Rethrows GRDB / SQLCipher errors from `PRAGMA rekey`.
     @discardableResult
-    public func changePin(userId: Int64, oldPin: String, newPin: String, pool: DatabasePool? = nil) throws -> Bool {
+    public func changePin(userId: Int64, oldPin: String, newPin: String) throws -> Bool {
         // Validate new PIN.
         let trimmed = newPin.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -723,18 +714,6 @@ public final class AuthService: Sendable {
         let authResult = try authenticateByPin(userId: userId, pin: oldPin)
         guard authResult.success else {
             throw AuthError.invalidPin(authResult.message)
-        }
-
-        // Re-key the encrypted database first (before persisting the PIN hash).
-        // If re-key succeeds, we then persist the new PIN hash — this ordering
-        // ensures failure-atomicity: a re-key failure leaves the PIN hash unchanged
-        // and the DB still openable with the old key.  A PIN hash write failure
-        // after a successful re-key is extremely unlikely (the connection is
-        // already proven open), but if it occurs the user retains the old PIN
-        // credentials and should retry.
-        if let pool {
-            let newKeyHex = try CipherKeyManager.shared.deriveKeyHex(pin: trimmed)
-            try AppDatabase.rekey(pool: pool, newKeyHex: newKeyHex)
         }
 
         // Persist new PIN hash using the trimmed (normalised) PIN so PIN validation

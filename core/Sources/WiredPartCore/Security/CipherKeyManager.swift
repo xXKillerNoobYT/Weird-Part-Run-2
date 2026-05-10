@@ -12,7 +12,8 @@ import os.log
 /// the database page key.
 ///
 /// - The **salt** ties the key to this specific device (cross-device rainbow tables useless).
-/// - The **PIN** means a PIN change can re-key the database (`PRAGMA rekey`).
+/// - The **PIN** can be used for explicit re-key operations if the app adds a
+///   pre-open unlock flow. Normal user PIN changes do not re-key the app DB.
 /// - The derived passphrase material is never stored — it is re-created each time
 ///   from PIN + salt.
 ///

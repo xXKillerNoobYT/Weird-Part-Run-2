@@ -168,6 +168,8 @@ extension AppDatabase {
                 ))
 
                 // Copy data for every table that exists in both the old and new DB.
+                // Explicit intersecting columns let older plaintext schemas import into
+                // the current schema while newer columns take their migration defaults.
                 // INSERT OR REPLACE handles rows that the migrator may have seeded.
                 //
                 // Table names come from sqlite_master on our own database files, so they are
@@ -180,14 +182,23 @@ extension AppDatabase {
                     guard table.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.union(.init(charactersIn: "_")).contains($0) }) else {
                         continue
                     }
-                    // Quote the identifier to handle any reserved words (still safe after validation).
-                    let q = "\"\(table)\""
-                    try db.execute(sql: "INSERT OR REPLACE INTO main.\(q) SELECT * FROM old_db.\(q)")
+                    let oldColumns = try tableColumns(db, schema: "old_db", table: table)
+                    let newColumns = try tableColumns(db, schema: "main", table: table)
+                    let oldColumnSet = Set(oldColumns)
+                    let columnsToCopy = newColumns.filter { oldColumnSet.contains($0) }
+                    guard !columnsToCopy.isEmpty else {
+                        throw CipherMigrationError.noSharedColumns(table)
+                    }
+
+                    // Quote identifiers to handle any reserved words (still safe after validation).
+                    let q = quotedIdentifier(table)
+                    let columnList = columnsToCopy.map(quotedIdentifier).joined(separator: ", ")
+                    try db.execute(sql: "INSERT OR REPLACE INTO main.\(q) (\(columnList)) SELECT \(columnList) FROM old_db.\(q)")
 
                     // --- Step 3: Verify row counts ---
                     let oldCount = (try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM old_db.\(q)")) ?? 0
                     let newCount = (try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM main.\(q)")) ?? 0
-                    if oldCount != newCount {
+                    if newCount < oldCount {
                         mismatchedTables.append(table)
                     }
                 }
@@ -302,6 +313,17 @@ extension AppDatabase {
             throw CipherMigrationError.invalidKeyMaterial
         }
     }
+
+    private static func tableColumns(_ db: Database, schema: String, table: String) throws -> [String] {
+        guard schema == "main" || schema == "old_db" else {
+            throw CipherMigrationError.invalidSchemaName(schema)
+        }
+        return try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('\(table)', '\(schema)') ORDER BY cid")
+    }
+
+    private static func quotedIdentifier(_ value: String) -> String {
+        "\"\(value)\""
+    }
 }
 
 // MARK: - CipherMigrationError
@@ -313,6 +335,10 @@ public enum CipherMigrationError: Error, Sendable {
     case rowCountMismatch([String])
     /// The passphrase material must be a 64-character hex digest.
     case invalidKeyMaterial
+    /// A source table and destination table had no columns in common.
+    case noSharedColumns(String)
+    /// Internal guard against unsupported schema interpolation.
+    case invalidSchemaName(String)
 }
 
 extension CipherMigrationError: LocalizedError {
@@ -326,6 +352,10 @@ extension CipherMigrationError: LocalizedError {
             return "Row-count mismatch after import for tables: \(tables.joined(separator: ", "))"
         case .invalidKeyMaterial:
             return "Invalid SQLCipher key material."
+        case .noSharedColumns(let table):
+            return "No shared columns while importing table: \(table)"
+        case .invalidSchemaName(let schema):
+            return "Invalid schema name: \(schema)"
         }
     }
 }

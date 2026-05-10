@@ -89,10 +89,10 @@ final class AppCore: ObservableObject {
 
                 let database: AppDatabase
                 do {
-                    // SQLCipher: derive a device-bound bootstrap key from the Keychain salt.
+                    // SQLCipher: derive a device-bound bootstrap key from the Keychain.
                     // This key never changes unless the Keychain is wiped (device reset).
-                    // When a user changes their PIN, `AuthService.changePin` re-keys the pool
-                    // from this bootstrap key to a PIN+salt key via `PRAGMA rekey`.
+                    // User PIN changes update authentication credentials only; the app DB
+                    // stays on this device key so startup can always open it before login.
                     //
                     // Migration path: if the DB file is still plaintext (pre-SQLCipher binary),
                     // `migratePlaintextDBIfNeeded` converts it in-place before opening.
@@ -458,8 +458,8 @@ final class AppCore: ObservableObject {
     /// It is a random 32-byte value generated on first launch and stored in the
     /// Keychain with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`.
     ///
-    /// When a user later changes their PIN, `changePinAndRekey` re-keys the pool
-    /// from this bootstrap key to a PIN+salt key (`PRAGMA rekey`).
+    /// User PIN changes do not re-key the app database. Startup must open the DB
+    /// before any user can enter a PIN, so the persistent DB key remains device-bound.
     nonisolated static func deviceBootstrapKeyHex() throws -> String {
         let service = "com.wiredpart.dbcipher.bootstrap-key"
         let account = "device-bootstrap-key"
@@ -509,17 +509,13 @@ final class AppCore: ObservableObject {
         return keyData.map { String(format: "%02x", $0) }.joined()
     }
 
-    // MARK: - PIN Change with DB Re-key
+    // MARK: - PIN Change
 
-    /// Change a user's PIN and atomically re-key the encrypted database.
+    /// Change a user's PIN.
     ///
-    /// Wraps `AuthService.changePin` and passes the open `DatabasePool` so
-    /// SQLCipher's `PRAGMA rekey` runs before the PIN-hash update is persisted.
-    /// After this call, the database can only be opened with the new PIN+salt key.
-    ///
-    /// - Note: After a successful re-key, the device bootstrap key no longer works.
-    ///         Subsequent app launches require PIN entry to derive the new key.
-    ///         This is the intended behavior for the PIN+salt security tier.
+    /// The SQLCipher database remains encrypted with the device bootstrap key.
+    /// Re-keying to a per-user PIN would require a pre-open unlock flow on startup,
+    /// which this app does not have.
     ///
     /// - Parameters:
     ///   - userId: The ID of the authenticated user.
@@ -527,22 +523,13 @@ final class AppCore: ObservableObject {
     ///   - newPin: The replacement PIN (4–8 digits).
     /// - Returns: nil on success, or a user-friendly error string.
     func changePinAndRekey(userId: Int64, oldPin: String, newPin: String) async -> String? {
-        guard let authService, let db else { return "App not ready. Please wait." }
-        // Extract the pool on MainActor before entering the detached task so we can
-        // pass a concrete Sendable type rather than `any DatabaseWriter`.
-        // Fail fast if the writer isn't a DatabasePool — this would mean the app was
-        // bootstrapped without encryption, which is a programming error in production.
-        guard let pool = db.writer as? DatabasePool else {
-            return "Unable to change PIN at this time. Please restart the app and try again, or contact support if the issue persists."
-        }
+        guard let authService else { return "App not ready. Please wait." }
         do {
             try await Task.detached(priority: .userInitiated) {
-                // `changePin` verifies the old PIN, re-keys the pool, then updates the hash.
                 try authService.changePin(
                     userId: userId,
                     oldPin: oldPin,
-                    newPin: newPin,
-                    pool: pool
+                    newPin: newPin
                 )
             }.value
             return nil
