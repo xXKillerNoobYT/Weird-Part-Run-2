@@ -210,6 +210,11 @@ extension AppDatabase {
                     try db.execute(sql: "INSERT OR REPLACE INTO main.\(q) (\(columnList)) SELECT \(columnList) FROM old_db.\(q)")
 
                     // --- Step 3: Verify row counts ---
+                    // We check newCount < oldCount rather than != because the migrator
+                    // may have pre-seeded default rows in the encrypted DB (e.g. settings).
+                    // INSERT OR REPLACE cannot create duplicates, so newCount > oldCount is
+                    // expected when seeded rows don't conflict with imported data.
+                    // Only newCount < oldCount indicates genuine data loss.
                     let oldCount = (try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM old_db.\(q)")) ?? 0
                     let newCount = (try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM main.\(q)")) ?? 0
                     if newCount < oldCount {
@@ -334,7 +339,14 @@ extension AppDatabase {
         guard schema == "main" || schema == "old_db" else {
             throw CipherMigrationError.invalidSchemaName(schema)
         }
-        return try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('\(table)', '\(schema)') ORDER BY cid")
+        // Use GRDB parameter binding for both `table` and `schema` so no string
+        // is ever interpolated directly into SQL. `pragma_table_info(?, ?)` is a
+        // SQLite table-valued function that accepts bound arguments.
+        return try String.fetchAll(
+            db,
+            sql: "SELECT name FROM pragma_table_info(?, ?) ORDER BY cid",
+            arguments: [table, schema]
+        )
     }
 
     private static func quotedIdentifier(_ value: String) -> String {
