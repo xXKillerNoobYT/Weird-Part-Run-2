@@ -134,7 +134,13 @@ extension AppDatabase {
 
                 // Re-enable FK checks unconditionally when this closure exits,
                 // regardless of whether DETACH or any subsequent step throws.
-                defer { try? db.execute(sql: "PRAGMA foreign_keys = ON") }
+                defer {
+                    do {
+                        try db.execute(sql: "PRAGMA foreign_keys = ON")
+                    } catch {
+                        Self.cipherLogger.error("Failed to re-enable foreign_keys after import: \(error.localizedDescription, privacy: .public)")
+                    }
+                }
 
                 // Attach old plaintext DB. SQLCipher uses KEY '' for unencrypted attachments.
                 try db.execute(

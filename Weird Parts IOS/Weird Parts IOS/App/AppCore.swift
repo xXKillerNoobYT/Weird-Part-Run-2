@@ -534,7 +534,7 @@ final class AppCore: ObservableObject {
         // Fail fast if the writer isn't a DatabasePool — this would mean the app was
         // bootstrapped without encryption, which is a programming error in production.
         guard let pool = db.writer as? DatabasePool else {
-            return "Database configuration error: encrypted pool is required for PIN changes."
+            return "Unable to change PIN at this time. Please restart the app and try again, or contact support if the issue persists."
         }
         do {
             try await Task.detached(priority: .userInitiated) {

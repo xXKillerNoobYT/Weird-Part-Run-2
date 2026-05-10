@@ -79,7 +79,9 @@ public final class CipherKeyManager: Sendable {
             if let existing = readSaltFromKeychain() {
                 return existing
             }
-            throw error
+            // Both the write and the follow-up re-read failed — surface a combined error.
+            Self.logger.error("CipherKeyManager: salt write raced (duplicate), and re-read also failed: \(error.localizedDescription, privacy: .public)")
+            throw CipherKeyError.keychainAccessFailed(errSecIO)
         }
     }
 
