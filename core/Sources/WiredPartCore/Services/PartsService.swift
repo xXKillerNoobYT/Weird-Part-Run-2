@@ -11,9 +11,11 @@ import GRDB
 /// Ported from: Parts & Inventory feature area (Phases 2, 2.5, 3.5, 16)
 public final class PartsService: Sendable {
     private let db: AppDatabase
+    private let auth: AuthService
 
-    public init(db: AppDatabase) {
+    public init(db: AppDatabase, auth: AuthService) {
         self.db = db
+        self.auth = auth
     }
 
     // MARK: - Result Types
@@ -335,7 +337,7 @@ public final class PartsService: Sendable {
 
     // MARK: - Errors
 
-    public enum PartsError: Error, Sendable {
+    public enum PartsError: Error, Sendable, Equatable {
         case categoryNotFound(Int64)
         case styleNotFound(Int64)
         case typeNotFound(Int64)
@@ -348,6 +350,7 @@ public final class PartsService: Sendable {
         case insufficientStock(available: Int, requested: Int)
         case insufficientReturns(available: Int, requested: Int)
         case invalidInput(String)
+        case insufficientPermissions(required: String)
     }
 
     // =========================================================================
@@ -3934,7 +3937,16 @@ public final class PartsService: Sendable {
     }
 
     /// Approve a recommendation — applies the new values to location_stock_targets.
-    public func approveRecommendation(id: Int64, userId: Int64) throws {
+    ///
+    /// - Parameters:
+    ///   - id: The `target_recommendations.id` to approve.
+    ///   - byUserId: The user performing the approval. Must hold the
+    ///     `forecasting.approve_recommendation` permission.
+    /// - Throws: `PartsError.insufficientPermissions` if the user lacks permission.
+    public func approveRecommendation(id: Int64, byUserId: Int64) throws {
+        guard try auth.hasPermission(byUserId, permissionKey: "forecasting.approve_recommendation") else {
+            throw PartsError.insufficientPermissions(required: "forecasting.approve_recommendation")
+        }
         try db.writer.write { dbConn in
             guard let rec = try TargetRecommendation.fetchOne(dbConn, key: id),
                   rec.status == "pending" else { return }
@@ -3970,12 +3982,23 @@ public final class PartsService: Sendable {
                 UPDATE target_recommendations SET
                     status = 'approved', approved_by = ?, approved_at = datetime('now')
                 WHERE id = ?
-                """, arguments: [userId, id])
+                """, arguments: [byUserId, id])
         }
     }
 
     /// Dismiss a recommendation with required reason.
-    public func dismissRecommendation(id: Int64, userId: Int64, reason: String) throws {
+    ///
+    /// - Parameters:
+    ///   - id: The `target_recommendations.id` to dismiss.
+    ///   - byUserId: The user performing the dismissal. Must hold the
+    ///     `forecasting.dismiss_recommendation` permission.
+    ///   - reason: Non-empty reason string stored in `dismissed_reason`.
+    /// - Throws: `PartsError.insufficientPermissions` if the user lacks permission.
+    /// - Throws: `PartsError.invalidInput` if `reason` is blank.
+    public func dismissRecommendation(id: Int64, byUserId: Int64, reason: String) throws {
+        guard try auth.hasPermission(byUserId, permissionKey: "forecasting.dismiss_recommendation") else {
+            throw PartsError.insufficientPermissions(required: "forecasting.dismiss_recommendation")
+        }
         guard !reason.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw PartsError.invalidInput("Dismiss reason is required")
         }
@@ -3984,7 +4007,7 @@ public final class PartsService: Sendable {
                 UPDATE target_recommendations SET
                     status = 'dismissed', dismissed_by = ?, dismissed_reason = ?
                 WHERE id = ? AND status = 'pending'
-                """, arguments: [userId, reason, id])
+                """, arguments: [byUserId, reason, id])
         }
     }
 

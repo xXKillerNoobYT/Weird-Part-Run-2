@@ -988,7 +988,7 @@ struct PartsServiceInventoryTests {
             recommendedMin: 3, recommendedTarget: 8, recommendedMax: 15
         )
 
-        try env.parts.approveRecommendation(id: recId, userId: env.adminUserId)
+        try env.parts.approveRecommendation(id: recId, byUserId: env.adminUserId)
 
         let row = try env.db.writer.read { db in
             try Row.fetchOne(db, sql: """
@@ -1015,7 +1015,7 @@ struct PartsServiceInventoryTests {
         )
         let recId = try insertPendingRecommendation(env, partId: partId)
 
-        try env.parts.approveRecommendation(id: recId, userId: env.adminUserId)
+        try env.parts.approveRecommendation(id: recId, byUserId: env.adminUserId)
 
         let row = try env.db.writer.read { db in
             try Row.fetchOne(db, sql: """
@@ -1038,7 +1038,7 @@ struct PartsServiceInventoryTests {
         let recId = try insertPendingRecommendation(env, partId: partId)
 
         let reason = "We are overstocked this quarter"
-        try env.parts.dismissRecommendation(id: recId, userId: env.adminUserId, reason: reason)
+        try env.parts.dismissRecommendation(id: recId, byUserId: env.adminUserId, reason: reason)
 
         let row = try env.db.writer.read { db in
             try Row.fetchOne(db, sql: """
@@ -1059,7 +1059,7 @@ struct PartsServiceInventoryTests {
         let recId = try insertPendingRecommendation(env, partId: partId)
 
         try env.parts.dismissRecommendation(
-            id: recId, userId: env.adminUserId, reason: "Not needed right now"
+            id: recId, byUserId: env.adminUserId, reason: "Not needed right now"
         )
 
         let row = try env.db.writer.read { db in
@@ -1070,5 +1070,66 @@ struct PartsServiceInventoryTests {
         let r = try #require(row)
         #expect((r["dismissed_by"] as Int64?) == env.adminUserId,
                 "dismissed_by must record the userId passed to dismissRecommendation")
+    }
+
+    // MARK: - Permission gates (#367)
+
+    @Test("approveRecommendation throws insufficientPermissions for user without forecasting.approve_recommendation")
+    func test_approveRecommendation_rejectsUnprivilegedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "GateApproveRejectCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "GateApproveRejectPart", categoryId: catId)
+        let recId = try insertPendingRecommendation(env, partId: partId)
+
+        // Create a plain user with no hats and therefore no forecasting permissions
+        let unprivilegedId = try env.auth.createUser(displayName: "NoPermUser", pin: "9999")
+
+        #expect(throws: PartsService.PartsError.insufficientPermissions(required: "forecasting.approve_recommendation")) {
+            try env.parts.approveRecommendation(id: recId, byUserId: unprivilegedId)
+        }
+    }
+
+    @Test("approveRecommendation succeeds for admin user who has forecasting.approve_recommendation")
+    func test_approveRecommendation_succeedsWithPermission() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "GateApproveOKCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "GateApproveOKPart", categoryId: catId)
+        try env.parts.setLocationStockTarget(
+            partId: partId, locationType: "warehouse", locationId: 1,
+            minStock: 0, targetStock: 0, maxStock: 0
+        )
+        let recId = try insertPendingRecommendation(env, partId: partId)
+
+        // Admin has forecasting.approve_recommendation seeded by defaultPermissionMap
+        #expect(throws: Never.self) {
+            try env.parts.approveRecommendation(id: recId, byUserId: env.adminUserId)
+        }
+    }
+
+    @Test("dismissRecommendation throws insufficientPermissions for user without forecasting.dismiss_recommendation")
+    func test_dismissRecommendation_rejectsUnprivilegedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "GateDismissRejectCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "GateDismissRejectPart", categoryId: catId)
+        let recId = try insertPendingRecommendation(env, partId: partId)
+
+        let unprivilegedId = try env.auth.createUser(displayName: "NoDismissUser", pin: "8888")
+
+        #expect(throws: PartsService.PartsError.insufficientPermissions(required: "forecasting.dismiss_recommendation")) {
+            try env.parts.dismissRecommendation(id: recId, byUserId: unprivilegedId, reason: "Budget cut")
+        }
+    }
+
+    @Test("dismissRecommendation succeeds for admin user who has forecasting.dismiss_recommendation")
+    func test_dismissRecommendation_succeedsWithPermission() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "GateDismissOKCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "GateDismissOKPart", categoryId: catId)
+        let recId = try insertPendingRecommendation(env, partId: partId)
+
+        // Admin has forecasting.dismiss_recommendation seeded by defaultPermissionMap
+        #expect(throws: Never.self) {
+            try env.parts.dismissRecommendation(id: recId, byUserId: env.adminUserId, reason: "Not needed")
+        }
     }
 }
