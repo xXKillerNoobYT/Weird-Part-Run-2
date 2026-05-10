@@ -323,6 +323,48 @@ struct SettingsServiceTests {
         #expect(fetched?.companyName == "Updated LLC")
     }
 
+    @Test("creating second active business profile fails without adding another active row")
+    func testCreateSecondActiveBusinessProfileFails() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        _ = try svc.createBusinessProfile(BusinessProfile(companyName: "First LLC", isActive: 1))
+
+        #expect(throws: SettingsService.SettingsError.activeBusinessProfileExists) {
+            _ = try svc.createBusinessProfile(BusinessProfile(companyName: "Second LLC", isActive: 1))
+        }
+
+        let activeCount = try db.writer.read { dbConnection in
+            try Int.fetchOne(
+                dbConnection,
+                sql: "SELECT COUNT(*) FROM business_profiles WHERE is_active = 1"
+            ) ?? 0
+        }
+        #expect(activeCount <= 1)
+    }
+
+    @Test("activating a second business profile fails without adding another active row")
+    func testActivateSecondBusinessProfileFails() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        _ = try svc.createBusinessProfile(BusinessProfile(companyName: "Active LLC", isActive: 1))
+        var inactive = try svc.createBusinessProfile(BusinessProfile(companyName: "Inactive LLC", isActive: 0))
+        inactive.isActive = 1
+
+        #expect(throws: SettingsService.SettingsError.activeBusinessProfileExists) {
+            _ = try svc.updateBusinessProfile(inactive)
+        }
+
+        let activeCount = try db.writer.read { dbConnection in
+            try Int.fetchOne(
+                dbConnection,
+                sql: "SELECT COUNT(*) FROM business_profiles WHERE is_active = 1"
+            ) ?? 0
+        }
+        #expect(activeCount <= 1)
+    }
+
     // MARK: - Backup Info
 
     @Test("getBackupInfo returns zero count on fresh DB")

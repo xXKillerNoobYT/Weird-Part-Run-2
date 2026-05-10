@@ -350,6 +350,9 @@ public final class SettingsService: Sendable {
     public func createBusinessProfile(_ profile: BusinessProfile) throws -> BusinessProfile {
         var record = profile
         try db.writer.write { dbConnection in
+            if record.isActive == 1 {
+                try ensureNoOtherActiveBusinessProfile(dbConnection)
+            }
             try record.insert(dbConnection)
         }
         return record
@@ -358,6 +361,9 @@ public final class SettingsService: Sendable {
     /// Update an existing business profile.
     public func updateBusinessProfile(_ profile: BusinessProfile) throws -> BusinessProfile {
         try db.writer.write { dbConnection in
+            if profile.isActive == 1 {
+                try ensureNoOtherActiveBusinessProfile(dbConnection, excludingID: profile.id)
+            }
             try profile.update(dbConnection)
         }
         return profile
@@ -792,11 +798,32 @@ public final class SettingsService: Sendable {
 
     public enum SettingsError: Error, Sendable, Equatable {
         case companyProfileNotFound(Int64)
+        case activeBusinessProfileExists
         case requiredFieldEmpty(String)
         case invalidValue(String)
     }
 
     // MARK: - Helpers
+
+    private func ensureNoOtherActiveBusinessProfile(_ dbConnection: Database, excludingID: Int64? = nil) throws {
+        let activeCount: Int
+        if let excludingID {
+            activeCount = try Int.fetchOne(
+                dbConnection,
+                sql: "SELECT COUNT(*) FROM business_profiles WHERE is_active = 1 AND id != ?",
+                arguments: [excludingID]
+            ) ?? 0
+        } else {
+            activeCount = try Int.fetchOne(
+                dbConnection,
+                sql: "SELECT COUNT(*) FROM business_profiles WHERE is_active = 1"
+            ) ?? 0
+        }
+
+        if activeCount > 0 {
+            throw SettingsError.activeBusinessProfileExists
+        }
+    }
 
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)

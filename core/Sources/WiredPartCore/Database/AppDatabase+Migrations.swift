@@ -114,6 +114,7 @@ extension AppDatabase {
         registerMigration075CompanionFeedbackNullableSuggestionId(&migrator)
         registerMigration076StockMovementsCompositeIndex(&migrator)
         registerMigration077VehicleIssueReports(&migrator)
+        registerMigration078SingleActiveBusinessProfile(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4960,6 +4961,29 @@ extension AppDatabase {
             }
             try db.create(index: "idx_vehicle_issue_reports_vehicle", on: "vehicle_issue_reports", columns: ["vehicle_id"])
             try db.create(index: "idx_vehicle_issue_reports_status", on: "vehicle_issue_reports", columns: ["status"])
+        }
+    }
+
+    private static func registerMigration078SingleActiveBusinessProfile(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("078_single_active_business_profile") { db in
+            try db.execute(sql: """
+                UPDATE business_profiles
+                SET is_active = 0, updated_at = datetime('now')
+                WHERE is_active = 1
+                  AND id NOT IN (
+                      SELECT id
+                      FROM business_profiles
+                      WHERE is_active = 1
+                      ORDER BY id
+                      LIMIT 1
+                  )
+                """)
+
+            try db.execute(sql: """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_business_profiles_single_active
+                ON business_profiles (is_active)
+                WHERE is_active = 1
+                """)
         }
     }
 
