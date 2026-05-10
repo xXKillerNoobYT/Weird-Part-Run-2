@@ -4964,13 +4964,20 @@ extension AppDatabase {
         }
     }
 
-    // MARK: - Migration 078: tool_movements composite index
+    // MARK: - Migration 078: tool_movements composite indexes
 
     private static func registerMigration078ToolMovementsIndex(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("078_tool_movements_index") { db in
+            // Covers tool-specific queries: WHERE tool_id = ? [AND movement_type = ?] ORDER BY created_at DESC
             try db.execute(sql: """
                 CREATE INDEX IF NOT EXISTS idx_tool_movements_tool
-                ON tool_movements (tool_id, movement_type)
+                ON tool_movements (tool_id, movement_type, deleted_at, created_at)
+                """)
+            // Covers movement-type-only queries (e.g. listCheckouts active:true, no toolId):
+            // WHERE movement_type = 'checkout' AND deleted_at IS NULL ORDER BY created_at DESC
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_tool_movements_type
+                ON tool_movements (movement_type, deleted_at, created_at)
                 """)
         }
     }
