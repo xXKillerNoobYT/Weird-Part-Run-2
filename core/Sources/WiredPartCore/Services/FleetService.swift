@@ -25,7 +25,7 @@ public final class FleetService: Sendable {
     // MARK: - Error Types
     // =========================================================================
 
-    public enum FleetError: Error, Sendable, Equatable {
+    public enum FleetError: LocalizedError, Sendable, Equatable {
         case vehicleNotFound(Int64)
         case userNotFound(Int64)
         case trailerNotFound(Int64)
@@ -34,6 +34,20 @@ public final class FleetService: Sendable {
         case requiredFieldEmpty(String)
         case invalidIssueReport(String)
         case insufficientPermissions(required: String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .vehicleNotFound(let id): "Vehicle #\(id) not found"
+            case .userNotFound(let id): "User #\(id) not found"
+            case .trailerNotFound(let id): "Trailer #\(id) not found"
+            case .invalidQuantity(let qty): "Invalid quantity: \(qty)"
+            case .invalidFuelLevel(let level): "Fuel level \(level) is out of range (must be 0.0–1.0)"
+            case .requiredFieldEmpty(let field): "Required field '\(field)' cannot be empty"
+            case .invalidIssueReport(let msg): msg
+            case .insufficientPermissions(let required):
+                "You don't have permission to perform this action (required: \(required))"
+            }
+        }
     }
 
     // =========================================================================

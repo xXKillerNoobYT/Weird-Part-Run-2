@@ -1163,4 +1163,33 @@ struct FleetServiceTests {
             )
         }
     }
+
+    @Test("addVehicleStockItem succeeds for a user with the Worker hat (has log_fleet)")
+    func testAddVehicleStockItem_workerCanAdd() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
+            vehicleNumber: "V-STK-WORKER", vehicleName: "Worker Truck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let workerId = try env.auth.createUser(displayName: "Worker User", pin: "5678")
+        // Assign the Worker hat via direct SQL (Worker hat includes log_fleet)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "INSERT INTO user_hats (user_id, hat_id, is_active) SELECT ?, id, 1 FROM hats WHERE name = 'Worker'",
+                arguments: [workerId]
+            )
+        }
+
+        // Workers have log_fleet — this must not throw
+        try env.fleet.addVehicleStockItem(
+            actorId: workerId,
+            vehicleId: vehicleId, partName: "Bolt", quantity: 10, stockType: "truck_stock"
+        )
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM vehicle_stock WHERE vehicle_id = ? AND part_name = 'Bolt'",
+                             arguments: [vehicleId]) ?? 0
+        }
+        #expect(count == 1, "Worker must be able to add stock items with log_fleet permission")
+    }
 }
