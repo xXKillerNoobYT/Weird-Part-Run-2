@@ -7,10 +7,14 @@ import os.log
 ///
 /// Key derivation: `SHA-256(pin.utf8 || salt)` where `salt` is 32 random bytes
 /// stored in the Keychain under `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`.
+/// The resulting hex string is passed to SQLCipher as passphrase material, so
+/// SQLCipher still applies its configured PBKDF2 work factor before deriving
+/// the database page key.
 ///
 /// - The **salt** ties the key to this specific device (cross-device rainbow tables useless).
 /// - The **PIN** means a PIN change can re-key the database (`PRAGMA rekey`).
-/// - The **raw key** is never stored — it is re-derived each time from PIN + salt.
+/// - The derived passphrase material is never stored — it is re-created each time
+///   from PIN + salt.
 ///
 /// Usage:
 /// ```swift
@@ -31,7 +35,7 @@ public final class CipherKeyManager: Sendable {
 
     /// Derive a 64-character hex key from a PIN string and this device's persisted salt.
     /// - Parameter pin: The user's plaintext PIN.
-    /// - Returns: 64-character lowercase hex string suitable for `PRAGMA key = "x'<key>'"`.
+    /// - Returns: 64-character lowercase hex string suitable as SQLCipher passphrase material.
     /// - Throws: `CipherKeyError.keychainAccessFailed` if the salt cannot be read/written.
     public func deriveKeyHex(pin: String) throws -> String {
         let salt = try loadOrCreateSalt()

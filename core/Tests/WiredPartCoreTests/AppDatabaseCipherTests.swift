@@ -126,11 +126,11 @@ struct AppDatabaseCipherTests {
                 VALUES ('cipher_migration_test', 'hello_option_b', 'test')
             """)
         }
-        // Insert a part_category (no FK dependency).
+        // Insert a part_category using the current migration schema (no FK dependency).
         try plainDB.writer.write { db in
             try db.execute(sql: """
-                INSERT INTO part_categories (name, icon, color, description)
-                VALUES ('MigrationTestCat', '⚙️', '#FF0000', 'cipher test row')
+                INSERT INTO part_categories (name, description, sort_order, is_active)
+                VALUES ('MigrationTestCat', 'cipher test row', 99, 1)
             """)
         }
         let plainSettingsCount = try plainDB.writer.read { db in

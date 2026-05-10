@@ -16,16 +16,12 @@ let package = Package(
         // the same `GRDB` product name — zero import-site changes across 300+ Swift files.
         // Closes CodeQL cleartext-storage-database alerts by encrypting the whole DB.
         //
-        // Pinned to 3.7.0: earlier releases (including 3.0.0) shipped GRDB source that
-        // references C stdlib functions (strcmp) without an explicit `import Darwin` guard
-        // on macOS.  In Swift 6 strict-module mode only the explicitly-imported C module
-        // (CSQLite) is in scope; Darwin is no longer implicitly available, so the build
-        // fails with "cannot find 'strcmp' in scope" in StatementAuthorizer.swift.
-        // 3.7.0 carries the necessary `#if os(Linux) import Glibc` guard which is
-        // sufficient on Linux; macOS builds rely on the Darwin module being transitively
-        // available through CSQLite, which works with the 3.7.0 sources.
-        // Package.resolved is committed to keep every environment on this exact revision.
-        .package(url: "https://github.com/duckduckgo/GRDB.swift", from: "3.7.0"),
+        // Pinned exactly to 2.4.2-1: this DDG SQLCipher tag imports string_h/Darwin for
+        // strcmp in StatementAuthorizer.swift and still builds GRDB against the bundled
+        // SQLCipher target. Later DDG v3.7.0 still fails macOS CLI `swift test` with
+        // "cannot find 'strcmp' in scope". Package.resolved is committed to keep every
+        // environment on this exact revision.
+        .package(url: "https://github.com/duckduckgo/GRDB.swift", exact: "2.4.2-1"),
     ],
     targets: [
         .target(

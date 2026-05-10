@@ -502,10 +502,9 @@ final class AppCore: ObservableObject {
             if rereadStatus == errSecSuccess, let data = existing as? Data, data.count == 32 {
                 return data.map { String(format: "%02x", $0) }.joined()
             }
-            // Re-read failed: fall through with the in-memory key (best-effort for this session).
+            throw CipherKeyError.keychainAccessFailed(rereadStatus)
         } else if addStatus != errSecSuccess {
-            // Non-fatal — key still in memory for this session.
-            // (Cannot use `logger` here — static nonisolated method.)
+            throw CipherKeyError.keychainAccessFailed(addStatus)
         }
         return keyData.map { String(format: "%02x", $0) }.joined()
     }
@@ -515,7 +514,7 @@ final class AppCore: ObservableObject {
     /// Change a user's PIN and atomically re-key the encrypted database.
     ///
     /// Wraps `AuthService.changePin` and passes the open `DatabasePool` so
-    /// SQLCipher's `PRAGMA rekey` runs in the same session as the PIN-hash update.
+    /// SQLCipher's `PRAGMA rekey` runs before the PIN-hash update is persisted.
     /// After this call, the database can only be opened with the new PIN+salt key.
     ///
     /// - Note: After a successful re-key, the device bootstrap key no longer works.

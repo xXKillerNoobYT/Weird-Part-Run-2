@@ -687,9 +687,9 @@ public final class AuthService: Sendable {
     /// Change a user's PIN and re-key the encrypted database.
     ///
     /// Verifies the old PIN before making any changes. On success:
-    /// 1. Updates the user's `pin_hash` and `pin_salt` to the new PIN.
-    /// 2. If an encrypted `DatabasePool` is provided, runs `PRAGMA rekey` to
+    /// 1. If an encrypted `DatabasePool` is provided, runs `PRAGMA rekey` to
     ///    re-encrypt the database with the key derived from the new PIN + device salt.
+    /// 2. Updates the user's `pin_hash` and `pin_salt` to the new PIN.
     ///
     /// **Important — `pool` parameter**: Always pass the production `DatabasePool`
     /// (available via `AppCore.db?.writer as? DatabasePool`) so the SQLCipher re-key

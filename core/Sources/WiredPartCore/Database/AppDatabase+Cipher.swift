@@ -13,14 +13,15 @@ extension AppDatabase {
     /// Open a file-based **encrypted** database using SQLCipher.
     ///
     /// The `keyHex` must be a 64-character lowercase hex string (32 bytes, i.e. a SHA-256
-    /// digest encoded as hex). SQLCipher accepts this via its `x'...'` hex notation.
+    /// digest encoded as hex). It is passed to SQLCipher as a passphrase so SQLCipher's
+    /// PBKDF2 key derivation still runs.
     ///
     /// All SQLCipher PRAGMAs are issued inside `prepareDatabase` — the first closure called
     /// before any schema I/O — guaranteeing the key is set before any page is read.
     ///
     /// - Parameters:
     ///   - path: Filesystem path for the database file.
-    ///   - keyHex: 64-char hex key derived from `CipherKeyManager.deriveKeyHex(pin:)`.
+    ///   - keyHex: 64-char hex passphrase material derived by `CipherKeyManager`.
     /// - Returns: An open, migrated `AppDatabase` wrapping an encrypted `DatabasePool`.
     /// - Throws: Rethrows GRDB/SQLCipher errors (wrong key → `SQLITE_NOTADB`).
     public static func openEncryptedDatabase(atPath path: String, keyHex: String) throws -> AppDatabase {
@@ -33,23 +34,18 @@ extension AppDatabase {
     /// Prefer `openEncryptedDatabase(atPath:keyHex:)` which additionally runs migrations.
     /// Call this directly only when you need a raw pool (e.g. for import operations).
     public static func makeEncryptedPool(path: String, keyHex: String) throws -> DatabasePool {
+        try validateCipherKeyHex(keyHex)
+
         var config = Configuration()
         config.foreignKeysEnabled = true
         config.prepareDatabase { db in
-            // Set the encryption key using SQLCipher's hex notation.
-            // `usePassphrase("x'<hex>'")` calls sqlite3_key_v2() with the raw bytes
-            // of the string; SQLCipher recognises the x'...' prefix and treats it as
-            // a 32-byte raw key, bypassing its internal PBKDF2.
+            // Set the encryption key as a SQLCipher passphrase. Do not use
+            // `x'<hex>'` raw-key notation here: raw keys bypass SQLCipher's KDF.
             //
-            // Security note: when `keyHex` is derived from a user PIN via
-            // CipherKeyManager (SHA-256(pin || salt)), SHA-256 is NOT a slow KDF —
-            // an attacker with the salt could brute-force short PINs quickly.
-            // The primary threat model here is casual physical access and
-            // data-at-rest exposure; for the device bootstrap key path the key
-            // is random 32 bytes (not PIN-derived), so no brute-force applies.
-            // If PIN brute-force resistance is required in the future, replace
-            // deriveKey(pin:salt:) with PBKDF2 or Argon2.
-            try db.usePassphrase("x'\(keyHex)'")
+            // `CipherKeyManager` first mixes the PIN with a device salt, then
+            // SQLCipher applies its configured PBKDF2 work factor to this value.
+            // For the device-bootstrap path, `keyHex` is random 32-byte material.
+            try db.usePassphrase(keyHex)
             // Use 4096-byte pages (SQLCipher default; good for mobile I/O).
             try db.execute(sql: "PRAGMA cipher_page_size = 4096")
             // WAL mode for concurrent reads.
@@ -82,7 +78,7 @@ extension AppDatabase {
     ///
     /// - Parameters:
     ///   - path: Canonical database file path.
-    ///   - keyHex: 64-char hex key for the destination encrypted database.
+    ///   - keyHex: 64-char hex passphrase material for the destination encrypted database.
     /// - Throws: Rethrows filesystem or SQLite errors.
     public static func migratePlaintextDBIfNeeded(atPath path: String, keyHex: String) throws {
         let fm = FileManager.default
@@ -286,15 +282,24 @@ extension AppDatabase {
     ///
     /// - Parameters:
     ///   - pool: An open, authenticated `DatabasePool`.
-    ///   - newKeyHex: 64-char hex string for the new passphrase.
+    ///   - newKeyHex: 64-char hex passphrase material for the new key.
     /// - Throws: Rethrows SQLite/SQLCipher errors.
     public static func rekey(pool: DatabasePool, newKeyHex: String) throws {
+        try validateCipherKeyHex(newKeyHex)
+
         // Use direct SQL interpolation rather than a bound parameter because
         // SQLite PRAGMA statements have limited support for positional bindings.
         // `newKeyHex` is always exactly 64 lowercase hex chars (SHA-256 output),
         // so there is no SQL-injection risk.
         try pool.writeWithoutTransaction { db in
-            try db.execute(sql: "PRAGMA rekey = \"x'\(newKeyHex)'\"")
+            try db.execute(sql: "PRAGMA rekey = '\(newKeyHex)'")
+        }
+    }
+
+    private static func validateCipherKeyHex(_ value: String) throws {
+        guard value.count == 64,
+              value.allSatisfy({ $0.isHexDigit }) else {
+            throw CipherMigrationError.invalidKeyMaterial
         }
     }
 }
@@ -306,6 +311,8 @@ public enum CipherMigrationError: Error, Sendable {
     case renameFailed(Error)
     /// One or more tables had a row-count mismatch after the import.
     case rowCountMismatch([String])
+    /// The passphrase material must be a 64-character hex digest.
+    case invalidKeyMaterial
 }
 
 extension CipherMigrationError: LocalizedError {
@@ -317,6 +324,8 @@ extension CipherMigrationError: LocalizedError {
             return "Atomic rename failed after SQLCipher import: \(underlying.localizedDescription)"
         case .rowCountMismatch(let tables):
             return "Row-count mismatch after import for tables: \(tables.joined(separator: ", "))"
+        case .invalidKeyMaterial:
+            return "Invalid SQLCipher key material."
         }
     }
 }
