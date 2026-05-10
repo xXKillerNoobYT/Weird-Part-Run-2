@@ -1,9 +1,12 @@
 import Foundation
 import GRDB
+import os.log
 
 // MARK: - AppDatabase + Cipher
 
 extension AppDatabase {
+
+    private static let cipherLogger = Logger(subsystem: "com.wiredpart.core", category: "AppDatabase+Cipher")
 
     // MARK: - Encrypted Pool Construction
 
@@ -87,8 +90,16 @@ extension AppDatabase {
             try probe.read { db in
                 _ = try Row.fetchOne(db, sql: "SELECT 1 FROM sqlite_master LIMIT 1")
             }
-            try probe.close()
+            // `close()` is best-effort here: we've already confirmed the file is
+            // plaintext. A close failure (e.g. transient FS flush error) must NOT
+            // cause us to skip migration — otherwise the DB stays unencrypted.
+            do {
+                try probe.close()
+            } catch {
+                Self.cipherLogger.warning("Probe close failed (continuing): \(error.localizedDescription, privacy: .public)")
+            }
         } catch {
+            // Opening or reading failed → file is already encrypted (or corrupt).
             return
         }
 
@@ -169,12 +180,13 @@ extension AppDatabase {
 
                 try db.execute(sql: "DETACH DATABASE old_db")
 
+                // Re-enable FK checks unconditionally before returning or throwing,
+                // so the connection is always left in a consistent state.
+                try db.execute(sql: "PRAGMA foreign_keys = ON")
+
                 if !mismatchedTables.isEmpty {
                     throw CipherMigrationError.rowCountMismatch(mismatchedTables)
                 }
-
-                // Re-enable FK checks.
-                try db.execute(sql: "PRAGMA foreign_keys = ON")
             }
 
             // --- Step 4: Stamp current schema version (data copy may have overwritten it) ---
@@ -205,6 +217,14 @@ extension AppDatabase {
             for suffix in ["-wal", "-shm"] { try? fm.removeItem(atPath: path + suffix) }
             try? fm.removeItem(atPath: bakPath)      // Remove stale backup if present.
             try fm.moveItem(atPath: path, toPath: bakPath)
+            // Touch the backup so the 7-day retention window is measured from the time
+            // of migration, not from the original DB file's last-modified timestamp.
+            // (POSIX rename preserves the source's mtime; we want "age since migration".)
+            do {
+                try fm.setAttributes([.modificationDate: Date()], ofItemAtPath: bakPath)
+            } catch {
+                Self.cipherLogger.warning("Failed to touch backup file (7-day window may be inaccurate): \(error.localizedDescription, privacy: .public)")
+            }
             try fm.moveItem(atPath: tempPath, toPath: path)
         } catch {
             // Rename failed — temp is orphaned; clean it up. Original is still at `path`.
