@@ -819,5 +819,88 @@ struct AuthServiceTests {
         #expect(countAfter == 0,
                 "softDeleteUser must cascade-deactivate all user_hats rows for the deleted user")
     }
+
+    // MARK: - Migration 078: forecasting permission backfill (#4258864571)
+
+    @Test("migration078 backfills forecasting permissions into existing Admin hat")
+    func testMigration078_backfillsForecastingPermissions_Admin() throws {
+        let db = try freshDB()
+        // freshDB runs all migrations including 078, so the Admin hat already has the keys.
+        // Verify they exist — this guards against regression where the migration is removed.
+        let adminApprove = try db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM hat_permissions hp
+                JOIN hats h ON h.id = hp.hat_id
+                WHERE h.name = 'Admin' AND hp.permission_key = 'forecasting.approve_recommendation'
+                """) ?? 0
+        }
+        let adminDismiss = try db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM hat_permissions hp
+                JOIN hats h ON h.id = hp.hat_id
+                WHERE h.name = 'Admin' AND hp.permission_key = 'forecasting.dismiss_recommendation'
+                """) ?? 0
+        }
+        #expect(adminApprove == 1, "Admin hat must have forecasting.approve_recommendation after migration 078")
+        #expect(adminDismiss == 1, "Admin hat must have forecasting.dismiss_recommendation after migration 078")
+    }
+
+    @Test("migration078 backfills forecasting permissions into existing Manager hat")
+    func testMigration078_backfillsForecastingPermissions_Manager() throws {
+        let db = try freshDB()
+        let managerApprove = try db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM hat_permissions hp
+                JOIN hats h ON h.id = hp.hat_id
+                WHERE h.name = 'Manager' AND hp.permission_key = 'forecasting.approve_recommendation'
+                """) ?? 0
+        }
+        let managerDismiss = try db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM hat_permissions hp
+                JOIN hats h ON h.id = hp.hat_id
+                WHERE h.name = 'Manager' AND hp.permission_key = 'forecasting.dismiss_recommendation'
+                """) ?? 0
+        }
+        #expect(managerApprove == 1, "Manager hat must have forecasting.approve_recommendation after migration 078")
+        #expect(managerDismiss == 1, "Manager hat must have forecasting.dismiss_recommendation after migration 078")
+    }
+
+    @Test("migration078 is idempotent — duplicate INSERT OR IGNORE does not create extra rows")
+    func testMigration078_isIdempotent() throws {
+        let db = try freshDB()
+        // Run the INSERT OR IGNORE statements a second time (simulating re-run)
+        try db.writer.write { dbConn in
+            for permKey in ["forecasting.approve_recommendation", "forecasting.dismiss_recommendation"] {
+                for hatName in ["Admin", "Manager"] {
+                    try dbConn.execute(
+                        sql: """
+                            INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+                            SELECT id, ? FROM hats WHERE name = ?
+                            """,
+                        arguments: [permKey, hatName]
+                    )
+                }
+            }
+        }
+        // Each (hat, key) pair must appear exactly once
+        let duplicates = try db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM (
+                    SELECT hp.hat_id, hp.permission_key, COUNT(*) AS cnt
+                    FROM hat_permissions hp
+                    JOIN hats h ON h.id = hp.hat_id
+                    WHERE h.name IN ('Admin', 'Manager')
+                      AND hp.permission_key IN (
+                          'forecasting.approve_recommendation',
+                          'forecasting.dismiss_recommendation'
+                      )
+                    GROUP BY hp.hat_id, hp.permission_key
+                    HAVING cnt > 1
+                )
+                """) ?? 0
+        }
+        #expect(duplicates == 0, "INSERT OR IGNORE must not create duplicate hat_permissions rows")
+    }
 }
 

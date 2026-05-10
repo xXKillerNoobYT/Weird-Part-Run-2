@@ -337,7 +337,7 @@ public final class PartsService: Sendable {
 
     // MARK: - Errors
 
-    public enum PartsError: Error, Sendable, Equatable {
+    public enum PartsError: Error, LocalizedError, Sendable, Equatable {
         case categoryNotFound(Int64)
         case styleNotFound(Int64)
         case typeNotFound(Int64)
@@ -351,6 +351,25 @@ public final class PartsService: Sendable {
         case insufficientReturns(available: Int, requested: Int)
         case invalidInput(String)
         case insufficientPermissions(required: String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .insufficientPermissions(let key):
+                return "You don't have permission to perform this action (\(key))."
+            case .categoryNotFound(let id):
+                return "Category \(id) not found."
+            case .partNotFound(let id):
+                return "Part \(id) not found."
+            case .supplierNotFound(let id):
+                return "Supplier \(id) not found."
+            case .insufficientStock(let available, let requested):
+                return "Insufficient stock: \(available) available, \(requested) requested."
+            case .invalidInput(let msg):
+                return msg
+            default:
+                return localizedDescription
+            }
+        }
     }
 
     // =========================================================================

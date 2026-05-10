@@ -843,11 +843,13 @@ struct PartsServiceInventoryTests {
 
         _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10, locationType: "warehouse", locationId: 1)
 
-        // Soft-delete the stock row directly
+        // Soft-delete the stock row directly — scope to the exact location row to prevent
+        // order-dependent state if other tests create additional stock rows for this part.
         try env.db.writer.write { db in
             try db.execute(sql: """
                 UPDATE stock SET deleted_at = datetime('now')
-                WHERE part_id = ? AND location_type = 'warehouse'
+                WHERE part_id = ? AND location_type = 'warehouse' AND location_id = 1
+                  AND deleted_at IS NULL
                 """, arguments: [partId])
         }
 
@@ -880,6 +882,14 @@ struct PartsServiceInventoryTests {
         // Insert movements via raw SQL so we can set backdated created_at.
         // First movement satisfies the "first_movement >= minDataDays" guard (10 > 7).
         // Consume movement gives a non-trivial ADU for the recommendation engine.
+        //
+        // created_at must be ISO 8601 with a T-separator (e.g. 2026-01-01T12:00:00Z)
+        // because generateDailyRecommendation parses MIN(created_at) via
+        // CoreFormatters.parseISO, which only accepts ISO-8601 format.
+        // SQLite's datetime('now') produces "YYYY-MM-DD HH:MM:SS" (space-separated),
+        // which parseISO cannot parse — so we compute the timestamps in Swift.
+        let receiveAt = CoreFormatters.iso8601.string(from: Date().addingTimeInterval(-10 * 86400))
+        let consumeAt = CoreFormatters.iso8601.string(from: Date().addingTimeInterval(-5 * 86400))
         try env.db.writer.write { db in
             try db.execute(sql: """
                 INSERT INTO stock_movements
@@ -887,16 +897,18 @@ struct PartsServiceInventoryTests {
                      to_location_type, to_location_id,
                      qty, movement_type, performed_by, created_at, deleted_at)
                 VALUES (?, NULL, NULL, 'warehouse', 1,
-                        500, 'receive', ?, datetime('now', '-10 days'), NULL)
-                """, arguments: [partId, env.adminUserId])
+                        500, 'receive', ?, ?, NULL)
+                """, arguments: [partId, env.adminUserId, receiveAt])
+            // qty is positive (300); direction is conveyed by from_location_type = 'warehouse'
+            // matching the convention enforced by WarehouseService.createMovement (qty > 0).
             try db.execute(sql: """
                 INSERT INTO stock_movements
                     (part_id, from_location_type, from_location_id,
                      to_location_type, to_location_id,
                      qty, movement_type, performed_by, created_at, deleted_at)
                 VALUES (?, 'warehouse', 1, NULL, NULL,
-                        -300, 'consume', ?, datetime('now', '-5 days'), NULL)
-                """, arguments: [partId, env.adminUserId])
+                        300, 'consume', ?, ?, NULL)
+                """, arguments: [partId, env.adminUserId, consumeAt])
         }
 
         try env.parts.generateDailyRecommendation()
