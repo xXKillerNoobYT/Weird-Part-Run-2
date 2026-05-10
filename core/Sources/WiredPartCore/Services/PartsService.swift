@@ -3377,6 +3377,12 @@ public final class PartsService: Sendable {
                 target.updatedAt = CoreFormatters.nowISO()
                 try target.update(dbConn)
             } else {
+                // NOTE: `partCategory` and `doNotRestock` must be set explicitly here.
+                // GRDB writes NULL for any `Int?`/`String?` property that is not
+                // initialized, ignoring the SQL column DEFAULT. The recommendation
+                // engine's combination query filters `WHERE do_not_restock = 0`,
+                // and in SQL `NULL = 0` is NULL (falsy), so a NULL value would
+                // silently exclude this row from all recommendation consideration.
                 var target = LocationStockTarget(
                     id: nil, partId: partId,
                     locationType: locationType, locationId: locationId,
@@ -3384,8 +3390,8 @@ public final class PartsService: Sendable {
                     forecastAdu30: nil, forecastAdu90: nil,
                     forecastDaysUntilLow: nil, forecastSuggestedOrder: nil,
                     forecastLastRun: nil, certaintyRating: nil,
-                    partCategory: "common", // match SQL DEFAULT; engine query requires do_not_restock = 0
-                    doNotRestock: 0,        // GRDB writes NULL for Int? unless set explicitly
+                    partCategory: "common", // matches SQL DEFAULT
+                    doNotRestock: 0,        // matches SQL DEFAULT (0 = eligible for restocking)
                     deletedAt: nil, updatedAt: nil
                 )
                 try target.insert(dbConn)
