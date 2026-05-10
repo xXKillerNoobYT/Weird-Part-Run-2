@@ -929,11 +929,19 @@ struct PartsServiceInventoryTests {
         let partId = try E2ETestHelpers.seedPart(env, name: "DailyRecSkipPart", categoryId: catId)
 
         // Create a location_stock_targets row but do NOT insert any stock_movements.
-        // With no movement history, firstMovement is nil and the engine skips this combo.
+        // Mark it critical so this test exercises the stock-level no-history guard
+        // without also matching the separate "stale common" category-change rule.
         try env.parts.setLocationStockTarget(
             partId: partId, locationType: "warehouse", locationId: 1,
             minStock: 0, targetStock: 0, maxStock: 0
         )
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE location_stock_targets
+                SET part_category = 'critical'
+                WHERE part_id = ? AND location_type = 'warehouse' AND location_id = 1
+                """, arguments: [partId])
+        }
 
         try env.parts.generateDailyRecommendation()
 
