@@ -3384,6 +3384,8 @@ public final class PartsService: Sendable {
                     forecastAdu30: nil, forecastAdu90: nil,
                     forecastDaysUntilLow: nil, forecastSuggestedOrder: nil,
                     forecastLastRun: nil, certaintyRating: nil,
+                    partCategory: "common", // match SQL DEFAULT; engine query requires do_not_restock = 0
+                    doNotRestock: 0,        // GRDB writes NULL for Int? unless set explicitly
                     deletedAt: nil, updatedAt: nil
                 )
                 try target.insert(dbConn)
