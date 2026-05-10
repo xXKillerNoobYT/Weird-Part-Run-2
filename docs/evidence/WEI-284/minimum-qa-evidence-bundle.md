@@ -5,20 +5,19 @@ Artifact Links:
 - [Commit 32ea876 raw patch](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/commit/32ea8768017c0614fab5b1c262e279a2c1c22274.patch)
 - [Execution-path file: AIConflictResolutionView.swift @32ea876](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/blob/32ea8768017c0614fab5b1c262e279a2c1c22274/Weird%20Parts%20IOS/Weird%20Parts%20IOS/Sync/AIConflictResolutionView.swift)
 - [Execution-path file: SyncConflictReviewPage.swift @32ea876](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/blob/32ea8768017c0614fab5b1c262e279a2c1c22274/Weird%20Parts%20IOS/Weird%20Parts%20IOS/Sync/SyncConflictReviewPage.swift)
-- [Workflow run: Copilot code review (success)](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/actions/runs/25592776630)
-- [Job log: Agent (run 25592776630)](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/actions/runs/25592776630/job/75133303099)
-- [Workflow run: CodeQL Security Scan (success)](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/actions/runs/25592775926)
-- [Job log: Analyze (swift) (run 25592775926)](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/actions/runs/25592775926/job/75133284977)
-- [Commit tied to the CI runs (head SHA 958b660)](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/commit/958b66049c3e2ee171d0c56af323db8ba741e90b)
+- [Corrected WEI-631 CI linkage addendum](../WEI-631/corrected-ci-evidence.md)
+- [PR #373 current-head CodeQL workflow run (success)](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/actions/runs/25615262920)
+- [PR #373 current-head CodeQL Analyze (swift) job log](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/actions/runs/25615262920/job/75194353798)
+- [PR #373 current-head commit 8c7b607](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/commit/8c7b6074b2245cbeacc249c7495272b0a8612a59)
 
 Acceptance Checklist:
 - [x] PR/patch evidence is linked with file-level execution-path coverage for Xcode MCP-related conflict flow files.
 - [x] CI workflow run URLs and job-level log URLs are linked.
-- [x] Final CI status and UTC timestamps are captured for commit `958b66049c3e2ee171d0c56af323db8ba741e90b`:
-- [x] `Copilot code review` run `25592776630` status `completed`, conclusion `success`, created `2026-05-09T05:21:52Z`, updated `2026-05-09T05:27:26Z`.
-- [x] `CodeQL Security Scan` run `25592775926` status `completed`, conclusion `success`, created `2026-05-09T05:21:50Z`, updated `2026-05-09T05:43:43Z`.
+- [x] Final PR #373 current-head CI status and UTC timestamps are captured for commit `8c7b6074b2245cbeacc249c7495272b0a8612a59`, which contains `32ea8768017c0614fab5b1c262e279a2c1c22274` in PR #373 history.
+- [x] `CodeQL Security Scan` run `25615262920` status `completed`, conclusion `success`, created `2026-05-10T00:12:30Z`, updated `2026-05-10T01:21:41Z`; job `Analyze (swift)` completed `success` at `2026-05-10T01:21:40Z`.
+- [x] Exact commit `32ea8768017c0614fab5b1c262e279a2c1c22274` has no direct GitHub Actions runs, statuses, or check suites; see corrected WEI-631 addendum for the reproducible API evidence and exact-commit Xcode build transcript.
 
-Unresolved Risks: none for minimum evidence completeness; QA behavioral acceptance is still pending reviewer disposition on WEI-139.
+Unresolved Risks: GitHub does not have direct CI attached to exact commit `32ea8768017c0614fab5b1c262e279a2c1c22274`; the available CI evidence is PR #373 current-head CI, and the exact commit is covered by local Xcode simulator build evidence in the WEI-631 addendum. QA behavioral acceptance is still pending reviewer disposition on WEI-139.
 
 Reproduction:
 Command: `./scripts/qa-closure-bundle-validator.sh docs/evidence/WEI-284/minimum-qa-evidence-bundle.md`
