@@ -6,13 +6,23 @@
 
 ---
 
+## What This Does
+
+The cross-cutting area is the program's foundational layer — what every other area sits on top of. It includes the app shell (AppCore, root navigation, theming), the auth/onboarding flow (PIN-based session, role-derived hat permissions, device key binding), the navigation system (87-page router, tab bar, sidebar config, deep linking), Multipeer sync (peer discovery, change-log replication, conflict resolution), Apple Foundation Models AI integration (page-context Q&A, action suggestions, conversation memory), the scanning subsystem (QR/barcode/camera + sticker validation), shared reusable components (ContentUnavailableView wrappers, FormSheet, ErrorStateView, EmptyStateView, MessageBubble, etc.), the entire DesignSystem/ (Components/Foundation/Styles/Tokens — 20 files), and the WebFallback (WKWebView for legacy URLs). Plus 5 core services that don't belong to a single feature: AuthService, FoundationModelsService, BackgroundTaskService, BadgeCountService, AIDispatchService.
+
+## Why
+
+This is the area where defects have amplified impact: a bug in auth breaks everyone's login; a sync regression silently corrupts data across the shop; a navigation mistake makes a whole feature unreachable; a theme break uglifies every page; a Foundation Models race condition crashes the AI panel from any page. Cross-cutting also owns the load-bearing security primitives — HMAC-signed tokens, CryptoKit-derived PIN hashes, Keychain-stored device salts, the future SQLCipher integration. So while feature areas can ship with polish gaps without breaking the world, cross-cutting can't. This area's checklist is run last in the rotation specifically so all the feature areas have settled their dependencies first; cross-cutting sweeps catch what those dependencies forced into the foundations. The area also bundles the DesignSystem (which doesn't belong to any feature) and the shared components library (used by everyone).
+
+---
+
 ## Overview
 
 The cross-cutting area covers the foundational layers that all 87 feature pages depend on: the app shell, auth/onboarding flow, navigation system, sync engine, AI integration, scanning subsystem, and all shared reusable components. Because everything else builds on top of this, quality issues here have amplified impact.
 
 ---
 
-## iOS Files by Subdirectory (~65 files)
+## iOS Files by Subdirectory (~91 files as of 2026-05-01; DesignSystem + Shared grew naturally past initial ~65 estimate)
 
 ### App/ (6 files)
 | File | Purpose |

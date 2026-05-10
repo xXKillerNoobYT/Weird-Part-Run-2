@@ -54,6 +54,25 @@ Memory is organized by topic, not chronologically. Each entry includes when it w
 
 ## Things I tried that worked well
 
+- [2026-05-06] **Issues spanning multiple areas → partial-fix carry-over pattern.** When a GitHub issue lists files in MULTIPLE area scopes (e.g. #249 had files in scheduling + warehouse + chat), per-area rotation can only fix the part scoped to that area. The remaining sub-files carry over until the OTHER areas re-rotate. **Disposition pattern:** post a "1 of N fixed" comment on the issue with explicit per-area status, leave the issue open, mention which area's next rotation will pick up the rest. Counter-rule from soul ("one area at a time, do NOT switch mid-checklist"): don't fix the cross-area portions during the current rotation even if they're trivial — discipline matters. **Eligible for Copilot delegation as a small T3 if owner wants to accelerate** since the fix per file is one-line. Validated 2026-05-06 with #249 (1/3 = scheduling fixed; warehouse + chat carry-over).
+
+- [2026-05-06] **Render-perf scanner false-positive class: `cached*` variable assignment IS the fix pattern.** When the scanner flags `cachedWorkerName = unassignedWorkers.first(where: ...)` or `cachedJobName = jobRows.first(where: ...)`, the `cached*` variable name is a strong signal that the fix from #340/#341 has ALREADY been applied — the assignment moves the lookup OUT of body-render-path into a `@State` cache populated on data change. Scanner still detects the `first(where:)` text inside the assignment line. **Triage rule:** if the LHS is a `@State` variable matching `cached*` pattern, the finding is a false positive (scanner caught the fix, not the bug). Add to scanner SKILL.md triage caveat in next loop-self-improve pass. Observed at IOSDispatchPage:598/599 in scheduling rotation-2 sweep.
+
+- [2026-05-05] **Multi-sheet false-positive class: same `@State` variable name in DIFFERENT View structs is safe.** SwiftUI `@State` is per-struct-scoped — two `@State private var activeSheet: ActiveSheet?` declarations in two different `struct ... : View` definitions don't collide. The "scanner caught duplicate var name" finding looks suspicious but verifying struct boundaries usually clears it. **Concrete cases observed:** chat IOSEscalationTimeline (1 actual + 1 in code comment), parts PartsSuppliersPage (L31 in `PartsSuppliersPage` struct + L672 in `private struct SupplierDetailSheet` — both legitimate). **Triage step for future C7 multi-sheet hits:** if same var name appears twice, run `grep -nE "^(struct|private struct).*View"` on the file; if the two .sheet lines are in different struct ranges, it's safe per per-struct scoping. Only flag as real bug if both .sheet calls fall within the SAME View struct's body (which would indicate the dangerous chained-modifier pattern from #347 IOSMainView).
+
+- [2026-05-05] **🎯 MILESTONE: First-rotation 14/14 graduation complete.** All 14 project areas graduated by 2026-05-05 — parts (2026-04-18) → jobs/warehouse/scheduling/orders/people/tools/vehicles (2026-04-19/20) → inventory (2026-04-27) → reports/notebooks (2026-04-30) → chat/settings/cross-cutting (2026-05-01/05). Total span: 17 days. 11 PRs merged across the rotation. 3 new scanners built (render-perf, identity-string-audit, grdb-silent-bug) + validated against 4 areas before graduation. **The first rotation was the scanner-build phase**; the **second rotation is the scanner-validation phase** — running the now-mature toolkit against each area for fresh drift detection. Pattern observation: graduating areas trended faster (parts took 16 iters; chat took 1 iter; settings + cross-cutting took 2-3 iters each) as the toolkit matured. Memory candidate-promotion review at next Sunday's loop-self-improve: areas that show the same scanner-clean profile twice in a row could be eligible for "auto-graduate" treatment (skip C7-C9 if 3 prior rotations all clean). Worth modeling.
+- [2026-05-01] **5-try-per-step escape hatch: if Copilot tries >5 times on a SINGLE STEP within an issue and still failing, I can take over that step directly.** [→ soul candidate] Owner directive on 2026-05-01: *"if more then 5 trys with remote agent trying to do the work you can take over to finsh the job"* + clarification *"that's per a step in an issue"*. **Granularity is per-step, not per-whole-issue.** An issue typically has multiple acceptance-criteria checkboxes + build/test gates — each is a step. **Threshold:** 6+ Copilot work cycles (delegate → commits → fail/stall) on the SAME step → AUTO GO takes that step directly while leaving other steps to Copilot. **Real assessment of #320 SQLCipher under this rule:**
+  - **Step 1 (Package.swift GRDB+SQLCipher integration):** ~4-5 tries already (initial impl 2026-04-26 + Option-B refactor 2026-04-29 + code-review self-iteration 2026-04-29 + my 3-option diagnostic 2026-04-29, none resolving the `cannot find 'strcmp' in scope` build error). **One more failed try would qualify this step for AUTO GO takeover** — write the conditional `condition: .when(platforms: [.iOS])` Package.swift fix myself + test it builds.
+  - **Step 2 (cipher key derivation in CipherKeyManager.swift):** ~1-2 tries, looked correct in commits — does NOT yet qualify.
+  - **Step 3 (Option B migration in AppDatabase+Cipher.swift):** ~1-2 tries, structurally sound per diff review — does NOT yet qualify.
+  - **Step 4 (tests in AppDatabaseCipherTests.swift):** blocked by step 1, no progress to count yet.
+
+  **Counter-rule from soul still applies:** I do NOT take over security-sensitive code (AuthService/FieldEncryption/Cipher* per `.github/copilot-instructions.md` §8) without owner approval. So step 1 (Package.swift) IS within takeover scope — it's build-config, not crypto code — but steps 2-3 (CipherKeyManager + AppDatabase+Cipher) are crypto and stay owner-review-required even at 5+ tries. **The 5-try-per-step rule is the operational granularity for surgically unblocking stuck Copilot loops without rewriting whole PRs.** Update PR-supervision iter pattern: when a PR's draft commits show iterative failure on one specific code area, count tries there (not on the whole issue) — and consider stepping in for that area only if the threshold's hit.
+- [2026-04-30] **SQLCipher+GRDB integration is an above-Copilot-pay-grade task — pulled back twice in 2 days.** PR [#320](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/pull/320) was assigned to Copilot 2026-04-26, pulled back 2026-04-29 (3-day silence), re-delegated 2026-04-29 with owner's Option B directive baked in, then **pulled back AGAIN 2026-04-30** after my detailed 3-option fix diagnostic (DDG-fork pinning vs LebJe alternative vs `condition: .when(platforms: [.iOS])` Package.swift fix) sat for 24h with zero response. The Option B refactor work + cipher key setup + ATTACH copy logic look correct in commits, but the GRDB+SQLCipher Swift Package conflict (`cannot find 'strcmp' in scope` errors when CLI builds GRDB sources directly) is a non-trivial Package.swift puzzle Copilot can't crack from issue-body context. **Rule for security-sensitive package-level integrations:** don't rely on Copilot SWE for them. Owner needs to either prototype the Package.swift fix manually first then hand off implementation, OR re-prompt with a much smaller scope (e.g. just the migration helper code, defer the cipher integration). Both 2-pullback attempts produced ~1037 lines of correct-looking work that's blocked on integration plumbing — significant Copilot-time wasted that won't accumulate. Branch + commits stay intact for owner manual resume.
+- [2026-04-30] **grdb-silent-bug-scanner built (3/3 approved scanners — C13 build queue exhausted, reports area graduates).** Path: `~/.claude/scheduled-tasks/grdb-silent-bug-scanner/{SKILL.md, scanner.py}`. Combined two checks per the original Q&A approval. **Check A (GRDB-Nil-Default):** Phase 1 inventories `Int?` boolean-flag fields without Swift defaults; Phase 2 scans service files for inserts of those structs without explicit flag assignment in the preceding ~30 lines. **Check B (LEFT JOIN NULL propagation):** regex matches triple-quoted SQL strings with `LEFT JOIN <table> <alias> ON ... AND <alias>.<col> = ...` followed by `WHERE <alias>.deleted_at IS NULL`. **First sweep:** 13 raw findings — 3 Check A confirmed real via schema lookup ([#344](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/344) delegated), 10 Check B candidates filed for owner triage ([#345](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/345) high false-positive rate, NOT delegated). **All 3 approved scanners now built + validated.** Each caught real bugs on first sweep: render-perf → 3 issues (#338, #340, #341 merged + #335 retroactive); identity-string-audit → 1 T1 (#342→#343 merged); grdb-silent-bug → 3+10 candidates (#344 delegated, #345 owner-triage). **Investment ROI confirmed: building approved scanners during owner-absence is the highest-leverage autonomous work.** Future area rotations (notebooks/chat/settings/cross-cutting/parts-wrap) will run all 3 scanners during C3/C7b/C8 dispatch.
+- [2026-04-30] **identity-string-audit-scanner built (2/3 approved scanners) — found 1 T1 the day after the wishlist refactor shipped.** Path: `~/.claude/scheduled-tasks/identity-string-audit-scanner/{SKILL.md, scanner.py}`. Python regex scans service func signatures for `by \w+: String` parameter, locates function body via brace-depth tracking, checks for audit-field writes (`approved_by`/`dismissed_by`/`created_by`/etc + camelCase) AND for service-layer permission gates (`auth.\w*Permission`, `requirePermission`, `hasPermission`, `hasCapability`) BEFORE the audit write. Flags audit-writing functions without a gate as T1. **First sweep:** caught `WishlistService.processAutoApprovals(by approver: String)` line 385 — the background-task entry point missed by PR #331's UI-method refactor. Filed as [#342](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/342) (T1, security, P1) with full implementation guidance + delegated to Copilot. **Validates the C13 scanner-build investment:** scanner caught a real T1 within 30s of running. The 4 sister methods refactored in #331 correctly NOT flagged (they pass `auth.hasPermission` gate). **Wire-in:** auto-go.md C8 dispatch should invoke this scanner alongside `security-review` SKILL after the next loop-self-improve pass picks it up. **Remaining unbuilt approved scanner:** grdb-silent-bug-scanner (combined Nil-Default + LEFT JOIN NULL propagation). Build target: next C13 iter.
+- [2026-04-30] **render-perf-scanner built (1/3 approved scanners from inventory rotation 2 C13).** Path: `~/.claude/scheduled-tasks/render-perf-scanner/{SKILL.md, scanner.py}`. Python brace-depth parser walks `.swift` files, identifies `var body: some View {` blocks + computed properties, flags `\.filter\s*\{[^}]*\}\s*\.count`, `\.first\s*\(\s*where:`, `\.contains\s*\(\s*where:`, `\.compactMap\{}.count`, `\.flatMap\{}.count` inside those blocks. **First sweep results:** 11 raw findings across 4 areas; manual triage → 5 false-positives (PartsCatalogPage `.onReceive` event handlers — lifecycle-modifier closures NOT yet detected by scanner), 1 trivial (6-elem boolean array), ~4 real-but-small T3 findings filed as [#340](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/340). **Self-test passed:** 0 findings on reports area post-#339. **Scanner caveat:** the COMPUTED_RE pattern doesn't yet exclude `.onReceive`/`.onChange`/`.task`/`.onAppear`/`.onDisappear` closure bodies; agent triage step in SKILL.md covers the gap until a follow-up improvement detects lifecycle modifiers. **Remaining unbuilt approved scanners:** identity-string-audit (C8 wire-in) + grdb-silent-bug (combined GRDB-Nil-Default + LEFT JOIN NULL propagation). Build queue for future C13 iters.
+- [2026-04-29] **`gh pr comment --body "..."` heredoc eats `@` literals; use `--body-file <(cat <<'EOF'...EOF)` for any PR comment with shell-meaningful chars.** Iter 5 of 2026-04-29 hit it: comment to `@copilot` containing literal `@State` Swift annotations triggered zsh history-expansion on `@State` (treated as a history reference) which silently dropped the literal text from the comment body — `@copilot` mention survived (line-start with following space), but inline `@State` got eaten leaving the comment grammatically broken. **Working pattern (validated iter 6 of 2026-04-29):** `gh pr comment N --repo X/Y --body-file <(cat <<'EOF'\n<body with @State and other shell-meaningful chars>\nEOF\n)` — process substitution + single-quoted heredoc bypass shell pre-processing entirely. **Rule for future Copilot delegations:** any PR or issue comment containing code, Swift annotations (`@State`/`@Binding`/`@MainActor`), shell special chars, or backticked code blocks → use `--body-file <(cat <<'EOF'...EOF)` not `--body "..."`.
 - [2026-04-29] **CLI `--add-assignee Copilot` AND `--remove-assignee Copilot` both unreliable — GraphQL `replaceActorsForAssignable` is the only working pattern for the Copilot bot.** Iter 4 of 2026-04-29 confirmed the un-assignment side: `gh pr edit 320 --remove-assignee Copilot` (iter 1) returned exit 0 silently but did NOT remove Copilot from the PR assignees. Verified iter 4 via `gh pr view 320 --json assignees` — Copilot still listed (`databaseId: 198982749, BOT_kgDOC9w8XQ`). Re-removed successfully via `gh api graphql -f query='mutation { replaceActorsForAssignable(input: { assignableId: "<pr_node_id>", actorIds: ["<owner_user_id>"] }) { assignable { ... on PullRequest { number assignees(first: 5) { nodes { login } } } } } }'` — empty/owner-only `actorIds` removes Copilot. **Same pattern applies to issues** (use `assignable: ... on Issue` instead). **Rule for future delegation iters:** never trust `gh pr edit --add-assignee Copilot` or `gh pr edit --remove-assignee Copilot` to actually mutate the assignment — the CLI exits 0 but is silently a no-op. Always use the GraphQL mutation directly. The earlier "Copilot delegation via GraphQL" memory entry [2026-04-29] covered the add-assignee side; this entry extends it to remove-assignee. The PR/issue node ID (lookup: `gh pr view N --json id --jq .id` or `gh issue view N --json id --jq .id`) and bot ID (`BOT_kgDOC9w8XQ` for this repo, lookup via `suggestedActors`) are the only fixed inputs needed.
 - [2026-04-29] **Copilot Coding Agent delegation via GraphQL when CLI fails.** `gh issue edit <N> --add-assignee Copilot` fails with `Bot does not have access to the repository` — the CLI shorthand cannot invoke the Coding-Agent assignment mutation. **Working alternative:** (1) resolve bot ID via `gh api graphql -f query='query { repository(owner:"...", name:"...") { suggestedActors(capabilities: [CAN_BE_ASSIGNED], first: 25) { nodes { login __typename ... on Bot { id } ... on User { id } } } } }'` — returns `copilot-swe-agent` bot login + node ID (was `BOT_kgDOC9w8XQ` for this repo). (2) Get target issue's node ID via `gh issue view <N> --json id --jq .id`. (3) Call `replaceActorsForAssignable` mutation with `actorIds: [<bot_id>, <user_id>]` (include the human owner so notifications still flow). The mutation returns the updated assignee list; Copilot starts work within a few minutes. Display name in `gh pr view --json assignees` shows as `Copilot` even though the actual login is `copilot-swe-agent` — both refer to the same actor. **Rule for future delegation iters:** always have this GraphQL fallback ready; the CLI assignee shorthand is fragile across repo configurations.
 
@@ -168,6 +187,7 @@ Memory is organized by topic, not chronologically. Each entry includes when it w
 - [2026-04-27] **SwiftUI `filter{...}.count` in `var body` = recurring render-perf anti-pattern**: `var body: some View { ... array.filter{...}.count ... }` recomputes on every `@State` change, with each filter chain costing O(N). Stat-card layouts that show 3-6 buckets pay 3-6 full scans per frame. Iter 7 of 2026-04-27 found 5 instances across 3 inventory pages (PartsForecastingPage urgency cards + IOSInventoryGridPage smart-cards + IOSProcurementPage readyToGenerate). **Fix pattern:** declare `@State private var counts: [Bucket: Int] = [:]`, populate once via single-pass for-loop on data load (in `.task` or `.onChange(of: items)`), reference `counts[.urgent] ?? 0` in body. **Rule for future iOS C9 audits:** grep each iOS page for `\.filter\s*\{[^}]*\}\.count` inside `var body` blocks — every match is a candidate. Bundled into [#328](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/328); same pattern likely surfaces in jobs/people/orders pages once those rotations re-run C9.
 - [2026-04-19] **#263 filed (composite index)**: `stock_movements(part_id, movement_type, created_at, deleted_at)` index proposed. Existing single-column indexes don't cover compound filter patterns in `recalculateForecasts*`. Deferred — correct behavior now, pure perf optimization.
 - [2026-04-19] **C7b: 9 usability fixes across 3 pages** (PartsForecastingPage, IOSWishlistPage, IOSInventoryGridPage). Main patterns: decorative icons in Icon+Text buttons need `.accessibilityHidden(true)`, or the button needs `.accessibilityLabel()`. `smartCard` in IOSInventoryGridPage now has `minHeight: 44` for HIG compliance.
+- [2026-05-06] **Rotation-2 graduation in 1 iter (9th rotation-2 area)** — full 17-check sweep: 0 scanner findings (render-perf 0 on 5 inventory iOS pages, identity-string 0 across 21 services, grdb Check A 0 confirms #346 landed, Check B 10 = exactly the documented #345 owner-triage queue with no regressions or new findings). Wishlist: 12 methods / 32 tests = 2.67× breadth. Forecasting: 13 methods / 45 tests = 3.46× breadth. C8 9 sql += in PartsService all safe-static-fragment. C9 0 SELECT * in WishlistService. Build 0 warnings, 1777/1777 tests. **Lesson worth elevating:** AT START OF EACH ITERATION, run `git pull --ff-only` BEFORE running scanners — discovered the local main was 1 commit behind origin/main (missing #346 ba1889ea), which produced false-positive grdb Check A findings on already-fixed lines. The pull-first discipline saves ~10 min of false-positive triage. **Memory candidate:** add to STEP 1 (after gates passed, before scanners run) "git pull --ff-only origin main" with stash-pop guard for in-flight working changes.
 
 ### reports
 - [2026-04-19] **Service profile**: ReportsService 13 public methods (getTimesheetData, getDailyReportSummary, getSpendingSummary, getProfitabilitySummary, getPreBillingData, getBookkeeperLaborSummary, getBookkeeperMaterialPOs, getReportsStats, generateCustomReport, saveReportConfig, getSavedReports, deleteSavedReport, markReportRun). 31 tests = 2.4× coverage, 100% breadth. All 31 pass.
@@ -233,6 +253,198 @@ Memory is organized by topic, not chronologically. Each entry includes when it w
 ## Weekly reflections (newest first)
 
 *(The `loop-self-improve` Sunday pass writes a reflection here each week: what was graduated, what got stuck, what patterns emerged, what soul or memory entries need updating.)*
+
+### [2026-05-06 EVE] Rotation-4 partial — foundation-first audit reaches natural close at 7 areas / 8 deliverables
+
+**Achieved iters 26-33 of 2026-05-06 (~3h):**
+
+Rotation-4 began as "foundation-first audit mode" per the rotation-3 weekly reflection. Goal: instead of filing more individual instances of recurring classes, build scanners and identify foundation defects.
+
+**Deliverables (7 iters, 8 outputs):**
+
+1. **service-permission-gate-scanner** (iter 26) — built at `~/.claude/scheduled-tasks/service-permission-gate-scanner/`. Detected 42 instances of the rotation-3 #1 class.
+2. **#367 parts** — sister to #368 umbrella (`approveRecommendation`/`dismissRecommendation` lack permission gates).
+3. **#368 umbrella** — 42-finding scanner output as one issue, batch-triage candidate.
+4. **#369 warehouse** — stringly-typed-enum-without-canonical-constants on `stock_movements.movement_type`. Sister to #354 at the values level.
+5. **#370 scheduling** — checkTimeOffConflict missing `is_approved=1` filter (sister to #358 — same class twice = filter-direction-off).
+6. **#371 orders** — `generatePOFromJPO` doesn't update `jpo_line_items.line_status` (two-writers-inconsistent-update — 3rd instance, scanner-eligible class).
+7. **#359 expansion comment** (iter 27) — orphan-scheduled-task list expanded from 2 → 5 instances.
+8. **#368 scanner enhancement** (iter 31) — actor-implicit-mutations sub-class (false negative).
+
+**Iters 32-39 = honest-no-findings sweep across remaining 7 areas** (tools, vehicles, inventory, reports, notebooks, chat, settings, cross-cutting all confirmed already-covered by existing trackers). 8 consecutive no-finding iters — the accumulated trackers absolutely absorb the systemic classes for every area in the rotation. Settings was qualitatively distinct (genuine 0 scanner findings vs "all in umbrella"); cross-cutting closed cleanly with #366 T1 still owner-pending.
+
+**🎉 ROTATION-4 14/14 COMPLETE.** Sweep total: 14 iters / 8 deliverables / 8 honest-no-findings closes (iter 26 was deliverable; iters 32-39 were honest-no-findings).
+
+**Comparison to rotation-3:**
+
+| Rotation | Iters | Findings | Mode |
+|----------|-------|----------|------|
+| 1 (discover+repair) | 16 | many fixes merged | construction |
+| 2 (validate) | 11 | 11 PR merges, 14 area graduations | confirmation |
+| 3 (diagnosis) | 14 | 14 issues / 12-class taxonomy | catalog |
+| 4 (foundation-first audit) | 14 (complete) | 1 scanner + 6 issues + 2 enhancement comments + 8 honest-no-findings | tooling |
+
+**Rotation-4 thesis fully confirmed:** when a class repeats 3+ times, build a scanner. The service-permission-gate-scanner immediately surfaced 35 instances I'd never have found by manual reading. Subsequent 8 area sweeps validated specificity — scanner found nothing in services without the actor-identity-write pattern (settings) and found only already-tracked instances elsewhere. Scanners produce compound dividends and converge cleanly.
+
+**Key memory candidates from rotation-4 (all validated):**
+
+1. **build-the-scanner-not-the-fix** (iter 26) — when class N repeats 3+ times, automate detection. ✅ Validated: 1 scanner > 35 instance fixes.
+2. **extend-tracker-not-fragment** (iter 27, refined iter 31) — when an existing umbrella covers the class, comment-extend instead of filing new. ✅ Validated 2× (#359 expansion + #368 enhancement).
+3. **honest-no-findings** (iters 32-39) — confirmed-covered is a valid iter close. Don't manufacture findings to fill iters. ✅ Validated 8 consecutive iters.
+4. **scanner-itself-can-have-blind-spots** (iter 31) — actor-implicit-mutations sub-class showed the scanner regex needs extension. Scanners need their own audits.
+5. **scanner-specificity-validates-via-zero-false-positives** (iter 38) — when scanner returns 0 findings on a service that genuinely doesn't fit the pattern (SettingsService — system-context writes), that's a positive signal not a gap. Distinguish "0 because covered" from "0 because not applicable."
+
+**Pipeline state (end of rotation-4):** 5/5 PRs still draft for ~13 hours. No Copilot CI activity throughout the entire rotation. The accumulated rotation-4 deliverables (scanner + 6 issues + scanner-enhancement comment + #359 expansion) plus rotation-3 finale (#366 T1) await owner triage. Total queue for owner: 7 rotation-4 items + 1 T1 + 5 stalled PRs.
+
+**Next phase recommendation:** rotation-5 should be **owner-triage-driven** — when owner returns, triage the 8-item queue + 5 stalled PRs. Until triage, additional sweep work has zero marginal yield (proven by 8 consecutive no-finding iters). The loop's value during owner-absent periods is creating an actionable, prioritized inbox — not creating more raw findings to dilute it.
+
+**Rotation-4 final close:** 14/14 areas swept, 8 deliverables landed, 8 honest-no-findings closes proved the convergence. Cumulative session: rotation-4 took 14 iters / ~4h elapsed (vs rotation-1 16 iters/18 days, rotation-2 11 iters/12.5h, rotation-3 14 iters/5.5h). Fastest rotation by elapsed time — because tooling (scanner) front-loaded the work.
+
+---
+
+## 🎉 Rotation-5 — Owner-Triage-Driven Confirmation (2026-05-06, completed in ~5h)
+
+Rotation-5 began as the predicted "owner-triage-driven" rotation per rotation-4's closing thesis. Goal: continue thin record-keeping sweeps to confirm the convergence pattern while owner is away. The hypothesis: rotation-5 will produce **0 deliverables** and **14 honest-no-findings closes**.
+
+**Deliverables (14 iters, 0 outputs):**
+
+Rotation-5 produced **0 deliverables**. Every area returned either "all findings already in #368 umbrella" or "genuinely 0 scanner findings." This was the predicted outcome — confirming that the rotation-4 deliverable set (1 scanner + 6 issues + #366 T1 from rotation-3 finale) covers the discoverable systemic classes for the project at the foundation-first audit lens.
+
+**Honest-no-findings closes (14 areas):**
+- parts (iter 40), jobs (41), warehouse (42), scheduling (43), orders (44), people (45), tools (46), vehicles (47), inventory (48), reports (49), notebooks (50), chat (51), settings (52), cross-cutting (53).
+
+**Comparison across all 5 rotations:**
+
+| Rotation | Iters | Findings | Mode | Elapsed |
+|----------|-------|----------|------|---------|
+| 1 (discover+repair) | 16 | many fixes merged | construction | 18 days |
+| 2 (validate) | 11 | 11 PR merges, 14 area graduations | confirmation | 12.5h |
+| 3 (diagnosis) | 14 | 14 issues / 12-class taxonomy | catalog | 5.5h |
+| 4 (foundation-first audit) | 14 | 1 scanner + 6 issues + 2 enhancement comments | tooling | ~4h |
+| 5 (owner-triage-driven) | 14 | 0 deliverables (predicted) | record-keeping | ~5h |
+
+**Rotation-5 thesis fully confirmed:** the 22-consecutive-no-finding streak (rotation-4 last 8 + rotation-5 all 14) is the strongest empirical evidence the loop has ever produced that **owner-triage capacity is the binding constraint, not loop discovery capacity**. Pipeline (5 PRs draft) sat unchanged for the entire ~5h rotation-5 + ~4h rotation-4 partial = ~18h of zero Copilot CI activity.
+
+**Key memory insight from rotation-5:**
+
+6. **rotation-5-can-be-honest-zero** (iters 40-53) — when prior rotations have built the trackers and scanners that cover the project's discoverable systemic classes, a subsequent rotation can legitimately produce zero new findings. The loop's value during such rotations is **record-keeping completeness** (confirming all 14 areas were re-audited under the established lens) rather than artifact generation. This is a valid loop state, not a failure mode.
+
+**Pipeline state (end of rotation-5):** 5/5 PRs still draft for ~18h. Zero Copilot CI activity throughout rotation-4 + rotation-5. Owner-triage queue: 8 rotation-4 items + 1 T1 from rotation-3 + 5 stalled PRs = 14 items awaiting attention.
+
+**Next phase recommendation:** rotation-6 should remain owner-triage-driven (same as rotation-5) until owner returns. If pipeline starts moving (Copilot CI activity, PR review decisions), rotation-6 work pivots to PR supervision + merge sweeps. Until that signal: continue thin record-keeping discipline.
+
+**Rotation-5 final close:** 14/14 areas swept, 0 deliverables (predicted + confirmed), 14 honest-no-findings closes. 5 complete rotation cycles. ~45h total cron-driven loop work. Project state stable. The accumulated prioritized inbox (14 items) is ready for owner triage.
+
+---
+
+## Rotation-6 — Owner-Triage-Driven Continuation (2026-05-07, completed in ~13h)
+
+Rotation-6 began as continuation of rotation-5's owner-triage-driven mode. Goal: maintain record-keeping discipline through a second full sweep cycle while owner triage queue remains unprocessed. The hypothesis: rotation-6 will continue the 22-no-finding streak through all 14 areas (predicted 14 more no-findings = 36 consecutive total).
+
+**Deliverables (14 iters, 0 outputs):** Same as rotation-5. Every area returned "all findings already in #368 umbrella" or "genuinely 0 scanner findings." Rotation-6 produced the second full no-deliverables cycle.
+
+**Honest-no-findings closes (14 areas):** parts (iter 1), jobs (2), warehouse (3), scheduling (4), orders (5), people (6), tools (7), vehicles (8), inventory (9), reports (10), notebooks (11), chat (12), settings (13), cross-cutting (14).
+
+**Comparison across all 6 rotations:**
+
+| Rotation | Iters | Findings | Mode | Elapsed |
+|----------|-------|----------|------|---------|
+| 1 (discover+repair) | 16 | many fixes merged | construction | 18 days |
+| 2 (validate) | 11 | 11 PR merges, 14 area graduations | confirmation | 12.5h |
+| 3 (diagnosis) | 14 | 14 issues / 12-class taxonomy | catalog | 5.5h |
+| 4 (foundation-first audit) | 14 | 1 scanner + 6 issues | tooling | ~4h |
+| 5 (owner-triage-driven) | 14 | 0 deliverables | record-keeping | ~5h |
+| 6 (owner-triage-driven, day 2) | 14 | 0 deliverables (predicted) | record-keeping | ~13h |
+
+**Combined no-finding streak: 36 consecutive iters** (rotation-4 last 8 + rotation-5 all 14 + rotation-6 all 14). This is now the largest contiguous evidence the loop has produced that owner-triage capacity is the binding constraint.
+
+**Memory candidate-promotion review:** rotation-6 produced no NEW memory candidates beyond rotation-5's 6 insights. Rotation-5 thesis fully validated by rotation-6 replication: when the deliverables-set is complete and owner-triage hasn't moved, additional sweep work has zero marginal yield. The ONLY iter that did anything novel in rotation-6 was iter 1 (morning-kickoff frontmatter reset for new day). Otherwise mechanical record-keeping.
+
+**Pipeline state (end of rotation-6):** 5/5 PRs still draft for ~32h. Zero Copilot CI activity throughout BOTH rotation-5 + rotation-6 (~45h combined). Owner-triage queue: still 14 items + 5 stalled PRs.
+
+**Soul-candidate elevation question for next loop-self-improve pass:** When 2 full rotations confirm a thesis empirically (in this case "owner-triage is the binding constraint"), should the loop SLOW its cadence during such periods? Currently each iter takes ~5min and produces no GitHub artifacts. A more honest cadence might be: when 14+ no-finding iters have passed AND pipeline shows no movement in 24+ hours, reduce loop cadence to once-per-area-rotation (1 iter every ~14 owner-typed `/auto-go` invocations) until pipeline activity resumes. This would honor the "honest about my limits" soul value and reduce noise in the heartbeat log.
+
+**Rotation-6 final close:** 14/14 areas swept, 0 deliverables (matching rotation-5), 14 honest-no-findings. 6 complete rotation cycles. ~58h total cron-driven loop work. **The project state is at a true equilibrium** — discovery has converged, scanners cover all known classes, and only owner-triage decisions can move it forward.
+
+---
+
+### [2026-05-06 PM] 🎉 14/14 THIRD-ROTATION CYCLE COMPLETE — taxonomy delivered
+
+**Achieved this session (2026-05-06 ~07:58 → ~13:35Z, ~5.5h elapsed across 14 iters 12-25):**
+
+Third-rotation cycle catalogs **14 substantive cross-layer / integration / orchestration defects** across the 14 areas — 1 per area, with **13 distinct classes** (service-layer-permission-gate-missing repeats 4× = scheduling/notebooks/chat/auth, plus 3 historical instances). Average pace: 1 iter/area, all areas surface a deeper defect.
+
+**The taxonomy IS the deliverable.** Rotation 1 was discovery+repair (16 iters, 18 days). Rotation 2 was validation (11 iters, ~12.5h). Rotation 3 is **diagnosis** — surfacing the integration-level defects that surface scanners can't catch.
+
+**Class taxonomy (14 areas, 13 classes):**
+
+| # | Area | Issue | Class |
+|---|------|-------|-------|
+| 1 | parts | #351 ✅ delegated | untested-public-methods |
+| 2 | jobs | #353 | per-entry-vs-per-day-math (per-entry math contradicts per-day reality) |
+| 3 | warehouse | #354 | column-two-conventions (one column, two writers, two meanings) |
+| 4 | scheduling | #355 ✅ delegated | **service-layer-permission-gate-missing** (1st in-rotation) |
+| 5 | orders | #357 | plan-vs-code-vs-queries 3-layer drift |
+| 6 | people | #358 | filter-direction-off-by-class (date filter excluded the most urgent case) |
+| 7 | tools | #359 | orphan-scheduled-task (method exists, no scheduler runs it) |
+| 8 | vehicles | #360 | mutation-doesn't-enforce-data-invariant |
+| 9 | inventory | #361 | chain-broken-at-integration-boundary (status written, no consumer reads) |
+| 10 | reports | #362 | memory-known-but-untracked / plan-aspirational |
+| 11 | notebooks | #363 | **service-layer-permission-gate-missing** (2nd) + orphan-history-on-soft-delete |
+| 12 | chat | #364 | **service-layer-permission-gate-missing** (3rd) + read-write asymmetry |
+| 13 | settings | #365 | multi-write-atomicity-not-guaranteed |
+| 14 | cross-cutting | #366 T1 | **permission-gate-itself-has-backdoor** (the auth gate has a backdoor invalidating fixes 4, 11, 12 + #327, #280, #342) |
+
+**The rotation-3 finale (#366) is the meta-finding:** every other rotation-3 fix that uses `auth.hasPermission` is only partial because that helper doesn't filter by `users.deleted_at IS NULL`. Soft-deleted users retain all permissions. This is T1 security — the foundational defect under the foundational class.
+
+**Pattern observation worth elevating to soul:** "audit your foundations before your features." The single most repeated defect class (service-layer-permission-gate-missing, 4×) routes through ONE helper. That helper has a bug. Every fix to the surface class is partial until the foundation is fixed. → **Soul candidate**: rotation 4+ should adopt "depth-first auditing" — when a class repeats 3+ times, audit the underlying helper/library/foundation before adding more surface fixes.
+
+**Cumulative findings rotation 3:** 14 substantive issues + 12 pending owner design decisions + 2 delegated to Copilot (PR #352 inventory tests + PR #356 scheduling time-off). 1 T1 (#366), 13 T2.
+
+**Pipeline state at cycle close:** 5/5 PRs draft awaiting CI (#320, #349, #350, #352, #356). All 14 rotation-3 issues filed; classes documented; the 13-class taxonomy is now the project's bug-pattern reference.
+
+**Project state:** all 14 areas have completed rotation 1 (discovery+repair, 18 days), rotation 2 (validation, 12.5h), rotation 3 (deeper-defect catalog, 5.5h). **Total 3-rotation work: ~36 hours of cron-driven loop work; 14 PRs merged; 14+ T2 issues filed; 1 T1 issue filed; 12-class defect taxonomy established.**
+
+**Rotation 4 design proposal (for owner approval):** rotation 4 should be **"foundation-first audit"** mode — start at AuthService (#366), then BaseRepository, then any class that 3+ services depend on. Audit the foundations BEFORE the surfaces. Memory pattern → soul-candidate elevated.
+
+---
+
+### [2026-05-06] 🎉 14/14 SECOND-ROTATION CYCLE COMPLETE — milestone reflection
+
+**Achieved this session (2026-05-05 19:25Z → 2026-05-06 ~07:55Z, ~12.5h elapsed across 11 iters):**
+
+Second-rotation cycle graduates ALL 14 areas in 11 iters total = **1.27 iters/area average** (parts 3 iters → all 13 subsequent areas in 1 iter each, except cross-cutting which closed 17/17 today). This is **5× faster** than the first rotation's 18 days (parts 04-18 → cross-cutting 05-05 graduated in 16 iters across 17 days).
+
+**Why so fast:** the first rotation built the toolkit; the second rotation validated it. Specifically:
+1. **3 scanners as convergence engines** — render-perf, identity-string-audit, grdb-silent-bug. Each runs in <2s on a service or page. When all 3 return 0, an area can be batch-closed across C3+C8+C9 in one iter.
+2. **Memory-encoded false-positive classes** — `.onReceive`/`.onChange` lifecycle closures, trivial fixed-size arrays, code-comment grep matches, per-struct `@State` scoping, cached* assignment-as-fix. Documented once, applied across rotations.
+3. **Safe-pattern catalog** — `sql += " AND ... = ?"`-with-`?`-placeholder is safe across JobsService:628 / WarehouseService:1702 / OrdersService:796+2081 / PeopleService:1731 / PartsService 9-hits / NotebooksService:1079+1082. Recognized at sight, no need to re-audit.
+4. **Mature-area umbrella pattern** — close program-review parents with explicit dispositions for sub-issues. Closed during rotation: #52 (parts), #53 (jobs), #56 (warehouse), #58 (tools), #57 (vehicles), #54 (orders), #59 (scheduling), #55 (people), #62 (notebooks), #60 (reports), #61 (chat), #63 (settings), #66 (cross-cutting), plus #93 disposition for inventory.
+5. **Pull-first hygiene** — added STEP 1 `git pull --ff-only` discipline mid-cycle (iter 6) when a stale local main produced a false-positive grdb Check A. Saves ~10 min per iter when origin is ahead.
+
+**11 PRs merged this session:** #332/#331/#333/#334/#335/#336/#337/#339/#341/#343/#346/#348 — net +348 tests (1429 → 1777), 0 regressions.
+
+**Areas with their rotation-2 metrics:**
+| # | Area | Iters | Service breadth | iOS files | Notable |
+|---|------|-------|-----------------|-----------|---------|
+| 1 | parts | 3 | 248/177 = 1.40× | 24 | 6 plans + Plan-Family Index added |
+| 2 | jobs | 1 | 110/49 = 2.24× | 14 | First batch-close demonstration |
+| 3 | warehouse | 1 | 190/140 = 1.36× | 31 | Largest service (4761 lines) |
+| 4 | scheduling | 1 | 154/36 = 4.28× | 15 | **Highest test breadth in project** |
+| 5 | orders | 1 | 87/42 = 2.07× | 16 | 4-plan Plan-Family Index added |
+| 6 | people | 1 | 76/56 = 1.36× | 14 | |
+| 7 | tools | 1 | 115/30 = 3.83× | 8 | 2nd-highest breadth |
+| 8 | vehicles | 1 | 57/34 = 1.68× | 18 | #280 T1 security delegated |
+| 9 | inventory | 1 | 32/12 + 45/13 cross-area | 5 | Validated #344 GRDB fix on origin |
+| 10 | reports | 1 | 52/13 = 3.54× | 22 | |
+| 11 | notebooks | 1 | 56/37 = 1.51× | 8 | |
+| 12 | chat | 1 | 52/35 = 1.49× | 9 | |
+| 13 | settings | 1 | 68/43 = 1.58× | **35** | Largest by file count |
+| 14 | cross-cutting | 1 | 51+/18 (Auth) | 54 | App+DesignSystem+Nav+Sync+AI+Auth |
+
+**14/14 graduated. Next pass — third rotation — will be the deeper-defect-hunt phase**, looking past surface scanners into algorithmic correctness, race conditions, edge cases the test suite doesn't cover. The first rotation built. The second validated. The third refines.
+
+**Owner action items still queued post-cycle:** #320 SQLCipher (build broken, owner-pending), #345 LEFT JOIN candidates (owner-triage), #347 IOSMainView refactor (owner-review), #330 OrdersService.getProcurementDemand (delegation candidate), #280 Fleet T1 security (delegated → PR #349 draft).
 
 ---
 

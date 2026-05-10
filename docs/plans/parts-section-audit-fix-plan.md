@@ -1,5 +1,29 @@
 # Parts Section — Full Audit & Fix Plan
 
+## What This Does
+
+The Parts area is the program's catalog backbone — managing the hierarchical taxonomy of parts (categories → styles → types → colors → brands → suppliers), per-location stock tracking, forecasting/recommendation logic, pricing cascade (cost / supplier / brand / job-override), part-number generation, search/filter UI, brand-supplier carry-status, supplier scoring/traceability/contacts, color-brand SKU mapping (PE-COLORS), and part-detail editing. ~8 iOS pages and 15 supporting components, backed by `PartsService.swift` (~6500 lines, 60+ public methods) which is the single largest service in the project.
+
+## Why
+
+Parts is the foundational data model: jobs, orders, warehouse moves, dispatches, scheduling — every other domain references parts. A bug in the parts catalog ripples through every workflow. Pricing correctness is revenue-critical (wrong cost = lost margin); FK-integrity matters for moves and orders; forecasting feeds inventory recommendations that drive reorder timing. Beyond data, the Parts UI is the most-touched surface in the program — operators search, filter, view, and edit parts dozens of times per day. So the area gets disproportionate attention: most-tested service (250+ tests), most plan files (6 specialized plans for sub-systems), most-graduated area (16 iters first rotation, baseline for all subsequent rotations).
+
+## Plan-Family Index
+
+The Parts area's design is spread across 6 specialized plans rather than one monolithic doc — too much surface area for a single file. Each plan covers a sub-system:
+
+| Plan | Scope |
+|------|-------|
+| `parts-section-audit-fix-plan.md` (this file) | Cross-cutting audit + critical-fix tracker |
+| `colors-parts-redesign.md` | PE-COLORS variants/SKU redesign (Phase 1 complete; Phase 2 UI #237-#240) |
+| `ios-part-number-hierarchy.md` | Part-number generation rules (category/style/type/color/brand/supplier hierarchy) |
+| `ios-brands-suppliers-editing.md` | Brand-supplier link UI + carry-status workflow |
+| `ios-supplier-system.md` | Supplier scoring, traceability, contacts, communication bridge |
+| `supplier-communication-bridge-plan.md` | Supplier comm channels (email/PDF/portal) |
+| `inventory-intelligence-system.md` (lives outside parts/) | Forecasting backbone — referenced by parts forecasting pages |
+
+For dev-pipeline-manager 9-section coverage: each sub-plan covers Test Plan + User Roles + Security + HIG within its scope. The aggregate-level What/Why is captured here.
+
 ## Context
 
 Thorough audit of all 8 Parts pages, 15 supporting components, PartsService (6500+ lines), and PartsModels comparing built code against plan documents. Found critical backend bugs, unbuilt forecasting features (prompts 23B-23H still queued), pricing gaps, and 18+ silent error locations. User wants everything fixed: bugs, plan alignment, and deeper audit.

@@ -1,5 +1,13 @@
 # iOS Settings Pages — Design Plan
 
+## What This Does
+
+The Settings area is the broadest single area in the program — 22+ logical subsystems spread across General, Company, Operations, Warehouse, Sync & Devices, Security, Data, and AI & Integrations groups. Each settings page either configures a system-wide policy (break/lunch rules, tool checkout policies, pre-trip checklist templates, dispatch preferences, forecast windows, organization audit thresholds), manages credentials and devices (Bluetooth pairing, device management, bootstrap, key management, security admin), or controls company/billing/data administration (company profiles, PDF templates, backups, export, DB reset). Most pages use explicit Save buttons (intentional — Settings changes are deliberate, not auto-saved). Permissions for Settings pages are gated on `manage_settings`, `manage_devices`, or specific keys per feature (`view_audit_log`, `manage_billing`, etc.).
+
+## Why
+
+Settings is the program's control surface for configuration that's too operational for hardcoding but too policy-level for daily UI. A break-policy change needs a dedicated UI because its effects ripple through scheduling, daily reports, and labor calculations; a forecast window change reshapes inventory recommendations; a device-key rotation re-establishes Multipeer trust across the shop. Centralizing these in Settings (rather than scattered "Edit defaults" buttons in each feature) makes them discoverable, auditable, and gateable behind admin permissions. The settings sync scope reference (per-feature: per-shop / per-device / per-user) is foundational because Multipeer sync needs to know which settings travel between devices and which stay local. Without a centralized Settings area, every new policy would either ship hardcoded or accumulate as random sheets across other features.
+
 ## Navigation (Grouped like iOS Settings)
 Settings:
 - General (About, Themes, Notifications, App Config)

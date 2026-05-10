@@ -4,6 +4,26 @@
 > **Nav:** Orders → Job Orders (JPOs)
 > **Status:** Design CONFIRMED (2026-03-21)
 
+## What This Does (Orders Area Aggregator)
+
+The Orders area covers the full procurement lifecycle: Job Purchase Orders (JPOs — workers request parts for specific jobs) → Procurement Planner (consolidates JPO demand across jobs into supplier-grouped batches) → Purchase Orders (POs — formal supplier orders with 7-status lifecycle: draft/sent/confirmed/partial/received/closed/cancelled) → Receiving Sessions (incoming PO line items, sort to staging/job/truck) → Returns (sort returnable items by reason). Backed by `OrdersService.swift` (42 public methods, 2713 lines, 87 tests = 2.07× breadth) + 16 iOS pages including JPO/PO creation, procurement planner, receiving flows, and approvals (which live under Features/Office/ as `IOSUnifiedApprovalsPage` per memory's documented routing).
+
+## Why
+
+The Orders area is the program's revenue lifecycle: a botched JPO means the field worker doesn't get the parts they need to finish the job → customer waits → revenue delayed; a botched PO means the wrong supplier gets paid or the wrong parts arrive → cost overrun; a botched receiving session means parts go missing → inventory drift → cascading errors elsewhere. The 7-status PO lifecycle exists because real procurement is multi-stage (you draft, then submit, then confirm, then receive in pieces, then close); collapsing this into a single "ordered/received" boolean would lose critical visibility. The Procurement Planner consolidates per-job JPOs into supplier-grouped batches because individually-ordered parts cost more (lost volume discount) and ship more slowly (multiple shipments). PE-COLORS Phase 3 (issues #242 + #243) extends the order forms to handle the new variants/SKU model post-redesign. Memory's "Code far ahead of plan documents" observation from first rotation reflects how fast this area moved during the procurement redesign — plans paused while the team shipped working code.
+
+## Plan-Family Index (Orders Area)
+
+| Plan | Scope |
+|------|-------|
+| `ios-jpo-page.md` (this file, area lead) | JPOs page + dashboard/detail UI + What/Why for the area |
+| `ios-jpo-creation-page.md` | JPO Creation 3-Panel Builder (Search + Cart + Suggestions) |
+| `ios-procurement-page.md` | Procurement Planner — demand consolidation, supplier grouping |
+| `ios-receiving-draft-persistence.md` | Receiving session draft-persist + restore (PE-041 pattern) |
+| `colors-parts-redesign.md` (cross-area, lives in parts) | PE-COLORS Phase 3 referenced by JPO/PO creation pages |
+
+PO creation, returns sorting, and Office/IOSUnifiedApprovalsPage details are documented within OrdersService docstrings rather than as separate plan files — historical artifact of the area's "code-ahead-of-plan" pace.
+
 ## Core Concepts
 
 - **JPO** = Job Purchase Order — a field worker's request for parts for a specific job

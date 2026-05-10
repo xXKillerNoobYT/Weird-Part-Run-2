@@ -8,6 +8,16 @@
 
 ---
 
+## What This Does
+
+The Jobs area is the program's work-management surface — managing the lifecycle of every job from creation through completion (6 statuses: bidding, planning, active, paused, completed, archived), per-job dashboards with smart cards / financial summary / AI summary / quick actions, clock-in/out with GPS verification, daily reports + questionnaires, labor entries, warranty tracking, continuous-job per-to-do warranty (recurring service jobs), and QR-code-based fast-access. Backed by `JobsService.swift` (49 public methods, 2267 lines), `DailyReportGenerator.swift`, and 14 iOS pages. Hat-gated: most write operations require `manage_jobs` permission; financial section requires `view_financials`; clock-in is open to authenticated users.
+
+## Why
+
+Jobs are the program's organizing unit — every operational thing (parts orders, labor hours, scheduling, dispatching, warehouse moves, daily reports, billing) attaches to a job. Without solid Jobs primitives, the rest of the program has no anchor. The 6-status lifecycle codifies the workflow operators actually use (bid → plan → execute → pause-if-needed → complete → archive); the smart-card filter bar surfaces actionable subsets (overdue, paused-on-hold, awaiting-payment); per-job dashboards consolidate the per-context information operators need without forcing them to navigate to 5 different screens. Clock-in/out feeds labor tracking which feeds payroll + pre-billing; daily reports feed end-of-day rollups + customer communications. Warranty tracking is a long-tail revenue driver — without per-job warranty windows, callbacks would be lost. Jobs is the cleanest area in the project per memory ("graduated-baseline reference" — 0 hunt-fix findings, 0 security findings, 0 perf findings on first rotation) precisely because everything else's correctness depends on Jobs being correct.
+
+---
+
 ## 1. Job Status Types
 
 Jobs have six distinct statuses. Each status has specific visual treatment and behavioral rules.
