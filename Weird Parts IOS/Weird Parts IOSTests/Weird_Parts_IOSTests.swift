@@ -51,6 +51,7 @@ private struct BiometricTestDefaults {
 // MARK: - Tests
 
 @Suite("BiometricAuthService — Opt-In Persistence", .serialized)
+@MainActor
 struct BiometricOptInPersistenceTests {
 
     // Each test creates a fresh service that reads/writes the standard suite.
@@ -126,6 +127,7 @@ struct BiometricOptInPersistenceTests {
 // MARK: - Availability + Fallback Branch Tests
 
 @Suite("BiometricAuthService — Availability & Fallback Branches", .serialized)
+@MainActor
 struct BiometricAvailabilityTests {
 
     @Test("availableBiometry returns .faceID when evaluator reports Face ID")
@@ -175,6 +177,7 @@ struct BiometricAvailabilityTests {
 // MARK: - attemptBiometricAuth Branch Tests
 
 @Suite("BiometricAuthService — attemptBiometricAuth Branches", .serialized)
+@MainActor
 struct BiometricAttemptTests {
 
     /// Creates a service pre-configured with an opted-in user and a controllable evaluator.
