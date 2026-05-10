@@ -17,6 +17,10 @@ import os.log
 /// - The derived passphrase material is never stored — it is re-created each time
 ///   from PIN + salt.
 ///
+/// Note: The production app DB is encrypted with a random device-bound bootstrap key
+/// (`AppCore.deviceBootstrapKeyHex`), not with a PIN-derived key. This class is used
+/// for PIN-derived key material in advanced scenarios (e.g. explicit DB re-key tests).
+///
 /// Usage:
 /// ```swift
 /// let manager = CipherKeyManager.shared

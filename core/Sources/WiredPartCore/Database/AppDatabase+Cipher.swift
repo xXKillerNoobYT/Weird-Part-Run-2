@@ -66,10 +66,11 @@ extension AppDatabase {
     /// 2. Create a fresh SQLCipher-encrypted DB at `<path>.encrypted-tmp`.
     /// 3. Run the full `AppDatabase` schema migrator on the new encrypted DB.
     /// 4. ATTACH the old plaintext DB read-only as `old_db` (SQLCipher `KEY ''`).
-    /// 5. Copy every user-data table via explicit shared-column lists so older plaintext
-    ///    schemas can import into the current schema while new columns use defaults.
-    ///    FK checks are disabled for the bulk import so order does not matter.
-    /// 6. Verify the encrypted table has at least as many rows as the old source table.
+    /// 5. Copy every user-data table with column-intersection `INSERT … SELECT`:
+    ///    only columns present in **both** the old and new schema are copied so
+    ///    that old DBs at an earlier migration level (fewer columns) are handled
+    ///    correctly — new columns receive their schema DEFAULT values.
+    /// 6. Verify per-table row counts match.
     /// 7. Detach old DB.
     /// 8. Restore the current schema-version record (may have been overwritten by the copy).
     /// 9. Close the new pool.
@@ -177,21 +178,33 @@ extension AppDatabase {
                 // trusted. We additionally validate that each name contains only safe
                 // characters (alphanumeric + underscore) as a defense-in-depth measure before
                 // interpolating into SQL.
+                //
+                // Column-intersection copy: SELECT only columns that exist in the new schema.
+                // This handles old DBs at an earlier migration level (fewer columns) and new
+                // DBs that have added columns since — new columns receive their DEFAULT values.
+
+                // Determine the validated set of tables to copy and pre-cache their new-schema
+                // column lists so we don't re-query the (unchanging) encrypted DB inside the loop.
+                let safeChars: CharacterSet = CharacterSet.alphanumerics.union(.init(charactersIn: "_"))
+                let tablesToCopy = oldTables.filter {
+                    newTables.contains($0) && $0.unicodeScalars.allSatisfy({ safeChars.contains($0) })
+                }
+                var newColsByTable: [String: [String]] = [:]
+                for table in tablesToCopy {
+                    newColsByTable[table] = try tableColumns(db, schema: "main", table: table)
+                }
+
                 var mismatchedTables: [String] = []
-                for table in oldTables where newTables.contains(table) {
-                    // Validate table name: allow only alphanumeric characters and underscores.
-                    guard table.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.union(.init(charactersIn: "_")).contains($0) }) else {
-                        continue
-                    }
-                    let oldColumns = try tableColumns(db, schema: "old_db", table: table)
-                    let newColumns = try tableColumns(db, schema: "main", table: table)
-                    let oldColumnSet = Set(oldColumns)
-                    let columnsToCopy = newColumns.filter { oldColumnSet.contains($0) }
+                for table in tablesToCopy {
+                    let oldCols = try tableColumns(db, schema: "old_db", table: table)
+                    let newCols = newColsByTable[table] ?? []
+                    let oldColSet = Set(oldCols)
+                    // Copy only columns present in both old and new schema; new columns get defaults.
+                    let columnsToCopy = newCols.filter { oldColSet.contains($0) }
                     guard !columnsToCopy.isEmpty else {
                         throw CipherMigrationError.noSharedColumns(table)
                     }
 
-                    // Quote identifiers to handle any reserved words (still safe after validation).
                     let q = quotedIdentifier(table)
                     let columnList = columnsToCopy.map(quotedIdentifier).joined(separator: ", ")
                     try db.execute(sql: "INSERT OR REPLACE INTO main.\(q) (\(columnList)) SELECT \(columnList) FROM old_db.\(q)")
@@ -288,9 +301,11 @@ extension AppDatabase {
 
     /// Re-key an already-open encrypted `DatabasePool` to a new passphrase.
     ///
-    /// Called from `AuthService.changePin(userId:oldPin:newPin:)` after verifying the old PIN.
     /// SQLCipher's `PRAGMA rekey` is atomic — if it succeeds, the DB is re-encrypted;
     /// if the process is interrupted mid-write, SQLCipher rolls back to the old key.
+    ///
+    /// Note: The production app keeps its DB on the device-bound bootstrap key;
+    /// this method is used by advanced callers and tests only.
     ///
     /// - Parameters:
     ///   - pool: An open, authenticated `DatabasePool`.

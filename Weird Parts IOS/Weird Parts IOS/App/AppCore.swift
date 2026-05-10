@@ -89,7 +89,7 @@ final class AppCore: ObservableObject {
 
                 let database: AppDatabase
                 do {
-                    // SQLCipher: derive a device-bound bootstrap key from the Keychain.
+// SQLCipher: derive a device-bound bootstrap key from the Keychain.
                     // This key never changes unless the Keychain is wiped (device reset).
                     // User PIN changes update authentication credentials only; the app DB
                     // stays on this device key so startup can always open it before login.
@@ -454,9 +454,9 @@ final class AppCore: ObservableObject {
 
     /// Return the device-bound SQLCipher bootstrap key (hex-encoded 64 chars).
     ///
-    /// This key is used during app startup, before any user PIN is available.
-    /// It is a random 32-byte value generated on first launch and stored in the
-    /// Keychain with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`.
+    /// This key is used exclusively to encrypt the database file. It is a random
+    /// 32-byte value generated on first launch and stored in the Keychain with
+    /// `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. It never changes.
     ///
     /// User PIN changes do not re-key the app database. Startup must open the DB
     /// before any user can enter a PIN, so the persistent DB key remains device-bound.
@@ -519,18 +519,14 @@ final class AppCore: ObservableObject {
     ///
     /// - Parameters:
     ///   - userId: The ID of the authenticated user.
-    ///   - oldPin: The current PIN (verified before re-key runs).
+    ///   - oldPin: The current PIN (verified before update runs).
     ///   - newPin: The replacement PIN (4–8 digits).
     /// - Returns: nil on success, or a user-friendly error string.
     func changePinAndRekey(userId: Int64, oldPin: String, newPin: String) async -> String? {
         guard let authService else { return "App not ready. Please wait." }
         do {
             try await Task.detached(priority: .userInitiated) {
-                try authService.changePin(
-                    userId: userId,
-                    oldPin: oldPin,
-                    newPin: newPin
-                )
+                try authService.changePin(userId: userId, oldPin: oldPin, newPin: newPin)
             }.value
             return nil
         } catch {
