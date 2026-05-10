@@ -39,8 +39,16 @@ extension AppDatabase {
             // Set the encryption key using SQLCipher's hex notation.
             // `usePassphrase("x'<hex>'")` calls sqlite3_key_v2() with the raw bytes
             // of the string; SQLCipher recognises the x'...' prefix and treats it as
-            // a 32-byte raw key, bypassing PBKDF2.  SHA-256(pin || salt) already
-            // provides key stretching, so a second PBKDF2 round is unnecessary.
+            // a 32-byte raw key, bypassing its internal PBKDF2.
+            //
+            // Security note: when `keyHex` is derived from a user PIN via
+            // CipherKeyManager (SHA-256(pin || salt)), SHA-256 is NOT a slow KDF —
+            // an attacker with the salt could brute-force short PINs quickly.
+            // The primary threat model here is casual physical access and
+            // data-at-rest exposure; for the device bootstrap key path the key
+            // is random 32 bytes (not PIN-derived), so no brute-force applies.
+            // If PIN brute-force resistance is required in the future, replace
+            // deriveKey(pin:salt:) with PBKDF2 or Argon2.
             try db.usePassphrase("x'\(keyHex)'")
             // Use 4096-byte pages (SQLCipher default; good for mobile I/O).
             try db.execute(sql: "PRAGMA cipher_page_size = 4096")
@@ -124,6 +132,10 @@ extension AppDatabase {
                 // PRAGMA foreign_keys can only be changed outside of a transaction.
                 try db.execute(sql: "PRAGMA foreign_keys = OFF")
 
+                // Re-enable FK checks unconditionally when this closure exits,
+                // regardless of whether DETACH or any subsequent step throws.
+                defer { try? db.execute(sql: "PRAGMA foreign_keys = ON") }
+
                 // Attach old plaintext DB. SQLCipher uses KEY '' for unencrypted attachments.
                 try db.execute(
                     sql: "ATTACH DATABASE ? AS old_db KEY ''",
@@ -179,10 +191,6 @@ extension AppDatabase {
                 }
 
                 try db.execute(sql: "DETACH DATABASE old_db")
-
-                // Re-enable FK checks unconditionally before returning or throwing,
-                // so the connection is always left in a consistent state.
-                try db.execute(sql: "PRAGMA foreign_keys = ON")
 
                 if !mismatchedTables.isEmpty {
                     throw CipherMigrationError.rowCountMismatch(mismatchedTables)

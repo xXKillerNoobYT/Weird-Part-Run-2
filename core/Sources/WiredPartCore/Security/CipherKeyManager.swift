@@ -68,8 +68,19 @@ public final class CipherKeyManager: Sendable {
         }
         let salt = Data(bytes)
 
-        try writeSaltToKeychain(salt)
-        return salt
+        do {
+            try writeSaltToKeychain(salt)
+            return salt
+        } catch {
+            // `writeSaltToKeychain` throws `keychainAccessFailed(errSecDuplicateItem)` when
+            // another thread raced and wrote the salt first. Re-read to get the winner's value
+            // so all callers share the same stable salt (different salts → different DB keys →
+            // encrypted data becomes unreadable).
+            if let existing = readSaltFromKeychain() {
+                return existing
+            }
+            throw error
+        }
     }
 
     /// Delete the persisted salt (use only during device wipe / factory reset).
@@ -115,18 +126,12 @@ public final class CipherKeyManager: Sendable {
         guard status == errSecSuccess || status == errSecDuplicateItem else {
             throw CipherKeyError.keychainAccessFailed(status)
         }
-        // If the item already exists (race condition), update it.
+        // If the item already exists (race condition between two callers), do NOT
+        // overwrite it — doing so could change the stored salt, invalidating the
+        // derived DB key for all other sessions. Instead, surface the duplicate so
+        // loadOrCreateSalt() can re-read and use the already-persisted value.
         if status == errSecDuplicateItem {
-            let updateQuery: [CFString: Any] = [
-                kSecClass: kSecClassGenericPassword,
-                kSecAttrService: Self.keychainService,
-                kSecAttrAccount: Self.keychainAccount
-            ]
-            let attrs: [CFString: Any] = [kSecValueData: salt]
-            let updateStatus = SecItemUpdate(updateQuery as CFDictionary, attrs as CFDictionary)
-            guard updateStatus == errSecSuccess else {
-                throw CipherKeyError.keychainAccessFailed(updateStatus)
-            }
+            throw CipherKeyError.keychainAccessFailed(status)
         }
     }
 }

@@ -494,7 +494,16 @@ final class AppCore: ObservableObject {
             kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         ]
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
-        if addStatus != errSecSuccess && addStatus != errSecDuplicateItem {
+        if addStatus == errSecDuplicateItem {
+            // Another thread or launch already stored a bootstrap key — read and return it
+            // so we don't encrypt the DB with a key that won't be retrievable next launch.
+            var existing: AnyObject?
+            let rereadStatus = SecItemCopyMatching(readQuery as CFDictionary, &existing)
+            if rereadStatus == errSecSuccess, let data = existing as? Data, data.count == 32 {
+                return data.map { String(format: "%02x", $0) }.joined()
+            }
+            // Re-read failed: fall through with the in-memory key (best-effort for this session).
+        } else if addStatus != errSecSuccess {
             // Non-fatal — key still in memory for this session.
             // (Cannot use `logger` here — static nonisolated method.)
         }
@@ -522,10 +531,14 @@ final class AppCore: ObservableObject {
         guard let authService, let db else { return "App not ready. Please wait." }
         // Extract the pool on MainActor before entering the detached task so we can
         // pass a concrete Sendable type rather than `any DatabaseWriter`.
-        let pool = db.writer as? DatabasePool
+        // Fail fast if the writer isn't a DatabasePool — this would mean the app was
+        // bootstrapped without encryption, which is a programming error in production.
+        guard let pool = db.writer as? DatabasePool else {
+            return "Database configuration error: encrypted pool is required for PIN changes."
+        }
         do {
             try await Task.detached(priority: .userInitiated) {
-                // `changePin` verifies the old PIN, updates the hash, and re-keys the pool.
+                // `changePin` verifies the old PIN, re-keys the pool, then updates the hash.
                 try authService.changePin(
                     userId: userId,
                     oldPin: oldPin,

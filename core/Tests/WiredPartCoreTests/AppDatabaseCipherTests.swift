@@ -1,7 +1,6 @@
 import Foundation
 import Testing
 import GRDB
-import CryptoKit
 @testable import WiredPartCore
 
 // MARK: - AppDatabaseCipherTests

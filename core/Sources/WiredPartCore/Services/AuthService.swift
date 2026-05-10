@@ -725,21 +725,28 @@ public final class AuthService: Sendable {
             throw AuthError.invalidPin(authResult.message)
         }
 
-        // Persist new PIN hash.
+        // Re-key the encrypted database first (before persisting the PIN hash).
+        // If re-key succeeds, we then persist the new PIN hash — this ordering
+        // ensures failure-atomicity: a re-key failure leaves the PIN hash unchanged
+        // and the DB still openable with the old key.  A PIN hash write failure
+        // after a successful re-key is extremely unlikely (the connection is
+        // already proven open), but if it occurs the user retains the old PIN
+        // credentials and should retry.
+        if let pool {
+            let newKeyHex = try CipherKeyManager.shared.deriveKeyHex(pin: trimmed)
+            try AppDatabase.rekey(pool: pool, newKeyHex: newKeyHex)
+        }
+
+        // Persist new PIN hash using the trimmed (normalised) PIN so PIN validation
+        // and key derivation are always consistent — no whitespace variants.
         let newSalt = Self.generateSalt()
-        let newHash = Self.hashPin(newPin, salt: newSalt)
+        let newHash = Self.hashPin(trimmed, salt: newSalt)
         let now = Self.currentTimestamp()
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: "UPDATE users SET pin_hash = ?, pin_salt = ?, updated_at = ? WHERE id = ?",
                 arguments: [newHash, newSalt, now, userId]
             )
-        }
-
-        // Re-key the encrypted database if a pool was supplied.
-        if let pool {
-            let newKeyHex = try CipherKeyManager.shared.deriveKeyHex(pin: newPin)
-            try AppDatabase.rekey(pool: pool, newKeyHex: newKeyHex)
         }
 
         return true
