@@ -106,42 +106,44 @@ public actor OnboardAIRuntimeBootstrapper {
     private func availabilityWithTimeout() async -> AIAvailability? {
         // Run the checker on a real OS thread so a blocking implementation
         // cannot occupy a cooperative-thread-pool worker and delay the
-        // timeout sentinel. The `_AvailabilityResumeOnce` actor serialises
-        // the race and guarantees the continuation is resumed exactly once.
-        return await withCheckedContinuation { continuation in
-            let once = _AvailabilityResumeOnce(continuation)
-
-            // Timeout sentinel — cooperative, does not hold a thread.
-            Task { [timeoutNanoseconds] in
-                try? await Task.sleep(nanoseconds: timeoutNanoseconds)
-                await once.resume(with: nil)
-            }
-
-            // Checker on a real OS thread. Blocking calls here cannot starve
-            // the cooperative thread pool and delay the timeout above.
-            let checker = aiChecker
-            Thread.detachNewThread {
-                let value = checker.checkAvailability()
-                Task { await once.resume(with: value) }
-            }
+        // timeout fallback. The current task blocks only for the fixed budget
+        // instead of awaiting a continuation that must be rescheduled onto the
+        // cooperative executor under test/runtime load.
+        let waitBox = _AvailabilityWaitBox()
+        let checker = aiChecker
+        Thread.detachNewThread {
+            waitBox.finish(with: checker.checkAvailability())
         }
+
+        return waitBox.wait(timeoutNanoseconds: timeoutNanoseconds)
     }
 }
 
-// MARK: - Private one-shot continuation guard
+// MARK: - Private timeout wait guard
 
-/// Serialises the race between the timeout sentinel and the availability
-/// checker so that `CheckedContinuation.resume` is called exactly once.
-private actor _AvailabilityResumeOnce {
-    private var pending: CheckedContinuation<AIAvailability?, Never>?
+/// Holds a single checker result behind a semaphore so the bootstrap timeout
+/// does not depend on Swift task, actor, or dispatch queue scheduling.
+private final class _AvailabilityWaitBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private let semaphore = DispatchSemaphore(value: 0)
+    private var result: AIAvailability?
 
-    init(_ continuation: CheckedContinuation<AIAvailability?, Never>) {
-        self.pending = continuation
+    func finish(with value: AIAvailability) {
+        lock.lock()
+        result = value
+        lock.unlock()
+
+        semaphore.signal()
     }
 
-    func resume(with value: AIAvailability?) {
-        guard let c = pending else { return }
-        pending = nil
-        c.resume(returning: value)
+    func wait(timeoutNanoseconds: UInt64) -> AIAvailability? {
+        let timeout = DispatchTime.now() + .nanoseconds(Int(timeoutNanoseconds))
+        guard semaphore.wait(timeout: timeout) == .success else {
+            return nil
+        }
+
+        lock.lock()
+        defer { lock.unlock() }
+        return result
     }
 }
