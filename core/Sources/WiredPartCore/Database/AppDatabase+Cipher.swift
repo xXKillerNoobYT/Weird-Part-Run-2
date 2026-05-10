@@ -66,9 +66,10 @@ extension AppDatabase {
     /// 2. Create a fresh SQLCipher-encrypted DB at `<path>.encrypted-tmp`.
     /// 3. Run the full `AppDatabase` schema migrator on the new encrypted DB.
     /// 4. ATTACH the old plaintext DB read-only as `old_db` (SQLCipher `KEY ''`).
-    /// 5. Copy every user-data table via `INSERT OR REPLACE INTO main.<t> SELECT * FROM old_db.<t>`.
+    /// 5. Copy every user-data table via explicit shared-column lists so older plaintext
+    ///    schemas can import into the current schema while new columns use defaults.
     ///    FK checks are disabled for the bulk import so order does not matter.
-    /// 6. Verify per-table row counts match.
+    /// 6. Verify the encrypted table has at least as many rows as the old source table.
     /// 7. Detach old DB.
     /// 8. Restore the current schema-version record (may have been overwritten by the copy).
     /// 9. Close the new pool.
