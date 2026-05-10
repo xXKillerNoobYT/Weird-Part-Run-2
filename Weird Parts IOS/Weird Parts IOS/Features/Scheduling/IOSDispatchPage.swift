@@ -45,6 +45,7 @@ struct IOSDispatchPage: View {
     @State private var pendingAssignJobId: Int64?
     @State private var pendingAssignDate: String?
     @State private var pendingAssignWorkerId: Int64?
+    @State private var pendingAssignTimeSlot: String = "full"
 
     @State private var actionError: String?
     @State private var activeSheet: ActiveSheet?
@@ -136,7 +137,7 @@ struct IOSDispatchPage: View {
         .alert("Time-Off Conflict", isPresented: $showConflictAlert) {
             Button("Assign Anyway", role: .destructive) {
                 if let jid = pendingAssignJobId, let uid = pendingAssignWorkerId, let d = pendingAssignDate {
-                    forceAssignment(jobId: jid, userId: uid, date: d)
+                    forceAssignment(jobId: jid, userId: uid, date: d, timeSlot: pendingAssignTimeSlot)
                 }
             }
             Button("Cancel", role: .cancel) { }
@@ -456,6 +457,7 @@ struct IOSDispatchPage: View {
                 pendingAssignJobId = jobId
                 pendingAssignWorkerId = userId
                 pendingAssignDate = date
+                pendingAssignTimeSlot = timeSlot
                 showConflictAlert = true
                 return
             }
@@ -463,7 +465,18 @@ struct IOSDispatchPage: View {
             // If conflict check fails, proceed anyway
         }
 
-        forceAssignment(jobId: jobId, userId: userId, date: date, timeSlot: timeSlot)
+        // No conflict — create the schedule entry directly (service layer also validates).
+        do {
+            _ = try service.createScheduleEntry(
+                userId: userId,
+                jobId: jobId,
+                date: date,
+                timeSlot: timeSlot
+            )
+            loadData()
+        } catch {
+            actionError = userFriendlyError(error, context: "complete action")
+        }
     }
 
     private func forceAssignment(jobId: Int64, userId: Int64, date: String, timeSlot: String = "full") {
@@ -472,10 +485,11 @@ struct IOSDispatchPage: View {
             return
         }
         do {
-            _ = try service.createDispatch(
-                jobId: jobId,
+            _ = try service.createScheduleEntry(
                 userId: userId,
+                jobId: jobId,
                 date: date,
+                timeSlot: timeSlot,
                 forceCreateDespiteTimeOff: true
             )
             loadData()

@@ -955,6 +955,8 @@ public final class SchedulingService: Sendable {
     // =========================================================================
 
     /// Creates a new schedule entry (schedule a user for a job on a date with optional times).
+    /// Checks for approved time-off conflict before inserting (mirrors createDispatch enforcement).
+    /// Pass `forceCreateDespiteTimeOff: true` for the "Assign anyway?" explicit override.
     @discardableResult
     public func createScheduleEntry(
         userId: Int64,
@@ -963,10 +965,21 @@ public final class SchedulingService: Sendable {
         startTime: String? = nil,
         endTime: String? = nil,
         notes: String? = nil,
-        timeSlot: String = "full"
+        timeSlot: String = "full",
+        forceCreateDespiteTimeOff: Bool = false
     ) throws -> Int64 {
         guard !date.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw SchedulingError.requiredFieldEmpty
+        }
+        // Service-layer time-off conflict enforcement (consistent with createDispatch).
+        if !forceCreateDespiteTimeOff {
+            if let conflict = try checkTimeOffConflict(employeeId: userId, date: date) {
+                throw SchedulingError.timeOffConflict(
+                    userId: userId,
+                    date: date,
+                    reason: conflict.reason
+                )
+            }
         }
         return try db.writer.write { dbConn -> Int64 in
             // Guard: job + user must exist and not be tombstoned.
