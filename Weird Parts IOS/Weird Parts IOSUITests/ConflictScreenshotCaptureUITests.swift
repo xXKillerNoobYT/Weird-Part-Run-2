@@ -7,6 +7,7 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
 
     func testCaptureConflictScreenshots() throws {
         let app = XCUIApplication()
+        app.launchArguments += ["-UITesting"]
         app.launch()
 
         let userRows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'loginUserRow_'"))
