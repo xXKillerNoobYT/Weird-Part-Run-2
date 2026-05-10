@@ -1,5 +1,13 @@
 # iOS People Pages — Design Plan
 
+## What This Does
+
+The People area covers everyone the program tracks: employees (with certifications, skills, wages, hat assignments, team membership), customers (with contact preferences and billing info), contractors (with subcontractor agreements + scoring), free-form contacts (entity_contacts table — non-employee non-customer people who appear in jobs/orders/etc), teams (groups of employees with shared visibility), hats (job roles with permission bundles), and the permission catalog itself. Backed by `PeopleService.swift` (56 public methods, 2279 lines, 76 tests = 1.36× breadth) + 14 iOS pages.
+
+## Why
+
+The People area is identity-and-permission ground truth for the whole program. Every audit log entry references a user_id; every dispatch references a worker; every job references a customer; every contractor reference flows to billing. A bug in PeopleService propagates everywhere. Hats are the program's RBAC primitive — a "Tech" hat carries one permission bundle, "Office" carries another, "Owner" carries everything. Re-assigning a hat to an employee atomically changes their authority across the program. Teams add shared-visibility scoping (e.g. Truck-1 team sees Truck-1's calendar). Per memory, People had the highest dismiss-safety fix density of any area first rotation (9 fixes across 11 files) — every form-style sheet needs the `interactiveDismissDisabled(isDirty || isSaving)` pattern because losing a half-typed customer's phone number to an accidental swipe-down is a data-loss event in this domain. Rotation-2 sweep is now the validation that those fixes held + that no new gaps appeared.
+
 > **Purpose:** Comprehensive design decisions for all People-related pages in the iOS app. Covers people dashboard, employees, customers, contractors, contacts, teams, hats, permissions, and payment tracking.
 >
 > **Source:** Design conversation 2026-03-23. Implements pages in `Weird Parts IOS/Features/People/`.

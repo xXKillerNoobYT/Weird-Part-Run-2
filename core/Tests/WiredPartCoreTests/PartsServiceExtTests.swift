@@ -1165,4 +1165,38 @@ struct PartsServiceExtTests {
         let parts = try env.parts.listParts()
         #expect(!parts.contains(where: { $0.part.id == partId }))
     }
+
+    // MARK: - NULL-default boolean field defense (issue: GRDB Int? inserts NULL bypassing SQL DEFAULT)
+
+    @Test("createPart sets isDeprecated=0 — row appears in WHERE is_deprecated=0 query")
+    func testCreatePart_setsIsDeprecatedZero() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "DeprecatedDefenseCat")
+        let partId = try env.parts.createPart(categoryId: catId, name: "NotDeprecatedPart", code: "NODEP-001")
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM parts WHERE id = ? AND is_deprecated = 0", arguments: [partId]) ?? 0
+        }
+        #expect(count == 1)
+    }
+
+    @Test("createPart sets isQrTagged=0 — row appears in WHERE is_qr_tagged=0 query")
+    func testCreatePart_setsIsQrTaggedZero() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "QrTagDefenseCat")
+        let partId = try env.parts.createPart(categoryId: catId, name: "UntaggedPart", code: "NOTAG-001")
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM parts WHERE id = ? AND is_qr_tagged = 0", arguments: [partId]) ?? 0
+        }
+        #expect(count == 1)
+    }
+
+    @Test("createSupplier sets isActive=1 — row appears in WHERE is_active=1 query")
+    func testCreateSupplier_setsIsActiveOne() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try env.parts.createSupplier(name: "ActiveDefenseSupplier")
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM suppliers WHERE id = ? AND is_active = 1", arguments: [supplierId]) ?? 0
+        }
+        #expect(count == 1)
+    }
 }

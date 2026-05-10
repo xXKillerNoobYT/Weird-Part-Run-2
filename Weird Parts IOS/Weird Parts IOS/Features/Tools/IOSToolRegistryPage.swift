@@ -101,9 +101,9 @@ struct IOSToolRegistryPage: View {
                 )
             }
         }
-        .onChange(of: searchText) { loadData() }
-        .refreshable { loadData() }
-        .task { loadData() }
+        .onChange(of: searchText) { Task { await loadData() } }
+        .refreshable { await loadData() }
+        .task { await loadData() }
         .onAppear {
             NotificationCenter.default.post(
                 name: .toolRegistryPageActive,
@@ -128,14 +128,14 @@ struct IOSToolRegistryPage: View {
                     title: "All",
                     count: total,
                     isSelected: statusFilter == "all",
-                    action: { statusFilter = "all"; loadData() }
+                    action: { statusFilter = "all"; Task { await loadData() } }
                 )
                 ForEach(statusOptions.dropFirst(), id: \.self) { status in
                     SmartFilterCard(
                         title: status.replacingOccurrences(of: "_", with: " ").capitalized,
                         count: statusCounts[status] ?? 0,
                         isSelected: statusFilter == status,
-                        action: { statusFilter = status; loadData() }
+                        action: { statusFilter = status; Task { await loadData() } }
                     )
                 }
             }
@@ -152,7 +152,7 @@ struct IOSToolRegistryPage: View {
             ProgressView("Loading tools...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
-            ErrorStateView(message: error) { loadData() }
+            ErrorStateView(message: error) { Task { await loadData() } }
         } else if filteredTools.isEmpty {
             EmptyStateView(
                 icon: "wrench.and.screwdriver",
@@ -269,7 +269,7 @@ struct IOSToolRegistryPage: View {
 
     // MARK: - Data Loading
 
-    private func loadData() {
+    private func loadData() async {
         guard let service = appCore.toolsService else {
             isLoading = false
             loadError = "Tools service unavailable"

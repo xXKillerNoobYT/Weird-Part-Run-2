@@ -1,5 +1,13 @@
 # iOS Fleet Pages — Design Plan
 
+## What This Does
+
+The Vehicles area (UI named "Fleet" because it covers vehicles + trailers) manages the shop's mobile-asset inventory and operational records: per-vehicle assignments to drivers, fuel + mileage logs (combined in one Usage Log per vehicle), pre-trip inspections (with photo capture and pass/fail criteria), maintenance records (oil changes, repairs, scheduled service), telematics (GPS location tracking from connected devices), per-truck stock tracking (parts loaded onto specific trucks), trailer-from-truck transfers, deliveries, reimbursements (driver-pay-for-fuel claims), and dashboard aggregates. Backed by `FleetService.swift` (34 public methods, 2215 lines, 57 tests = 1.68× breadth) + 18 iOS pages.
+
+## Why
+
+Fleet is the program's bridge between digital inventory and physical reality. A vehicle's location at any moment determines where its loaded parts are; a trailer's contents are job-staging-area-on-wheels. Bad fleet data has cascading effects: dispatcher can't reach a truck for a job because the GPS is stale; bookkeeper can't reimburse fuel because the receipts didn't make it into the program; mechanic doesn't know which trailer's brake inspection is due. Per-trip pre-trip inspection is also a regulatory requirement — DOT requires drivers to verify safety items every shift. The 13 is_active gaps that first-rotation found in FleetService (the most of any area) reflect how fast this area was built — every list query needed retrofitting to filter inactive vehicles. Memory's documented `getFleetDashboardStats` 8-roundtrip pattern (#312) and per-vehicle stats fanout are the kind of perf concerns that pile up when the area's data shape evolves faster than its query structure. The 11 open issues at rotation-2 (#278/#279/#280/#281/#312-317) are all post-first-graduation feature/perf/security work — most filed in the 2026-04-25 audit batch.
+
 ## Navigation
 Fleet: My Vehicle, Vehicles, Trailers, Usage Log (combined fuel+mileage), Inspections, Maintenance, Tracking, Management
 

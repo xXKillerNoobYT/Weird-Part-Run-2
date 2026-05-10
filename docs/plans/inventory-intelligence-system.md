@@ -3,7 +3,15 @@
 > **Status:** IMPLEMENTATION COMPLETE (core) / DESIGN TBD (advanced features in Part F)
 > **Scope:** Forecasting backbone + Wishlist + Procurement Planner redesign + movement suggestions + smart pull
 > **Related:** `ios-page-review-tracker.md`, `forecasting-page-redesign.md`
-> **Last updated:** 2026-04-19
+> **Last updated:** 2026-04-19 (graduated 2026-04-27 first rotation; rotation-2 sweep 2026-05-06)
+
+## What This Does
+
+The Inventory Intelligence area is the cross-cutting "what should we have on hand vs what do we actually have" engine. It spans three services and five iOS pages: **PartsService forecasting funcs** (13 methods covering ADU/APW math, location-aware forecast settings, free-space ratings, pending recommendations, recalc); **WishlistService** (12 methods, 438 lines, 32 tests = 2.67× breadth — sectioned items by source/status, approve/dismiss with permission gates, send-to-procurement); **OrdersService.getProcurementDemand** (consolidates demand from JPOs+wishlist+forecasts into supplier-grouped batches). UI: `PartsForecastingPage.swift` + `ForecastSettingsSheet.swift` + `IOSForecastSettingsPage.swift` + `IOSWishlistPage.swift` + `IOSInventoryGridPage.swift`. Backed by 5 dedicated migrations (029 location_stock_targets, 030 forecast_settings + location_free_space, 031 target_recommendations, 057 wishlist_items, 070 wishlist_items_v2 with dismiss_reason + auto_approve_at + certainty_score).
+
+## Why
+
+Inventory is the program's **memory of the future** — JPO is "what someone asked for today", but inventory intelligence is "what we should have ordered last week to be ready for next week's jobs." The forecasting backbone reads consumption patterns (ADU = average daily usage, APW = average per work-shift) and projects when stock will hit MIN; without it, the dispatcher's next call to a job site lands with the wrong parts, the customer waits, the day is lost. The Wishlist is the **curation layer between user-asked + forecast-projected + auto-detected** — three data sources merged into one approval queue so the procurement planner has a single inbox. The procurement planner takes that queue and groups by supplier so we capture volume discounts and minimize shipments. The 5 dedicated migrations + version 2 of wishlist_items reflect this area's evolution: dismiss_reason was added when reviewers needed audit trails for "no, we don't need that"; certainty_score was added when forecast-derived items needed to outrank user-typed items only when the algorithm was confident; auto_approve_at added when the team realized 90% of forecast items were rubber-stamped and a permission-gated auto-flow would save the bookkeeper's morning. Memory's #344 fix (PartsService Int? boolean defaults silently NULL-bypassing SQL DEFAULT 0/1) and #345 (10 LEFT JOIN NULL propagation candidates) — two T1-T2 silent-data bugs surfaced by AUTO GO scanners on this area in particular — show why this cross-area is the **ground-truth-of-stock** test bed: every other area depends on inventory data being correct, so subtle silent bugs in inventory cascade everywhere else. The #341 perf cache fix (3 SwiftUI views) and #340 hot-path render cache (Reports + Inventory grid) reflect that this area is also one of the heavier read paths — list views with 200+ rows + filter/sort overlays.
 
 ## Current Implementation Status (as of 2026-04-19)
 

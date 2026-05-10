@@ -80,6 +80,7 @@ struct IOSWishlistPage: View {
         ) {
             if let item = itemToDelete {
                 Button("Delete \"\(item.partName)\"", role: .destructive) {
+                    Haptics.warning()
                     deleteItem(item)
                     itemToDelete = nil
                 }
@@ -88,7 +89,6 @@ struct IOSWishlistPage: View {
         } message: {
             Text("This item will be permanently removed from the wishlist.")
         }
-        .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }
     }
@@ -231,6 +231,7 @@ struct IOSWishlistPage: View {
     private func leadingSwipeActions(_ item: WishlistItem) -> some View {
         if item.status == "pending" {
             Button {
+                Haptics.impact(.medium)
                 approveItem(item)
             } label: {
                 Label("Approve", systemImage: "checkmark.circle")
@@ -239,6 +240,7 @@ struct IOSWishlistPage: View {
         }
         if item.status == "approved" {
             Button {
+                Haptics.impact(.medium)
                 sendToProcurement(item)
             } label: {
                 Label("Send to PO", systemImage: "shippingbox")
@@ -251,6 +253,7 @@ struct IOSWishlistPage: View {
     private func trailingSwipeActions(_ item: WishlistItem) -> some View {
         if item.status == "pending" || item.status == "approved" {
             Button(role: .destructive) {
+                Haptics.impact(.medium)
                 activeSheet = .dismiss(item)
             } label: {
                 Label("Dismiss", systemImage: "xmark.circle")
@@ -258,6 +261,7 @@ struct IOSWishlistPage: View {
         }
         if item.status == "dismissed" {
             Button {
+                Haptics.impact(.medium)
                 reopenItem(item)
             } label: {
                 Label("Reopen", systemImage: "arrow.uturn.left")
@@ -412,10 +416,11 @@ struct IOSWishlistPage: View {
     private func approveItem(_ item: WishlistItem) {
         guard let service = appCore.wishlistService else { loadError = "Service not available"; return }
         guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
-        let approver = appCore.currentUser?.displayName ?? "Unknown"
+        guard let userId = appCore.currentUser?.id else { loadError = "Not authenticated"; return }
         do {
-            try service.approveItem(id: id, by: approver)
-            loadData()
+            let updated = try service.approveItem(id: id, byUserId: userId)
+            Haptics.success()
+            applyPartialUpdate(updated)
         } catch {
             loadError = userFriendlyError(error, context: "approve wishlist item")
         }
@@ -424,10 +429,11 @@ struct IOSWishlistPage: View {
     private func dismissItem(_ item: WishlistItem, reason: String) {
         guard let service = appCore.wishlistService else { loadError = "Service not available"; return }
         guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
-        let dismisser = appCore.currentUser?.displayName ?? "Unknown"
+        guard let userId = appCore.currentUser?.id else { loadError = "Not authenticated"; return }
         do {
-            try service.dismissItem(id: id, by: dismisser, reason: reason)
-            loadData()
+            let updated = try service.dismissItem(id: id, byUserId: userId, reason: reason)
+            Haptics.success()
+            applyPartialUpdate(updated)
         } catch {
             loadError = userFriendlyError(error, context: "dismiss wishlist item")
         }
@@ -436,9 +442,11 @@ struct IOSWishlistPage: View {
     private func sendToProcurement(_ item: WishlistItem) {
         guard let service = appCore.wishlistService else { loadError = "Service not available"; return }
         guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
+        guard let userId = appCore.currentUser?.id else { loadError = "Not authenticated"; return }
         do {
-            try service.sendToProcurement(id: id)
-            loadData()
+            let updated = try service.sendToProcurement(id: id, byUserId: userId)
+            Haptics.success()
+            applyPartialUpdate(updated)
         } catch {
             loadError = userFriendlyError(error, context: "send to procurement")
         }
@@ -447,9 +455,11 @@ struct IOSWishlistPage: View {
     private func reopenItem(_ item: WishlistItem) {
         guard let service = appCore.wishlistService else { loadError = "Service not available"; return }
         guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
+        guard let userId = appCore.currentUser?.id else { loadError = "Not authenticated"; return }
         do {
-            try service.reopenItem(id: id)
-            loadData()
+            let updated = try service.reopenItem(id: id, byUserId: userId)
+            Haptics.success()
+            applyPartialUpdate(updated)
         } catch {
             loadError = userFriendlyError(error, context: "reopen wishlist item")
         }
@@ -460,10 +470,52 @@ struct IOSWishlistPage: View {
         guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
         do {
             try service.deleteItem(id: id)
-            loadData()
+            removeFromSections(item)
         } catch {
             loadError = userFriendlyError(error, context: "delete wishlist item")
         }
+    }
+
+    // MARK: - Partial Update Helpers
+
+    /// Apply a single-item diff: remove the old version from whichever section holds it,
+    /// then insert the updated item at the front of the section that matches its sourceType.
+    /// Only `loadData()` (initial load + pull-to-refresh) performs a full DB fetch.
+    private func applyPartialUpdate(_ updatedItem: WishlistItem) {
+        guard let id = updatedItem.id else { return }
+        let newUserAdded = sections.userAdded.filter { $0.id != id }
+        let newForecast = sections.forecastDemand.filter { $0.id != id }
+        let newAutoAdded = sections.autoAdded.filter { $0.id != id }
+        switch updatedItem.sourceType {
+        case "manual":
+            sections = WishlistService.WishlistSections(
+                userAdded: [updatedItem] + newUserAdded,
+                forecastDemand: newForecast,
+                autoAdded: newAutoAdded
+            )
+        case "forecast":
+            sections = WishlistService.WishlistSections(
+                userAdded: newUserAdded,
+                forecastDemand: [updatedItem] + newForecast,
+                autoAdded: newAutoAdded
+            )
+        default:
+            sections = WishlistService.WishlistSections(
+                userAdded: newUserAdded,
+                forecastDemand: newForecast,
+                autoAdded: [updatedItem] + newAutoAdded
+            )
+        }
+    }
+
+    /// Remove a deleted item from whichever section holds it, with no DB fetch.
+    private func removeFromSections(_ item: WishlistItem) {
+        guard let id = item.id else { return }
+        sections = WishlistService.WishlistSections(
+            userAdded: sections.userAdded.filter { $0.id != id },
+            forecastDemand: sections.forecastDemand.filter { $0.id != id },
+            autoAdded: sections.autoAdded.filter { $0.id != id }
+        )
     }
 
     // MARK: - Data Loading
@@ -476,11 +528,12 @@ struct IOSWishlistPage: View {
         }
         isLoading = totalCount == 0
         loadError = nil
+        let currentUserId = appCore.currentUser?.id
         // Run auto-approvals in a background task before reading sections (DIS-006).
         // processAutoApprovals was removed from getSectionedItems() to avoid main-thread
         // DB writes inside a read; we fire it here as a detached utility task instead.
         Task.detached(priority: .utility) {
-            _ = try? service.processAutoApprovals(by: "System (Auto)")
+            _ = try? service.processAutoApprovals(byUserId: currentUserId)
             do {
                 let result = try service.getSectionedItems()
                 await MainActor.run {
@@ -614,6 +667,8 @@ private struct AddWishlistItemSheet: View {
     @State private var notes = ""
     @State private var saveError: String?
     @State private var isSaving = false
+    @State private var isDirty = false
+    @State private var showCancelConfirmation = false
 
     private let priorities = ["urgent", "high", "normal", "low"]
 
@@ -623,8 +678,10 @@ private struct AddWishlistItemSheet: View {
                 Section("Part Information") {
                     TextField("Part Name", text: $partName)
                         .textContentType(.none)
+                        .onChange(of: partName) { _ in isDirty = true }
 
                     Stepper("Quantity: \(qtySuggested)", value: $qtySuggested, in: 1...9999)
+                        .onChange(of: qtySuggested) { _ in isDirty = true }
                 }
 
                 Section("Priority") {
@@ -635,14 +692,17 @@ private struct AddWishlistItemSheet: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                    .onChange(of: priority) { _ in isDirty = true }
                 }
 
                 Section("Details") {
                     TextField("Reason (optional)", text: $reason, axis: .vertical)
                         .lineLimit(2...4)
+                        .onChange(of: reason) { _ in isDirty = true }
 
                     TextField("Notes (optional)", text: $notes, axis: .vertical)
                         .lineLimit(2...4)
+                        .onChange(of: notes) { _ in isDirty = true }
                 }
 
                 if let error = saveError {
@@ -656,11 +716,21 @@ private struct AddWishlistItemSheet: View {
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Add Wishlist Item")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(isSaving)
+            .interactiveDismissDisabled(isDirty || isSaving)
+            .confirmationDialog(
+                "Discard changes?",
+                isPresented: $showCancelConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) {}
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .disabled(isSaving)
+                    Button("Cancel") {
+                        if isDirty { showCancelConfirmation = true } else { dismiss() }
+                    }
+                    .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isSaving {
@@ -710,6 +780,7 @@ private struct AddWishlistItemSheet: View {
                 requestedBy: appCore.currentUser?.displayName,
                 notes: notes.isEmpty ? nil : notes
             )
+            isDirty = false
             dismiss()
             onSave()
         } catch {

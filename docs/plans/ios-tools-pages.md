@@ -1,5 +1,13 @@
 # iOS Tools Pages — Design Plan
 
+## What This Does
+
+The Tools area manages physical tools and tool kits — checkout/return tracking, condition verification, kit content verification (counting items in pre-defined kits), maintenance scheduling, lost/stolen tracking, tool trades between users, and edit-with-verification (changes to tool records require photo + condition verification). Backed by `ToolsService.swift` (30 public methods, 1767 lines, 115 tests = **3.83× breadth — second-highest in project after scheduling's 4.28×**) + 8 iOS pages. Per memory: "First area with 0 dismiss-safety gaps" first rotation; documented `allowedToolEditFields` allowlist pattern for safe field-level UPDATE.
+
+## Why
+
+Tools are physical assets with high theft/loss risk and ongoing maintenance costs. A misplaced $2k impact wrench is real money walking off; an un-maintained $10k vehicle lift is a liability waiting to fail. The checkout/return flow with condition verification creates an explicit chain-of-custody: every tool's location/condition is the latest auditable transaction. Kit verification supports the "pre-staged kits for jobs" workflow — Tech grabs Kit A on the way to a job, the verification step ensures all items are present before they leave the shop. Maintenance scheduling surfaces upcoming-due work before it becomes failure. Tool trades support cross-shop transfers in multi-shop networks. The 3.83× test breadth ratio reflects that tool-state correctness is operational ground truth — getting "tool X is at job Y" wrong means a Tech shows up to a job missing the tool they need.
+
 ## Navigation
 Tools: Dashboard, All Tools (renamed from Registry), Checkouts, Kits, Maintenance, Management (renamed from Admin)
 

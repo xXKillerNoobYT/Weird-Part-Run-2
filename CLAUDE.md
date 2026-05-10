@@ -264,7 +264,7 @@ See `docs/plans/github-flow.md` for full design.
 **Recently Completed (2026-03-07):**
 
 - Phase 7 Delta: People additions — PO naming convention, report filename naming (✅ complete — see `docs/plans/phase-7-people-delta.md`)
-- Phase 8: Reports & Pre-Billing — all 6 pages, period locking, bookkeeper exports (✅ complete — see `docs/plans/phase-11-reports-prebilling.md`)
+- Phase 8: Reports & Pre-Billing — all 6 pages, period locking, bookkeeper exports (✅ complete — see `docs/plans/ios-reports-pages.md`)
 - Legacy Cleanup — superseded pages removed/redirected (✅ complete — see `docs/plans/legacy-cleanup-plan.md`)
 - Testing Strategy — 119 tests across 10 files (✅ complete — see `docs/plans/testing-strategy.md`)
 - Feature Audits — all 13 areas audited (✅ complete — see `docs/plans/Audit/`)
@@ -296,7 +296,7 @@ The project pivoted to a **native iOS-first** architecture. The earlier Tauri 2.
 
 **Future phases (planned — all have plan files):**
 
-- Phase 9: Chat & Q&A — per-job group chat, DMs, Q&A escalation chain, RFI bridge (see `docs/plans/phase-9-chat.md`)
+- Phase 9: Chat & Q&A — per-job group chat, DMs, Q&A escalation chain, RFI bridge (see `docs/plans/ios-chat-pages.md`)
 - Phase 10: PWA & Desktop — service worker, keyboard shortcuts, command palette, push notifications (see `docs/plans/phase-12-pwa-desktop.md`)
 - Phase 11: Sync & Bluetooth — BT mesh, gossip protocol, PGP encryption, device pairing, shop cluster (see `docs/plans/phase-13-sync-bluetooth.md`)
 - Phase 12: AI Integration — LM Studio local LLM, NL queries, anomaly detection, predictive ordering (see `docs/plans/phase-14-ai-integration.md`)

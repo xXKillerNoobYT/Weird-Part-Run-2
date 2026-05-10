@@ -24,17 +24,31 @@ struct IOSProcurementPage: View {
     @State private var isGenerating = false
     @State private var searchText = ""
 
+    // Generate POs confirmation
+    @State private var showGeneratePOsConfirmation = false
+
     // Pull action tracking: partId -> (pullQty, orderQty)
     @State private var pullDecisions: [Int64: (pullQty: Int, orderQty: Int)] = [:]
     @State private var pullActionError: String?
     @State private var pullActionSuccess: String?
     @State private var isPulling: Set<Int64> = []  // parts currently being pulled
 
+    // Pull confirmation
+    @State private var showPullConfirmation = false
+    @State private var pendingPullItem: OrdersService.ProcurementItem? = nil
+    @State private var pendingPullQty: Int = 0
+    @State private var pendingPullOrderQty: Int = 0
+
     // Help
     @State private var activeSheet: ActiveSheet?
 
     // Toast
     @State private var showSavedToast = false
+
+    // Cached source counts and ready-to-generate list — populated in loadData() / on input change;
+    // avoids per-render filter scans in smart card filters and PO preview section.
+    @State private var sourceCounts: [String: Int] = [:]
+    @State private var cachedReadyToGenerate: [OrdersService.ProcurementItem] = []
 
     private enum ActiveSheet: Identifiable {
         case help
@@ -88,6 +102,8 @@ struct IOSProcurementPage: View {
             loadData()
             appCore.onboardingManager?.markCompleted("procurement-view")
         }
+        .onChange(of: checkedParts) { updateReadyToGenerate() }
+        .onChange(of: selectedSupplier) { updateReadyToGenerate() }
         .alert("Error", isPresented: Binding(
             get: { generateError != nil },
             set: { if !$0 { generateError = nil } }
@@ -126,6 +142,33 @@ struct IOSProcurementPage: View {
         } message: {
             Text(pullActionSuccess ?? "")
         }
+        .confirmationDialog(
+            generatePOsConfirmationTitle,
+            isPresented: $showGeneratePOsConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Generate") { generatePOs() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text(generatePOsConfirmationMessage)
+        }
+        .confirmationDialog(
+            pullConfirmationTitle,
+            isPresented: $showPullConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Pull") {
+                if let item = pendingPullItem {
+                    executePullAction(item: item, pullQty: pendingPullQty, orderQty: pendingPullOrderQty)
+                }
+                pendingPullItem = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingPullItem = nil
+            }
+        } message: {
+            Text(pullConfirmationMessage)
+        }
         .overlay(alignment: .bottom) {
             if showSavedToast {
                 Text("Selections saved — they'll persist while you're on this page")
@@ -148,17 +191,12 @@ struct IOSProcurementPage: View {
     // MARK: - Smart Card Filters
 
     private var smartCardFilters: some View {
-        let jpoCount = items.filter { $0.sources.contains { $0.sourceType == "jpo" } }.count
-        let wishlistCount = items.filter { $0.sources.contains { $0.sourceType == "wishlist" } }.count
-        let forecastCount = items.filter { $0.sources.contains { $0.sourceType == "forecast" } }.count
-        let overstockCount = items.filter { $0.urgency == "overstock" }.count
-
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                smartCard("JPO Parts", count: jpoCount, icon: "doc.text.fill", filter: "jpo")
-                smartCard("Wishlist", count: wishlistCount, icon: "heart.fill", filter: "wishlist")
-                smartCard("Forecast", count: forecastCount, icon: "chart.line.uptrend.xyaxis", filter: "forecast")
-                smartCard("Overstock", count: overstockCount, icon: "exclamationmark.triangle.fill", filter: "overstock")
+                smartCard("JPO Parts", count: sourceCounts["jpo", default: 0], icon: "doc.text.fill", filter: "jpo")
+                smartCard("Wishlist", count: sourceCounts["wishlist", default: 0], icon: "heart.fill", filter: "wishlist")
+                smartCard("Forecast", count: sourceCounts["forecast", default: 0], icon: "chart.line.uptrend.xyaxis", filter: "forecast")
+                smartCard("Overstock", count: sourceCounts["overstock", default: 0], icon: "exclamationmark.triangle.fill", filter: "overstock")
                 smartCard("All", count: items.count, icon: "tray.full.fill", filter: nil)
             }
             .padding(.horizontal)
@@ -247,16 +285,19 @@ struct IOSProcurementPage: View {
             }
 
             // Preview + Generate section
-            if !readyToGenerateItems.isEmpty {
+            if !cachedReadyToGenerate.isEmpty {
                 poPreviewSection
             }
         }
         .listStyle(.insetGrouped)
     }
 
-    /// Items that have both a supplier selected AND are checked, with order qty > 0.
-    private var readyToGenerateItems: [OrdersService.ProcurementItem] {
-        items.filter { item in
+    /// Updates the cached ready-to-generate list. Call whenever checkedParts, selectedSupplier,
+    /// pullDecisions, or items change. Avoids repeated O(N) filter scans on every render.
+    /// Triggered by discrete user actions (checkbox tap, supplier pick, pull decision) — not
+    /// by a hot render path — so per-call O(N) work is acceptable without debouncing.
+    private func updateReadyToGenerate() {
+        cachedReadyToGenerate = items.filter { item in
             checkedParts.contains(item.id) &&
             selectedSupplier[item.id] != nil &&
             effectiveOrderQty(for: item) > 0
@@ -490,7 +531,7 @@ struct IOSProcurementPage: View {
                 // Action buttons
                 HStack(spacing: 12) {
                     Button {
-                        generatePOs()
+                        showGeneratePOsConfirmation = true
                     } label: {
                         Label(
                             isGenerating ? "Generating..." : "Generate \(poPreviewGroups.count) PO\(poPreviewGroups.count == 1 ? "" : "s")",
@@ -533,7 +574,7 @@ struct IOSProcurementPage: View {
 
     private var poPreviewGroups: [POPreviewGroup] {
         var groups: [Int64: (name: String, parts: [POPreviewPart])] = [:]
-        for item in readyToGenerateItems {
+        for item in cachedReadyToGenerate {
             guard let supplierId = selectedSupplier[item.id] else { continue }
             let supplierName = item.suppliers.first(where: { $0.id == supplierId })?.name ?? "Unknown"
             let unitCost = item.suppliers.first(where: { $0.id == supplierId })?.unitPrice
@@ -551,6 +592,38 @@ struct IOSProcurementPage: View {
         }
         return groups.map { POPreviewGroup(supplierId: $0.key, supplierName: $0.value.name, parts: $0.value.parts) }
             .sorted { $0.supplierName < $1.supplierName }
+    }
+
+    // MARK: - Confirmation Dialog Content
+
+    private var generatePOsConfirmationTitle: String {
+        let count = poPreviewGroups.count
+        return "Generate \(count) Purchase Order\(count == 1 ? "" : "s")?"
+    }
+
+    private var generatePOsConfirmationMessage: String {
+        let totalCost = poPreviewGroups.flatMap(\.parts).compactMap { p in
+            p.unitCost.map { $0 * Double(p.quantity) }
+        }.reduce(0, +)
+        if totalCost > 0 {
+            return String(format: "This will create %d PO(s) totalling $%.2f. This action cannot be undone.", poPreviewGroups.count, totalCost)
+        }
+        return "This will create \(poPreviewGroups.count) PO(s). This action cannot be undone."
+    }
+
+    private var pullConfirmationTitle: String {
+        guard let item = pendingPullItem else { return "Pull Stock?" }
+        return "Pull \(pendingPullQty) \(item.partName)?"
+    }
+
+    private var pullConfirmationMessage: String {
+        guard let item = pendingPullItem else { return "" }
+        var msg = "Move \(pendingPullQty) unit(s) of \(item.partName) from Warehouse to Pulled Staging."
+        if pendingPullOrderQty > 0 {
+            msg += " \(pendingPullOrderQty) unit(s) will still need to be ordered."
+        }
+        msg += " This movement cannot be reversed without a manual return."
+        return msg
     }
 
     private func generatePOs() {
@@ -577,8 +650,9 @@ struct IOSProcurementPage: View {
             let result = try service.generatePOsFromProcurement(items: generateItems)
             let poNumbers = result.createdPOs.map(\.poNumber).joined(separator: ", ")
             generateSuccess = "Created \(result.createdPOs.count) PO(s): \(poNumbers) with \(result.totalLineItems) line items"
+            Haptics.success()
             // Clear checked items that were generated
-            for item in readyToGenerateItems {
+            for item in cachedReadyToGenerate {
                 checkedParts.remove(item.id)
             }
         } catch {
@@ -773,6 +847,7 @@ struct IOSProcurementPage: View {
                         Spacer()
                         Button {
                             pullDecisions.removeValue(forKey: item.id)
+                            updateReadyToGenerate()
                         } label: {
                             Text("Change")
                                 .font(.caption2)
@@ -878,7 +953,7 @@ struct IOSProcurementPage: View {
         isLoading: Bool
     ) -> some View {
         Button {
-            executePullAction(item: item, pullQty: pullQty, orderQty: orderQty)
+            requestPullAction(item: item, pullQty: pullQty, orderQty: orderQty)
         } label: {
             HStack(spacing: 6) {
                 if isLoading {
@@ -923,14 +998,22 @@ struct IOSProcurementPage: View {
 
     // MARK: - Pull Action Execution
 
-    /// Executes a pull from warehouse shelf to pulled-staging and records the decision.
-    private func executePullAction(item: OrdersService.ProcurementItem, pullQty: Int, orderQty: Int) {
-        // If no pull needed (order-all), just record the decision
+    /// Stores the pending pull intent and shows the confirmation dialog.
+    private func requestPullAction(item: OrdersService.ProcurementItem, pullQty: Int, orderQty: Int) {
+        // If no pull needed (order-all), just record the decision — no confirmation required
         if pullQty == 0 {
             pullDecisions[item.id] = (pullQty: 0, orderQty: orderQty)
+            updateReadyToGenerate()
             return
         }
+        pendingPullItem = item
+        pendingPullQty = pullQty
+        pendingPullOrderQty = orderQty
+        showPullConfirmation = true
+    }
 
+    /// Executes a pull from warehouse shelf to pulled-staging and records the decision.
+    private func executePullAction(item: OrdersService.ProcurementItem, pullQty: Int, orderQty: Int) {
         guard let warehouseService = appCore.warehouseService else {
             pullActionError = "Warehouse service not available"
             return
@@ -976,6 +1059,7 @@ struct IOSProcurementPage: View {
 
             // Record the decision
             pullDecisions[item.id] = (pullQty: actualPull, orderQty: adjustedOrder)
+            updateReadyToGenerate()
 
             // Show confirmation
             if actualPull < pullQty {
@@ -985,6 +1069,7 @@ struct IOSProcurementPage: View {
             } else {
                 pullActionSuccess = "Pulled \(actualPull) \(item.partName) to staging. No order needed."
             }
+            Haptics.success()
 
             // Reload to reflect updated stock levels
             loadData()
@@ -1049,6 +1134,24 @@ struct IOSProcurementPage: View {
                     selectedSupplier[item.id] = preferred.id
                 }
             }
+            // Single-pass source counts — avoids per-render filter scans in smart card filters.
+            // seenTypes deduplicates per item: a part may have multiple JPO sources (one per job),
+            // but the card should count unique parts with that source type, not source instances.
+            var counts: [String: Int] = [:]
+            for item in items {
+                var seenTypes: Set<String> = []
+                for source in item.sources {
+                    let t = source.sourceType
+                    if seenTypes.insert(t).inserted {
+                        counts[t, default: 0] += 1
+                    }
+                }
+                if item.urgency == "overstock" {
+                    counts["overstock", default: 0] += 1
+                }
+            }
+            sourceCounts = counts
+            updateReadyToGenerate()
         } catch {
             loadError = userFriendlyError(error, context: "load procurement data")
         }

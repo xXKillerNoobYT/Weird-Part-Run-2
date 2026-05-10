@@ -20,6 +20,7 @@ struct IOSJPOCreationPage: View {
     @State private var deliveryOption = "partial"
     @State private var notes = ""
     @State private var jobs: [JobsService.JobListItem] = []
+    @State private var jobLookup: [Int64: JobsService.JobListItem] = [:]
 
     // MARK: - Cart
 
@@ -218,7 +219,7 @@ struct IOSJPOCreationPage: View {
             Button("Yes, for \(selectedJobName)") { }
             Button("No, use clocked-in job", role: .cancel) {
                 if let cId = clockedInJobId,
-                   let job = jobs.first(where: { $0.id == cId }) {
+                   let job = jobLookup[cId] {
                     selectedJobId = cId
                     selectedJobName = job.jobName
                 }
@@ -951,6 +952,7 @@ struct IOSJPOCreationPage: View {
         // Load active jobs
         do {
             jobs = try jobsService.listJobs(status: "active", limit: 100)
+            jobLookup = Dictionary(uniqueKeysWithValues: jobs.map { ($0.id, $0) })
         } catch {
             submitError = userFriendlyError(error, context: "submit data")
         }

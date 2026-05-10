@@ -8,6 +8,16 @@
 
 ---
 
+## What This Does
+
+The Notebooks area is the freeform-knowledge-capture surface of the program — a OneNote-style hierarchical content store with block-based editing, sync-conflict resolution, to-do classification, daily reports, panel-schedule builder, and templates. Every job has its own notebook; users also have general notebooks for cross-job knowledge. Each notebook contains sections, each section contains entries (rich blocks), each entry can hold checklist items, todo classifications, headings, callouts, dividers, panel schedules, and panel-builder layouts. The area underpins the daily-report-summary feature (which reads notebook entries) and the warranty-timer + question-escalation flows.
+
+## Why
+
+Operators in the field need a single place to capture observations, action items, and decisions during the workday — without forcing structure that breaks flow. Notebooks succeed because they are flexible (block types match the kind of thing being recorded), durable (synced across devices via Multipeer with conflict resolution), and bridged into other workflows (todo blocks roll into the daily report; question blocks escalate to Q&A; panel schedules feed billing). Without notebooks, the program would lose the messy-but-essential operational notes that distinguish a useful tool from a pure data-entry app. Notebooks are also the long-term institutional memory for jobs that span weeks or months.
+
+---
+
 ## 1. Notebook Hierarchy
 
 Notebooks follow a **OneNote-style** hierarchy:
@@ -370,7 +380,7 @@ Key service methods:
 
 Note: `PanelScheduleBuilder.swift` is not listed in the plan's "Files:" header but is described in section 6 and implemented.
 
-### NotebooksService API (35+ public methods, 1461 lines)
+### NotebooksService API (37 public methods, 1485 lines as of 2026-04-30)
 
 Actual method names differ slightly from the plan's conceptual list:
 

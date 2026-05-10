@@ -139,7 +139,7 @@ final class AppCore: ObservableObject {
                     breaks: BreakService(db: database),
                     jobEstimation: JobEstimationService(db: database),
                     dailyReport: DailyReportGenerator(db: database),
-                    wishlist: WishlistService(db: database),
+                    wishlist: WishlistService(db: database, auth: auth),
                     backgroundTask: BackgroundTaskService(db: database),
                     aiDispatch: AIDispatchService(db: database),
                     badgeCount: BadgeCountService(db: database),
