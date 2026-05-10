@@ -34,6 +34,7 @@ struct PartsCatalogPage: View {
     @State private var selectedColorId: Int64?
     @State private var selectedBrandId: Int64?
     @State private var lowStockOnly = false
+    @State private var nlAppliedSearchText: String?
 
     // MARK: - Sorting
     @State private var sortField: SortField = .name
@@ -129,6 +130,9 @@ struct PartsCatalogPage: View {
                 selectedColorId = parsed.colorId
                 selectedBrandId = parsed.brandId
                 lowStockOnly = parsed.lowStock
+                nlAppliedSearchText = trimmed
+            } else {
+                nlAppliedSearchText = nil
             }
 
             if !trimmed.isEmpty {
@@ -318,6 +322,7 @@ struct PartsCatalogPage: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled()
                 .submitLabel(.search)
+                .accessibilityIdentifier("partsCatalogSearchField")
 
             if !searchText.isEmpty {
                 Button {
@@ -354,6 +359,7 @@ struct PartsCatalogPage: View {
                     selection: selectedCategoryId,
                     options: categories.compactMap { ($0.id, $0.name) }
                 ) { newValue in
+                    nlAppliedSearchText = nil
                     selectedCategoryId = newValue
                     // Clear dependent filters
                     selectedStyleId = nil
@@ -368,6 +374,7 @@ struct PartsCatalogPage: View {
                     selection: selectedStyleId,
                     options: filteredStyles.compactMap { ($0.id, $0.name) }
                 ) { newValue in
+                    nlAppliedSearchText = nil
                     selectedStyleId = newValue
                     selectedTypeId = nil
                     resetAndLoad()
@@ -380,6 +387,7 @@ struct PartsCatalogPage: View {
                     selection: selectedTypeId,
                     options: filteredTypes.compactMap { ($0.id, $0.name) }
                 ) { newValue in
+                    nlAppliedSearchText = nil
                     selectedTypeId = newValue
                     resetAndLoad()
                 }
@@ -391,6 +399,7 @@ struct PartsCatalogPage: View {
                     selection: selectedColorId,
                     options: colors.compactMap { ($0.id, $0.name) }
                 ) { newValue in
+                    nlAppliedSearchText = nil
                     selectedColorId = newValue
                     resetAndLoad()
                 }
@@ -402,12 +411,14 @@ struct PartsCatalogPage: View {
                     selection: selectedBrandId,
                     options: brands.compactMap { ($0.id, $0.name) }
                 ) { newValue in
+                    nlAppliedSearchText = nil
                     selectedBrandId = newValue
                     resetAndLoad()
                 }
 
                 // Low stock toggle
                 Button {
+                    nlAppliedSearchText = nil
                     lowStockOnly.toggle()
                     resetAndLoad()
                 } label: {
@@ -423,6 +434,7 @@ struct PartsCatalogPage: View {
                     .clipShape(Capsule())
                     .overlay(Capsule().stroke(lowStockOnly ? Color.orange.opacity(0.5) : Color.accentColor.opacity(0.3), lineWidth: 1))
                 }
+                .accessibilityIdentifier("partsCatalogLowStockFilter")
 
                 // Clear all
                 if hasActiveFilters {
@@ -455,6 +467,7 @@ struct PartsCatalogPage: View {
     }
 
     private func clearAllFilters() {
+        nlAppliedSearchText = nil
         selectedCategoryId = nil
         selectedStyleId = nil
         selectedTypeId = nil
@@ -1000,29 +1013,73 @@ struct PartsCatalogPage: View {
         return result
     }
 
+    private func nlFilterLabels(for parsed: NLSearchResult) -> [String] {
+        var labels: [String] = []
+        if let categoryId = parsed.categoryId,
+           let name = categories.first(where: { $0.id == categoryId })?.name {
+            labels.append("Category: \(name)")
+        }
+        if let styleId = parsed.styleId,
+           let name = styles.first(where: { $0.id == styleId })?.name {
+            labels.append("Style: \(name)")
+        }
+        if let typeId = parsed.typeId,
+           let name = types.first(where: { $0.id == typeId })?.name {
+            labels.append("Type: \(name)")
+        }
+        if let colorId = parsed.colorId,
+           let name = colors.first(where: { $0.id == colorId })?.name {
+            labels.append("Color: \(name)")
+        }
+        if let brandId = parsed.brandId,
+           let name = brands.first(where: { $0.id == brandId })?.name {
+            labels.append("Brand: \(name)")
+        }
+        if parsed.lowStock {
+            labels.append("Low Stock")
+        }
+        return labels
+    }
+
     @ViewBuilder
     private var nlFilterBanner: some View {
-        let parsed = parseNaturalLanguageSearch(searchText)
-        if parsed.hasStructuredFilters {
-            HStack(spacing: 6) {
-                Image(systemName: "sparkles")
+        let trimmed = searchText.trimmingCharacters(in: .whitespaces)
+        let parsed = parseNaturalLanguageSearch(trimmed)
+        if parsed.hasStructuredFilters && nlAppliedSearchText == trimmed {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.caption2)
+                        .foregroundStyle(.blue)
+                        .accessibilityHidden(true)
+                    Text("Smart search applied filters")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Clear filters") {
+                        clearAllFilters()
+                    }
                     .font(.caption2)
                     .foregroundStyle(.blue)
-                    .accessibilityHidden(true)
-                Text("Smart search applied filters")
+                    .accessibilityIdentifier("partsCatalogNLClearFiltersButton")
+                }
+
+                Text(nlFilterLabels(for: parsed).joined(separator: ", "))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                Spacer()
-                Button("Clear filters") {
-                    clearAllFilters()
-                    searchText = ""
-                }
-                .font(.caption2)
-                .foregroundStyle(.blue)
+                    .accessibilityIdentifier("partsCatalogNLFilterList")
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("partsCatalogNLFilterBanner")
             .padding(.horizontal, DS.Space.lg)
             .padding(.vertical, 4)
         }
+    }
+
+    private var shouldUseNaturalLanguageFilters: Bool {
+        let trimmed = searchText.trimmingCharacters(in: .whitespaces)
+        return !trimmed.isEmpty && nlAppliedSearchText == trimmed
     }
 
     // MARK: - Helpers
@@ -1074,7 +1131,7 @@ struct PartsCatalogPage: View {
             let offset = (currentPage - 1) * pageSize
 
             let parsed = parseNaturalLanguageSearch(searchText)
-            let effectiveSearchText = parsed.hasStructuredFilters ? parsed.textSearch : searchText.trimmingCharacters(in: .whitespaces)
+            let effectiveSearchText = shouldUseNaturalLanguageFilters ? parsed.textSearch : searchText.trimmingCharacters(in: .whitespaces)
 
             let catalogSort: PartsService.CatalogSortField = switch sortField {
             case .name: .name

@@ -179,6 +179,14 @@ final class AppCore: ObservableObject {
                 self.theme = theme
             }
 
+            if uiTestingMode, let user = result.users.first, let userId = user.id {
+                currentUser = user
+                permissions = (try? result.auth.getUserPermissions(userId)) ?? []
+                currentToken = "ui-testing"
+                onboardingManager = OnboardingProgressManager(userId: userId)
+                badgeCountManager.setUserId(userId)
+            }
+
             if result.users.isEmpty && !result.hasProfile {
                 // Brand-new device — show two-path onboarding.
                 // Clear stale UserDefaults flags so a fresh-build DB doesn't
@@ -544,6 +552,7 @@ final class AppCore: ObservableObject {
 
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
-        UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
+        UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
     }
 }
