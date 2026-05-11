@@ -41,7 +41,7 @@ public struct SearchPartsTool: FoundationModels.Tool {
         guard permissions.contains("view_parts_catalog") else {
             return "You don't have permission to search parts. Ask your admin for access."
         }
-        let service = PartsService(db: db)
+        let service = PartsService(db: db, auth: AuthService(db: db))
         let results = try service.searchParts(query: arguments.query, limit: 5)
         if results.isEmpty {
             return "No parts found matching '\(arguments.query)'"
@@ -148,7 +148,7 @@ public struct GetSupplierInfoTool: FoundationModels.Tool {
         guard permissions.contains("view_parts_catalog") else {
             return "You don't have permission to look up suppliers. Ask your admin for access."
         }
-        let service = PartsService(db: db)
+        let service = PartsService(db: db, auth: AuthService(db: db))
         let results = try service.listSuppliers(search: arguments.query)
         if results.isEmpty {
             return "No suppliers found matching '\(arguments.query)'"
@@ -187,7 +187,7 @@ public struct ListCompanionRulesTool: FoundationModels.Tool {
         guard permissions.contains("view_parts_catalog") else {
             return "You don't have permission to view companion rules."
         }
-        let service = PartsService(db: db)
+        let service = PartsService(db: db, auth: AuthService(db: db))
         let rules = try service.listCompanionRulesHierarchy()
         if rules.isEmpty { return "No companion rules exist yet." }
         var result = "Active Companion Rules (\(rules.count)):\n\n"
@@ -233,7 +233,7 @@ public struct GetActiveCompanionPollsTool: FoundationModels.Tool {
         guard permissions.contains("view_parts_catalog") else {
             return "You don't have permission to view companion polls."
         }
-        let service = PartsService(db: db)
+        let service = PartsService(db: db, auth: AuthService(db: db))
         let polls = try service.getActivePolls(userId: userId, isAdmin: false)
         if polls.isEmpty {
             return "No active polls right now. The system needs at least 3 months of ordering data to start suggesting companion rules."
@@ -339,7 +339,7 @@ public struct GetVotingSummaryTool: FoundationModels.Tool {
         guard permissions.contains("view_parts_catalog") else {
             return "You don't have permission to view voting data."
         }
-        let service = PartsService(db: db)
+        let service = PartsService(db: db, auth: AuthService(db: db))
         let results = try service.getLastWeekResults(userId: userId)
         if results.isEmpty { return "No poll results from the past week." }
         var result = "Recent Poll Results:\n\n"
