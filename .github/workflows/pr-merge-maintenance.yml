@@ -1,0 +1,42 @@
+name: PR Merge Maintenance
+
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Log intended actions without updating branches or auto-merge"
+        type: boolean
+        required: true
+        default: true
+      max_prs:
+        description: "Maximum open PRs targeting main to inspect"
+        type: number
+        required: true
+        default: 50
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: pr-merge-maintenance
+  cancel-in-progress: false
+
+jobs:
+  maintain-prs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_MAINTENANCE_BASE: main
+      PR_MAINTENANCE_MAX_PRS: ${{ github.event.inputs.max_prs || '50' }}
+      PR_MAINTENANCE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true' && '1' || '0' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Maintain merge backlog
+        run: scripts/pr-merge-maintenance.sh "${{ github.repository }}"
