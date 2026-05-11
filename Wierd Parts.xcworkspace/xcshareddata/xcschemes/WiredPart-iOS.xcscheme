@@ -20,6 +20,20 @@
                ReferencedContainer = "container:Weird Parts IOS/Weird Parts.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "08F2BE4D2F67A53700944E97"
+               BuildableName = "Weird PartsUITests.xctest"
+               BlueprintName = "Weird PartsUITests"
+               ReferencedContainer = "container:Weird Parts IOS/Weird Parts.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -27,7 +41,7 @@
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES"
-      shouldAutocreateTestPlan = "YES">
+      shouldAutocreateTestPlan = "NO">
       <Testables>
          <TestableReference
             skipped = "NO"
@@ -51,7 +65,27 @@
                ReferencedContainer = "container:core">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "08F2BE4D2F67A53700944E97"
+               BuildableName = "Weird PartsUITests.xctest"
+               BlueprintName = "Weird PartsUITests"
+               ReferencedContainer = "container:Weird Parts IOS/Weird Parts.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
+      <MacroExpansion>
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "08F2BE312F67A53500944E97"
+            BuildableName = "Weird Parts.app"
+            BlueprintName = "Weird Parts"
+            ReferencedContainer = "container:Weird Parts IOS/Weird Parts.xcodeproj">
+         </BuildableReference>
+      </MacroExpansion>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"

@@ -238,11 +238,8 @@ struct DashboardDailyReportPage: View {
                     // Calculate duration text from raw clock-in timestamp
                     let durationText: String = {
                         guard member.clockInRaw.count >= 19 else { return "—" }
-                        let formatter = ISO8601DateFormatter()
-                        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                        let formatterBasic = ISO8601DateFormatter()
-                        formatterBasic.formatOptions = [.withInternetDateTime]
-                        if let date = formatter.date(from: member.clockInRaw) ?? formatterBasic.date(from: member.clockInRaw) {
+                        if let date = Formatters.iso8601Fractional.date(from: member.clockInRaw)
+                            ?? Formatters.iso8601Basic.date(from: member.clockInRaw) {
                             let mins = Int(Date().timeIntervalSince(date) / 60)
                             if mins < 60 { return "\(mins)m" }
                             return "\(mins / 60)h \(mins % 60)m"

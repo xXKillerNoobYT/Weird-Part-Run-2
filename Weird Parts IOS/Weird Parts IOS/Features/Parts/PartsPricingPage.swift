@@ -842,7 +842,8 @@ struct PartsPricingPage: View {
                 // Check if stale (cost not updated in > threshold days, or never updated)
                 let isStale: Bool
                 if let lastUpdated = pwd.part.costLastUpdated,
-                   let date = ISO8601DateFormatter().date(from: lastUpdated) {
+                   let date = Formatters.iso8601Fractional.date(from: lastUpdated)
+                    ?? Formatters.iso8601Basic.date(from: lastUpdated) {
                     isStale = Calendar.current.dateComponents([.day], from: date, to: Date()).day ?? 0 > thresholdDays
                 } else {
                     isStale = pwd.part.costLastUpdated == nil
