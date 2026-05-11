@@ -140,7 +140,8 @@ while IFS= read -r pr; do
       echo "branch state can proceed through branch protection/auto-merge"
       ;;
     *)
-      echo "observed unhandled merge state: $merge_state"
+      echo "blocked: unhandled merge state '$merge_state'; skipping to be conservative"
+      blocked=1
       ;;
   esac
 

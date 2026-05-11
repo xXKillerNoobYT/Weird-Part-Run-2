@@ -2,7 +2,7 @@ name: PR Merge Maintenance
 
 on:
   schedule:
-    - cron: "*/20 * * * *"
+    - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -11,7 +11,7 @@ on:
         required: true
         default: true
       max_prs:
-        description: "Maximum open PRs targeting main to inspect"
+        description: "Maximum open PRs targeting main to inspect (defaults to 50 for manual runs)"
         type: number
         required: true
         default: 50
@@ -31,7 +31,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       PR_MAINTENANCE_BASE: main
-      PR_MAINTENANCE_MAX_PRS: ${{ github.event.inputs.max_prs || '50' }}
+      PR_MAINTENANCE_MAX_PRS: ${{ github.event_name == 'schedule' && '20' || github.event.inputs.max_prs || '50' }}
       PR_MAINTENANCE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true' && '1' || '0' }}
 
     steps:
