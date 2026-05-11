@@ -514,7 +514,7 @@ final class AppCore: ObservableObject {
         var keyBytes = [UInt8](repeating: 0, count: 32)
         let rc = SecRandomCopyBytes(kSecRandomDefault, 32, &keyBytes)
         guard rc == errSecSuccess else {
-            throw CipherKeyError.saltGenerationFailed(rc)
+            throw CipherKeyError.bootstrapKeyGenerationFailed(rc)
         }
         let keyData = Data(keyBytes)
 
@@ -543,7 +543,7 @@ final class AppCore: ObservableObject {
 
     // MARK: - PIN Change
 
-    /// Change a user's PIN.
+    /// Change a user's PIN (hash only — does not re-key the database).
     ///
     /// The SQLCipher database remains encrypted with the device bootstrap key.
     /// Re-keying to a per-user PIN would require a pre-open unlock flow on startup,
@@ -554,7 +554,7 @@ final class AppCore: ObservableObject {
     ///   - oldPin: The current PIN (verified before update runs).
     ///   - newPin: The replacement PIN (4–8 digits).
     /// - Returns: nil on success, or a user-friendly error string.
-    func changePinAndRekey(userId: Int64, oldPin: String, newPin: String) async -> String? {
+    func changePin(userId: Int64, oldPin: String, newPin: String) async -> String? {
         guard let authService else { return "App not ready. Please wait." }
         do {
             try await Task.detached(priority: .userInitiated) {

@@ -753,8 +753,8 @@ struct AuthServiceTests {
         #expect(authResult.success)
     }
 
-    @Test("testPINChangeRekeysDB — old key fails, new key works, rows preserved")
-    func testPINChangeRekeysDB() throws {
+    @Test("testDatabaseRekeyLowLevel — old key fails, new key works, rows preserved")
+    func testDatabaseRekeyLowLevel() throws {
         AuthService.resetAllLoginAttempts()
 
         let tmpDir = NSTemporaryDirectory()

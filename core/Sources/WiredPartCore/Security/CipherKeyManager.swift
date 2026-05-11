@@ -80,17 +80,20 @@ public final class CipherKeyManager: Sendable {
         do {
             try writeSaltToKeychain(salt)
             return salt
-        } catch {
-            // `writeSaltToKeychain` throws `keychainAccessFailed(errSecDuplicateItem)` when
-            // another thread raced and wrote the salt first. Re-read to get the winner's value
+        } catch CipherKeyError.keychainAccessFailed(errSecDuplicateItem) {
+            // Another thread raced and wrote the salt first. Re-read to get the winner's value
             // so all callers share the same stable salt (different salts → different DB keys →
             // encrypted data becomes unreadable).
             if let existing = readSaltFromKeychain() {
                 return existing
             }
-            // Both the write and the follow-up re-read failed — surface a combined error.
-            Self.logger.error("CipherKeyManager: salt write raced (duplicate), and re-read also failed: \(error.localizedDescription, privacy: .public)")
-            throw CipherKeyError.keychainAccessFailed(errSecIO)
+            // Duplicate-item write raced but the follow-up re-read also failed.
+            Self.logger.error("CipherKeyManager: salt write raced (errSecDuplicateItem) and re-read also failed", privacy: .public)
+            throw CipherKeyError.keychainAccessFailed(errSecDuplicateItem)
+        } catch {
+            // Any other write failure (e.g. errSecNotAvailable, errSecAuthFailed) — surface
+            // the original error directly so callers get the real failure reason.
+            throw error
         }
     }
 
@@ -151,6 +154,7 @@ public final class CipherKeyManager: Sendable {
 
 public enum CipherKeyError: Error, Sendable {
     case saltGenerationFailed(OSStatus)
+    case bootstrapKeyGenerationFailed(OSStatus)
     case keychainAccessFailed(OSStatus)
     case missingPin
 }
@@ -160,6 +164,8 @@ extension CipherKeyError: LocalizedError {
         switch self {
         case .saltGenerationFailed(let code):
             return "Failed to generate cipher salt (OSStatus \(code))."
+        case .bootstrapKeyGenerationFailed(let code):
+            return "Failed to generate device bootstrap key (OSStatus \(code))."
         case .keychainAccessFailed(let code):
             return "Keychain access failed for cipher salt (OSStatus \(code))."
         case .missingPin:
