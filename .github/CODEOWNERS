@@ -1,0 +1,16 @@
+# Copilot delegation pilot gates. Replace @xXKillerNoobYT with the durable maintainer/team when the repo has one.
+
+.github/** @xXKillerNoobYT
+.github/workflows/** @xXKillerNoobYT
+
+# Dependency and build graph changes require explicit human review.
+core/Package.swift @xXKillerNoobYT
+core/Package.resolved @xXKillerNoobYT
+**/Package.swift @xXKillerNoobYT
+**/Package.resolved @xXKillerNoobYT
+
+# Xcode project and release infrastructure require explicit human review.
+*.xcodeproj/** @xXKillerNoobYT
+*.xcworkspace/** @xXKillerNoobYT
+scripts/** @xXKillerNoobYT
+docs/runbooks/** @xXKillerNoobYT

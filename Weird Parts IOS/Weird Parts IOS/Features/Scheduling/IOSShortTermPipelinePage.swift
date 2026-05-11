@@ -65,9 +65,7 @@ struct IOSShortTermPipelinePage: View {
     }
 
     private var todayString: String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: Date())
+        Formatters.localDateFormatter.string(from: Date())
     }
 
     var body: some View {
@@ -311,11 +309,9 @@ struct IOSShortTermPipelinePage: View {
             loadError = "Service not available"
             return
         }
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
         let target = Calendar.current.date(byAdding: .day, value: days, to: Date()) ?? Date()
         do {
-            try service.snoozeCallback(jobId: jobId, until: f.string(from: target))
+            try service.snoozeCallback(jobId: jobId, until: Formatters.localDateFormatter.string(from: target))
             loadData()
         } catch {
             loadError = userFriendlyError(error, context: "load pipeline data")

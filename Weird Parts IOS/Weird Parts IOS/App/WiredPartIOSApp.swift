@@ -12,6 +12,8 @@ struct WiredPartIOSApp: App {
     @StateObject private var tabPrefs = TabBarPreferences()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage("hasCompletedCompanySetup") private var hasCompletedCompanySetup = false
+    @AppStorage("hasSeenOnboardAIMVPEntry") private var hasSeenOnboardAIMVPEntry = false
+    @AppStorage(OnboardAIFeatureFlag.onboardingMVP) private var onboardAIMVPEnabled = false
 
     init() {
         // One-time migration: users who already completed the old welcome flow
@@ -65,6 +67,9 @@ struct WiredPartIOSApp: App {
                             .environmentObject(appCore)
                     } else if isAdmin && !hasCompletedCompanySetup {
                         CompanySetupWizard()
+                            .environmentObject(appCore)
+                    } else if onboardAIMVPEnabled && !hasSeenOnboardAIMVPEntry {
+                        OnboardAIMVPEntryView()
                             .environmentObject(appCore)
                     } else if !hasCompletedOnboarding {
                         OnboardingWalkthroughView()

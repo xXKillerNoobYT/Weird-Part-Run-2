@@ -432,9 +432,8 @@ struct IOSJobDetailTabView: View {
                     }
                     // Calculate days remaining
                     if let endStr = job.warrantyEndDate {
-                        let fmt = ISO8601DateFormatter()
-                        let _ = fmt.formatOptions = [.withInternetDateTime]
-                        if let endDate = fmt.date(from: endStr) {
+                        if let endDate = Formatters.iso8601Basic.date(from: endStr)
+                            ?? Formatters.iso8601Fractional.date(from: endStr) {
                             let days = Calendar.current.dateComponents([.day], from: Date(), to: endDate).day ?? 0
                             HStack {
                                 Text("Days Remaining")
