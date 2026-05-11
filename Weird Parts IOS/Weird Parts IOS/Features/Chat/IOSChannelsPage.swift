@@ -393,7 +393,7 @@ struct IOSChannelsPage: View {
     private func formatRelativeDate(_ iso: String) -> String {
         // Simplified: show time if today, date if older
         guard iso.count >= 16 else { return iso }
-        let todayPrefix = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+        let todayPrefix = String(Formatters.iso8601Basic.string(from: Date()).prefix(10))
         if iso.hasPrefix(todayPrefix) {
             let start = iso.index(iso.startIndex, offsetBy: 11)
             let end = iso.index(iso.startIndex, offsetBy: 16)

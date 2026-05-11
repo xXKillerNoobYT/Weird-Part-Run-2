@@ -136,8 +136,7 @@ struct PartHistoryView: View {
 
     private func formatDate(_ iso: String) -> String {
         let prefix = String(iso.prefix(10))
-        let formatter = ISO8601DateFormatter()
-        let today = formatter.string(from: Date()).prefix(10)
+        let today = Formatters.iso8601Basic.string(from: Date()).prefix(10)
         if prefix == String(today) { return "Today" }
         return prefix
     }

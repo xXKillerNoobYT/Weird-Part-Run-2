@@ -57,6 +57,7 @@ final class AppCore: ObservableObject {
 
     /// Guided onboarding progress tracker (per-user).
     @Published public var onboardingManager: OnboardingProgressManager?
+    @Published public var onboardAIRuntimeBootstrap: OnboardAIRuntimeBootstrapResult?
 
     nonisolated let logger = Logger(subsystem: "com.wiredpart.ios", category: "AppCore")
 
@@ -183,6 +184,7 @@ final class AppCore: ObservableObject {
                 needsOnboarding = false
             }
             isReady = true
+            await evaluateOnboardAIRuntimeIfEnabled()
 
             // Configure badge count manager
             if let badgeService = badgeCountService {
@@ -360,6 +362,23 @@ final class AppCore: ObservableObject {
     /// Check if the current user has a specific permission.
     func hasPermission(_ key: String) -> Bool {
         permissions.contains(key)
+    }
+
+    private func evaluateOnboardAIRuntimeIfEnabled() async {
+        guard UserDefaults.standard.bool(forKey: OnboardAIFeatureFlag.onboardingMVP) else {
+            onboardAIRuntimeBootstrap = nil
+            return
+        }
+
+        let startedAt = Date()
+        let bootstrapper = OnboardAIRuntimeBootstrapper()
+        let result = await bootstrapper.bootstrap()
+        onboardAIRuntimeBootstrap = result
+
+        let latencyMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+        logger.info(
+            "[OnboardAI] bootstrap route=\(result.route.rawValue, privacy: .public) latency_ms=\(latencyMs, privacy: .public) availability=\(result.availabilityLabel, privacy: .public) timeout_budget_ms=\(result.timeoutBudgetMs, privacy: .public) did_timeout=\(result.didTimeout, privacy: .public) fallback_model_unavailable=\(result.usedModelUnavailableFallback, privacy: .public) fallback_low_resource=\(result.usedLowResourceFallback, privacy: .public)"
+        )
     }
 
     /// Reload theme settings from the database and apply them.

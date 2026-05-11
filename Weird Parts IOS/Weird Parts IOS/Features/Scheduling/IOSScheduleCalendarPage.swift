@@ -42,12 +42,12 @@ struct IOSScheduleCalendarPage: View {
     }
 
     private var weekStart: String {
-        ISO8601DateFormatter.dateOnlyFormatter.string(from: weekStartDate)
+        Formatters.iso8601DateOnly.string(from: weekStartDate)
     }
 
     private var weekEnd: String {
         let end = calendar.date(byAdding: .day, value: 6, to: weekStartDate) ?? weekStartDate
-        return ISO8601DateFormatter.dateOnlyFormatter.string(from: end)
+        return Formatters.iso8601DateOnly.string(from: end)
     }
 
     var body: some View {
@@ -110,7 +110,7 @@ struct IOSScheduleCalendarPage: View {
         .task { loadData() }
         .task { appCore.onboardingManager?.markCompleted("schedule-view") }
         .onAppear {
-            let dateStr = ISO8601DateFormatter.dateOnlyFormatter.string(from: selectedDate)
+            let dateStr = Formatters.iso8601DateOnly.string(from: selectedDate)
             NotificationCenter.default.post(
                 name: .scheduleCalendarPageActive,
                 object: nil,
@@ -125,7 +125,7 @@ struct IOSScheduleCalendarPage: View {
     }
 
     private var selectedDateString: String {
-        ISO8601DateFormatter.dateOnlyFormatter.string(from: selectedDate)
+        Formatters.iso8601DateOnly.string(from: selectedDate)
     }
 
     // MARK: - Month View
@@ -179,7 +179,7 @@ struct IOSScheduleCalendarPage: View {
             // Calendar grid
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 7), spacing: 2) {
                 ForEach(daysInMonth(), id: \.self) { date in
-                    let dateStr = ISO8601DateFormatter.dateOnlyFormatter.string(from: date)
+                    let dateStr = Formatters.iso8601DateOnly.string(from: date)
                     DayCell(
                         date: date,
                         isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
@@ -566,15 +566,4 @@ private struct DayCell: View {
                 .fill(isSelected ? Color.blue.opacity(0.2) : isToday ? Color.blue.opacity(0.05) : Color.clear)
         )
     }
-}
-
-// MARK: - Date Formatter Helper
-
-private extension ISO8601DateFormatter {
-    @MainActor
-    static let dateOnlyFormatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withFullDate, .withDashSeparatorInDate]
-        return f
-    }()
 }

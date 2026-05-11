@@ -108,13 +108,11 @@ struct CreateScheduleEntrySheet: View {
         }
         isSaving = true
         saveError = nil
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
         do {
             _ = try service.createScheduleEntry(
                 userId: userId,
                 jobId: jobId,
-                date: fmt.string(from: entryDate),
+                date: Formatters.localDateFormatter.string(from: entryDate),
                 startTime: startTime.isEmpty ? nil : startTime,
                 endTime: endTime.isEmpty ? nil : endTime,
                 notes: notes.isEmpty ? nil : notes,
