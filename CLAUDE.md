@@ -103,6 +103,7 @@ Errors are learning opportunities. When something breaks:
 5. **Check existing issues first.** Before filing a new issue, search to make sure it's not already tracked. Reference related issues with `#number`.
 6. **Issue format:** Use `[Area]` prefix (e.g., `[Parts]`, `[Orders]`, `[Scheduling]`) and `[Type]` (e.g., `[Bug]`, `[Feature]`, `[UX]`). Include a "Status" line: `OPEN`, `IN PROGRESS`, or `FIXED`.
 7. **Program Review issues (#52-#66)** are the parent tracking issues for each feature area. New issues should reference their parent when applicable.
+8. **Auto-close guard (MANDATORY).** Before closing ANY GitHub issue via `gh issue close`, run `scripts/gh-issue-close-guard.sh <issue-number>`. If it exits non-zero, DO NOT close — emit a status comment instead and let a human close. The guard checks: (a) `docs/dev-qa.md` Pending section, (b) `docs/plans/*.md` with pending-status markers, (c) `xcode-ai/fix-prompts/00-fix-order.md` queued items. See GitHub #233.
 
 ---
 
