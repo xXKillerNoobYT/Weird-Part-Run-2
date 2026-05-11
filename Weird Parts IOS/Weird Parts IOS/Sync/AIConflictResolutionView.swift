@@ -148,8 +148,10 @@ struct AIConflictResolutionView: View {
                 .font(.caption)
                 .foregroundStyle(color)
 
-            Text(text.prefix(300) + (text.count > 300 ? "..." : ""))
+            Text(text)
                 .font(.caption)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
@@ -172,6 +174,12 @@ struct CriticalConflictView: View {
     let conflict: ConflictLogEntry
     let onResolveLocal: () -> Void
     let onResolveRemote: () -> Void
+    @State private var pendingResolution: PendingResolution?
+
+    private enum PendingResolution: String {
+        case local
+        case remote
+    }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -201,7 +209,7 @@ struct CriticalConflictView: View {
                     Text(formatTS(conflict.localTs))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
-                    Button("Use This") { onResolveLocal() }
+                    Button("Use This") { pendingResolution = .local }
                         .buttonStyle(.borderedProminent)
                         .tint(.blue)
                         .controlSize(.small)
@@ -222,7 +230,7 @@ struct CriticalConflictView: View {
                     Text(formatTS(conflict.remoteTs))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
-                    Button("Use This") { onResolveRemote() }
+                    Button("Use This") { pendingResolution = .remote }
                         .buttonStyle(.borderedProminent)
                         .tint(.purple)
                         .controlSize(.small)
@@ -243,6 +251,32 @@ struct CriticalConflictView: View {
                         .stroke(Color.red.opacity(0.2), lineWidth: 1)
                 )
         )
+        .alert(
+            "Confirm Critical Write Decision",
+            isPresented: Binding(
+                get: { pendingResolution != nil },
+                set: { if !$0 { pendingResolution = nil } }
+            )
+        ) {
+            Button("Cancel", role: .cancel) {
+                pendingResolution = nil
+            }
+            Button("Confirm", role: .destructive) {
+                guard let pendingResolution else { return }
+                switch pendingResolution {
+                case .local:
+                    onResolveLocal()
+                case .remote:
+                    onResolveRemote()
+                }
+                self.pendingResolution = nil
+            }
+        } message: {
+            let selectedLabel = pendingResolution == .local ? "This Device" : "Remote"
+            Text(
+                "You are about to apply the \(selectedLabel) value for \(conflict.tableName).\(conflict.fieldName). This affects financial or inventory data."
+            )
+        }
     }
 
     private func formatTS(_ ts: String) -> String {
