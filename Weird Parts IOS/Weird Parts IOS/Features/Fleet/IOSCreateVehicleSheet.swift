@@ -100,11 +100,16 @@ struct IOSCreateVehicleSheet: View {
             errorMessage = "Fleet service not available."
             return
         }
+        guard let actorId = appCore.currentUser?.id else {
+            errorMessage = "Not signed in."
+            return
+        }
         isSaving = true
         errorMessage = nil
 
         do {
             _ = try fleet.createVehicle(
+                actorId: actorId,
                 vehicleNumber: vehicleNumber.trimmingCharacters(in: .whitespaces),
                 vehicleName: vehicleName.trimmingCharacters(in: .whitespaces),
                 vehicleType: vehicleType,
