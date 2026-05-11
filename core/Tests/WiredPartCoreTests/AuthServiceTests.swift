@@ -718,4 +718,234 @@ struct AuthServiceTests {
             try env.auth.addHatPermission(hatId: 99999, permissionKey: "manage_devices")
         }
     }
+
+    // MARK: - hasPermission backdoor fix (#366)
+
+    @Test("hasPermission returns true for an active admin user (regression guard)")
+    func testHasPermission_returnsTrueForActiveUser() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "ActiveAdmin", pin: "1234")
+        let userId = seed.user!.id!
+
+        #expect(try auth.hasPermission(userId, permissionKey: "manage_settings"),
+                "hasPermission must return true for an active admin with the correct key")
+    }
+
+    @Test("hasPermission returns false after user is soft-deleted even if user_hats row is still active")
+    func testHasPermission_returnsFalseAfterSoftDelete() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "SoftDeletedAdmin", pin: "1234")
+        let userId = seed.user!.id!
+
+        // Confirm permission exists before deletion
+        #expect(try auth.hasPermission(userId, permissionKey: "manage_settings"))
+
+        // Soft-delete the user only — leave user_hats untouched to validate the JOIN guard
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE users SET deleted_at = datetime('now'), is_active = 0 WHERE id = ?",
+                arguments: [userId]
+            )
+        }
+
+        #expect(try !auth.hasPermission(userId, permissionKey: "manage_settings"),
+                "hasPermission must return false for a soft-deleted user even if their user_hats row is still active")
+    }
+
+    @Test("getUserPermissions returns empty for a soft-deleted user")
+    func testGetUserPermissions_emptyForSoftDeletedUser() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "PermDeletedAdmin", pin: "1234")
+        let userId = seed.user!.id!
+
+        let before = try auth.getUserPermissions(userId)
+        #expect(!before.isEmpty, "admin must have permissions before deletion")
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE users SET deleted_at = datetime('now'), is_active = 0 WHERE id = ?",
+                arguments: [userId]
+            )
+        }
+
+        let after = try auth.getUserPermissions(userId)
+        #expect(after.isEmpty,
+                "getUserPermissions must return empty for a soft-deleted user to prevent permission leakage")
+    }
+
+    @Test("softDeleteUser sets deleted_at and is_active=0 on the user row")
+    func testSoftDeleteUser_marksUserDeleted() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "ToDelete", pin: "1234")
+        let userId = seed.user!.id!
+
+        try auth.softDeleteUser(userId: userId)
+
+        let row = try db.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: "SELECT deleted_at, is_active FROM users WHERE id = ?",
+                             arguments: [userId])
+        }
+        let r = try #require(row)
+        #expect((r["deleted_at"] as String?) != nil, "deleted_at must be set after softDeleteUser")
+        #expect((r["is_active"] as Int) == 0, "is_active must be 0 after softDeleteUser")
+    }
+
+    @Test("softDeleteUser cascades to deactivate user_hats rows")
+    func testSoftDeleteUser_cascadesUserHats() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "HatCascade", pin: "1234")
+        let userId = seed.user!.id!
+
+        // Confirm hat assignment exists and is active before delete
+        let countBefore = try db.writer.read { dbConn in
+            try Int.fetchOne(dbConn,
+                sql: "SELECT COUNT(*) FROM user_hats WHERE user_id = ? AND is_active = 1 AND deleted_at IS NULL",
+                arguments: [userId]) ?? 0
+        }
+        #expect(countBefore > 0, "admin must have at least one active hat before soft-delete")
+
+        try auth.softDeleteUser(userId: userId)
+
+        let countAfter = try db.writer.read { dbConn in
+            try Int.fetchOne(dbConn,
+                sql: "SELECT COUNT(*) FROM user_hats WHERE user_id = ? AND is_active = 1 AND deleted_at IS NULL",
+                arguments: [userId]) ?? 0
+        }
+        #expect(countAfter == 0,
+                "softDeleteUser must cascade-deactivate all user_hats rows for the deleted user")
+    }
+
+    // MARK: - Migration 078: forecasting permission backfill (#4258864571)
+
+    /// Run the migration 078 backfill SQL in the context of an already-seeded database.
+    /// This simulates the upgrade scenario: hats exist, forecasting keys are missing, migration adds them.
+    private func applyMigration078BackfillSQL(_ db: AppDatabase) throws {
+        let permissions = [
+            "forecasting.approve_recommendation",
+            "forecasting.dismiss_recommendation",
+        ]
+        let hats = ["Admin", "Manager"]
+        try db.writer.write { dbConn in
+            for permKey in permissions {
+                for hatName in hats {
+                    try dbConn.execute(
+                        sql: """
+                            INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+                            SELECT id, ? FROM hats WHERE name = ?
+                            """,
+                        arguments: [permKey, hatName]
+                    )
+                }
+            }
+        }
+    }
+
+    @Test("migration078 backfills forecasting permissions into existing Admin hat")
+    func testMigration078_backfillsForecastingPermissions_Admin() throws {
+        // Use E2ETestHelpers.setUp() so that seedFirstAdmin() populates the hats table.
+        // freshDB() alone does NOT insert hat rows — hats are created by seedFirstAdmin(),
+        // so migration 078 (which runs during DB init before hats exist) is a no-op on
+        // fresh databases. The migration matters for EXISTING (pre-upgrade) databases.
+        let env = try E2ETestHelpers.setUp()
+
+        // Simulate pre-upgrade state: delete the forecasting permission keys that were
+        // seeded by defaultPermissionMap so we can verify the migration restores them.
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                DELETE FROM hat_permissions
+                WHERE permission_key IN (
+                    'forecasting.approve_recommendation',
+                    'forecasting.dismiss_recommendation'
+                )
+                """)
+        }
+
+        // Re-apply the migration 078 backfill SQL
+        try applyMigration078BackfillSQL(env.db)
+
+        let adminApprove = try env.db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM hat_permissions hp
+                JOIN hats h ON h.id = hp.hat_id
+                WHERE h.name = 'Admin' AND hp.permission_key = 'forecasting.approve_recommendation'
+                """) ?? 0
+        }
+        let adminDismiss = try env.db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM hat_permissions hp
+                JOIN hats h ON h.id = hp.hat_id
+                WHERE h.name = 'Admin' AND hp.permission_key = 'forecasting.dismiss_recommendation'
+                """) ?? 0
+        }
+        #expect(adminApprove == 1, "Admin hat must have forecasting.approve_recommendation after backfill")
+        #expect(adminDismiss == 1, "Admin hat must have forecasting.dismiss_recommendation after backfill")
+    }
+
+    @Test("migration078 backfills forecasting permissions into existing Manager hat")
+    func testMigration078_backfillsForecastingPermissions_Manager() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                DELETE FROM hat_permissions
+                WHERE permission_key IN (
+                    'forecasting.approve_recommendation',
+                    'forecasting.dismiss_recommendation'
+                )
+                """)
+        }
+
+        try applyMigration078BackfillSQL(env.db)
+
+        let managerApprove = try env.db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM hat_permissions hp
+                JOIN hats h ON h.id = hp.hat_id
+                WHERE h.name = 'Manager' AND hp.permission_key = 'forecasting.approve_recommendation'
+                """) ?? 0
+        }
+        let managerDismiss = try env.db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM hat_permissions hp
+                JOIN hats h ON h.id = hp.hat_id
+                WHERE h.name = 'Manager' AND hp.permission_key = 'forecasting.dismiss_recommendation'
+                """) ?? 0
+        }
+        #expect(managerApprove == 1, "Manager hat must have forecasting.approve_recommendation after backfill")
+        #expect(managerDismiss == 1, "Manager hat must have forecasting.dismiss_recommendation after backfill")
+    }
+
+    @Test("migration078 is idempotent — duplicate INSERT OR IGNORE does not create extra rows")
+    func testMigration078_isIdempotent() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Run the backfill twice (first run: keys already seeded; second run: idempotent)
+        try applyMigration078BackfillSQL(env.db)
+        try applyMigration078BackfillSQL(env.db)
+
+        // Each (hat, key) pair must appear exactly once
+        let duplicates = try env.db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM (
+                    SELECT hp.hat_id, hp.permission_key, COUNT(*) AS cnt
+                    FROM hat_permissions hp
+                    JOIN hats h ON h.id = hp.hat_id
+                    WHERE h.name IN ('Admin', 'Manager')
+                      AND hp.permission_key IN (
+                          'forecasting.approve_recommendation',
+                          'forecasting.dismiss_recommendation'
+                      )
+                    GROUP BY hp.hat_id, hp.permission_key
+                    HAVING cnt > 1
+                )
+                """) ?? 0
+        }
+        #expect(duplicates == 0, "INSERT OR IGNORE must not create duplicate hat_permissions rows")
+    }
 }
+

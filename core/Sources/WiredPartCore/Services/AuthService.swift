@@ -337,6 +337,8 @@ public final class AuthService: Sendable {
     }
 
     /// Get permissions for a user (from user_hats + hat_permissions).
+    ///
+    /// Only returns permissions for users who are currently active (not soft-deleted).
     public func getUserPermissions(_ userId: Int64) throws -> [String] {
         try db.writer.read { dbConnection in
             let rows = try Row.fetchAll(
@@ -344,8 +346,11 @@ public final class AuthService: Sendable {
                 sql: """
                     SELECT DISTINCT hp.permission_key
                     FROM user_hats uh
+                    JOIN users u ON u.id = uh.user_id
                     JOIN hat_permissions hp ON hp.hat_id = uh.hat_id
-                    WHERE uh.user_id = ? AND uh.is_active = 1 AND uh.deleted_at IS NULL
+                    WHERE uh.user_id = ?
+                      AND uh.is_active = 1 AND uh.deleted_at IS NULL
+                      AND u.deleted_at IS NULL AND u.is_active = 1
                     """,
                 arguments: [userId]
             )
@@ -354,19 +359,63 @@ public final class AuthService: Sendable {
     }
 
     /// Check if user has a specific permission.
+    ///
+    /// Returns false for soft-deleted users (`users.deleted_at IS NOT NULL`) or
+    /// inactive users (`users.is_active = 0`) even if their hat assignments remain active.
+    /// This closes the backdoor where a terminated user could still pass the permission gate
+    /// because their `user_hats` rows were not cascaded at termination time.
     public func hasPermission(_ userId: Int64, permissionKey: String) throws -> Bool {
         try db.writer.read { dbConnection in
             let count = try Int.fetchOne(
                 dbConnection,
                 sql: """
                     SELECT COUNT(*) FROM user_hats uh
+                    JOIN users u ON u.id = uh.user_id
                     JOIN hat_permissions hp ON hp.hat_id = uh.hat_id
-                    WHERE uh.user_id = ? AND uh.is_active = 1 AND uh.deleted_at IS NULL AND hp.permission_key = ?
+                    WHERE uh.user_id = ?
+                      AND uh.is_active = 1 AND uh.deleted_at IS NULL
+                      AND u.deleted_at IS NULL AND u.is_active = 1
+                      AND hp.permission_key = ?
                     LIMIT 1
                     """,
                 arguments: [userId, permissionKey]
             ) ?? 0
             return count > 0
+        }
+    }
+
+    /// Soft-delete a user and cascade-deactivate their hat assignments.
+    ///
+    /// Runs in a single write transaction so the cascade is atomic:
+    /// - `users.deleted_at` and `users.is_active = 0` are set together.
+    /// - All `user_hats` rows for the user are deactivated simultaneously.
+    ///
+    /// After this call, `hasPermission` will return `false` for the user,
+    /// even if the `user_hats` rows had already been cleaned up separately.
+    public func softDeleteUser(userId: Int64) throws {
+        try db.writer.write { dbConnection in
+            try dbConnection.execute(
+                sql: """
+                    UPDATE users
+                    SET deleted_at = datetime('now'),
+                        is_active  = 0,
+                        updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [userId]
+            )
+            // Defense-in-depth: also deactivate hat assignments so they're
+            // visually clean in admin UI and don't survive if a future query
+            // accidentally omits the users JOIN.
+            try dbConnection.execute(
+                sql: """
+                    UPDATE user_hats
+                    SET is_active  = 0,
+                        deleted_at = datetime('now')
+                    WHERE user_id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [userId]
+            )
         }
     }
 
@@ -852,6 +901,8 @@ public final class AuthService: Sendable {
                 // Wishlist management
                 "wishlist.approve", "wishlist.dismiss", "wishlist.send_to_procurement", "wishlist.reopen",
                 "wishlist.auto_approve",
+                // Forecasting / recommendation pipeline
+                "forecasting.approve_recommendation", "forecasting.dismiss_recommendation",
             ],
             "Manager": [
                 "view_parts_catalog", "edit_parts_catalog", "edit_pricing", "show_dollar_values",
@@ -875,6 +926,8 @@ public final class AuthService: Sendable {
                 // Wishlist management
                 "wishlist.approve", "wishlist.dismiss", "wishlist.send_to_procurement", "wishlist.reopen",
                 "wishlist.auto_approve",
+                // Forecasting / recommendation pipeline
+                "forecasting.approve_recommendation", "forecasting.dismiss_recommendation",
             ],
             "Office": [
                 "view_parts_catalog", "edit_parts_catalog", "show_dollar_values",
