@@ -884,7 +884,7 @@ public final class AuthService: Sendable {
                 "view_orders", "manage_orders", "approve_returns", "view_people", "manage_people",
                 "view_reports", "export_reports", "manage_settings", "manage_devices",
                 "manage_templates", "manage_notebooks", "perform_audit", "manager_override", "view_activity_log",
-                "view_fleet", "manage_fleet", "view_tools", "manage_tools",
+                "view_fleet", "manage_fleet", "log_fleet", "view_tools", "manage_tools",
                 "view_scheduling", "manage_scheduling", "manage_dispatch",
                 "view_schedule", "manage_schedule", "dispatch_employees",
                 "manage_time_off", "manage_subcontractors",
@@ -912,7 +912,7 @@ public final class AuthService: Sendable {
                 "view_orders", "manage_orders", "approve_returns", "view_people", "manage_people",
                 "view_reports", "export_reports", "manage_templates", "manage_notebooks", "perform_audit",
                 "manager_override", "view_activity_log",
-                "view_fleet", "manage_fleet", "view_tools", "manage_tools",
+                "view_fleet", "manage_fleet", "log_fleet", "view_tools", "manage_tools",
                 "view_scheduling", "manage_scheduling", "manage_dispatch",
                 "view_schedule", "manage_schedule", "dispatch_employees",
                 "use_chat", "view_chat", "manage_chat", "ask_qa", "send_rfi",
@@ -945,7 +945,7 @@ public final class AuthService: Sendable {
                 "view_parts_catalog", "view_warehouse", "view_trucks", "move_stock_truck",
                 "view_jobs", "manage_jobs", "clock_in_out", "consume_parts_any_job",
                 "view_labor", "view_orders", "view_reports",
-                "view_fleet", "view_tools", "view_scheduling", "view_schedule",
+                "view_fleet", "log_fleet", "view_tools", "view_scheduling", "view_schedule",
                 "use_chat", "view_chat", "ask_qa",
                 "view_customers",
                 // 39A expanded keys
@@ -957,7 +957,7 @@ public final class AuthService: Sendable {
             "Worker": [
                 "view_parts_catalog", "view_warehouse", "view_trucks", "move_stock_truck",
                 "view_jobs", "clock_in_out", "view_labor", "view_orders",
-                "view_fleet", "view_tools", "view_schedule",
+                "view_fleet", "log_fleet", "view_tools", "view_schedule",
                 "use_chat", "view_chat",
                 // 39A expanded keys
                 "self_assign_ready_jobs", "self_assign_contact_jobs",

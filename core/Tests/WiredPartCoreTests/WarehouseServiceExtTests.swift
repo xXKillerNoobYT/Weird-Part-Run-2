@@ -605,6 +605,7 @@ struct WarehouseServiceExtTests {
         let catId = try E2ETestHelpers.seedCategory(env)
         let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
         let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
             vehicleNumber: "V-DSL-01", vehicleName: "DSL Truck", vehicleType: "truck",
             make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
         )
@@ -973,7 +974,7 @@ struct WarehouseServiceExtTests {
     @Test("recordTrailerLocation rejects tombstoned trailer")
     func testRecordTrailerLocation_rejectsTombstonedTrailer() throws {
         let env = try E2ETestHelpers.setUp()
-        let trailerId = try env.fleet.createTrailer(trailerNumber: "T-REC-SOFT", trailerType: "flatbed", notes: nil)
+        let trailerId = try env.fleet.createTrailer(actorId: env.adminUserId, trailerNumber: "T-REC-SOFT", trailerType: "flatbed", notes: nil)
         try env.db.writer.write { db in
             try db.execute(sql: "UPDATE job_trailers SET deleted_at = datetime('now') WHERE id = ?",
                            arguments: [trailerId])
