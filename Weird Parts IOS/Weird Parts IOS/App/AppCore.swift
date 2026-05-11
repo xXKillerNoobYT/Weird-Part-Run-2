@@ -130,7 +130,7 @@ final class AppCore: ObservableObject {
                     warehouse: WarehouseService(db: database),
                     jobs: JobsService(db: database),
                     orders: OrdersService(db: database),
-                    fleet: FleetService(db: database),
+                    fleet: FleetService(db: database, auth: auth),
                     people: PeopleService(db: database),
                     scheduling: SchedulingService(db: database),
                     chat: ChatService(db: database),

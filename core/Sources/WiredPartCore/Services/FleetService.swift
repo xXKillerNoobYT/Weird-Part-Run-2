@@ -8,19 +8,24 @@ import GRDB
 /// Tables that may not yet exist are handled gracefully: queries that
 /// hit a missing table return zero counts or empty arrays rather than throwing.
 ///
+/// Write methods require an `actorId` and check the caller's permissions
+/// via `AuthService` before executing the mutation (service-level defense in depth).
+///
 /// Ported from: Fleet & Vehicle Management feature area (Phase 6)
 public final class FleetService: Sendable {
     private let db: AppDatabase
+    private let auth: AuthService
 
-    public init(db: AppDatabase) {
+    public init(db: AppDatabase, auth: AuthService) {
         self.db = db
+        self.auth = auth
     }
 
     // =========================================================================
     // MARK: - Error Types
     // =========================================================================
 
-    public enum FleetError: Error, Sendable, Equatable {
+    public enum FleetError: LocalizedError, Sendable, Equatable {
         case vehicleNotFound(Int64)
         case userNotFound(Int64)
         case trailerNotFound(Int64)
@@ -28,6 +33,21 @@ public final class FleetService: Sendable {
         case invalidFuelLevel(Double)
         case requiredFieldEmpty(String)
         case invalidIssueReport(String)
+        case insufficientPermissions(required: String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .vehicleNotFound(let id): "Vehicle #\(id) not found"
+            case .userNotFound(let id): "User #\(id) not found"
+            case .trailerNotFound(let id): "Trailer #\(id) not found"
+            case .invalidQuantity(let qty): "Invalid quantity: \(qty)"
+            case .invalidFuelLevel(let level): "Fuel level \(level) is out of range (must be 0.0–1.0)"
+            case .requiredFieldEmpty(let field): "Required field '\(field)' cannot be empty"
+            case .invalidIssueReport(let msg): msg
+            case .insufficientPermissions(let required):
+                "You don't have permission to perform this action (required: \(required))"
+            }
+        }
     }
 
     // =========================================================================
@@ -1019,7 +1039,11 @@ public final class FleetService: Sendable {
     // =========================================================================
 
     /// Create a new vehicle. Returns the inserted row ID.
+    ///
+    /// - Parameter actorId: The ID of the user performing the action. Must have the
+    ///   `manage_fleet` permission; throws `FleetError.insufficientPermissions` otherwise.
     public func createVehicle(
+        actorId: Int64,
         vehicleNumber: String,
         vehicleName: String,
         vehicleType: String,
@@ -1031,6 +1055,9 @@ public final class FleetService: Sendable {
         licensePlate: String?,
         notes: String?
     ) throws -> Int64 {
+        guard try auth.hasPermission(actorId, permissionKey: "manage_fleet") else {
+            throw FleetError.insufficientPermissions(required: "manage_fleet")
+        }
         guard !vehicleNumber.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw FleetError.requiredFieldEmpty("vehicleNumber")
         }
@@ -1055,11 +1082,18 @@ public final class FleetService: Sendable {
     }
 
     /// Create a new trailer. Returns the inserted row ID.
+    ///
+    /// - Parameter actorId: The ID of the user performing the action. Must have the
+    ///   `manage_fleet` permission; throws `FleetError.insufficientPermissions` otherwise.
     public func createTrailer(
+        actorId: Int64,
         trailerNumber: String,
         trailerType: String,
         notes: String?
     ) throws -> Int64 {
+        guard try auth.hasPermission(actorId, permissionKey: "manage_fleet") else {
+            throw FleetError.insufficientPermissions(required: "manage_fleet")
+        }
         guard !trailerNumber.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw FleetError.requiredFieldEmpty("trailerNumber")
         }
@@ -1080,12 +1114,19 @@ public final class FleetService: Sendable {
     }
 
     /// Assign a driver (user) to a vehicle.
+    ///
+    /// - Parameter actorId: The ID of the user performing the action. Must have the
+    ///   `manage_fleet` permission; throws `FleetError.insufficientPermissions` otherwise.
     public func assignDriver(
+        actorId: Int64,
         vehicleId: Int64,
         userId: Int64,
         assignmentType: String,
         isTakeHome: Bool
     ) throws {
+        guard try auth.hasPermission(actorId, permissionKey: "manage_fleet") else {
+            throw FleetError.insufficientPermissions(required: "manage_fleet")
+        }
         try db.writer.write { dbConn in
             // Guard: both vehicle and user must exist and not be tombstoned —
             // otherwise the INSERT INTO vehicle_assignments would orphan-link
@@ -1354,7 +1395,12 @@ public final class FleetService: Sendable {
     // =========================================================================
 
     /// Add a stock item (truck_stock or transfer) to a vehicle.
+    ///
+    /// - Parameter actorId: The ID of the user performing the action. Must have the
+    ///   `log_fleet` permission (granted to Workers, Leads, Managers, and Admins);
+    ///   throws `FleetError.insufficientPermissions` otherwise.
     public func addVehicleStockItem(
+        actorId: Int64,
         vehicleId: Int64,
         partName: String,
         quantity: Int,
@@ -1367,6 +1413,9 @@ public final class FleetService: Sendable {
         destinationLocation: String? = nil,
         transferReason: String? = nil
     ) throws {
+        guard try auth.hasPermission(actorId, permissionKey: "log_fleet") else {
+            throw FleetError.insufficientPermissions(required: "log_fleet")
+        }
         guard !partName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw FleetError.requiredFieldEmpty("partName")
         }
@@ -1409,7 +1458,14 @@ public final class FleetService: Sendable {
 
     /// Log a fuel fill-up and update the vehicle's fuel_level.
     /// fuelLevel must be in [0.0, 1.0] — a fraction of a full tank.
-    public func logFuelLevel(vehicleId: Int64, fuelLevel: Double) throws {
+    ///
+    /// - Parameter actorId: The ID of the user performing the action. Must have the
+    ///   `log_fleet` permission (granted to Workers, Leads, Managers, and Admins);
+    ///   throws `FleetError.insufficientPermissions` otherwise.
+    public func logFuelLevel(actorId: Int64, vehicleId: Int64, fuelLevel: Double) throws {
+        guard try auth.hasPermission(actorId, permissionKey: "log_fleet") else {
+            throw FleetError.insufficientPermissions(required: "log_fleet")
+        }
         guard fuelLevel >= 0.0 && fuelLevel <= 1.0 else {
             throw FleetError.invalidFuelLevel(fuelLevel)
         }

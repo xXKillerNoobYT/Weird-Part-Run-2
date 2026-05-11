@@ -115,7 +115,8 @@ extension AppDatabase {
         registerMigration076StockMovementsCompositeIndex(&migrator)
         registerMigration077VehicleIssueReports(&migrator)
         registerMigration078ForecastingPermissionBackfill(&migrator)
-        registerMigration079ToolMovementsIndex(&migrator)
+        registerMigration079LogFleetPermission(&migrator)
+        registerMigration080ToolMovementsIndex(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4965,10 +4966,26 @@ extension AppDatabase {
         }
     }
 
-    // MARK: - Migration 079: tool_movements composite indexes
+    private static func registerMigration079LogFleetPermission(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("079_log_fleet_permission") { db in
+            // Backfill the new `log_fleet` permission key for existing hats.
+            // `log_fleet` allows Workers, Leads, Managers, and Admins to log fuel levels
+            // and add vehicle stock items — actions that don't require full fleet management
+            // access (`manage_fleet`).
+            let hatsToGrant = ["Admin", "Manager", "Lead", "Worker"]
+            for hatName in hatsToGrant {
+                try db.execute(sql: """
+                    INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+                    SELECT id, 'log_fleet' FROM hats WHERE name = ?
+                    """, arguments: [hatName])
+            }
+        }
+    }
 
-    private static func registerMigration079ToolMovementsIndex(_ migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("079_tool_movements_index") { db in
+    // MARK: - Migration 080: tool_movements composite indexes
+
+    private static func registerMigration080ToolMovementsIndex(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("080_tool_movements_index") { db in
             // Covers tool-specific queries: WHERE tool_id = ? [AND movement_type = ?] ORDER BY created_at DESC
             try db.execute(sql: """
                 CREATE INDEX IF NOT EXISTS idx_tool_movements_tool

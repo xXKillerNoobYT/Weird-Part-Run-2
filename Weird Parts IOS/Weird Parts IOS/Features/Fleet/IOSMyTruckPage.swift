@@ -218,12 +218,14 @@ struct IOSMyTruckPage: View {
                 QuickActionBtn(title: "Log Fuel", icon: "fuelpump.fill", color: .blue) {
                     activeSheet = .logFuel
                 }
+                .requiresPermission("log_fleet")
                 QuickActionBtn(title: "Report Issue", icon: "exclamationmark.triangle.fill", color: .red) {
                     activeSheet = .reportIssue
                 }
                 QuickActionBtn(title: "Add Part", icon: "plus.circle.fill", color: .green) {
                     activeSheet = .addTransferItem
                 }
+                .requiresPermission("log_fleet")
             }
             .frame(maxWidth: .infinity)
         }
@@ -618,10 +620,14 @@ private struct LogFuelSheet: View {
             saveError = "Fleet service not available"
             return
         }
+        guard let actorId = appCore.currentUser?.id else {
+            saveError = "Not signed in."
+            return
+        }
         isSaving = true
         saveError = nil
         do {
-            try fleet.logFuelLevel(vehicleId: vehicleId, fuelLevel: fuelPercent / 100.0)
+            try fleet.logFuelLevel(actorId: actorId, vehicleId: vehicleId, fuelLevel: fuelPercent / 100.0)
             onComplete()
         } catch {
             saveError = userFriendlyError(error, context: "save vehicle data")
@@ -777,10 +783,15 @@ private struct AddTransferItemSheet: View {
             saveError = "Fleet service not available"
             return
         }
+        guard let actorId = appCore.currentUser?.id else {
+            saveError = "Not signed in."
+            return
+        }
         isSaving = true
         saveError = nil
         do {
             try fleet.addVehicleStockItem(
+                actorId: actorId,
                 vehicleId: vehicleId,
                 partName: partName,
                 quantity: quantity,
