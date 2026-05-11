@@ -88,7 +88,7 @@ public final class CipherKeyManager: Sendable {
                 return existing
             }
             // Duplicate-item write raced but the follow-up re-read also failed.
-            Self.logger.error("CipherKeyManager: salt write raced (errSecDuplicateItem) and re-read also failed", privacy: .public)
+            Self.logger.error("CipherKeyManager: salt write raced (errSecDuplicateItem) and re-read also failed")
             throw CipherKeyError.keychainAccessFailed(errSecDuplicateItem)
         } catch {
             // Any other write failure (e.g. errSecNotAvailable, errSecAuthFailed) — surface
