@@ -731,6 +731,55 @@ public final class AuthService: Sendable {
         }
     }
 
+    // MARK: - PIN Change
+
+    /// Change a user's PIN.
+    ///
+    /// Verifies the old PIN before making any changes. On success:
+    /// 1. Updates the user's `pin_hash` and `pin_salt` to the new PIN.
+    ///
+    /// The SQLCipher app database remains encrypted with the device bootstrap key.
+    /// Re-keying it to a per-user PIN would make the next launch fail unless startup
+    /// had a pre-open unlock flow that can select the current DB key before login.
+    ///
+    /// - Parameters:
+    ///   - userId: The user whose PIN is being changed.
+    ///   - oldPin: The current PIN (must authenticate successfully).
+    ///   - newPin: The new PIN (4–8 digits, same rules as `createUser`).
+    /// - Throws: `AuthError.invalidPin` if `oldPin` is wrong.
+    ///           `AuthError.requiredFieldEmpty` if `newPin` is empty.
+    @discardableResult
+    public func changePin(userId: Int64, oldPin: String, newPin: String) throws -> Bool {
+        // Validate new PIN.
+        let trimmed = newPin.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw AuthError.requiredFieldEmpty("newPin")
+        }
+        guard trimmed.count >= 4 && trimmed.count <= 8, trimmed.allSatisfy({ $0.isNumber }) else {
+            throw AuthError.invalidPin("New PIN must be 4–8 digits")
+        }
+
+        // Verify old PIN against the DB (uses existing brute-force protection).
+        let authResult = try authenticateByPin(userId: userId, pin: oldPin)
+        guard authResult.success else {
+            throw AuthError.invalidPin(authResult.message)
+        }
+
+        // Persist new PIN hash using the trimmed (normalised) PIN so PIN validation
+        // and key derivation are always consistent — no whitespace variants.
+        let newSalt = Self.generateSalt()
+        let newHash = Self.hashPin(trimmed, salt: newSalt)
+        let now = Self.currentTimestamp()
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE users SET pin_hash = ?, pin_salt = ?, updated_at = ? WHERE id = ?",
+                arguments: [newHash, newSalt, now, userId]
+            )
+        }
+
+        return true
+    }
+
     // MARK: - Internal Helpers
 
     /// Verify a PIN against a stored hash.

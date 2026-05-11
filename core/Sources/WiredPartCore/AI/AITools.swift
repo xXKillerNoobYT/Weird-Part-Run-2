@@ -280,7 +280,7 @@ public struct ExplainCoOccurrenceTool: FoundationModels.Tool {
         let catBSearch = "%\(arguments.categoryB.lowercased())%"
         let catAName = arguments.categoryA
         let catBName = arguments.categoryB
-        let row: Row? = try db.writer.read { dbConn -> Row? in
+        let row: Row? = try await db.writer.read { dbConn -> Row? in
             try Row.fetchOne(dbConn, sql: """
                 SELECT cop.points, cop.co_occurrence_count, cop.confidence,
                        cop.rejection_count, cop.is_blocked, cop.match_level,

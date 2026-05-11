@@ -719,6 +719,96 @@ struct AuthServiceTests {
         }
     }
 
+    // MARK: - PIN Change + SQLCipher
+
+    @Test("changePin keeps DB openable with device bootstrap key after restart")
+    func testChangePinKeepsBootstrapKeyAfterRestart() throws {
+        AuthService.resetAllLoginAttempts()
+
+        let tmpDir = NSTemporaryDirectory()
+        let dbPath = (tmpDir as NSString).appendingPathComponent("wp_pin_restart_test_\(UUID().uuidString).sqlite")
+        defer {
+            try? FileManager.default.removeItem(atPath: dbPath)
+            try? FileManager.default.removeItem(atPath: dbPath + "-wal")
+            try? FileManager.default.removeItem(atPath: dbPath + "-shm")
+        }
+
+        let bootstrapKeyHex = CipherKeyManager.deriveKey(
+            pin: "device-bootstrap",
+            salt: Data(repeating: 0x34, count: 32)
+        )
+        let db = try AppDatabase.openEncryptedDatabase(atPath: dbPath, keyHex: bootstrapKeyHex)
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
+        let userId = try #require(seed.user?.id)
+
+        #expect(try auth.changePin(userId: userId, oldPin: "1234", newPin: "9876"))
+        try (db.writer as? DatabasePool)?.close()
+
+        let reopened = try AppDatabase.openEncryptedDatabase(atPath: dbPath, keyHex: bootstrapKeyHex)
+        let reopenedAuth = AuthService(db: reopened)
+        let authResult = try reopenedAuth.authenticateByPin(userId: userId, pin: "9876")
+        try (reopened.writer as? DatabasePool)?.close()
+
+        #expect(authResult.success)
+    }
+
+    @Test("testDatabaseRekeyLowLevel — old key fails, new key works, rows preserved")
+    func testDatabaseRekeyLowLevel() throws {
+        AuthService.resetAllLoginAttempts()
+
+        let tmpDir = NSTemporaryDirectory()
+        let dbPath = (tmpDir as NSString).appendingPathComponent("wp_pinchange_test_\(UUID().uuidString).sqlite")
+        defer {
+            try? FileManager.default.removeItem(atPath: dbPath)
+            try? FileManager.default.removeItem(atPath: dbPath + "-wal")
+            try? FileManager.default.removeItem(atPath: dbPath + "-shm")
+        }
+
+        // Derive an initial key.
+        let salt = Data(repeating: 0x12, count: 32)
+        let oldPin = "1111"
+        let newPin = "9999"
+        let oldKeyHex = CipherKeyManager.deriveKey(pin: oldPin, salt: salt)
+        let newKeyHex = CipherKeyManager.deriveKey(pin: newPin, salt: salt)
+        #expect(oldKeyHex != newKeyHex)
+
+        // Open an encrypted file-based DB with old key.
+        let pool = try AppDatabase.makeEncryptedPool(path: dbPath, keyHex: oldKeyHex)
+
+        // Seed a minimal schema + row so we can verify data survives re-key.
+        try pool.write { db in
+            try db.execute(sql: "CREATE TABLE IF NOT EXISTS _rekey_test (v TEXT)")
+            try db.execute(sql: "INSERT INTO _rekey_test (v) VALUES ('preserved')")
+        }
+
+        // Re-key to new key.
+        try AppDatabase.rekey(pool: pool, newKeyHex: newKeyHex)
+        try pool.close()
+
+        // Verify: old key CANNOT open the DB.
+        var oldKeyFailed = false
+        do {
+            let badPool = try AppDatabase.makeEncryptedPool(path: dbPath, keyHex: oldKeyHex)
+            try badPool.read { db in
+                _ = try Row.fetchOne(db, sql: "SELECT 1 FROM _rekey_test LIMIT 1")
+            }
+            try badPool.close()
+        } catch {
+            oldKeyFailed = true
+        }
+        #expect(oldKeyFailed, "Old key should not open re-keyed DB")
+
+        // Verify: new key CAN open the DB and rows are preserved.
+        let goodPool = try AppDatabase.makeEncryptedPool(path: dbPath, keyHex: newKeyHex)
+        let value: String? = try goodPool.read { db in
+            let row = try Row.fetchOne(db, sql: "SELECT v FROM _rekey_test LIMIT 1")
+            return row?["v"]
+        }
+        try goodPool.close()
+        #expect(value == "preserved", "Rows must survive re-key")
+    }
+
     // MARK: - hasPermission backdoor fix (#366)
 
     @Test("hasPermission returns true for an active admin user (regression guard)")
