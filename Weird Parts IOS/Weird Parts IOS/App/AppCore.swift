@@ -126,7 +126,7 @@ final class AppCore: ObservableObject {
                     database: database,
                     auth: auth,
                     settings: settings,
-                    parts: PartsService(db: database),
+                    parts: PartsService(db: database, auth: auth),
                     warehouse: WarehouseService(db: database),
                     jobs: JobsService(db: database),
                     orders: OrdersService(db: database),
