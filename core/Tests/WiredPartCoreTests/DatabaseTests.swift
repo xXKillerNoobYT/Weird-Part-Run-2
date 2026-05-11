@@ -16,7 +16,7 @@ struct DatabaseTests {
         #expect(tableExists)
     }
 
-    @Test("All 74 migrations (000-073) apply successfully")
+    @Test("All 80 migrations (000-079) apply successfully")
     func testAllMigrationsApply() throws {
         let db = try AppDatabase.openInMemoryDatabase()
 
@@ -93,9 +93,9 @@ struct DatabaseTests {
         }
     }
 
-    @Test("Schema version is 74")
+    @Test("Schema version is 80")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 74)
+        #expect(AppDatabase.schemaVersion == 80)
     }
 
     @Test("Migration 073 adds grid_rows and grid_cols to warehouse_floor_plans")
