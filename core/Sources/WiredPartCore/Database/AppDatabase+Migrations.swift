@@ -4986,10 +4986,11 @@ extension AppDatabase {
 
     private static func registerMigration080ToolMovementsIndex(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("080_tool_movements_index") { db in
-            // Covers tool-specific queries: WHERE tool_id = ? [AND movement_type = ?] ORDER BY created_at DESC
+            // Covers tool-specific queries: WHERE tool_id = ? [AND deleted_at IS NULL] [AND movement_type = ?] ORDER BY created_at DESC
+            // deleted_at before movement_type so the index is usable when movement_type is unconstrained (active:false).
             try db.execute(sql: """
                 CREATE INDEX IF NOT EXISTS idx_tool_movements_tool
-                ON tool_movements (tool_id, movement_type, deleted_at, created_at)
+                ON tool_movements (tool_id, deleted_at, movement_type, created_at)
                 """)
             // Covers movement-type-only queries (e.g. listCheckouts active:true, no toolId):
             // WHERE movement_type = 'checkout' AND deleted_at IS NULL ORDER BY created_at DESC
