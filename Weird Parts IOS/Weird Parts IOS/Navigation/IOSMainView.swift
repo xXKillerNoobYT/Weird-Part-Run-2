@@ -119,6 +119,7 @@ struct IOSMainView: View {
         .onChange(of: scenePhase) {
             if scenePhase == .active {
                 badgeManager.refresh()
+                appCore.runScheduledMaintenanceIfNeeded()
             }
         }
         // Safety: this .onReceive closure captures tabPrefs and appCore strongly, but that is fine.

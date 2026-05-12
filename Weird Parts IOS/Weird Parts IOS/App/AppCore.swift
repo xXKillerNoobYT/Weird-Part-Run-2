@@ -246,6 +246,7 @@ final class AppCore: ObservableObject {
                 _ = try? backgroundTaskService?.cleanupStaleTasks()
                 _ = try? backgroundTaskService?.cleanupOldEntries()
             }
+            runScheduledMaintenanceIfNeeded()
 
             // Run companion auto-discovery cycle in the background (logged)
             Task.detached { [partsService, backgroundTaskService] in
@@ -304,6 +305,18 @@ final class AppCore: ObservableObject {
         loadError = nil
         Task { @MainActor in
             await bootstrap()
+        }
+    }
+
+    func runScheduledMaintenanceIfNeeded() {
+        guard let backgroundTaskService, let toolsService else { return }
+        let logger = self.logger
+        Task.detached { [backgroundTaskService, toolsService] in
+            do {
+                _ = try backgroundTaskService.runToolsMaintenance(toolsService: toolsService)
+            } catch {
+                logger.error("[AppCore] Tools maintenance failed: \(error.localizedDescription)")
+            }
         }
     }
 
