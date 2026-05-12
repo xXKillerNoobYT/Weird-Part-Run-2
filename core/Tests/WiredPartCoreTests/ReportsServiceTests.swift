@@ -292,13 +292,12 @@ struct ReportsServiceTests {
         let partId = try E2ETestHelpers.seedPart(env, name: "Usage Part", categoryId: catId)
         _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
 
-        // Create a pull movement so the part appears in the usage report.
-        // qty must be positive; "pull" semantics come from fromLocationType="warehouse" + nil destination.
+        // Create a consume movement so the part appears in the usage report.
         _ = try env.warehouse.createMovement(
             partId: partId, qty: 3,
             fromLocationType: "warehouse", fromLocationId: 1,
             toLocationType: nil, toLocationId: nil,
-            movementType: "pull",
+            movementType: .consume,
             performedBy: env.adminUserId,
             unitCostAtMove: 5.0
         )
