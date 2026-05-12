@@ -103,6 +103,12 @@ public actor FoundationModelsService {
     /// Maximum characters of context to send to the model.
     private let maxContextChars: Int
 
+    /// Maximum persisted chat turns to replay into a freshly-created model session.
+    private let maxConversationMemoryMessages = 12
+
+    /// Maximum characters of persisted chat context to replay into a freshly-created model session.
+    private let maxConversationMemoryChars = 6_000
+
     /// System instructions for the electrical contracting domain.
     private let domainInstructions = """
         You are an AI assistant for an electrical contracting business management app \
@@ -369,12 +375,27 @@ public actor FoundationModelsService {
                     \(navigationContext)
                     """
 
+                let hasActiveSession = hasActiveChatSession(for: conversationId)
+                let prompt: String
+                if hasActiveSession {
+                    prompt = query
+                } else {
+                    let savedHistory = (try? await Self.loadConversation(conversationId, from: db)) ?? []
+                    messageHistory = savedHistory
+                    prompt = Self.conversationMemoryPrompt(
+                        for: query,
+                        history: savedHistory,
+                        maxMessages: maxConversationMemoryMessages,
+                        maxCharacters: maxConversationMemoryChars
+                    )
+                }
+
                 let session = getOrCreateChatSession(
                     conversationId: conversationId,
                     tools: tools,
                     instructions: chatInstructions
                 )
-                let response = try await session.respond(to: query)
+                let response = try await session.respond(to: prompt)
                 let text = response.content.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
 
                 // Append user + assistant messages to in-memory history
@@ -406,6 +427,15 @@ public actor FoundationModelsService {
     }
 
     // MARK: - Session Management
+
+    /// Returns whether the actor still has a live model session for this conversation.
+    private func hasActiveChatSession(for conversationId: String) -> Bool {
+        #if canImport(FoundationModels)
+        return activeChatConversationId == conversationId && activeChatSession != nil
+        #else
+        return false
+        #endif
+    }
 
     /// Returns the existing `LanguageModelSession` if the conversation ID matches,
     /// otherwise creates a new session and caches it.
@@ -441,6 +471,42 @@ public actor FoundationModelsService {
     /// Returns the in-memory message history for debugging / display.
     public func currentMessageHistory() -> [AIConversationMessage] {
         messageHistory
+    }
+
+    /// Build a prompt that restores recent persisted turns for a fresh model session.
+    ///
+    /// Foundation Models owns live turn memory while the `LanguageModelSession` exists.
+    /// If SwiftUI recreates the service actor, the app can still answer follow-ups like
+    /// "order those" by replaying recent saved turns into the next prompt.
+    public static func conversationMemoryPrompt(
+        for query: String,
+        history: [AIConversationMessage],
+        maxMessages: Int = 12,
+        maxCharacters: Int = 6_000
+    ) -> String {
+        let recent = history
+            .filter { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .suffix(maxMessages)
+
+        guard !recent.isEmpty else { return query }
+
+        var lines = recent.map { message in
+            let role = message.role == "assistant" ? "Assistant" : "User"
+            return "\(role): \(message.content)"
+        }
+
+        while lines.joined(separator: "\n").count > maxCharacters, lines.count > 1 {
+            lines.removeFirst()
+        }
+
+        let conversationContext = lines.joined(separator: "\n")
+        return """
+            Previous conversation context:
+            \(conversationContext)
+
+            Current user message:
+            \(query)
+            """
     }
 
     // MARK: - DB Persistence

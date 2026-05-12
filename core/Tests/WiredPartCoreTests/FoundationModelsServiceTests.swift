@@ -128,6 +128,54 @@ struct FoundationModelsServiceTests {
         #expect(history.isEmpty)
     }
 
+    @Test("conversationMemoryPrompt includes recent persisted turns and current query")
+    func testConversationMemoryPrompt_includesRecentTurns() {
+        let history: [AIConversationMessage] = [
+            AIConversationMessage(id: "m1", conversationId: "conv-memory", role: "user", content: "Show me low stock conduit", createdAt: "2026-05-12 08:00:00"),
+            AIConversationMessage(id: "m2", conversationId: "conv-memory", role: "assistant", content: "EMT 1/2 inch and EMT 3/4 inch are low.", createdAt: "2026-05-12 08:00:01"),
+        ]
+
+        let prompt = FoundationModelsService.conversationMemoryPrompt(
+            for: "Order those",
+            history: history
+        )
+
+        #expect(prompt.contains("Previous conversation context:"))
+        #expect(prompt.contains("User: Show me low stock conduit"))
+        #expect(prompt.contains("Assistant: EMT 1/2 inch and EMT 3/4 inch are low."))
+        #expect(prompt.contains("Current user message:"))
+        #expect(prompt.contains("Order those"))
+    }
+
+    @Test("conversationMemoryPrompt returns original query without history")
+    func testConversationMemoryPrompt_withoutHistoryReturnsQuery() {
+        let prompt = FoundationModelsService.conversationMemoryPrompt(
+            for: "What jobs are open?",
+            history: []
+        )
+
+        #expect(prompt == "What jobs are open?")
+    }
+
+    @Test("conversationMemoryPrompt trims oldest turns when context is too large")
+    func testConversationMemoryPrompt_trimsOldestTurns() {
+        let history: [AIConversationMessage] = [
+            AIConversationMessage(id: "old", conversationId: "conv-trim", role: "user", content: "old-old-old-old", createdAt: "2026-05-12 08:00:00"),
+            AIConversationMessage(id: "new", conversationId: "conv-trim", role: "assistant", content: "new-new-new-new", createdAt: "2026-05-12 08:00:01"),
+        ]
+
+        let prompt = FoundationModelsService.conversationMemoryPrompt(
+            for: "Continue",
+            history: history,
+            maxMessages: 2,
+            maxCharacters: 18
+        )
+
+        #expect(!prompt.contains("old-old-old-old"))
+        #expect(prompt.contains("new-new-new-new"))
+        #expect(prompt.contains("Continue"))
+    }
+
     // MARK: - DB Persistence (static methods, fully testable)
 
     @Test("saveMessage then loadConversation round-trips message content")

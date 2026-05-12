@@ -32,6 +32,7 @@ struct IOSAIAssistantPanel: View {
 
     @State private var query = ""
     @State private var messages: [AssistantMessage] = []
+    @State private var aiService = FoundationModelsService()
     @State private var isProcessing = false
     @State private var aiAvailability: AIAvailability = .notSupported
     @State private var catalogContext: String?
@@ -60,9 +61,7 @@ struct IOSAIAssistantPanel: View {
     @State private var activePageId: String?
 
     /// Unique ID for the current conversation thread. Changing this starts a fresh session.
-    @State private var conversationId: String = UUID().uuidString
-
-    private let aiService = FoundationModelsService()
+    @AppStorage("wiredpart.aiAssistant.conversationId") private var conversationId: String = "default"
 
     var body: some View {
         if displayMode == .sheet {
