@@ -34,6 +34,26 @@ struct ConflictResolverTests {
         return user.id!
     }
 
+    @discardableResult
+    private func insertPart(
+        db: AppDatabase,
+        name: String = "Original Part",
+        description: String? = nil
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: "INSERT INTO part_categories (name) VALUES ('Sync Test')")
+            let categoryId = dbConn.lastInsertedRowID
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO parts (category_id, name, description, part_type, updated_at)
+                    VALUES (?, ?, ?, 'general', ?)
+                    """,
+                arguments: [categoryId, name, description, "2026-03-14T10:00:00Z"]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
     // MARK: - resolveAndApplyChanges
 
     @Test("Empty change list returns zero result")
@@ -322,6 +342,141 @@ struct ConflictResolverTests {
             try User.fetchOne(dbConn, key: userId)
         }
         #expect(user?.displayName == "Local")
+    }
+
+    @Test("UPDATE conflict uses per-field timestamp before row updated_at")
+    func testUpdateConflictUsesFieldTimestamp() throws {
+        let db = try freshDB()
+        let partId = try insertPart(db: db, name: "Original")
+
+        try ChangeTracker.trackChange(
+            db: db,
+            tableName: "parts",
+            recordId: partId,
+            operation: .update,
+            changedFields: ["name": "Local"],
+            deviceId: "local-device"
+        )
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE parts
+                    SET name = ?,
+                        updated_at = ?,
+                        _field_timestamps = ?
+                    WHERE id = ?
+                    """,
+                arguments: [
+                    "Local",
+                    "2026-03-14T12:00:00Z",
+                    #"{"name":"2026-03-14T09:00:00Z"}"#,
+                    partId
+                ]
+            )
+        }
+
+        let result = try ConflictResolver.resolveAndApplyChanges(
+            db: db,
+            changes: [
+                IncomingChange(
+                    deviceId: "remote-device",
+                    tableName: "parts",
+                    recordId: "\(partId)",
+                    operation: "UPDATE",
+                    changedFields: #"{"name":"Remote"}"#,
+                    timestamp: "2026-03-14T10:00:00Z"
+                )
+            ],
+            localDeviceId: "local-device"
+        )
+
+        #expect(result.conflicts == 1)
+
+        let row = try db.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: "SELECT name, _field_timestamps FROM parts WHERE id = ?", arguments: [partId])
+        }
+        #expect(row?["name"] as String? == "Remote")
+
+        let timestamps = FieldTimestampHelper.decode(row?["_field_timestamps"] as String?)
+        #expect(timestamps["name"] == "2026-03-14T10:00:00Z")
+    }
+
+    @Test("UPDATE conflict falls back to row timestamp when field timestamp is NULL")
+    func testUpdateConflictFallsBackToRowTimestamp() throws {
+        let db = try freshDB()
+        let partId = try insertPart(db: db, name: "Original")
+
+        try ChangeTracker.trackChange(
+            db: db,
+            tableName: "parts",
+            recordId: partId,
+            operation: .update,
+            changedFields: ["name": "Local"],
+            deviceId: "local-device"
+        )
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE parts SET name = ?, updated_at = ?, _field_timestamps = NULL WHERE id = ?",
+                arguments: ["Local", "2026-03-14T12:00:00Z", partId]
+            )
+        }
+
+        let result = try ConflictResolver.resolveAndApplyChanges(
+            db: db,
+            changes: [
+                IncomingChange(
+                    deviceId: "remote-device",
+                    tableName: "parts",
+                    recordId: "\(partId)",
+                    operation: "UPDATE",
+                    changedFields: #"{"name":"Remote"}"#,
+                    timestamp: "2026-03-14T10:00:00Z"
+                )
+            ],
+            localDeviceId: "local-device"
+        )
+
+        #expect(result.conflicts == 1)
+
+        let name = try db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT name FROM parts WHERE id = ?", arguments: [partId])
+        }
+        #expect(name == "Local")
+    }
+
+    @Test("PartsService update stamps touched fields only")
+    func testPartsServiceUpdateStampsTouchedFieldsOnly() throws {
+        let db = try freshDB()
+        let service = PartsService(db: db)
+        let categoryId = try service.createCategory(name: "Stamped")
+        let partId = try service.createPart(
+            categoryId: categoryId,
+            name: "Original",
+            description: "Keep timestamp"
+        )
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE parts SET _field_timestamps = ? WHERE id = ?",
+                arguments: [#"{"name":"2026-03-14T09:00:00Z","description":"2026-03-14T09:00:00Z"}"#, partId]
+            )
+        }
+
+        try service.updatePart(id: partId, name: "Renamed")
+
+        let timestamps = try db.writer.read { dbConn -> [String: String] in
+            let json = try String.fetchOne(
+                dbConn,
+                sql: "SELECT _field_timestamps FROM parts WHERE id = ?",
+                arguments: [partId]
+            )
+            return FieldTimestampHelper.decode(json)
+        }
+
+        #expect(timestamps["name"] != "2026-03-14T09:00:00Z")
+        #expect(timestamps["description"] == "2026-03-14T09:00:00Z")
     }
 
     @Test("UPDATE missing record with record_data inserts it")

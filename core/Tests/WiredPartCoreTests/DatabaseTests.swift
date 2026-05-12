@@ -17,7 +17,7 @@ struct DatabaseTests {
         #expect(tableExists)
     }
 
-    @Test("All 81 migrations (000-080) apply successfully")
+    @Test("All 85 migrations (000-084) apply successfully")
     func testAllMigrationsApply() throws {
         let db = try AppDatabase.openInMemoryDatabase()
 
@@ -72,6 +72,8 @@ struct DatabaseTests {
             "payment_records",   // 043
             // Scheduling & estimation (046-047)
             "estimation_questions", // 047
+            "estimation_question_accuracy_reviews", // 083
+            "estimation_question_candidates", // 083
             // Tools detail (048-050)
             "tool_checkouts",    // 048
             // Vehicle & trailer (051-053)
@@ -95,9 +97,28 @@ struct DatabaseTests {
         }
     }
 
-    @Test("Schema version is 81")
+    @Test("Schema version is 85")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 81)
+        #expect(AppDatabase.schemaVersion == 85)
+    }
+
+    @Test("Synced tables have nullable field timestamps column")
+    func testSyncedTablesFieldTimestampsColumn() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+
+        let missingTables = try db.writer.read { db in
+            try ConflictResolver.allowedSyncTables
+                .filter { !$0.hasPrefix("_") }
+                .filter { try db.tableExists($0) }
+                .filter { table in
+                    let columns = try db.columns(in: table).map(\.name)
+                    return !columns.contains(FieldTimestampHelper.columnName)
+                }
+                .sorted()
+        }
+
+        let missingList = missingTables.joined(separator: ", ")
+        #expect(missingTables.isEmpty, "Missing \(FieldTimestampHelper.columnName): \(missingList)")
     }
 
     @Test("Pre-migration backup reports main database copy failures")

@@ -1308,8 +1308,18 @@ public final class PartsService: Sendable {
         record.isActive = 1
         record.isDeprecated = 0
         record.isQrTagged = 0
+        let createdFields = [
+            "category_id", "style_id", "type_id", "color_id", "part_type", "code", "name",
+            "description", "brand_id", "manufacturer_part_number", "unit_of_measure",
+            "weight_lbs", "company_cost_price", "company_markup_percent", "min_stock_level",
+            "max_stock_level", "target_stock_level", "reorder_point", "notes", "image_url",
+            "shelf_location", "bin_location", "is_active", "is_deprecated", "is_qr_tagged"
+        ]
         try db.writer.write { dbConn in
             try record.insert(dbConn)
+            if let partId = record.id {
+                try FieldTimestampHelper.stamp(createdFields, table: "parts", rowId: partId, in: dbConn)
+            }
         }
         guard let partId = record.id else { throw PartsError.invalidInput("Failed to get ID after insert") }
         // Log creation in audit trail — intentionally non-fatal: part creation must succeed
@@ -1355,31 +1365,32 @@ public final class PartsService: Sendable {
         try db.writer.write { dbConn in
             var setClauses: [String] = []
             var args: [DatabaseValueConvertible?] = []
+            var touchedFields: [String] = []
 
-            if let name { setClauses.append("name = ?"); args.append(name) }
-            if let code { setClauses.append("code = ?"); args.append(code) }
-            if let description { setClauses.append("description = ?"); args.append(description) }
-            if let categoryId { setClauses.append("category_id = ?"); args.append(categoryId) }
-            if let styleId { setClauses.append("style_id = ?"); args.append(styleId) }
-            if let typeId { setClauses.append("type_id = ?"); args.append(typeId) }
-            if let colorId { setClauses.append("color_id = ?"); args.append(colorId) }
-            if let brandId { setClauses.append("brand_id = ?"); args.append(brandId) }
-            if let partType { setClauses.append("part_type = ?"); args.append(partType) }
-            if let manufacturerPartNumber { setClauses.append("manufacturer_part_number = ?"); args.append(manufacturerPartNumber) }
-            if let unitOfMeasure { setClauses.append("unit_of_measure = ?"); args.append(unitOfMeasure) }
-            if let weightLbs { setClauses.append("weight_lbs = ?"); args.append(weightLbs) }
-            if let companyCostPrice { setClauses.append("company_cost_price = ?"); args.append(companyCostPrice) }
-            if let companyMarkupPercent { setClauses.append("company_markup_percent = ?"); args.append(companyMarkupPercent) }
-            if let minStockLevel { setClauses.append("min_stock_level = ?"); args.append(minStockLevel) }
-            if let maxStockLevel { setClauses.append("max_stock_level = ?"); args.append(maxStockLevel) }
-            if let targetStockLevel { setClauses.append("target_stock_level = ?"); args.append(targetStockLevel) }
-            if let reorderPoint { setClauses.append("reorder_point = ?"); args.append(reorderPoint) }
-            if let isDeprecated { setClauses.append("is_deprecated = ?"); args.append(isDeprecated) }
-            if let deprecationReason { setClauses.append("deprecation_reason = ?"); args.append(deprecationReason) }
-            if let notes { setClauses.append("notes = ?"); args.append(notes) }
-            if let imageUrl { setClauses.append("image_url = ?"); args.append(imageUrl) }
-            if let shelfLocation { setClauses.append("shelf_location = ?"); args.append(shelfLocation) }
-            if let binLocation { setClauses.append("bin_location = ?"); args.append(binLocation) }
+            if let name { setClauses.append("name = ?"); args.append(name); touchedFields.append("name") }
+            if let code { setClauses.append("code = ?"); args.append(code); touchedFields.append("code") }
+            if let description { setClauses.append("description = ?"); args.append(description); touchedFields.append("description") }
+            if let categoryId { setClauses.append("category_id = ?"); args.append(categoryId); touchedFields.append("category_id") }
+            if let styleId { setClauses.append("style_id = ?"); args.append(styleId); touchedFields.append("style_id") }
+            if let typeId { setClauses.append("type_id = ?"); args.append(typeId); touchedFields.append("type_id") }
+            if let colorId { setClauses.append("color_id = ?"); args.append(colorId); touchedFields.append("color_id") }
+            if let brandId { setClauses.append("brand_id = ?"); args.append(brandId); touchedFields.append("brand_id") }
+            if let partType { setClauses.append("part_type = ?"); args.append(partType); touchedFields.append("part_type") }
+            if let manufacturerPartNumber { setClauses.append("manufacturer_part_number = ?"); args.append(manufacturerPartNumber); touchedFields.append("manufacturer_part_number") }
+            if let unitOfMeasure { setClauses.append("unit_of_measure = ?"); args.append(unitOfMeasure); touchedFields.append("unit_of_measure") }
+            if let weightLbs { setClauses.append("weight_lbs = ?"); args.append(weightLbs); touchedFields.append("weight_lbs") }
+            if let companyCostPrice { setClauses.append("company_cost_price = ?"); args.append(companyCostPrice); touchedFields.append("company_cost_price") }
+            if let companyMarkupPercent { setClauses.append("company_markup_percent = ?"); args.append(companyMarkupPercent); touchedFields.append("company_markup_percent") }
+            if let minStockLevel { setClauses.append("min_stock_level = ?"); args.append(minStockLevel); touchedFields.append("min_stock_level") }
+            if let maxStockLevel { setClauses.append("max_stock_level = ?"); args.append(maxStockLevel); touchedFields.append("max_stock_level") }
+            if let targetStockLevel { setClauses.append("target_stock_level = ?"); args.append(targetStockLevel); touchedFields.append("target_stock_level") }
+            if let reorderPoint { setClauses.append("reorder_point = ?"); args.append(reorderPoint); touchedFields.append("reorder_point") }
+            if let isDeprecated { setClauses.append("is_deprecated = ?"); args.append(isDeprecated); touchedFields.append("is_deprecated") }
+            if let deprecationReason { setClauses.append("deprecation_reason = ?"); args.append(deprecationReason); touchedFields.append("deprecation_reason") }
+            if let notes { setClauses.append("notes = ?"); args.append(notes); touchedFields.append("notes") }
+            if let imageUrl { setClauses.append("image_url = ?"); args.append(imageUrl); touchedFields.append("image_url") }
+            if let shelfLocation { setClauses.append("shelf_location = ?"); args.append(shelfLocation); touchedFields.append("shelf_location") }
+            if let binLocation { setClauses.append("bin_location = ?"); args.append(binLocation); touchedFields.append("bin_location") }
 
             guard !setClauses.isEmpty else { return }
             setClauses.append("updated_at = datetime('now')")
@@ -1387,6 +1398,7 @@ public final class PartsService: Sendable {
 
             let sql = "UPDATE parts SET \(setClauses.joined(separator: ", ")) WHERE id = ? AND deleted_at IS NULL"
             try dbConn.execute(sql: sql, arguments: StatementArguments(args))
+            try FieldTimestampHelper.stamp(touchedFields, table: "parts", rowId: id, in: dbConn)
         }
 
         // Log field-level changes to audit trail (non-fatal)

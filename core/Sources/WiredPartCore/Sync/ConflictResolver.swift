@@ -176,6 +176,7 @@ public enum ConflictResolver {
         // Estimation
         "estimation_questions", "estimation_responses", "estimation_results",
         "estimation_reviews", "estimation_question_rejections",
+        "estimation_question_accuracy_reviews", "estimation_question_candidates",
         // Tool Detail
         "tool_checkouts", "tool_change_log", "tool_trades", "tool_maintenance_configs",
         // Vehicle Stock & Trailers
@@ -502,13 +503,8 @@ public enum ConflictResolver {
     /// If no conflict: accept remote. If conflict: later timestamp wins.
     /// Returns conflict count.
     ///
-    /// KNOWN TRADE-OFF (#221 — row-level timestamps for per-field conflicts):
-    /// LWW uses the row's `updated_at` as the comparison timestamp for ALL fields.
-    /// This means a later edit to an unrelated field on device B can cause field X —
-    /// where device A's change was chronologically earlier — to resolve in device B's
-    /// favor. True per-field timestamps would require extending `_change_log.changed_fields`
-    /// to `{field: {value, timestamp}}` and a schema migration. Deferred as a scope-bounded
-    /// accepted limitation; document rather than silently surprise future contributors.
+    /// Per-field timestamps are used when available. Older rows and tables that
+    /// have not been migrated yet fall back to row-level `updated_at`.
     private static func fieldLevelMerge(
         db: Database,
         table: String,
@@ -521,24 +517,21 @@ public enum ConflictResolver {
         // Get fields that have been locally modified but not yet synced
         let localChangedFields = try getLocalChangedFields(db: db, tableName: table, recordId: recordId)
 
-        // Get local timestamp for conflict comparison
-        let localTimestamp: String
-        if let updatedAt: String = localRow["updated_at"] {
-            localTimestamp = updatedAt
-        } else if let createdAt: String = localRow["created_at"] {
-            localTimestamp = createdAt
-        } else {
-            localTimestamp = "1970-01-01T00:00:00Z"
-        }
-
-        let remoteTimestamp = change.timestamp
+        let localRowTimestamp = rowTimestamp(localRow)
+        let remoteRowTimestamp = change.timestamp
+        let remoteRecordData = parseJsonField(change.recordData)
 
         var mergedData: [String: String?] = [:]
+        var acceptedFieldTimestamps: [String: String] = [:]
         var conflictEntries: [ConflictLogEntry] = []
 
         for (field, remoteValue) in incomingFields {
             // Always skip "id" — primary key is never merged
             if field == "id" { continue }
+            if field == FieldTimestampHelper.columnName { continue }
+
+            let localTimestamp = fieldTimestamp(field, in: localRow) ?? localRowTimestamp
+            let remoteTimestamp = fieldTimestamp(field, in: remoteRecordData) ?? remoteRowTimestamp
 
             if localChangedFields.contains(field) {
                 // Both local and remote modified this field — LWW
@@ -548,6 +541,7 @@ public enum ConflictResolver {
                     // Remote wins
                     winner = "remote"
                     mergedData[field] = remoteValue
+                    acceptedFieldTimestamps[field] = remoteTimestamp
                 } else {
                     // Local wins (or tie goes to local)
                     winner = "local"
@@ -569,6 +563,7 @@ public enum ConflictResolver {
             } else {
                 // Field not locally modified — accept remote value
                 mergedData[field] = remoteValue
+                acceptedFieldTimestamps[field] = remoteTimestamp
             }
         }
 
@@ -593,6 +588,13 @@ public enum ConflictResolver {
                 sql: "UPDATE \(quotedTable(table)) SET \(setClauses) WHERE id = ?",
                 arguments: StatementArguments(args)
             )
+
+            if hasFieldTimestampColumn(db: db, table: table),
+               let rowId = Int64(recordId) {
+                for (field, timestamp) in acceptedFieldTimestamps {
+                    try FieldTimestampHelper.stamp([field], table: table, rowId: rowId, timestamp: timestamp, in: db)
+                }
+            }
         }
 
         // Log all conflicts
@@ -604,6 +606,31 @@ public enum ConflictResolver {
     }
 
     // MARK: - Private: Helpers
+
+    private static func rowTimestamp(_ row: Row) -> String {
+        if let updatedAt: String = row["updated_at"] {
+            return updatedAt
+        }
+        if let createdAt: String = row["created_at"] {
+            return createdAt
+        }
+        return "1970-01-01T00:00:00Z"
+    }
+
+    private static func fieldTimestamp(_ field: String, in row: Row) -> String? {
+        guard row.columnNames.contains(FieldTimestampHelper.columnName) else { return nil }
+        let json: String? = row[FieldTimestampHelper.columnName]
+        return FieldTimestampHelper.decode(json)[field]
+    }
+
+    private static func fieldTimestamp(_ field: String, in recordData: [String: String?]?) -> String? {
+        guard let timestampJson = recordData?[FieldTimestampHelper.columnName] ?? nil else { return nil }
+        return FieldTimestampHelper.decode(timestampJson)[field]
+    }
+
+    private static func hasFieldTimestampColumn(db: Database, table: String) -> Bool {
+        ((try? db.columns(in: table).map(\.name)) ?? []).contains(FieldTimestampHelper.columnName)
+    }
 
     /// Fetch a local record by ID from any table.
     private static func getLocalRecord(db: Database, tableName: String, recordId: String) throws -> Row? {

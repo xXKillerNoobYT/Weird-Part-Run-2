@@ -117,6 +117,10 @@ extension AppDatabase {
         registerMigration078PartsRecommendationPermissions(&migrator)
         registerMigration079VehicleLocationLogsIndex(&migrator)
         registerMigration080InspectionRecordsVehiclePerformedAtIndex(&migrator)
+        registerMigration081POLineResolvedBrand(&migrator)
+        registerMigration082PartsFieldTimestamps(&migrator)
+        registerMigration083StructuredEstimationReviews(&migrator)
+        registerMigration084SyncedTableFieldTimestamps(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5017,6 +5021,76 @@ extension AppDatabase {
         }
     }
 
+    private static func registerMigration081POLineResolvedBrand(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("081_po_line_resolved_brand") { db in
+            try addColumnIfMissing(db, table: "po_line_items", column: "brand_id", type: .integer)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_po_line_items_brand
+                ON po_line_items (brand_id)
+                WHERE deleted_at IS NULL
+                """)
+        }
+    }
+
+    private static func registerMigration082PartsFieldTimestamps(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("082_parts_field_timestamps") { db in
+            try addColumnIfMissing(db, table: "parts", column: FieldTimestampHelper.columnName, type: .text)
+        }
+    }
+
+    private static func registerMigration083StructuredEstimationReviews(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("083_structured_estimation_reviews") { db in
+            try addColumnIfMissing(db, table: "estimation_reviews", column: "delay_factors", type: .text)
+            try addColumnIfMissing(db, table: "estimation_reviews", column: "on_track_status", type: .text)
+            try addColumnIfMissing(db, table: "estimation_reviews", column: "unresolved_question_count", type: .integer)
+            try addColumnIfMissing(db, table: "estimation_reviews", column: "crew_feedback", type: .text)
+            try addColumnIfMissing(db, table: "estimation_reviews", column: "gc_rating", type: .integer)
+
+            if try !db.tableExists("estimation_question_accuracy_reviews") {
+                try db.create(table: "estimation_question_accuracy_reviews") { t in
+                    t.autoIncrementedPrimaryKey("id")
+                    t.column("review_id", .integer).notNull()
+                        .references("estimation_reviews", onDelete: .cascade)
+                    t.column("question_id", .integer).notNull()
+                        .references("estimation_questions")
+                    t.column("predicted_impact", .text)
+                    t.column("actual_impact", .text)
+                    t.column("accuracy_rating", .integer).notNull()
+                    t.column("notes", .text)
+                    t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                }
+            }
+
+            if try !db.tableExists("estimation_question_candidates") {
+                try db.create(table: "estimation_question_candidates") { t in
+                    t.autoIncrementedPrimaryKey("id")
+                    t.column("question_text", .text).notNull()
+                    t.column("question_group", .text).notNull()
+                    t.column("stage", .text).notNull()
+                    t.column("answer_type", .text).notNull().defaults(to: "text")
+                    t.column("rationale", .text)
+                    t.column("source_signal", .text)
+                    t.column("status", .text).notNull().defaults(to: "pending")
+                    t.column("generated_at", .text).defaults(sql: "(datetime('now'))")
+                    t.column("reviewed_by", .integer).references("users")
+                    t.column("reviewed_at", .text)
+                }
+            }
+        }
+    }
+
+    private static func registerMigration084SyncedTableFieldTimestamps(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("084_synced_table_field_timestamps") { db in
+            let syncedTables = ConflictResolver.allowedSyncTables
+                .filter { !$0.hasPrefix("_") }
+                .sorted()
+
+            for table in syncedTables {
+                guard try db.tableExists(table) else { continue }
+                try addColumnIfMissing(db, table: table, column: FieldTimestampHelper.columnName, type: .text)
+            }
+        }
+    }
     private static func registerMigration075CompanionFeedbackNullableSuggestionId(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("075_companion_feedback_nullable_suggestion_id") { db in
             try db.execute(sql: """
