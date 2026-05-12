@@ -59,7 +59,6 @@ struct DashboardView: View {
     // Onboarding checklist persistence
     @AppStorage("onboarding_checklist_dismissed") private var checklistDismissed = false
     @AppStorage("hasCompletedCompanySetup") private var hasCompletedCompanySetup = false
-    @State private var warehouseHasFloorPlan = false
     // showCreateJobSheet and showCompanySetupWizard consolidated into ActiveSheet enum
 
     @State private var isLoading = true
@@ -190,202 +189,28 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var gettingStartedChecklist: some View {
-        if isFirstLaunchState && !checklistDismissed {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Image(systemName: "sparkles")
-                        .foregroundStyle(.blue)
-                        .font(.title2)
-                        .accessibilityHidden(true)
-                    Text("Getting Started")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    Spacer()
-                    Button {
-                        withAnimation { checklistDismissed = true }
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Dismiss checklist")
-                }
+        let completed = [
+            hasCompletedCompanySetup,
+            stats.employeeCount > 0,
+            stats.activeJobs > 0,
+            stats.supplierCount > 0,
+            stats.partTypes > 0,
+            stats.warehouseLocationCount > 0,
+        ].filter { $0 }.count
 
-                Text("Welcome to WiredPart! Complete these steps to set up your business.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                VStack(spacing: 12) {
-                    checklistItem(
-                        step: 1,
-                        title: "Add Your Team",
-                        subtitle: "Add employees so they can clock in and get assigned to jobs.",
-                        icon: "person.badge.plus",
-                        color: .blue,
-                        isComplete: stats.employeeCount > 0
-                    ) {
-                        IOSEmployeesPage().environmentObject(appCore)
-                    }
-
-                    checklistItem(
-                        step: 2,
-                        title: "Set Up Parts Catalog",
-                        subtitle: "Import or create your parts inventory so you can track stock and order materials.",
-                        icon: "wrench.and.screwdriver.fill",
-                        color: .green,
-                        isComplete: stats.partTypes > 0
-                    ) {
-                        PartsRouter(tabId: "parts-import-export").environmentObject(appCore)
-                    }
-
-                    // Step 3 uses a sheet instead of NavigationLink
-                    Button {
-                        activeSheet = .createJob
-                    } label: {
-                        checklistItemLabel(
-                            step: 3,
-                            title: "Create Your First Job",
-                            subtitle: "Jobs are the core of WiredPart — create one to start tracking work.",
-                            icon: "briefcase.fill",
-                            color: .orange,
-                            isComplete: stats.activeJobs > 0
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(stats.activeJobs > 0)
-
-                    checklistItem(
-                        step: 4,
-                        title: "Configure Your Warehouse",
-                        subtitle: "Set up warehouse locations and bins so parts can be tracked on shelves.",
-                        icon: "building.2.fill",
-                        color: .purple,
-                        isComplete: warehouseHasFloorPlan
-                    ) {
-                        WarehouseOnboardingWizard().environmentObject(appCore)
-                    }
-                }
-
-                // Progress indicator
-                let completed = [
-                    stats.employeeCount > 0,
-                    stats.partTypes > 0,
-                    stats.activeJobs > 0,
-                    warehouseHasFloorPlan,
-                ].filter { $0 }.count
-
-                HStack {
-                    Text("\(completed) of 4 complete")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    ProgressView(value: Double(completed), total: 4.0)
-                        .frame(width: 100)
-                }
-
-                // Resume company setup (admin only)
-                if !hasCompletedCompanySetup && appCore.hasPermission("manage_jobs") {
-                    Button {
-                        activeSheet = .companySetup
-                    } label: {
-                        Label("Resume Company Setup", systemImage: "arrow.right.circle.fill")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                }
-
-                // Tour button
-                if appCore.onboardingManager?.isOnboardingActive != true {
-                    Button {
-                        withAnimation { appCore.onboardingManager?.isOnboardingActive = true }
-                    } label: {
-                        Label("Take the Full App Tour", systemImage: "graduationcap.fill")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                }
-            }
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(.systemBackground))
-                    .shadow(color: .black.opacity(0.1), radius: 8, y: 2)
+        if !checklistDismissed && (isFirstLaunchState || (completed > 0 && completed < 6)) {
+            OnboardingChecklistCard(
+                hasCompletedCompanySetup: hasCompletedCompanySetup,
+                employeeCount: stats.employeeCount,
+                activeJobs: stats.activeJobs,
+                supplierCount: stats.supplierCount,
+                totalParts: stats.partTypes,
+                warehouseLocationCount: stats.warehouseLocationCount,
+                onDismiss: { checklistDismissed = true },
+                onSetUpCompany: { activeSheet = .companySetup },
+                onCreateFirstJob: { activeSheet = .createJob }
             )
-            .padding(.horizontal, DS.Space.lg)
         }
-    }
-
-    private func checklistItem<Destination: View>(
-        step: Int,
-        title: String,
-        subtitle: String,
-        icon: String,
-        color: Color,
-        isComplete: Bool,
-        @ViewBuilder destination: @escaping () -> Destination
-    ) -> some View {
-        NavigationLink {
-            destination()
-        } label: {
-            checklistItemLabel(step: step, title: title, subtitle: subtitle, icon: icon, color: color, isComplete: isComplete)
-        }
-        .buttonStyle(.plain)
-        .disabled(isComplete)
-    }
-
-    private func checklistItemLabel(
-        step: Int,
-        title: String,
-        subtitle: String,
-        icon: String,
-        color: Color,
-        isComplete: Bool
-    ) -> some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(isComplete ? Color.green : color.opacity(0.15))
-                    .frame(width: 36, height: 36)
-                if isComplete {
-                    Image(systemName: "checkmark")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .foregroundStyle(.white)
-                } else {
-                    Text("\(step)")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .foregroundStyle(color)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .strikethrough(isComplete)
-                    .foregroundStyle(isComplete ? .secondary : .primary)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-
-            Spacer()
-
-            if !isComplete {
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-            }
-        }
-        .contentShape(Rectangle())
     }
 
     // MARK: - Onboarding Progress
@@ -901,13 +726,17 @@ struct DashboardView: View {
             // KPI summary via DashboardService
             let kpi = try service.getKPISummary()
             let empCount = (try? service.getEmployeeCount()) ?? 0
+            let supplierCount = (try? service.getSupplierCount()) ?? 0
+            let warehouseLocationCount = (try? service.getWarehouseLocationCount()) ?? 0
             let newStats = DashboardStats(
                 partTypes: kpi.partTypes,
                 totalStock: kpi.totalStock,
                 activeJobs: kpi.activeJobs,
                 pendingOrders: kpi.pendingOrders,
                 lowStockCount: kpi.lowStockAlerts,
-                employeeCount: empCount
+                employeeCount: empCount,
+                supplierCount: supplierCount,
+                warehouseLocationCount: warehouseLocationCount
             )
 
             // Alerts via DashboardService
@@ -932,11 +761,7 @@ struct DashboardView: View {
             let bgSummary = try? bgService?.last24HoursSummary()
             let bgRecent = (try? bgService?.recentTasks(limit: 3)) ?? []
 
-            // Warehouse floor plan check for onboarding checklist
-            let hasFloorPlan = (try? appCore.warehouseService?.listFloorPlans().count ?? 0) ?? 0 > 0
-
             await MainActor.run {
-                warehouseHasFloorPlan = hasFloorPlan
                 stats = newStats
                 certAlerts = certs
                 vehicleAlerts = vAlerts
@@ -1025,6 +850,8 @@ private struct DashboardStats: Sendable {
     var pendingOrders = 0
     var lowStockCount = 0
     var employeeCount = 0
+    var supplierCount = 0
+    var warehouseLocationCount = 0
 }
 
 private struct CertAlert: Sendable {
@@ -1037,7 +864,3 @@ private struct VehicleAlert: Sendable {
     let vehicleNumber: String
     let alertMessage: String
 }
-
-
-
-

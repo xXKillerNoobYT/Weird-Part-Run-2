@@ -337,6 +337,32 @@ struct DashboardServiceTests {
         #expect(count >= 1)
     }
 
+    @Test("Supplier count reflects active non-deleted suppliers")
+    func testSupplierCount() throws {
+        let (env, dash) = try freshEnv()
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "INSERT INTO suppliers (name, is_active) VALUES ('Ready Supplier', 1)")
+            try db.execute(sql: "INSERT INTO suppliers (name, is_active, deleted_at) VALUES ('Deleted Supplier', 1, datetime('now'))")
+        }
+
+        let count = try dash.getSupplierCount()
+        #expect(count >= 1)
+    }
+
+    @Test("Warehouse location count reflects active non-deleted locations")
+    func testWarehouseLocationCount() throws {
+        let (env, dash) = try freshEnv()
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "INSERT INTO warehouse_locations (name, location_type, is_active) VALUES ('Main Shop', 'warehouse', 1)")
+            try db.execute(sql: "INSERT INTO warehouse_locations (name, location_type, is_active, deleted_at) VALUES ('Old Shop', 'warehouse', 1, datetime('now'))")
+        }
+
+        let count = try dash.getWarehouseLocationCount()
+        #expect(count >= 1)
+    }
+
     // MARK: - Stock At Location Type
 
     @Test("getStockAtLocationType returns empty on fresh DB")

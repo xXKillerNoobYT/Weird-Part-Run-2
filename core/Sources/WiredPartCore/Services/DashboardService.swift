@@ -1891,6 +1891,26 @@ public final class DashboardService: Sendable {
         )
     }
 
+    /// Fetch the number of active suppliers in the system.
+    ///
+    /// Used by first-launch setup guidance to keep completion state tied to
+    /// real data. If the suppliers table is unavailable, this returns zero.
+    public func getSupplierCount() throws -> Int {
+        try safeCount(
+            sql: "SELECT COUNT(*) FROM suppliers WHERE deleted_at IS NULL AND is_active = 1"
+        )
+    }
+
+    /// Fetch the number of active warehouse locations in the system.
+    ///
+    /// A single active location is enough for the first-launch checklist to
+    /// consider warehouse setup started.
+    public func getWarehouseLocationCount() throws -> Int {
+        try safeCount(
+            sql: "SELECT COUNT(*) FROM warehouse_locations WHERE deleted_at IS NULL AND is_active = 1"
+        )
+    }
+
     // MARK: - Internal Helpers
 
     /// Execute a `SELECT COUNT(*)` query and return the integer result.
