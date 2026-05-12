@@ -9,6 +9,10 @@ import Testing
 import LocalAuthentication
 @testable import Weird_Parts
 
+private enum QuestionnaireBreakTestError: Error {
+    case autoFillFailed
+}
+
 // MARK: - Mock Evaluator
 
 /// Test double for `BiometricEvaluator` — lets tests control availability and outcome
@@ -31,6 +35,64 @@ final class MockBiometricEvaluator: BiometricEvaluator {
             throw LAError(.authenticationFailed)
         }
         return result
+    }
+}
+
+// MARK: - Questionnaire Break Compliance
+
+@Suite("Questionnaire break compliance auto-fill")
+@MainActor
+struct QuestionnaireBreakComplianceTests {
+
+    @Test("all taken without break buttons propagates auto-fill failure")
+    func testAllTakenAutoFillFailureBlocksSubmit() {
+        var autoFillAttempts = 0
+
+        do {
+            try QuestionnaireBreakComplianceSubmitter.submit(
+                verification: .allTaken,
+                hadBreakButtons: false,
+                missedBreaks: []
+            ) {
+                autoFillAttempts += 1
+                throw QuestionnaireBreakTestError.autoFillFailed
+            }
+            Issue.record("Expected auto-fill failure to propagate")
+        } catch QuestionnaireBreakTestError.autoFillFailed {
+            #expect(autoFillAttempts == 1)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("forgot break path runs required auto-fill successfully")
+    func testForgotBreakAutoFillSuccess() throws {
+        var autoFillAttempts = 0
+
+        try QuestionnaireBreakComplianceSubmitter.submit(
+            verification: .forgot,
+            hadBreakButtons: false,
+            missedBreaks: ["morning_break", "lunch", "afternoon_break"]
+        ) {
+            autoFillAttempts += 1
+        }
+
+        #expect(autoFillAttempts == 1)
+    }
+
+    @Test("all taken with existing break buttons does not auto-fill")
+    func testExistingBreakButtonsSkipAutoFill() throws {
+        var autoFillAttempts = 0
+
+        try QuestionnaireBreakComplianceSubmitter.submit(
+            verification: .allTaken,
+            hadBreakButtons: true,
+            missedBreaks: []
+        ) {
+            autoFillAttempts += 1
+        }
+
+        #expect(autoFillAttempts == 0)
     }
 }
 

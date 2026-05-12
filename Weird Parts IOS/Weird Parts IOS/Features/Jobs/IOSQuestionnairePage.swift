@@ -31,15 +31,9 @@ struct IOSQuestionnairePage: View {
     @State private var companionVotes: [Int64: Bool] = [:]  // pollId -> true=accept, false=reject
 
     // Break verification
-    @State private var breakVerification: BreakAnswer = .allTaken
+    @State private var breakVerification: QuestionnaireBreakVerification = .allTaken
     @State private var missedBreaks: Set<String> = []
     @State private var hadBreakButtons = false  // Did the user use break buttons today?
-
-    private enum BreakAnswer: String, CaseIterable {
-        case allTaken = "Yes, all"
-        case forgot = "I forgot / didn't"
-        case partial = "Partial"
-    }
 
     var body: some View {
         NavigationStack {
@@ -132,7 +126,7 @@ struct IOSQuestionnairePage: View {
                             .fontWeight(.medium)
 
                         Picker("Breaks", selection: $breakVerification) {
-                            ForEach(BreakAnswer.allCases, id: \.self) { answer in
+                            ForEach(QuestionnaireBreakVerification.allCases, id: \.self) { answer in
                                 Text(answer.rawValue).tag(answer)
                             }
                         }
@@ -295,13 +289,13 @@ struct IOSQuestionnairePage: View {
         }
 
         do {
+            // Handle break verification
+            try handleBreakVerification()
+
             try service.saveClockOutResponses(
                 laborEntryId: laborEntryId,
                 responses: responses
             )
-
-            // Handle break verification
-            handleBreakVerification()
 
             // Save companion poll votes (separate from clock-out responses)
             if let partsService = appCore.partsService,
@@ -317,8 +311,10 @@ struct IOSQuestionnairePage: View {
 
             onComplete?()
             dismiss()
+        } catch QuestionnaireBreakComplianceError.serviceUnavailable {
+            errorMessage = "Break service not available"
         } catch {
-            errorMessage = userFriendlyError(error, context: "save responses")
+            errorMessage = userFriendlyError(error, context: "complete questionnaire")
         }
         isSubmitting = false
     }
@@ -326,42 +322,21 @@ struct IOSQuestionnairePage: View {
     /// Handle break verification logic:
     /// - "Yes, all taken" + no break buttons used → auto-fill at defaults
     /// - "Forgot" or "Partial" → report missed breaks to office
-    private func handleBreakVerification() {
+    private func handleBreakVerification() throws {
         guard let breakSvc = appCore.breakService,
               let userId = appCore.currentUser?.id else {
-            errorMessage = "Break service not available"
-            return
+            throw QuestionnaireBreakComplianceError.serviceUnavailable
         }
 
-        switch breakVerification {
-        case .allTaken:
-            // If user said "yes, all taken" but didn't actually use break buttons,
-            // auto-fill break records at default times for compliance
-            if !hadBreakButtons {
-                try? breakSvc.autoFillBreaksForDay(
-                    userId: userId,
-                    laborEntryId: laborEntryId
-                )
-            }
-            // Note: if hadBreakButtons == true, bonus is eligible (handled by compliance calc)
-
-        case .forgot:
-            // All breaks missed — mark all as missed, auto-fill for compliance
-            try? breakSvc.autoFillBreaksForDay(
+        try QuestionnaireBreakComplianceSubmitter.submit(
+            verification: breakVerification,
+            hadBreakButtons: hadBreakButtons,
+            missedBreaks: missedBreaks
+        ) {
+            try breakSvc.autoFillBreaksForDay(
                 userId: userId,
                 laborEntryId: laborEntryId
             )
-            // Bonus NOT eligible since questionnaire had to ask
-
-        case .partial:
-            // Some breaks missed — auto-fill the ones that were missed
-            if !missedBreaks.isEmpty {
-                try? breakSvc.autoFillBreaksForDay(
-                    userId: userId,
-                    laborEntryId: laborEntryId
-                )
-            }
-            // Bonus NOT eligible since questionnaire had to ask
         }
     }
 
@@ -415,5 +390,43 @@ struct IOSQuestionnairePage: View {
         }
 
         isLoading = false
+    }
+}
+
+enum QuestionnaireBreakVerification: String, CaseIterable {
+    case allTaken = "Yes, all"
+    case forgot = "I forgot / didn't"
+    case partial = "Partial"
+}
+
+enum QuestionnaireBreakComplianceError: Error {
+    case serviceUnavailable
+}
+
+enum QuestionnaireBreakComplianceSubmitter {
+    static func submit(
+        verification: QuestionnaireBreakVerification,
+        hadBreakButtons: Bool,
+        missedBreaks: Set<String>,
+        autoFillBreaks: () throws -> Void
+    ) throws {
+        switch verification {
+        case .allTaken:
+            // If user said "yes, all taken" but didn't use break buttons, the
+            // compliance records are required before the questionnaire can save.
+            if !hadBreakButtons {
+                try autoFillBreaks()
+            }
+
+        case .forgot:
+            // All breaks missed; auto-fill is required for the compliance record.
+            try autoFillBreaks()
+
+        case .partial:
+            // Only partial reports with specific missed breaks need auto-fill.
+            if !missedBreaks.isEmpty {
+                try autoFillBreaks()
+            }
+        }
     }
 }
