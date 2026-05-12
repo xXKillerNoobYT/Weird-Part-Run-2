@@ -927,6 +927,48 @@ struct PartsServiceExtTests {
         #expect(cantexFitting[0].partNumber == "CX-GRAY-FIT-001")
     }
 
+    @Test("getHierarchy surfaces SKU colors under brand nodes without requiring concrete parts")
+    func testHierarchyIncludesColorBrandSKUsWithoutParts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(
+            env, category: "Conduit", style: "PVC", type: "3/4 Inch"
+        )
+        let colorId = try env.parts.createColor(name: "Reusable Gray", hexCode: "#808080")
+        let cantexId = try E2ETestHelpers.seedBrand(env, name: "Hierarchy Cantex")
+        let carlonId = try E2ETestHelpers.seedBrand(env, name: "Hierarchy Carlon")
+
+        _ = try env.parts.upsertColorBrandSKU(
+            colorId: colorId,
+            brandId: cantexId,
+            typeId: typeId,
+            partNumber: "HC-GRAY-001"
+        )
+        _ = try env.parts.upsertColorBrandSKU(
+            colorId: colorId,
+            brandId: carlonId,
+            typeId: typeId,
+            partNumber: "HL-GRAY-001"
+        )
+
+        let tree = try env.parts.getHierarchy()
+        let typeNode = try #require(
+            tree.categories
+                .flatMap(\.styles)
+                .flatMap(\.types)
+                .first { $0.type.id == typeId }
+        )
+
+        let cantexNode = try #require(typeNode.brandNodes.first { $0.brand?.id == cantexId })
+        let carlonNode = try #require(typeNode.brandNodes.first { $0.brand?.id == carlonId })
+
+        #expect(cantexNode.colors.map(\.id).contains(colorId))
+        #expect(carlonNode.colors.map(\.id).contains(colorId))
+        #expect(
+            typeNode.colors.filter { $0.id == colorId }.count == 1,
+            "The flat compatibility color list should still dedupe the shared color."
+        )
+    }
+
     @Test("PE-COLORS Plan Test 1: upsert returns same id for duplicate (color, brand, type) triple")
     func testColorBrandSKUUniqueConstraintReturnsSameId() throws {
         let env = try E2ETestHelpers.setUp()

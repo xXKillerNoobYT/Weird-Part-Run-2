@@ -434,6 +434,30 @@ public final class PartsService: Sendable {
                     brandTypeColorMap[key, default: []].insert(colorId)
                 }
 
+                // PE-COLORS: SKU rows are the additive source of truth for reusable colors
+                // under brand+type contexts. Keep the legacy parts-derived map above as a
+                // non-destructive fallback for existing data.
+                let skuRows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT type_id, brand_id, color_id
+                        FROM color_brand_skus
+                        WHERE deleted_at IS NULL AND is_active = 1
+                        """
+                )
+                for row in skuRows {
+                    let typeId: Int64 = row["type_id"]
+                    let brandId: Int64 = row["brand_id"]
+                    let colorId: Int64 = row["color_id"]
+                    let key = "\(typeId)-\(brandId)"
+                    brandTypeColorMap[key, default: []].insert(colorId)
+
+                    if let brand = brandById[brandId],
+                       typeBrandMap[typeId]?.contains(where: { $0.id == brandId }) != true {
+                        typeBrandMap[typeId, default: []].append(brand)
+                    }
+                }
+
                 // Merge type_color_links into the General (no brand) node for each type
                 for row in typeColorLinks {
                     guard let typeId: Int64 = row["type_id"],
