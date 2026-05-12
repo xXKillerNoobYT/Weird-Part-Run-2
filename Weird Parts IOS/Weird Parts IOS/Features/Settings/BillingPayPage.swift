@@ -7,6 +7,7 @@ import WiredPartCore
 /// pay period (biweekly/weekly/monthly + start day) via SettingsService.
 struct BillingPayPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
 
     @State private var activeSheet: ActiveSheet?
 
@@ -23,6 +24,9 @@ struct BillingPayPage: View {
     // Fix #192: gate the form behind a loading state so the first render doesn't
     // flash the default values before loadSettings() returns.
     @State private var isLoading = true
+    @State private var isDirty = false
+    @State private var hasLoadedSettings = false
+    @State private var showDiscardConfirmation = false
 
     private let cycleTypes = ["monthly", "weekly", "biweekly"]
     private let periodTypes = ["biweekly", "weekly", "monthly", "semimonthly"]
@@ -74,7 +78,17 @@ struct BillingPayPage: View {
             }
         }
         .navigationTitle("Billing & Pay")
+        .navigationBarBackButtonHidden(isDirty)
         .toolbar {
+            if isDirty {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showDiscardConfirmation = true
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -93,11 +107,29 @@ struct BillingPayPage: View {
         } message: {
             Text(errorMessage ?? "")
         }
+        .interactiveDismissDisabled(isDirty)
+        .confirmationDialog(
+            "Discard changes?",
+            isPresented: $showDiscardConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Discard", role: .destructive) { dismiss() }
+            Button("Keep Editing", role: .cancel) {}
+        }
+        .onChange(of: billingCycleType) { _, _ in markDirty() }
+        .onChange(of: billingStartDay) { _, _ in markDirty() }
+        .onChange(of: payPeriodType) { _, _ in markDirty() }
+        .onChange(of: payStartDay) { _, _ in markDirty() }
     }
 
     private enum ActiveSheet: Identifiable {
         case help
         var id: String { "help" }
+    }
+
+    private func markDirty() {
+        guard hasLoadedSettings else { return }
+        isDirty = true
     }
 
     private func loadSettings() {
@@ -106,6 +138,7 @@ struct BillingPayPage: View {
             errorMessage = "Settings service unavailable"
             return
         }
+        hasLoadedSettings = false
         do {
             let billing = try service.getBillingCycle()
             billingCycleType = billing.cycleType
@@ -116,6 +149,10 @@ struct BillingPayPage: View {
             payStartDay = pay.startDay
         } catch {
             errorMessage = userFriendlyError(error, context: "load")
+        }
+        isDirty = false
+        Task { @MainActor in
+            hasLoadedSettings = true
         }
     }
 
@@ -132,6 +169,7 @@ struct BillingPayPage: View {
                 SettingsService.PayPeriodSettings(periodType: payPeriodType, startDay: payStartDay)
             )
             saved = true
+            isDirty = false
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(2))
                 saved = false

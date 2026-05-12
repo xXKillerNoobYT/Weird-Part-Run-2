@@ -8,6 +8,7 @@ import WiredPartCore
 /// placeholder that shows the planned notification categories.
 struct NotificationPrefsPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
     @State private var activeSheet: ActiveSheet?
     @State private var orderAlerts = true
     @State private var certExpiry = true
@@ -16,6 +17,9 @@ struct NotificationPrefsPage: View {
     @State private var soundEnabled = true
     @State private var saved = false
     @State private var errorMessage: String?
+    @State private var isDirty = false
+    @State private var hasLoadedSettings = false
+    @State private var showDiscardConfirmation = false
 
     var body: some View {
         Form {
@@ -51,7 +55,17 @@ struct NotificationPrefsPage: View {
             }
         }
         .navigationTitle("Notifications")
+        .navigationBarBackButtonHidden(isDirty)
         .toolbar {
+            if isDirty {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showDiscardConfirmation = true
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -71,6 +85,20 @@ struct NotificationPrefsPage: View {
         } message: {
             Text(errorMessage ?? "")
         }
+        .interactiveDismissDisabled(isDirty)
+        .confirmationDialog(
+            "Discard changes?",
+            isPresented: $showDiscardConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Discard", role: .destructive) { dismiss() }
+            Button("Keep Editing", role: .cancel) {}
+        }
+        .onChange(of: orderAlerts) { _, _ in markDirty() }
+        .onChange(of: certExpiry) { _, _ in markDirty() }
+        .onChange(of: vehicleAlerts) { _, _ in markDirty() }
+        .onChange(of: syncStatus) { _, _ in markDirty() }
+        .onChange(of: soundEnabled) { _, _ in markDirty() }
     }
 
     private enum ActiveSheet: Identifiable {
@@ -78,11 +106,17 @@ struct NotificationPrefsPage: View {
         var id: String { "help" }
     }
 
+    private func markDirty() {
+        guard hasLoadedSettings else { return }
+        isDirty = true
+    }
+
     private func loadPrefs() {
         guard let service = appCore.settingsService else {
             errorMessage = "Settings service unavailable"
             return
         }
+        hasLoadedSettings = false
         do {
             let map = try service.getSettingsByCategory("notifications")
             orderAlerts = map["order_alerts"] != "false"
@@ -92,6 +126,10 @@ struct NotificationPrefsPage: View {
             soundEnabled = map["sound_enabled"] != "false"
         } catch {
             errorMessage = userFriendlyError(error, context: "load")
+        }
+        isDirty = false
+        Task { @MainActor in
+            hasLoadedSettings = true
         }
     }
 
@@ -109,6 +147,7 @@ struct NotificationPrefsPage: View {
                 "sound_enabled": String(soundEnabled),
             ], category: "notifications")
             saved = true
+            isDirty = false
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(2))
                 saved = false

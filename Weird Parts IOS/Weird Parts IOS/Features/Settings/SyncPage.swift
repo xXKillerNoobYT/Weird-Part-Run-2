@@ -8,12 +8,16 @@ import WiredPartCore
 /// package's SyncEngine and MultipeerManager.
 struct SyncPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
     @State private var activeSheet: ActiveSheet?
     @State private var shopServerAddress = ""
     @State private var syncInterval = "30"
     @State private var autoSync = true
     @State private var saved = false
     @State private var errorMessage: String?
+    @State private var isDirty = false
+    @State private var hasLoadedSettings = false
+    @State private var showDiscardConfirmation = false
 
     private var syncManager: IOSSyncManager { appCore.syncManager }
 
@@ -139,7 +143,17 @@ struct SyncPage: View {
         // Fix #149: dismiss keyboard on scroll
         .scrollDismissesKeyboard(.interactively)
         .navigationTitle("LAN Sync")
+        .navigationBarBackButtonHidden(isDirty)
         .toolbar {
+            if isDirty {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showDiscardConfirmation = true
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -159,11 +173,28 @@ struct SyncPage: View {
         } message: {
             Text(errorMessage ?? "")
         }
+        .interactiveDismissDisabled(isDirty)
+        .confirmationDialog(
+            "Discard changes?",
+            isPresented: $showDiscardConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Discard", role: .destructive) { dismiss() }
+            Button("Keep Editing", role: .cancel) {}
+        }
+        .onChange(of: shopServerAddress) { _, _ in markDirty() }
+        .onChange(of: syncInterval) { _, _ in markDirty() }
+        .onChange(of: autoSync) { _, _ in markDirty() }
     }
 
     private enum ActiveSheet: Identifiable {
         case help
         var id: String { "help" }
+    }
+
+    private func markDirty() {
+        guard hasLoadedSettings else { return }
+        isDirty = true
     }
 
     // MARK: - Status Row
@@ -204,6 +235,7 @@ struct SyncPage: View {
             errorMessage = "Settings service unavailable"
             return
         }
+        hasLoadedSettings = false
         do {
             let map = try service.getSettingsByCategory("sync")
             shopServerAddress = map["shop_server_address"] ?? ""
@@ -211,6 +243,10 @@ struct SyncPage: View {
             autoSync = map["auto_sync"] != "false"
         } catch {
             errorMessage = userFriendlyError(error, context: "load settings")
+        }
+        isDirty = false
+        Task { @MainActor in
+            hasLoadedSettings = true
         }
     }
 
@@ -226,6 +262,7 @@ struct SyncPage: View {
                 "auto_sync": String(autoSync),
             ], category: "sync")
             saved = true
+            isDirty = false
 
             // Reconfigure auto-sync with new settings
             if autoSync && syncManager.isSyncAvailable {

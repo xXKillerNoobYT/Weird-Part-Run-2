@@ -7,6 +7,7 @@ import WiredPartCore
 /// stale data threshold, and archive days via SettingsService.
 struct AppConfigPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
     @State private var activeSheet: ActiveSheet?
     @State private var autoLockMinutes = "15"
     @State private var staleDataHours = "4"
@@ -19,6 +20,9 @@ struct AppConfigPage: View {
     @State private var saved = false
     @State private var loadError: String?
     @State private var actionError: String?
+    @State private var isDirty = false
+    @State private var hasLoadedSettings = false
+    @State private var showDiscardConfirmation = false
 
     /// Fix #150: input validity gate for the Save button — all numeric text fields must be non-empty positive integers.
     private var isFormValid: Bool {
@@ -114,7 +118,17 @@ struct AppConfigPage: View {
         // Fix #149: dismiss keyboard on scroll to free space when keyboard covers field
         .scrollDismissesKeyboard(.interactively)
         .navigationTitle("App Config")
+        .navigationBarBackButtonHidden(isDirty)
         .toolbar {
+            if isDirty {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showDiscardConfirmation = true
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -134,6 +148,23 @@ struct AppConfigPage: View {
         } message: {
             Text(loadError ?? actionError ?? "")
         }
+        .interactiveDismissDisabled(isDirty)
+        .confirmationDialog(
+            "Discard changes?",
+            isPresented: $showDiscardConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Discard", role: .destructive) { dismiss() }
+            Button("Keep Editing", role: .cancel) {}
+        }
+        .onChange(of: autoLockMinutes) { _, _ in markDirty() }
+        .onChange(of: staleDataHours) { _, _ in markDirty() }
+        .onChange(of: archiveDays) { _, _ in markDirty() }
+        .onChange(of: warrantyDays) { _, _ in markDirty() }
+        .onChange(of: paymentTrackingEnabled) { _, _ in markDirty() }
+        .onChange(of: paymentTermsDays) { _, _ in markDirty() }
+        .onChange(of: overdueWarningDays) { _, _ in markDirty() }
+        .onChange(of: autoPaymentHold) { _, _ in markDirty() }
     }
 
     private enum ActiveSheet: Identifiable {
@@ -141,11 +172,17 @@ struct AppConfigPage: View {
         var id: String { "help" }
     }
 
+    private func markDirty() {
+        guard hasLoadedSettings else { return }
+        isDirty = true
+    }
+
     private func loadConfig() {
         guard let service = appCore.settingsService else {
             loadError = "Settings service unavailable"
             return
         }
+        hasLoadedSettings = false
         do {
             autoLockMinutes = try service.getSetting("auto_lock_minutes") ?? "15"
             staleDataHours = try service.getSetting("stale_data_hours") ?? "4"
@@ -163,6 +200,10 @@ struct AppConfigPage: View {
             }
         } catch {
             loadError = userFriendlyError(error, context: "load settings")
+        }
+        isDirty = false
+        Task { @MainActor in
+            hasLoadedSettings = true
         }
     }
 
@@ -189,6 +230,7 @@ struct AppConfigPage: View {
                 )
             }
             saved = true
+            isDirty = false
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(2))
                 saved = false

@@ -7,12 +7,16 @@ import WiredPartCore
 /// via the SettingsService.
 struct ThemesPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
     @State private var activeSheet: ActiveSheet?
     @State private var themeMode = "system"
     @State private var primaryColor = "#2563eb"
     @State private var fontFamily = "Inter"
     @State private var saved = false
     @State private var errorMessage: String?
+    @State private var isDirty = false
+    @State private var hasLoadedSettings = false
+    @State private var showDiscardConfirmation = false
 
     private let themeModes = ["system", "light", "dark"]
     private let colorPresets: [(String, String)] = [
@@ -86,7 +90,17 @@ struct ThemesPage: View {
             }
         }
         .navigationTitle("Themes")
+        .navigationBarBackButtonHidden(isDirty)
         .toolbar {
+            if isDirty {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showDiscardConfirmation = true
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -106,6 +120,18 @@ struct ThemesPage: View {
         } message: {
             Text(errorMessage ?? "")
         }
+        .interactiveDismissDisabled(isDirty)
+        .confirmationDialog(
+            "Discard changes?",
+            isPresented: $showDiscardConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Discard", role: .destructive) { dismiss() }
+            Button("Keep Editing", role: .cancel) {}
+        }
+        .onChange(of: themeMode) { _, _ in markDirty() }
+        .onChange(of: primaryColor) { _, _ in markDirty() }
+        .onChange(of: fontFamily) { _, _ in markDirty() }
     }
 
     private enum ActiveSheet: Identifiable {
@@ -113,11 +139,17 @@ struct ThemesPage: View {
         var id: String { "help" }
     }
 
+    private func markDirty() {
+        guard hasLoadedSettings else { return }
+        isDirty = true
+    }
+
     private func loadTheme() {
         guard let service = appCore.settingsService else {
             errorMessage = "Settings service unavailable"
             return
         }
+        hasLoadedSettings = false
         do {
             let theme = try service.getTheme()
             themeMode = theme.themeMode
@@ -125,6 +157,10 @@ struct ThemesPage: View {
             fontFamily = theme.fontFamily
         } catch {
             errorMessage = userFriendlyError(error, context: "load")
+        }
+        isDirty = false
+        Task { @MainActor in
+            hasLoadedSettings = true
         }
     }
 
@@ -141,6 +177,7 @@ struct ThemesPage: View {
         do {
             _ = try service.updateTheme(settings)
             saved = true
+            isDirty = false
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(2))
                 saved = false
