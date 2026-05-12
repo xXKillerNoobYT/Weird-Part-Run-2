@@ -360,6 +360,7 @@ public final class AuthService: Sendable {
                 dbConnection,
                 sql: """
                     SELECT COUNT(*) FROM user_hats uh
+                    JOIN users u ON u.id = uh.user_id AND u.deleted_at IS NULL
                     JOIN hat_permissions hp ON hp.hat_id = uh.hat_id
                     WHERE uh.user_id = ? AND uh.is_active = 1 AND uh.deleted_at IS NULL AND hp.permission_key = ?
                     LIMIT 1

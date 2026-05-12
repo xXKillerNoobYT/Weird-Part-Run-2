@@ -349,6 +349,26 @@ struct AuthServiceTests {
         #expect(try !auth.hasPermission(userId, permissionKey: "nonexistent_perm"))
     }
 
+    @Test("hasPermission denies soft-deleted users with active hats")
+    func testHasPermissionDeniesDeletedUser() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "DeletedAdmin", pin: "1234")
+        let userId = seed.user!.id!
+
+        #expect(try auth.hasPermission(userId, permissionKey: "manage_settings"))
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [userId]
+            )
+        }
+
+        #expect(try !auth.hasPermission(userId, permissionKey: "manage_settings"),
+                "Soft-deleted users must not retain hat permissions when user_hats remains active")
+    }
+
     // MARK: - User Profile
 
     @Test("getLocalUserProfile builds full profile from token")
