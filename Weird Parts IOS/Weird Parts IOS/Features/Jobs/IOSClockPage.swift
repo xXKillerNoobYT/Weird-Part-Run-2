@@ -108,6 +108,7 @@ struct IOSClockPage: View {
         case todoPicker
         case switchJobPicker
         case lunchUnpaidPrompt
+        case breakClockOutBlock(Int64)
 
         var id: String {
             switch self {
@@ -117,6 +118,7 @@ struct IOSClockPage: View {
             case .todoPicker: "todoPicker"
             case .switchJobPicker: "switchJobPicker"
             case .lunchUnpaidPrompt: "lunchUnpaidPrompt"
+            case .breakClockOutBlock(let id): "breakClockOutBlock-\(id)"
             }
         }
     }
@@ -240,6 +242,8 @@ struct IOSClockPage: View {
                             Task { await endCurrentBreak() }
                         }
                     )
+                case .breakClockOutBlock(let entryId):
+                    breakClockOutBlockSheet(entryId: entryId)
                 }
             }
             .alert("Join Job?", isPresented: $showSelfAssignConfirmation) {
@@ -438,11 +442,15 @@ struct IOSClockPage: View {
                     activeBreakBanner(breakRecord)
                 }
 
-                // Clock Out + Switch Job (disabled during active break)
+                // Clock Out + Switch Job
                 HStack(spacing: 12) {
                     Button(role: .destructive) {
-                        pendingClockOutEntryId = entry.id
-                        showClockOutConfirmation = true
+                        if activeBreakRecord != nil {
+                            activeSheet = .breakClockOutBlock(entry.id)
+                        } else {
+                            pendingClockOutEntryId = entry.id
+                            showClockOutConfirmation = true
+                        }
                     } label: {
                         Label("Clock Out", systemImage: "stop.circle.fill")
                             .frame(maxWidth: .infinity)
@@ -450,9 +458,8 @@ struct IOSClockPage: View {
                     .buttonStyle(.bordered)
                     .controlSize(.large)
                     .actionRing(.red)
-                    .disabled(activeBreakRecord != nil)
-                    .opacity(activeBreakRecord != nil ? 0.4 : 1.0)
-                    .accessibilityLabel("Clock Out — action required")
+                    .accessibilityLabel(activeBreakRecord == nil ? "Clock Out" : "Clock Out blocked during break")
+                    .accessibilityHint(activeBreakRecord == nil ? "Starts the clock out flow." : "Explains that you must end the break before clocking out.")
                     .confirmationDialog("Clock Out?", isPresented: $showClockOutConfirmation, titleVisibility: .visible) {
                         Button("Clock Out", role: .destructive) {
                             if let entryId = pendingClockOutEntryId {
@@ -478,9 +485,9 @@ struct IOSClockPage: View {
                 }
                 .padding(.top, 4)
 
-                // Break explanation when clock out is disabled
+                // Break explanation before the modal path
                 if activeBreakRecord != nil {
-                    Label("End your break first to clock out", systemImage: "info.circle")
+                    Label("Tap Clock Out for options to end your break first.", systemImage: "info.circle")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -533,6 +540,58 @@ struct IOSClockPage: View {
             }
             .padding(.vertical, 4)
         }
+    }
+
+    private func breakClockOutBlockSheet(entryId: Int64) -> some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 18) {
+                Image(systemName: "pause.circle.fill")
+                    .font(.system(size: 44, weight: .semibold))
+                    .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Break in Progress")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+
+                    Text("You're on a break. End the break first, then clock out.")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Button {
+                    Task { await endBreakThenClockOut(entryId: entryId) }
+                } label: {
+                    Label("End Break & Clock Out", systemImage: "checkmark.circle.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+                .controlSize(.large)
+
+                Button {
+                    activeSheet = nil
+                } label: {
+                    Text("Stay on Break")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+
+                Spacer(minLength: 0)
+            }
+            .padding()
+            .navigationTitle("Clock Out")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { activeSheet = nil }
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 
     // MARK: - Status Helpers
@@ -1354,6 +1413,36 @@ struct IOSClockPage: View {
         } catch {
             await MainActor.run {
                 errorMessage = userFriendlyError(error, context: "end break")
+            }
+        }
+    }
+
+    private func endBreakThenClockOut(entryId: Int64) async {
+        guard let breakSvc = appCore.breakService,
+              let record = activeBreakRecord,
+              let recordId = record.id else {
+            await MainActor.run {
+                activeSheet = nil
+                errorMessage = "Break service not available"
+            }
+            return
+        }
+
+        do {
+            try breakSvc.endBreak(recordId: recordId)
+            await MainActor.run {
+                breakTimer?.invalidate()
+                breakTimer = nil
+                activeBreakRecord = nil
+                activityStatus = "working"
+                breakElapsedText = ""
+                activeSheet = nil
+                errorMessage = nil
+                clockOut(entryId: entryId)
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = userFriendlyError(error, context: "end break before clock out")
             }
         }
     }
