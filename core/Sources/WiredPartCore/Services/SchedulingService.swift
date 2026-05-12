@@ -905,6 +905,7 @@ public final class SchedulingService: Sendable {
                     WHERE se.user_id = ?
                       AND se.exception_date = ?
                       AND se.exception_type = 'time_off'
+                      AND se.is_approved = 1
                       AND se.deleted_at IS NULL
                     LIMIT 1
                     """

@@ -556,15 +556,20 @@ struct SchedulingServiceTests {
         #expect(schedule[0].notes == "Dispatch note")
     }
 
-    @Test("checkTimeOffConflict detects time-off on date")
-    func testCheckTimeOffConflict() throws {
+    @Test("checkTimeOffConflict detects approved time-off on date")
+    func testCheckTimeOffConflictDetectsApprovedTimeOff() throws {
         let env = try E2ETestHelpers.setUp()
 
-        _ = try env.scheduling.createTimeOffRequest(
+        let requestId = try env.scheduling.createTimeOffRequest(
             userId: env.adminUserId,
             startDate: "2026-10-15",
             endDate: "2026-10-15",
             reason: "Conference"
+        )
+        try env.scheduling.updateTimeOffStatus(
+            id: requestId,
+            status: "approved",
+            approvedBy: env.adminUserId
         )
 
         let conflict = try env.scheduling.checkTimeOffConflict(
@@ -574,6 +579,43 @@ struct SchedulingServiceTests {
         #expect(conflict != nil)
         #expect(conflict!.employeeName == "TestAdmin")
         #expect(conflict!.reason == "Conference")
+    }
+
+    @Test("checkTimeOffConflict ignores pending time-off")
+    func testCheckTimeOffConflictIgnoresPendingTimeOff() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        _ = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2026-10-16",
+            endDate: "2026-10-16",
+            reason: "Pending request"
+        )
+
+        let conflict = try env.scheduling.checkTimeOffConflict(
+            employeeId: env.adminUserId,
+            date: "2026-10-16"
+        )
+        #expect(conflict == nil)
+    }
+
+    @Test("checkTimeOffConflict ignores denied time-off")
+    func testCheckTimeOffConflictIgnoresDeniedTimeOff() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let requestId = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2026-10-17",
+            endDate: "2026-10-17",
+            reason: "Denied request"
+        )
+        try env.scheduling.updateTimeOffStatus(id: requestId, status: "denied")
+
+        let conflict = try env.scheduling.checkTimeOffConflict(
+            employeeId: env.adminUserId,
+            date: "2026-10-17"
+        )
+        #expect(conflict == nil)
     }
 
     @Test("checkTimeOffConflict returns nil when no conflict")
