@@ -134,6 +134,44 @@ struct OrdersServiceTests {
         #expect(demand.count >= 0)
     }
 
+    @Test("Procurement demand includes wishlist items sent to procurement")
+    func testProcurementDemandIncludesSentWishlistItems() throws {
+        let env = try E2ETestHelpers.setUp()
+        let wishlist = WishlistService(db: env.db, auth: env.auth)
+        let catId = try E2ETestHelpers.seedCategory(env, name: "Wishlist Procurement")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Wishlist Demand Part", categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Wishlist Supplier")
+        _ = try env.parts.addPartSupplierLink(
+            partId: partId,
+            supplierId: supplierId,
+            supplierPartNumber: "WISH-001",
+            costPrice: 4.25,
+            isPreferred: true
+        )
+
+        let item = try wishlist.addItem(
+            partId: partId,
+            partName: "Wishlist Demand Part",
+            qtySuggested: 7,
+            reason: "Crew requested replenishment",
+            priority: "high",
+            sourceType: "manual",
+            requestedBy: "Crew Lead"
+        )
+        let approved = try wishlist.approveItem(id: item.id!, byUserId: env.adminUserId)
+        _ = try wishlist.sendToProcurement(id: approved.id!, byUserId: env.adminUserId)
+
+        let demand = try env.orders.getProcurementDemand()
+        let procurementItem = try #require(demand.first { $0.id == partId })
+        let wishlistSource = try #require(procurementItem.sources.first { $0.sourceType == "wishlist" })
+
+        #expect(procurementItem.totalDemand == 7)
+        #expect(wishlistSource.sourceId == item.id)
+        #expect(wishlistSource.quantity == 7)
+        #expect(wishlistSource.sourceName.contains("Crew Lead"))
+        #expect(procurementItem.suppliers.contains { $0.id == supplierId && $0.isPreferred })
+    }
+
     // MARK: - Returns
 
     @Test("List returns empty on fresh DB")

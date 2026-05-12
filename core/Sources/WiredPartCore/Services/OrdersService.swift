@@ -1117,7 +1117,7 @@ public final class OrdersService: Sendable {
     // MARK: - 1d. Procurement Aggregation
 
     /// Get all consolidated procurement demand, grouped by part.
-    /// Aggregates approved JPO lines + overstock detection.
+    /// Aggregates approved JPO lines + wishlist items sent to procurement + overstock detection.
     public func getProcurementDemand() throws -> [ProcurementItem] {
         do {
             return try db.writer.read { dbConn in
@@ -1163,6 +1163,52 @@ public final class OrdersService: Sendable {
                         sourceName: "JPO #\(jpoId) (\(jobName))",
                         quantity: qty,
                         lineIds: [lineId]
+                    )
+
+                    if partDemand[partId] != nil {
+                        partDemand[partId]?.sources.append(source)
+                        partDemand[partId]?.totalQty += qty
+                    } else {
+                        partDemand[partId] = (partRow: row, sources: [source], totalQty: qty)
+                    }
+                }
+
+                // 2. Get wishlist items explicitly sent to procurement.
+                // These are approved outside the JPO flow and must still be visible to the
+                // same part-grouped procurement planner.
+                let wishlistRows = try Row.fetchAll(dbConn, sql: """
+                    SELECT wi.part_id, p.name AS part_name, p.code AS part_code,
+                           b.name AS brand_name,
+                           CASE WHEN b.name IS NULL OR b.name = 'General' THEN 1 ELSE 0 END AS is_generic,
+                           wi.qty_suggested AS quantity, wi.id AS wishlist_id,
+                           wi.source_type, wi.requested_by, wi.reason
+                    FROM wishlist_items wi
+                    JOIN parts p ON p.id = wi.part_id AND p.deleted_at IS NULL
+                    LEFT JOIN brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
+                    WHERE wi.status = 'sent_to_procurement'
+                      AND wi.part_id IS NOT NULL
+                    """)
+
+                for row in wishlistRows {
+                    guard let partId: Int64 = row["part_id"] else { continue }
+                    let wishlistId: Int64 = row["wishlist_id"] ?? 0
+                    let qty: Int = row["quantity"] ?? 0
+                    let rawSourceType: String = row["source_type"] ?? "manual"
+                    let sourceType = rawSourceType == "forecast" ? "forecast" : "wishlist"
+                    let requester: String? = row["requested_by"]
+                    let sourceLabel = rawSourceType == "forecast" ? "Forecast" : "Wishlist"
+                    let sourceName: String
+                    if let requester, !requester.isEmpty {
+                        sourceName = "\(sourceLabel) #\(wishlistId) (\(requester))"
+                    } else {
+                        sourceName = "\(sourceLabel) #\(wishlistId)"
+                    }
+
+                    let source = DemandSource(
+                        sourceType: sourceType,
+                        sourceId: wishlistId,
+                        sourceName: sourceName,
+                        quantity: qty
                     )
 
                     if partDemand[partId] != nil {
