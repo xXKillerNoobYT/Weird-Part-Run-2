@@ -17,11 +17,23 @@ struct IOSMainView: View {
     @State private var showLogoutConfirm = false
     @State private var showAIAssistant = false
     @State private var aiDisplayMode: AIDisplayMode = .sheet
-    @State private var showConflictReview = false
 
     // Full sidebar state
     @State private var expandedModuleId: String? = "dashboard"
     @State private var selectedTabPath: String = "/dashboard"
+
+    // Root-level modal coordinator for sheets that can be triggered from the app shell.
+    enum RootSheet: Identifiable {
+        case conflictReview
+        case aiAssistant
+
+        var id: String {
+            switch self {
+            case .conflictReview: return "conflictReview"
+            case .aiAssistant: return "aiAssistant"
+            }
+        }
+    }
 
     // Single active-sheet enum for sidebar layout to avoid multiple .sheet conflicts
     enum SidebarSheet: Identifiable {
@@ -38,6 +50,7 @@ struct IOSMainView: View {
         }
     }
 
+    @State private var activeRootSheet: RootSheet?
     @State private var activeSidebarSheet: SidebarSheet?
 
     // Tab-view layout still uses separate booleans since sheets are on different NavigationStacks
@@ -77,7 +90,7 @@ struct IOSMainView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SyncConflictBanner { showConflictReview = true }
+            SyncConflictBanner { activeRootSheet = .conflictReview }
                 .environmentObject(appCore)
 
             Group {
@@ -89,11 +102,8 @@ struct IOSMainView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .sheet(isPresented: $showConflictReview) {
-            SyncConflictReviewPage()
-                .environmentObject(appCore)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
+        .sheet(item: $activeRootSheet, onDismiss: handleRootSheetDismiss) { sheet in
+            rootSheetContent(sheet)
         }
         .confirmationDialog("Log out?", isPresented: $showLogoutConfirm, titleVisibility: .visible) {
             Button("Log Out", role: .destructive) {
@@ -142,6 +152,28 @@ struct IOSMainView: View {
         }
     }
 
+    @ViewBuilder
+    private func rootSheetContent(_ sheet: RootSheet) -> some View {
+        switch sheet {
+        case .conflictReview:
+            SyncConflictReviewPage()
+                .environmentObject(appCore)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        case .aiAssistant:
+            IOSAIAssistantPanel(displayMode: $aiDisplayMode, isVisible: $showAIAssistant)
+                .environmentObject(appCore)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+    }
+
+    private func handleRootSheetDismiss() {
+        if aiDisplayMode == .sheet {
+            showAIAssistant = false
+        }
+    }
+
     // MARK: - Tab View Layout (existing)
 
     @ViewBuilder
@@ -172,12 +204,6 @@ struct IOSMainView: View {
             if !showAIAssistant || aiDisplayMode == .sheet {
                 aiFloatingButton(bottomPadding: 90)
             }
-        }
-        .sheet(isPresented: aiDisplayMode == .sheet ? $showAIAssistant : .constant(false)) {
-            IOSAIAssistantPanel(displayMode: $aiDisplayMode, isVisible: $showAIAssistant)
-                .environmentObject(appCore)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
         }
         .overlay(alignment: .bottomTrailing) {
             if showAIAssistant && aiDisplayMode == .overlay {
@@ -461,6 +487,8 @@ struct IOSMainView: View {
             withAnimation(.easeInOut(duration: 0.25)) {
                 if tabPrefs.navigationStyle == .fullSidebar && aiDisplayMode == .sheet {
                     activeSidebarSheet = .aiAssistant
+                } else if aiDisplayMode == .sheet {
+                    activeRootSheet = .aiAssistant
                 }
                 showAIAssistant = true
             }

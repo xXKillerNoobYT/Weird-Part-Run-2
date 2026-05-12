@@ -124,6 +124,27 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testRootAIAssistantSheetCanReopen() throws {
+        loginIfNeeded()
+
+        let aiButton = app.buttons["aiAssistantButton"]
+        XCTAssertTrue(aiButton.waitForExistence(timeout: 5), "AI assistant button should be available")
+        aiButton.tap()
+
+        let assistantTitle = app.navigationBars["AI Assistant"]
+        XCTAssertTrue(assistantTitle.waitForExistence(timeout: 5), "AI assistant sheet should open")
+
+        let closeButton = app.buttons["Close"]
+        XCTAssertTrue(closeButton.waitForExistence(timeout: 3), "AI assistant sheet should expose Close")
+        closeButton.tap()
+        XCTAssertFalse(assistantTitle.waitForExistence(timeout: 3), "AI assistant sheet should dismiss")
+
+        XCTAssertTrue(aiButton.waitForExistence(timeout: 5), "AI assistant button should remain available after dismissal")
+        aiButton.tap()
+        XCTAssertTrue(assistantTitle.waitForExistence(timeout: 5), "AI assistant sheet should reopen from the root coordinator")
+    }
+
     /// Navigates from the main tab bar to the Parts > Categories page.
     /// Handles the case where the app may be on a different tab.
     private func navigateToCategories() {
