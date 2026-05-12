@@ -16,7 +16,7 @@ struct DatabaseTests {
         #expect(tableExists)
     }
 
-    @Test("All 80 migrations (000-079) apply successfully")
+    @Test("All 81 migrations (000-080) apply successfully")
     func testAllMigrationsApply() throws {
         let db = try AppDatabase.openInMemoryDatabase()
 
@@ -94,9 +94,42 @@ struct DatabaseTests {
         }
     }
 
-    @Test("Schema version is 80")
+    @Test("Schema version is 81")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 80)
+        #expect(AppDatabase.schemaVersion == 81)
+    }
+
+    @Test("Migration 080 adds live inspection records vehicle performed-at index")
+    func testMigration080InspectionRecordsVehiclePerformedAtIndex() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+
+        let indexes = try db.writer.read { db in
+            try Row.fetchAll(db, sql: "PRAGMA index_list('inspection_records')")
+        }
+
+        let index = indexes.first { row in
+            (row["name"] as String?) == "idx_ir_vehicle_performed_at_live"
+        }
+        #expect(index != nil, "inspection_records should have vehicle/performed_at index")
+        #expect((index?["partial"] as Int?) == 1, "vehicle/performed_at index should exclude deleted rows")
+
+        let indexedColumns = try db.writer.read { db in
+            try Row.fetchAll(db, sql: "PRAGMA index_info('idx_ir_vehicle_performed_at_live')")
+                .compactMap { $0["name"] as String? }
+        }
+        #expect(indexedColumns == ["vehicle_id", "performed_at"])
+
+        let queryPlan = try db.writer.read { db in
+            try Row.fetchAll(db, sql: """
+                EXPLAIN QUERY PLAN
+                SELECT result, performed_at FROM inspection_records
+                WHERE vehicle_id = ? AND deleted_at IS NULL
+                ORDER BY performed_at DESC LIMIT 1
+                """, arguments: [1])
+                .compactMap { $0["detail"] as String? }
+                .joined(separator: "\n")
+        }
+        #expect(queryPlan.contains("idx_ir_vehicle_performed_at_live"))
     }
 
     @Test("Migration 079 adds live vehicle latest-location index")

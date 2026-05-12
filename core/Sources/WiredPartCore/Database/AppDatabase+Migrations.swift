@@ -116,6 +116,7 @@ extension AppDatabase {
         registerMigration077VehicleIssueReports(&migrator)
         registerMigration078PartsRecommendationPermissions(&migrator)
         registerMigration079VehicleLocationLogsIndex(&migrator)
+        registerMigration080InspectionRecordsVehiclePerformedAtIndex(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5001,6 +5002,16 @@ extension AppDatabase {
             try db.execute(sql: """
                 CREATE INDEX IF NOT EXISTS idx_vll_vehicle_latest_live
                 ON vehicle_location_logs (vehicle_id, id)
+                WHERE deleted_at IS NULL
+                """)
+        }
+    }
+
+    private static func registerMigration080InspectionRecordsVehiclePerformedAtIndex(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("080_inspection_records_vehicle_performed_at_index") { db in
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_ir_vehicle_performed_at_live
+                ON inspection_records (vehicle_id, performed_at)
                 WHERE deleted_at IS NULL
                 """)
         }
