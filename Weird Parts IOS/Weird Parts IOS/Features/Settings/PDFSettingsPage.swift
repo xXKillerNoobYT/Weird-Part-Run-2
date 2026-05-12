@@ -7,6 +7,7 @@ import WiredPartCore
 /// footer text, payment terms, delivery notes) via SettingsService.
 struct PDFSettingsPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
     @State private var activeSheet: ActiveSheet?
     @State private var accentColor = "#2563eb"
     @State private var showUnitPrices = true
@@ -16,6 +17,9 @@ struct PDFSettingsPage: View {
     @State private var deliveryNotes = ""
     @State private var saved = false
     @State private var errorMessage: String?
+    @State private var isDirty = false
+    @State private var hasLoadedSettings = false
+    @State private var showDiscardConfirmation = false
 
     private let paymentOptions = ["Net 15", "Net 30", "Net 45", "Net 60", "Due on Receipt", "COD"]
 
@@ -71,7 +75,17 @@ struct PDFSettingsPage: View {
         // Fix #149: dismiss keyboard on scroll
         .scrollDismissesKeyboard(.interactively)
         .navigationTitle("PDF Settings")
+        .navigationBarBackButtonHidden(isDirty)
         .toolbar {
+            if isDirty {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showDiscardConfirmation = true
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -91,6 +105,21 @@ struct PDFSettingsPage: View {
         } message: {
             Text(errorMessage ?? "")
         }
+        .interactiveDismissDisabled(isDirty)
+        .confirmationDialog(
+            "Discard changes?",
+            isPresented: $showDiscardConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Discard", role: .destructive) { dismiss() }
+            Button("Keep editing", role: .cancel) {}
+        }
+        .onChange(of: accentColor) { _, _ in markDirty() }
+        .onChange(of: showUnitPrices) { _, _ in markDirty() }
+        .onChange(of: showExtended) { _, _ in markDirty() }
+        .onChange(of: footerText) { _, _ in markDirty() }
+        .onChange(of: paymentTerms) { _, _ in markDirty() }
+        .onChange(of: deliveryNotes) { _, _ in markDirty() }
     }
 
     private enum ActiveSheet: Identifiable {
@@ -103,6 +132,7 @@ struct PDFSettingsPage: View {
             errorMessage = "Settings service unavailable"
             return
         }
+        hasLoadedSettings = false
         do {
             let pdf = try service.getPDFSettings()
             accentColor = pdf.accentColor
@@ -111,9 +141,19 @@ struct PDFSettingsPage: View {
             footerText = pdf.footerText
             paymentTerms = pdf.paymentTerms
             deliveryNotes = pdf.deliveryNotes
+            isDirty = false
+            Task { @MainActor in
+                hasLoadedSettings = true
+            }
         } catch {
             errorMessage = userFriendlyError(error, context: "load")
         }
+    }
+
+    private func markDirty() {
+        guard hasLoadedSettings else { return }
+        isDirty = true
+        saved = false
     }
 
     private func savePDFSettings() {
@@ -132,6 +172,7 @@ struct PDFSettingsPage: View {
         do {
             _ = try service.updatePDFSettings(settings)
             saved = true
+            isDirty = false
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(2))
                 saved = false

@@ -32,6 +32,7 @@ struct IOSReportTemplatesPage: View {
     @State private var newName = ""
     @State private var newReportType = "labor_hours"
     @State private var newIsShared = false
+    @State private var showCreateDiscardConfirmation = false
 
     private let reportTypes = [
         ("labor_hours", "Timesheet"),
@@ -224,17 +225,40 @@ struct IOSReportTemplatesPage: View {
             .scrollDismissesKeyboard(.immediately)
             .navigationTitle("New Template")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(!newName.trimmingCharacters(in: .whitespaces).isEmpty)
+            .interactiveDismissDisabled(isCreateDirty)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { activeSheet = nil }
+                    Button("Cancel") {
+                        if isCreateDirty {
+                            showCreateDiscardConfirmation = true
+                        } else {
+                            activeSheet = nil
+                        }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") { createTemplate() }
                         .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
+            .confirmationDialog(
+                "Discard changes?",
+                isPresented: $showCreateDiscardConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard", role: .destructive) {
+                    resetCreateForm()
+                    activeSheet = nil
+                }
+                Button("Keep editing", role: .cancel) {}
+            }
         }
+    }
+
+    private var isCreateDirty: Bool {
+        !newName.trimmingCharacters(in: .whitespaces).isEmpty
+            || newReportType != "labor_hours"
+            || newIsShared
     }
 
     // MARK: - Actions
@@ -275,12 +299,18 @@ struct IOSReportTemplatesPage: View {
                 isShared: newIsShared
             )
             activeSheet = nil
-            newName = ""
-            newIsShared = false
+            resetCreateForm()
             loadTemplates()
         } catch {
             actionError = userFriendlyError(error, context: "save template")
         }
+    }
+
+    private func resetCreateForm() {
+        newName = ""
+        newReportType = "labor_hours"
+        newIsShared = false
+        showCreateDiscardConfirmation = false
     }
 
     private func confirmDelete() {

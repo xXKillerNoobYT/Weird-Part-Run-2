@@ -8,6 +8,7 @@ import WiredPartCore
 /// and can be shared via the iOS share sheet.
 struct IOSDataExportPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
 
     // MARK: - State
 
@@ -20,6 +21,9 @@ struct IOSDataExportPage: View {
     @State private var exportSuccess = false
     @State private var errorMessage: String?
     @State private var dbSizeText = "Unknown"
+    @State private var isDirty = false
+    @State private var hasLoadedData = false
+    @State private var showDiscardConfirmation = false
 
     private let formats = ["csv", "json"]
 
@@ -42,7 +46,17 @@ struct IOSDataExportPage: View {
             }
         }
         .navigationTitle("Data Export")
+        .navigationBarBackButtonHidden(isDirty)
         .toolbar {
+            if isDirty {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showDiscardConfirmation = true
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -57,6 +71,17 @@ struct IOSDataExportPage: View {
             ])
         }
         .task { if canExport { loadData() } }
+        .interactiveDismissDisabled(isDirty || isExporting)
+        .confirmationDialog(
+            "Discard changes?",
+            isPresented: $showDiscardConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Discard", role: .destructive) { dismiss() }
+            Button("Keep editing", role: .cancel) {}
+        }
+        .onChange(of: selectedFormat) { _, _ in markDirty() }
+        .onChange(of: selectedTables) { _, _ in markDirty() }
     }
 
     private var exportForm: some View {
@@ -205,6 +230,16 @@ struct IOSDataExportPage: View {
             errorMessage = userFriendlyError(error, context: "load tables")
         }
         isLoading = false
+        isDirty = false
+        Task { @MainActor in
+            hasLoadedData = true
+        }
+    }
+
+    private func markDirty() {
+        guard hasLoadedData else { return }
+        isDirty = true
+        exportSuccess = false
     }
 
     // MARK: - Export Actions
@@ -266,6 +301,7 @@ struct IOSDataExportPage: View {
             exportURLs = urls
             exportSuccess = true
             isExporting = false
+            isDirty = false
 
             if !urls.isEmpty {
                 showShareSheet = true
@@ -298,6 +334,7 @@ struct IOSDataExportPage: View {
             try FileManager.default.copyItem(at: URL(fileURLWithPath: dbPath), to: destURL)
             exportURLs = [destURL]
             exportSuccess = true
+            isDirty = false
             showShareSheet = true
         } catch {
             errorMessage = userFriendlyError(error, context: "export data")
