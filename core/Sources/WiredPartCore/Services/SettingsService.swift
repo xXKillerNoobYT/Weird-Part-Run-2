@@ -106,14 +106,7 @@ public final class SettingsService: Sendable {
     /// Insert-or-update a setting row.
     public func upsertSetting(key: String, value: String, category: String = "general") throws {
         try db.writer.write { dbConnection in
-            try dbConnection.execute(
-                sql: """
-                    INSERT INTO settings (key, value, category, updated_at)
-                    VALUES (?, ?, ?, datetime('now'))
-                    ON CONFLICT(key) DO UPDATE SET value = ?, category = ?, updated_at = datetime('now')
-                    """,
-                arguments: [key, value, category, value, category]
-            )
+            try Self.upsertSetting(key: key, value: value, category: category, in: dbConnection)
         }
     }
 
@@ -137,9 +130,22 @@ public final class SettingsService: Sendable {
 
     /// Bulk upsert a dictionary of key->value pairs under one category.
     public func upsertSettingsMap(_ data: [String: String], category: String) throws {
-        for (key, value) in data {
-            try upsertSetting(key: key, value: value, category: category)
+        try db.writer.write { dbConnection in
+            for (key, value) in data {
+                try Self.upsertSetting(key: key, value: value, category: category, in: dbConnection)
+            }
         }
+    }
+
+    private static func upsertSetting(key: String, value: String, category: String, in dbConnection: Database) throws {
+        try dbConnection.execute(
+            sql: """
+                INSERT INTO settings (key, value, category, updated_at)
+                VALUES (?, ?, ?, datetime('now'))
+                ON CONFLICT(key) DO UPDATE SET value = ?, category = ?, updated_at = datetime('now')
+                """,
+            arguments: [key, value, category, value, category]
+        )
     }
 
     // MARK: - Theme
