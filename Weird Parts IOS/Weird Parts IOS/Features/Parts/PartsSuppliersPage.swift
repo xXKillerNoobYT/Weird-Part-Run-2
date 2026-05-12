@@ -476,6 +476,8 @@ private struct SupplierFormSheet: View {
     // Save state
     @State private var saveError: String?
     @State private var isSaving = false
+    @State private var newSupplierId: Int64?
+    @State private var showBrandPicker = false
 
     private let deliveryMethods = ["", "Pickup", "Delivery", "UPS", "FedEx", "USPS", "Freight", "Will Call", "Other"]
 
@@ -579,6 +581,16 @@ private struct SupplierFormSheet: View {
                     notes = s.notes ?? ""
                 }
             }
+            .sheet(isPresented: $showBrandPicker) {
+                if let newSupplierId {
+                    SupplierBrandPickerSheet(
+                        supplierId: newSupplierId,
+                        onCancel: finishNewSupplierFlow,
+                        onSave: finishNewSupplierFlow
+                    )
+                    .environmentObject(appCore)
+                }
+            }
         }
         .interactiveDismissDisabled(isSaving)
     }
@@ -588,6 +600,11 @@ private struct SupplierFormSheet: View {
         saveError = nil
         do {
             try await save()
+            if supplier == nil, newSupplierId != nil {
+                isSaving = false
+                showBrandPicker = true
+                return
+            }
             dismiss()
             await onSave()
         } catch {
@@ -624,7 +641,7 @@ private struct SupplierFormSheet: View {
                 notes: notes.isEmpty ? nil : notes
             )
         } else {
-            _ = try service.createSupplier(
+            newSupplierId = try service.createSupplier(
                 name: trimmedName,
                 contactName: contactName.isEmpty ? nil : contactName,
                 email: email.isEmpty ? nil : email,
@@ -641,6 +658,13 @@ private struct SupplierFormSheet: View {
             )
         }
     }
+
+    private func finishNewSupplierFlow() {
+        Task {
+            dismiss()
+            await onSave()
+        }
+    }
 }
 
 // MARK: - Supplier Detail Sheet
@@ -655,10 +679,12 @@ private struct SupplierDetailSheet: View {
     // Single active-sheet enum to avoid multiple .sheet conflicts
     enum ActiveSheet: Identifiable {
         case addContact
+        case brandPicker
 
         var id: String {
             switch self {
             case .addContact: return "addContact"
+            case .brandPicker: return "brandPicker"
             }
         }
     }
@@ -750,6 +776,13 @@ private struct SupplierDetailSheet: View {
                                 loadError = userFriendlyError(error, context: "reload contacts")
                             }
                         }
+                    }
+                    .environmentObject(appCore)
+                case .brandPicker:
+                    SupplierBrandPickerSheet(supplierId: supplier.id) {
+                        Task { await loadAllDetails() }
+                    } onSave: {
+                        Task { await loadAllDetails() }
                     }
                     .environmentObject(appCore)
                 }
@@ -1041,7 +1074,7 @@ private struct SupplierDetailSheet: View {
     private var brandsSection: some View {
         Section {
             if linkedBrands.isEmpty {
-                Text("No brands linked. Link brands from the Brands tab.")
+                Text("No brands linked yet.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
@@ -1080,7 +1113,16 @@ private struct SupplierDetailSheet: View {
                 }
             }
         } header: {
-            Text("Brands Carried (\(linkedBrands.count))")
+            HStack {
+                Text("Brands Carried (\(linkedBrands.count))")
+                Spacer()
+                Button {
+                    activeSheet = .brandPicker
+                } label: {
+                    Label("Manage", systemImage: "checklist")
+                        .font(.caption)
+                }
+            }
         }
     }
 
@@ -1206,6 +1248,221 @@ private struct SupplierDetailSheet: View {
             isLoading = false
         } catch {
             isLoading = false
+        }
+    }
+}
+
+// MARK: - Supplier Brand Picker Sheet
+
+private struct SupplierBrandPickerSheet: View {
+    let supplierId: Int64
+    let onCancel: () -> Void
+    let onSave: () -> Void
+    @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var allBrands: [BrandCheckItem] = []
+    @State private var isLoading = true
+    @State private var loadError: String?
+    @State private var isSaving = false
+    @State private var searchText = ""
+
+    private struct BrandCheckItem: Identifiable {
+        let id: Int64
+        let name: String
+        let website: String?
+        let partCount: Int
+        var isLinked: Bool
+        let wasLinked: Bool
+    }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if isLoading {
+                    ProgressView("Loading brands...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let error = loadError {
+                    VStack(spacing: 12) {
+                        Text(error)
+                            .foregroundStyle(.red)
+                            .font(.subheadline)
+                        Button("Retry") { loadBrands() }
+                            .buttonStyle(.bordered)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if allBrands.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "tag")
+                            .font(.largeTitle)
+                            .foregroundStyle(.secondary)
+                        Text("No Brands")
+                            .font(.headline)
+                        Text("Add brands in Parts > Brands first.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    brandList
+                }
+            }
+            .navigationTitle("Manage Brands")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText, prompt: "Search brands...")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                        onCancel()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        Task { await saveLinks() }
+                    } label: {
+                        if isSaving {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Text("Save")
+                                .fontWeight(.semibold)
+                        }
+                    }
+                    .disabled(isSaving)
+                }
+            }
+            .task { loadBrands() }
+            .interactiveDismissDisabled(isSaving)
+        }
+    }
+
+    private var filteredBrands: [BrandCheckItem] {
+        if searchText.isEmpty { return allBrands }
+        let query = searchText.lowercased()
+        return allBrands.filter {
+            $0.name.lowercased().contains(query) ||
+            ($0.website?.lowercased().contains(query) ?? false)
+        }
+    }
+
+    @ViewBuilder
+    private var brandList: some View {
+        List {
+            let linkedCount = allBrands.filter(\.isLinked).count
+            Section {
+                Text("\(linkedCount) of \(allBrands.count) brands selected")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(filteredBrands) { brand in
+                Button {
+                    toggleBrand(brand.id)
+                } label: {
+                    HStack(spacing: 14) {
+                        Image(systemName: brand.isLinked ? "checkmark.square.fill" : "square")
+                            .font(.title3)
+                            .foregroundStyle(brand.isLinked ? Color.accentColor : .secondary)
+                            .frame(width: 28)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(brand.name)
+                                .font(.body)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.primary)
+
+                            Text("\(brand.partCount) parts")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        if let website = brand.website, !website.isEmpty {
+                            Text(website)
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .frame(minHeight: 50)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .listStyle(.insetGrouped)
+    }
+
+    private func toggleBrand(_ brandId: Int64) {
+        if let index = allBrands.firstIndex(where: { $0.id == brandId }) {
+            allBrands[index].isLinked.toggle()
+        }
+    }
+
+    private func loadBrands() {
+        isLoading = true
+        loadError = nil
+        do {
+            guard let service = appCore.partsService else {
+                isLoading = false
+                loadError = "Parts service not available"
+                return
+            }
+
+            let allItems = try service.listBrands()
+            let linked: [(brandId: Int64, brandName: String, partCount: Int, carryStatus: String)] = try service.getSupplierBrands(supplierId: supplierId)
+            let linkedIds = Set(linked.map(\.brandId))
+
+            allBrands = allItems.compactMap { item in
+                guard let brandId = item.brand.id else { return nil }
+                let isLinked = linkedIds.contains(brandId)
+                return BrandCheckItem(
+                    id: brandId,
+                    name: item.brand.name,
+                    website: item.brand.website,
+                    partCount: item.partCount,
+                    isLinked: isLinked,
+                    wasLinked: isLinked
+                )
+            }
+            isLoading = false
+        } catch {
+            loadError = userFriendlyError(error, context: "load brand list")
+            isLoading = false
+        }
+    }
+
+    private func saveLinks() async {
+        isSaving = true
+        do {
+            guard let service = appCore.partsService else {
+                loadError = "Parts service not available"
+                isSaving = false
+                return
+            }
+
+            let selectedIds = Set(allBrands.filter(\.isLinked).map(\.id))
+            let originalIds = Set(allBrands.filter(\.wasLinked).map(\.id))
+
+            for brandId in selectedIds.subtracting(originalIds) {
+                try service.linkBrandToSupplier(brandId: brandId, supplierId: supplierId)
+            }
+            for brandId in originalIds.subtracting(selectedIds) {
+                try service.unlinkBrandFromSupplier(brandId: brandId, supplierId: supplierId)
+            }
+
+            await MainActor.run {
+                isSaving = false
+                dismiss()
+                onSave()
+            }
+        } catch {
+            await MainActor.run {
+                isSaving = false
+                loadError = userFriendlyError(error, context: "save supplier-brand links")
+            }
         }
     }
 }
