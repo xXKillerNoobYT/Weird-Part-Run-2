@@ -79,6 +79,86 @@ struct JobsServiceTests {
         #expect(summary.totalEntries >= 1)
     }
 
+    @Test("Clock out applies daily overtime across split jobs")
+    func testClockOutAggregatesDailyOvertimeAcrossSplitJobs() throws {
+        let env = try E2ETestHelpers.setUp()
+        let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-A", name: "Morning Job")
+        let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-B", name: "Afternoon Job")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES
+                    (?, ?, datetime('now', '-10 hours'), datetime('now', '-5 hours'), 5, 0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, firstJobId])
+        }
+
+        let secondEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: secondJobId)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE labor_entries SET clock_in = datetime('now', '-5 hours') WHERE id = ?",
+                arguments: [secondEntryId]
+            )
+        }
+
+        try env.jobs.clockOut(laborEntryId: secondEntryId)
+        let hours = try laborHours(env, entryId: secondEntryId)
+
+        #expect(hours.regular == 3.0)
+        #expect(hours.overtime == 2.0)
+    }
+
+    @Test("Clock out keeps single long entry overtime")
+    func testClockOutSingleEntryOvertime() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let entryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE labor_entries SET clock_in = datetime('now', '-10 hours') WHERE id = ?",
+                arguments: [entryId]
+            )
+        }
+
+        try env.jobs.clockOut(laborEntryId: entryId)
+        let hours = try laborHours(env, entryId: entryId)
+
+        #expect(hours.regular == 8.0)
+        #expect(hours.overtime == 2.0)
+    }
+
+    @Test("Clock out remains regular below daily threshold")
+    func testClockOutBelowDailyThreshold() throws {
+        let env = try E2ETestHelpers.setUp()
+        let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-REG-A", name: "Short Morning Job")
+        let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-REG-B", name: "Short Afternoon Job")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES
+                    (?, ?, datetime('now', '-5 hours'), datetime('now', '-3 hours'), 2, 0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, firstJobId])
+        }
+
+        let secondEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: secondJobId)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE labor_entries SET clock_in = datetime('now', '-3 hours') WHERE id = ?",
+                arguments: [secondEntryId]
+            )
+        }
+
+        try env.jobs.clockOut(laborEntryId: secondEntryId)
+        let hours = try laborHours(env, entryId: secondEntryId)
+
+        #expect(hours.regular == 3.0)
+        #expect(hours.overtime == 0.0)
+    }
+
     // MARK: - Team Members
 
     @Test("Add and remove team member from job")
@@ -1632,5 +1712,16 @@ struct JobsServiceTests {
             threw = true
         } catch {}
         #expect(threw, "setClockEntryWorkType must throw requiredFieldEmpty when workType is whitespace-only")
+    }
+
+    private func laborHours(_ env: E2ETestHelpers.TestEnvironment, entryId: Int64) throws -> (regular: Double, overtime: Double) {
+        try env.db.writer.read { db in
+            let row = try Row.fetchOne(
+                db,
+                sql: "SELECT regular_hours, overtime_hours FROM labor_entries WHERE id = ?",
+                arguments: [entryId]
+            )
+            return (row?["regular_hours"] ?? 0.0, row?["overtime_hours"] ?? 0.0)
+        }
     }
 }
