@@ -103,6 +103,27 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
     // MARK: - Helper: Navigate to Parts > Categories
 
+    @MainActor
+    func testUITestingLaunchBypassesOnDeviceAIGate() throws {
+        loginIfNeeded()
+
+        XCTAssertFalse(
+            app.staticTexts["On-Device AI"].waitForExistence(timeout: 2),
+            "-UITesting should bypass the On-Device AI onboarding gate"
+        )
+        XCTAssertFalse(
+            app.buttons["Continue Onboarding"].exists,
+            "-UITesting should not require tapping the On-Device AI continuation button"
+        )
+
+        let partsTab = app.tabBars.buttons["Parts"]
+        let moreTab = app.tabBars.buttons["More"]
+        XCTAssertTrue(
+            partsTab.waitForExistence(timeout: 5) || moreTab.waitForExistence(timeout: 5),
+            "-UITesting launch should reach the post-login tab UI"
+        )
+    }
+
     /// Navigates from the main tab bar to the Parts > Categories page.
     /// Handles the case where the app may be on a different tab.
     private func navigateToCategories() {

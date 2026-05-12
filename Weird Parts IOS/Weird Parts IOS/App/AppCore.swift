@@ -565,6 +565,7 @@ final class AppCore: ObservableObject {
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
         UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
+        UserDefaults.standard.set(true, forKey: "hasSeenOnboardAIMVPEntry")
         UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
     }
 }
