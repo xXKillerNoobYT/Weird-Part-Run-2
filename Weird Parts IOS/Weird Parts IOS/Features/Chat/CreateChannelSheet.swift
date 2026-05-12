@@ -13,6 +13,7 @@ struct CreateChannelSheet: View {
     @State private var description = ""
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var showDiscardConfirmation = false
 
     // Supplier channel state
     @State private var selectedSupplierId: Int64 = 0
@@ -22,6 +23,11 @@ struct CreateChannelSheet: View {
 
     private var isDM: Bool { channelType == "dm" }
     private var isSupplier: Bool { channelType == "supplier" }
+    private var isDirty: Bool {
+        !channelName.trimmingCharacters(in: .whitespaces).isEmpty ||
+            !description.trimmingCharacters(in: .whitespaces).isEmpty ||
+            selectedSupplierId != 0
+    }
 
     var body: some View {
         NavigationStack {
@@ -76,10 +82,17 @@ struct CreateChannelSheet: View {
             .refreshable {
                 await loadSuppliers()
             }
-            .interactiveDismissDisabled(isSaving)
+            .interactiveDismissDisabled(isDirty || isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty {
+                            showDiscardConfirmation = true
+                        } else {
+                            dismiss()
+                        }
+                    }
+                    .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") { saveChannel() }
@@ -89,6 +102,12 @@ struct CreateChannelSheet: View {
             }
             .task {
                 await loadSuppliers()
+            }
+            .alert("Discard changes?", isPresented: $showDiscardConfirmation) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved conversation details will be lost.")
             }
         }
     }

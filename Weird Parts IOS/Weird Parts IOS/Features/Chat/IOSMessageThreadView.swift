@@ -10,6 +10,7 @@ import WiredPartCore
 /// Supports photo, file, and reference attachments.
 struct IOSMessageThreadView: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
 
     let channelId: Int64
     let channelName: String
@@ -30,6 +31,7 @@ struct IOSMessageThreadView: View {
     @State private var pendingAttachments: [ChatService.PendingAttachment] = []
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var activeSheet: ActiveSheet?
+    @State private var showDiscardDraftConfirmation = false
 
     private enum ActiveSheet: Identifiable {
         case help
@@ -52,6 +54,12 @@ struct IOSMessageThreadView: View {
     // Toast
     @State private var showComingSoon = false
 
+    private var isComposerDirty: Bool {
+        !messageText.trimmingCharacters(in: .whitespaces).isEmpty ||
+            !pendingAttachments.isEmpty ||
+            !selectedPhotoItems.isEmpty
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Expandable header + info panel
@@ -73,8 +81,18 @@ struct IOSMessageThreadView: View {
         }
         .navigationTitle(channelName)
         .navigationBarTitleDisplayMode(.inline)
-        .interactiveDismissDisabled(isSending)
+        .interactiveDismissDisabled(isComposerDirty || isSending)
         .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") {
+                    if isComposerDirty {
+                        showDiscardDraftConfirmation = true
+                    } else {
+                        dismiss()
+                    }
+                }
+                .disabled(isSending)
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -113,6 +131,12 @@ struct IOSMessageThreadView: View {
             Button("OK") { actionError = nil }
         } message: {
             Text(actionError ?? "")
+        }
+        .alert("Discard message draft?", isPresented: $showDiscardDraftConfirmation) {
+            Button("Discard", role: .destructive) { dismiss() }
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("Your unsent message and pending attachments will be lost.")
         }
         .overlay(alignment: .bottom) {
             if showComingSoon {
