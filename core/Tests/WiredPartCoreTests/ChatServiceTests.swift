@@ -78,6 +78,99 @@ struct ChatServiceTests {
         #expect(messages.count >= 3)
     }
 
+    @Test("sendMessage allows active channel members")
+    func testSendMessageAllowsActiveMember() throws {
+        let env = try E2ETestHelpers.setUp()
+        let senderId = try env.auth.createUser(displayName: "Chat Member", pin: "1111", email: "chat-member@test.com")
+        let channelId = try env.chat.createChannel(
+            name: "Member Gate",
+            channelType: "group",
+            jobId: nil,
+            createdBy: env.adminUserId
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO chat_channel_members (channel_id, user_id, role, joined_at)
+                VALUES (?, ?, 'member', datetime('now'))
+                """, arguments: [channelId, senderId])
+        }
+
+        let msgId = try env.chat.sendMessage(
+            channelId: channelId,
+            senderId: senderId,
+            content: "Active member can send"
+        )
+
+        #expect(msgId > 0)
+    }
+
+    @Test("sendMessage rejects non-members without inserting")
+    func testSendMessageRejectsNonMember() throws {
+        let env = try E2ETestHelpers.setUp()
+        let outsiderId = try env.auth.createUser(displayName: "Chat Outsider", pin: "2222", email: "chat-outsider@test.com")
+        let channelId = try env.chat.createChannel(
+            name: "Private Channel",
+            channelType: "group",
+            jobId: nil,
+            createdBy: env.adminUserId
+        )
+
+        var threw = false
+        do {
+            _ = try env.chat.sendMessage(channelId: channelId, senderId: outsiderId, content: "Let me in")
+        } catch ChatService.ChatError.channelNotFound(let deniedChannelId) {
+            threw = deniedChannelId == channelId
+        } catch {}
+
+        let messageCount = try Self.messageCount(env: env, channelId: channelId)
+        #expect(threw, "sendMessage must reject users without active channel membership")
+        #expect(messageCount == 0, "Rejected non-member sends must not insert chat_messages rows")
+    }
+
+    @Test("sendMessage rejects members who left or were soft-deleted")
+    func testSendMessageRejectsRemovedMembers() throws {
+        let env = try E2ETestHelpers.setUp()
+        let leftMemberId = try env.auth.createUser(displayName: "Left Member", pin: "3333", email: "left-member@test.com")
+        let deletedMemberId = try env.auth.createUser(displayName: "Deleted Member", pin: "4444", email: "deleted-member@test.com")
+        let channelId = try env.chat.createChannel(
+            name: "Removed Members",
+            channelType: "group",
+            jobId: nil,
+            createdBy: env.adminUserId
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO chat_channel_members (channel_id, user_id, role, joined_at, left_at)
+                VALUES (?, ?, 'member', datetime('now'), datetime('now'))
+                """, arguments: [channelId, leftMemberId])
+            try db.execute(sql: """
+                INSERT INTO chat_channel_members (channel_id, user_id, role, joined_at, deleted_at)
+                VALUES (?, ?, 'member', datetime('now'), datetime('now'))
+                """, arguments: [channelId, deletedMemberId])
+        }
+
+        var leftMemberDenied = false
+        do {
+            _ = try env.chat.sendMessage(channelId: channelId, senderId: leftMemberId, content: "I left")
+        } catch ChatService.ChatError.channelNotFound(let deniedChannelId) {
+            leftMemberDenied = deniedChannelId == channelId
+        } catch {}
+
+        var deletedMemberDenied = false
+        do {
+            _ = try env.chat.sendMessage(channelId: channelId, senderId: deletedMemberId, content: "I was removed")
+        } catch ChatService.ChatError.channelNotFound(let deniedChannelId) {
+            deletedMemberDenied = deniedChannelId == channelId
+        } catch {}
+
+        let messageCount = try Self.messageCount(env: env, channelId: channelId)
+        #expect(leftMemberDenied, "sendMessage must reject memberships with left_at set")
+        #expect(deletedMemberDenied, "sendMessage must reject memberships with deleted_at set")
+        #expect(messageCount == 0, "Rejected removed-member sends must not insert chat_messages rows")
+    }
+
     // MARK: - Q&A Threads
 
     @Test("Create and list QA threads")
@@ -910,5 +1003,15 @@ struct ChatServiceTests {
                 """, arguments: [channelId, userId])
         }
         #expect(stored == msg2, "markRead must not move the read pointer backwards")
+    }
+
+    private static func messageCount(env: E2ETestHelpers.TestEnvironment, channelId: Int64) throws -> Int {
+        try env.db.writer.read { db in
+            try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM chat_messages WHERE channel_id = ?",
+                arguments: [channelId]
+            ) ?? 0
+        }
     }
 }
