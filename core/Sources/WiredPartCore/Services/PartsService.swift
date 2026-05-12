@@ -6888,6 +6888,23 @@ public final class PartsService: Sendable {
         }
     }
 
+    /// Fetch all active SKUs for a given type (across all brands and colors).
+    public func getSKUsForType(typeId: Int64) throws -> [ColorBrandSKU] {
+        do {
+            return try db.writer.read { dbConn in
+                try Row.fetchAll(dbConn, sql: """
+                    SELECT * FROM color_brand_skus
+                    WHERE type_id = ? AND deleted_at IS NULL AND is_active = 1
+                    ORDER BY color_id, brand_id
+                    """, arguments: [typeId])
+                    .map(colorBrandSKUFromRow)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
     /// Create or update a SKU for a (color, brand, type) triple.
     /// If a row already exists (even soft-deleted), reactivates and updates it.
     @discardableResult
