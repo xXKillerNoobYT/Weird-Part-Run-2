@@ -70,25 +70,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-for cmd in curl jq gh; do
+for cmd in curl jq sha256sum gh; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "error: required command missing: $cmd" >&2
     exit 1
   fi
 done
-
-hash_sha256() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum | awk '{print $1}'
-  elif command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 | awk '{print $1}'
-  elif command -v openssl >/dev/null 2>&1; then
-    openssl dgst -sha256 -r | awk '{print $1}'
-  else
-    echo "error: required command missing: sha256sum, shasum, or openssl" >&2
-    return 1
-  fi
-}
 
 : "${PAPERCLIP_API_URL:?error: PAPERCLIP_API_URL is required}"
 : "${PAPERCLIP_API_KEY:?error: PAPERCLIP_API_KEY is required}"
@@ -111,25 +98,14 @@ fi
 
 STAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 WEB_URL="${PAPERCLIP_WEB_URL:-}"
-ISSUES_PATH="$(mktemp)"
-DONE_ISSUES_PATH="$(mktemp)"
-AGENTS_PATH="$(mktemp)"
-trap 'rm -f "$ISSUES_PATH" "$DONE_ISSUES_PATH" "$AGENTS_PATH"' EXIT
 
-curl -fsS \
+ISSUES_JSON="$(curl -fsS \
   -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
-  "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/issues?status=todo,in_progress,in_review,blocked" \
-  -o "$ISSUES_PATH"
+  "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/issues?status=todo,in_progress,in_review,blocked")"
 
-curl -fsS \
+AGENTS_JSON="$(curl -fsS \
   -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
-  "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/issues?status=done" \
-  -o "$DONE_ISSUES_PATH"
-
-curl -fsS \
-  -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
-  "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/agents" \
-  -o "$AGENTS_PATH"
+  "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/agents")"
 
 render_link() {
   local identifier="$1"
@@ -143,17 +119,16 @@ render_link() {
 
 COMMENT_BODY="$(
   jq -nr \
-    --slurpfile issues "$ISSUES_PATH" \
-    --slurpfile doneIssues "$DONE_ISSUES_PATH" \
-    --slurpfile agents "$AGENTS_PATH" \
+    --argjson issues "$ISSUES_JSON" \
+    --argjson agents "$AGENTS_JSON" \
     --arg stamp "$STAMP" '
     def agent_name($id):
-      ($agents[0] | map(select(.id == $id)) | .[0].name) // "unassigned";
+      ($agents | map(select(.id == $id)) | .[0].name) // "unassigned";
 
     def issue_sort_key: .identifier // .id // "";
 
     def normalized:
-      $issues[0]
+      $issues
       | map({
           identifier,
           title,
@@ -166,21 +141,6 @@ COMMENT_BODY="$(
           ) | unique | sort
         })
       | sort_by(issue_sort_key);
-
-    def recently_completed:
-      $doneIssues[0]
-      | map({
-          identifier,
-          title,
-          status,
-          priority,
-          assigneeAgentId,
-          completedAt,
-          updatedAt
-        })
-      | sort_by(.completedAt // .updatedAt // "")
-      | reverse
-      | .[:20];
 
     def blocker_summary($issue):
       if (($issue.blockedByIssueIds // []) | length) == 0 then "none"
@@ -201,61 +161,26 @@ COMMENT_BODY="$(
         " | blockers: `" + blocker_summary(.) + "`" +
         " | " + (.title // "(untitled)")
       )) | join("\n")
-    ) + "\n\n" +
-    "### Recently Completed\n\n" +
-    (
-      (recently_completed | map(
-        "- " + (.identifier // .id) +
-        " | completed: `" + (.completedAt // .updatedAt // "unknown") + "`" +
-        " | owner: `" + (agent_name(.assigneeAgentId)) + "`" +
-        " | " + (.title // "(untitled)")
-      )) | join("\n")
     ) + "\n"
   '
 )"
 
 SYNC_FINGERPRINT="$(
   jq -cS -n \
-    --slurpfile issues "$ISSUES_PATH" \
-    --slurpfile doneIssues "$DONE_ISSUES_PATH" \
-    --slurpfile agents "$AGENTS_PATH" '
-    {
-      active: (
-        $issues[0]
-        | map({
-            identifier,
-            title,
-            status,
-            priority,
-            assigneeAgentId,
-            blockedByIssueIds: (
-              (.blockedByIssueIds // [])
-              + ((.blockedBy // []) | map(.id))
-            ) | unique | sort
-          })
-        | sort_by(.identifier // .id // "")
-      ),
-      recentlyCompleted: (
-        $doneIssues[0]
-        | map({
-            identifier,
-            title,
-            status,
-            priority,
-            assigneeAgentId,
-            completedAt,
-            updatedAt
-          })
-        | sort_by(.completedAt // .updatedAt // "")
-        | reverse
-        | .[:20]
-      ),
-      agents: (
-        $agents[0]
-        | map({id, name})
-        | sort_by(.id // "")
-      )
-    }
+    --argjson issues "$ISSUES_JSON" '
+    $issues
+    | map({
+        identifier,
+        title,
+        status,
+        priority,
+        assigneeAgentId,
+        blockedByIssueIds: (
+          (.blockedByIssueIds // [])
+          + ((.blockedBy // []) | map(.id))
+        ) | unique | sort
+      })
+    | sort_by(.identifier // .id // "")
   '
 )"
 
@@ -270,7 +195,7 @@ if [[ -n "$WEB_URL" ]]; then
   done < <(printf "%s\n" "$COMMENT_BODY")
 fi
 
-CONTENT_HASH="$(printf "%s" "$SYNC_FINGERPRINT" | hash_sha256)"
+CONTENT_HASH="$(printf "%s" "$SYNC_FINGERPRINT" | sha256sum | awk '{print $1}')"
 PREV_HASH=""
 if [[ -f "$STATE_PATH" ]]; then
   PREV_HASH="$(cat "$STATE_PATH")"
@@ -287,7 +212,7 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   exit 0
 fi
 
-COMMENTS_JSON="$(gh api --paginate "repos/$REPO/issues/$TRACKER_NUMBER/comments?per_page=100" | jq -s 'add')"
+COMMENTS_JSON="$(gh api "repos/$REPO/issues/$TRACKER_NUMBER/comments?per_page=100")"
 EXISTING_ID="$(
   jq -r '
     map(select(.body | startswith("# paperclip-tracker-sync:v1"))) |
