@@ -640,7 +640,57 @@ struct WarehouseAuditTests {
 
         // Verify the adjustment movement was recorded
         let movements = try env.warehouse.listMovements(movementType: "adjustment")
-        #expect(movements.contains { $0.partId == partId })
+        let movement = movements.first { $0.partId == partId }
+        #expect(movement?.qty == -3)
+        #expect(movement?.notes == "Audit count adjustment: 10 -> 7 (-3)")
+    }
+
+    @Test("adjustAuditCount records positive delta for stock increases")
+    func testAdjustAuditCountRecordsPositiveDelta() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
+
+        try env.warehouse.adjustAuditCount(
+            partId: partId,
+            locationType: "warehouse",
+            locationId: 1,
+            newQty: 14,
+            reason: nil,
+            performedBy: env.adminUserId
+        )
+
+        let qty = try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1)
+        #expect(qty == 14)
+
+        let movement = try latestAuditAdjustmentMovement(env, partId: partId)
+        #expect(movement?["qty"] as Int? == 4)
+        #expect(movement?["notes"] as String? == "Audit count adjustment: 10 -> 14 (+4)")
+    }
+
+    @Test("adjustAuditCount records zero delta for no-op audit counts")
+    func testAdjustAuditCountRecordsZeroDelta() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
+
+        try env.warehouse.adjustAuditCount(
+            partId: partId,
+            locationType: "warehouse",
+            locationId: 1,
+            newQty: 10,
+            reason: nil,
+            performedBy: env.adminUserId
+        )
+
+        let qty = try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1)
+        #expect(qty == 10)
+
+        let movement = try latestAuditAdjustmentMovement(env, partId: partId)
+        #expect(movement?["qty"] as Int? == 0)
+        #expect(movement?["notes"] as String? == "Audit count adjustment: 10 -> 10 (+0)")
     }
 
     @Test("recordAuditRecount updates last_counted timestamp for stock row")
@@ -670,6 +720,25 @@ struct WarehouseAuditTests {
         // After recount, last_counted must be set
         #expect(updatedCounted != nil)
         _ = initialCounted // suppress unused warning
+    }
+
+    private func latestAuditAdjustmentMovement(
+        _ env: E2ETestHelpers.TestEnvironment,
+        partId: Int64
+    ) throws -> Row? {
+        try env.db.writer.read { db in
+            try Row.fetchOne(
+                db,
+                sql: """
+                    SELECT qty, notes
+                    FROM stock_movements
+                    WHERE part_id = ? AND movement_type = ? AND deleted_at IS NULL
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                arguments: [partId, WarehouseMovementType.adjustment.rawValue]
+            )
+        }
     }
 
     // MARK: - Consolidation Vote Lifecycle

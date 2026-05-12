@@ -1701,6 +1701,16 @@ public final class WarehouseService: Sendable {
                     """, arguments: [uid]) ?? 0) > 0
                 guard userExists else { throw WarehouseError.userNotFound(uid) }
             }
+            let currentQty = try Int.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT qty FROM stock
+                    WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [partId, locationType, locationId]
+            ) ?? 0
+            let deltaQty = newQty - currentQty
+
             // Update the stock record
             try dbConn.execute(
                 sql: """
@@ -1709,14 +1719,24 @@ public final class WarehouseService: Sendable {
                     """,
                 arguments: [newQty, partId, locationType, locationId]
             )
+            if dbConn.changesCount == 0 {
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO stock (part_id, location_type, location_id, qty, last_counted, updated_at)
+                        VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+                        """,
+                    arguments: [partId, locationType, locationId, newQty]
+                )
+            }
 
             // Record the adjustment as a movement
+            let signedDelta = deltaQty >= 0 ? "+\(deltaQty)" : "\(deltaQty)"
             try dbConn.execute(
                 sql: """
                     INSERT INTO stock_movements (part_id, qty, from_location_type, from_location_id, to_location_type, to_location_id, movement_type, reason, notes, performed_by, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Audit count adjustment', ?, datetime('now'))
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                     """,
-                arguments: [partId, newQty, locationType, locationId, locationType, locationId, WarehouseMovementType.adjustment.rawValue, reason ?? "Audit adjustment", performedBy]
+                arguments: [partId, deltaQty, locationType, locationId, locationType, locationId, WarehouseMovementType.adjustment.rawValue, reason ?? "Audit adjustment", "Audit count adjustment: \(currentQty) -> \(newQty) (\(signedDelta))", performedBy]
             )
         }
     }
