@@ -57,6 +57,54 @@ struct FleetServiceTests {
         #expect(active.count >= 1)
     }
 
+    @Test("Vehicle status counts aggregate in SQL and exclude inactive rows")
+    func testVehicleStatusCounts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let before = try env.fleet.getVehicleStatusCounts()
+
+        let activeId = try env.fleet.createVehicle(
+            vehicleNumber: "V-COUNT-ACT", vehicleName: "Count Active", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let inactiveId = try env.fleet.createVehicle(
+            vehicleNumber: "V-COUNT-INACT", vehicleName: "Count Inactive", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let maintenanceId = try env.fleet.createVehicle(
+            vehicleNumber: "V-COUNT-MAINT", vehicleName: "Count Maintenance", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let retiredId = try env.fleet.createVehicle(
+            vehicleNumber: "V-COUNT-RET", vehicleName: "Count Retired", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let excludedId = try env.fleet.createVehicle(
+            vehicleNumber: "V-COUNT-EXCL", vehicleName: "Count Excluded", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE vehicles SET status = 'inactive' WHERE id = ?", arguments: [inactiveId])
+            try db.execute(sql: "UPDATE vehicles SET status = 'maintenance' WHERE id = ?", arguments: [maintenanceId])
+            try db.execute(sql: "UPDATE vehicles SET status = 'retired' WHERE id = ?", arguments: [retiredId])
+            try db.execute(sql: "UPDATE vehicles SET is_active = 0 WHERE id = ?", arguments: [excludedId])
+        }
+
+        let after = try env.fleet.getVehicleStatusCounts()
+        #expect(after.all == before.all + 4)
+        #expect(after.active == before.active + 1)
+        #expect(after.inactive == before.inactive + 1)
+        #expect(after.maintenance == before.maintenance + 1)
+        #expect(after.retired == before.retired + 1)
+        #expect(after.count(for: "all") == after.all)
+        #expect(after.count(for: "active") == after.active)
+        #expect(after.count(for: "unknown") == 0)
+
+        let visibleIds = Set(try env.fleet.listVehicles().map(\.id))
+        #expect(visibleIds.contains(activeId))
+        #expect(!visibleIds.contains(excludedId))
+    }
+
     // MARK: - Trailer CRUD
 
     @Test("Create and list trailers")
