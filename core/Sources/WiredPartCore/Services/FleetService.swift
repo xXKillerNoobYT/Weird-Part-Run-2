@@ -707,40 +707,48 @@ public final class FleetService: Sendable {
     // MARK: - 6. Fleet Stats
     // =========================================================================
 
-    /// Get fleet-wide dashboard statistics.
+    /// Get fleet-wide dashboard statistics (single DB round trip).
     public func getFleetStats() throws -> FleetStats {
-        let totalVehicles = try safeCount(
-            sql: "SELECT COUNT(*) FROM vehicles WHERE deleted_at IS NULL AND is_active = 1"
-        )
+        do {
+            return try db.writer.read { dbConn in
+                // Vehicle counts – one query for total + active
+                let vehicleRow = try Row.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) AS total,
+                           SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active
+                    FROM vehicles WHERE deleted_at IS NULL AND is_active = 1
+                    """)
+                let totalVehicles = vehicleRow?["total"] as Int? ?? 0
+                let activeVehicles = vehicleRow?["active"] as Int? ?? 0
 
-        let activeVehicles = try safeCount(
-            sql: "SELECT COUNT(*) FROM vehicles WHERE status = 'active' AND deleted_at IS NULL AND is_active = 1"
-        )
+                // Maintenance due: schedules where next_due_date <= today or next_due_miles <= current odometer
+                let maintenanceDue = (try? Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM maintenance_schedules ms
+                    JOIN vehicles v ON v.id = ms.vehicle_id AND v.deleted_at IS NULL AND v.is_active = 1
+                    WHERE ms.deleted_at IS NULL
+                      AND (
+                        (ms.next_due_date IS NOT NULL AND date(ms.next_due_date) <= date('now'))
+                        OR (ms.next_due_miles IS NOT NULL AND v.current_odometer IS NOT NULL
+                            AND ms.next_due_miles <= v.current_odometer)
+                      )
+                    """)) ?? 0
 
-        // Maintenance due: schedules where next_due_date <= today or next_due_miles <= current odometer
-        let maintenanceDue = try safeCount(
-            sql: """
-                SELECT COUNT(*) FROM maintenance_schedules ms
-                JOIN vehicles v ON v.id = ms.vehicle_id AND v.deleted_at IS NULL AND v.is_active = 1
-                WHERE ms.deleted_at IS NULL
-                  AND (
-                    (ms.next_due_date IS NOT NULL AND date(ms.next_due_date) <= date('now'))
-                    OR (ms.next_due_miles IS NOT NULL AND v.current_odometer IS NOT NULL
-                        AND ms.next_due_miles <= v.current_odometer)
-                  )
-                """
-        )
+                let totalTrailers = (try? Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM job_trailers WHERE deleted_at IS NULL AND is_active = 1
+                    """)) ?? 0
 
-        let totalTrailers = try safeCount(
-            sql: "SELECT COUNT(*) FROM job_trailers WHERE deleted_at IS NULL AND is_active = 1"
-        )
-
-        return FleetStats(
-            totalVehicles: totalVehicles,
-            activeVehicles: activeVehicles,
-            maintenanceDue: maintenanceDue,
-            totalTrailers: totalTrailers
-        )
+                return FleetStats(
+                    totalVehicles: totalVehicles,
+                    activeVehicles: activeVehicles,
+                    maintenanceDue: maintenanceDue,
+                    totalTrailers: totalTrailers
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) {
+                return FleetStats(totalVehicles: 0, activeVehicles: 0, maintenanceDue: 0, totalTrailers: 0)
+            }
+            throw error
+        }
     }
 
     // =========================================================================
@@ -816,79 +824,91 @@ public final class FleetService: Sendable {
     }
 
     /// Get full fleet dashboard statistics including overdue inspections and cost data.
+    /// Consolidated into a single DB round trip (was eight separate queries).
     public func getFleetDashboardStats() throws -> FleetDashboardStats {
-        let basic = try getFleetStats()
-
-        // Overdue inspections: active vehicles with no inspection today
-        let overdueInspections = try safeCount(sql: """
-            SELECT COUNT(*) FROM vehicles v
-            WHERE v.status = 'active' AND v.deleted_at IS NULL AND v.is_active = 1
-              AND v.id IN (SELECT vehicle_id FROM vehicle_assignments WHERE is_active = 1 AND deleted_at IS NULL)
-              AND v.id NOT IN (
-                  SELECT vehicle_id FROM inspection_records
-                  WHERE deleted_at IS NULL AND date(performed_at) = date('now')
-              )
-            """)
-
-        // Month-to-date cost stats
+        // Compute month-start string outside the read block (no DB needed)
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
         let cal = Calendar.current
         let startOfMonth = cal.date(from: cal.dateComponents([.year, .month], from: Date())) ?? Date()
         let monthStr = fmt.string(from: startOfMonth)
 
-        let fuelCostMTD: Double? = try {
-            do {
-                return try db.writer.read { dbConn in
-                    try Double.fetchOne(dbConn, sql: """
-                        SELECT COALESCE(SUM(total_cost), 0) FROM fuel_logs
-                        WHERE log_date >= ? AND deleted_at IS NULL
-                        """, arguments: [monthStr])
-                }
-            } catch {
-                if isTableNotFoundError(error) { return 0 }
-                throw error
-            }
-        }()
+        do {
+            return try db.writer.read { dbConn in
+                // 1. Vehicle counts – total + active in one query
+                let vehicleRow = try Row.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) AS total,
+                           SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active
+                    FROM vehicles WHERE deleted_at IS NULL AND is_active = 1
+                    """)
+                let totalVehicles = vehicleRow?["total"] as Int? ?? 0
+                let activeVehicles = vehicleRow?["active"] as Int? ?? 0
 
-        let milesMTD: Int? = try {
-            do {
-                return try db.writer.read { dbConn in
-                    try Int.fetchOne(dbConn, sql: """
-                        SELECT COALESCE(CAST(SUM(total_miles) AS INTEGER), 0) FROM mileage_logs
-                        WHERE log_date >= ? AND deleted_at IS NULL
-                        """, arguments: [monthStr])
-                }
-            } catch {
-                if isTableNotFoundError(error) { return 0 }
-                throw error
-            }
-        }()
+                // 2. Maintenance due
+                let maintenanceDue = (try? Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM maintenance_schedules ms
+                    JOIN vehicles v ON v.id = ms.vehicle_id AND v.deleted_at IS NULL AND v.is_active = 1
+                    WHERE ms.deleted_at IS NULL
+                      AND (
+                        (ms.next_due_date IS NOT NULL AND date(ms.next_due_date) <= date('now'))
+                        OR (ms.next_due_miles IS NOT NULL AND v.current_odometer IS NOT NULL
+                            AND ms.next_due_miles <= v.current_odometer)
+                      )
+                    """)) ?? 0
 
-        let maintenanceCostMTD: Double? = try {
-            do {
-                return try db.writer.read { dbConn in
-                    try Double.fetchOne(dbConn, sql: """
-                        SELECT COALESCE(SUM(cost), 0) FROM maintenance_records
-                        WHERE performed_at >= ? AND deleted_at IS NULL
-                        """, arguments: [monthStr])
-                }
-            } catch {
-                if isTableNotFoundError(error) { return 0 }
-                throw error
-            }
-        }()
+                // 3. Trailer count
+                let totalTrailers = (try? Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM job_trailers WHERE deleted_at IS NULL AND is_active = 1
+                    """)) ?? 0
 
-        return FleetDashboardStats(
-            totalVehicles: basic.totalVehicles,
-            activeVehicles: basic.activeVehicles,
-            maintenanceDue: basic.maintenanceDue,
-            overdueInspections: overdueInspections,
-            totalTrailers: basic.totalTrailers,
-            fuelCostMTD: fuelCostMTD,
-            milesMTD: milesMTD,
-            maintenanceCostMTD: maintenanceCostMTD
-        )
+                // 4. Overdue inspections: assigned active vehicles with no inspection today
+                let overdueInspections = (try? Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM vehicles v
+                    WHERE v.status = 'active' AND v.deleted_at IS NULL AND v.is_active = 1
+                      AND v.id IN (SELECT vehicle_id FROM vehicle_assignments WHERE is_active = 1 AND deleted_at IS NULL)
+                      AND v.id NOT IN (
+                          SELECT vehicle_id FROM inspection_records
+                          WHERE deleted_at IS NULL AND date(performed_at) = date('now')
+                      )
+                    """)) ?? 0
+
+                // 5-7. Month-to-date costs (each try? handles missing table gracefully)
+                let fuelCostMTD = (try? Double.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(total_cost), 0) FROM fuel_logs
+                    WHERE log_date >= ? AND deleted_at IS NULL
+                    """, arguments: [monthStr])) ?? 0.0
+
+                let milesMTD = (try? Int.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(CAST(SUM(total_miles) AS INTEGER), 0) FROM mileage_logs
+                    WHERE log_date >= ? AND deleted_at IS NULL
+                    """, arguments: [monthStr])) ?? 0
+
+                let maintenanceCostMTD = (try? Double.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(cost), 0) FROM maintenance_records
+                    WHERE performed_at >= ? AND deleted_at IS NULL
+                    """, arguments: [monthStr])) ?? 0.0
+
+                return FleetDashboardStats(
+                    totalVehicles: totalVehicles,
+                    activeVehicles: activeVehicles,
+                    maintenanceDue: maintenanceDue,
+                    overdueInspections: overdueInspections,
+                    totalTrailers: totalTrailers,
+                    fuelCostMTD: fuelCostMTD,
+                    milesMTD: milesMTD,
+                    maintenanceCostMTD: maintenanceCostMTD
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) {
+                return FleetDashboardStats(
+                    totalVehicles: 0, activeVehicles: 0, maintenanceDue: 0,
+                    overdueInspections: 0, totalTrailers: 0,
+                    fuelCostMTD: 0, milesMTD: 0, maintenanceCostMTD: 0
+                )
+            }
+            throw error
+        }
     }
 
     /// Get all vehicles with their current assignment and inspection status.

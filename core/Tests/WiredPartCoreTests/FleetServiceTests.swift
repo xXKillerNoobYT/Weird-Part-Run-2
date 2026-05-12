@@ -1219,6 +1219,88 @@ struct FleetServiceTests {
         #expect(!list.contains(where: { $0.id == vehicleId }), "is_active=0 vehicle must not appear in status list")
     }
 
+    @Test("getFleetDashboardStats regression – consolidated query matches expected values")
+    func testFleetDashboardStatsRegression() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Baseline – empty fleet
+        let baseline = try env.fleet.getFleetDashboardStats()
+        #expect(baseline.totalVehicles == 0)
+        #expect(baseline.activeVehicles == 0)
+        #expect(baseline.maintenanceDue == 0)
+        #expect(baseline.overdueInspections == 0)
+        #expect(baseline.totalTrailers == 0)
+
+        // Create two vehicles: one active, one out-of-service
+        let v1 = try env.fleet.createVehicle(
+            vehicleNumber: "V-DASH-1", vehicleName: "Dash Active", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let v2 = try env.fleet.createVehicle(
+            vehicleNumber: "V-DASH-2", vehicleName: "Dash OOS", vehicleType: "van",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE vehicles SET status = 'out_of_service' WHERE id = ?", arguments: [v2])
+        }
+
+        // Create a trailer
+        _ = try env.fleet.createTrailer(trailerNumber: "TR-DASH-1", trailerType: "flatbed", notes: nil)
+
+        // Insert MTD cost data (current month)
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let today = fmt.string(from: Date())
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO fuel_logs (vehicle_id, user_id, log_date, gallons, total_cost, station)
+                VALUES (?, ?, ?, 10.0, 45.50, 'Test Station')
+                """, arguments: [v1, env.adminUserId, today])
+            try db.execute(sql: """
+                INSERT INTO mileage_logs (vehicle_id, user_id, log_date, total_miles, purpose)
+                VALUES (?, ?, ?, 120.0, 'Service call')
+                """, arguments: [v1, env.adminUserId, today])
+            try db.execute(sql: """
+                INSERT INTO maintenance_records (vehicle_id, performed_at, cost, odometer_reading)
+                VALUES (?, ?, 250.00, 50000)
+                """, arguments: [v1, today])
+        }
+
+        let stats = try env.fleet.getFleetDashboardStats()
+        #expect(stats.totalVehicles == 2)
+        #expect(stats.activeVehicles == 1)
+        #expect(stats.totalTrailers == 1)
+        #expect(stats.fuelCostMTD == 45.50)
+        #expect(stats.milesMTD == 120)
+        #expect(stats.maintenanceCostMTD == 250.00)
+
+        // Deactivate a vehicle – should reduce counts
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE vehicles SET is_active = 0 WHERE id = ?", arguments: [v2])
+        }
+        let afterDeactivate = try env.fleet.getFleetDashboardStats()
+        #expect(afterDeactivate.totalVehicles == 1)
+        #expect(afterDeactivate.activeVehicles == 1)
+    }
+
+    @Test("getFleetStats matches getFleetDashboardStats base counts")
+    func testFleetStatsMatchesDashboardBaseCounts() throws {
+        let env = try E2ETestHelpers.setUp()
+        _ = try env.fleet.createVehicle(
+            vehicleNumber: "V-MATCH-1", vehicleName: "Match Truck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        _ = try env.fleet.createTrailer(trailerNumber: "TR-MATCH-1", trailerType: "enclosed", notes: nil)
+
+        let basic = try env.fleet.getFleetStats()
+        let dashboard = try env.fleet.getFleetDashboardStats()
+
+        #expect(basic.totalVehicles == dashboard.totalVehicles)
+        #expect(basic.activeVehicles == dashboard.activeVehicles)
+        #expect(basic.maintenanceDue == dashboard.maintenanceDue)
+        #expect(basic.totalTrailers == dashboard.totalTrailers)
+    }
+
     @Test("getUpcomingFleetMaintenance excludes is_active = 0 vehicles")
     func testUpcomingFleetMaintenance_excludesInactive() throws {
         let env = try E2ETestHelpers.setUp()
