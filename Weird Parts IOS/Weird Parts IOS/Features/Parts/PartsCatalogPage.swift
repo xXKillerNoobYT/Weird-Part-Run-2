@@ -1243,6 +1243,7 @@ struct PartsCatalogPage: View {
     // MARK: - Cascade Price Cache
 
     private func loadCascadePriceCache() async {
+        // usability-hunter: acceptable - non-critical cache warm-up; catalog rows still render without cascade price chips.
         guard let service = appCore.partsService else { return }
         var cache: [Int64: PartsService.ResolvedCascadeCost] = [:]
         for part in parts {

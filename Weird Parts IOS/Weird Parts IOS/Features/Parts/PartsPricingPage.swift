@@ -23,6 +23,7 @@ struct PartsPricingPage: View {
     // Cascade view data
     @State private var cascadeTypes: [CascadeTypeRow] = []
     @State private var cascadeActiveSheet: CascadeActiveSheet?
+    @State private var cascadeLoadError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -612,7 +613,13 @@ struct PartsPricingPage: View {
     @ViewBuilder
     private var cascadePricingView: some View {
         List {
-            if cascadeTypes.isEmpty {
+            if let error = cascadeLoadError {
+                Section {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(.red)
+                }
+            } else if cascadeTypes.isEmpty {
                 Section {
                     Text("No types found. Add types via the Parts Catalog hierarchy.")
                         .font(.subheadline)
@@ -746,7 +753,11 @@ struct PartsPricingPage: View {
     }
 
     private func loadCascadeData() async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            cascadeLoadError = "Parts service not available"
+            cascadeTypes = []
+            return
+        }
         do {
             let allTypes = try service.listTypes()
             let allStyles = try service.listStyles()
@@ -805,9 +816,15 @@ struct PartsPricingPage: View {
                 ))
             }
 
-            await MainActor.run { cascadeTypes = rows }
+            await MainActor.run {
+                cascadeTypes = rows
+                cascadeLoadError = nil
+            }
         } catch {
-            // Non-critical: cascade view shows empty
+            await MainActor.run {
+                cascadeTypes = []
+                cascadeLoadError = userFriendlyError(error, context: "load cascade pricing")
+            }
         }
     }
 
