@@ -2282,6 +2282,7 @@ private struct POLineEditSheet: View {
 
     @State private var quantity: Int
     @State private var unitPriceText: String
+    @State private var showCancelConfirmation = false
     @Environment(\.dismiss) private var dismiss
 
     init(lineItem: OrdersService.POLineRow, onSave: @escaping (Int, Double?) -> Void) {
@@ -2289,6 +2290,10 @@ private struct POLineEditSheet: View {
         self.onSave = onSave
         _quantity = State(initialValue: lineItem.quantityOrdered)
         _unitPriceText = State(initialValue: lineItem.unitPrice.map { String(format: "%.2f", $0) } ?? "")
+    }
+
+    private var initialUnitPriceText: String {
+        lineItem.unitPrice.map { String(format: "%.2f", $0) } ?? ""
     }
 
     private var parsedPrice: Double? {
@@ -2301,6 +2306,10 @@ private struct POLineEditSheet: View {
 
     private var isValid: Bool {
         quantity > 0 && (unitPriceText.isEmpty || parsedPrice != nil)
+    }
+
+    private var isDirty: Bool {
+        quantity != lineItem.quantityOrdered || unitPriceText != initialUnitPriceText
     }
 
     var body: some View {
@@ -2376,9 +2385,20 @@ private struct POLineEditSheet: View {
             }
             .navigationTitle("Edit Line Item")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isDirty)
+            .confirmationDialog(
+                "Discard changes?",
+                isPresented: $showCancelConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) {}
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showCancelConfirmation = true } else { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {

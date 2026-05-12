@@ -1033,6 +1033,14 @@ private struct AddJPOLineItemSheet: View {
     @State private var quantity = 1
     @State private var notes = ""
     @State private var errorMessage: String?
+    @State private var showCancelConfirmation = false
+
+    private var isDirty: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        selectedPart != nil ||
+        quantity != 1 ||
+        !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         NavigationStack {
@@ -1088,7 +1096,9 @@ private struct AddJPOLineItemSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showCancelConfirmation = true } else { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") { save() }
@@ -1096,7 +1106,15 @@ private struct AddJPOLineItemSheet: View {
                 }
             }
             .scrollDismissesKeyboard(.interactively)
-            .interactiveDismissDisabled(selectedPart != nil || !notes.isEmpty)
+            .interactiveDismissDisabled(isDirty)
+            .confirmationDialog(
+                "Discard changes?",
+                isPresented: $showCancelConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) {}
+            }
         }
     }
 
