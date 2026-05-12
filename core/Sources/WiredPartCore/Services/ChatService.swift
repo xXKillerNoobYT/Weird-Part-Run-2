@@ -318,6 +318,24 @@ public final class ChatService: Sendable {
             throw ChatError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
+            let canSend = try Bool.fetchOne(dbConn, sql: """
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM chat_channels cc
+                    INNER JOIN chat_channel_members ccm
+                        ON ccm.channel_id = cc.id
+                        AND ccm.user_id = ?
+                        AND ccm.left_at IS NULL
+                        AND ccm.deleted_at IS NULL
+                    WHERE cc.id = ?
+                      AND cc.is_active = 1
+                      AND cc.deleted_at IS NULL
+                )
+                """, arguments: [senderId, channelId]) ?? false
+            guard canSend else {
+                throw ChatError.channelNotFound(channelId)
+            }
+
             try dbConn.execute(
                 sql: """
                     INSERT INTO chat_messages
