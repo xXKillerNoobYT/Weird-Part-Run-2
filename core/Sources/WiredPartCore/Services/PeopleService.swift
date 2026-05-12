@@ -1368,7 +1368,7 @@ public final class PeopleService: Sendable {
         public let offReason: String?
     }
 
-    /// Certification expiring soon.
+    /// Certification compliance alert for expired or soon-expiring certifications.
     public struct CertificationAlert: Sendable, Identifiable {
         public let id: Int64
         public let employeeName: String
@@ -1464,11 +1464,15 @@ public final class PeopleService: Sendable {
         }
     }
 
-    /// Get certifications expiring within a given number of days.
+    /// Get active certifications that are expired or will expire within a given number of days.
+    ///
+    /// The compliance dashboard treats already-expired certifications as the most
+    /// urgent subset of expiring alerts, so the lower date bound is intentionally
+    /// unbounded while the upper bound remains today + withinDays.
     public func getExpiringCertifications(withinDays: Int = 30) throws -> [CertificationAlert] {
         let today = Date()
-        let futureDate = Calendar.current.date(byAdding: .day, value: withinDays, to: today) ?? today.addingTimeInterval(Double(withinDays) * 86400)
-        let todayStr = formatDateYMD(today)
+        let lookaheadDays = max(0, withinDays)
+        let futureDate = Calendar.current.date(byAdding: .day, value: lookaheadDays, to: today) ?? today.addingTimeInterval(Double(lookaheadDays) * 86400)
         let futureStr = formatDateYMD(futureDate)
 
         do {
@@ -1479,17 +1483,19 @@ public final class PeopleService: Sendable {
                            ec.cert_name,
                            ec.expiry_date
                     FROM certifications ec
-                    LEFT JOIN users u ON u.id = ec.user_id AND u.deleted_at IS NULL
-                    WHERE ec.expiry_date >= ? AND ec.expiry_date <= ?
+                    INNER JOIN users u ON u.id = ec.user_id
+                    WHERE ec.expiry_date IS NOT NULL
+                      AND ec.expiry_date <= ?
+                      AND ec.is_active = 1
                       AND ec.deleted_at IS NULL
+                      AND u.is_active = 1
+                      AND u.deleted_at IS NULL
                     ORDER BY ec.expiry_date ASC
-                    """, arguments: [todayStr, futureStr])
+                    """, arguments: [futureStr])
 
                 return rows.compactMap { row -> CertificationAlert? in
                     let expiryStr: String = row["expiry_date"] ?? ""
-                    let f = DateFormatter()
-                    f.dateFormat = "yyyy-MM-dd"
-                    guard let expiryDate = f.date(from: expiryStr) else { return nil }
+                    guard let expiryDate = parseDateYMD(expiryStr) else { return nil }
                     return CertificationAlert(
                         id: row["id"] ?? 0,
                         employeeName: row["employee_name"] ?? "Unknown",
