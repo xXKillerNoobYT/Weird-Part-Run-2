@@ -74,18 +74,39 @@ public actor OnboardAIRuntimeBootstrapper {
     }
 
     private func availabilityWithTimeout() async -> AIAvailability? {
-        await withTaskGroup(of: AIAvailability?.self) { group in
-            group.addTask { [aiChecker] in
-                aiChecker.checkAvailability()
-            }
-            group.addTask { [timeoutNanoseconds] in
-                try? await Task.sleep(nanoseconds: timeoutNanoseconds)
-                return nil
+        await withCheckedContinuation { continuation in
+            let race = OnboardAIAvailabilityRace(continuation: continuation)
+
+            DispatchQueue.global(qos: .userInitiated).async { [aiChecker] in
+                race.resume(returning: aiChecker.checkAvailability())
             }
 
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
+            let timeout = Int(min(timeoutNanoseconds, UInt64(Int.max)))
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + .nanoseconds(timeout)) {
+                race.resume(returning: nil)
+            }
         }
+    }
+}
+
+private final class OnboardAIAvailabilityRace: @unchecked Sendable {
+    private let continuation: CheckedContinuation<AIAvailability?, Never>
+    private let lock = NSLock()
+    private var hasResumed = false
+
+    init(continuation: CheckedContinuation<AIAvailability?, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume(returning availability: AIAvailability?) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard !hasResumed else {
+            return
+        }
+
+        hasResumed = true
+        continuation.resume(returning: availability)
     }
 }
