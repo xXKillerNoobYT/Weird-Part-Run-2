@@ -254,3 +254,58 @@ struct BiometricAttemptTests {
         #expect(result == .notAvailable)
     }
 }
+
+// MARK: - Settings Validation Tests
+
+@Suite("Organization Threshold Settings Validation")
+struct OrganizationThresholdSettingsValidationTests {
+    @Test("accepts non-zero in-range threshold settings")
+    func testValidThresholdSettings() {
+        #expect(OrganizationThresholdSettingsValidation.isValid(
+            baseDecayRate: 0.1,
+            movementDecayFactor: 0.5,
+            auditThreshold: 80,
+            maxRecsPerDay: 1,
+            recCooldownDays: 60,
+            votingTimeoutDays: 7,
+            minVotesRequired: 2,
+            targetScore: 85
+        ))
+    }
+
+    @Test("rejects zero threshold settings")
+    func testRejectsZeroThresholdSettings() {
+        #expect(!OrganizationThresholdSettingsValidation.isValid(
+            baseDecayRate: 0,
+            movementDecayFactor: 0.5,
+            auditThreshold: 80,
+            maxRecsPerDay: 1,
+            recCooldownDays: 60,
+            votingTimeoutDays: 7,
+            minVotesRequired: 2,
+            targetScore: 85
+        ))
+
+        #expect(!OrganizationThresholdSettingsValidation.isValid(
+            baseDecayRate: 0.1,
+            movementDecayFactor: 0.5,
+            auditThreshold: 0,
+            maxRecsPerDay: 1,
+            recCooldownDays: 60,
+            votingTimeoutDays: 7,
+            minVotesRequired: 2,
+            targetScore: 85
+        ))
+
+        #expect(!OrganizationThresholdSettingsValidation.isValid(
+            baseDecayRate: 0.1,
+            movementDecayFactor: 0.5,
+            auditThreshold: 80,
+            maxRecsPerDay: 1,
+            recCooldownDays: 60,
+            votingTimeoutDays: 7,
+            minVotesRequired: 2,
+            targetScore: 0
+        ))
+    }
+}

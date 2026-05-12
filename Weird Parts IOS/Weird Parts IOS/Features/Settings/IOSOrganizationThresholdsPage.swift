@@ -38,6 +38,19 @@ struct IOSOrganizationThresholdsPage: View {
         var id: String { "help" }
     }
 
+    private var hasValidSettings: Bool {
+        OrganizationThresholdSettingsValidation.isValid(
+            baseDecayRate: baseDecayRate,
+            movementDecayFactor: movementDecayFactor,
+            auditThreshold: auditThreshold,
+            maxRecsPerDay: maxRecsPerDay,
+            recCooldownDays: recCooldownDays,
+            votingTimeoutDays: votingTimeoutDays,
+            minVotesRequired: minVotesRequired,
+            targetScore: targetScore
+        )
+    }
+
     var body: some View {
         Group {
             if isLoading {
@@ -157,6 +170,8 @@ struct IOSOrganizationThresholdsPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!hasValidSettings)
+                .accessibilityHint(hasValidSettings ? "Saves organization threshold settings" : "Enter non-zero threshold values before saving")
             }
         }
         // Fix #149: dismiss keyboard when scrolling threshold settings
@@ -196,6 +211,11 @@ struct IOSOrganizationThresholdsPage: View {
     }
 
     private func saveSettings() {
+        guard hasValidSettings else {
+            saveError = "Enter non-zero threshold values before saving."
+            return
+        }
+
         guard let service = appCore.settingsService else {
             saveError = "Settings service unavailable"
             return
@@ -220,5 +240,27 @@ struct IOSOrganizationThresholdsPage: View {
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }
+    }
+}
+
+enum OrganizationThresholdSettingsValidation {
+    nonisolated static func isValid(
+        baseDecayRate: Double,
+        movementDecayFactor: Double,
+        auditThreshold: Double,
+        maxRecsPerDay: Int,
+        recCooldownDays: Int,
+        votingTimeoutDays: Int,
+        minVotesRequired: Int,
+        targetScore: Double
+    ) -> Bool {
+        baseDecayRate > 0 &&
+        movementDecayFactor > 0 &&
+        auditThreshold > 0 && auditThreshold <= 100 &&
+        maxRecsPerDay > 0 &&
+        recCooldownDays > 0 &&
+        votingTimeoutDays > 0 &&
+        minVotesRequired > 0 &&
+        targetScore > 0 && targetScore <= 100
     }
 }
