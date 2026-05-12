@@ -141,6 +141,81 @@ struct PeerManagerTests {
         await pm.stopPeerSync()
     }
 
+    // MARK: - Fix #385: Encryption/Decode Failure Propagation
+
+    @Test("AES-GCM encryption throws with invalid key size (Fix #385)")
+    func testEncryptionThrowsWithBadKey() {
+        let plain = Data("{\"test\":true}".utf8)
+        // 1-byte key is invalid for AES-GCM (needs 16/24/32 bytes)
+        let badKeyData = Data([0x42])
+        do {
+            _ = try SyncCrypto.encryptAESGCM(data: plain, keyData: badKeyData)
+            Issue.record("Expected encryptAESGCM to throw with 1-byte key")
+        } catch {
+            // Expected: encryption failure propagates
+        }
+    }
+
+    @Test("AES-GCM decryption throws on garbage ciphertext (Fix #385)")
+    func testDecryptionThrowsOnGarbage() throws {
+        let (privA, _) = SyncCrypto.generateKeyAgreementPair()
+        let (_, pubB) = SyncCrypto.generateKeyAgreementPair()
+        let keyData = try SyncCrypto.deriveSharedKeyData(ourPrivateKeyB64: privA, theirPublicKeyB64: pubB)
+
+        let garbageData = Data("this is not encrypted at all".utf8)
+        do {
+            _ = try SyncCrypto.decryptAESGCM(data: garbageData, keyData: keyData)
+            Issue.record("Expected decryptAESGCM to throw on garbage ciphertext")
+        } catch {
+            // Expected: decryption failure propagates instead of returning garbage as plaintext
+        }
+    }
+
+    @Test("Key derivation throws on invalid base64 peer key (Fix #385)")
+    func testKeyDerivationThrowsOnBadPeerKey() {
+        let (priv, _) = SyncCrypto.generateKeyAgreementPair()
+        do {
+            _ = try SyncCrypto.deriveSharedKeyData(
+                ourPrivateKeyB64: priv,
+                theirPublicKeyB64: "not-valid-base64!!!"
+            )
+            Issue.record("Expected deriveSharedKeyData to throw on invalid base64")
+        } catch {
+            // Expected: key derivation failure propagates instead of silent fallback to unencrypted
+        }
+    }
+
+    @Test("Sync with peer where server is down reports failure not false success (Fix #385)")
+    func testSyncWithDownPeerReportsFailure() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+
+        try await pm.startPeerSync(
+            deviceId: "dev-385",
+            deviceName: "Test Device",
+            companyId: "test-company"
+        )
+
+        // Peer on a port that will refuse connection
+        let peer = DiscoveredPeer(
+            deviceId: "down-peer",
+            deviceName: "Down Peer",
+            companyId: "test-company",
+            host: "127.0.0.1",
+            port: 1,
+            transport: "lan"
+        )
+
+        let result = await pm.syncWithPeer(peer)
+        // Must report failure, not false success
+        #expect(result.success == false)
+        #expect(result.error != nil)
+        #expect(result.pushed == 0)
+        #expect(result.pulled == 0)
+
+        await pm.stopPeerSync()
+    }
+
     @Test("PeerSyncResult stores all fields correctly")
     func testPeerSyncResult() {
         let result = PeerSyncResult(
@@ -165,4 +240,5 @@ extension PeerManager {
     func testEnrichChanges(_ entries: [ChangeLogEntry]) throws -> [IncomingChange] {
         try enrichChangesWithData(entries)
     }
+
 }
