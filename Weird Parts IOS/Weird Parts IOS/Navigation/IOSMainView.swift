@@ -44,6 +44,16 @@ struct IOSMainView: View {
     @State private var showTabEditor = false
     @State private var showUserMenu = false
 
+    private var uiTestPrimaryModuleId: String? {
+        let args = ProcessInfo.processInfo.arguments
+        guard args.contains("-UITesting"),
+              let index = args.firstIndex(of: "-UITestPrimaryModule"),
+              args.indices.contains(index + 1) else {
+            return nil
+        }
+        return args[index + 1]
+    }
+
     /// Modules visible to the current user (permission-filtered, no settings on mobile).
     private var filteredModules: [AppModule] {
         visibleModules(permissions: appCore.permissions)
@@ -100,6 +110,10 @@ struct IOSMainView: View {
         }
         .onAppear {
             tabPrefs.load(userId: appCore.currentUser?.id)
+            if let moduleId = uiTestPrimaryModuleId {
+                tabPrefs.tabOrder = [moduleId] + filteredModules.map(\.id).filter { $0 != moduleId }
+                selectedModuleId = moduleId
+            }
             badgeManager.refresh()
         }
         .onChange(of: scenePhase) {
@@ -478,6 +492,7 @@ struct IOSMainView: View {
                                 Label(module.label, systemImage: module.icon)
                             }
                             .badge(badgeManager.badge(for: module.id))
+                            .accessibilityIdentifier("moreModule_\(module.id)")
                         }
                     }
                 }

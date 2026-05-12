@@ -122,6 +122,13 @@ final class AppCore: ObservableObject {
                 let users = try auth.getActiveUsers()
                 let hasProfile = try settings.hasBusinessProfile()
 
+                // Compute UITesting permissions here (off main thread) to avoid
+                // priority inversion from synchronous DB reads on @MainActor.
+                var uiTestingPermissions: [String] = []
+                if uiTestingMode, let user = users.first, let userId = user.id {
+                    uiTestingPermissions = (try? auth.getUserPermissions(userId)) ?? []
+                }
+
                 return (
                     database: database,
                     auth: auth,
@@ -147,7 +154,8 @@ final class AppCore: ObservableObject {
                     badgeCount: BadgeCountService(db: database),
                     theme: theme,
                     users: users,
-                    hasProfile: hasProfile
+                    hasProfile: hasProfile,
+                    uiTestingPermissions: uiTestingPermissions
                 )
             }.value
 
@@ -177,6 +185,14 @@ final class AppCore: ObservableObject {
 
             if let theme = result.theme {
                 self.theme = theme
+            }
+
+            if uiTestingMode, let user = result.users.first, let userId = user.id {
+                currentUser = user
+                permissions = result.uiTestingPermissions
+                currentToken = "ui-testing"
+                onboardingManager = OnboardingProgressManager(userId: userId)
+                badgeCountManager.setUserId(userId)
             }
 
             if result.users.isEmpty && !result.hasProfile {
@@ -396,8 +412,12 @@ final class AppCore: ObservableObject {
 
     /// Reload theme settings from the database and apply them.
     func updateTheme() {
-        if let settings = settingsService {
-            self.theme = (try? settings.getTheme()) ?? .defaults
+        guard let settings = settingsService else { return }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let theme = (try? settings.getTheme()) ?? .defaults
+            await MainActor.run {
+                self?.theme = theme
+            }
         }
     }
 
@@ -544,6 +564,7 @@ final class AppCore: ObservableObject {
 
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
-        UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
+        UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
     }
 }
