@@ -163,6 +163,47 @@ struct PartsServiceAdvancedTests {
         #expect(stats.totalCategories >= 0)
     }
 
+    @Test("exportPartsCSV includes selected groups and escapes CSV values")
+    func testExportPartsCSVSelectedGroupsAndEscaping() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try env.parts.createCategory(name: "CSV Category")
+        let styleId = try env.parts.createStyle(categoryId: catId, name: "CSV Style")
+        let typeId = try env.parts.createType(styleId: styleId, name: "CSV Type")
+        let brandId = try env.parts.createBrand(name: "CSV Brand")
+        let colorId = try env.parts.createColor(name: "CSV Color", hexCode: "#abcdef")
+        let partId = try env.parts.createPart(
+            categoryId: catId,
+            name: "Cable, \"quoted\"",
+            partType: "material",
+            styleId: styleId,
+            typeId: typeId,
+            colorId: colorId,
+            code: "CSV-001",
+            description: "Line one\nLine two",
+            brandId: brandId,
+            unitOfMeasure: "ft",
+            companyCostPrice: 4.0,
+            companyMarkupPercent: 25.0,
+            minStockLevel: 2,
+            maxStockLevel: 10,
+            targetStockLevel: 6,
+            shelfLocation: "A1",
+            binLocation: "B2"
+        )
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 4)
+        try env.parts.recalculateForecasts()
+
+        let csv = try env.parts.exportPartsCSV(groups: Set(PartsService.ExportFieldGroup.allCases))
+        let lines = csv.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+
+        #expect(lines.first == "name,code,category,style,type,brand,color,cost_price,markup_percent,sell_price,min_stock,target_stock,max_stock,current_stock,forecast_adu_30,forecast_adu_90,forecast_days_until_low,forecast_suggested_order,description,unit_of_measure,part_type,shelf_location,bin_location")
+        #expect(csv.contains("\"Cable, \"\"quoted\"\"\""))
+        #expect(csv.contains("CSV Category,CSV Style,CSV Type,CSV Brand,CSV Color"))
+        #expect(csv.contains("2,6,10,4"))
+        #expect(csv.contains("\"Line one\nLine two\""))
+        #expect(csv.contains(",ft,material,A1,B2"))
+    }
+
     // MARK: - approveScheduledDeletion
 
     @Test("approveScheduledDeletion soft-deletes the entity and marks schedule approved")

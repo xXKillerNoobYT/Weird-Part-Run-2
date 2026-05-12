@@ -577,6 +577,45 @@ struct PartsServiceExtTests {
         #expect(trace.first?.performedByName == nil)
     }
 
+    @Test("tracePartFromSupplier returns supplier-filtered movement locations in order")
+    func testTracePartFromSupplierWithLocationDescriptions() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "SupplierTraceCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Supplier Trace Part", categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Trace Supplier")
+        let otherSupplierId = try E2ETestHelpers.seedSupplier(env, name: "Other Trace Supplier")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO stock_movements
+                    (part_id, qty, from_location_type, to_location_type, supplier_id,
+                     movement_type, reference_number, notes, performed_by, unit_cost_at_move, created_at)
+                VALUES
+                    (?, 5, 'supplier', 'warehouse', ?, 'receipt', 'PO-TRACE-1', 'received', ?, 1.25, '2026-05-01T08:00:00Z'),
+                    (?, 3, 'warehouse', 'staging', ?, 'transfer', 'MOVE-TRACE-2', 'staged', ?, 1.25, '2026-05-01T09:00:00Z'),
+                    (?, 2, 'staging', 'job', ?, 'consumption', 'JOB-TRACE-3', 'installed', ?, 1.25, '2026-05-01T10:00:00Z'),
+                    (?, 1, 'vehicle', 'custom_bin', ?, 'transfer', 'MOVE-TRACE-4', 'truck move', ?, 1.25, '2026-05-01T11:00:00Z'),
+                    (?, 99, 'supplier', 'warehouse', ?, 'receipt', 'PO-OTHER', 'other supplier', ?, 9.99, '2026-05-01T12:00:00Z')
+                """, arguments: [
+                    partId, supplierId, env.adminUserId,
+                    partId, supplierId, env.adminUserId,
+                    partId, supplierId, env.adminUserId,
+                    partId, supplierId, env.adminUserId,
+                    partId, otherSupplierId, env.adminUserId
+                ])
+        }
+
+        let trace = try env.parts.tracePartFromSupplier(partId: partId, supplierId: supplierId)
+
+        #expect(trace.count == 4)
+        #expect(trace.map(\.referenceNumber) == ["PO-TRACE-1", "MOVE-TRACE-2", "JOB-TRACE-3", "MOVE-TRACE-4"])
+        #expect(trace.map(\.fromLocation) == ["Supplier", "Warehouse", "Staging Area", "Truck"])
+        #expect(trace.map(\.toLocation) == ["Warehouse", "Staging Area", "Job Site", "Custom_Bin"])
+        #expect(trace.first?.performedByName == "TestAdmin")
+        #expect(trace.first?.unitCost == 1.25)
+        #expect(trace.first?.notes == "received")
+    }
+
     // MARK: - getPartCurrentLocations
 
     @Test("getPartCurrentLocations returns correct location after stocking")
