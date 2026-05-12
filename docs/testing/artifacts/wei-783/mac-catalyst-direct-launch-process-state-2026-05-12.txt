@@ -1,0 +1,3 @@
+== pgrep ==
+86913 /Users/IA/Library/Developer/Xcode/DerivedData/Wierd_Parts-hgcsrjjyiprjqbdervpswmetitby/Build/Products/Debug-maccatalyst/Weird Parts.app/Contents/MacOS/Weird Parts -UITesting -UITestPrimaryModule parts
+== lsappinfo ==
