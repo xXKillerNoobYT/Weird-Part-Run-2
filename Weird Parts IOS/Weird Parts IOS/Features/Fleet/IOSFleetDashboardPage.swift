@@ -502,9 +502,7 @@ struct IOSFleetDashboardPage: View {
     }
 
     private var todayString: String {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
-        return fmt.string(from: Date())
+        Formatters.localDateFormatter.string(from: Date())
     }
 
     // MARK: - Data Loading
