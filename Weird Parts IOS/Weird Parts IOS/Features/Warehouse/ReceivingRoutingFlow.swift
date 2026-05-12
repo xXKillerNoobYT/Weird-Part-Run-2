@@ -120,6 +120,9 @@ struct ReceivingRoutingFlow: View {
                 }
                 .padding()
             }
+            .refreshable {
+                await refreshCurrentStepData()
+            }
         }
         .animation(.easeInOut(duration: 0.25), value: currentStep)
     }
@@ -915,6 +918,28 @@ struct ReceivingRoutingFlow: View {
     }
 
     // MARK: - Flow Logic
+
+    @MainActor
+    private func refreshCurrentStepData() async {
+        guard !isProcessing else { return }
+
+        switch currentStep {
+        case .conditionCheck:
+            if selectedCondition == .used {
+                await loadStockLevels()
+            }
+        case .wrongPartCheck:
+            break
+        case .jobLinkCheck:
+            await checkJobLink()
+        case .jpoDemandCheck:
+            await checkJPODemand()
+        case .stockLevelCheck:
+            await loadStockLevels()
+        case .routeConfirmed:
+            break
+        }
+    }
 
     @MainActor
     private func advanceFromCondition() async {
