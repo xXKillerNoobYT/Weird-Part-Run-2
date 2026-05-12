@@ -408,9 +408,9 @@ struct WarehouseAuditTests {
         let partId = try E2ETestHelpers.seedPart(env, name: "BackorderPart", categoryId: catId)
         let lineId = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 10, unitPrice: 2.0)
 
-        // Put PO in 'sent' status so it shows up in backorder report
+        // Put PO in 'ordered' status so it shows up in backorder report
         try env.db.writer.write { db in
-            try db.execute(sql: "UPDATE purchase_orders SET status = 'sent' WHERE id = ?", arguments: [poId])
+            try db.execute(sql: "UPDATE purchase_orders SET status = 'ordered' WHERE id = ?", arguments: [poId])
             // Leave qty_received = 0 (default) so it appears as backordered
         }
 
