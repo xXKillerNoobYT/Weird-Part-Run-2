@@ -890,8 +890,8 @@ struct IOSJPODetailPage: View {
     }
 
     /// Apply the same hold reason to ALL items in bulkHoldItems, cancelling
-    /// any pending transfers first. Creates a hold+chat for the first item
-    /// and a status-only hold (with the shared reason) for the rest.
+    /// any pending transfers first. Each newly held item gets both its legacy
+    /// order chat and a typed unified-inbox hold thread.
     @MainActor
     private func bulkHoldAllItems() async {
         guard let service = appCore.ordersService,
@@ -904,6 +904,7 @@ struct IOSJPODetailPage: View {
         guard !reason.isEmpty else { return }
 
         isBulkHolding = true
+        var firstHoldChatId: Int64?
 
         for item in bulkHoldItems {
             do {
@@ -917,13 +918,29 @@ struct IOSJPODetailPage: View {
                     )
                 }
 
-                // Place on hold with the shared reason
-                try service.updateJPOLineStatus(
+                let existingHoldChatId = item.chatThreadId
+                let legacyChatId = try service.holdJPOLineWithChat(
                     lineId: item.id,
-                    status: "on_hold",
-                    reason: reason,
-                    updatedBy: userId
+                    holdReason: reason,
+                    userId: userId,
+                    partName: item.partName ?? "Part",
+                    jpoId: item.jpoId
                 )
+
+                // Do not create a second unified hold thread for lines that
+                // already had a hold chat before this bulk action.
+                if existingHoldChatId == nil, let chatService = appCore.chatService {
+                    let jpoNumber = "JPO #\(item.jpoId)"
+                    let threadPartName = "\(item.partName ?? "Part") — Line #\(item.id)"
+                    _ = try chatService.createJPOHoldThread(
+                        partName: threadPartName,
+                        jpoNumber: jpoNumber,
+                        holdReason: reason,
+                        userId: userId
+                    )
+                }
+
+                firstHoldChatId = firstHoldChatId ?? legacyChatId
             } catch {
                 actionError = userFriendlyError(error, context: "process order")
             }
@@ -934,7 +951,11 @@ struct IOSJPODetailPage: View {
         bulkHoldItems = []
         bulkHoldReason = ""
         isBulkHolding = false
-        activeSheet = nil
+        if actionError == nil, let firstHoldChatId {
+            activeSheet = .viewChat(firstHoldChatId)
+        } else {
+            activeSheet = nil
+        }
         loadData()
     }
 

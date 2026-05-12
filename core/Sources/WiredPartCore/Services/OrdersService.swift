@@ -835,6 +835,37 @@ public final class OrdersService: Sendable {
                 """, arguments: [userId]) ?? 0) > 0
             guard userExists else { throw OrdersError.userNotFound(userId) }
 
+            if let existingChannelId = try Int64.fetchOne(dbConn, sql: """
+                SELECT chat_thread_id
+                FROM jpo_line_items
+                WHERE id = ? AND deleted_at IS NULL
+                  AND chat_thread_id IS NOT NULL
+                LIMIT 1
+                """, arguments: [lineId]) {
+                try dbConn.execute(
+                    sql: """
+                        UPDATE jpo_line_items SET
+                            line_status = 'on_hold',
+                            hold_reason = ?,
+                            status_updated_at = datetime('now'),
+                            status_updated_by = ?
+                        WHERE id = ? AND deleted_at IS NULL
+                        """,
+                    arguments: [holdReason, userId, lineId]
+                )
+
+                let allStatuses = try String.fetchAll(dbConn, sql: """
+                    SELECT line_status FROM jpo_line_items WHERE jpo_id = ? AND deleted_at IS NULL
+                    """, arguments: [jpoId])
+                let derived = deriveJPOStatusFromLineStatuses(allStatuses)
+                try dbConn.execute(
+                    sql: "UPDATE job_parts_orders SET status = ?, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
+                    arguments: [derived, jpoId]
+                )
+
+                return existingChannelId
+            }
+
             // Create a chat channel for this Q&A
             let channelName = "JPO #\(jpoId) — \(partName)"
             try dbConn.execute(

@@ -827,6 +827,87 @@ struct OrdersServiceTests {
         #expect(role == "admin")
     }
 
+    @Test("bulk hold flow creates dual-home chat visibility for each selected line")
+    func testBulkHoldDualHomeVisibilityPerLine() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId1 = try E2ETestHelpers.seedPart(env, name: "Bulk Wire", categoryId: catId)
+        let partId2 = try E2ETestHelpers.seedPart(env, name: "Bulk Breaker", categoryId: catId)
+
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let lineId1 = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId1, quantity: 3, notes: nil)
+        let lineId2 = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId2, quantity: 2, notes: nil)
+
+        for (lineId, partName) in [(lineId1, "Bulk Wire"), (lineId2, "Bulk Breaker")] {
+            _ = try env.orders.holdJPOLineWithChat(
+                lineId: lineId,
+                holdReason: "Bulk hold question",
+                userId: env.adminUserId,
+                partName: partName,
+                jpoId: jpoId
+            )
+            _ = try env.chat.createJPOHoldThread(
+                partName: "\(partName) — Line #\(lineId)",
+                jpoNumber: "JPO #\(jpoId)",
+                holdReason: "Bulk hold question",
+                userId: env.adminUserId
+            )
+        }
+
+        let counts = try env.db.writer.read { db in
+            let legacyCount = try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM jpo_line_items
+                WHERE jpo_id = ? AND line_status = 'on_hold' AND chat_thread_id IS NOT NULL
+                """, arguments: [jpoId]) ?? 0
+            let unifiedCount = try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM chat_channels
+                WHERE channel_type = 'jpo_hold' AND name LIKE ?
+                  AND is_active = 1 AND deleted_at IS NULL
+                """, arguments: ["Hold: % — Line #% (JPO #\(jpoId))"]) ?? 0
+            return (legacyCount: legacyCount, unifiedCount: unifiedCount)
+        }
+
+        #expect(counts.legacyCount == 2)
+        #expect(counts.unifiedCount == 2)
+    }
+
+    @Test("holdJPOLineWithChat reuses existing hold chat on repeat hold")
+    func testHoldJPOLineWithChatDoesNotDuplicateExistingLineChat() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let lineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 5, notes: nil)
+
+        let firstChannelId = try env.orders.holdJPOLineWithChat(
+            lineId: lineId,
+            holdReason: "First question",
+            userId: env.adminUserId,
+            partName: "Test Wire",
+            jpoId: jpoId
+        )
+        let secondChannelId = try env.orders.holdJPOLineWithChat(
+            lineId: lineId,
+            holdReason: "Updated question",
+            userId: env.adminUserId,
+            partName: "Test Wire",
+            jpoId: jpoId
+        )
+
+        let channelCount = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM chat_channels
+                WHERE channel_type = 'jpo_qa' AND name = ?
+                """, arguments: ["JPO #\(jpoId) — Test Wire"]) ?? 0
+        }
+
+        #expect(secondChannelId == firstChannelId)
+        #expect(channelCount == 1)
+    }
+
     // MARK: - generatePOsFromProcurement
 
     @Test("generatePOsFromProcurement groups items by supplier into separate POs")
