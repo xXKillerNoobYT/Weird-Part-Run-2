@@ -7,6 +7,37 @@ import GRDB
 /// stats, and filtering.
 @Suite("NotebooksService Tests")
 struct NotebooksServiceTests {
+    private func seedWorkerUser(_ env: E2ETestHelpers.TestEnvironment) throws -> Int64 {
+        let userId = try env.auth.createUser(displayName: "Notebook Worker", pin: "2468")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO user_hats (user_id, hat_id, is_active)
+                SELECT ?, id, 1 FROM hats WHERE name = 'Worker'
+                """, arguments: [userId])
+        }
+        return userId
+    }
+
+    private func seedClassifiableEntry(_ env: E2ETestHelpers.TestEnvironment) throws -> (notebookId: Int64, sectionId: Int64, entryId: Int64) {
+        let notebookId = try env.notebooks.createNotebook(
+            title: "Classification Gate NB",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: notebookId,
+            groupId: nil,
+            name: "Work"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "todo",
+            title: "Classifiable task",
+            content: "Needs classification",
+            createdBy: env.adminUserId
+        )
+        return (notebookId, sectionId, entryId)
+    }
 
     // MARK: - 1. Create Notebook & List
 
@@ -571,6 +602,222 @@ struct NotebooksServiceTests {
         let history = try env.notebooks.getClassificationHistory(entryId: entryId)
         #expect(history.count == 1)
         #expect(history[0].newClassification == "warranty")
+    }
+
+    @Test("Classification mutations require notebook classification permissions")
+    func testClassificationMutationsRequireNotebookClassificationPermissions() throws {
+        let env = try E2ETestHelpers.setUp()
+        let workerUserId = try seedWorkerUser(env)
+        let (_, _, entryId) = try seedClassifiableEntry(env)
+
+        do {
+            try env.notebooks.classifyTodoWork(
+                entryId: entryId,
+                classification: "warranty",
+                classifiedBy: workerUserId
+            )
+            Issue.record("classifyTodoWork should reject users without notebooks.classify_todo")
+        } catch NotebooksService.NotebooksError.insufficientPermissions(let required) {
+            #expect(required == "notebooks.classify_todo")
+        } catch {
+            Issue.record("Expected insufficientPermissions, got \(error)")
+        }
+
+        try env.notebooks.classifyTodoWork(
+            entryId: entryId,
+            classification: "regular",
+            classifiedBy: env.adminUserId
+        )
+
+        do {
+            try env.notebooks.reviewClassification(
+                entryId: entryId,
+                reviewedBy: workerUserId,
+                approved: true,
+                newClassification: nil
+            )
+            Issue.record("reviewClassification should reject users without notebooks.review_classification")
+        } catch NotebooksService.NotebooksError.insufficientPermissions(let required) {
+            #expect(required == "notebooks.review_classification")
+        } catch {
+            Issue.record("Expected insufficientPermissions, got \(error)")
+        }
+
+        do {
+            try env.notebooks.reclassifyTodoWork(
+                entryId: entryId,
+                newClassification: "warranty",
+                changedBy: workerUserId,
+                reason: "Unauthorized"
+            )
+            Issue.record("reclassifyTodoWork should reject users without notebooks.reclassify_todo")
+        } catch NotebooksService.NotebooksError.insufficientPermissions(let required) {
+            #expect(required == "notebooks.reclassify_todo")
+        } catch {
+            Issue.record("Expected insufficientPermissions, got \(error)")
+        }
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(
+                db,
+                sql: """
+                    SELECT work_classification, classification_reviewed
+                    FROM notebook_entries
+                    WHERE id = ?
+                    """,
+                arguments: [entryId]
+            )
+        }
+        let result = try #require(row)
+        #expect((result["work_classification"] as String?) == "regular")
+        #expect((result["classification_reviewed"] as Int?) == 0)
+        #expect(try env.notebooks.getClassificationHistory(entryId: entryId).count == 1)
+    }
+
+    @Test("classifyTodoWork rejects soft-deleted entries without history")
+    func testClassifyTodoWorkRejectsSoftDeletedEntryWithoutHistory() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, entryId) = try seedClassifiableEntry(env)
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE notebook_entries SET deleted_at = datetime('now'), is_deleted = 1 WHERE id = ?",
+                arguments: [entryId]
+            )
+        }
+
+        do {
+            try env.notebooks.classifyTodoWork(
+                entryId: entryId,
+                classification: "warranty",
+                classifiedBy: env.adminUserId
+            )
+            Issue.record("classifyTodoWork should reject soft-deleted entries")
+        } catch NotebooksService.NotebooksError.entryNotFound(let missingId) {
+            #expect(missingId == entryId)
+        } catch {
+            Issue.record("Expected entryNotFound, got \(error)")
+        }
+
+        let rawRow = try env.db.writer.read { db in
+            try Row.fetchOne(
+                db,
+                sql: """
+                    SELECT work_classification,
+                           (SELECT COUNT(*) FROM classification_history WHERE entry_id = ?) AS history_count
+                    FROM notebook_entries
+                    WHERE id = ?
+                    """,
+                arguments: [entryId, entryId]
+            )
+        }
+        let result = try #require(rawRow)
+        #expect((result["work_classification"] as String?) == nil)
+        #expect((result["history_count"] as Int?) == 0)
+        #expect(try env.notebooks.getClassificationHistory(entryId: entryId).isEmpty)
+    }
+
+    @Test("reviewClassification rejects soft-deleted entries without history")
+    func testReviewClassificationRejectsSoftDeletedEntryWithoutHistory() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, entryId) = try seedClassifiableEntry(env)
+
+        try env.notebooks.classifyTodoWork(
+            entryId: entryId,
+            classification: "regular",
+            classifiedBy: env.adminUserId
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE notebook_entries SET deleted_at = datetime('now'), is_deleted = 1 WHERE id = ?",
+                arguments: [entryId]
+            )
+        }
+
+        do {
+            try env.notebooks.reviewClassification(
+                entryId: entryId,
+                reviewedBy: env.adminUserId,
+                approved: false,
+                newClassification: "warranty"
+            )
+            Issue.record("reviewClassification should reject soft-deleted entries")
+        } catch NotebooksService.NotebooksError.entryNotFound(let missingId) {
+            #expect(missingId == entryId)
+        } catch {
+            Issue.record("Expected entryNotFound, got \(error)")
+        }
+
+        let rawRow = try env.db.writer.read { db in
+            try Row.fetchOne(
+                db,
+                sql: """
+                    SELECT work_classification, classification_reviewed,
+                           (SELECT COUNT(*) FROM classification_history WHERE entry_id = ?) AS history_count
+                    FROM notebook_entries
+                    WHERE id = ?
+                    """,
+                arguments: [entryId, entryId]
+            )
+        }
+        let result = try #require(rawRow)
+        #expect((result["work_classification"] as String?) == "regular")
+        #expect((result["classification_reviewed"] as Int?) == 0)
+        #expect((result["history_count"] as Int?) == 1)
+        #expect(try env.notebooks.getClassificationHistory(entryId: entryId).isEmpty)
+    }
+
+    @Test("reclassifyTodoWork rejects soft-deleted entries without history")
+    func testReclassifyTodoWorkRejectsSoftDeletedEntryWithoutHistory() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, entryId) = try seedClassifiableEntry(env)
+
+        try env.notebooks.classifyTodoWork(
+            entryId: entryId,
+            classification: "regular",
+            classifiedBy: env.adminUserId
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE notebook_entries SET deleted_at = datetime('now'), is_deleted = 1 WHERE id = ?",
+                arguments: [entryId]
+            )
+        }
+
+        do {
+            try env.notebooks.reclassifyTodoWork(
+                entryId: entryId,
+                newClassification: "warranty",
+                changedBy: env.adminUserId,
+                reason: "Soft-deleted entries must not mutate"
+            )
+            Issue.record("reclassifyTodoWork should reject soft-deleted entries")
+        } catch NotebooksService.NotebooksError.entryNotFound(let missingId) {
+            #expect(missingId == entryId)
+        } catch {
+            Issue.record("Expected entryNotFound, got \(error)")
+        }
+
+        let visibleHistory = try env.notebooks.getClassificationHistory(entryId: entryId)
+        #expect(visibleHistory.isEmpty)
+
+        let rawRow = try env.db.writer.read { db in
+            try Row.fetchOne(
+                db,
+                sql: """
+                    SELECT work_classification,
+                           (SELECT COUNT(*) FROM classification_history WHERE entry_id = ?) AS history_count
+                    FROM notebook_entries
+                    WHERE id = ?
+                    """,
+                arguments: [entryId, entryId]
+            )
+        }
+        let result = try #require(rawRow)
+        #expect((result["work_classification"] as String?) == "regular")
+        #expect((result["history_count"] as Int?) == 1)
     }
 
     // MARK: - 18. Review Classification

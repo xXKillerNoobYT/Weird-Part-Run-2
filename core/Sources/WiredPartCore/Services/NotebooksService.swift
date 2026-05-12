@@ -11,9 +11,11 @@ import GRDB
 /// Ported from: Unified Notebook System (Phase 4.5)
 public final class NotebooksService: Sendable {
     private let db: AppDatabase
+    private let auth: AuthService
 
-    public init(db: AppDatabase) {
+    public init(db: AppDatabase, auth: AuthService? = nil) {
         self.db = db
+        self.auth = auth ?? AuthService(db: db)
     }
 
     // =========================================================================
@@ -25,6 +27,7 @@ public final class NotebooksService: Sendable {
         case entryNotFound(Int64)
         case requiredFieldEmpty
         case invalidDuration(Int64)
+        case insufficientPermissions(required: String)
     }
 
     // =========================================================================
@@ -455,11 +458,12 @@ public final class NotebooksService: Sendable {
 
     /// Classify a to-do as regular or warranty work.
     public func classifyTodoWork(entryId: Int64, classification: String, classifiedBy: Int64) throws {
+        try requireClassificationPermission(userId: classifiedBy, permissionKey: "notebooks.classify_todo")
+
         try db.writer.write { dbConn in
-            // Get current classification for history
-            let current = try String.fetchOne(dbConn, sql: """
-                SELECT work_classification FROM notebook_entries WHERE id = ?
-                """, arguments: [entryId])
+            guard let current = try activeEntryClassification(dbConn, entryId: entryId) else {
+                throw NotebooksError.entryNotFound(entryId)
+            }
 
             // Update classification
             try dbConn.execute(sql: """
@@ -483,7 +487,13 @@ public final class NotebooksService: Sendable {
 
     /// Manager reviews/approves a classification.
     public func reviewClassification(entryId: Int64, reviewedBy: Int64, approved: Bool, newClassification: String?) throws {
+        try requireClassificationPermission(userId: reviewedBy, permissionKey: "notebooks.review_classification")
+
         try db.writer.write { dbConn in
+            guard let current = try activeEntryClassification(dbConn, entryId: entryId) else {
+                throw NotebooksError.entryNotFound(entryId)
+            }
+
             if approved {
                 // Approve current classification
                 try dbConn.execute(sql: """
@@ -496,10 +506,6 @@ public final class NotebooksService: Sendable {
                     """, arguments: [reviewedBy, entryId])
             } else if let newClass = newClassification {
                 // Reclassify and approve in one step
-                let current = try String.fetchOne(dbConn, sql: """
-                    SELECT work_classification FROM notebook_entries WHERE id = ?
-                    """, arguments: [entryId])
-
                 try dbConn.execute(sql: """
                     UPDATE notebook_entries SET
                         work_classification = ?,
@@ -521,10 +527,12 @@ public final class NotebooksService: Sendable {
 
     /// Reclassify a to-do with reason tracking. Resets the review flag.
     public func reclassifyTodoWork(entryId: Int64, newClassification: String, changedBy: Int64, reason: String?) throws {
+        try requireClassificationPermission(userId: changedBy, permissionKey: "notebooks.reclassify_todo")
+
         try db.writer.write { dbConn in
-            let current = try String.fetchOne(dbConn, sql: """
-                SELECT work_classification FROM notebook_entries WHERE id = ?
-                """, arguments: [entryId])
+            guard let current = try activeEntryClassification(dbConn, entryId: entryId) else {
+                throw NotebooksError.entryNotFound(entryId)
+            }
 
             // Log old → new
             try dbConn.execute(sql: """
@@ -550,11 +558,14 @@ public final class NotebooksService: Sendable {
     public func getClassificationHistory(entryId: Int64) throws -> [ClassificationChange] {
         try db.writer.read { dbConn in
             let rows = try Row.fetchAll(dbConn, sql: """
-                SELECT id, entry_id, old_classification, new_classification,
-                       changed_by, reason, changed_at
-                FROM classification_history
-                WHERE entry_id = ?
-                ORDER BY changed_at DESC
+                SELECT ch.id, ch.entry_id, ch.old_classification, ch.new_classification,
+                       ch.changed_by, ch.reason, ch.changed_at
+                FROM classification_history ch
+                JOIN notebook_entries ne ON ne.id = ch.entry_id AND ne.deleted_at IS NULL
+                JOIN notebook_sections ns ON ns.id = ne.section_id AND ns.deleted_at IS NULL
+                JOIN notebooks n ON n.id = ns.notebook_id AND n.deleted_at IS NULL
+                WHERE ch.entry_id = ?
+                ORDER BY ch.changed_at DESC
                 """, arguments: [entryId])
             return rows.map { row in
                 ClassificationChange(
@@ -568,6 +579,24 @@ public final class NotebooksService: Sendable {
                 )
             }
         }
+    }
+
+    private func requireClassificationPermission(userId: Int64, permissionKey: String) throws {
+        guard try auth.hasPermission(userId, permissionKey: permissionKey) else {
+            throw NotebooksError.insufficientPermissions(required: permissionKey)
+        }
+    }
+
+    private func activeEntryClassification(_ dbConn: Database, entryId: Int64) throws -> String?? {
+        guard let row = try Row.fetchOne(dbConn, sql: """
+            SELECT ne.work_classification
+            FROM notebook_entries ne
+            JOIN notebook_sections ns ON ns.id = ne.section_id AND ns.deleted_at IS NULL
+            JOIN notebooks n ON n.id = ns.notebook_id AND n.deleted_at IS NULL
+            WHERE ne.id = ? AND ne.deleted_at IS NULL
+            """, arguments: [entryId])
+        else { return nil }
+        return row["work_classification"] as String?
     }
 
     /// Start warranty timer when a to-do is completed. Sets timer_start = now, timer_end = now + job warranty days.

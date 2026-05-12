@@ -337,6 +337,9 @@ struct AuthServiceTests {
 
         #expect(try auth.hasPermission(userId, permissionKey: "manage_settings"))
         #expect(try auth.hasPermission(userId, permissionKey: "view_parts_catalog"))
+        #expect(try auth.hasPermission(userId, permissionKey: "notebooks.classify_todo"))
+        #expect(try auth.hasPermission(userId, permissionKey: "notebooks.reclassify_todo"))
+        #expect(try auth.hasPermission(userId, permissionKey: "notebooks.review_classification"))
     }
 
     @Test("hasPermission returns false for non-existent permission")
