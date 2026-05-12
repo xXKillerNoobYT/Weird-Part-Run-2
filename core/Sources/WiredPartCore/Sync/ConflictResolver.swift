@@ -98,6 +98,9 @@ public enum ConflictResolver {
         /// change had no full-record payload. Caller should count as skipped
         /// and request a full resync for this record. (Fixes #220)
         case missingLocalRecord(table: String, recordId: String)
+        /// Manual conflict resolution only supports bounded, text-like
+        /// notebook entry fields. Other tables remain review-only.
+        case unsupportedManualResolution(table: String, field: String)
     }
 
 
@@ -293,6 +296,59 @@ public enum ConflictResolver {
             try dbConn.execute(
                 sql: "UPDATE _conflict_log SET reviewed = 1 WHERE id = ?",
                 arguments: [conflictId]
+            )
+        }
+    }
+
+    /// Apply a selected notebook text merge and mark its conflict reviewed.
+    ///
+    /// This is intentionally narrower than the sync apply path: the global
+    /// review UI may offer AI/manual merged text, but only notebook entry text
+    /// fields can be written safely from that surface. Critical inventory,
+    /// financial, and unknown-table conflicts stay review-only.
+    public static func applyNotebookTextConflictResolution(
+        db: AppDatabase,
+        conflictId: Int64,
+        selectedValue: String
+    ) throws {
+        try db.writer.write { dbConn in
+            guard let conflict = try ConflictLogEntry.fetchOne(dbConn, key: conflictId) else {
+                return
+            }
+
+            guard conflict.tableName == "notebook_entries",
+                  let safeColumn = notebookTextConflictColumns[conflict.fieldName] else {
+                throw ApplyError.unsupportedManualResolution(
+                    table: conflict.tableName,
+                    field: conflict.fieldName
+                )
+            }
+
+            try dbConn.execute(
+                sql: """
+                    UPDATE "notebook_entries"
+                    SET "\(safeColumn)" = ?, updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                arguments: [selectedValue, conflict.recordId]
+            )
+
+            guard dbConn.changesCount > 0 else {
+                throw ApplyError.missingLocalRecord(table: conflict.tableName, recordId: conflict.recordId)
+            }
+
+            let selectedWinner: String
+            if selectedValue == conflict.localValue {
+                selectedWinner = "local"
+            } else if selectedValue == conflict.remoteValue {
+                selectedWinner = "remote"
+            } else {
+                selectedWinner = "manual"
+            }
+
+            try dbConn.execute(
+                sql: "UPDATE _conflict_log SET reviewed = 1, winner = ?, resolved_at = datetime('now') WHERE id = ?",
+                arguments: [selectedWinner, conflictId]
             )
         }
     }
@@ -604,6 +660,13 @@ public enum ConflictResolver {
     }
 
     // MARK: - Private: Helpers
+
+    private static let notebookTextConflictColumns: [String: String] = [
+        "content": "content",
+        "title": "title",
+        "block_data": "block_data",
+        "checklist_items": "checklist_items"
+    ]
 
     /// Fetch a local record by ID from any table.
     private static func getLocalRecord(db: Database, tableName: String, recordId: String) throws -> Row? {

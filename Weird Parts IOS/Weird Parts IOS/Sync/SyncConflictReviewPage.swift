@@ -14,6 +14,7 @@ struct SyncConflictReviewPage: View {
     @State private var isLoading = true
     @State private var aiResolutions: [Int64: AIConflictResolution] = [:]
     @State private var isRequestingAI = false
+    @State private var resolutionErrorMessage: String?
 
     private var syncManager: IOSSyncManager { appCore.syncManager }
 
@@ -49,6 +50,14 @@ struct SyncConflictReviewPage: View {
                 }
             }
             .onAppear { loadConflicts() }
+            .alert("Merge Not Applied", isPresented: Binding(
+                get: { resolutionErrorMessage != nil },
+                set: { if !$0 { resolutionErrorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { resolutionErrorMessage = nil }
+            } message: {
+                Text(resolutionErrorMessage ?? "")
+            }
         }
     }
 
@@ -111,8 +120,8 @@ struct SyncConflictReviewPage: View {
             case .hard:
                 // Hard: show AI merge button or AI resolution if available
                 if let resolution = aiResolutions[conflict.id ?? 0] {
-                    AIConflictResolutionView(resolution: resolution) { _ in
-                        withAnimation { markReviewed(conflict) }
+                    AIConflictResolutionView(resolution: resolution) { selectedText in
+                        withAnimation { applyNotebookTextResolution(conflict, selectedText: selectedText) }
                     }
                 } else {
                     // Standard view with AI merge button
@@ -267,6 +276,18 @@ struct SyncConflictReviewPage: View {
     private func markReviewed(_ conflict: ConflictLogEntry) {
         guard let id = conflict.id else { return }
         syncManager.markConflictReviewed(conflictId: id)
+        conflicts.removeAll { $0.id == id }
+    }
+
+    private func applyNotebookTextResolution(_ conflict: ConflictLogEntry, selectedText: String) {
+        guard let id = conflict.id else { return }
+        guard syncManager.applyNotebookTextConflictResolution(conflictId: id, selectedText: selectedText) else {
+            resolutionErrorMessage = """
+            This conflict was not changed. Only notebook text conflicts can be applied from this review screen; open the source record to resolve unsupported or critical fields.
+            """
+            return
+        }
+        aiResolutions[id] = nil
         conflicts.removeAll { $0.id == id }
     }
 

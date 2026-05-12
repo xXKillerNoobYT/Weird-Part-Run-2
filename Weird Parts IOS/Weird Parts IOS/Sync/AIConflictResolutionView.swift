@@ -191,7 +191,7 @@ struct CriticalConflictView: View {
                     .fontWeight(.semibold)
             }
 
-            Text("This involves financial or inventory data — it must be resolved manually.")
+            Text("This involves financial or inventory data. This screen is review-only for critical records; make the change on the source record if a value needs to be corrected.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -209,7 +209,7 @@ struct CriticalConflictView: View {
                     Text(formatTS(conflict.localTs))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
-                    Button("Use This") { pendingResolution = .local }
+                    Button("Mark Reviewed") { pendingResolution = .local }
                         .buttonStyle(.borderedProminent)
                         .tint(.blue)
                         .controlSize(.small)
@@ -230,7 +230,7 @@ struct CriticalConflictView: View {
                     Text(formatTS(conflict.remoteTs))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
-                    Button("Use This") { pendingResolution = .remote }
+                    Button("Mark Reviewed") { pendingResolution = .remote }
                         .buttonStyle(.borderedProminent)
                         .tint(.purple)
                         .controlSize(.small)
@@ -252,7 +252,7 @@ struct CriticalConflictView: View {
                 )
         )
         .alert(
-            "Confirm Critical Write Decision",
+            "Confirm Critical Review",
             isPresented: Binding(
                 get: { pendingResolution != nil },
                 set: { if !$0 { pendingResolution = nil } }
@@ -274,7 +274,7 @@ struct CriticalConflictView: View {
         } message: {
             let selectedLabel = pendingResolution == .local ? "This Device" : "Remote"
             Text(
-                "You are about to apply the \(selectedLabel) value for \(conflict.tableName).\(conflict.fieldName). This affects financial or inventory data."
+                "This will only mark the \(selectedLabel) value reviewed for \(conflict.tableName).\(conflict.fieldName). It will not write to critical financial or inventory records."
             )
         }
     }

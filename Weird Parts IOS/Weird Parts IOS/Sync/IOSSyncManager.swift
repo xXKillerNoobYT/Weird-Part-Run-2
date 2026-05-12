@@ -359,6 +359,25 @@ final class IOSSyncManager {
         refreshConflictCount()
     }
 
+    /// Apply a selected AI/manual notebook text merge, then mark reviewed.
+    @discardableResult
+    func applyNotebookTextConflictResolution(conflictId: Int64, selectedText: String) -> Bool {
+        guard let db else { return false }
+        do {
+            try ConflictResolver.applyNotebookTextConflictResolution(
+                db: db,
+                conflictId: conflictId,
+                selectedValue: selectedText
+            )
+            refreshConflictCount()
+            return true
+        } catch {
+            logger.error("[IOSSyncManager] applyNotebookTextConflictResolution failed for id \(conflictId): \(error.localizedDescription)")
+            refreshConflictCount()
+            return false
+        }
+    }
+
     /// Mark all unreviewed conflicts as reviewed.
     func markAllConflictsReviewed() {
         guard let db else { return }

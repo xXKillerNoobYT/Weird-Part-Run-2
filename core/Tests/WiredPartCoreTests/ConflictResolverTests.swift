@@ -495,4 +495,97 @@ struct ConflictResolverTests {
         #expect(statsAfter.total == 1)
         #expect(statsAfter.unreviewed == 0)
     }
+
+    @Test("applyNotebookTextConflictResolution writes selected text and reviews conflict")
+    func testApplyNotebookTextConflictResolution() throws {
+        let db = try freshDB()
+        let userId = try insertUser(db: db)
+
+        var entryId: Int64 = 0
+        var conflictId: Int64 = 0
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "INSERT INTO notebooks (title, created_by) VALUES ('Sync Review', ?)",
+                arguments: [userId]
+            )
+            let notebookId = dbConn.lastInsertedRowID
+
+            try dbConn.execute(
+                sql: "INSERT INTO notebook_sections (notebook_id, name) VALUES (?, 'Notes')",
+                arguments: [notebookId]
+            )
+            let sectionId = dbConn.lastInsertedRowID
+
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO notebook_entries
+                        (notebook_id, section_id, title, content, entry_type, block_type, created_by)
+                    VALUES (?, ?, 'Entry', 'local text', 'note', 'text', ?)
+                    """,
+                arguments: [notebookId, sectionId, userId]
+            )
+            entryId = dbConn.lastInsertedRowID
+
+            try dbConn.execute(sql: """
+                INSERT INTO _conflict_log
+                    (table_name, record_id, field_name, local_value, remote_value,
+                     winner, local_device, remote_device, local_ts, remote_ts,
+                     resolved_at, reviewed)
+                VALUES ('notebook_entries', ?, 'content',
+                        'local text', 'remote text',
+                        'remote', 'local-device', 'remote-device',
+                        '2026-04-01T10:00:00Z', '2026-04-01T11:00:00Z',
+                        datetime('now'), 0)
+                """, arguments: [String(entryId)])
+            conflictId = dbConn.lastInsertedRowID
+        }
+
+        try ConflictResolver.applyNotebookTextConflictResolution(
+            db: db,
+            conflictId: conflictId,
+            selectedValue: "local text plus remote text"
+        )
+
+        let row = try db.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: """
+                SELECT ne.content, cl.reviewed, cl.winner
+                FROM notebook_entries ne
+                JOIN _conflict_log cl ON cl.id = ?
+                WHERE ne.id = ?
+                """, arguments: [conflictId, entryId])
+        }
+
+        #expect(row?["content"] as String? == "local text plus remote text")
+        #expect(row?["reviewed"] as Int? == 1)
+        #expect(row?["winner"] as String? == "manual")
+    }
+
+    @Test("applyNotebookTextConflictResolution rejects unsupported tables")
+    func testApplyNotebookTextConflictResolutionRejectsUnsupportedTable() throws {
+        let db = try freshDB()
+
+        var conflictId: Int64 = 0
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO _conflict_log
+                    (table_name, record_id, field_name, local_value, remote_value,
+                     winner, local_device, remote_device, local_ts, remote_ts,
+                     resolved_at, reviewed)
+                VALUES ('stock', '1', 'quantity',
+                        '4', '5',
+                        'remote', 'local-device', 'remote-device',
+                        '2026-04-01T10:00:00Z', '2026-04-01T11:00:00Z',
+                        datetime('now'), 0)
+                """)
+            conflictId = dbConn.lastInsertedRowID
+        }
+
+        #expect(throws: ConflictResolver.ApplyError.self) {
+            try ConflictResolver.applyNotebookTextConflictResolution(
+                db: db,
+                conflictId: conflictId,
+                selectedValue: "5"
+            )
+        }
+    }
 }
