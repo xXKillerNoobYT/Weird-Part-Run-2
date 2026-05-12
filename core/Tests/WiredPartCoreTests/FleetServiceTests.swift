@@ -97,6 +97,79 @@ struct FleetServiceTests {
         #expect(detail != nil)
     }
 
+    @Test("assignDriver deactivates previous active assignment for same vehicle")
+    func testAssignDriverDeactivatesVehicleAssignment() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-REASSIGN", vehicleName: "Reassign Truck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let nextUserId = try env.auth.createUser(displayName: "Next Driver", pin: "5678")
+
+        try env.fleet.assignDriver(
+            vehicleId: vehicleId, userId: env.adminUserId,
+            assignmentType: "primary", isTakeHome: false
+        )
+        try env.fleet.assignDriver(
+            vehicleId: vehicleId, userId: nextUserId,
+            assignmentType: "primary", isTakeHome: true
+        )
+
+        let rows = try env.db.writer.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT user_id, is_active, end_date
+                FROM vehicle_assignments
+                WHERE vehicle_id = ? AND deleted_at IS NULL
+                ORDER BY id ASC
+                """, arguments: [vehicleId])
+        }
+
+        #expect(rows.count == 2)
+        #expect((rows[0]["user_id"] as Int64?) == env.adminUserId)
+        #expect((rows[0]["is_active"] as Int?) == 0)
+        #expect((rows[0]["end_date"] as String?) != nil)
+        #expect((rows[1]["user_id"] as Int64?) == nextUserId)
+        #expect((rows[1]["is_active"] as Int?) == 1)
+    }
+
+    @Test("assignDriver deactivates previous active assignment for same driver")
+    func testAssignDriverDeactivatesDriverAssignment() throws {
+        let env = try E2ETestHelpers.setUp()
+        let firstVehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-DRIVER-1", vehicleName: "First Driver Truck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let secondVehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-DRIVER-2", vehicleName: "Second Driver Truck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+
+        try env.fleet.assignDriver(
+            vehicleId: firstVehicleId, userId: env.adminUserId,
+            assignmentType: "primary", isTakeHome: false
+        )
+        try env.fleet.assignDriver(
+            vehicleId: secondVehicleId, userId: env.adminUserId,
+            assignmentType: "primary", isTakeHome: true
+        )
+
+        let rows = try env.db.writer.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT vehicle_id, is_active, end_date
+                FROM vehicle_assignments
+                WHERE user_id = ? AND deleted_at IS NULL
+                ORDER BY id ASC
+                """, arguments: [env.adminUserId])
+        }
+
+        #expect(rows.count == 2)
+        #expect((rows[0]["vehicle_id"] as Int64?) == firstVehicleId)
+        #expect((rows[0]["is_active"] as Int?) == 0)
+        #expect((rows[0]["end_date"] as String?) != nil)
+        #expect((rows[1]["vehicle_id"] as Int64?) == secondVehicleId)
+        #expect((rows[1]["is_active"] as Int?) == 1)
+    }
+
     @Test("My vehicle stats")
     func testMyVehicleStats() throws {
         let env = try E2ETestHelpers.setUp()

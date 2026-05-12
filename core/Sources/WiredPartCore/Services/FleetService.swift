@@ -1101,6 +1101,19 @@ public final class FleetService: Sendable {
 
             try dbConn.execute(
                 sql: """
+                    UPDATE vehicle_assignments
+                    SET is_active = 0,
+                        end_date = COALESCE(end_date, date('now')),
+                        updated_at = datetime('now')
+                    WHERE deleted_at IS NULL
+                      AND is_active = 1
+                      AND (vehicle_id = ? OR user_id = ?)
+                    """,
+                arguments: [vehicleId, userId]
+            )
+
+            try dbConn.execute(
+                sql: """
                     INSERT INTO vehicle_assignments
                         (vehicle_id, user_id, assignment_type, is_take_home, is_active)
                     VALUES (?, ?, ?, ?, 1)
