@@ -564,6 +564,44 @@ struct ChatServiceTests {
         #expect(attachments[0].fileSize == 204800)
     }
 
+    @Test("sendMessageWithAttachments surfaces attachment import persistence failures")
+    func testSendMessageWithAttachmentsSurfacesImportFailure() throws {
+        let env = try E2ETestHelpers.setUp()
+        let channelId = try env.chat.createChannel(
+            name: "Broken Attachment Import",
+            channelType: "group",
+            jobId: nil,
+            createdBy: env.adminUserId
+        )
+        let attachment = ChatService.PendingAttachment(
+            type: "photo",
+            filePath: "/private/tmp/customer-panel.jpg",
+            fileName: "customer-panel.jpg",
+            fileSize: 12_345,
+            mimeType: "image/jpeg"
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "DROP TABLE message_attachments")
+        }
+
+        var surfaced = false
+        do {
+            _ = try env.chat.sendMessageWithAttachments(
+                channelId: channelId,
+                content: "Panel photo",
+                userId: env.adminUserId,
+                attachments: [attachment]
+            )
+        } catch ChatService.ChatError.attachmentImportFailed {
+            surfaced = true
+        } catch {}
+
+        let messageCount = try Self.messageCount(env: env, channelId: channelId)
+        #expect(surfaced, "attachment import persistence failures must be surfaced")
+        #expect(messageCount == 0, "failed attachment import must roll back the chat message")
+    }
+
     @Test("getMessageAttachments returns empty for message with no attachments")
     func testGetMessageAttachmentsEmpty() throws {
         let env = try E2ETestHelpers.setUp()
@@ -1003,6 +1041,34 @@ struct ChatServiceTests {
                 """, arguments: [channelId, userId])
         }
         #expect(stored == msg2, "markRead must not move the read pointer backwards")
+    }
+
+    @Test("markRead surfaces read receipt persistence failures")
+    func testMarkRead_surfacesPersistenceFailure() throws {
+        let env = try E2ETestHelpers.setUp()
+        let channelId = try env.chat.createChannel(
+            name: "Broken Read Receipts",
+            channelType: "group",
+            createdBy: env.adminUserId
+        )
+        let messageId = try env.chat.sendMessage(
+            channelId: channelId,
+            senderId: env.adminUserId,
+            content: "Please acknowledge"
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "DROP TABLE chat_read_receipts")
+        }
+
+        var surfaced = false
+        do {
+            try env.chat.markRead(channelId: channelId, userId: env.adminUserId, messageId: messageId)
+        } catch ChatService.ChatError.readReceiptPersistenceFailed {
+            surfaced = true
+        } catch {}
+
+        #expect(surfaced, "read receipt persistence failures must be surfaced")
     }
 
     private static func messageCount(env: E2ETestHelpers.TestEnvironment, channelId: Int64) throws -> Int {
