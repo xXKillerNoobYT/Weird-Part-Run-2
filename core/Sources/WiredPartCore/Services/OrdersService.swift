@@ -1012,7 +1012,7 @@ public final class OrdersService: Sendable {
                     fromLocationId: 1,
                     toLocationType: "warehouse",
                     toLocationId: 1,
-                    movementType: "transfer",
+                    movementType: .transfer,
                     reason: "JPO line hold — reversing transfer",
                     notes: "Reversed transfer for JPO line #\(lineId)",
                     performedBy: reversedBy

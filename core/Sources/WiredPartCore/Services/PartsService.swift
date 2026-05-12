@@ -3290,14 +3290,14 @@ public final class PartsService: Sendable {
                     LEFT JOIN (
                         SELECT part_id, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
-                        WHERE movement_type IN ('consume', 'return_to_supplier')
+                        WHERE movement_type IN (\(WarehouseMovementType.consumptionSQLLiteralList))
                           AND created_at >= datetime('now', '-30 days') AND deleted_at IS NULL
                         GROUP BY part_id
                     ) m30 ON m30.part_id = p.id
                     LEFT JOIN (
                         SELECT part_id, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
-                        WHERE movement_type IN ('consume', 'return_to_supplier')
+                        WHERE movement_type IN (\(WarehouseMovementType.consumptionSQLLiteralList))
                           AND created_at >= datetime('now', '-90 days') AND deleted_at IS NULL
                         GROUP BY part_id
                     ) m90 ON m90.part_id = p.id
@@ -3553,14 +3553,14 @@ public final class PartsService: Sendable {
                     LEFT JOIN (
                         SELECT part_id, from_location_type AS lt, from_location_id AS lid, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
-                        WHERE movement_type IN ('consume')
+                        WHERE movement_type IN (\(WarehouseMovementType.consumptionSQLLiteralList))
                           AND created_at >= datetime('now','-30 days') AND deleted_at IS NULL
                         GROUP BY part_id, from_location_type, from_location_id
                     ) c30 ON c30.part_id = combos.part_id AND c30.lt = combos.lt AND c30.lid = combos.lid
                     LEFT JOIN (
                         SELECT part_id, from_location_type AS lt, from_location_id AS lid, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
-                        WHERE movement_type IN ('consume')
+                        WHERE movement_type IN (\(WarehouseMovementType.consumptionSQLLiteralList))
                           AND created_at >= datetime('now','-90 days') AND deleted_at IS NULL
                         GROUP BY part_id, from_location_type, from_location_id
                     ) c90 ON c90.part_id = combos.part_id AND c90.lt = combos.lt AND c90.lid = combos.lid
@@ -3826,7 +3826,7 @@ public final class PartsService: Sendable {
                     let consumed = try Int.fetchOne(dbConn, sql: """
                         SELECT COALESCE(SUM(ABS(qty)), 0) FROM stock_movements
                         WHERE part_id = ? AND from_location_type = ? AND from_location_id = ?
-                          AND movement_type IN ('consume')
+                          AND movement_type IN (\(WarehouseMovementType.consumptionSQLLiteralList))
                           AND created_at >= datetime('now', '-\(windowDays) days')
                           AND deleted_at IS NULL
                         """, arguments: [partId, locType, locId]) ?? 0
@@ -3837,7 +3837,7 @@ public final class PartsService: Sendable {
                     let consumed = try Int.fetchOne(dbConn, sql: """
                         SELECT COALESCE(SUM(ABS(qty)), 0) FROM stock_movements
                         WHERE part_id = ? AND from_location_type = ? AND from_location_id = ?
-                          AND movement_type IN ('consume')
+                          AND movement_type IN (\(WarehouseMovementType.consumptionSQLLiteralList))
                           AND created_at >= datetime('now', '-\(s.aduLookbackDays) days')
                           AND deleted_at IS NULL
                         """, arguments: [partId, locType, locId]) ?? 0
@@ -5931,7 +5931,7 @@ public final class PartsService: Sendable {
             let receivedRow = try Row.fetchOne(dbConn, sql: """
                 SELECT COALESCE(SUM(qty), 0) AS total_received
                 FROM stock_movements
-                WHERE supplier_id = ? AND movement_type = 'receipt' AND deleted_at IS NULL
+                WHERE supplier_id = ? AND movement_type = '\(WarehouseMovementType.receive.rawValue)' AND deleted_at IS NULL
                 """, arguments: [supplierId])
             let totalReceived: Int = receivedRow?["total_received"] ?? 0
 
@@ -5939,7 +5939,7 @@ public final class PartsService: Sendable {
             let returnedRow = try Row.fetchOne(dbConn, sql: """
                 SELECT COALESCE(SUM(qty), 0) AS total_returned
                 FROM stock_movements
-                WHERE supplier_id = ? AND movement_type = 'return' AND deleted_at IS NULL
+                WHERE supplier_id = ? AND movement_type = '\(WarehouseMovementType.returnToSupplier.rawValue)' AND deleted_at IS NULL
                 AND from_location_type IN ('warehouse', 'staging')
                 AND to_location_type = 'supplier'
                 """, arguments: [supplierId])
