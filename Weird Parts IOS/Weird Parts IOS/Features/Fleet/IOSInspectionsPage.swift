@@ -132,17 +132,12 @@ struct IOSInspectionsPage: View {
     // MARK: - Helpers
 
     private func resultBadge(_ result: String) -> some View {
-        let color: Color = switch result.lowercased() {
-        case "pass", "passed": .green
-        case "fail", "failed": .red
-        case "conditional": .orange
-        default: .gray
-        }
+        let color = DS.SemanticColor.inspectionStatus(result)
         return Text(result.capitalized)
             .font(.system(.caption2, weight: .semibold))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(Capsule().fill(color.opacity(0.15)))
+            .background(Capsule().fill(DS.SemanticColor.tint(color)))
             .foregroundStyle(color)
     }
 

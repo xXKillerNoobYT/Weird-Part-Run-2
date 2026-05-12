@@ -279,11 +279,11 @@ struct IOSFleetDashboardPage: View {
                     let isToday = inspDate.hasPrefix(todayString)
                     Text(isToday ? "Inspected" : "No inspection today")
                         .font(.caption2)
-                        .foregroundStyle(isToday ? .green : .red)
+                        .foregroundStyle(DS.SemanticColor.inspectionStatus(isToday ? "inspected" : "missing"))
                 } else {
                     Text("Never inspected")
                         .font(.caption2)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(DS.SemanticColor.inspectionStatus("never_inspected"))
                 }
             }
 
