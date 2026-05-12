@@ -497,7 +497,10 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         visibleScreenshot.lifetime = .keepAlways
         add(visibleScreenshot)
 
-        app.buttons["partsCatalogLowStockFilter"].tap()
+        let lowStockFilter = app.buttons["partsCatalogLowStockFilter"]
+        XCTAssertTrue(lowStockFilter.waitForExistence(timeout: 5), "Low Stock filter should be present")
+        XCTAssertTrue(lowStockFilter.isHittable, "Low Stock filter should be hittable on phone after NL filters apply")
+        lowStockFilter.tap()
         XCTAssertFalse(banner.waitForExistence(timeout: 3), "Manual filter changes should dismiss stale NL banner state")
 
         searchField.tap()

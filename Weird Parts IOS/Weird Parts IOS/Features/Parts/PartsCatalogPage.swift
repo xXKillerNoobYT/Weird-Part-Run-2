@@ -13,6 +13,7 @@ import WiredPartCore
 ///   - Swipe-to-delete
 struct PartsCatalogPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     // MARK: - Data
     @State private var parts: [CatalogPartRow] = []
@@ -352,6 +353,10 @@ struct PartsCatalogPage: View {
     private var filterBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                if horizontalSizeClass == .compact {
+                    lowStockFilterButton
+                }
+
                 // Category
                 filterMenu(
                     label: "Category",
@@ -416,25 +421,9 @@ struct PartsCatalogPage: View {
                     resetAndLoad()
                 }
 
-                // Low stock toggle
-                Button {
-                    nlAppliedSearchText = nil
-                    lowStockOnly.toggle()
-                    resetAndLoad()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.caption)
-                        Text("Low Stock")
-                            .font(.subheadline)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(lowStockOnly ? Color.orange.opacity(0.15) : Color.clear)
-                    .clipShape(Capsule())
-                    .overlay(Capsule().stroke(lowStockOnly ? Color.orange.opacity(0.5) : Color.accentColor.opacity(0.3), lineWidth: 1))
+                if horizontalSizeClass != .compact {
+                    lowStockFilterButton
                 }
-                .accessibilityIdentifier("partsCatalogLowStockFilter")
 
                 // Clear all
                 if hasActiveFilters {
@@ -458,6 +447,27 @@ struct PartsCatalogPage: View {
             .padding(.vertical, 8)
         }
         .background(Color(.secondarySystemGroupedBackground))
+    }
+
+    private var lowStockFilterButton: some View {
+        Button {
+            nlAppliedSearchText = nil
+            lowStockOnly.toggle()
+            resetAndLoad()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                Text("Low Stock")
+                    .font(.subheadline)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(lowStockOnly ? Color.orange.opacity(0.15) : Color.clear)
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(lowStockOnly ? Color.orange.opacity(0.5) : Color.accentColor.opacity(0.3), lineWidth: 1))
+        }
+        .accessibilityIdentifier("partsCatalogLowStockFilter")
     }
 
     private var hasActiveFilters: Bool {
