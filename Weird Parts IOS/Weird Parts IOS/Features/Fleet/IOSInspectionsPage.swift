@@ -13,7 +13,8 @@ struct IOSInspectionsPage: View {
     // MARK: - State
 
     @State private var inspections: [FleetService.InspectionRow] = []
-    @State private var isLoading = true
+    @State private var isInitialLoading = true
+    @State private var isRefreshing = false
     @State private var loadError: String?
     @State private var searchText = ""
     @State private var activeSheet: ActiveSheet?
@@ -27,12 +28,19 @@ struct IOSInspectionsPage: View {
         inspectionList
             .navigationTitle("Inspections")
             .searchable(text: $searchText, prompt: "Search inspections...")
-            .refreshable { loadData() }
+            .refreshable { loadData(isRefresh: true) }
             .task { loadData() }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { loadData() }
+                if phase == .active { loadData(isRefresh: !inspections.isEmpty) }
             }
             .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    if isRefreshing {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Refreshing inspections")
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
@@ -57,7 +65,7 @@ struct IOSInspectionsPage: View {
 
     @ViewBuilder
     private var inspectionList: some View {
-        if isLoading {
+        if isInitialLoading {
             ProgressView("Loading inspections...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
@@ -140,21 +148,26 @@ struct IOSInspectionsPage: View {
 
     // MARK: - Data Loading
 
-    private func loadData() {
+    private func loadData(isRefresh: Bool = false) {
         guard let service = appCore.fleetService else {
             loadError = "Fleet service not available"
-            isLoading = false
+            isInitialLoading = false
+            isRefreshing = false
             return
         }
-        isLoading = inspections.isEmpty
+        let shouldShowInitialLoader = !isRefresh && inspections.isEmpty
+        isInitialLoading = shouldShowInitialLoader
+        isRefreshing = !shouldShowInitialLoader
         loadError = nil
+        defer {
+            isInitialLoading = false
+            isRefreshing = false
+        }
 
         do {
             inspections = try service.listInspections()
         } catch {
             loadError = userFriendlyError(error, context: "load inspections")
         }
-
-        isLoading = false
     }
 }

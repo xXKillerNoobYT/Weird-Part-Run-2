@@ -13,7 +13,8 @@ struct IOSMaintenancePage: View {
     // MARK: - State
 
     @State private var records: [FleetService.MaintenanceRow] = []
-    @State private var isLoading = true
+    @State private var isInitialLoading = true
+    @State private var isRefreshing = false
     @State private var searchText = ""
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
@@ -40,15 +41,22 @@ struct IOSMaintenancePage: View {
             .task { appCore.onboardingManager?.markCompleted("fleet-maintenance-view") }
             .navigationTitle("Maintenance")
             .searchable(text: $searchText, prompt: "Search maintenance records...")
-            .refreshable { loadData() }
+            .refreshable { loadData(isRefresh: true) }
             .task { loadData() }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { loadData() }
+                if phase == .active { loadData(isRefresh: !records.isEmpty) }
             }
-            .onChange(of: dateRange) { loadData() }
-            .onChange(of: customStart) { loadData() }
-            .onChange(of: customEnd) { loadData() }
+            .onChange(of: dateRange) { loadData(isRefresh: true) }
+            .onChange(of: customStart) { loadData(isRefresh: true) }
+            .onChange(of: customEnd) { loadData(isRefresh: true) }
             .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    if isRefreshing {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Refreshing maintenance records")
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
@@ -73,7 +81,7 @@ struct IOSMaintenancePage: View {
 
     @ViewBuilder
     private var maintenanceList: some View {
-        if isLoading {
+        if isInitialLoading {
             ProgressView("Loading maintenance records...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
@@ -150,14 +158,21 @@ struct IOSMaintenancePage: View {
 
     // MARK: - Data Loading
 
-    private func loadData() {
+    private func loadData(isRefresh: Bool = false) {
         guard let service = appCore.fleetService else {
             loadError = "Fleet service not available"
-            isLoading = false
+            isInitialLoading = false
+            isRefreshing = false
             return
         }
-        isLoading = records.isEmpty
+        let shouldShowInitialLoader = !isRefresh && records.isEmpty
+        isInitialLoading = shouldShowInitialLoader
+        isRefreshing = !shouldShowInitialLoader
         loadError = nil
+        defer {
+            isInitialLoading = false
+            isRefreshing = false
+        }
         do {
             let startStr = Formatters.localDateFormatter.string(from: effectiveStart)
             let endStr = Formatters.localDateFormatter.string(from: effectiveEnd)
@@ -165,6 +180,5 @@ struct IOSMaintenancePage: View {
         } catch {
             loadError = userFriendlyError(error, context: "load maintenance data")
         }
-        isLoading = false
     }
 }

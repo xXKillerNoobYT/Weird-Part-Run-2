@@ -13,7 +13,8 @@ struct IOSMileagePage: View {
     // MARK: - State
 
     @State private var mileageLogs: [FleetService.MileageRow] = []
-    @State private var isLoading = true
+    @State private var isInitialLoading = true
+    @State private var isRefreshing = false
     @State private var searchText = ""
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
@@ -38,15 +39,22 @@ struct IOSMileagePage: View {
         }
             .navigationTitle("Mileage Logs")
             .searchable(text: $searchText, prompt: "Search mileage logs...")
-            .refreshable { loadData() }
+            .refreshable { loadData(isRefresh: true) }
             .task { loadData() }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { loadData() }
+                if phase == .active { loadData(isRefresh: !mileageLogs.isEmpty) }
             }
-            .onChange(of: dateRange) { loadData() }
-            .onChange(of: customStart) { loadData() }
-            .onChange(of: customEnd) { loadData() }
+            .onChange(of: dateRange) { loadData(isRefresh: true) }
+            .onChange(of: customStart) { loadData(isRefresh: true) }
+            .onChange(of: customEnd) { loadData(isRefresh: true) }
             .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    if isRefreshing {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Refreshing mileage logs")
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
@@ -71,7 +79,7 @@ struct IOSMileagePage: View {
 
     @ViewBuilder
     private var mileageList: some View {
-        if isLoading {
+        if isInitialLoading {
             ProgressView("Loading mileage logs...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
@@ -142,14 +150,21 @@ struct IOSMileagePage: View {
 
     // MARK: - Data Loading
 
-    private func loadData() {
+    private func loadData(isRefresh: Bool = false) {
         guard let service = appCore.fleetService else {
             loadError = "Fleet service not available"
-            isLoading = false
+            isInitialLoading = false
+            isRefreshing = false
             return
         }
-        isLoading = mileageLogs.isEmpty
+        let shouldShowInitialLoader = !isRefresh && mileageLogs.isEmpty
+        isInitialLoading = shouldShowInitialLoader
+        isRefreshing = !shouldShowInitialLoader
         loadError = nil
+        defer {
+            isInitialLoading = false
+            isRefreshing = false
+        }
         do {
             let startStr = Formatters.localDateFormatter.string(from: effectiveStart)
             let endStr = Formatters.localDateFormatter.string(from: effectiveEnd)
@@ -157,6 +172,5 @@ struct IOSMileagePage: View {
         } catch {
             loadError = userFriendlyError(error, context: "load mileage data")
         }
-        isLoading = false
     }
 }
