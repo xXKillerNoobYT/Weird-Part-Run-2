@@ -70,6 +70,35 @@ struct OrdersServiceTests {
         #expect(detail.lines.count == 1)
     }
 
+    @Test("Create JPO with lines persists mixed brand selection modes")
+    func testCreateJPOWithLinesPersistsMixedBrandSelectionModes() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let specificPartId = try E2ETestHelpers.seedPart(env, name: "Specific Wire", categoryId: catId)
+        let generalPartId = try E2ETestHelpers.seedPart(env, name: "General Wire", categoryId: catId)
+
+        let jpoId = try env.orders.createJPOWithLines(
+            jobId: jobId,
+            requestedBy: env.adminUserId,
+            priority: "normal",
+            deliveryOption: "partial",
+            notes: nil,
+            lines: [
+                (partId: specificPartId, quantity: 2),
+                (partId: generalPartId, quantity: 3)
+            ],
+            brandSelectionModes: ["specific", "general"]
+        )
+
+        let detail = try env.orders.getJPODetail(id: jpoId)
+        let modesByPartId = Dictionary(uniqueKeysWithValues: detail.lines.compactMap { line in
+            line.partId.map { ($0, line.brandSelectionMode) }
+        })
+        #expect(modesByPartId[specificPartId] == "specific")
+        #expect(modesByPartId[generalPartId] == "general")
+    }
+
     // MARK: - Purchase Orders
 
     @Test("Create and list purchase orders")

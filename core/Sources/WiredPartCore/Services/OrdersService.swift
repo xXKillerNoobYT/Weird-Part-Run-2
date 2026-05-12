@@ -249,6 +249,7 @@ public final class OrdersService: Sendable {
         public let chatThreadId: Int64?
         public let poLineId: Int64?
         public let transferId: Int64?
+        public let brandSelectionMode: String
         public let createdAt: String?
 
         public init(
@@ -257,7 +258,8 @@ public final class OrdersService: Sendable {
             notes: String?, priority: String, createdAt: String?,
             lineStatus: String = "pending", holdReason: String? = nil,
             rejectReason: String? = nil, chatThreadId: Int64? = nil,
-            poLineId: Int64? = nil, transferId: Int64? = nil
+            poLineId: Int64? = nil, transferId: Int64? = nil,
+            brandSelectionMode: String = "specific"
         ) {
             self.id = id
             self.jpoId = jpoId
@@ -274,6 +276,7 @@ public final class OrdersService: Sendable {
             self.chatThreadId = chatThreadId
             self.poLineId = poLineId
             self.transferId = transferId
+            self.brandSelectionMode = brandSelectionMode
             self.createdAt = createdAt
         }
     }
@@ -613,7 +616,8 @@ public final class OrdersService: Sendable {
                     rejectReason: lr["reject_reason"] as String?,
                     chatThreadId: lr["chat_thread_id"] as Int64?,
                     poLineId: lr["po_line_id"] as Int64?,
-                    transferId: lr["transfer_id"] as Int64?
+                    transferId: lr["transfer_id"] as Int64?,
+                    brandSelectionMode: lr["brand_selection_mode"] ?? "specific"
                 )
             }
 
@@ -1046,7 +1050,8 @@ public final class OrdersService: Sendable {
         priority: String,
         deliveryOption: String,
         notes: String?,
-        lines: [(partId: Int64, quantity: Int)]
+        lines: [(partId: Int64, quantity: Int)],
+        brandSelectionModes: [String]? = nil
     ) throws -> Int64 {
         try db.writer.write { dbConn in
             // Guard: job and requesting user must exist and not be tombstoned (mirrors createJPO).
@@ -1061,8 +1066,18 @@ public final class OrdersService: Sendable {
             guard userExists else { throw OrdersError.userNotFound(requestedBy) }
 
             // Guard: every line must have qty > 0 and a live part.
-            for line in lines {
+            if let brandSelectionModes {
+                guard brandSelectionModes.count == lines.count else {
+                    throw OrdersError.invalidStatus("Brand selection mode count must match JPO line count")
+                }
+            }
+
+            for (index, line) in lines.enumerated() {
                 guard line.quantity > 0 else { throw OrdersError.invalidQuantity(line.quantity) }
+                let brandSelectionMode = brandSelectionModes?[index] ?? "specific"
+                guard brandSelectionMode == "specific" || brandSelectionMode == "general" else {
+                    throw OrdersError.invalidStatus("Invalid brand selection mode: \(brandSelectionMode)")
+                }
                 let partExists = (try Int.fetchOne(dbConn, sql: """
                     SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL
                     """, arguments: [line.partId]) ?? 0) > 0
@@ -1080,12 +1095,13 @@ public final class OrdersService: Sendable {
             let jpoId = dbConn.lastInsertedRowID
 
             // 2. Insert each line and smart-route
-            for line in lines {
+            for (index, line) in lines.enumerated() {
+                let brandSelectionMode = brandSelectionModes?[index] ?? "specific"
                 try dbConn.execute(sql: """
                     INSERT INTO jpo_line_items
-                    (jpo_id, part_id, qty_requested, priority, notes, created_at)
-                    VALUES (?, ?, ?, ?, NULL, datetime('now'))
-                    """, arguments: [jpoId, line.partId, line.quantity, priority])
+                    (jpo_id, part_id, qty_requested, priority, notes, brand_selection_mode, created_at)
+                    VALUES (?, ?, ?, ?, NULL, ?, datetime('now'))
+                    """, arguments: [jpoId, line.partId, line.quantity, priority, brandSelectionMode])
                 let lineId = dbConn.lastInsertedRowID
 
                 // Check shop stock for smart routing
