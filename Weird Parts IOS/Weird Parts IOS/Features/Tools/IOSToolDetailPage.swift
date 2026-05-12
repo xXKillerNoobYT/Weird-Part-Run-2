@@ -107,6 +107,8 @@ struct IOSToolDetailPage: View {
         }
         .sheet(item: $activeSheet) { sheet in
             sheetContent(sheet)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
         .refreshable { loadAllData() }
         .task { loadAllData() }

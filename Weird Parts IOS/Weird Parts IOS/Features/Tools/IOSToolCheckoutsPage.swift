@@ -51,29 +51,33 @@ struct IOSToolCheckoutsPage: View {
             }
         }
         .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .toolScanner:
-                QRScanSheet(expectedType: .tool) { result in
-                    if let toolId = result.entityId, result.isFound {
-                        scannedToolId = toolId
-                        scannedToolName = result.fields["tool_name"] ?? result.fields["name"] ?? result.code
-                        showCheckoutConfirm = true
+            Group {
+                switch sheet {
+                case .toolScanner:
+                    QRScanSheet(expectedType: .tool) { result in
+                        if let toolId = result.entityId, result.isFound {
+                            scannedToolId = toolId
+                            scannedToolName = result.fields["tool_name"] ?? result.fields["name"] ?? result.code
+                            showCheckoutConfirm = true
+                        }
                     }
+                    .environmentObject(appCore)
+                case .help:
+                    PageHelpSheet(
+                        title: "Tool Checkouts Help",
+                        sections: [
+                            ("What This Page Does", "This page tracks every tool checkout and return. It shows who has which tools, when they were checked out, when they are due back, and whether they have been returned."),
+                            ("Active vs All", "Use the filter pills at the top to switch between 'Active' (tools currently out) and 'All' (complete history including returned tools). Active view is the default so you can quickly see what is still out."),
+                            ("Status Badges", "Blue 'Active' means the tool is still checked out. Green 'Returned' means it has been brought back. Red 'Overdue' means the expected return date has passed and the tool has not been returned yet."),
+                            ("QR Scanner", "Tap the QR code icon to scan a tool's label. After scanning, you can jump to All Tools to see its full details and check it out or return it."),
+                            ("Searching", "Use the search bar to find checkouts by tool name or the person who checked it out."),
+                            ("Tips", "Keep an eye on overdue tools. If a tool is overdue, contact the person who has it. Regular checkout tracking prevents lost tools and keeps the team accountable.")
+                        ]
+                    )
                 }
-                .environmentObject(appCore)
-            case .help:
-                PageHelpSheet(
-                    title: "Tool Checkouts Help",
-                    sections: [
-                        ("What This Page Does", "This page tracks every tool checkout and return. It shows who has which tools, when they were checked out, when they are due back, and whether they have been returned."),
-                        ("Active vs All", "Use the filter pills at the top to switch between 'Active' (tools currently out) and 'All' (complete history including returned tools). Active view is the default so you can quickly see what is still out."),
-                        ("Status Badges", "Blue 'Active' means the tool is still checked out. Green 'Returned' means it has been brought back. Red 'Overdue' means the expected return date has passed and the tool has not been returned yet."),
-                        ("QR Scanner", "Tap the QR code icon to scan a tool's label. After scanning, you can jump to All Tools to see its full details and check it out or return it."),
-                        ("Searching", "Use the search bar to find checkouts by tool name or the person who checked it out."),
-                        ("Tips", "Keep an eye on overdue tools. If a tool is overdue, contact the person who has it. Regular checkout tracking prevents lost tools and keeps the team accountable.")
-                    ]
-                )
             }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
         .alert("Tool Scanned", isPresented: $showCheckoutConfirm) {
             Button("View in Registry") {

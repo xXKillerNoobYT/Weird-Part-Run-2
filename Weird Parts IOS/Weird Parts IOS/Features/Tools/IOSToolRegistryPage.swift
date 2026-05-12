@@ -64,42 +64,46 @@ struct IOSToolRegistryPage: View {
             }
         }
         .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .toolScanner:
-                QRScanSheet(expectedType: .tool) { result in
-                    if result.isFound {
-                        if let toolName = result.fields["tool_name"] ?? result.fields["name"] {
-                            searchText = toolName
-                        } else {
-                            searchText = result.code
+            Group {
+                switch sheet {
+                case .toolScanner:
+                    QRScanSheet(expectedType: .tool) { result in
+                        if result.isFound {
+                            if let toolName = result.fields["tool_name"] ?? result.fields["name"] {
+                                searchText = toolName
+                            } else {
+                                searchText = result.code
+                            }
                         }
                     }
-                }
-                .environmentObject(appCore)
-            case .printLabels:
-                QRLabelPrintSheet(items: filteredTools.map { tool in
-                    QRLabelContent(
-                        entityType: .tool,
-                        entityId: tool.id,
-                        code: tool.serialNumber ?? tool.toolNumber,
-                        title: tool.name,
-                        subtitle: tool.toolType.replacingOccurrences(of: "_", with: " ").capitalized,
-                        detail: tool.assignedToName
+                    .environmentObject(appCore)
+                case .printLabels:
+                    QRLabelPrintSheet(items: filteredTools.map { tool in
+                        QRLabelContent(
+                            entityType: .tool,
+                            entityId: tool.id,
+                            code: tool.serialNumber ?? tool.toolNumber,
+                            title: tool.name,
+                            subtitle: tool.toolType.replacingOccurrences(of: "_", with: " ").capitalized,
+                            detail: tool.assignedToName
+                        )
+                    })
+                case .help:
+                    PageHelpSheet(
+                        title: "All Tools Help",
+                        sections: [
+                            ("What This Page Does", "The All Tools is the master inventory of every tool the company owns. Each entry shows the tool name, number, category, serial number, who it is assigned to, current status, and value."),
+                            ("Searching & Filtering", "Use the search bar to find tools by name, tool number, serial number, or assignee. Tap the status pills at the top (All, Available, Checked Out, Maintenance, Lost) to filter the list by current status."),
+                            ("QR Scanner", "Tap the QR code icon in the toolbar to scan a tool's QR label. The scanned tool will appear in your search results automatically."),
+                            ("Printing Labels", "Tap the printer icon to generate QR labels for the currently visible tools. You can print labels for the entire filtered list at once."),
+                            ("Tool Details", "Tap any tool row to open its full detail page where you can check it out, return it, edit its info, or report an issue."),
+                            ("Tips", "Tools with a red 'Lost' badge need investigation. Orange 'Maintenance' tools are out of service. Green 'Available' tools are ready for checkout.")
+                        ]
                     )
-                })
-            case .help:
-                PageHelpSheet(
-                    title: "All Tools Help",
-                    sections: [
-                        ("What This Page Does", "The All Tools is the master inventory of every tool the company owns. Each entry shows the tool name, number, category, serial number, who it is assigned to, current status, and value."),
-                        ("Searching & Filtering", "Use the search bar to find tools by name, tool number, serial number, or assignee. Tap the status pills at the top (All, Available, Checked Out, Maintenance, Lost) to filter the list by current status."),
-                        ("QR Scanner", "Tap the QR code icon in the toolbar to scan a tool's QR label. The scanned tool will appear in your search results automatically."),
-                        ("Printing Labels", "Tap the printer icon to generate QR labels for the currently visible tools. You can print labels for the entire filtered list at once."),
-                        ("Tool Details", "Tap any tool row to open its full detail page where you can check it out, return it, edit its info, or report an issue."),
-                        ("Tips", "Tools with a red 'Lost' badge need investigation. Orange 'Maintenance' tools are out of service. Green 'Available' tools are ready for checkout.")
-                    ]
-                )
+                }
             }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
         .onChange(of: searchText) { Task { await loadData() } }
         .refreshable { await loadData() }
