@@ -746,6 +746,27 @@ struct PartsServiceExtTests {
         #expect(match?.hexCode == nil, "Named-only variant must have nil hex_code")
     }
 
+    @Test("PE-COLORS Plan Test 2b: empty hex input normalizes to NULL")
+    func testNamedOnlyVariantEmptyHexNormalizesToNil() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let variantId = try env.parts.createColor(name: "Standard", hexCode: "")
+        let match = try env.parts.listColors().first { $0.id == variantId }
+
+        #expect(match?.hexCode == nil, "Empty hex_code should be stored as NULL for named-only variants")
+    }
+
+    @Test("PE-COLORS Plan Test 2c: existing variant can clear hex_code")
+    func testUpdateVariantCanClearHexCode() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let variantId = try env.parts.createColor(name: "Metal", hexCode: "#888888")
+        try env.parts.updateColor(id: variantId, clearHexCode: true)
+
+        let match = try env.parts.listColors().first { $0.id == variantId }
+        #expect(match?.hexCode == nil, "clearHexCode should store NULL, not an empty string")
+    }
+
     @Test("PE-COLORS Plan Test 4: searchParts finds a part by its SKU-level part_number")
     func testSearchBySkuPartNumber() throws {
         let env = try E2ETestHelpers.setUp()

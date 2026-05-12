@@ -28,13 +28,13 @@ struct CategoriesColorPicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
             HStack {
-                Text("Colors")
+                Text("Variants")
                     .font(.headline)
                 Spacer()
                 Button {
                     activeSheet = .addColor
                 } label: {
-                    Label("New Color", systemImage: "plus")
+                    Label("New Variant", systemImage: "plus")
                         .font(.caption)
                 }
             }
@@ -48,11 +48,10 @@ struct CategoriesColorPicker: View {
                     .frame(maxWidth: .infinity)
                     .padding()
             } else if allColors.isEmpty {
-                Text("No colors in the system. Add a color to create catalog entries.")
+                Text("No variants in the system. Add a variant to create catalog entries.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                // Color grid
                 LazyVGrid(columns: [
                     GridItem(.adaptive(minimum: 100, maximum: 160), spacing: DS.Space.sm)
                 ], spacing: DS.Space.sm) {
@@ -108,39 +107,42 @@ struct CategoriesColorPicker: View {
         } label: {
             VStack(spacing: DS.Space.xs) {
                 ZStack {
-                    if let hex = color.hexCode, !hex.isEmpty, let c = Color(hex: hex) {
+                    if let swatchColor = variantSwatchColor(color) {
                         Circle()
-                            .fill(c)
+                            .fill(swatchColor)
                             .frame(width: 36, height: 36)
                             .overlay(
                                 Circle()
                                     .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
                             )
                     } else {
-                        // "None" / no-color indicator
-                        Circle()
-                            .fill(Color(.secondarySystemGroupedBackground))
-                            .frame(width: 36, height: 36)
+                        Text(color.name)
+                            .font(.caption.weight(.medium))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .padding(.horizontal, DS.Space.sm)
+                            .frame(minWidth: 72, minHeight: 32)
+                            .background(
+                                Capsule()
+                                    .fill(Color(.secondarySystemGroupedBackground))
+                            )
                             .overlay(
-                                Circle()
+                                Capsule()
                                     .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
                             )
-                            .overlay {
-                                Image(systemName: "nosign")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
                     }
                     if isLinked || wasJustAdded {
                         Image(systemName: "checkmark")
                             .font(.caption.bold())
-                            .foregroundStyle(.white)
+                            .foregroundStyle(variantSwatchColor(color) == nil ? .green : .white)
                     }
                 }
-                Text(color.name)
-                    .font(.caption)
-                    .lineLimit(1)
-                    .foregroundStyle(isLinked ? .primary : .secondary)
+                if variantSwatchColor(color) != nil {
+                    Text(color.name)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .foregroundStyle(isLinked ? .primary : .secondary)
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, DS.Space.sm)
@@ -156,6 +158,13 @@ struct CategoriesColorPicker: View {
         .buttonStyle(.plain)
         .contentShape(Rectangle())
         .disabled(isLinked)
+    }
+
+    private func variantSwatchColor(_ color: PartColor) -> Color? {
+        guard let hex = color.hexCode, !hex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return Color(hex: hex)
     }
 
     // MARK: - Helpers
@@ -260,6 +269,10 @@ struct CategoriesColorPicker: View {
             return
         }
         guard let colorId = color.id else { return }
+        guard !linkedColorIds.contains(colorId) else {
+            errorMessage = "\(color.name) is already in this catalog path."
+            return
+        }
         guard let path = resolveHierarchyPath() else {
             errorMessage = "Could not resolve hierarchy path for this type."
             return

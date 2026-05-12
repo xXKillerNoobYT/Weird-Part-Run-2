@@ -563,10 +563,10 @@ struct ColorFormSheet: View {
         let trimmedPN = partNumber.trimmingCharacters(in: .whitespaces)
         if let existing = color, let id = existing.id {
             // Always pass partNumber: empty string clears to NULL, non-empty sets it
-            try service.updateColor(id: id, name: trimmedName, hexCode: hex ?? "", partNumber: trimmedPN.isEmpty ? "" : trimmedPN, sortOrder: sortOrder)
+            try service.updateColor(id: id, name: trimmedName, hexCode: hex, clearHexCode: hex == nil, partNumber: trimmedPN.isEmpty ? "" : trimmedPN, sortOrder: sortOrder)
         } else {
             let pn: String? = trimmedPN.isEmpty ? nil : trimmedPN
-            try service.createColor(name: trimmedName, hexCode: hex ?? "", partNumber: pn, sortOrder: sortOrder)
+            try service.createColor(name: trimmedName, hexCode: hex, partNumber: pn, sortOrder: sortOrder)
         }
     }
 }

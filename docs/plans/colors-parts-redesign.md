@@ -229,6 +229,8 @@ Search precedence is documented in `docs/plans/ios-part-number-hierarchy.md` —
 6. `CategoriesColorPicker` supports hex=NULL variants.
 7. `CategoriesFormSheets` new-brand/new-supplier picker wiring.
 
+**2026-05-12 PE-047 implementation note:** `CategoriesColorPicker` now treats the shared `part_colors` pool as Variants, renders `hex_code=NULL` rows as named-only text pills instead of color chips, and blocks duplicate picks already linked to the current catalog path. `ColorFormSheet` now passes nil hex values through for named-only variants. `PartsService.createColor` normalizes empty hex input to NULL, and `updateColor(clearHexCode:)` explicitly clears existing hex values for edits.
+
 ### Phase 3 — Order flows (General Mode)
 8. JPO creation: per-line Specific/General toggle.
 9. PO creation: `resolveGeneralLineItem()` wired, resolved-brand pill.
