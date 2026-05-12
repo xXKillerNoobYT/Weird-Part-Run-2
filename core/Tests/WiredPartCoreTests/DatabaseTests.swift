@@ -16,7 +16,7 @@ struct DatabaseTests {
         #expect(tableExists)
     }
 
-    @Test("All 74 migrations (000-073) apply successfully")
+    @Test("All 80 migrations (000-079) apply successfully")
     func testAllMigrationsApply() throws {
         let db = try AppDatabase.openInMemoryDatabase()
 
@@ -83,6 +83,7 @@ struct DatabaseTests {
             "wishlist_items",    // 057
             "background_task_log", // 058
             // Audit assignments & permissions (059-060)
+            "vehicle_location_logs", // 079
         ]
 
         for table in tables {
@@ -93,9 +94,43 @@ struct DatabaseTests {
         }
     }
 
-    @Test("Schema version is 74")
+    @Test("Schema version is 80")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 74)
+        #expect(AppDatabase.schemaVersion == 80)
+    }
+
+    @Test("Migration 079 adds live vehicle latest-location index")
+    func testMigration079VehicleLocationLogsIndex() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+
+        let indexes = try db.writer.read { db in
+            try Row.fetchAll(db, sql: "PRAGMA index_list('vehicle_location_logs')")
+        }
+
+        let index = indexes.first { row in
+            (row["name"] as String?) == "idx_vll_vehicle_latest_live"
+        }
+        #expect(index != nil, "vehicle_location_logs should have latest-location index")
+        #expect((index?["partial"] as Int?) == 1, "latest-location index should exclude deleted rows")
+
+        let indexedColumns = try db.writer.read { db in
+            try Row.fetchAll(db, sql: "PRAGMA index_info('idx_vll_vehicle_latest_live')")
+                .compactMap { $0["name"] as String? }
+        }
+        #expect(indexedColumns == ["vehicle_id", "id"])
+
+        let queryPlan = try db.writer.read { db in
+            try Row.fetchAll(db, sql: """
+                EXPLAIN QUERY PLAN
+                SELECT MAX(id)
+                FROM vehicle_location_logs
+                WHERE deleted_at IS NULL
+                GROUP BY vehicle_id
+                """)
+                .compactMap { $0["detail"] as String? }
+                .joined(separator: "\n")
+        }
+        #expect(queryPlan.contains("idx_vll_vehicle_latest_live"))
     }
 
     @Test("Migration 073 adds grid_rows and grid_cols to warehouse_floor_plans")

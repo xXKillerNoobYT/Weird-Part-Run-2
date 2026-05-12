@@ -115,6 +115,7 @@ extension AppDatabase {
         registerMigration076StockMovementsCompositeIndex(&migrator)
         registerMigration077VehicleIssueReports(&migrator)
         registerMigration078PartsRecommendationPermissions(&migrator)
+        registerMigration079VehicleLocationLogsIndex(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4979,6 +4980,29 @@ extension AppDatabase {
                         """, arguments: [permission.key, hatName])
                 }
             }
+        }
+    }
+
+    private static func registerMigration079VehicleLocationLogsIndex(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("079_vehicle_location_logs_index") { db in
+            try db.create(table: "vehicle_location_logs", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("vehicle_id", .integer).notNull().references("vehicles")
+                t.column("user_id", .integer).references("users")
+                t.column("latitude", .double)
+                t.column("longitude", .double)
+                t.column("speed", .double)
+                t.column("status", .text).notNull().defaults(to: "unknown")
+                t.column("recorded_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            }
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_vll_vehicle_latest_live
+                ON vehicle_location_logs (vehicle_id, id)
+                WHERE deleted_at IS NULL
+                """)
         }
     }
 

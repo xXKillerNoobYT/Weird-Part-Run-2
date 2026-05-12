@@ -489,6 +489,37 @@ struct FleetServiceTests {
         #expect(data.isEmpty)
     }
 
+    @Test("List telematics data returns latest live row per vehicle")
+    func testTelematicsLatestLiveRows() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-GPS", vehicleName: "GPS Truck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO vehicle_location_logs
+                    (vehicle_id, user_id, latitude, longitude, speed, status, recorded_at)
+                VALUES
+                    (?, ?, 41.1, -104.1, 12.0, 'moving', '2026-05-12T10:00:00Z'),
+                    (?, ?, 41.2, -104.2, 0.0, 'parked', '2026-05-12T10:05:00Z')
+                """, arguments: [vehicleId, env.adminUserId, vehicleId, env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO vehicle_location_logs
+                    (vehicle_id, user_id, latitude, longitude, speed, status, recorded_at, deleted_at)
+                VALUES (?, ?, 41.3, -104.3, 21.0, 'deleted', '2026-05-12T10:10:00Z', '2026-05-12T10:11:00Z')
+                """, arguments: [vehicleId, env.adminUserId])
+        }
+
+        let data = try env.fleet.listTelematicsData()
+        #expect(data.count == 1)
+        #expect(data.first?.id == 2)
+        #expect(data.first?.vehicleName == "GPS Truck")
+        #expect(data.first?.driverName == env.adminUser.displayName)
+        #expect(data.first?.status == "parked")
+    }
+
     // MARK: - Vehicle Tools
 
     @Test("Get vehicle tools returns empty when no assignments or checkouts exist")
