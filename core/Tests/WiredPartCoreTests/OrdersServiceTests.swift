@@ -249,6 +249,32 @@ struct OrdersServiceTests {
         #expect(pos.contains(where: { $0.id == poId }))
     }
 
+    @Test("Generate PO from JPO advances line status to in procurement")
+    func testGeneratePOFromJPO_advancesLineStatusToInProcurement() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-GEN-LINE", name: "Generate PO Line Status")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Line Status Supplier")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "LineStatusCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Line Status Part", categoryId: catId)
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let lineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 4)
+        try env.orders.updateJPOLineStatus(lineId: lineId, status: "approved", updatedBy: env.adminUserId)
+
+        let poId = try env.orders.generatePOFromJPO(jpoId: jpoId, supplierId: supplierId)
+
+        let linkedLine = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT jli.line_status, jli.po_line_id, pli.po_id
+                FROM jpo_line_items jli
+                LEFT JOIN po_line_items pli ON pli.id = jli.po_line_id AND pli.deleted_at IS NULL
+                WHERE jli.id = ? AND jli.deleted_at IS NULL
+                """, arguments: [lineId])
+        }
+        #expect(linkedLine?["line_status"] as String? == "in_procurement")
+        #expect(linkedLine?["po_line_id"] as Int64? != nil)
+        #expect(linkedLine?["po_id"] as Int64? == poId)
+    }
+
     // MARK: - Update Return Status
 
     @Test("Update return status")
