@@ -92,14 +92,35 @@ struct IOSForecastSettingsPage: View {
         }
         .task { loadSettings() }
         .interactiveDismissDisabled(isDirty)
-        .confirmationDialog(
-            "Discard changes?",
-            isPresented: $showDiscardConfirmation,
-            titleVisibility: .visible
-        ) {
+        .alert("Discard changes?", isPresented: $showDiscardConfirmation) {
             Button("Discard", role: .destructive) { dismiss() }
             Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("You have unsaved changes that will be lost.")
         }
+    }
+
+    // MARK: - Validation
+
+    private var hasValidSettings: Bool {
+        commonMinMult > 0 && commonTargetMult > 0 && commonMaxMult > 0 &&
+        criticalMinMult > 0 && criticalTargetMult > 0 && criticalMaxMult > 0 &&
+        commonMinMult <= commonTargetMult && commonTargetMult <= commonMaxMult &&
+        criticalMinMult <= criticalTargetMult && criticalTargetMult <= criticalMaxMult
+    }
+
+    private var validationMessage: String? {
+        if commonMinMult <= 0 || commonTargetMult <= 0 || commonMaxMult <= 0 ||
+           criticalMinMult <= 0 || criticalTargetMult <= 0 || criticalMaxMult <= 0 {
+            return "All multipliers must be greater than zero."
+        }
+        if commonMinMult > commonTargetMult || commonTargetMult > commonMaxMult {
+            return "Common multipliers must follow MIN ≤ TARGET ≤ MAX."
+        }
+        if criticalMinMult > criticalTargetMult || criticalTargetMult > criticalMaxMult {
+            return "Critical multipliers must follow MIN ≤ TARGET ≤ MAX."
+        }
+        return nil
     }
 
     // MARK: - Form
@@ -110,6 +131,14 @@ struct IOSForecastSettingsPage: View {
                 Section {
                     Label(saveError, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
+                        .font(.caption)
+                }
+            }
+
+            if let validationMessage {
+                Section {
+                    Label(validationMessage, systemImage: "exclamationmark.circle")
+                        .foregroundStyle(.orange)
                         .font(.caption)
                 }
             }
@@ -208,6 +237,8 @@ struct IOSForecastSettingsPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!hasValidSettings)
+                .accessibilityHint(hasValidSettings ? "Saves forecast settings" : "Fix multiplier values before saving")
             }
         }
         // Fix #149: dismiss keyboard when scrolling forecast settings

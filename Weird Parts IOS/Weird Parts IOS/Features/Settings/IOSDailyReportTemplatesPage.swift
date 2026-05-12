@@ -189,6 +189,7 @@ struct IOSDailyReportTemplatesPage: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!isDirty)
+                .accessibilityHint(isDirty ? "Saves daily report template changes" : "Make a template change before saving")
             }
         }
         // Fix #149: dismiss keyboard when scrolling template editor

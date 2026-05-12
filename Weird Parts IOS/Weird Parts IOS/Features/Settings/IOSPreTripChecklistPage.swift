@@ -7,6 +7,7 @@ import WiredPartCore
 /// Configuration is stored as a single JSON blob in the settings table.
 struct IOSPreTripChecklistPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
 
     // MARK: - Types
 
@@ -45,6 +46,9 @@ struct IOSPreTripChecklistPage: View {
     @State private var loadError: String?
     @State private var saveError: String?
     @State private var activeSheet: ActiveSheet?
+    @State private var isDirty = false
+    @State private var hasLoadedSettings = false
+    @State private var showDiscardConfirmation = false
 
     @State private var selectedVehicleType: String = "all"
     @State private var checklists: [String: VehicleChecklist] = [:]
@@ -88,7 +92,17 @@ struct IOSPreTripChecklistPage: View {
         }
         .navigationTitle("Pre-Trip Checklists")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(isDirty)
         .toolbar {
+            if isDirty {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showDiscardConfirmation = true
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -103,6 +117,13 @@ struct IOSPreTripChecklistPage: View {
             ])
         }
         .task { loadSettings() }
+        .interactiveDismissDisabled(isDirty)
+        .alert("Discard changes?", isPresented: $showDiscardConfirmation) {
+            Button("Discard", role: .destructive) { dismiss() }
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("You have unsaved changes that will be lost.")
+        }
     }
 
     // MARK: - Editor
@@ -228,10 +249,13 @@ struct IOSPreTripChecklistPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!isDirty)
+                .accessibilityHint(isDirty ? "Saves pre-trip checklist changes" : "Make a checklist change before saving")
             }
         }
         // Fix #149: dismiss keyboard when scrolling checklist editor
         .scrollDismissesKeyboard(.interactively)
+        .onChange(of: checklists) { _, _ in markDirty() }
         .alert("Add Item", isPresented: $showAddItem) {
             TextField("Item name", text: $newItemName)
             Toggle("Critical item", isOn: $newItemCritical)
@@ -311,6 +335,11 @@ struct IOSPreTripChecklistPage: View {
 
     // MARK: - Persistence
 
+    private func markDirty() {
+        guard hasLoadedSettings else { return }
+        isDirty = true
+    }
+
     private func loadSettings() {
         guard let service = appCore.settingsService else {
             loadError = "Settings service unavailable"
@@ -318,6 +347,7 @@ struct IOSPreTripChecklistPage: View {
             return
         }
 
+        hasLoadedSettings = false
         do {
             if let json = try service.getSettingValue("pretrip_checklist_config"),
                let data = json.data(using: .utf8) {
@@ -331,6 +361,10 @@ struct IOSPreTripChecklistPage: View {
             checklists = ["all": VehicleChecklist(useDefault: false, sections: Self.defaultSections)]
         }
         isLoading = false
+        isDirty = false
+        Task { @MainActor in
+            hasLoadedSettings = true
+        }
     }
 
     private func saveSettings() {
@@ -344,6 +378,7 @@ struct IOSPreTripChecklistPage: View {
             let json = String(data: data, encoding: .utf8) ?? "{}"
             try service.upsertSetting(key: "pretrip_checklist_config", value: json, category: "pretrip")
             saveError = nil
+            isDirty = false
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }

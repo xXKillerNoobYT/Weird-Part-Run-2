@@ -49,6 +49,17 @@ struct IOSAuditSettingsPage: View {
         "spot_check": "Spot Check",
     ]
 
+    private var hasValidSettings: Bool {
+        misplacementPenalty > 0
+    }
+
+    private var validationMessage: String? {
+        guard hasValidSettings else {
+            return "Misplacement penalty must be greater than zero."
+        }
+        return nil
+    }
+
     var body: some View {
         Group {
             if isLoading {
@@ -89,13 +100,11 @@ struct IOSAuditSettingsPage: View {
         }
         .task { loadSettings() }
         .interactiveDismissDisabled(isDirty)
-        .confirmationDialog(
-            "Discard changes?",
-            isPresented: $showDiscardConfirmation,
-            titleVisibility: .visible
-        ) {
+        .alert("Discard changes?", isPresented: $showDiscardConfirmation) {
             Button("Discard", role: .destructive) { dismiss() }
             Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("You have unsaved changes that will be lost.")
         }
     }
 
@@ -107,6 +116,14 @@ struct IOSAuditSettingsPage: View {
                 Section {
                     Label(saveError, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
+                        .font(.caption)
+                }
+            }
+
+            if let validationMessage {
+                Section {
+                    Label(validationMessage, systemImage: "exclamationmark.circle")
+                        .foregroundStyle(.orange)
                         .font(.caption)
                 }
             }
@@ -179,6 +196,8 @@ struct IOSAuditSettingsPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!isDirty || !hasValidSettings)
+                .accessibilityHint(hasValidSettings ? (isDirty ? "Saves audit setting changes" : "Make an audit setting change before saving") : "Fix audit setting values before saving")
             }
         }
         // Fix #149: dismiss keyboard when scrolling audit settings
@@ -239,6 +258,11 @@ struct IOSAuditSettingsPage: View {
     }
 
     private func saveSettings() {
+        guard hasValidSettings else {
+            saveError = validationMessage
+            return
+        }
+
         guard let service = appCore.settingsService else {
             saveError = "Settings service unavailable"
             return
