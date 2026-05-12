@@ -52,72 +52,78 @@ public final class AppDatabase: Sendable {
     // MARK: - Backup & Restore
 
     /// Create a backup of the database before running migrations.
-    /// Returns the backup file path, or nil if backup failed.
+    /// Returns the backup file path, or nil when there is no existing database to back up.
     @discardableResult
-    public static func backupDatabase(atPath path: String) -> String? {
-        let fileManager = FileManager.default
-        let backupDir = (path as NSString).deletingLastPathComponent + "/Backups"
-        do {
-            try fileManager.createDirectory(atPath: backupDir, withIntermediateDirectories: true)
-        } catch {
-            return nil
-        }
-
+    public static func backupDatabase(atPath path: String) throws -> String? {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd_HHmmss"
         let timestamp = dateFormatter.string(from: Date())
+
+        return try backupDatabase(atPath: path, timestamp: timestamp)
+    }
+
+    static func backupDatabase(atPath path: String, timestamp: String) throws -> String? {
+        let fileManager = FileManager.default
+        let backupDir = (path as NSString).deletingLastPathComponent + "/Backups"
+        try fileManager.createDirectory(atPath: backupDir, withIntermediateDirectories: true)
+
+        // Only back up if the source file exists. Fresh installs have no database yet.
+        guard fileManager.fileExists(atPath: path) else { return nil }
+
         let backupPath = backupDir + "/pre-migration-\(timestamp).sqlite"
+        try fileManager.copyItem(atPath: path, toPath: backupPath)
 
-        do {
-            // Only back up if the source file exists
-            guard fileManager.fileExists(atPath: path) else { return nil }
-
-            try fileManager.copyItem(atPath: path, toPath: backupPath)
-
-            // Also copy WAL and SHM files if they exist
-            for suffix in ["-wal", "-shm"] {
-                let src = path + suffix
-                let dst = backupPath + suffix
-                if fileManager.fileExists(atPath: src) {
-                    try? fileManager.copyItem(atPath: src, toPath: dst)
-                }
+        // Also copy WAL and SHM files if they exist. These are part of the SQLite state.
+        for suffix in ["-wal", "-shm"] {
+            let src = path + suffix
+            let dst = backupPath + suffix
+            if fileManager.fileExists(atPath: src) {
+                try fileManager.copyItem(atPath: src, toPath: dst)
             }
-
-            // Keep only last 5 pre-migration backups
-            let allFiles = try fileManager.contentsOfDirectory(atPath: backupDir)
-            let backups = allFiles
-                .filter { $0.hasPrefix("pre-migration-") && $0.hasSuffix(".sqlite") }
-                .sorted()
-            if backups.count > 5 {
-                for old in backups.prefix(backups.count - 5) {
-                    let oldPath = backupDir + "/" + old
-                    try? fileManager.removeItem(atPath: oldPath)
-                    // Also remove WAL/SHM for old backups
-                    try? fileManager.removeItem(atPath: oldPath + "-wal")
-                    try? fileManager.removeItem(atPath: oldPath + "-shm")
-                }
-            }
-
-            return backupPath
-        } catch {
-            return nil
         }
+
+        // Keep only last 5 pre-migration backups.
+        let allFiles = try fileManager.contentsOfDirectory(atPath: backupDir)
+        let backups = allFiles
+            .filter { $0.hasPrefix("pre-migration-") && $0.hasSuffix(".sqlite") }
+            .sorted()
+        if backups.count > 5 {
+            for old in backups.prefix(backups.count - 5) {
+                let oldPath = backupDir + "/" + old
+                try fileManager.removeItem(atPath: oldPath)
+                // Also remove WAL/SHM for old backups when present.
+                for suffix in ["-wal", "-shm"] where fileManager.fileExists(atPath: oldPath + suffix) {
+                    try fileManager.removeItem(atPath: oldPath + suffix)
+                }
+            }
+        }
+
+        return backupPath
     }
 
     /// Restore database from a backup file.
     public static func restoreDatabase(from backupPath: String, to dbPath: String) throws {
         let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: backupPath) else {
+            throw CocoaError(.fileNoSuchFile, userInfo: [NSFilePathErrorKey: backupPath])
+        }
+
         // Remove current DB files
-        try? fileManager.removeItem(atPath: dbPath)
-        try? fileManager.removeItem(atPath: dbPath + "-wal")
-        try? fileManager.removeItem(atPath: dbPath + "-shm")
+        for suffix in ["", "-wal", "-shm"] {
+            let path = dbPath + suffix
+            if fileManager.fileExists(atPath: path) {
+                try fileManager.removeItem(atPath: path)
+            }
+        }
+
         // Copy backup into place
         try fileManager.copyItem(atPath: backupPath, toPath: dbPath)
+
         // Restore WAL/SHM if they exist
         for suffix in ["-wal", "-shm"] {
             let src = backupPath + suffix
             if fileManager.fileExists(atPath: src) {
-                try? fileManager.copyItem(atPath: src, toPath: dbPath + suffix)
+                try fileManager.copyItem(atPath: src, toPath: dbPath + suffix)
             }
         }
     }

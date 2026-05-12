@@ -94,7 +94,7 @@ final class AppCore: ObservableObject {
             let result = try await Task.detached(priority: .userInitiated) {
                 // Production safety: back up before migration so we can roll back
                 #if !DEBUG
-                let backupPath = AppDatabase.backupDatabase(atPath: path)
+                let backupPath = try AppDatabase.backupDatabase(atPath: path)
                 #endif
 
                 let database: AppDatabase
@@ -104,9 +104,14 @@ final class AppCore: ObservableObject {
                     #if !DEBUG
                     // Migration failed — try to restore from backup
                     if let backup = backupPath {
-                        try? AppDatabase.restoreDatabase(from: backup, to: path)
-                        // Retry with restored DB (old schema, but data preserved)
-                        logger.error("[AppCore] Migration failed, restored from backup. Error: \(error.localizedDescription)")
+                        do {
+                            try AppDatabase.restoreDatabase(from: backup, to: path)
+                            // Retry with restored DB (old schema, but data preserved)
+                            logger.error("[AppCore] Migration failed, restored from backup. Error: \(error.localizedDescription)")
+                        } catch {
+                            logger.error("[AppCore] Migration failed and backup restore also failed: \(error.localizedDescription)")
+                            throw error
+                        }
                     }
                     #endif
                     throw error

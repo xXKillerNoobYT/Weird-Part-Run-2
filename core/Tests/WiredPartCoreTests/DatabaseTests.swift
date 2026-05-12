@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 import GRDB
 @testable import WiredPartCore
 
@@ -99,6 +100,60 @@ struct DatabaseTests {
         #expect(AppDatabase.schemaVersion == 81)
     }
 
+    @Test("Pre-migration backup reports main database copy failures")
+    func testPreMigrationBackupReportsMainCopyFailure() throws {
+        let fixture = try makeBackupFixture()
+        try "database".write(toFile: fixture.dbPath, atomically: true, encoding: .utf8)
+        try FileManager.default.createDirectory(atPath: fixture.backupDir, withIntermediateDirectories: true)
+        try "existing".write(toFile: fixture.backupPath, atomically: true, encoding: .utf8)
+
+        #expect(throws: (any Error).self) {
+            try AppDatabase.backupDatabase(atPath: fixture.dbPath, timestamp: fixture.timestamp)
+        }
+    }
+
+    @Test("Pre-migration backup reports WAL copy failures")
+    func testPreMigrationBackupReportsWALCopyFailure() throws {
+        let fixture = try makeBackupFixture()
+        try "database".write(toFile: fixture.dbPath, atomically: true, encoding: .utf8)
+        try "wal".write(toFile: fixture.dbPath + "-wal", atomically: true, encoding: .utf8)
+        try FileManager.default.createDirectory(atPath: fixture.backupDir, withIntermediateDirectories: true)
+        try "existing wal".write(toFile: fixture.backupPath + "-wal", atomically: true, encoding: .utf8)
+
+        #expect(throws: (any Error).self) {
+            try AppDatabase.backupDatabase(atPath: fixture.dbPath, timestamp: fixture.timestamp)
+        }
+    }
+
+    @Test("Restore reports missing backup without deleting current database")
+    func testRestoreReportsMissingBackupWithoutDeletingCurrentDatabase() throws {
+        let fixture = try makeBackupFixture()
+        try "current database".write(toFile: fixture.dbPath, atomically: true, encoding: .utf8)
+
+        #expect(throws: (any Error).self) {
+            try AppDatabase.restoreDatabase(from: fixture.backupPath, to: fixture.dbPath)
+        }
+
+        let current = try String(contentsOfFile: fixture.dbPath, encoding: .utf8)
+        #expect(current == "current database")
+    }
+
+    @Test("Restore copies backup and sidecar files")
+    func testRestoreCopiesBackupAndSidecars() throws {
+        let fixture = try makeBackupFixture()
+        try FileManager.default.createDirectory(atPath: fixture.backupDir, withIntermediateDirectories: true)
+        try "backup database".write(toFile: fixture.backupPath, atomically: true, encoding: .utf8)
+        try "backup wal".write(toFile: fixture.backupPath + "-wal", atomically: true, encoding: .utf8)
+        try "backup shm".write(toFile: fixture.backupPath + "-shm", atomically: true, encoding: .utf8)
+        try "current database".write(toFile: fixture.dbPath, atomically: true, encoding: .utf8)
+
+        try AppDatabase.restoreDatabase(from: fixture.backupPath, to: fixture.dbPath)
+
+        #expect(try String(contentsOfFile: fixture.dbPath, encoding: .utf8) == "backup database")
+        #expect(try String(contentsOfFile: fixture.dbPath + "-wal", encoding: .utf8) == "backup wal")
+        #expect(try String(contentsOfFile: fixture.dbPath + "-shm", encoding: .utf8) == "backup shm")
+    }
+
     @Test("Migration 080 adds live inspection records vehicle performed-at index")
     func testMigration080InspectionRecordsVehiclePerformedAtIndex() throws {
         let db = try AppDatabase.openInMemoryDatabase()
@@ -164,6 +219,26 @@ struct DatabaseTests {
                 .joined(separator: "\n")
         }
         #expect(queryPlan.contains("idx_vll_vehicle_latest_live"))
+    }
+
+    private func makeBackupFixture() throws -> (
+        dbPath: String,
+        backupDir: String,
+        backupPath: String,
+        timestamp: String
+    ) {
+        let timestamp = "2026-05-12_120000"
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WiredPartCoreTests")
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let dbPath = root.appendingPathComponent("wiredpart.sqlite").path
+        let backupDir = root.appendingPathComponent("Backups").path
+        let backupPath = root
+            .appendingPathComponent("Backups")
+            .appendingPathComponent("pre-migration-\(timestamp).sqlite")
+            .path
+        return (dbPath, backupDir, backupPath, timestamp)
     }
 
     @Test("Migration 073 adds grid_rows and grid_cols to warehouse_floor_plans")
