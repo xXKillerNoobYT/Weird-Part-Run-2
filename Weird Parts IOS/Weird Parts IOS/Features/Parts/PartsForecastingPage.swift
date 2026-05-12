@@ -145,7 +145,7 @@ struct PartsForecastingPage: View {
                         }
                         do {
                             guard let recId = rec.id else { return }
-                            try service.dismissRecommendation(id: recId, userId: userId, reason: dismissReason)
+                            try service.dismissRecommendation(id: recId, byUserId: userId, reason: dismissReason)
                             await loadRecommendations()
                         } catch {
                             loadError = userFriendlyError(error, context: "dismiss recommendation")
@@ -624,7 +624,7 @@ struct PartsForecastingPage: View {
         }
         do {
             guard let recId = rec.id else { return }
-            try service.approveRecommendation(id: recId, userId: userId)
+            try service.approveRecommendation(id: recId, byUserId: userId)
             await loadRecommendations()
             await loadData()
         } catch {

@@ -3238,4 +3238,112 @@ struct SchedulingServiceTests {
         #expect(nextMonthEntry?.jobs.contains(where: { $0.name == "MultiMonth Job" }) == true,
                 "Job must appear in the month it ends in (overlap)")
     }
+
+    // MARK: - createDispatch + Time-Off Integration (Fixes #355)
+
+    @Test("createDispatch throws timeOffConflict when user has approved time off")
+    func testCreateDispatch_throwsTimeOffConflict_whenUserOnApprovedTimeOff() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        let requestId = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2026-11-10",
+            endDate: "2026-11-10",
+            reason: "Vacation"
+        )
+        try env.scheduling.updateTimeOffStatus(
+            id: requestId,
+            status: "approved",
+            approvedBy: env.adminUserId
+        )
+
+        #expect(throws: SchedulingService.SchedulingError.timeOffConflict(
+            userId: env.adminUserId,
+            date: "2026-11-10",
+            reason: "Vacation"
+        )) {
+            _ = try env.scheduling.createDispatch(
+                jobId: jobId,
+                userId: env.adminUserId,
+                date: "2026-11-10"
+            )
+        }
+    }
+
+    @Test("createDispatch succeeds with forceCreateDespiteTimeOff: true when user has approved time off")
+    func testCreateDispatch_succeeds_whenForceCreateDespiteTimeOffTrue_andUserOnTimeOff() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        let requestId = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2026-11-11",
+            endDate: "2026-11-11",
+            reason: "Doctor"
+        )
+        try env.scheduling.updateTimeOffStatus(
+            id: requestId,
+            status: "approved",
+            approvedBy: env.adminUserId
+        )
+
+        let dispatchId = try env.scheduling.createDispatch(
+            jobId: jobId,
+            userId: env.adminUserId,
+            date: "2026-11-11",
+            forceCreateDespiteTimeOff: true
+        )
+        #expect(dispatchId > 0)
+    }
+
+    @Test("createDispatch succeeds when time-off is denied (only approved blocks)")
+    func testCreateDispatch_succeeds_whenTimeOffIsDenied() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        let requestId = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2026-11-12",
+            endDate: "2026-11-12",
+            reason: "Personal"
+        )
+        try env.scheduling.updateTimeOffStatus(
+            id: requestId,
+            status: "denied"
+        )
+
+        let dispatchId = try env.scheduling.createDispatch(
+            jobId: jobId,
+            userId: env.adminUserId,
+            date: "2026-11-12"
+        )
+        #expect(dispatchId > 0)
+    }
+
+    @Test("createDispatch succeeds when approved time-off is for a different date")
+    func testCreateDispatch_succeeds_whenTimeOffIsForDifferentDate() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        let requestId = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2026-11-15",
+            endDate: "2026-11-15",
+            reason: "Holiday"
+        )
+        try env.scheduling.updateTimeOffStatus(
+            id: requestId,
+            status: "approved",
+            approvedBy: env.adminUserId
+        )
+
+        // Dispatch on a DIFFERENT date should succeed despite approved time-off on another date
+        let dispatchId = try env.scheduling.createDispatch(
+            jobId: jobId,
+            userId: env.adminUserId,
+            date: "2026-11-16"
+        )
+        #expect(dispatchId > 0)
+    }
 }

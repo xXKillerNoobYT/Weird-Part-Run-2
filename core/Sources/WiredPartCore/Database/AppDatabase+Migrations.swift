@@ -115,6 +115,7 @@ extension AppDatabase {
         registerMigration076StockMovementsCompositeIndex(&migrator)
         registerMigration077VehicleIssueReports(&migrator)
         registerMigration078PartsRecommendationPermissions(&migrator)
+        registerMigration078ForecastingPermissionBackfill(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5009,6 +5010,39 @@ extension AppDatabase {
                 """)
             try db.execute(sql: "DROP TABLE companion_feedback")
             try db.execute(sql: "ALTER TABLE companion_feedback_new RENAME TO companion_feedback")
+        }
+    }
+
+    // MARK: - Migration 078: Backfill forecasting permission keys
+
+    /// Grants `forecasting.approve_recommendation` and `forecasting.dismiss_recommendation`
+    /// to the Admin and Manager hats in existing production databases.
+    ///
+    /// `INSERT OR IGNORE` makes this idempotent — fresh databases seeded via
+    /// `defaultPermissionMap` already have these rows and will not be double-inserted.
+    ///
+    /// Motivation: The permission-gate logic added in PR #367 requires these keys to
+    /// exist in `hat_permissions`. The `defaultPermissionMap` seeds them for *new*
+    /// installs, but existing hats in upgraded databases need this backfill to avoid
+    /// denying all approve/dismiss actions after the upgrade.
+    private static func registerMigration078ForecastingPermissionBackfill(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("078_forecasting_permission_backfill") { db in
+            let permissions = [
+                "forecasting.approve_recommendation",
+                "forecasting.dismiss_recommendation",
+            ]
+            let hats = ["Admin", "Manager"]
+            for permKey in permissions {
+                for hatName in hats {
+                    try db.execute(
+                        sql: """
+                            INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+                            SELECT id, ? FROM hats WHERE name = ?
+                            """,
+                        arguments: [permKey, hatName]
+                    )
+                }
+            }
         }
     }
 }

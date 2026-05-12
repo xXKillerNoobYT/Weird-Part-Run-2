@@ -337,7 +337,7 @@ public final class PartsService: Sendable {
 
     // MARK: - Errors
 
-    public enum PartsError: Error, Sendable {
+    public enum PartsError: Error, LocalizedError, Sendable, Equatable {
         case categoryNotFound(Int64)
         case styleNotFound(Int64)
         case typeNotFound(Int64)
@@ -351,6 +351,25 @@ public final class PartsService: Sendable {
         case insufficientReturns(available: Int, requested: Int)
         case invalidInput(String)
         case insufficientPermissions(required: String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .insufficientPermissions(let key):
+                return "You don't have permission to perform this action (\(key))."
+            case .categoryNotFound(let id):
+                return "Category \(id) not found."
+            case .partNotFound(let id):
+                return "Part \(id) not found."
+            case .supplierNotFound(let id):
+                return "Supplier \(id) not found."
+            case .insufficientStock(let available, let requested):
+                return "Insufficient stock: \(available) available, \(requested) requested."
+            case .invalidInput(let msg):
+                return msg
+            default:
+                return localizedDescription
+            }
+        }
     }
 
     // =========================================================================
@@ -3358,6 +3377,12 @@ public final class PartsService: Sendable {
                 target.updatedAt = CoreFormatters.nowISO()
                 try target.update(dbConn)
             } else {
+                // NOTE: `partCategory` and `doNotRestock` must be set explicitly here.
+                // GRDB writes NULL for any `Int?`/`String?` property that is not
+                // initialized, ignoring the SQL column DEFAULT. The recommendation
+                // engine's combination query filters `WHERE do_not_restock = 0`,
+                // and in SQL `NULL = 0` is NULL (falsy), so a NULL value would
+                // silently exclude this row from all recommendation consideration.
                 var target = LocationStockTarget(
                     id: nil, partId: partId,
                     locationType: locationType, locationId: locationId,
@@ -3365,6 +3390,8 @@ public final class PartsService: Sendable {
                     forecastAdu30: nil, forecastAdu90: nil,
                     forecastDaysUntilLow: nil, forecastSuggestedOrder: nil,
                     forecastLastRun: nil, certaintyRating: nil,
+                    partCategory: "common", // matches SQL DEFAULT
+                    doNotRestock: 0,        // matches SQL DEFAULT (0 = eligible for restocking)
                     deletedAt: nil, updatedAt: nil
                 )
                 try target.insert(dbConn)
@@ -3942,7 +3969,23 @@ public final class PartsService: Sendable {
         guard try auth.hasPermission(userId, permissionKey: requiredPermission) else {
             throw PartsError.insufficientPermissions(required: requiredPermission)
         }
+        try applyRecommendationApproval(id: id, byUserId: userId)
+    }
 
+    ///
+    /// - Parameters:
+    ///   - id: The `target_recommendations.id` to approve.
+    ///   - byUserId: The user performing the approval. Must hold the
+    ///     `forecasting.approve_recommendation` permission.
+    /// - Throws: `PartsError.insufficientPermissions` if the user lacks permission.
+    public func approveRecommendation(id: Int64, byUserId: Int64) throws {
+        guard try auth.hasPermission(byUserId, permissionKey: "forecasting.approve_recommendation") else {
+            throw PartsError.insufficientPermissions(required: "forecasting.approve_recommendation")
+        }
+        try applyRecommendationApproval(id: id, byUserId: byUserId)
+    }
+
+    private func applyRecommendationApproval(id: Int64, byUserId: Int64) throws {
         try db.writer.write { dbConn in
             guard let rec = try TargetRecommendation.fetchOne(dbConn, key: id),
                   rec.status == "pending" else { return }
@@ -3978,11 +4021,29 @@ public final class PartsService: Sendable {
                 UPDATE target_recommendations SET
                     status = 'approved', approved_by = ?, approved_at = datetime('now')
                 WHERE id = ?
-                """, arguments: [userId, id])
+                """, arguments: [byUserId, id])
         }
     }
 
     /// Dismiss a recommendation with required reason.
+    ///
+    /// - Parameters:
+    ///   - id: The `target_recommendations.id` to dismiss.
+    ///   - byUserId: The user performing the dismissal. Must hold the
+    ///     `forecasting.dismiss_recommendation` permission.
+    ///   - reason: Non-empty reason string stored in `dismissed_reason`.
+    /// - Throws: `PartsError.insufficientPermissions` if the user lacks permission.
+    /// - Throws: `PartsError.invalidInput` if `reason` is blank.
+    public func dismissRecommendation(id: Int64, byUserId: Int64, reason: String) throws {
+        guard try auth.hasPermission(byUserId, permissionKey: "forecasting.dismiss_recommendation") else {
+            throw PartsError.insufficientPermissions(required: "forecasting.dismiss_recommendation")
+        }
+        guard !reason.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw PartsError.invalidInput("Dismiss reason is required")
+        }
+        try applyRecommendationDismissal(id: id, byUserId: byUserId, reason: reason)
+    }
+
     public func dismissRecommendation(id: Int64, userId: Int64, reason: String) throws {
         guard !reason.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw PartsError.invalidInput("Dismiss reason is required")
@@ -3991,13 +4052,16 @@ public final class PartsService: Sendable {
         guard try auth.hasPermission(userId, permissionKey: requiredPermission) else {
             throw PartsError.insufficientPermissions(required: requiredPermission)
         }
+        try applyRecommendationDismissal(id: id, byUserId: userId, reason: reason)
+    }
 
+    private func applyRecommendationDismissal(id: Int64, byUserId: Int64, reason: String) throws {
         try db.writer.write { dbConn in
             try dbConn.execute(sql: """
                 UPDATE target_recommendations SET
                     status = 'dismissed', dismissed_by = ?, dismissed_reason = ?
                 WHERE id = ? AND status = 'pending'
-                """, arguments: [userId, reason, id])
+                """, arguments: [byUserId, reason, id])
         }
     }
 
