@@ -13,18 +13,23 @@ struct RequestTimeOffSheet: View {
     @State private var reason = ""
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var isDirty = false
+    @State private var showDiscardConfirmation = false
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Dates") {
                     DatePicker("Start", selection: $startDate, displayedComponents: .date)
+                        .onChange(of: startDate) { _, _ in isDirty = true }
                     DatePicker("End", selection: $endDate, in: startDate..., displayedComponents: .date)
+                        .onChange(of: endDate) { _, _ in isDirty = true }
                 }
 
                 Section("Reason (Optional)") {
                     TextEditor(text: $reason)
                         .frame(minHeight: 60)
+                        .onChange(of: reason) { _, _ in isDirty = true }
                 }
 
                 if let error = saveError {
@@ -38,10 +43,12 @@ struct RequestTimeOffSheet: View {
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Request Time Off")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(isSaving)
+            .interactiveDismissDisabled(isDirty || isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showDiscardConfirmation = true } else { dismiss() }
+                    }
                         .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -52,6 +59,16 @@ struct RequestTimeOffSheet: View {
                             .fontWeight(.semibold)
                     }
                 }
+            }
+            .confirmationDialog(
+                "Discard changes?",
+                isPresented: $showDiscardConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved time-off request will be lost.")
             }
         }
     }
@@ -73,6 +90,7 @@ struct RequestTimeOffSheet: View {
                 endDate: fmt.string(from: endDate),
                 reason: reason.isEmpty ? nil : reason
             )
+            isDirty = false
             dismiss()
             onSave()
         } catch {
