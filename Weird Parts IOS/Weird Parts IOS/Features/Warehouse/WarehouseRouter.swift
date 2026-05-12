@@ -7,7 +7,12 @@ import WiredPartCore
 /// the database directly for its data. Pages cover the Warehouse domain:
 /// dashboard KPIs, stock movements, and inventory by location.
 struct WarehouseRouter: View {
+    enum OnboardingAction: Equatable {
+        case showFloorPlanTutorial
+    }
+
     let tabId: String
+    var onboardingAction: OnboardingAction?
     @EnvironmentObject private var appCore: AppCore
 
     var body: some View {
@@ -22,7 +27,7 @@ struct WarehouseRouter: View {
         case "warehouse-movements":
             WarehouseMovementsPage()
         case "warehouse-locations":
-            WarehouseLocationsPage()
+            WarehouseLocationsPage(showFloorPlanTutorialOnAppear: onboardingAction == .showFloorPlanTutorial)
         case "warehouse-staging":
             IOSStagingPage()
         case "warehouse-receiving":

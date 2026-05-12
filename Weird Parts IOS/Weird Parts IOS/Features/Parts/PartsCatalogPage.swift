@@ -13,6 +13,7 @@ import WiredPartCore
 ///   - Swipe-to-delete
 struct PartsCatalogPage: View {
     @EnvironmentObject private var appCore: AppCore
+    var openImportOrAddOnAppear = false
 
     // MARK: - Data
     @State private var parts: [CatalogPartRow] = []
@@ -72,6 +73,7 @@ struct PartsCatalogPage: View {
     @State private var loadError: String?
     @State private var actionError: String?
     @State private var partToDelete: CatalogPartRow?
+    @State private var didHandleImportOrAddOnAppear = false
 
     // Pricing overlay
     @State private var showPricing = false
@@ -250,6 +252,10 @@ struct PartsCatalogPage: View {
                     "availableColors": colors.map(\.name)
                 ]
             )
+            if openImportOrAddOnAppear && !didHandleImportOrAddOnAppear {
+                didHandleImportOrAddOnAppear = true
+                activeSheet = .addPart
+            }
         }
         .onDisappear {
             NotificationCenter.default.post(name: .catalogPageInactive, object: nil)

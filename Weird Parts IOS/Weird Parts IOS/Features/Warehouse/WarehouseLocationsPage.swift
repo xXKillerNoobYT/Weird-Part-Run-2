@@ -20,6 +20,7 @@ private struct DraggableUnit: Codable, Transferable {
 /// Long press: Rotate, edit, remove units on the grid.
 struct WarehouseLocationsPage: View {
     @EnvironmentObject private var appCore: AppCore
+    var showFloorPlanTutorialOnAppear = false
 
     @State private var floorPlans: [WarehouseFloorPlan] = []
     @State private var selectedPlanId: Int64?
@@ -36,6 +37,7 @@ struct WarehouseLocationsPage: View {
     @State private var gridScale: CGFloat = 1.0
     @State private var gridOffset: CGSize = .zero
     @State private var isGridDropTargeted = false
+    @State private var didHandleFloorPlanTutorialOnAppear = false
 
     enum ActiveSheet: Identifiable {
         case addUnit(String)
@@ -520,10 +522,17 @@ struct WarehouseLocationsPage: View {
                 selectedPlanId = floorPlans.first?.id
             }
             loadPlanData()
+            handleFloorPlanTutorialOnAppear()
         } catch {
             loadError = userFriendlyError(error, context: "load locations")
         }
         isLoading = false
+    }
+
+    private func handleFloorPlanTutorialOnAppear() {
+        guard showFloorPlanTutorialOnAppear, !didHandleFloorPlanTutorialOnAppear else { return }
+        didHandleFloorPlanTutorialOnAppear = true
+        activeSheet = floorPlans.isEmpty ? .createFloorPlan : .help
     }
 
     private func loadPlanData() {

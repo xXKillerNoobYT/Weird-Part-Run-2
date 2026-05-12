@@ -7,6 +7,7 @@ import WiredPartCore
 /// and quality scores. Supports create, edit, delete via sheets and swipe actions.
 struct PartsSuppliersPage: View {
     @EnvironmentObject private var appCore: AppCore
+    var addSupplierOnAppear = false
     @State private var suppliers: [SupplierListRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
@@ -34,6 +35,7 @@ struct PartsSuppliersPage: View {
     @State private var showDeleteConfirm = false
     @State private var deleteError: String?
     @State private var sortOption: SupplierSortOption = .nameAsc
+    @State private var didHandleAddSupplierOnAppear = false
 
     enum SupplierSortOption: String, CaseIterable {
         case nameAsc = "Name A→Z"
@@ -134,7 +136,13 @@ struct PartsSuppliersPage: View {
             await loadData()
             appCore.onboardingManager?.markCompleted("suppliers-view")
         }
-        .onAppear { postSuppliersContext() }
+        .onAppear {
+            postSuppliersContext()
+            if addSupplierOnAppear && !didHandleAddSupplierOnAppear {
+                didHandleAddSupplierOnAppear = true
+                activeSheet = .addSupplier
+            }
+        }
         .onDisappear {
             NotificationCenter.default.post(name: .suppliersPageInactive, object: nil)
         }

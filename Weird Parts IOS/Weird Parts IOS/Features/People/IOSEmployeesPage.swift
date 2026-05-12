@@ -7,6 +7,7 @@ import WiredPartCore
 /// status badge, and hats. Supports pull-to-refresh and status-based filtering.
 struct IOSEmployeesPage: View {
     @EnvironmentObject private var appCore: AppCore
+    var addPersonOnAppear = false
 
     // MARK: - State
 
@@ -17,6 +18,7 @@ struct IOSEmployeesPage: View {
     @State private var statusCounts: [String: Int] = [:]
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
+    @State private var didHandleAddPersonOnAppear = false
 
     private enum ActiveSheet: Identifiable {
         case addEmployee
@@ -55,6 +57,10 @@ struct IOSEmployeesPage: View {
                     "context": "Employees Page: \(employees.count) employees, filter: \(statusFilter)."
                 ]
             )
+            if addPersonOnAppear && !didHandleAddPersonOnAppear {
+                didHandleAddPersonOnAppear = true
+                activeSheet = .addEmployee
+            }
         }
         .onDisappear {
             NotificationCenter.default.post(name: .employeesPageInactive, object: nil)

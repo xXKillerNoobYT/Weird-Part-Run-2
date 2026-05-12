@@ -13,9 +13,22 @@ struct IOSContentRouter: View {
         routedView
     }
 
+    private var routePath: String {
+        path.split(separator: "?", maxSplits: 1).first.map(String.init) ?? path
+    }
+
+    private var queryItems: [String: String] {
+        guard let query = path.split(separator: "?", maxSplits: 1).dropFirst().first else { return [:] }
+        return query.split(separator: "&").reduce(into: [String: String]()) { result, pair in
+            let parts = pair.split(separator: "=", maxSplits: 1)
+            guard let key = parts.first else { return }
+            result[String(key)] = parts.dropFirst().first.map(String.init) ?? "1"
+        }
+    }
+
     @ViewBuilder
     private var routedView: some View {
-        switch path {
+        switch routePath {
         // Dashboard
         case "/dashboard":
             DashboardView()
@@ -30,11 +43,14 @@ struct IOSContentRouter: View {
         case "/parts/categories":
             PartsRouter(tabId: "parts-categories")
         case "/parts/catalog":
-            PartsRouter(tabId: "parts-catalog")
+            PartsRouter(
+                tabId: "parts-catalog",
+                onboardingAction: queryItems["bottomSheet"] == "importOrAdd" ? .importOrAdd : nil
+            )
         case "/parts/brands":
             PartsRouter(tabId: "parts-brands")
         case "/parts/suppliers":
-            PartsRouter(tabId: "parts-suppliers")
+            PartsRouter(tabId: "parts-suppliers", onboardingAction: queryItems["add"] == "1" ? .addSupplier : nil)
         case "/parts/pricing":
             PartsRouter(tabId: "parts-pricing")
         case "/parts/companions":
@@ -130,7 +146,10 @@ struct IOSContentRouter: View {
         case "/warehouse/movements":
             WarehouseRouter(tabId: "warehouse-movements")
         case "/warehouse/locations":
-            WarehouseRouter(tabId: "warehouse-locations")
+            WarehouseRouter(
+                tabId: "warehouse-locations",
+                onboardingAction: queryItems["showFloorPlanTutorial"] == "1" ? .showFloorPlanTutorial : nil
+            )
         case "/warehouse/staging":
             WarehouseRouter(tabId: "warehouse-staging")
         case "/warehouse/receiving":
@@ -205,7 +224,7 @@ struct IOSContentRouter: View {
             PeopleRouter(tabId: "people-teams")
         // People legacy routes — redirect to People module
         case "/people/employees", "/people/directory":
-            PeopleRouter(tabId: "people-employees")
+            PeopleRouter(tabId: "people-employees", onboardingAction: queryItems["addPersonOnAppear"] == "true" ? .addPerson : nil)
         case "/people/hats":
             PeopleRouter(tabId: "people-hats")
         case "/people/permissions":

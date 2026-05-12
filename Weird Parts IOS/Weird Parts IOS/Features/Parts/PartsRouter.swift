@@ -8,7 +8,13 @@ import WiredPartCore
 /// Parts & Inventory domain: categories, catalog, brands, suppliers,
 /// pricing, companions, forecasting, and import/export.
 struct PartsRouter: View {
+    enum OnboardingAction: Equatable {
+        case addSupplier
+        case importOrAdd
+    }
+
     let tabId: String
+    var onboardingAction: OnboardingAction?
     @EnvironmentObject private var appCore: AppCore
 
     var body: some View {
@@ -21,11 +27,11 @@ struct PartsRouter: View {
         case "parts-categories":
             PartsCategoriesPage()
         case "parts-catalog":
-            PartsCatalogPage()
+            PartsCatalogPage(openImportOrAddOnAppear: onboardingAction == .importOrAdd)
         case "parts-brands":
             PartsBrandsPage()
         case "parts-suppliers":
-            PartsSuppliersPage()
+            PartsSuppliersPage(addSupplierOnAppear: onboardingAction == .addSupplier)
         case "parts-pricing":
             PartsPricingPage()
         case "parts-companions":
