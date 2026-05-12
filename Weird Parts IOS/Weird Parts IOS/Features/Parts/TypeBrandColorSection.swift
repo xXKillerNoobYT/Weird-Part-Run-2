@@ -1,6 +1,21 @@
 import SwiftUI
 import WiredPartCore
 
+struct BrandRemovalConfirmation: Identifiable, Equatable {
+    let brandId: Int64
+    let brandName: String
+
+    var id: Int64 { brandId }
+
+    var message: String {
+        "Are you sure you want to remove brand \(brandName) from this type? This may affect linked parts and colors."
+    }
+}
+
+enum TypeBrandSelectionDefaults {
+    static let isGeneralSelectedOnLoad = true
+}
+
 /// Combined brand selection + per-brand color picker for a Type.
 ///
 /// Layout:
@@ -23,6 +38,7 @@ struct TypeBrandColorSection: View {
     @State private var loadError: String?
     @State private var expandedBrandId: Int64? // Which brand's color picker is open
     @State private var mfrPartNumbers: [Int64: String] = [:]
+    @State private var pendingBrandRemoval: BrandRemovalConfirmation?
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
@@ -77,6 +93,24 @@ struct TypeBrandColorSection: View {
             }
         }
         .task { await loadBrandData() }
+        .confirmationDialog(
+            "Remove Brand?",
+            isPresented: Binding(
+                get: { pendingBrandRemoval != nil },
+                set: { if !$0 { pendingBrandRemoval = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingBrandRemoval
+        ) { removal in
+            Button("Remove", role: .destructive) {
+                Task { await removeBrand(removal) }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingBrandRemoval = nil
+            }
+        } message: { removal in
+            Text(removal.message)
+        }
     }
 
     // MARK: - Selected brands helper
@@ -100,7 +134,11 @@ struct TypeBrandColorSection: View {
                 let brandId = brand.id ?? 0
                 let isLinked = linkedBrandIds.contains(brandId)
                 brandChip(name: brand.name, isSelected: isLinked) {
-                    Task { await toggleBrand(brandId: brandId, isLinked: isLinked) }
+                    if isLinked {
+                        pendingBrandRemoval = BrandRemovalConfirmation(brandId: brandId, brandName: brand.name)
+                    } else {
+                        Task { await addBrand(brandId: brandId) }
+                    }
                 }
             }
         }
@@ -277,11 +315,12 @@ struct TypeBrandColorSection: View {
             await MainActor.run {
                 allBrands = allBrandsList
                 linkedBrandIds = linkedIds
+                isGeneralLinked = TypeBrandSelectionDefaults.isGeneralSelectedOnLoad
                 isLoading = false
                 // Auto-expand first selected brand
                 if let first = allBrandsList.first(where: { linkedIds.contains($0.id ?? 0) }) {
                     expandedBrandId = first.id
-                } else if isGeneralLinked {
+                } else {
                     expandedBrandId = -1
                 }
             }
@@ -295,29 +334,39 @@ struct TypeBrandColorSection: View {
 
     // MARK: - Toggle Brand Link
 
-    private func toggleBrand(brandId: Int64, isLinked: Bool) async {
+    private func addBrand(brandId: Int64) async {
         guard let service = appCore.partsService else {
             loadError = "Service not available"
             return
         }
         do {
-            if isLinked {
-                let linkId = try service.getTypeBrandLinkId(typeId: typeId, brandId: brandId)
-                if let linkId {
-                    try service.unlinkTypeBrand(linkId: linkId)
+            try service.linkTypeToBrand(typeId: typeId, brandId: brandId)
+            await MainActor.run {
+                linkedBrandIds.insert(brandId)
+                expandedBrandId = brandId // Auto-expand newly linked brand
+            }
+            await onRefresh()
+        } catch {
+            loadError = userFriendlyError(error, context: "load brands")
+        }
+    }
+
+    private func removeBrand(_ removal: BrandRemovalConfirmation) async {
+        guard let service = appCore.partsService else {
+            loadError = "Service not available"
+            return
+        }
+        do {
+            let linkId = try service.getTypeBrandLinkId(typeId: typeId, brandId: removal.brandId)
+            if let linkId {
+                try service.unlinkTypeBrand(linkId: linkId)
+            }
+            await MainActor.run {
+                linkedBrandIds.remove(removal.brandId)
+                if expandedBrandId == removal.brandId {
+                    expandedBrandId = nil
                 }
-                await MainActor.run {
-                    linkedBrandIds.remove(brandId)
-                    if expandedBrandId == brandId {
-                        expandedBrandId = nil
-                    }
-                }
-            } else {
-                try service.linkTypeToBrand(typeId: typeId, brandId: brandId)
-                await MainActor.run {
-                    linkedBrandIds.insert(brandId)
-                    expandedBrandId = brandId // Auto-expand newly linked brand
-                }
+                pendingBrandRemoval = nil
             }
             await onRefresh()
         } catch {

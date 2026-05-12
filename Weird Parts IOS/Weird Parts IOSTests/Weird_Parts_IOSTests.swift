@@ -371,3 +371,21 @@ struct OrganizationThresholdSettingsValidationTests {
         ))
     }
 }
+
+// MARK: - Type Brand Selection Tests
+
+@Suite("Type brand selection")
+@MainActor
+struct TypeBrandSelectionTests {
+    @Test("General is the default type brand selection")
+    func generalBrandSelectedByDefault() {
+        #expect(TypeBrandSelectionDefaults.isGeneralSelectedOnLoad)
+    }
+
+    @Test("brand removal confirmation names the brand and destructive consequence")
+    func brandRemovalConfirmationMessage() {
+        let confirmation = BrandRemovalConfirmation(brandId: 42, brandName: "Southwire")
+
+        #expect(confirmation.message == "Are you sure you want to remove brand Southwire from this type? This may affect linked parts and colors.")
+    }
+}

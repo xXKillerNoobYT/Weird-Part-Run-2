@@ -23,6 +23,7 @@ struct CategoriesBrandSection: View {
     @State private var isGeneralLinked = false
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var pendingBrandRemoval: BrandRemovalConfirmation?
 
     /// Key constant for the "General" pseudo-brand
     private static let generalBrandName = "General"
@@ -62,6 +63,24 @@ struct CategoriesBrandSection: View {
         }
         .refreshable { await loadBrandData() }
         .task { await loadBrandData() }
+        .confirmationDialog(
+            "Remove Brand?",
+            isPresented: Binding(
+                get: { pendingBrandRemoval != nil },
+                set: { if !$0 { pendingBrandRemoval = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingBrandRemoval
+        ) { removal in
+            Button("Remove", role: .destructive) {
+                Task { await removeBrand(removal) }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingBrandRemoval = nil
+            }
+        } message: { removal in
+            Text(removal.message)
+        }
     }
 
     // MARK: - General Brand Row
@@ -135,7 +154,11 @@ struct CategoriesBrandSection: View {
             .accessibilityAddTraits(.isButton)
             .accessibilityAddTraits(isLinked ? .isSelected : [])
             .onTapGesture {
-                Task { await toggleBrand(brandId: brandId, isLinked: isLinked) }
+                if isLinked {
+                    pendingBrandRemoval = BrandRemovalConfirmation(brandId: brandId, brandName: brand.name)
+                } else {
+                    Task { await addBrand(brandId: brandId) }
+                }
             }
 
             // Expanded details when linked
@@ -233,6 +256,7 @@ struct CategoriesBrandSection: View {
                 allBrands = allBrandsList
                 linkedBrandIds = linkedIds
                 suppliersByBrand = supplierMap
+                isGeneralLinked = TypeBrandSelectionDefaults.isGeneralSelectedOnLoad
                 isLoading = false
             }
         } catch {
@@ -245,22 +269,31 @@ struct CategoriesBrandSection: View {
 
     // MARK: - Toggle Brand Link
 
-    private func toggleBrand(brandId: Int64, isLinked: Bool) async {
+    private func addBrand(brandId: Int64) async {
         guard let service = appCore.partsService else {
             loadError = "Service not available"
             return
         }
         do {
-            if isLinked {
-                let linkId = try service.getTypeBrandLinkId(typeId: typeId, brandId: brandId)
-                if let linkId {
-                    try service.unlinkTypeBrand(linkId: linkId)
-                }
-                linkedBrandIds.remove(brandId)
-            } else {
-                try service.linkTypeToBrand(typeId: typeId, brandId: brandId)
-                linkedBrandIds.insert(brandId)
+            try service.linkTypeToBrand(typeId: typeId, brandId: brandId)
+            linkedBrandIds.insert(brandId)
+        } catch {
+            loadError = userFriendlyError(error, context: "load brands")
+        }
+    }
+
+    private func removeBrand(_ removal: BrandRemovalConfirmation) async {
+        guard let service = appCore.partsService else {
+            loadError = "Service not available"
+            return
+        }
+        do {
+            let linkId = try service.getTypeBrandLinkId(typeId: typeId, brandId: removal.brandId)
+            if let linkId {
+                try service.unlinkTypeBrand(linkId: linkId)
             }
+            linkedBrandIds.remove(removal.brandId)
+            pendingBrandRemoval = nil
         } catch {
             loadError = userFriendlyError(error, context: "load brands")
         }
