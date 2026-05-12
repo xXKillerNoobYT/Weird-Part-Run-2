@@ -179,6 +179,80 @@ struct FleetServiceTests {
         #expect(stats != nil)
     }
 
+    @Test("My Truck dashboard batched load matches legacy service calls")
+    func testMyTruckDashboardData() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-BATCH",
+            vehicleName: "Batch Truck",
+            vehicleType: "truck",
+            make: "Ford",
+            model: "Transit",
+            year: 2025,
+            color: nil,
+            vin: nil,
+            licensePlate: nil,
+            notes: nil
+        )
+        try env.fleet.assignDriver(
+            vehicleId: vehicleId,
+            userId: env.adminUserId,
+            assignmentType: "primary",
+            isTakeHome: true
+        )
+        try env.fleet.logFuelLevel(vehicleId: vehicleId, fuelLevel: 0.5)
+        try env.fleet.addVehicleStockItem(vehicleId: vehicleId, partName: "Wire Nuts", quantity: 12, stockType: "truck_stock")
+        try env.fleet.addVehicleStockItem(vehicleId: vehicleId, partName: "Panel", quantity: 2, stockType: "transfer")
+
+        let trailerId = try env.fleet.createTrailer(trailerNumber: "T-BATCH", trailerType: "enclosed", notes: nil)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO trailer_attachments (vehicle_id, trailer_id, attached_by)
+                    VALUES (?, ?, ?)
+                    """,
+                arguments: [vehicleId, trailerId, env.adminUserId]
+            )
+            try db.execute(
+                sql: """
+                    INSERT INTO mileage_logs (vehicle_id, user_id, log_date, total_miles, purpose)
+                    VALUES (?, ?, '2026-05-02', 18.5, 'Service call'),
+                           (?, ?, '2026-05-01', 11.0, 'Pickup')
+                    """,
+                arguments: [vehicleId, env.adminUserId, vehicleId, env.adminUserId]
+            )
+            try db.execute(
+                sql: """
+                    INSERT INTO fuel_logs (vehicle_id, user_id, log_date, gallons, total_cost, station)
+                    VALUES (?, ?, '2026-05-03', 9.0, 36.0, 'Depot'),
+                           (?, ?, '2026-05-01', 7.5, 30.0, 'Yard')
+                    """,
+                arguments: [vehicleId, env.adminUserId, vehicleId, env.adminUserId]
+            )
+        }
+
+        let dashboard = try env.fleet.getMyTruckDashboardData(userId: env.adminUserId)
+        let legacyStats = try env.fleet.getMyVehicleStats(userId: env.adminUserId)
+        let legacyVehicle = try env.fleet.getVehicleDetail(id: vehicleId)
+        let legacyTruckStock = try env.fleet.getVehicleStock(vehicleId: vehicleId, stockType: "truck_stock")
+        let legacyTransferItems = try env.fleet.getVehicleStock(vehicleId: vehicleId, stockType: "transfer")
+        let legacyMileage = try env.fleet.listMileageLogs(vehicleId: vehicleId, limit: 5)
+        let legacyFuel = try env.fleet.listFuelLogs(vehicleId: vehicleId, limit: 5)
+
+        #expect(dashboard.vehicleStats?.vehicleId == legacyStats?.vehicleId)
+        #expect(dashboard.vehicleStats?.partCount == legacyStats?.partCount)
+        #expect(dashboard.vehicleStats?.transferItems == legacyStats?.transferItems)
+        #expect(dashboard.vehicleStats?.fuelLevel == legacyStats?.fuelLevel)
+        #expect(dashboard.vehicleStats?.hasTrailer == legacyStats?.hasTrailer)
+        #expect(dashboard.vehicleStats?.trailerId == legacyStats?.trailerId)
+        #expect(dashboard.vehicle?.vehicleName == legacyVehicle?.vehicleName)
+        #expect(dashboard.vehicle?.assignments.count == legacyVehicle?.assignments.count)
+        #expect(dashboard.truckStock.map(\.partName) == legacyTruckStock.map(\.partName))
+        #expect(dashboard.transferItems.map(\.partName) == legacyTransferItems.map(\.partName))
+        #expect(dashboard.recentMileage.map(\.logDate) == legacyMileage.map(\.logDate))
+        #expect(dashboard.recentFuel.map(\.logDate) == legacyFuel.map(\.logDate))
+    }
+
     // MARK: - Fleet Stats & Dashboard
 
     @Test("Fleet stats aggregates")

@@ -1156,6 +1156,41 @@ public final class FleetService: Sendable {
         }
     }
 
+    /// Combined payload for the iOS "My Truck" dashboard.
+    public struct MyTruckDashboardData: Sendable {
+        public let vehicleStats: MyVehicleStats?
+        public let vehicle: VehicleDetail?
+        public let truckStock: [VehicleStockItem]
+        public let transferItems: [VehicleStockItem]
+        public let recentMileage: [MileageRow]
+        public let recentFuel: [FuelRow]
+
+        public init(
+            vehicleStats: MyVehicleStats?,
+            vehicle: VehicleDetail?,
+            truckStock: [VehicleStockItem],
+            transferItems: [VehicleStockItem],
+            recentMileage: [MileageRow],
+            recentFuel: [FuelRow]
+        ) {
+            self.vehicleStats = vehicleStats
+            self.vehicle = vehicle
+            self.truckStock = truckStock
+            self.transferItems = transferItems
+            self.recentMileage = recentMileage
+            self.recentFuel = recentFuel
+        }
+
+        public static let empty = MyTruckDashboardData(
+            vehicleStats: nil,
+            vehicle: nil,
+            truckStock: [],
+            transferItems: [],
+            recentMileage: [],
+            recentFuel: []
+        )
+    }
+
     /// Get aggregated stats for the current user's assigned vehicle.
     public func getMyVehicleStats(userId: Int64) throws -> MyVehicleStats? {
         do {
@@ -1225,6 +1260,203 @@ public final class FleetService: Sendable {
             }
         } catch {
             if isTableNotFoundError(error) { return nil }
+            throw error
+        }
+    }
+
+    /// Load the "My Truck" dashboard in one database read instead of six
+    /// sequential service calls from the iOS page.
+    public func getMyTruckDashboardData(userId: Int64, recentLogLimit: Int = 5) throws -> MyTruckDashboardData {
+        do {
+            return try db.writer.read { dbConn -> MyTruckDashboardData in
+                guard let assignment = try Row.fetchOne(dbConn, sql: """
+                    SELECT v.*,
+                           va.vehicle_id,
+                           (SELECT COUNT(*)
+                            FROM tool_checkouts tc
+                            JOIN tools t ON tc.tool_id = t.id
+                            WHERE tc.checked_out_by = ?
+                              AND tc.checked_in_at IS NULL
+                              AND t.deleted_at IS NULL) AS tool_count,
+                           (SELECT COALESCE(SUM(quantity), 0)
+                            FROM vehicle_stock
+                            WHERE vehicle_id = v.id
+                              AND stock_type = 'truck_stock'
+                              AND deleted_at IS NULL) AS part_count,
+                           (SELECT COUNT(*)
+                            FROM maintenance_schedules ms
+                            WHERE ms.vehicle_id = v.id
+                              AND ms.deleted_at IS NULL
+                              AND ms.next_due_date IS NOT NULL
+                              AND date(ms.next_due_date) <= date('now', '+7 days')) AS maintenance_due,
+                           (SELECT COALESCE(SUM(quantity), 0)
+                            FROM vehicle_stock
+                            WHERE vehicle_id = v.id
+                              AND stock_type = 'transfer'
+                              AND deleted_at IS NULL) AS transfer_items,
+                           ta.trailer_id,
+                           jt.name AS trailer_name
+                    FROM vehicle_assignments va
+                    JOIN vehicles v ON va.vehicle_id = v.id AND v.deleted_at IS NULL AND v.is_active = 1
+                    LEFT JOIN trailer_attachments ta
+                        ON ta.vehicle_id = v.id AND ta.detached_at IS NULL AND ta.deleted_at IS NULL
+                    LEFT JOIN job_trailers jt
+                        ON ta.trailer_id = jt.id AND jt.deleted_at IS NULL AND jt.is_active = 1
+                    WHERE va.user_id = ? AND va.is_active = 1 AND va.deleted_at IS NULL
+                    ORDER BY va.start_date DESC
+                    LIMIT 1
+                    """, arguments: [userId, userId]) else {
+                    return .empty
+                }
+
+                let vehicleId: Int64 = assignment["vehicle_id"] ?? 0
+
+                let assignmentRows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT va.id, va.user_id, va.assignment_type, va.is_take_home,
+                               va.start_date, va.end_date, va.is_active,
+                               COALESCE(u.display_name, u.email, 'Unknown') AS user_name
+                        FROM vehicle_assignments va
+                        LEFT JOIN users u ON u.id = va.user_id AND u.deleted_at IS NULL
+                        WHERE va.vehicle_id = ? AND va.deleted_at IS NULL
+                        ORDER BY va.is_active DESC, va.start_date DESC
+                        """,
+                    arguments: [vehicleId]
+                )
+
+                let assignments = assignmentRows.map { row in
+                    AssignmentRow(
+                        id: row["id"] ?? 0,
+                        userId: row["user_id"] ?? 0,
+                        userName: row["user_name"] ?? "Unknown",
+                        assignmentType: row["assignment_type"] ?? "primary",
+                        isTakeHome: (row["is_take_home"] as Int?) == 1,
+                        startDate: row["start_date"] ?? "",
+                        endDate: row["end_date"] as String?,
+                        isActive: (row["is_active"] as Int?) == 1
+                    )
+                }
+
+                let stockRows = try Row.fetchAll(dbConn, sql: """
+                    SELECT id, part_name, quantity, stock_type,
+                           min_qty, target_qty, max_qty,
+                           source_location, destination_location, transfer_reason
+                    FROM vehicle_stock
+                    WHERE vehicle_id = ?
+                      AND stock_type IN ('truck_stock', 'transfer')
+                      AND deleted_at IS NULL
+                    ORDER BY stock_type ASC, part_name ASC
+                    """, arguments: [vehicleId])
+
+                let stockItems = stockRows.map { row in
+                    VehicleStockItem(
+                        id: row["id"] ?? 0,
+                        partName: row["part_name"] ?? "",
+                        quantity: row["quantity"] ?? 0,
+                        stockType: row["stock_type"] ?? "",
+                        minQty: row["min_qty"] as Int?,
+                        targetQty: row["target_qty"] as Int?,
+                        maxQty: row["max_qty"] as Int?,
+                        sourceLocation: row["source_location"] as String?,
+                        destinationLocation: row["destination_location"] as String?,
+                        transferReason: row["transfer_reason"] as String?
+                    )
+                }
+
+                let mileageRows = try Row.fetchAll(dbConn, sql: """
+                    SELECT ml.id, ml.log_date, ml.total_miles, ml.purpose,
+                           v.vehicle_name,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS user_name
+                    FROM mileage_logs ml
+                    LEFT JOIN vehicles v ON v.id = ml.vehicle_id AND v.deleted_at IS NULL AND v.is_active = 1
+                    LEFT JOIN users u ON u.id = ml.user_id AND u.deleted_at IS NULL
+                    WHERE ml.deleted_at IS NULL AND ml.vehicle_id = ?
+                    ORDER BY ml.log_date DESC
+                    LIMIT ?
+                    """, arguments: [vehicleId, recentLogLimit])
+
+                let fuelRows = try Row.fetchAll(dbConn, sql: """
+                    SELECT fl.id, fl.log_date, fl.gallons, fl.total_cost, fl.station,
+                           v.vehicle_name,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS user_name
+                    FROM fuel_logs fl
+                    LEFT JOIN vehicles v ON v.id = fl.vehicle_id AND v.deleted_at IS NULL AND v.is_active = 1
+                    LEFT JOIN users u ON u.id = fl.user_id AND u.deleted_at IS NULL
+                    WHERE fl.deleted_at IS NULL AND fl.vehicle_id = ?
+                    ORDER BY fl.log_date DESC
+                    LIMIT ?
+                    """, arguments: [vehicleId, recentLogLimit])
+
+                let vehicle = VehicleDetail(
+                    id: assignment["id"] ?? 0,
+                    vehicleNumber: assignment["vehicle_number"] ?? "",
+                    vehicleName: assignment["vehicle_name"] ?? "",
+                    vehicleType: assignment["vehicle_type"] ?? "truck",
+                    status: assignment["status"] ?? "active",
+                    make: assignment["make"] as String?,
+                    model: assignment["model"] as String?,
+                    year: assignment["year"] as Int?,
+                    color: assignment["color"] as String?,
+                    vin: assignment["vin"] as String?,
+                    licensePlate: assignment["license_plate"] as String?,
+                    insurancePolicy: assignment["insurance_policy"] as String?,
+                    insuranceExpiry: assignment["insurance_expiry"] as String?,
+                    registrationExpiry: assignment["registration_expiry"] as String?,
+                    currentOdometer: assignment["current_odometer"] as Int?,
+                    ownerUserId: assignment["owner_user_id"] as Int64?,
+                    notes: assignment["notes"] as String?,
+                    photoPath: assignment["photo_path"] as String?,
+                    isActive: (assignment["is_active"] as Int?) ?? 0,
+                    deletedAt: assignment["deleted_at"] as String?,
+                    createdAt: assignment["created_at"] as String?,
+                    updatedAt: assignment["updated_at"] as String?,
+                    assignments: assignments
+                )
+
+                let trailerId: Int64? = assignment["trailer_id"]
+                let stats = MyVehicleStats(
+                    vehicleId: vehicleId,
+                    toolCount: assignment["tool_count"] ?? 0,
+                    partCount: assignment["part_count"] ?? 0,
+                    fuelLevel: assignment["fuel_level"] as Double?,
+                    maintenanceDue: assignment["maintenance_due"] ?? 0,
+                    transferItems: assignment["transfer_items"] ?? 0,
+                    hasTrailer: trailerId != nil,
+                    trailerName: assignment["trailer_name"] as String?,
+                    trailerId: trailerId
+                )
+
+                return MyTruckDashboardData(
+                    vehicleStats: stats,
+                    vehicle: vehicle,
+                    truckStock: stockItems.filter { $0.stockType == "truck_stock" },
+                    transferItems: stockItems.filter { $0.stockType == "transfer" },
+                    recentMileage: mileageRows.map { row in
+                        MileageRow(
+                            id: row["id"] ?? 0,
+                            vehicleName: row["vehicle_name"] ?? "",
+                            userName: row["user_name"] ?? "Unknown",
+                            logDate: row["log_date"] ?? "",
+                            totalMiles: row["total_miles"] as Double?,
+                            purpose: row["purpose"] as String?
+                        )
+                    },
+                    recentFuel: fuelRows.map { row in
+                        FuelRow(
+                            id: row["id"] ?? 0,
+                            vehicleName: row["vehicle_name"] ?? "",
+                            userName: row["user_name"] ?? "Unknown",
+                            logDate: row["log_date"] ?? "",
+                            gallons: row["gallons"] as Double?,
+                            totalCost: row["total_cost"] as Double?,
+                            station: row["station"] as String?
+                        )
+                    }
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) { return .empty }
             throw error
         }
     }
