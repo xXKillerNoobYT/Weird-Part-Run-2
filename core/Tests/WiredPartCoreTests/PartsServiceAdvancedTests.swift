@@ -74,6 +74,31 @@ private func seedPollDirectly(
     }
 }
 
+// MARK: - Helper: Seed a stock target recommendation directly
+
+private func seedTargetRecommendation(
+    _ env: E2ETestHelpers.TestEnvironment,
+    partId: Int64,
+    type: String,
+    recommendedCategory: String? = nil
+) throws -> Int64 {
+    try env.db.writer.write { db in
+        try db.execute(sql: """
+            INSERT INTO target_recommendations
+            (part_id, location_type, location_id, recommendation_type,
+             current_min, current_target, current_max,
+             recommended_min, recommended_target, recommended_max,
+             current_category, recommended_category,
+             usage_value, usage_unit, data_days, impact_score, reason,
+             cooldown_until, status)
+            VALUES (?, 'warehouse', 1, ?, 1, 1, 1, 2, 4, 6,
+                    'common', ?, 1.0, 'daily', 30, 5.0, 'Seeded test recommendation',
+                    datetime('now', '+60 days'), 'pending')
+            """, arguments: [partId, type, recommendedCategory])
+        return db.lastInsertedRowID
+    }
+}
+
 // MARK: - Test Suite
 
 @Suite("PartsService Advanced Tests")
@@ -161,6 +186,204 @@ struct PartsServiceAdvancedTests {
         // Fresh DB has no parts/categories/brands/suppliers
         #expect(stats.totalParts >= 0)
         #expect(stats.totalCategories >= 0)
+    }
+
+    @Test("buildSupplierAIContext includes supplier profile fields and aggregate counts")
+    func testBuildSupplierAIContextIncludesProfileAndCounts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try env.parts.createCategory(name: "Context Category")
+        let partId = try env.parts.createPart(categoryId: catId, name: "Context Part", code: "CTX-001")
+        let brandId = try env.parts.createBrand(name: "Context Brand")
+        let supplierId = try env.parts.createSupplier(
+            name: "Context Supply",
+            contactName: "Casey Contact",
+            email: "orders@context.example",
+            phone: "555-0101",
+            repName: "Robin Rep",
+            deliveryMethod: "Counter pickup",
+            deliveryDays: "Mon/Wed/Fri",
+            accountNumber: "ACCT-42",
+            notes: "Keeps specialty fittings in stock"
+        )
+
+        _ = try env.parts.addPartSupplierLink(
+            partId: partId,
+            supplierId: supplierId,
+            supplierPartNumber: "SUP-CTX-001",
+            costPrice: 12.5,
+            isPreferred: true
+        )
+        _ = try env.parts.linkBrandToSupplier(brandId: brandId, supplierId: supplierId)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-CTX-001", supplierId: supplierId)
+        _ = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 3, unitPrice: 12.5)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE suppliers
+                SET quality_score = 98, on_time_rate = 87, reliability_score = 91
+                WHERE id = ?
+                """, arguments: [supplierId])
+        }
+
+        let context = try env.parts.buildSupplierAIContext()
+        #expect(context.contains("Total suppliers: 1"))
+        #expect(context.contains("Active: 1, Inactive: 0"))
+        #expect(context.contains("--- Context Supply  ---"))
+        #expect(context.contains("Account #: ACCT-42"))
+        #expect(context.contains("Contact: Casey Contact"))
+        #expect(context.contains("Phone: 555-0101"))
+        #expect(context.contains("Email: orders@context.example"))
+        #expect(context.contains("Delivery: Counter pickup"))
+        #expect(context.contains("Delivery Days: Mon/Wed/Fri"))
+        #expect(context.contains("Quality Score: 98%"))
+        #expect(context.contains("On-Time Rate: 87%"))
+        #expect(context.contains("Reliability: 91%"))
+        #expect(context.contains("Parts: 1, Brands: 1, POs: 1"))
+        #expect(context.contains("Sales Rep: Robin Rep"))
+        #expect(context.contains("Notes: Keeps specialty fittings in stock"))
+
+        let recentPOs = try env.parts.getSupplierRecentPOs(supplierId: supplierId, limit: 5)
+        let recentPO = try #require(recentPOs.first)
+        #expect(recentPO.poId == poId)
+        #expect(recentPO.poNumber == "PO-CTX-001")
+        #expect(recentPO.status == "draft")
+        #expect(recentPO.total == 37.5)
+        #expect(!recentPO.date.isEmpty)
+    }
+
+    @Test("buildSupplierAIContext marks inactive suppliers")
+    func testBuildSupplierAIContextMarksInactiveSupplier() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try env.parts.createSupplier(name: "Dormant Supply")
+
+        try env.parts.updateSupplier(id: supplierId, isActive: 0)
+
+        let context = try env.parts.buildSupplierAIContext()
+        #expect(context.contains("Active: 0, Inactive: 1"))
+        #expect(context.contains("--- Dormant Supply [INACTIVE] ---"))
+    }
+
+    @Test("supplier contacts and part costs round-trip through detail APIs")
+    func testSupplierContactsAndPartCosts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try env.parts.createCategory(name: "Supplier Detail Category")
+        let partId = try env.parts.createPart(categoryId: catId, name: "Supplier Detail Part", code: "SDP-001")
+        let supplierId = try env.parts.createSupplier(name: "Detail Supply")
+
+        try env.parts.addSupplierContact(
+            supplierId: supplierId,
+            firstName: "Primary",
+            lastName: "Buyer",
+            role: "Purchasing",
+            phone: "555-0133",
+            email: "buyer@detail.example",
+            isPrimary: true
+        )
+        try env.parts.addSupplierContact(
+            supplierId: supplierId,
+            firstName: "Backup",
+            lastName: "Desk",
+            role: "Counter",
+            phone: "555-0134",
+            email: nil,
+            isPrimary: false
+        )
+
+        let contacts = try env.parts.getSupplierContacts(supplierId: supplierId)
+        #expect(contacts.map(\.firstName) == ["Primary", "Backup"])
+        #expect(contacts.first?.role == "Purchasing")
+        #expect(contacts.first?.phone == "555-0133")
+        #expect(contacts.first?.email == "buyer@detail.example")
+        #expect(contacts.first?.isPrimary == 1)
+
+        try env.parts.removeSupplierContact(contactId: try #require(contacts.first?.contactId))
+        let remainingContacts = try env.parts.getSupplierContacts(supplierId: supplierId)
+        #expect(remainingContacts.count == 1)
+        #expect(remainingContacts.first?.firstName == "Backup")
+
+        _ = try env.parts.addPartSupplierLink(
+            partId: partId,
+            supplierId: supplierId,
+            supplierPartNumber: "DETAIL-001",
+            costPrice: 7.25,
+            isPreferred: true
+        )
+
+        let costs = try env.parts.getPartSupplierCosts(partId: partId)
+        let cost = try #require(costs.first)
+        #expect(cost.supplierId == supplierId)
+        #expect(cost.supplierName == "Detail Supply")
+        #expect(cost.supplierCostPrice == 7.25)
+        #expect(cost.supplierPartNumber == "DETAIL-001")
+        #expect(cost.isPreferred)
+    }
+
+    @Test("target recommendations generate, approve, and dismiss lifecycle paths")
+    func testTargetRecommendationLifecyclePaths() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try env.parts.createCategory(name: "Recommendation Category")
+        let partId = try env.parts.createPart(categoryId: catId, name: "Recommendation Part", code: "REC-001")
+
+        try env.parts.setLocationStockTarget(
+            partId: partId,
+            locationType: "warehouse",
+            locationId: 1,
+            minStock: 1,
+            targetStock: 1,
+            maxStock: 1
+        )
+
+        let generatedRecId = try seedTargetRecommendation(env, partId: partId, type: "adjust")
+        #expect(try env.parts.pendingRecommendationCount() == 1)
+        let generated = try #require(try env.parts.listPendingRecommendations(limit: 5).first)
+        #expect(generated.id == generatedRecId)
+        #expect(generated.recommendationType == "adjust")
+        #expect(generated.partId == partId)
+        #expect(generated.recommendedTarget ?? 0 > generated.currentTarget ?? 0)
+
+        try env.parts.approveRecommendation(id: try #require(generated.id), userId: env.adminUserId)
+        let adjusted = try #require(try env.parts.listLocationStockTargets(partId: partId).first)
+        #expect(adjusted.targetStock == generated.recommendedTarget)
+        #expect(try env.parts.pendingRecommendationCount() == 0)
+
+        let categoryRecId = try seedTargetRecommendation(
+            env,
+            partId: partId,
+            type: "category_change",
+            recommendedCategory: "critical"
+        )
+        try env.parts.approveRecommendation(id: categoryRecId, userId: env.adminUserId)
+
+        let category = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: """
+                SELECT part_category FROM location_stock_targets
+                WHERE part_id = ? AND location_type = 'warehouse' AND location_id = 1
+                """, arguments: [partId])
+        }
+        #expect(category == "critical")
+
+        let removeRecId = try seedTargetRecommendation(env, partId: partId, type: "remove")
+        try env.parts.approveRecommendation(id: removeRecId, userId: env.adminUserId)
+        let doNotRestock = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT do_not_restock FROM location_stock_targets
+                WHERE part_id = ? AND location_type = 'warehouse' AND location_id = 1
+                """, arguments: [partId])
+        }
+        #expect(doNotRestock == 1)
+
+        let dismissRecId = try seedTargetRecommendation(env, partId: partId, type: "adjust")
+        #expect(throws: PartsService.PartsError.self) {
+            try env.parts.dismissRecommendation(id: dismissRecId, userId: env.adminUserId, reason: "   ")
+        }
+        try env.parts.dismissRecommendation(id: dismissRecId, userId: env.adminUserId, reason: "Not useful yet")
+        let dismissedReason = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: """
+                SELECT dismissed_reason FROM target_recommendations
+                WHERE id = ? AND status = 'dismissed'
+                """, arguments: [dismissRecId])
+        }
+        #expect(dismissedReason == "Not useful yet")
     }
 
     @Test("exportPartsCSV includes selected groups and escapes CSV values")
