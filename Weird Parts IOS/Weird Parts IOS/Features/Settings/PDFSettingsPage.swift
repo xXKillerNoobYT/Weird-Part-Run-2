@@ -106,13 +106,11 @@ struct PDFSettingsPage: View {
             Text(errorMessage ?? "")
         }
         .interactiveDismissDisabled(isDirty)
-        .confirmationDialog(
-            "Discard changes?",
-            isPresented: $showDiscardConfirmation,
-            titleVisibility: .visible
-        ) {
+        .alert("Discard changes?", isPresented: $showDiscardConfirmation) {
             Button("Discard", role: .destructive) { dismiss() }
-            Button("Keep editing", role: .cancel) {}
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("You have unsaved changes that will be lost.")
         }
         .onChange(of: accentColor) { _, _ in markDirty() }
         .onChange(of: showUnitPrices) { _, _ in markDirty() }

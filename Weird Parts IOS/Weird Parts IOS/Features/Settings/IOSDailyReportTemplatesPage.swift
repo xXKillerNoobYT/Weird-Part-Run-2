@@ -112,13 +112,11 @@ struct IOSDailyReportTemplatesPage: View {
         .refreshable { loadSettings() }
         .task { loadSettings() }
         .interactiveDismissDisabled(isDirty)
-        .confirmationDialog(
-            "Discard changes?",
-            isPresented: $showDiscardConfirmation,
-            titleVisibility: .visible
-        ) {
+        .alert("Discard changes?", isPresented: $showDiscardConfirmation) {
             Button("Discard", role: .destructive) { dismiss() }
-            Button("Keep editing", role: .cancel) {}
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("You have unsaved changes that will be lost.")
         }
     }
 
@@ -190,6 +188,7 @@ struct IOSDailyReportTemplatesPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!isDirty)
             }
         }
         // Fix #149: dismiss keyboard when scrolling template editor

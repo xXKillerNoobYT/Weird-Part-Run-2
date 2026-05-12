@@ -241,16 +241,14 @@ struct IOSReportTemplatesPage: View {
                         .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
-            .confirmationDialog(
-                "Discard changes?",
-                isPresented: $showCreateDiscardConfirmation,
-                titleVisibility: .visible
-            ) {
+            .alert("Discard changes?", isPresented: $showCreateDiscardConfirmation) {
                 Button("Discard", role: .destructive) {
                     resetCreateForm()
                     activeSheet = nil
                 }
-                Button("Keep editing", role: .cancel) {}
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("You have unsaved changes that will be lost.")
             }
         }
     }

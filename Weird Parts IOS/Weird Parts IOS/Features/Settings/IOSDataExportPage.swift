@@ -72,13 +72,11 @@ struct IOSDataExportPage: View {
         }
         .task { if canExport { loadData() } }
         .interactiveDismissDisabled(isDirty || isExporting)
-        .confirmationDialog(
-            "Discard changes?",
-            isPresented: $showDiscardConfirmation,
-            titleVisibility: .visible
-        ) {
+        .alert("Discard changes?", isPresented: $showDiscardConfirmation) {
             Button("Discard", role: .destructive) { dismiss() }
-            Button("Keep editing", role: .cancel) {}
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("You have unsaved changes that will be lost.")
         }
         .onChange(of: selectedFormat) { _, _ in markDirty() }
         .onChange(of: selectedTables) { _, _ in markDirty() }
