@@ -114,6 +114,8 @@ struct CategoriesEditorPanel: View {
             brandEditor(brandId: brandId, typeId: typeId)
         case .color(let colorId, let typeId, let brandId):
             colorEditor(colorId: colorId, typeId: typeId, brandId: brandId)
+        case .sku(let skuId, let colorId, let typeId, let brandId):
+            skuEditor(skuId: skuId, colorId: colorId, typeId: typeId, brandId: brandId)
         }
     }
 
@@ -399,6 +401,44 @@ struct CategoriesEditorPanel: View {
         } else {
             Text("Type not found")
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - SKU Editor
+
+    @ViewBuilder
+    private func skuEditor(skuId: Int64, colorId: Int64, typeId: Int64, brandId: Int64) -> some View {
+        let color = findColor(colorId)
+        let brand = try? appCore.partsService?.getBrand(id: brandId)
+        VStack(alignment: .leading, spacing: DS.Space.md) {
+            Label("Brand SKU", systemImage: "number.square.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
+                Text(color?.name ?? "Variant")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                HStack(spacing: DS.Space.xs) {
+                    Text(brand?.name ?? "Brand")
+                        .fontWeight(.medium)
+                    Text("on")
+                        .foregroundStyle(.secondary)
+                    if let (_, _, typeNode) = findType(typeId) {
+                        Text(typeNode.type.name)
+                            .fontWeight(.medium)
+                    }
+                }
+                .font(.subheadline)
+            }
+
+            Text("This edits the SKU for this exact variant + brand + type. The reusable variant remains shared across the catalog.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            ColorBrandSKUEditorPanel(skuId: skuId, onRefresh: onRefresh)
         }
     }
 
@@ -749,6 +789,155 @@ struct ColorSupplierPartNumbersSection: View {
             await MainActor.run {
                 supplierParts = results
                 isLoading = false
+            }
+        }
+    }
+}
+
+// MARK: - Color Brand SKU Editor Panel
+
+struct ColorBrandSKUEditorPanel: View {
+    let skuId: Int64
+    var onRefresh: () async -> Void
+
+    @EnvironmentObject private var appCore: AppCore
+    @State private var sku: PartsService.ColorBrandSKU?
+    @State private var partNumber = ""
+    @State private var unitCost = ""
+    @State private var stockQty = ""
+    @State private var isLoading = true
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DS.Space.md) {
+            if isLoading {
+                ProgressView()
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, DS.Space.md)
+            } else if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else {
+                VStack(alignment: .leading, spacing: DS.Space.sm) {
+                    Text("Part Number")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("Manufacturer SKU", text: $partNumber)
+                        .textFieldStyle(.roundedBorder)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                }
+
+                VStack(alignment: .leading, spacing: DS.Space.sm) {
+                    Text("Unit Cost")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("0.00", text: $unitCost)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.decimalPad)
+                }
+
+                VStack(alignment: .leading, spacing: DS.Space.sm) {
+                    Text("Stock Quantity")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("0", text: $stockQty)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.numberPad)
+                }
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+
+                Button {
+                    save()
+                } label: {
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Label("Save SKU", systemImage: "checkmark.circle.fill")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isSaving)
+            }
+        }
+        .task(id: skuId) {
+            load()
+        }
+    }
+
+    private func load() {
+        guard let service = appCore.partsService else {
+            isLoading = false
+            errorMessage = "Parts service not available."
+            return
+        }
+
+        do {
+            let loaded = try service.getColorBrandSKU(skuId: skuId)
+            sku = loaded
+            partNumber = loaded?.partNumber ?? ""
+            unitCost = loaded?.unitCost.map { String(format: "%.2f", $0) } ?? ""
+            stockQty = loaded.map { String($0.stockQty) } ?? "0"
+            errorMessage = loaded == nil ? "SKU row not found." : nil
+            isLoading = false
+        } catch {
+            errorMessage = userFriendlyError(error, context: "load SKU")
+            isLoading = false
+        }
+    }
+
+    private func save() {
+        guard let service = appCore.partsService else {
+            errorMessage = "Parts service not available."
+            return
+        }
+
+        let trimmedPartNumber = partNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedPartNumber = trimmedPartNumber.isEmpty ? "" : trimmedPartNumber
+        let normalizedUnitCost: Double?
+        if unitCost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            normalizedUnitCost = nil
+        } else if let parsed = Double(unitCost) {
+            normalizedUnitCost = parsed
+        } else {
+            errorMessage = "Unit cost must be a number."
+            return
+        }
+
+        let normalizedStockQty: Int?
+        if stockQty.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            normalizedStockQty = 0
+        } else if let parsed = Int(stockQty), parsed >= 0 {
+            normalizedStockQty = parsed
+        } else {
+            errorMessage = "Stock quantity must be a whole number."
+            return
+        }
+
+        isSaving = true
+        Task {
+            do {
+                try service.updateColorBrandSKU(
+                    skuId: skuId,
+                    partNumber: normalizedPartNumber,
+                    unitCost: normalizedUnitCost,
+                    stockQty: normalizedStockQty
+                )
+                let refreshed = try service.getColorBrandSKU(skuId: skuId)
+                sku = refreshed
+                errorMessage = nil
+                isSaving = false
+                await onRefresh()
+            } catch {
+                errorMessage = userFriendlyError(error, context: "save SKU")
+                isSaving = false
             }
         }
     }

@@ -187,6 +187,12 @@ extension TreeSelection: Hashable {
             hasher.combine(colorId)
             hasher.combine(typeId)
             hasher.combine(brandId)
+        case .sku(let skuId, let colorId, let typeId, let brandId):
+            hasher.combine(5)
+            hasher.combine(skuId)
+            hasher.combine(colorId)
+            hasher.combine(typeId)
+            hasher.combine(brandId)
         }
     }
 }
@@ -194,4 +200,3 @@ extension TreeSelection: Hashable {
 #Preview {
     PartsCategoriesPage()
 }
-

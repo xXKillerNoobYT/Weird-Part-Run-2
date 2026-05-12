@@ -297,6 +297,17 @@ struct CategoriesColorPicker: View {
                 brandId: brandId
             )
 
+            // Concrete brand rows now render SKU records. Keep variants reusable,
+            // and create the brand-specific SKU shell only for a concrete brand.
+            if let brandId {
+                try service.upsertColorBrandSKU(
+                    colorId: colorId,
+                    brandId: brandId,
+                    typeId: typeId,
+                    partNumber: color.partNumber
+                )
+            }
+
             await MainActor.run {
                 linkedColorIds.insert(colorId)
                 recentlyAdded.insert(colorId)

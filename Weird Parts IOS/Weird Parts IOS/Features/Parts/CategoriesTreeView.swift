@@ -8,6 +8,7 @@ enum TreeSelection: Equatable {
     case type(Int64)
     case brand(brandId: Int64, typeId: Int64)
     case color(colorId: Int64, typeId: Int64, brandId: Int64?)
+    case sku(skuId: Int64, colorId: Int64, typeId: Int64, brandId: Int64)
 }
 
 /// Left-panel tree browser: 5-level nested hierarchy showing
@@ -29,6 +30,13 @@ struct CategoriesTreeView: View {
 
     /// Cache of effective cost per colorId, loaded alongside hierarchy.
     @State private var colorPriceCache: [Int64: Double?] = [:]
+    @State private var skuCache: [SKUCacheKey: [PartsService.ColorBrandSKU]] = [:]
+    @State private var skuLoadingKeys: Set<SKUCacheKey> = []
+
+    private struct SKUCacheKey: Hashable {
+        let typeId: Int64
+        let brandId: Int64
+    }
 
     // Single active-sheet enum to avoid multiple .sheet conflicts
     enum ActiveSheet: Identifiable {
@@ -572,10 +580,105 @@ struct CategoriesTreeView: View {
 
             // Color children under this brand
             if isExpanded {
-                ForEach(brandNode.colors, id: \.id) { color in
-                    colorRow(color, typeId: typeId, brandId: brandNode.brand?.id)
+                if let brand = brandNode.brand, let concreteBrandId = brand.id {
+                    skuRows(typeId: typeId, brandId: concreteBrandId, brandName: brand.name)
+                } else {
+                    ForEach(brandNode.colors, id: \.id) { color in
+                        colorRow(color, typeId: typeId, brandId: nil)
+                    }
                 }
             }
+        }
+    }
+
+    // MARK: - SKU Rows (Level 5, under concrete Brand)
+
+    @ViewBuilder
+    private func skuRows(typeId: Int64, brandId: Int64, brandName: String) -> some View {
+        let key = SKUCacheKey(typeId: typeId, brandId: brandId)
+        let rows = skuCache[key] ?? []
+
+        Group {
+            if skuLoadingKeys.contains(key) && rows.isEmpty {
+                HStack(spacing: DS.Space.sm) {
+                    ProgressView()
+                    Text("Loading SKUs...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, DS.Space.xs)
+                .padding(.leading, DS.Space.lg * 4 + 14)
+            } else if rows.isEmpty {
+                Text("No SKU rows yet - pick variants in the editor to create brand-specific SKUs")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, DS.Space.xs)
+                    .padding(.leading, DS.Space.lg * 4 + 14)
+            } else {
+                ForEach(rows, id: \.id) { sku in
+                    if let color = findColor(sku.colorId) {
+                        skuRow(sku, color: color, brandName: brandName)
+                    }
+                }
+            }
+        }
+        .task {
+            loadSKUsIfNeeded(typeId: typeId, brandId: brandId)
+        }
+    }
+
+    @ViewBuilder
+    private func skuRow(_ sku: PartsService.ColorBrandSKU, color: PartColor, brandName: String) -> some View {
+        let isSelected = selection == .sku(
+            skuId: sku.id,
+            colorId: sku.colorId,
+            typeId: sku.typeId,
+            brandId: sku.brandId
+        )
+
+        HStack(spacing: DS.Space.sm) {
+            variantChip(color)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: DS.Space.xs) {
+                    Text(brandName)
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.orange)
+                    Text("SKU")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if let pn = sku.partNumber, !pn.isEmpty {
+                    Text(pn)
+                        .font(.subheadline)
+                        .monospaced()
+                } else {
+                    Text("No SKU part number")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .italic()
+                }
+            }
+            Spacer()
+            if sku.stockQty > 0 {
+                Text("\(sku.stockQty) on hand")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, DS.Space.xs)
+        .padding(.horizontal, DS.Space.lg)
+        .padding(.leading, DS.Space.lg * 4 + 14)
+        .background(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            selection = .sku(
+                skuId: sku.id,
+                colorId: sku.colorId,
+                typeId: sku.typeId,
+                brandId: sku.brandId
+            )
         }
     }
 
@@ -642,6 +745,58 @@ struct CategoriesTreeView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             selection = .color(colorId: colorId, typeId: typeId, brandId: brandId)
+        }
+    }
+
+    private func loadSKUsIfNeeded(typeId: Int64, brandId: Int64) {
+        let key = SKUCacheKey(typeId: typeId, brandId: brandId)
+        guard skuCache[key] == nil, !skuLoadingKeys.contains(key), let parts = appCore.partsService else { return }
+        skuLoadingKeys.insert(key)
+        Task.detached {
+            let rows = (try? parts.getColorBrandSKUs(typeId: typeId, brandId: brandId)) ?? []
+            await MainActor.run {
+                skuCache[key] = rows
+                skuLoadingKeys.remove(key)
+            }
+        }
+    }
+
+    private func findColor(_ colorId: Int64) -> PartColor? {
+        for catNode in hierarchy.categories {
+            for styleNode in catNode.styles {
+                for typeNode in styleNode.types {
+                    for color in typeNode.colors where color.id == colorId {
+                        return color
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
+    @ViewBuilder
+    private func variantChip(_ color: PartColor) -> some View {
+        if let hex = color.hexCode, !hex.isEmpty, let resolved = Color(hex: hex) {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(resolved)
+                    .frame(width: 10, height: 10)
+                Text(color.name)
+                    .font(.caption2)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(Capsule())
+        } else {
+            Text(color.name)
+                .font(.caption2)
+                .lineLimit(1)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Color(.secondarySystemGroupedBackground))
+                .clipShape(Capsule())
         }
     }
 

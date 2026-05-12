@@ -776,6 +776,36 @@ struct PartsServiceCoverageTests {
         #expect(skus[0].isActive)
     }
 
+    @Test("ColorBrandSKU editor fields update part number, cost, and stock")
+    func testUpdateColorBrandSKU_updatesEditorFields() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let brandId = try E2ETestHelpers.seedBrand(env)
+        let colorId = try env.parts.createColor(name: "Green", hexCode: "#00AA00")
+
+        let skuId = try env.parts.upsertColorBrandSKU(
+            colorId: colorId,
+            brandId: brandId,
+            typeId: typeId,
+            partNumber: "OLD-GREEN",
+            unitCost: 1.25,
+            stockQty: 3
+        )
+
+        try env.parts.updateColorBrandSKU(
+            skuId: skuId,
+            partNumber: "NEW-GREEN",
+            unitCost: 2.75,
+            stockQty: 12
+        )
+
+        let loadedSKU = try env.parts.getColorBrandSKU(skuId: skuId)
+        let sku = try #require(loadedSKU)
+        #expect(sku.partNumber == "NEW-GREEN")
+        #expect(sku.unitCost == 2.75)
+        #expect(sku.stockQty == 12)
+    }
+
     @Test("upsertColorBrandSKU is idempotent — second call updates, not duplicates")
     func testUpsertColorBrandSKU_idempotent() throws {
         let env = try E2ETestHelpers.setUp()
