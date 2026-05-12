@@ -137,6 +137,96 @@ struct JobEstimationServiceTests {
         #expect((result.estimatedDays ?? 0) >= 0)
     }
 
+    @Test("Calculate estimate scores number, boolean, choice, text, and unknown answers")
+    func testCalculateEstimateScoringBranches() throws {
+        let (env, est) = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SCORE-001", name: "Scored Estimate")
+
+        let number = try est.createQuestion(
+            text: "How many panels?",
+            group: "scope",
+            stage: "bid",
+            answerType: "number"
+        )
+        let yesNo = try est.createQuestion(
+            text: "Needs shutdown?",
+            group: "risk",
+            stage: "bid",
+            answerType: "boolean"
+        )
+        let no = try est.createQuestion(
+            text: "Needs night work?",
+            group: "risk",
+            stage: "bid",
+            answerType: "boolean"
+        )
+        let choice = try est.createQuestion(
+            text: "Install difficulty?",
+            group: "scope",
+            stage: "bid",
+            answerType: "choice",
+            choices: ["easy", "medium", "hard"]
+        )
+        let text = try est.createQuestion(
+            text: "Notes",
+            group: "notes",
+            stage: "bid",
+            answerType: "text"
+        )
+        let unknown = try est.createQuestion(
+            text: "Utility lead time?",
+            group: "risk",
+            stage: "bid",
+            answerType: "number"
+        )
+
+        _ = try est.submitResponse(jobId: jobId, questionId: number.id!, stage: "bid", value: "12", answeredBy: env.adminUserId)
+        _ = try est.submitResponse(jobId: jobId, questionId: yesNo.id!, stage: "bid", value: "YES", answeredBy: env.adminUserId)
+        _ = try est.submitResponse(jobId: jobId, questionId: no.id!, stage: "bid", value: "no", answeredBy: env.adminUserId)
+        _ = try est.submitResponse(jobId: jobId, questionId: choice.id!, stage: "bid", value: "hard", answeredBy: env.adminUserId)
+        _ = try est.submitResponse(jobId: jobId, questionId: text.id!, stage: "bid", value: "tight room", answeredBy: env.adminUserId)
+        _ = try est.submitResponse(jobId: jobId, questionId: unknown.id!, stage: "bid", value: nil, isUnknown: true, answeredBy: env.adminUserId)
+
+        let result = try est.calculateEstimate(jobId: jobId, stage: "bid")
+
+        #expect(abs((result.estimatedDays ?? 0) - 17.0) < 0.001)
+        #expect(abs((result.estimatedHours ?? 0) - 136.0) < 0.001)
+        #expect(abs((result.confidencePercent ?? 0) - (5.0 / 6.0 * 100.0)) < 0.001)
+        #expect(result.aiSuggested == 0)
+    }
+
+    @Test("Weekly review captures labor actuals and bid estimate variance")
+    func testWeeklyReviewVarianceFromBidEstimate() throws {
+        let (env, est) = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-WEEKLY-001", name: "Weekly Review")
+
+        let q = try est.createQuestion(text: "Days?", group: "scope", stage: "bid", answerType: "number")
+        _ = try est.submitResponse(jobId: jobId, questionId: q.id!, stage: "bid", value: "2", answeredBy: env.adminUserId)
+        _ = try est.calculateEstimate(jobId: jobId, stage: "bid")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status)
+                VALUES
+                    (?, ?, '2026-05-01T08:00:00Z', '2026-05-01T16:00:00Z', 8, 0, 'clocked_out'),
+                    (?, ?, '2026-05-02T08:00:00Z', '2026-05-02T18:00:00Z', 8, 2, 'clocked_out')
+                """, arguments: [env.adminUserId, jobId, env.adminUserId, jobId])
+        }
+
+        let review = try est.submitWeeklyReview(
+            jobId: jobId,
+            reviewedBy: env.adminUserId,
+            notes: "Crew is ahead"
+        )
+
+        #expect(abs((review.actualHours ?? 0) - 18.0) < 0.001)
+        #expect(abs((review.actualDays ?? 0) - 2.25) < 0.001)
+        #expect(abs((review.estimateAtStart ?? 0) - 10.0) < 0.001)
+        #expect(abs((review.variancePercent ?? 0) - (-77.5)) < 0.001)
+        #expect(review.lessonsLearned == "Crew is ahead")
+    }
+
     @Test("Get latest result for job")
     func testGetLatestResult() throws {
         let (env, est) = try freshEnv()

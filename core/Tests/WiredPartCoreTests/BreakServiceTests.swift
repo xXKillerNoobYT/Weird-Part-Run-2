@@ -185,6 +185,81 @@ struct BreakServiceTests {
         #expect(compliance.takenLunchMinutes == 30)
     }
 
+    @Test("Break compliance marks manual minimums bonus eligible")
+    func testBreakComplianceBonusEligibleForManualMinimums() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        try breakService.updateCompanyBreakSettings(
+            stateCode: "CA",
+            roundingMinutes: 15,
+            roundingEnabled: false,
+            autoFillBreaks: false
+        )
+        _ = try breakService.savePolicy(
+            stateCode: "CA",
+            policyType: "state_required_paid",
+            lunchMinutes: 30,
+            breakCount: 2,
+            breakMinutes: 15
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO break_records
+                    (user_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
+                VALUES
+                    (?, 'break', date('now') || 'T10:00:00', date('now') || 'T10:15:00', 15, 1, 0),
+                    (?, 'lunch_unpaid', date('now') || 'T12:00:00', date('now') || 'T12:30:00', 30, 0, 0),
+                    (?, 'break', date('now') || 'T14:00:00', date('now') || 'T14:15:00', 15, 1, 0)
+                """, arguments: [env.adminUserId, env.adminUserId, env.adminUserId])
+        }
+
+        let compliance = try breakService.calculateBreakCompliance(userId: env.adminUserId)
+        #expect(compliance.requiredBreaks == 2)
+        #expect(compliance.takenBreaks == 2)
+        #expect(compliance.takenLunchMinutes == 30)
+        #expect(compliance.isCompliant)
+        #expect(!compliance.autoFilled)
+        #expect(compliance.bonusEligible)
+    }
+
+    @Test("Break compliance blocks bonus when any record was auto-filled")
+    func testBreakComplianceAutoFilledBlocksBonus() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        try breakService.updateCompanyBreakSettings(
+            stateCode: "CA",
+            roundingMinutes: 15,
+            roundingEnabled: false,
+            autoFillBreaks: true
+        )
+        _ = try breakService.savePolicy(
+            stateCode: "CA",
+            policyType: "state_required_paid",
+            lunchMinutes: 30,
+            breakCount: 2,
+            breakMinutes: 15
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO break_records
+                    (user_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
+                VALUES
+                    (?, 'break', date('now') || 'T10:00:00', date('now') || 'T10:15:00', 15, 1, 1),
+                    (?, 'lunch_paid', date('now') || 'T12:00:00', date('now') || 'T12:30:00', 30, 1, 1),
+                    (?, 'break', date('now') || 'T14:00:00', date('now') || 'T14:15:00', 15, 1, 1)
+                """, arguments: [env.adminUserId, env.adminUserId, env.adminUserId])
+        }
+
+        let compliance = try breakService.calculateBreakCompliance(userId: env.adminUserId)
+        #expect(compliance.isCompliant)
+        #expect(compliance.autoFilled)
+        #expect(!compliance.bonusEligible)
+    }
+
     // MARK: - Auto Fill
 
     @Test("autoFillBreaksForDay is no-op when autoFill is disabled")
@@ -268,5 +343,20 @@ struct BreakServiceTests {
         // 10:16 should round down to 10:15
         let rounded2 = breakService.getRoundedTime(time: "10:16", roundingMinutes: 15)
         #expect(rounded2 == "10:15")
+    }
+
+    @Test("getRoundedTime handles datetime, invalid, and disabled rounding")
+    func testRoundedTimeEdgeInputs() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        let roundedDateTime = breakService.getRoundedTime(
+            time: "2026-05-12T10:29:42Z",
+            roundingMinutes: 15
+        )
+        #expect(roundedDateTime.contains("10:15:42"))
+
+        #expect(breakService.getRoundedTime(time: "not-a-time", roundingMinutes: 15) == "not-a-time")
+        #expect(breakService.getRoundedTime(time: "10:07", roundingMinutes: 0) == "10:07")
     }
 }
