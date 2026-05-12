@@ -134,6 +134,82 @@ struct OrdersServiceTests {
         #expect(demand.count >= 0)
     }
 
+    @Test("Procurement demand includes approved JPO urgency, supplier tags, and overstock rows")
+    func testProcurementDemandAggregatesSuppliersAndOverstock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-PROC", name: "Procurement Job")
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "ProcurementCat")
+        let brandId = try E2ETestHelpers.seedBrand(env, name: "ProcurementBrand")
+        let demandPartId = try env.parts.createPart(
+            categoryId: categoryId,
+            name: "Procurement Demand Part",
+            code: "PROC-DEMAND",
+            brandId: brandId,
+            minStockLevel: 5,
+            maxStockLevel: 20,
+            targetStockLevel: 12
+        )
+        let overstockPartId = try env.parts.createPart(
+            categoryId: categoryId,
+            name: "Procurement Overstock Part",
+            code: "PROC-OVER",
+            maxStockLevel: 2
+        )
+
+        let cheapSupplier = try env.parts.createSupplier(name: "Cheap Supplier", deliveryDays: "4")
+        let ratedSupplier = try env.parts.createSupplier(name: "Rated Supplier", deliveryDays: "3")
+        let fastSupplier = try env.parts.createSupplier(name: "Fast Supplier", deliveryDays: "1")
+        try env.parts.addPartSupplierLink(partId: demandPartId, supplierId: cheapSupplier, costPrice: 1.25)
+        try env.parts.addPartSupplierLink(partId: demandPartId, supplierId: ratedSupplier, costPrice: 2.50)
+        try env.parts.addPartSupplierLink(partId: demandPartId, supplierId: fastSupplier, costPrice: 3.50)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE suppliers SET reliability_score = 0.50 WHERE id = ?", arguments: [cheapSupplier])
+            try db.execute(sql: "UPDATE suppliers SET reliability_score = 0.98 WHERE id = ?", arguments: [ratedSupplier])
+            try db.execute(sql: "UPDATE suppliers SET reliability_score = 0.70 WHERE id = ?", arguments: [fastSupplier])
+        }
+
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let lineId = try env.orders.addJPOLineItem(
+            jpoId: jpoId,
+            partId: demandPartId,
+            quantity: 7,
+            notes: "Needs ordering",
+            userId: env.adminUserId
+        )
+        try env.orders.updateJPOLineStatus(lineId: lineId, status: "approved", updatedBy: env.adminUserId)
+
+        _ = try E2ETestHelpers.seedStock(env, partId: overstockPartId, qty: 5)
+
+        let demand = try env.orders.getProcurementDemand()
+        let demandItem = try #require(demand.first { $0.id == demandPartId })
+        let overstockItem = try #require(demand.first { $0.id == overstockPartId })
+
+        #expect(demandItem.partName == "Procurement Demand Part")
+        #expect(demandItem.brandName == "ProcurementBrand")
+        #expect(demandItem.totalDemand == 7)
+        #expect(demandItem.shopStock == 0)
+        #expect(demandItem.minStock == 5)
+        #expect(demandItem.targetStock == 12)
+        #expect(demandItem.maxStock == 20)
+        #expect(demandItem.deltaToTarget == 12)
+        #expect(demandItem.urgency == "understock")
+        #expect(demandItem.sources.first?.sourceType == "jpo")
+        #expect(demandItem.sources.first?.lineIds == [lineId])
+        #expect(demandItem.suppliers.count == 3)
+        #expect(demandItem.suppliers.first(where: { $0.id == cheapSupplier })?.tag == "cheapest")
+        #expect(demandItem.suppliers.first(where: { $0.id == ratedSupplier })?.tag == "rated")
+        #expect(demandItem.suppliers.first(where: { $0.id == fastSupplier })?.tag == "fastest")
+
+        #expect(overstockItem.totalDemand == 0)
+        #expect(overstockItem.shopStock == 5)
+        #expect(overstockItem.maxStock == 2)
+        #expect(overstockItem.deltaToTarget == -3)
+        #expect(overstockItem.urgency == "overstock")
+        #expect(overstockItem.sources.first?.sourceType == "overstock")
+        #expect(overstockItem.sources.first?.quantity == 3)
+    }
+
     // MARK: - Returns
 
     @Test("List returns empty on fresh DB")
