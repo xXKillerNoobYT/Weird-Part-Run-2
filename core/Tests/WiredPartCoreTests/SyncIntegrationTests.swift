@@ -347,6 +347,7 @@ struct SyncIntegrationTests {
         var withCertReq = URLRequest(url: URL(string: "\(baseURL)/sync/push")!)
         withCertReq.httpMethod = "POST"
         withCertReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        addReplayHeaders(to: &withCertReq, nonce: "valid-cert-\(UUID().uuidString)")
         withCertReq.httpBody = withCertData
         withCertReq.timeoutInterval = 5
 
@@ -394,6 +395,7 @@ struct SyncIntegrationTests {
         var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/push")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        addReplayHeaders(to: &req, nonce: "expired-cert-\(UUID().uuidString)")
         req.httpBody = bodyData
         req.timeoutInterval = 5
 
@@ -542,5 +544,12 @@ struct SyncIntegrationTests {
 
         let (_, pullHTTP) = try await URLSession.shared.data(for: pullReq)
         #expect((pullHTTP as! HTTPURLResponse).statusCode == 403)
+    }
+
+    private func addReplayHeaders(to request: inout URLRequest, nonce: String) {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        request.setValue(nonce, forHTTPHeaderField: "X-Sync-Nonce")
+        request.setValue(formatter.string(from: Date()), forHTTPHeaderField: "X-Sync-Timestamp")
     }
 }
