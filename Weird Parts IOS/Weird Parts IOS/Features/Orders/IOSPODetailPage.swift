@@ -1823,7 +1823,7 @@ struct IOSPODetailPage: View {
 
             // View supplier profile link
             NavigationLink {
-                Text("Supplier Profile")
+                PartsSuppliersPage(highlightSupplierId: po.supplierId)
             } label: {
                 Label("View Supplier Profile", systemImage: "person.crop.rectangle")
                     .font(.caption)

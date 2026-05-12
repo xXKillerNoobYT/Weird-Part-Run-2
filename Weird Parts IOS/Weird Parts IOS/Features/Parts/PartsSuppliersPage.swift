@@ -6,6 +6,7 @@ import WiredPartCore
 /// Searchable list with supplier cards showing contact details, delivery info,
 /// and quality scores. Supports create, edit, delete via sheets and swipe actions.
 struct PartsSuppliersPage: View {
+    var highlightSupplierId: Int64? = nil
     @EnvironmentObject private var appCore: AppCore
     @State private var suppliers: [SupplierListRow] = []
     @State private var isLoading = true
@@ -156,6 +157,9 @@ struct PartsSuppliersPage: View {
 
     private var filteredSuppliers: [SupplierListRow] {
         var result = suppliers
+        if let highlightSupplierId {
+            result = result.filter { $0.id == highlightSupplierId }
+        }
         if let active = filterActive, active {
             result = result.filter { $0.isActive == 1 }
         }
@@ -372,6 +376,10 @@ struct PartsSuppliersPage: View {
                 )
             }
             suppliers = rows
+            if let highlightSupplierId,
+               rows.contains(where: { $0.id == highlightSupplierId && $0.isActive != 1 }) {
+                filterActive = nil
+            }
             isLoading = false
         } catch {
             loadError = userFriendlyError(error, context: "load suppliers")

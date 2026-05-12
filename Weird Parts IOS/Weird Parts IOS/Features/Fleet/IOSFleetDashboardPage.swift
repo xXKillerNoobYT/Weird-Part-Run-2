@@ -454,9 +454,7 @@ struct IOSFleetDashboardPage: View {
                 .padding(.horizontal, 4)
 
             NavigationLink {
-                Text("Fleet Reports")
-                    .font(.title2)
-                    .foregroundStyle(.secondary)
+                IOSReportsRouter(tabId: "reports-hub", initialCategory: .fleet)
             } label: {
                 HStack {
                     Image(systemName: "chart.bar.fill")
