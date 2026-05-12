@@ -853,6 +853,8 @@ public final class AuthService: Sendable {
                 // Wishlist management
                 "wishlist.approve", "wishlist.dismiss", "wishlist.send_to_procurement", "wishlist.reopen",
                 "wishlist.auto_approve",
+                // Parts recommendation approvals
+                "parts.approve_recommendation", "parts.dismiss_recommendation",
             ],
             "Manager": [
                 "view_parts_catalog", "edit_parts_catalog", "edit_pricing", "show_dollar_values",
@@ -876,6 +878,8 @@ public final class AuthService: Sendable {
                 // Wishlist management
                 "wishlist.approve", "wishlist.dismiss", "wishlist.send_to_procurement", "wishlist.reopen",
                 "wishlist.auto_approve",
+                // Parts recommendation approvals
+                "parts.approve_recommendation", "parts.dismiss_recommendation",
             ],
             "Office": [
                 "view_parts_catalog", "edit_parts_catalog", "show_dollar_values",

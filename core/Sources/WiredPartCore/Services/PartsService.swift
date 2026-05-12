@@ -11,9 +11,11 @@ import GRDB
 /// Ported from: Parts & Inventory feature area (Phases 2, 2.5, 3.5, 16)
 public final class PartsService: Sendable {
     private let db: AppDatabase
+    private let auth: AuthService
 
-    public init(db: AppDatabase) {
+    public init(db: AppDatabase, auth: AuthService? = nil) {
         self.db = db
+        self.auth = auth ?? AuthService(db: db)
     }
 
     // MARK: - Result Types
@@ -348,6 +350,7 @@ public final class PartsService: Sendable {
         case insufficientStock(available: Int, requested: Int)
         case insufficientReturns(available: Int, requested: Int)
         case invalidInput(String)
+        case insufficientPermissions(required: String)
     }
 
     // =========================================================================
@@ -3935,6 +3938,11 @@ public final class PartsService: Sendable {
 
     /// Approve a recommendation — applies the new values to location_stock_targets.
     public func approveRecommendation(id: Int64, userId: Int64) throws {
+        let requiredPermission = "parts.approve_recommendation"
+        guard try auth.hasPermission(userId, permissionKey: requiredPermission) else {
+            throw PartsError.insufficientPermissions(required: requiredPermission)
+        }
+
         try db.writer.write { dbConn in
             guard let rec = try TargetRecommendation.fetchOne(dbConn, key: id),
                   rec.status == "pending" else { return }
@@ -3979,6 +3987,11 @@ public final class PartsService: Sendable {
         guard !reason.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw PartsError.invalidInput("Dismiss reason is required")
         }
+        let requiredPermission = "parts.dismiss_recommendation"
+        guard try auth.hasPermission(userId, permissionKey: requiredPermission) else {
+            throw PartsError.insufficientPermissions(required: requiredPermission)
+        }
+
         try db.writer.write { dbConn in
             try dbConn.execute(sql: """
                 UPDATE target_recommendations SET

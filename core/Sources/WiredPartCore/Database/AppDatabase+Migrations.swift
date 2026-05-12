@@ -114,6 +114,7 @@ extension AppDatabase {
         registerMigration075CompanionFeedbackNullableSuggestionId(&migrator)
         registerMigration076StockMovementsCompositeIndex(&migrator)
         registerMigration077VehicleIssueReports(&migrator)
+        registerMigration078PartsRecommendationPermissions(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4960,6 +4961,24 @@ extension AppDatabase {
             }
             try db.create(index: "idx_vehicle_issue_reports_vehicle", on: "vehicle_issue_reports", columns: ["vehicle_id"])
             try db.create(index: "idx_vehicle_issue_reports_status", on: "vehicle_issue_reports", columns: ["status"])
+        }
+    }
+
+    private static func registerMigration078PartsRecommendationPermissions(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("078_parts_recommendation_permissions") { db in
+            let permissions: [(key: String, hatNames: [String])] = [
+                ("parts.approve_recommendation", ["Admin", "Manager"]),
+                ("parts.dismiss_recommendation", ["Admin", "Manager"]),
+            ]
+
+            for permission in permissions {
+                for hatName in permission.hatNames {
+                    try db.execute(sql: """
+                        INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+                        SELECT id, ? FROM hats WHERE name = ?
+                        """, arguments: [permission.key, hatName])
+                }
+            }
         }
     }
 
