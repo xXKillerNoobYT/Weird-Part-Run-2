@@ -17,6 +17,11 @@ MARKETPLACE_FILE="$TARGET_ROOT/.agents/plugins/marketplace.json"
 
 mkdir -p "$TARGET_PLUGINS_DIR" "$(dirname "$MARKETPLACE_FILE")"
 
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "error: required command missing: python3" >&2
+  exit 1
+fi
+
 if [[ -L "$TARGET_PLUGIN_DIR" || -e "$TARGET_PLUGIN_DIR" ]]; then
   rm -rf "$TARGET_PLUGIN_DIR"
 fi
