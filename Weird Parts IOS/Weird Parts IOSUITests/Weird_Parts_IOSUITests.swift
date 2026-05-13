@@ -19,6 +19,7 @@
 //
 
 import XCTest
+import UIKit
 
 final class Weird_Parts_IOSUITests: XCTestCase {
 
@@ -38,6 +39,49 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
     override func tearDownWithError() throws {
         app = nil
+    }
+
+    // MARK: - Login Accessibility
+
+    @MainActor
+    func testLoginSignInButtonHittableAtAX5WithKeyboardVisible() throws {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments += [
+            "-UITesting",
+            "-UIPreferredContentSizeCategoryName",
+            UIContentSizeCategory.accessibilityExtraExtraExtraLarge.rawValue
+        ]
+        app.launch()
+
+        let loginView = app.otherElements["loginView"]
+        guard loginView.waitForExistence(timeout: 30) else {
+            throw XCTSkip("Login was not shown; this regression requires a fresh logged-out UI-test launch.")
+        }
+
+        let userRows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'loginUserRow_'"))
+        guard userRows.firstMatch.waitForExistence(timeout: 20) else {
+            throw XCTSkip("Login seed user was not available; cannot exercise the PIN keyboard layout.")
+        }
+        userRows.firstMatch.tap()
+
+        let pinField = app.secureTextFields["loginPINField"]
+        XCTAssertTrue(pinField.waitForExistence(timeout: 5),
+                      "PIN field should appear after selecting a user")
+        pinField.tap()
+        pinField.typeText("1234")
+
+        let signIn = app.buttons["loginSignInButton"]
+        XCTAssertTrue(signIn.waitForExistence(timeout: 5),
+                      "Sign In should remain in the keyboard-aware bottom inset")
+        XCTAssertTrue(signIn.isHittable,
+                      "Sign In should be hittable at AX5 while the number pad is visible")
+
+        let done = app.buttons["loginPINDoneButton"]
+        XCTAssertTrue(done.waitForExistence(timeout: 3),
+                      "Number pad should expose a Done toolbar button")
+        XCTAssertTrue(done.isHittable,
+                      "Done toolbar button should be tappable at AX5")
     }
 
     // MARK: - Helper: Navigate to Parts > Categories

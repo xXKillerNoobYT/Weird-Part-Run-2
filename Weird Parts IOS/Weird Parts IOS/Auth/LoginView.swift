@@ -8,85 +8,99 @@ import WiredPartCore
 /// against the local SHA-256 hash.
 struct LoginView: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var users: [User] = []
     @State private var selectedUser: User?
     @State private var pin = ""
     @State private var errorMessage: String?
     @State private var isLoading = false
     @State private var usersLoaded = false
+    @FocusState private var pinFocused: Bool
+
+    private var isAccessibilitySize: Bool {
+        dynamicTypeSize >= .accessibility1
+    }
+
+    private var shouldCollapseSelectedUserHeader: Bool {
+        selectedUser != nil && isAccessibilitySize
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            VStack(spacing: 8) {
-                Image(systemName: "wrench.and.screwdriver.fill")
-                    .decorativeIconFont(48)
-                    .foregroundStyle(Color.accentColor)
-                Text("WiredPart")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                Text("Select your name and enter your PIN")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+            if !shouldCollapseSelectedUserHeader {
+                // Header
+                VStack(spacing: 8) {
+                    Image(systemName: "wrench.and.screwdriver.fill")
+                        .decorativeIconFont(48)
+                        .foregroundStyle(Color.accentColor)
+                    Text("WiredPart")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                    Text("Select your name and enter your PIN")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.top, 40)
+                .padding(.bottom, 24)
+                .padding(.horizontal)
             }
-            .padding(.top, 40)
-            .padding(.bottom, 24)
 
             if let selected = selectedUser {
                 // PIN entry for selected user
-                VStack(spacing: 16) {
-                    HStack {
-                        Button {
-                            withAnimation {
-                                selectedUser = nil
-                                pin = ""
-                                errorMessage = nil
+                ScrollView {
+                    VStack(spacing: 16) {
+                        HStack {
+                            Button {
+                                withAnimation {
+                                    selectedUser = nil
+                                    pin = ""
+                                    errorMessage = nil
+                                    pinFocused = false
+                                }
+                            } label: {
+                                Image(systemName: "chevron.left")
+                                Text("Back")
                             }
-                        } label: {
-                            Image(systemName: "chevron.left")
-                            Text("Back")
+                            .frame(minHeight: 44)
+                            .accessibilityIdentifier("loginBackButton")
+                            Spacer()
                         }
-                        .accessibilityIdentifier("loginBackButton")
-                        Spacer()
+                        .padding(.horizontal)
+
+                        Text("Hello, \(selected.displayName)")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                            .multilineTextAlignment(.center)
+
+                        SecureField("Enter PIN", text: $pin)
+                            .textContentType(.password)
+                            .keyboardType(.numberPad)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 320)
+                            .multilineTextAlignment(.center)
+                            .focused($pinFocused)
+                            .onSubmit { attemptLogin() }
+                            .accessibilityIdentifier("loginPINField")
+                            .toolbar {
+                                ToolbarItemGroup(placement: .keyboard) {
+                                    Spacer()
+                                    Button {
+                                        pinFocused = false
+                                    } label: {
+                                        Text("Done")
+                                            .frame(minWidth: 44, minHeight: 44)
+                                    }
+                                    .accessibilityIdentifier("loginPINDoneButton")
+                                }
+                            }
                     }
-                    .padding(.horizontal)
-
-                    Text("Hello, \(selected.displayName)")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-
-                    SecureField("Enter PIN", text: $pin)
-                        .textContentType(.password)
-                        .keyboardType(.numberPad)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 200)
-                        .multilineTextAlignment(.center)
-                        .onSubmit { attemptLogin() }
-                        .accessibilityIdentifier("loginPINField")
-
-                    if let error = errorMessage {
-                        Text(error)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                            .accessibilityIdentifier("loginErrorMessage")
-                    }
-
-                    Button {
-                        attemptLogin()
-                    } label: {
-                        if isLoading {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Text("Sign In")
-                                .fontWeight(.semibold)
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(pin.count < 4 || isLoading)
-                    .accessibilityIdentifier("loginSignInButton")
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, 12)
                 }
-                .padding()
+                .scrollDismissesKeyboard(.interactively)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 // User list
                 if users.isEmpty && !usersLoaded {
@@ -124,6 +138,7 @@ struct LoginView: View {
                                     withAnimation {
                                         selectedUser = user
                                         errorMessage = nil
+                                        pinFocused = true
                                     }
                                 } label: {
                                     HStack(spacing: 12) {
@@ -160,7 +175,46 @@ struct LoginView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityIdentifier("loginView")
         .background(Color(.systemBackground))
+        .safeAreaInset(edge: .bottom) {
+            if selectedUser != nil {
+                VStack(spacing: 12) {
+                    if let error = errorMessage {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .multilineTextAlignment(.center)
+                            .accessibilityIdentifier("loginErrorMessage")
+                    }
+
+                    Button {
+                        attemptLogin()
+                    } label: {
+                        Group {
+                            if isLoading {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Text("Sign In")
+                                    .fontWeight(.semibold)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(pin.count < 4 || isLoading)
+                    .accessibilityIdentifier("loginSignInButton")
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity)
+                .background(.bar)
+            }
+        }
         .onAppear { loadUsers() }
+        .onChange(of: selectedUser?.id) { _, newValue in
+            pinFocused = newValue != nil
+        }
     }
 
     // MARK: - Actions
