@@ -119,6 +119,20 @@ public struct EstimationReview: Codable, FetchableRecord, MutablePersistableReco
     public var lessonsLearned: String?
     public var reviewedBy: Int64?
     public var reviewedAt: String?
+    public var delayFactors: String?
+    public var onTrackStatus: String?
+    public var unresolvedQuestionCount: Int?
+    public var crewFeedback: String?
+    public var gcRating: Int?
+
+    public var decodedDelayFactors: [String] {
+        guard let delayFactors,
+              let data = delayFactors.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode([String].self, from: data) else {
+            return []
+        }
+        return decoded
+    }
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -131,9 +145,37 @@ public struct EstimationReview: Codable, FetchableRecord, MutablePersistableReco
         case lessonsLearned = "lessons_learned"
         case reviewedBy = "reviewed_by"
         case reviewedAt = "reviewed_at"
+        case delayFactors = "delay_factors"
+        case onTrackStatus = "on_track_status"
+        case unresolvedQuestionCount = "unresolved_question_count"
+        case crewFeedback = "crew_feedback"
+        case gcRating = "gc_rating"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
+/// Per-question feedback captured during an end-of-job estimation review.
+public struct QuestionAccuracyFeedbackInput: Codable, Sendable {
+    public var questionId: Int64
+    public var predictedImpact: String?
+    public var actualImpact: String?
+    public var accuracyRating: Int
+    public var notes: String?
+
+    public init(
+        questionId: Int64,
+        predictedImpact: String? = nil,
+        actualImpact: String? = nil,
+        accuracyRating: Int,
+        notes: String? = nil
+    ) {
+        self.questionId = questionId
+        self.predictedImpact = predictedImpact
+        self.actualImpact = actualImpact
+        self.accuracyRating = accuracyRating
+        self.notes = notes
+    }
 }
 
 // MARK: - EstimationQuestionRejection

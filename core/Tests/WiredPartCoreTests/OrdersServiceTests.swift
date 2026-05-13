@@ -70,6 +70,47 @@ struct OrdersServiceTests {
         #expect(detail.lines.count == 1)
     }
 
+    @Test("Create JPO with lines persists line notes")
+    func testCreateJPOWithLinesPersistsLineNotes() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        let jpoId = try env.orders.createJPOWithLines(
+            jobId: jobId,
+            requestedBy: env.adminUserId,
+            priority: "normal",
+            deliveryOption: "standard",
+            notes: "Bundle order",
+            lines: [(partId: partId, quantity: 10)],
+            lineNotes: ["Confirm panel fit before procurement"]
+        )
+
+        let detail = try env.orders.getJPODetail(id: jpoId)
+        #expect(detail.lines.first?.notes == "Confirm panel fit before procurement")
+    }
+
+    @Test("Create JPO with lines rejects mismatched line notes")
+    func testCreateJPOWithLinesRejectsMismatchedLineNotes() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        #expect(throws: OrdersService.OrdersError.invalidStatus("Line notes count must match JPO line count")) {
+            try env.orders.createJPOWithLines(
+                jobId: jobId,
+                requestedBy: env.adminUserId,
+                priority: "normal",
+                deliveryOption: "standard",
+                notes: nil,
+                lines: [(partId: partId, quantity: 10)],
+                lineNotes: ["one", "too many"]
+            )
+        }
+    }
+
     // MARK: - Purchase Orders
 
     @Test("Create and list purchase orders")

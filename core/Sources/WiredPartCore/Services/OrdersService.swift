@@ -1046,7 +1046,8 @@ public final class OrdersService: Sendable {
         priority: String,
         deliveryOption: String,
         notes: String?,
-        lines: [(partId: Int64, quantity: Int)]
+        lines: [(partId: Int64, quantity: Int)],
+        lineNotes: [String?]? = nil
     ) throws -> Int64 {
         try db.writer.write { dbConn in
             // Guard: job and requesting user must exist and not be tombstoned (mirrors createJPO).
@@ -1059,6 +1060,12 @@ public final class OrdersService: Sendable {
                 SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [requestedBy]) ?? 0) > 0
             guard userExists else { throw OrdersError.userNotFound(requestedBy) }
+
+            if let lineNotes {
+                guard lineNotes.count == lines.count else {
+                    throw OrdersError.invalidStatus("Line notes count must match JPO line count")
+                }
+            }
 
             // Guard: every line must have qty > 0 and a live part.
             for line in lines {
@@ -1080,12 +1087,13 @@ public final class OrdersService: Sendable {
             let jpoId = dbConn.lastInsertedRowID
 
             // 2. Insert each line and smart-route
-            for line in lines {
+            for (index, line) in lines.enumerated() {
+                let note = lineNotes?[index]
                 try dbConn.execute(sql: """
                     INSERT INTO jpo_line_items
                     (jpo_id, part_id, qty_requested, priority, notes, created_at)
-                    VALUES (?, ?, ?, ?, NULL, datetime('now'))
-                    """, arguments: [jpoId, line.partId, line.quantity, priority])
+                    VALUES (?, ?, ?, ?, ?, datetime('now'))
+                    """, arguments: [jpoId, line.partId, line.quantity, priority, note])
                 let lineId = dbConn.lastInsertedRowID
 
                 // Check shop stock for smart routing
