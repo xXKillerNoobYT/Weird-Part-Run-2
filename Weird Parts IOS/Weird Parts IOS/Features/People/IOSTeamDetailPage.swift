@@ -101,13 +101,16 @@ struct IOSTeamDetailPage: View {
                 )
             }
         }
-        .alert("Delete Team?", isPresented: $showDeleteConfirm) {
-            Button("Delete", role: .destructive) {
+        .alert(DestructiveConfirmationCopy.deleteTitle("Team"), isPresented: $showDeleteConfirm) {
+            Button(DestructiveConfirmationCopy.deleteButton("Team"), role: .destructive) {
                 Task { await deleteTeam() }
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This will remove the team. Members will not be deleted.")
+            Text(DestructiveConfirmationCopy.deleteMessage(
+                itemName: team?.name ?? "this team",
+                consequence: "Members will not be deleted."
+            ))
         }
         .alert("Remove Member?", isPresented: $showRemoveMemberConfirm) {
             Button("Remove", role: .destructive) {

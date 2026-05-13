@@ -107,13 +107,13 @@ struct IOSPODetailPage: View {
             sheetContent(for: sheet)
         }
         // Delete Draft confirmation
-        .alert("Delete Draft?", isPresented: $showDeleteConfirmation) {
+        .alert(DestructiveConfirmationCopy.deleteTitle("Draft Purchase Order"), isPresented: $showDeleteConfirmation) {
             Button("Keep Draft", role: .cancel) {}
-            Button("Delete", role: .destructive) {
+            Button(DestructiveConfirmationCopy.deleteButton("Draft PO"), role: .destructive) {
                 Task { await deleteDraftPO() }
             }
         } message: {
-            Text("This will permanently delete this draft purchase order.")
+            Text(DestructiveConfirmationCopy.deleteMessage(itemName: po?.poNumber ?? "this draft purchase order"))
         }
         // Cancel PO confirmation
         .alert("Cancel Purchase Order?", isPresented: $showCancelConfirmation) {

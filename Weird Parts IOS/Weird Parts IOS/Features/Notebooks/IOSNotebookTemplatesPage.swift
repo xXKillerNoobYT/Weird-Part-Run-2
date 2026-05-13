@@ -60,16 +60,16 @@ struct IOSNotebookTemplatesPage: View {
             }
         }
         .confirmationDialog(
-            "Delete Template",
+            DestructiveConfirmationCopy.deleteTitle("Template"),
             isPresented: Binding(get: { pendingDeleteTemplateId != nil }, set: { if !$0 { pendingDeleteTemplateId = nil } }),
             titleVisibility: .visible
         ) {
-            Button("Delete Template", role: .destructive) {
+            Button(DestructiveConfirmationCopy.deleteButton("Template"), role: .destructive) {
                 if let id = pendingDeleteTemplateId { deleteTemplate(id) }
             }
             Button("Cancel", role: .cancel) { pendingDeleteTemplateId = nil }
         } message: {
-            Text("This template will be permanently deleted.")
+            Text(DestructiveConfirmationCopy.deleteMessage(itemName: pendingDeleteTemplateName))
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
@@ -91,6 +91,11 @@ struct IOSNotebookTemplatesPage: View {
     }
 
     // MARK: - Template List
+
+    private var pendingDeleteTemplateName: String {
+        guard let id = pendingDeleteTemplateId else { return "this template" }
+        return templates.first(where: { $0.id == id })?.name ?? "this template"
+    }
 
     private var templateList: some View {
         List {

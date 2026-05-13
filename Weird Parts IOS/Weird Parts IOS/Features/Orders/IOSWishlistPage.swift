@@ -74,12 +74,12 @@ struct IOSWishlistPage: View {
             }
         }
         .confirmationDialog(
-            "Delete Wishlist Item?",
+            DestructiveConfirmationCopy.deleteTitle("Wishlist Item"),
             isPresented: Binding(get: { itemToDelete != nil }, set: { if !$0 { itemToDelete = nil } }),
             titleVisibility: .visible
         ) {
             if let item = itemToDelete {
-                Button("Delete \"\(item.partName)\"", role: .destructive) {
+                Button(DestructiveConfirmationCopy.deleteButton("Wishlist Item"), role: .destructive) {
                     Haptics.warning()
                     deleteItem(item)
                     itemToDelete = nil
@@ -87,7 +87,10 @@ struct IOSWishlistPage: View {
             }
             Button("Cancel", role: .cancel) { itemToDelete = nil }
         } message: {
-            Text("This item will be permanently removed from the wishlist.")
+            Text(DestructiveConfirmationCopy.deleteMessage(
+                itemName: itemToDelete?.partName ?? "this wishlist item",
+                consequence: "It will be removed from the wishlist."
+            ))
         }
         .refreshable { loadData() }
         .task { loadData() }

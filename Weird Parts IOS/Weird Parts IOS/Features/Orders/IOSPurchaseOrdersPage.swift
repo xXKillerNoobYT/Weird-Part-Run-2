@@ -120,7 +120,7 @@ struct IOSPurchaseOrdersPage: View {
             sheetContent(for: sheet)
         }
         .alert(
-            poToCancel?.status == "draft" ? "Delete Draft?" : "Cancel PO?",
+            poToCancel?.status == "draft" ? DestructiveConfirmationCopy.deleteTitle("Draft Purchase Order") : "Cancel PO?",
             isPresented: $showCancelConfirm
         ) {
             TextField("Reason (required)", text: $cancelReason)
@@ -129,7 +129,7 @@ struct IOSPurchaseOrdersPage: View {
                 aiSummary = ""
                 poToCancel = nil
             }
-            Button(poToCancel?.status == "draft" ? "Delete" : "Cancel PO", role: .destructive) {
+            Button(poToCancel?.status == "draft" ? DestructiveConfirmationCopy.deleteButton("Draft PO") : "Cancel PO", role: .destructive) {
                 guard !cancelReason.trimmingCharacters(in: .whitespaces).isEmpty else {
                     actionMessage = "Reason is required."
                     return
@@ -144,7 +144,12 @@ struct IOSPurchaseOrdersPage: View {
                 }
             }
         } message: {
-            if isGeneratingSummary {
+            if let po = poToCancel, po.status == "draft" {
+                Text(DestructiveConfirmationCopy.deleteMessage(
+                    itemName: po.poNumber,
+                    consequence: "A reason is required for the audit trail."
+                ))
+            } else if isGeneratingSummary {
                 Text("Generating summary...")
             } else {
                 Text(aiSummary)

@@ -147,25 +147,33 @@ struct PartsCompanionsPage: View {
         .sheet(item: $activeSheet) { sheet in
             sheetContent(for: sheet)
         }
-        .alert("Delete Rule?", isPresented: $showDeleteRuleConfirm, presenting: ruleToDelete) { rule in
-            Button("Delete", role: .destructive) {
+        .alert(DestructiveConfirmationCopy.deleteTitle("Rule"), isPresented: $showDeleteRuleConfirm, presenting: ruleToDelete) { rule in
+            Button(DestructiveConfirmationCopy.deleteButton("Rule"), role: .destructive) {
                 Task { await confirmDeleteRule(rule) }
             }
             Button("Cancel", role: .cancel) { }
         } message: { rule in
             if rule.childCount > 0 {
-                Text("This will also schedule \(rule.childCount) child rule\(rule.childCount == 1 ? "" : "s") for deletion in 30 days.")
+                Text(DestructiveConfirmationCopy.deleteMessage(
+                    itemName: rule.name,
+                    consequence: "This will also schedule \(rule.childCount) child rule\(rule.childCount == 1 ? "" : "s") for deletion in 30 days."
+                ))
             } else {
-                Text("\"" + rule.name + "\" will be scheduled for deletion.")
+                Text(DestructiveConfirmationCopy.deleteMessage(
+                    itemName: rule.name,
+                    consequence: "It will be scheduled for deletion."
+                ))
             }
         }
-        .alert("Delete Alternative?", isPresented: $showDeleteAltConfirm, presenting: altToDelete) { alt in
-            Button("Delete", role: .destructive) {
+        .alert(DestructiveConfirmationCopy.deleteTitle("Alternative Link"), isPresented: $showDeleteAltConfirm, presenting: altToDelete) { alt in
+            Button(DestructiveConfirmationCopy.deleteButton("Alternative Link"), role: .destructive) {
                 Task { await confirmDeleteAlternative(alt) }
             }
             Button("Cancel", role: .cancel) { }
         } message: { alt in
-            Text("Remove the link between \"\(alt.partName ?? "Part")\" and \"\(alt.alternativePartName ?? "Alternative")\"?")
+            Text(DestructiveConfirmationCopy.deleteMessage(
+                itemName: "the alternative link between \(alt.partName ?? "Part") and \(alt.alternativePartName ?? "Alternative")"
+            ))
         }
         .alert("Lock Poll Result?", isPresented: $showLockConfirm) {
             Button("Lock as \(lockAction == "accept" ? "Pass" : "Reject")", role: .destructive) {
