@@ -21,9 +21,13 @@ struct LoginView: View {
         dynamicTypeSize >= .accessibility1
     }
 
+    private var shouldCollapseSelectedUserHeader: Bool {
+        selectedUser != nil && isAccessibilitySize
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            if !(selectedUser != nil && isAccessibilitySize) {
+            if !shouldCollapseSelectedUserHeader {
                 // Header
                 VStack(spacing: 8) {
                     Image(systemName: "wrench.and.screwdriver.fill")
@@ -37,8 +41,8 @@ struct LoginView: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
-                .padding(.top, isAccessibilitySize ? 12 : 40)
-                .padding(.bottom, isAccessibilitySize ? 12 : 24)
+                .padding(.top, 40)
+                .padding(.bottom, 24)
                 .padding(.horizontal)
             }
 

@@ -1,6 +1,6 @@
 # Login at iPhone 13 mini × AX5 — Keyboard Overlap Fix
 
-> Owner: UXDesigner (design). Implementer: iOS engineer. Tracking: Paperclip WEI-1069 / GitHub #420.
+> Owner: UXDesigner (design). Implementer: iOS engineer. Tracking: Paperclip WEI-1084 / GitHub PR #432.
 > Related, sibling fix already shipped on iPhone 13 mini at **default** Dynamic Type: Paperclip WEI-1052 → GitHub #408 (closed 2026-05-13).
 
 ## 1. Problem (verified)
@@ -13,7 +13,7 @@
 
 ## 2. Why the current layout fails at AX5
 
-`Weird Parts IOS/Weird Parts IOS/Auth/LoginView.swift` (lines 18–164) is an outer `VStack` with:
+The pre-fix selected-user branch in `Weird Parts IOS/Weird Parts IOS/Auth/LoginView.swift` was an outer `VStack` with:
 
 1. A decorative header (`padding(.top, 40)`, 48pt wrench icon, `largeTitle` "WiredPart", subheadline copy, `padding(.bottom, 24)`).
 2. The selected-user PIN form (Back button row, `Hello, <name>` title2, `SecureField` with `frame(maxWidth: 200)`, error caption, prominent `Sign In` button).
@@ -68,7 +68,7 @@ Rationale: this is the single highest-impact change. Sign In becomes reachable a
 
 ### 3.2 Wrap the PIN entry section in a `ScrollView` with interactive dismissal
 
-The selected-user form must scroll on its own when content exceeds the available space above the keyboard. Wrap the PIN form branch (current lines 35–89) in:
+The selected-user form must scroll on its own when content exceeds the available space above the keyboard. Wrap the PIN form branch in:
 
 ```swift
 ScrollView {
@@ -80,7 +80,7 @@ ScrollView {
 ```
 
 - `.interactively` lets the user drag down to dismiss the pad, which is the cheapest recovery affordance on a `numberPad` keyboard (no return key).
-- The header (lines 21–32) can stay above the ScrollView OR move inside it — see 3.3.
+- The header can stay above the ScrollView OR move inside it — see 3.3.
 
 ### 3.3 Collapse the decorative header at accessibility sizes
 
@@ -163,6 +163,6 @@ Tap-target requirement: Sign In and Done must each be ≥ 44 × 44 pt at every D
 
 ## 6. Handoff
 
-- Engineering issue: create `[Auth][Bug][T1] AX5 number pad covers Login Sign In on iPhone 13 mini (#420 follow-up)`, link this plan, set as child of WEI-1069.
-- QA: re-run the WEI-1062 capture script after the fix lands, plus a new AX5 result-bundle capture under `docs/testing/artifacts/wei-1069/`.
-- Close GitHub #420 with the new evidence; mark WEI-1069 done once the verification matrix in §4 is green.
+- Engineering issue: WEI-1084 tracks the AX5 login keyboard-overlap fix and should link this plan.
+- QA: re-run the AX5 login capture after the fix lands, plus a new AX5 result-bundle capture under `docs/testing/artifacts/wei-1084/`.
+- Mark WEI-1084 done once the verification matrix in §4 is green.
