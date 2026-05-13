@@ -31,6 +31,9 @@ Thumbs.db
 # Claude
 .claude/
 
+# Local agent/worktree state
+.paperclip/worktrees/
+
 # Secrets — never commit these
 .env
 .env.*
