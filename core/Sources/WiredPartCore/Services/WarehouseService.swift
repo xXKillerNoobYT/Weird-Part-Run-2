@@ -977,6 +977,103 @@ public final class WarehouseService: Sendable {
         }
     }
 
+    /// Save the parts-first setup result as canonical inventory data.
+    ///
+    /// The parts-first flow runs before a floor plan exists, so counts are
+    /// anchored to the default warehouse location (`warehouse`, id 1). Free-text
+    /// locations are still persisted on the part record for operator lookup and
+    /// setup-progress detection.
+    public func savePartsFirstSetupResult(
+        partId: Int64,
+        countedQty: Int?,
+        locationText: String?,
+        performedBy: Int64? = nil
+    ) throws {
+        if let countedQty {
+            guard countedQty >= 0 else { throw WarehouseError.invalidQuantity }
+        }
+
+        let trimmedLocation = locationText?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedLocation = (trimmedLocation?.isEmpty == false) ? trimmedLocation : nil
+
+        try db.writer.write { dbConn in
+            let partExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [partId]) ?? 0) > 0
+            guard partExists else { throw WarehouseError.partNotFound(partId) }
+
+            if let performedBy {
+                let userExists = (try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                    """, arguments: [performedBy]) ?? 0) > 0
+                guard userExists else { throw WarehouseError.userNotFound(performedBy) }
+            }
+
+            if let normalizedLocation {
+                try dbConn.execute(
+                    sql: """
+                        UPDATE parts
+                        SET shelf_location = ?, updated_at = datetime('now')
+                        WHERE id = ? AND deleted_at IS NULL
+                        """,
+                    arguments: [normalizedLocation, partId]
+                )
+                try FieldTimestampHelper.stamp(["shelf_location"], table: "parts", rowId: partId, in: dbConn)
+            }
+
+            guard let countedQty else { return }
+
+            let currentQty = try Int.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT qty FROM stock
+                    WHERE part_id = ? AND location_type = 'warehouse' AND location_id = 1
+                      AND deleted_at IS NULL
+                    """,
+                arguments: [partId]
+            ) ?? 0
+            let deltaQty = countedQty - currentQty
+
+            try dbConn.execute(
+                sql: """
+                    UPDATE stock
+                    SET qty = ?, counted_qty = ?, last_counted = datetime('now'), updated_at = datetime('now')
+                    WHERE part_id = ? AND location_type = 'warehouse' AND location_id = 1
+                      AND deleted_at IS NULL
+                    """,
+                arguments: [countedQty, countedQty, partId]
+            )
+            if dbConn.changesCount == 0 {
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO stock
+                            (part_id, location_type, location_id, qty, counted_qty, last_counted, updated_at)
+                        VALUES (?, 'warehouse', 1, ?, ?, datetime('now'), datetime('now'))
+                        """,
+                    arguments: [partId, countedQty, countedQty]
+                )
+            }
+
+            let signedDelta = deltaQty >= 0 ? "+\(deltaQty)" : "\(deltaQty)"
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO stock_movements
+                        (part_id, qty, from_location_type, from_location_id,
+                         to_location_type, to_location_id, movement_type,
+                         reason, notes, performed_by, created_at)
+                    VALUES (?, ?, 'warehouse', 1, 'warehouse', 1, ?, ?, ?, ?, datetime('now'))
+                    """,
+                arguments: [
+                    partId, deltaQty, WarehouseMovementType.adjustment.rawValue,
+                    "Parts-first setup count",
+                    "Parts-first setup: \(currentQty) -> \(countedQty) (\(signedDelta))",
+                    performedBy
+                ]
+            )
+            try PartsService.cancelRestockedScheduledDeletions(db: dbConn, affectedPartIds: [partId])
+        }
+    }
+
     // =========================================================================
     // MARK: - 5. Staging (Pulled Items)
     // =========================================================================

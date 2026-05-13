@@ -1302,6 +1302,90 @@ struct WarehouseServiceExtTests {
         }
     }
 
+    @Test("parts-first setup saves count as canonical warehouse stock")
+    func testPartsFirstSetupSavesCanonicalStock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        try env.parts.updatePart(id: partId, notes: "Keep this note")
+
+        try env.warehouse.savePartsFirstSetupResult(
+            partId: partId,
+            countedQty: 14,
+            locationText: " Shelf A ",
+            performedBy: env.adminUserId
+        )
+
+        let stockQty = try env.warehouse.getStockQty(
+            partId: partId,
+            locationType: "warehouse",
+            locationId: 1
+        )
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT p.shelf_location, p.notes, s.counted_qty, s.last_counted
+                FROM parts p
+                JOIN stock s ON s.part_id = p.id
+                WHERE p.id = ? AND s.location_type = 'warehouse' AND s.location_id = 1
+                  AND s.deleted_at IS NULL
+                """, arguments: [partId])
+        }
+        let movement = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT qty, reason, notes, performed_by
+                FROM stock_movements
+                WHERE part_id = ? AND movement_type = ?
+                ORDER BY id DESC
+                """, arguments: [partId, WarehouseMovementType.adjustment.rawValue])
+        }
+
+        #expect(stockQty == 14)
+        #expect((row?["counted_qty"] as Int?) == 14)
+        #expect((row?["last_counted"] as String?) != nil)
+        #expect((row?["shelf_location"] as String?) == "Shelf A")
+        #expect((row?["notes"] as String?) == "Keep this note")
+        #expect((movement?["qty"] as Int?) == 14)
+        #expect((movement?["reason"] as String?) == "Parts-first setup count")
+        #expect((movement?["notes"] as String?)?.contains("0 -> 14") == true)
+        #expect((movement?["performed_by"] as Int64?) == env.adminUserId)
+    }
+
+    @Test("parts-first setup updates existing stock to new physical count")
+    func testPartsFirstSetupUpdatesExistingStock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        try env.warehouse.savePartsFirstSetupResult(
+            partId: partId,
+            countedQty: 10,
+            locationText: nil,
+            performedBy: env.adminUserId
+        )
+        try env.warehouse.savePartsFirstSetupResult(
+            partId: partId,
+            countedQty: 6,
+            locationText: nil,
+            performedBy: env.adminUserId
+        )
+
+        let stockQty = try env.warehouse.getStockQty(
+            partId: partId,
+            locationType: "warehouse",
+            locationId: 1
+        )
+        let latestMovementQty = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT qty FROM stock_movements
+                WHERE part_id = ? AND movement_type = ?
+                ORDER BY id DESC
+                """, arguments: [partId, WarehouseMovementType.adjustment.rawValue])
+        }
+
+        #expect(stockQty == 6)
+        #expect(latestMovementQty == -4)
+    }
+
     @Test("createAuditSession throws requiredFieldEmpty for blank scope")
     func testCreateAuditSession_throwsForBlankScope() throws {
         let env = try E2ETestHelpers.setUp()

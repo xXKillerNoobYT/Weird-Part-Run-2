@@ -417,7 +417,8 @@ struct PartsFlowWizard: View {
         let snapshot = parts
         let counts = partCounts
         let locations = partLocations
-        let service = appCore.partsService
+        let service = appCore.warehouseService
+        let userId = appCore.currentUser?.id
 
         // DB loop runs in a Task so SwiftUI renders isSaving=true before the loop starts
         Task {
@@ -425,22 +426,23 @@ struct PartsFlowWizard: View {
             var failedParts: [String] = []
             for item in snapshot {
                 guard let partId = item.part.id else { continue }
-                var notesParts: [String] = []
-                if let location = locations[partId],
-                   !location.trimmingCharacters(in: .whitespaces).isEmpty {
-                    notesParts.append("Location: \(location)")
-                }
-                if let text = counts[partId], let qty = Int(text) {
-                    notesParts.append("Initial count: \(qty)")
-                    count += 1
-                }
-                if !notesParts.isEmpty {
-                    let combined = notesParts.joined(separator: " | ")
-                    do {
-                        try service?.updatePart(id: partId, notes: combined)
-                    } catch {
-                        failedParts.append(item.part.name)
+                let location = locations[partId]
+                let countedQty = counts[partId].flatMap { Int($0) }
+                let hasLocation = location?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                guard countedQty != nil || hasLocation else { continue }
+
+                do {
+                    try service?.savePartsFirstSetupResult(
+                        partId: partId,
+                        countedQty: countedQty,
+                        locationText: location,
+                        performedBy: userId
+                    )
+                    if countedQty != nil {
+                        count += 1
                     }
+                } catch {
+                    failedParts.append(item.part.name)
                 }
             }
             savedCount = count
