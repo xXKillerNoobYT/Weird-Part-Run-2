@@ -1,0 +1,35 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "2A4E6DCF-CFF5-45A0-BDB2-4A4DFDC988C5",
+        "deviceName" : "WEI-899 iPhone 11 Pro Max 414pt",
+        "exportedFileName" : "6A252BCF-609E-42BD-BD3C-D3C91C5BE998.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "WEI-996 iPhone web gated_0_38F48479-6A8D-4DB2-AB5D-4AF7ABFFD47C.png",
+        "timestamp" : 1778643106.472
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "2A4E6DCF-CFF5-45A0-BDB2-4A4DFDC988C5",
+        "deviceName" : "WEI-899 iPhone 11 Pro Max 414pt",
+        "exportedFileName" : "D6E8214A-6E28-4002-B11A-1DB5858AA7F3.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "WEI-996 iPhone supplier websites_0_D865158F-5D5A-482C-AC30-C6ADC2AEAD3A.png",
+        "timestamp" : 1778643092.043
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "2A4E6DCF-CFF5-45A0-BDB2-4A4DFDC988C5",
+        "deviceName" : "WEI-899 iPhone 11 Pro Max 414pt",
+        "exportedFileName" : "C875837B-139F-42F8-A5DD-013FE0F1B29A.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "WEI-996 iPhone local catalog_0_93A1C43C-E2F6-4FFD-AAB8-C254609795C4.png",
+        "timestamp" : 1778643078.027
+      }
+    ],
+    "testIdentifier" : "WEI996NewPartsOrderSourcingVerifierUITests/testNewPartsOrderSourcingModesAreUsable()",
+    "testIdentifierURL" : "test://com.apple.xcode/Weird%20Parts/Weird%20PartsUITests/WEI996NewPartsOrderSourcingVerifierUITests/testNewPartsOrderSourcingModesAreUsable"
+  }
+]
