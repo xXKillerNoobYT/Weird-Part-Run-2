@@ -1,5 +1,21 @@
 import SwiftUI
 
+enum StandardFilterBarLayout {
+    static let minimumTapTarget: CGFloat = 44
+}
+
+struct StandardFilterBarCustomRange: Equatable {
+    let start: Date
+    let end: Date
+
+    static func normalized(start: Date, end: Date) -> StandardFilterBarCustomRange {
+        guard start <= end else {
+            return StandardFilterBarCustomRange(start: start, end: start)
+        }
+        return StandardFilterBarCustomRange(start: start, end: end)
+    }
+}
+
 /// Reusable horizontal date filter bar with quick-pick buttons and custom date range picker.
 ///
 /// Usage:
@@ -56,13 +72,18 @@ struct StandardFilterBar: View {
                                 .font(.caption)
                                 .fontWeight(selectedRange == option ? .bold : .regular)
                                 .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
+                                .frame(minWidth: StandardFilterBarLayout.minimumTapTarget, minHeight: StandardFilterBarLayout.minimumTapTarget)
                                 .background(
                                     Capsule().fill(selectedRange == option ? Color.accentColor : Color.secondary.opacity(0.15))
                                 )
                                 .foregroundStyle(selectedRange == option ? .white : .primary)
                         }
                         .buttonStyle(.plain)
+                        .contentShape(Capsule())
+                        .accessibilityIdentifier("dateRangeChip_\(option.accessibilityKey)")
+                        .accessibilityLabel(option.rawValue)
+                        .accessibilityValue(selectedRange == option ? "Selected" : "Not selected")
+                        .accessibilityAddTraits(selectedRange == option ? .isSelected : [])
                     }
                 }
                 .padding(.horizontal)
@@ -72,12 +93,17 @@ struct StandardFilterBar: View {
             // Custom date pickers — only show when Custom is selected
             if selectedRange == .custom {
                 HStack(spacing: 12) {
-                    DatePicker("From", selection: $customStart, displayedComponents: .date)
+                    DatePicker("From", selection: validatedCustomStart, in: ...customEnd, displayedComponents: .date)
                         .labelsHidden()
+                        .frame(minHeight: StandardFilterBarLayout.minimumTapTarget)
+                        .accessibilityIdentifier("dateRangeCustomStart")
                     Image(systemName: "arrow.right")
                         .foregroundStyle(.secondary)
-                    DatePicker("To", selection: $customEnd, displayedComponents: .date)
+                        .accessibilityHidden(true)
+                    DatePicker("To", selection: validatedCustomEnd, in: customStart..., displayedComponents: .date)
                         .labelsHidden()
+                        .frame(minHeight: StandardFilterBarLayout.minimumTapTarget)
+                        .accessibilityIdentifier("dateRangeCustomEnd")
                 }
                 .padding(.horizontal)
                 .padding(.bottom, 8)
@@ -85,6 +111,30 @@ struct StandardFilterBar: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: selectedRange)
+        .onAppear(perform: normalizeCustomRange)
+        .onChange(of: customStart) { _, _ in normalizeCustomRange() }
+        .onChange(of: customEnd) { _, _ in normalizeCustomRange() }
+    }
+
+    private var validatedCustomStart: Binding<Date> {
+        Binding(
+            get: { customStart },
+            set: { customStart = min($0, customEnd) }
+        )
+    }
+
+    private var validatedCustomEnd: Binding<Date> {
+        Binding(
+            get: { customEnd },
+            set: { customEnd = max($0, customStart) }
+        )
+    }
+
+    private func normalizeCustomRange() {
+        let normalized = StandardFilterBarCustomRange.normalized(start: customStart, end: customEnd)
+        guard customStart != normalized.start || customEnd != normalized.end else { return }
+        customStart = normalized.start
+        customEnd = normalized.end
     }
 
     /// Backward-compatible initializer for pages that only track start/end dates.
@@ -93,5 +143,15 @@ struct StandardFilterBar: View {
         self._selectedRange = .constant(.custom)
         self._customStart = startDate
         self._customEnd = endDate
+    }
+}
+
+private extension ReportDateRange {
+    var accessibilityKey: String {
+        rawValue
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: "_")
     }
 }

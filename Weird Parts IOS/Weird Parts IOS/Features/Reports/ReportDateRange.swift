@@ -12,13 +12,25 @@ enum ReportDateRange: String, CaseIterable, Identifiable {
     case thisYear = "This Year"
     case custom = "Custom"
 
-    var id: String { rawValue }
+    nonisolated var id: String { rawValue }
 
     /// Returns (startDate, endDate) for non-custom ranges.
     /// For `.custom`, returns nil — the caller supplies custom dates.
-    var dateInterval: (start: Date, end: Date)? {
-        let cal = Calendar.current
-        let now = Date()
+    nonisolated var dateInterval: (start: Date, end: Date)? {
+        dateInterval(containing: Date())
+    }
+
+    /// Deterministic variant used by shared UI and tests.
+    ///
+    /// The default pay-period anchor preserves the existing Jan 1 biweekly
+    /// behavior while making the assumption explicit for future payroll wiring.
+    nonisolated func dateInterval(
+        containing now: Date,
+        calendar: Calendar = .current,
+        payPeriodAnchor: Date? = nil,
+        payPeriodLengthDays: Int = 14
+    ) -> (start: Date, end: Date)? {
+        let cal = calendar
         switch self {
         case .thisWeek:
             let start = cal.dateInterval(of: .weekOfYear, for: now)?.start ?? now
@@ -30,24 +42,25 @@ enum ReportDateRange: String, CaseIterable, Identifiable {
             }
             return (interval.start, interval.end.addingTimeInterval(-1))
         case .thisPeriod:
-            // Pay period = bi-weekly, anchored to Jan 1 of current year
-            guard let yearStart = cal.date(from: cal.dateComponents([.year], from: now)) else {
+            guard payPeriodLengthDays > 0,
+                  let anchor = payPeriodAnchor ?? cal.date(from: cal.dateComponents([.year], from: now)) else {
                 return (now.addingTimeInterval(-14 * 86400), now)
             }
-            let days = cal.dateComponents([.day], from: yearStart, to: now).day ?? 0
-            let periodIndex = days / 14
-            let periodStart = cal.date(byAdding: .day, value: periodIndex * 14, to: yearStart)
+            let days = cal.dateComponents([.day], from: anchor, to: now).day ?? 0
+            let periodIndex = floorDiv(days, payPeriodLengthDays)
+            let periodStart = cal.date(byAdding: .day, value: periodIndex * payPeriodLengthDays, to: anchor)
                 ?? now.addingTimeInterval(-14 * 86400)
             return (periodStart, now)
         case .lastPeriod:
-            guard let yearStart = cal.date(from: cal.dateComponents([.year], from: now)) else {
+            guard payPeriodLengthDays > 0,
+                  let anchor = payPeriodAnchor ?? cal.date(from: cal.dateComponents([.year], from: now)) else {
                 return (now.addingTimeInterval(-28 * 86400), now.addingTimeInterval(-14 * 86400))
             }
-            let days = cal.dateComponents([.day], from: yearStart, to: now).day ?? 0
-            let periodIndex = days / 14
-            let periodStart = cal.date(byAdding: .day, value: (periodIndex - 1) * 14, to: yearStart)
+            let days = cal.dateComponents([.day], from: anchor, to: now).day ?? 0
+            let periodIndex = floorDiv(days, payPeriodLengthDays)
+            let periodStart = cal.date(byAdding: .day, value: (periodIndex - 1) * payPeriodLengthDays, to: anchor)
                 ?? now.addingTimeInterval(-28 * 86400)
-            let periodEnd = cal.date(byAdding: .day, value: periodIndex * 14 - 1, to: yearStart)
+            let periodEnd = cal.date(byAdding: .day, value: periodIndex * payPeriodLengthDays - 1, to: anchor)
                 ?? now.addingTimeInterval(-14 * 86400)
             return (periodStart, periodEnd)
         case .thisMonth:
@@ -76,4 +89,9 @@ enum ReportDateRange: String, CaseIterable, Identifiable {
             return nil
         }
     }
+}
+
+nonisolated private func floorDiv(_ lhs: Int, _ rhs: Int) -> Int {
+    precondition(rhs > 0)
+    return lhs >= 0 ? lhs / rhs : -((-lhs + rhs - 1) / rhs)
 }
