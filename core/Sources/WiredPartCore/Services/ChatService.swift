@@ -594,6 +594,71 @@ public final class ChatService: Sendable {
         )
     }
 
+    /// Job-scoped RFI counts for the job dashboard.
+    public struct JobRFISummary: Sendable {
+        public let jobId: Int64
+        public let totalCount: Int
+        public let openCount: Int
+        public let waitingCount: Int
+        public let closedCount: Int
+        public let supplierWaitingCount: Int
+        public let latestUpdatedAt: String?
+
+        public var hasSupplierWaiting: Bool { supplierWaitingCount > 0 }
+
+        public static func empty(jobId: Int64) -> JobRFISummary {
+            JobRFISummary(
+                jobId: jobId, totalCount: 0, openCount: 0, waitingCount: 0,
+                closedCount: 0, supplierWaitingCount: 0, latestUpdatedAt: nil
+            )
+        }
+    }
+
+    /// Summarize RFIs for one job without loading global RFI lists.
+    public func getRFISummaryForJob(jobId: Int64) throws -> JobRFISummary {
+        do {
+            return try db.writer.read { dbConn -> JobRFISummary in
+                guard let row = try Row.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) AS total_count,
+                           SUM(CASE
+                               WHEN LOWER(status) IN ('closed', 'resolved', 'answered', 'complete', 'completed')
+                               THEN 0 ELSE 1
+                           END) AS open_count,
+                           SUM(CASE
+                               WHEN LOWER(status) IN ('waiting', 'waiting_supplier', 'waiting_on_supplier', 'sent')
+                               THEN 1 ELSE 0
+                           END) AS waiting_count,
+                           SUM(CASE
+                               WHEN LOWER(status) IN ('closed', 'resolved', 'answered', 'complete', 'completed')
+                               THEN 1 ELSE 0
+                           END) AS closed_count,
+                           SUM(CASE
+                               WHEN LOWER(status) IN ('waiting', 'waiting_supplier', 'waiting_on_supplier', 'sent')
+                               THEN 1 ELSE 0
+                           END) AS supplier_waiting_count,
+                           MAX(updated_at) AS latest_updated_at
+                    FROM rfi_objects
+                    WHERE job_id = ? AND deleted_at IS NULL
+                    """, arguments: [jobId]) else {
+                    return .empty(jobId: jobId)
+                }
+
+                return JobRFISummary(
+                    jobId: jobId,
+                    totalCount: row["total_count"] ?? 0,
+                    openCount: row["open_count"] ?? 0,
+                    waitingCount: row["waiting_count"] ?? 0,
+                    closedCount: row["closed_count"] ?? 0,
+                    supplierWaitingCount: row["supplier_waiting_count"] ?? 0,
+                    latestUpdatedAt: row["latest_updated_at"] as String?
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) { return .empty(jobId: jobId) }
+            throw error
+        }
+    }
+
     // =========================================================================
     // MARK: - Office Channel
     // =========================================================================

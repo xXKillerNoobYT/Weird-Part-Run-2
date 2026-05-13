@@ -1301,6 +1301,72 @@ struct FleetServiceTests {
         #expect(basic.totalTrailers == dashboard.totalTrailers)
     }
 
+    @Test("getTrailersForJob returns job-scoped trailer dashboard summary")
+    func testGetTrailersForJobSummary() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-TR-SUM", name: "Trailer Summary Job")
+        let otherJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-TR-OTHER", name: "Other Job")
+        let trailerId = try env.fleet.createTrailer(trailerNumber: "TR-JOB-1", trailerType: "Job Trailer", notes: nil)
+        let otherTrailerId = try env.fleet.createTrailer(trailerNumber: "TR-JOB-2", trailerType: "Other Trailer", notes: nil)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE job_trailers
+                SET current_job_id = ?, assigned_driver_user_id = ?, is_at_shop = 0
+                WHERE id = ?
+                """, arguments: [jobId, env.adminUserId, trailerId])
+            try db.execute(sql: """
+                UPDATE job_trailers SET current_job_id = ? WHERE id = ?
+                """, arguments: [otherJobId, otherTrailerId])
+            try db.execute(sql: """
+                INSERT INTO trailer_stock (trailer_id, part_name, quantity, min_qty, created_at, updated_at)
+                VALUES (?, 'Connector', 1, 2, datetime('now'), datetime('now')),
+                       (?, 'Cable', 5, 2, datetime('now'), datetime('now'))
+                """, arguments: [trailerId, trailerId])
+            try db.execute(sql: """
+                INSERT INTO trailer_location_history
+                (trailer_id, location_type, location_label, job_id, arrived_at, recorded_by)
+                VALUES (?, 'job_site', 'North gate', ?, '2026-05-13 08:00:00', ?)
+                """, arguments: [trailerId, jobId, env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO trailer_location_events
+                (trailer_id, event_type, location_kind, job_id, recorded_by, recorded_at, notes)
+                VALUES (?, 'arrived', 'job_site', ?, ?, '2026-05-13 08:05:00', 'On site')
+                """, arguments: [trailerId, jobId, env.adminUserId])
+        }
+
+        let summaries = try env.fleet.getTrailersForJob(jobId: jobId)
+
+        #expect(summaries.count == 1)
+        #expect(summaries[0].id == trailerId)
+        #expect(summaries[0].trailerCode == "TR-JOB-1")
+        #expect(summaries[0].isAtShop == false)
+        #expect(summaries[0].currentJobId == jobId)
+        #expect(summaries[0].currentJobName == "Trailer Summary Job")
+        #expect(summaries[0].assignedDriverName == env.adminUser.displayName)
+        #expect(summaries[0].stockCount == 2)
+        #expect(summaries[0].belowMinCount == 1)
+        #expect(summaries[0].lastLocationType == "job_site")
+        #expect(summaries[0].lastLocationLabel == "North gate")
+        #expect(summaries[0].lastEventType == "arrived")
+    }
+
+    @Test("getTrailersForJob returns empty when trailer summary tables are missing")
+    func testGetTrailersForJobMissingTables() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-TR-MISSING", name: "Missing Tables Job")
+        let trailerId = try env.fleet.createTrailer(trailerNumber: "TR-MISSING", trailerType: "Job Trailer", notes: nil)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE job_trailers SET current_job_id = ? WHERE id = ?", arguments: [jobId, trailerId])
+            try db.execute(sql: "DROP TABLE trailer_stock")
+        }
+
+        let summaries = try env.fleet.getTrailersForJob(jobId: jobId)
+
+        #expect(summaries.isEmpty)
+    }
+
     @Test("getUpcomingFleetMaintenance excludes is_active = 0 vehicles")
     func testUpcomingFleetMaintenance_excludesInactive() throws {
         let env = try E2ETestHelpers.setUp()

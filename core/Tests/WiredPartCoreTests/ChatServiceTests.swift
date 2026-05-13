@@ -469,6 +469,72 @@ struct ChatServiceTests {
         #expect(closedQuestions.isEmpty)
     }
 
+    @Test("getRFISummaryForJob returns job-scoped dashboard counts")
+    func testGetRFISummaryForJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-RFI-SUM", name: "RFI Summary Job")
+        let otherJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-RFI-OTHER", name: "Other RFI Job")
+        let qaId = try env.chat.createQAThread(jobId: jobId, askedBy: env.adminUserId, subject: "Open RFI")
+        let qaId2 = try env.chat.createQAThread(jobId: jobId, askedBy: env.adminUserId, subject: "Waiting RFI")
+        let qaId3 = try env.chat.createQAThread(jobId: jobId, askedBy: env.adminUserId, subject: "Closed RFI")
+        let otherQaId = try env.chat.createQAThread(jobId: otherJobId, askedBy: env.adminUserId, subject: "Other RFI")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO rfi_objects
+                (qa_thread_id, job_id, subject, body, status, created_at, updated_at)
+                VALUES (?, ?, 'Open RFI', 'Body', 'open', datetime('now'), '2026-05-13 08:00:00'),
+                       (?, ?, 'Waiting RFI', 'Body', 'sent', datetime('now'), '2026-05-13 09:00:00'),
+                       (?, ?, 'Closed RFI', 'Body', 'closed', datetime('now'), '2026-05-13 10:00:00'),
+                       (?, ?, 'Other RFI', 'Body', 'open', datetime('now'), '2026-05-13 11:00:00')
+                """, arguments: [qaId, jobId, qaId2, jobId, qaId3, jobId, otherQaId, otherJobId])
+        }
+
+        let summary = try env.chat.getRFISummaryForJob(jobId: jobId)
+
+        #expect(summary.jobId == jobId)
+        #expect(summary.totalCount == 3)
+        #expect(summary.openCount == 2)
+        #expect(summary.waitingCount == 1)
+        #expect(summary.closedCount == 1)
+        #expect(summary.supplierWaitingCount == 1)
+        #expect(summary.hasSupplierWaiting)
+        #expect(summary.latestUpdatedAt == "2026-05-13 10:00:00")
+    }
+
+    @Test("getRFISummaryForJob returns empty summary when no RFIs exist")
+    func testGetRFISummaryForJobEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-RFI-EMPTY", name: "Empty RFI Job")
+
+        let summary = try env.chat.getRFISummaryForJob(jobId: jobId)
+
+        #expect(summary.jobId == jobId)
+        #expect(summary.totalCount == 0)
+        #expect(summary.openCount == 0)
+        #expect(summary.waitingCount == 0)
+        #expect(summary.closedCount == 0)
+        #expect(summary.hasSupplierWaiting == false)
+    }
+
+    @Test("getRFISummaryForJob returns empty summary when RFI table is missing")
+    func testGetRFISummaryForJobMissingTable() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-RFI-MISSING", name: "Missing RFI Table")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "DROP TABLE rfi_objects")
+        }
+
+        let summary = try env.chat.getRFISummaryForJob(jobId: jobId)
+
+        #expect(summary.jobId == jobId)
+        #expect(summary.totalCount == 0)
+        #expect(summary.openCount == 0)
+        #expect(summary.waitingCount == 0)
+        #expect(summary.closedCount == 0)
+    }
+
     @Test("deactivateSupplierBridge soft-deletes the bridge")
     func testDeactivateSupplierBridge() throws {
         let env = try E2ETestHelpers.setUp()

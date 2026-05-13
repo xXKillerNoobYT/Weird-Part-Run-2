@@ -1866,6 +1866,106 @@ public final class FleetService: Sendable {
         }
     }
 
+    /// Job-scoped trailer summary for the job dashboard.
+    public struct JobTrailerSummary: Sendable, Identifiable {
+        public let id: Int64
+        public let trailerCode: String
+        public let name: String
+        public let isAtShop: Bool
+        public let currentJobId: Int64?
+        public let currentJobName: String?
+        public let assignedDriverName: String?
+        public let stockCount: Int
+        public let belowMinCount: Int
+        public let lastLocationType: String?
+        public let lastLocationLabel: String?
+        public let lastLocationAt: String?
+        public let lastEventType: String?
+        public let lastEventAt: String?
+    }
+
+    /// List active trailers currently scoped to a job, including dashboard counts.
+    public func getTrailersForJob(jobId: Int64) throws -> [JobTrailerSummary] {
+        do {
+            return try db.writer.read { dbConn -> [JobTrailerSummary] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT jt.id, jt.trailer_code, jt.name, jt.is_at_shop,
+                           jt.current_job_id, j.job_name AS current_job_name,
+                           COALESCE(u.display_name, u.email) AS assigned_driver_name,
+                           COALESCE(stock.stock_count, 0) AS stock_count,
+                           COALESCE(stock.below_min_count, 0) AS below_min_count,
+                           last_location.location_type AS last_location_type,
+                           last_location.location_label AS last_location_label,
+                           last_location.arrived_at AS last_location_at,
+                           last_event.event_type AS last_event_type,
+                           last_event.recorded_at AS last_event_at
+                    FROM job_trailers jt
+                    LEFT JOIN jobs j ON j.id = jt.current_job_id AND j.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = jt.assigned_driver_user_id AND u.deleted_at IS NULL
+                    LEFT JOIN (
+                        SELECT trailer_id,
+                               COUNT(*) AS stock_count,
+                               SUM(CASE
+                                   WHEN min_qty IS NOT NULL AND quantity < min_qty THEN 1
+                                   ELSE 0
+                               END) AS below_min_count
+                        FROM trailer_stock
+                        WHERE deleted_at IS NULL
+                        GROUP BY trailer_id
+                    ) stock ON stock.trailer_id = jt.id
+                    LEFT JOIN (
+                        SELECT tlh.*
+                        FROM trailer_location_history tlh
+                        JOIN (
+                            SELECT trailer_id, MAX(arrived_at) AS arrived_at
+                            FROM trailer_location_history
+                            WHERE deleted_at IS NULL
+                            GROUP BY trailer_id
+                        ) latest ON latest.trailer_id = tlh.trailer_id
+                                 AND latest.arrived_at = tlh.arrived_at
+                        WHERE tlh.deleted_at IS NULL
+                    ) last_location ON last_location.trailer_id = jt.id
+                    LEFT JOIN (
+                        SELECT tle.*
+                        FROM trailer_location_events tle
+                        JOIN (
+                            SELECT trailer_id, MAX(recorded_at) AS recorded_at
+                            FROM trailer_location_events
+                            GROUP BY trailer_id
+                        ) latest ON latest.trailer_id = tle.trailer_id
+                                 AND latest.recorded_at = tle.recorded_at
+                    ) last_event ON last_event.trailer_id = jt.id
+                    WHERE jt.current_job_id = ?
+                      AND jt.deleted_at IS NULL
+                      AND jt.is_active = 1
+                    ORDER BY jt.trailer_code ASC
+                    """, arguments: [jobId])
+
+                return rows.map { row in
+                    JobTrailerSummary(
+                        id: row["id"] ?? 0,
+                        trailerCode: row["trailer_code"] ?? "",
+                        name: row["name"] ?? "",
+                        isAtShop: (row["is_at_shop"] as Int?) == 1,
+                        currentJobId: row["current_job_id"] as Int64?,
+                        currentJobName: row["current_job_name"] as String?,
+                        assignedDriverName: row["assigned_driver_name"] as String?,
+                        stockCount: row["stock_count"] ?? 0,
+                        belowMinCount: row["below_min_count"] ?? 0,
+                        lastLocationType: row["last_location_type"] as String?,
+                        lastLocationLabel: row["last_location_label"] as String?,
+                        lastLocationAt: row["last_location_at"] as String?,
+                        lastEventType: row["last_event_type"] as String?,
+                        lastEventAt: row["last_event_at"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
     // =========================================================================
     // MARK: - 15. Trailer Stock
     // =========================================================================
