@@ -22,12 +22,10 @@ struct IOSJobDetailPage: View {
 
     private enum ActiveSheet: Identifiable {
         case help
-        case weeklyReview
 
         var id: String {
             switch self {
             case .help: "help"
-            case .weeklyReview: "weeklyReview"
             }
         }
     }
@@ -38,16 +36,10 @@ struct IOSJobDetailPage: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    HStack(spacing: 12) {
-                        Button { activeSheet = .weeklyReview } label: {
-                            Image(systemName: "calendar.badge.clock")
-                        }
-                        .accessibilityLabel("Open weekly review")
-                        Button { activeSheet = .help } label: {
-                            Image(systemName: "questionmark.circle")
-                        }
-                        .accessibilityLabel("Help")
+                    Button { activeSheet = .help } label: {
+                        Image(systemName: "questionmark.circle")
                     }
+                    .accessibilityLabel("Help")
                 }
             }
             .sheet(item: $activeSheet) { sheet in
@@ -58,14 +50,9 @@ struct IOSJobDetailPage: View {
                         sections: [
                             ("Overview", "Full details for this job including status, priority, customer, address, dates, and notes."),
                             ("Team & Labor", "See assigned team members and a summary of labor hours logged against this job."),
-                            ("Weekly Review", "Tap the calendar icon to submit a weekly work review for this job."),
+                            ("Estimation Reviews", "Use the Estimate tab and open Reviews & Actuals to add weekly or end-of-job estimation reviews."),
                             ("Actions", "Pull down to refresh. Use the tab view for deeper access to team, labor, parts, and orders.")
                         ]
-                    )
-                case .weeklyReview:
-                    IOSWeeklyReviewSheet(
-                        jobId: jobId,
-                        jobName: job?.jobName ?? "Job \(jobId)"
                     )
                 }
             }

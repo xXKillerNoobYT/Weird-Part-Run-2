@@ -306,27 +306,7 @@ struct IOSWeeklyReviewSheet: View {
         isSubmitting = true
         submitError = nil
 
-        // Build structured notes payload
-        var reviewNotes = ""
-
-        if !isOnTrack {
-            let factors = selectedDelayFactors.sorted().joined(separator: ", ")
-            reviewNotes += "Status: OFF TRACK\n"
-            if !factors.isEmpty {
-                reviewNotes += "Delay factors: \(factors)\n"
-            }
-        } else {
-            reviewNotes += "Status: ON TRACK\n"
-        }
-
-        reviewNotes += "Work days: \(workDays)\n"
-        reviewNotes += "Week hours: \(String(format: "%.1f", weekHours))\n"
-        reviewNotes += "Todos: \(todosCompleted)/\(todosTotal)\n"
-
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedNotes.isEmpty {
-            reviewNotes += "\n\(trimmedNotes)"
-        }
 
         guard let userId = appCore.currentUser?.id else {
             submitError = "Not logged in. Please log in and try again."
@@ -338,7 +318,9 @@ struct IOSWeeklyReviewSheet: View {
             try estimationService.submitWeeklyReview(
                 jobId: jobId,
                 reviewedBy: userId,
-                notes: reviewNotes
+                notes: trimmedNotes.isEmpty ? nil : trimmedNotes,
+                delayFactors: isOnTrack ? [] : selectedDelayFactors.sorted(),
+                onTrackStatus: isOnTrack ? "on_track" : "off_track"
             )
             showingSuccess = true
         } catch {
