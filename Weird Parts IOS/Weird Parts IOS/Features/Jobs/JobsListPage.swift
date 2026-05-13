@@ -68,6 +68,7 @@ struct JobsListPage: View {
     @State private var loadError: String?
     /// Global job stages list (Rough-in, Prep/Makeup, Trim-out). Loaded once.
     @State private var globalStages: [JobsService.JobStageStatus] = []
+    @ScaledMetric(relativeTo: .body) private var searchBarBottomReserve: CGFloat = 12
 
     var body: some View {
         VStack(spacing: 0) {
@@ -75,10 +76,17 @@ struct JobsListPage: View {
             SkippedModuleHint(moduleId: "jobs")
             smartCards
             jobsList
+                .searchable(
+                    text: $searchText,
+                    placement: .navigationBarDrawer(displayMode: .always),
+                    prompt: "Search jobs..."
+                )
+                .safeAreaInset(edge: .bottom) {
+                    Color.clear.frame(height: searchBarBottomReserve)
+                }
         }
         .task { appCore.onboardingManager?.markCompleted("jobs-view-list") }
         .navigationTitle("Jobs")
-        .searchable(text: $searchText, prompt: "Search jobs...")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 12) {
