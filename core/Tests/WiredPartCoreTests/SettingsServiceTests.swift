@@ -230,6 +230,63 @@ struct SettingsServiceTests {
         #expect(reloaded.editVerificationMode == .alwaysPending)
     }
 
+    // MARK: - Dispatch Preferences
+
+    @Test("getDispatchPreferences returns defaults and updateDispatchPreferences persists typed settings")
+    func testDispatchPreferencesTypedSettings() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        let defaults = try svc.getDispatchPreferences()
+        #expect(defaults.aiSuggestionsEnabled)
+        #expect(defaults.aiLearningEnabled)
+        #expect(defaults.aiSuggestionCount == 3)
+        #expect(defaults.flexSelfAssignEnabled)
+        #expect(defaults.pipelineStartAnytimeTarget == 3)
+
+        var custom = defaults
+        custom.aiSuggestionsEnabled = false
+        custom.aiLearningEnabled = false
+        custom.aiSuggestionCount = 1
+        custom.flexSelfAssignEnabled = false
+        custom.flexRequireApproval = true
+        custom.pipelineStartAnytimeTarget = 7
+        custom.pipelineScheduleNeededTarget = 6
+        custom.pipelineFavoriteGCTarget = 5
+        custom.defaultView = "month"
+        custom.crewHistoryMonths = 8
+        custom.crewContinuityWeight = "high"
+
+        let saved = try svc.updateDispatchPreferences(custom)
+        #expect(saved == custom)
+
+        let reloaded = try svc.getDispatchPreferences()
+        #expect(reloaded == custom)
+    }
+
+    @Test("getDispatchPreferences clamps invalid stored dispatch values")
+    func testDispatchPreferencesClampInvalidValues() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        try svc.upsertSettingsMap([
+            "dispatch_ai_suggestion_count": "99",
+            "dispatch_pipeline_start_anytime_target": "-3",
+            "dispatch_pipeline_schedule_needed_target": "33",
+            "dispatch_default_view": "decade",
+            "dispatch_crew_history_months": "0",
+            "dispatch_crew_continuity_weight": "extreme",
+        ], category: "dispatch")
+
+        let preferences = try svc.getDispatchPreferences()
+        #expect(preferences.aiSuggestionCount == 3)
+        #expect(preferences.pipelineStartAnytimeTarget == 0)
+        #expect(preferences.pipelineScheduleNeededTarget == 20)
+        #expect(preferences.defaultView == "week")
+        #expect(preferences.crewHistoryMonths == 1)
+        #expect(preferences.crewContinuityWeight == "medium")
+    }
+
     // MARK: - Company Profiles
 
     @Test("createCompanyProfile and list")

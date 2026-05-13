@@ -85,7 +85,9 @@ Resolution:
 
 ### 5. Dispatch preferences are saved but not wired into dispatch behavior
 
-`IOSDispatchPreferencesPage` persists dispatch settings, but `AIDispatchService` always generates three suggestions and always exposes learning APIs independently of the saved toggles. The flex self-assign setting is also not visible in the service searches used during this triage.
+Status: FIXED by WEI-1104 / GitHub #439 on 2026-05-13.
+
+`IOSDispatchPreferencesPage` persisted dispatch settings, but `AIDispatchService` always generated three suggestions and always exposed learning APIs independently of the saved toggles. The flex self-assign setting was also not visible in the service searches used during this triage.
 
 Evidence:
 
@@ -93,7 +95,17 @@ Evidence:
 - `AIDispatchService.swift`: `generateSuggestions(date:)` unconditionally returns up to three ranked options at lines 94-153.
 - Repository search found no service-side reads of `dispatch_ai_suggestions_enabled`, `dispatch_ai_learning_enabled`, or `dispatch_flex_self_assign_enabled`.
 
-Impact: dispatch settings can be saved but ignored by the operational workflows they are supposed to govern.
+Impact: dispatch settings could be saved but ignored by the operational workflows they are supposed to govern.
+
+Resolution:
+
+- `SettingsService.DispatchPreferenceSettings` now provides typed defaults, typed reads, clamped validation, typed updates, and legacy `flex_pool_requires_approval` fallback.
+- `AIDispatchService.generateSuggestions(date:)` returns no suggestions when AI suggestions are disabled and limits generated strategies by the saved suggestion count.
+- `AIDispatchService.recordDispatcherChoice(...)` no-ops when AI learning is disabled.
+- `SchedulingService.fetchFlexPool(userId:)` and `claimFlexJob(jobId:userId:)` enforce the saved flex self-assign and manager-approval preferences.
+- `SchedulingService.getShortTermPipelineTargets()` exposes saved pipeline thresholds, and `IOSShortTermPipelinePage` uses those targets for cards and warning sections.
+- `IOSDispatchPreferencesPage` now loads/saves through the typed dispatch preference contract instead of raw map access.
+- Focused validation: `swift test --package-path core --filter 'SettingsServiceTests|AIDispatchServiceTests|SchedulingServiceTests'` passed with 224 tests.
 
 ## Recommended Executable Slices
 
@@ -101,7 +113,7 @@ Impact: dispatch settings can be saved but ignored by the operational workflows 
 2. Add complete break/lunch state preset data for 50 states + DC with 8-hour and 10-hour policy rows.
 3. Move pre-trip checklist settings onto `inspection_templates`, with reorder and required/critical semantics clarified.
 4. ~~Wire tool policy settings into Tools workflows and expose missing lost/stolen/edit-permission policy controls.~~ Fixed by WEI-1103 / GitHub #438.
-5. Wire dispatch preference settings into AI dispatch, flex pool, and pipeline behavior.
+5. ~~Wire dispatch preference settings into AI dispatch, flex pool, and pipeline behavior.~~ Fixed by WEI-1104 / GitHub #439.
 
 ## Closeout Rule
 

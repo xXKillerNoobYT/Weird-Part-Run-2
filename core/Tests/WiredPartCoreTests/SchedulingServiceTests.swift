@@ -1084,6 +1084,35 @@ struct SchedulingServiceTests {
         #expect(jobs[0].jobName == "Test Job")
     }
 
+    @Test("fetchFlexPool returns empty when self-assign is disabled")
+    func testFetchFlexPoolDisabledByDispatchPreferences() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        var preferences = try env.settings.getDispatchPreferences()
+        preferences.flexSelfAssignEnabled = false
+        _ = try env.settings.updateDispatchPreferences(preferences)
+
+        try env.scheduling.markJobFlexPool(jobId: jobId, isFlexPool: true)
+        let jobs = try env.scheduling.fetchFlexPool(userId: env.adminUserId)
+        #expect(jobs.isEmpty)
+    }
+
+    @Test("claimFlexJob rejects self-assignment when disabled")
+    func testClaimFlexJobDisabledByDispatchPreferences() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        var preferences = try env.settings.getDispatchPreferences()
+        preferences.flexSelfAssignEnabled = false
+        _ = try env.settings.updateDispatchPreferences(preferences)
+
+        try env.scheduling.markJobFlexPool(jobId: jobId, isFlexPool: true)
+        #expect(throws: SchedulingService.SchedulingError.flexSelfAssignDisabled) {
+            try env.scheduling.claimFlexJob(jobId: jobId, userId: env.adminUserId)
+        }
+    }
+
     @Test("markJobFlexPool with false removes job from pool")
     func testMarkJobFlexPoolRemove() throws {
         let env = try E2ETestHelpers.setUp()
@@ -1294,6 +1323,22 @@ struct SchedulingServiceTests {
         let item = pipeline.first(where: { $0.jobName == "Scheduled Job" })
         #expect(item != nil)
         #expect(item?.pipelineCategory == "schedule_needed")
+    }
+
+    @Test("getShortTermPipelineTargets uses saved dispatch preference thresholds")
+    func testPipelineTargetsUseDispatchPreferences() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        var preferences = try env.settings.getDispatchPreferences()
+        preferences.pipelineStartAnytimeTarget = 9
+        preferences.pipelineScheduleNeededTarget = 4
+        preferences.pipelineFavoriteGCTarget = 2
+        _ = try env.settings.updateDispatchPreferences(preferences)
+
+        let targets = try env.scheduling.getShortTermPipelineTargets()
+        #expect(targets.startAnytime == 9)
+        #expect(targets.scheduleNeeded == 4)
+        #expect(targets.favoriteGC == 2)
     }
 
     // MARK: - updateTimeOffStatus Cancelled
