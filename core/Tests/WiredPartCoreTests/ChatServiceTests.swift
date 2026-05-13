@@ -78,6 +78,32 @@ struct ChatServiceTests {
         #expect(messages.count >= 3)
     }
 
+    @Test("getMessages paginates older messages with before cursor")
+    func testGetMessagesCursorPagination() throws {
+        let env = try E2ETestHelpers.setUp()
+        let channelId = try env.chat.createChannel(
+            name: "Pagination Test",
+            channelType: "group",
+            jobId: nil,
+            createdBy: env.adminUserId
+        )
+
+        for idx in 1...5 {
+            _ = try env.chat.sendMessage(
+                channelId: channelId,
+                senderId: env.adminUserId,
+                content: "Message \(idx)"
+            )
+        }
+
+        let firstPage = try env.chat.getMessages(channelId: channelId, limit: 2)
+        #expect(firstPage.map(\.content) == ["Message 5", "Message 4"])
+
+        let secondPage = try env.chat.getMessages(channelId: channelId, limit: 2, before: firstPage.last?.id)
+        #expect(secondPage.map(\.content) == ["Message 3", "Message 2"])
+        #expect(Set(firstPage.map(\.id)).isDisjoint(with: Set(secondPage.map(\.id))))
+    }
+
     // MARK: - Q&A Threads
 
     @Test("Create and list QA threads")
@@ -140,6 +166,165 @@ struct ChatServiceTests {
         )
         try env.chat.escalateThread(threadId: threadId, escalatedBy: env.adminUserId, notes: nil)
         try env.chat.pushBackThread(threadId: threadId, pushedBackBy: env.adminUserId, reason: "Need more info")
+    }
+
+    @Test("Thread actions by channel write escalation history")
+    func testThreadActionsByChannel() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-QA-ACTION-01")
+        let channelId = try env.chat.createChannel(
+            name: "Action Q&A",
+            channelType: "qa",
+            jobId: jobId,
+            createdBy: env.adminUserId
+        )
+        let threadId = try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO qa_threads
+                (channel_id, job_id, asked_by, subject, current_level, status, priority, created_at, updated_at)
+                VALUES (?, ?, ?, 'Action thread', 'worker', 'open', 'high', datetime('now'), datetime('now'))
+                """, arguments: [channelId, jobId, env.adminUserId])
+            return db.lastInsertedRowID
+        }
+
+        try env.chat.escalateThreadByChannel(
+            channelId: channelId,
+            escalatedBy: env.adminUserId,
+            notes: "Need Approval"
+        )
+        try env.chat.pushBackThreadByChannel(
+            channelId: channelId,
+            pushedBackBy: env.adminUserId,
+            reason: "Need More Info"
+        )
+
+        let historyRows = try env.db.writer.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT from_level, to_level, reason
+                FROM qa_escalations
+                WHERE thread_id = ?
+                ORDER BY id ASC
+                """, arguments: [threadId])
+        }
+        #expect(historyRows.count == 2)
+        #expect(historyRows[0]["from_level"] as String == "worker")
+        #expect(historyRows[0]["to_level"] as String == "lead")
+        #expect(historyRows[0]["reason"] as String == "Need Approval")
+        #expect(historyRows[1]["from_level"] as String == "lead")
+        #expect(historyRows[1]["to_level"] as String == "worker")
+        #expect(historyRows[1]["reason"] as String == "Need More Info")
+    }
+
+    @Test("Add user to generic channel and exclude existing members")
+    func testAddUserToChannel() throws {
+        let env = try E2ETestHelpers.setUp()
+        let newUserId = try env.auth.createUser(displayName: "Thread Invitee", pin: "4321")
+        let channelId = try env.chat.createChannel(
+            name: "People Thread",
+            channelType: "group",
+            createdBy: env.adminUserId
+        )
+
+        let before = try env.chat.listUsersAvailableForChannel(channelId: channelId)
+        #expect(before.contains(where: { $0.id == newUserId }))
+
+        try env.chat.addUserToChannel(channelId: channelId, userId: newUserId)
+
+        let info = try env.chat.getThreadInfo(channelId: channelId)
+        #expect(info?.members.contains(where: { $0.userId == newUserId }) == true)
+        let after = try env.chat.listUsersAvailableForChannel(channelId: channelId)
+        #expect(!after.contains(where: { $0.id == newUserId }))
+    }
+
+    // MARK: - Formal RFIs
+
+    @Test("Create and list formal RFI with sequential number and external contract fields")
+    func testFormalRFICreateAndList() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-RFI-001")
+        let contactId = try env.people.createContact(
+            entityType: "gc",
+            entityId: 1,
+            firstName: "Dana",
+            lastName: "Lee",
+            role: "Project Manager",
+            phone: "555-0100",
+            email: "dana@example.com"
+        )
+
+        let firstId = try env.chat.createFormalRFI(
+            jobId: jobId,
+            createdBy: env.adminUserId,
+            subject: "Panel room clearance",
+            body: "Confirm required working clearance at panel P1.",
+            directedToName: "Dana Lee",
+            directedToType: "gc",
+            directedToContactId: contactId,
+            priority: "high",
+            dueDate: "2026-05-20"
+        )
+        let secondId = try env.chat.createFormalRFI(
+            jobId: jobId,
+            createdBy: env.adminUserId,
+            subject: "Fixture finish",
+            body: "Confirm fixture trim finish.",
+            directedToName: "Architect",
+            priority: "normal"
+        )
+
+        let rfis = try env.chat.listFormalRFIs(jobId: jobId)
+        #expect(rfis.map(\.id).contains(firstId))
+        #expect(rfis.map(\.id).contains(secondId))
+        let first = rfis.first { $0.id == firstId }
+        let second = rfis.first { $0.id == secondId }
+        #expect(first?.rfiNumber == "RFI-001")
+        #expect(second?.rfiNumber == "RFI-002")
+        #expect(first?.directedToName == "Dana Lee")
+        #expect(first?.directedToType == "gc")
+        #expect(first?.directedToContactId == contactId)
+        #expect(first?.priority == "high")
+        #expect(first?.dueDate == "2026-05-20")
+        #expect(first?.status == "open")
+    }
+
+    @Test("Update formal RFI and record external response")
+    func testFormalRFIUpdateAndResponse() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-RFI-002")
+        let rfiId = try env.chat.createFormalRFI(
+            jobId: jobId,
+            createdBy: env.adminUserId,
+            subject: "Ceiling conflict",
+            body: "Need direction on conduit route.",
+            directedToName: "Engineer",
+            priority: "critical"
+        )
+
+        try env.chat.updateFormalRFI(
+            rfiId: rfiId,
+            priority: "high",
+            dueDate: "2026-05-22",
+            directedToName: "Engineer of Record",
+            markSent: true
+        )
+
+        var updated = try #require(env.chat.listFormalRFIs().first { $0.id == rfiId })
+        #expect(updated.status == "submitted")
+        #expect(updated.priority == "high")
+        #expect(updated.dueDate == "2026-05-22")
+        #expect(updated.directedToName == "Engineer of Record")
+        #expect(updated.sentAt != nil)
+
+        try env.chat.recordRFIResponse(
+            rfiId: rfiId,
+            responseText: "Route conduit above the corridor ceiling.",
+            receivedFrom: "Engineer of Record"
+        )
+
+        updated = try #require(env.chat.listFormalRFIs(status: "responded").first { $0.id == rfiId })
+        #expect(updated.responseText == "Route conduit above the corridor ceiling.")
+        #expect(updated.responseReceivedFrom == "Engineer of Record")
+        #expect(updated.respondedAt != nil)
     }
 
     // MARK: - Unified Inbox

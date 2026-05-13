@@ -249,13 +249,20 @@ public struct QAEscalation: Codable, FetchableRecord, MutablePersistableRecord, 
 public struct RFI: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "rfi_objects"
     public var id: Int64?
+    public var rfiNumber: String?
     public var qaThreadId: Int64
     public var jobId: Int64
     public var gcContactId: Int64?
+    public var directedToType: String?
+    public var directedToName: String?
+    public var directedToContactId: Int64?
     public var subject: String
     public var body: String
     public var status: String
+    public var priority: String?
+    public var dueDate: String?
     public var responseText: String?
+    public var responseReceivedFrom: String?
     public var respondedAt: String?
     public var sentVia: String?
     public var sentAt: String?
@@ -265,10 +272,17 @@ public struct RFI: Codable, FetchableRecord, MutablePersistableRecord, Sendable 
 
     enum CodingKeys: String, CodingKey {
         case id, subject, body, status
+        case rfiNumber = "rfi_number"
         case qaThreadId = "qa_thread_id"
         case jobId = "job_id"
         case gcContactId = "gc_contact_id"
+        case directedToType = "directed_to_type"
+        case directedToName = "directed_to_name"
+        case directedToContactId = "directed_to_contact_id"
+        case priority
+        case dueDate = "due_date"
         case responseText = "response_text"
+        case responseReceivedFrom = "response_received_from"
         case respondedAt = "responded_at"
         case sentVia = "sent_via"
         case sentAt = "sent_at"

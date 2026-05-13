@@ -345,7 +345,7 @@ Key service methods:
 | Plan Method | Service Method | Status |
 |------------|----------------|--------|
 | `fetchChannels(filter:)` | `listChannels(userId:)`, `getUnifiedInbox(userId:)` | ✅ |
-| `fetchMessages(channelId:, limit:, before:)` | `getMessages(channelId:, limit:)` | ✅ (no cursor pagination yet) |
+| `fetchMessages(channelId:, limit:, before:)` | `getMessages(channelId:, limit:, before:)` | ✅ |
 | `sendMessage(channelId:, content:, attachments:)` | `sendMessage` + `sendMessageWithAttachments` | ✅ |
 | `escalateThread(threadId:, direction:, reason:)` | `escalateThread` + `pushBackThread` | ✅ |
 | `markRead(channelId:)` | `markRead` (inferred from unread count) | ✅ |
@@ -354,8 +354,8 @@ Key service methods:
 | Auto-save to job notebook | `autoSaveToJobNotebook(channelId:, attachment:, userId:)` | ✅ |
 | JPO Hold threads | `createJPOHoldThread` + `getJPOHoldThread` | ✅ |
 | Supplier bridge | `createSupplierChannel` + `listSupplierChannels` + supplier messaging | ✅ |
-| RFI threading | `IOSRFIListPage` + ChatService channel creation | ✅ |
-| Cursor-based pagination (`before:`) | Not yet implemented — `getMessages` uses limit only | ⏳ Phase 2 |
+| RFI threading | `createFormalRFI`, `listFormalRFIs`, `updateFormalRFI`, `recordRFIResponse` | ✅ |
+| Cursor-based pagination (`before:`) | `getMessages(channelId:, limit:, before:)`; `before` is the oldest loaded message ID | ✅ |
 | Voice memos | Not in v1 per plan section 5 | ❌ Out of scope |
 
 ### Test Coverage
@@ -379,7 +379,8 @@ Key service methods:
 
 ### Plan-ahead-of-code (acceptable future work)
 
-- **Cursor-based pagination** (`before:` parameter for `getMessages`): Current implementation uses `limit: Int = 50` only. No cursor/offset pagination. Plan section 12 calls for `fetchMessages(channelId:, limit:, before:)`. Phase 2 item — not blocking.
+- **Cursor-based pagination** (`before:` parameter for `getMessages`): Implemented in WEI-1137 as `getMessages(channelId:limit:before:)`, where `before` is a message ID cursor. Service still returns newest first; UI callers should keep reversing before rendering oldest-to-newest.
+- **Formal RFI contract**: Implemented in WEI-1137 with `rfi_number` (`RFI-001` sequence), external-party fields, priority, due date, submitted/responded timestamps, response text/source, soft delete, and service methods for create/list/update/response. Existing `qa_threads` remains the internal escalation link.
 - **Dedicated Supplier Bridge list page**: Plan implies a standalone page; current implementation surfaces supplier channels through the unified inbox filter only. Phase 2 item.
 - **`@part:`, `@po:`, `@job:` inline picker** (plan section 5): Reference cards exist as attachment types but the `@`-trigger picker in the message input is not implemented. Phase 2 item.
 

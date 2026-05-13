@@ -221,6 +221,28 @@ public final class ChatService: Sendable {
         }
     }
 
+    /// A formal RFI row with external-party tracking fields.
+    public struct RFIRecord: Sendable, Identifiable {
+        public let id: Int64
+        public let rfiNumber: String
+        public let qaThreadId: Int64
+        public let jobId: Int64
+        public let subject: String
+        public let body: String
+        public let directedToType: String
+        public let directedToName: String
+        public let directedToContactId: Int64?
+        public let priority: String
+        public let dueDate: String?
+        public let status: String
+        public let responseText: String?
+        public let responseReceivedFrom: String?
+        public let sentAt: String?
+        public let respondedAt: String?
+        public let createdAt: String?
+        public let updatedAt: String?
+    }
+
     /// Aggregate chat statistics.
     public struct ChatStats: Sendable {
         public let totalChannels: Int
@@ -280,20 +302,29 @@ public final class ChatService: Sendable {
     // =========================================================================
 
     /// Get messages for a channel, most recent first.
-    public func getMessages(channelId: Int64, limit: Int = 50) throws -> [MessageRow] {
+    /// Pass `before` as the oldest loaded message ID to fetch the next older page.
+    public func getMessages(channelId: Int64, limit: Int = 50, before: Int64? = nil) throws -> [MessageRow] {
         do {
             return try db.writer.read { dbConn -> [MessageRow] in
+                var whereClauses = ["cm.channel_id = ?", "cm.deleted_at IS NULL"]
+                var args: [DatabaseValueConvertible?] = [channelId]
+                if let before {
+                    whereClauses.append("cm.id < ?")
+                    args.append(before)
+                }
+                args.append(max(1, limit))
+
                 let sql = """
                     SELECT cm.id, cm.sender_id, cm.content, cm.message_type, cm.created_at,
                            COALESCE(u.display_name, u.email, 'Unknown') AS sender_name
                     FROM chat_messages cm
                     LEFT JOIN users u ON u.id = cm.sender_id AND u.deleted_at IS NULL
-                    WHERE cm.channel_id = ? AND cm.deleted_at IS NULL
-                    ORDER BY cm.created_at DESC
+                    WHERE \(whereClauses.joined(separator: " AND "))
+                    ORDER BY cm.created_at DESC, cm.id DESC
                     LIMIT ?
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [channelId, limit])
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     MessageRow(
                         id: row["id"] ?? 0,
@@ -494,6 +525,194 @@ public final class ChatService: Sendable {
                 arguments: [jobId, askedBy, subject, priority]
             )
             return dbConn.lastInsertedRowID
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 3b. Formal RFIs
+    // =========================================================================
+
+    @discardableResult
+    public func createFormalRFI(
+        jobId: Int64,
+        createdBy: Int64,
+        subject: String,
+        body: String,
+        directedToName: String,
+        directedToType: String = "external",
+        directedToContactId: Int64? = nil,
+        priority: String = "normal",
+        dueDate: String? = nil
+    ) throws -> Int64 {
+        guard !subject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ChatError.requiredFieldEmpty
+        }
+        guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ChatError.requiredFieldEmpty
+        }
+        guard !directedToName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ChatError.requiredFieldEmpty
+        }
+
+        return try db.writer.write { dbConn in
+            let nextNumber = try nextRFINumber(dbConn)
+
+            try dbConn.execute(sql: """
+                INSERT INTO qa_threads
+                    (job_id, asked_by, subject, current_level, status, priority, created_at, updated_at)
+                VALUES (?, ?, ?, 'office', 'open', ?, datetime('now'), datetime('now'))
+                """, arguments: [jobId, createdBy, subject, priority])
+            let threadId = dbConn.lastInsertedRowID
+
+            try dbConn.execute(sql: """
+                INSERT INTO rfi_objects
+                    (rfi_number, qa_thread_id, job_id, gc_contact_id, directed_to_type,
+                     directed_to_name, directed_to_contact_id, subject, body, status,
+                     priority, due_date, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, datetime('now'), datetime('now'))
+                """, arguments: [
+                    nextNumber, threadId, jobId, directedToContactId, directedToType,
+                    directedToName, directedToContactId, subject, body, priority, dueDate
+                ])
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    public func listFormalRFIs(jobId: Int64? = nil, status: String? = nil) throws -> [RFIRecord] {
+        do {
+            return try db.writer.read { dbConn -> [RFIRecord] in
+                var whereClauses = ["r.deleted_at IS NULL"]
+                var args: [DatabaseValueConvertible?] = []
+
+                if let jobId {
+                    whereClauses.append("r.job_id = ?")
+                    args.append(jobId)
+                }
+                if let status, !status.isEmpty {
+                    whereClauses.append("r.status = ?")
+                    args.append(status)
+                }
+
+                let sql = """
+                    SELECT r.id, r.rfi_number, r.qa_thread_id, r.job_id, r.subject, r.body,
+                           r.directed_to_type, r.directed_to_name, r.directed_to_contact_id,
+                           r.priority, r.due_date, r.status, r.response_text,
+                           r.response_received_from, r.sent_at, r.responded_at,
+                           r.created_at, r.updated_at
+                    FROM rfi_objects r
+                    WHERE \(whereClauses.joined(separator: " AND "))
+                    ORDER BY r.created_at DESC, r.id DESC
+                    """
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
+                return rows.map(Self.rfiRecord(from:))
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    public func updateFormalRFI(
+        rfiId: Int64,
+        status: String? = nil,
+        priority: String? = nil,
+        dueDate: String? = nil,
+        directedToName: String? = nil,
+        directedToType: String? = nil,
+        directedToContactId: Int64? = nil,
+        markSent: Bool = false
+    ) throws {
+        try db.writer.write { dbConn in
+            guard try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COUNT(*) FROM rfi_objects WHERE id = ? AND deleted_at IS NULL",
+                arguments: [rfiId]
+            ) ?? 0 > 0 else {
+                throw ChatError.threadNotFound(rfiId)
+            }
+
+            var assignments = ["updated_at = datetime('now')"]
+            var args: [DatabaseValueConvertible?] = []
+            if let status {
+                assignments.append("status = ?")
+                args.append(status)
+            }
+            if let priority {
+                assignments.append("priority = ?")
+                args.append(priority)
+            }
+            if let dueDate {
+                assignments.append("due_date = ?")
+                args.append(dueDate)
+            }
+            if let directedToName {
+                guard !directedToName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw ChatError.requiredFieldEmpty
+                }
+                assignments.append("directed_to_name = ?")
+                args.append(directedToName)
+            }
+            if let directedToType {
+                assignments.append("directed_to_type = ?")
+                args.append(directedToType)
+            }
+            if let directedToContactId {
+                assignments.append("directed_to_contact_id = ?")
+                assignments.append("gc_contact_id = ?")
+                args.append(directedToContactId)
+                args.append(directedToContactId)
+            }
+            if markSent {
+                assignments.append("sent_at = COALESCE(sent_at, datetime('now'))")
+                if status == nil {
+                    assignments.append("status = 'submitted'")
+                }
+            }
+
+            args.append(rfiId)
+            try dbConn.execute(
+                sql: "UPDATE rfi_objects SET \(assignments.joined(separator: ", ")) WHERE id = ?",
+                arguments: StatementArguments(args)
+            )
+        }
+    }
+
+    public func recordRFIResponse(
+        rfiId: Int64,
+        responseText: String,
+        receivedFrom: String? = nil
+    ) throws {
+        guard !responseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ChatError.requiredFieldEmpty
+        }
+
+        try db.writer.write { dbConn in
+            guard let threadId = try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT qa_thread_id FROM rfi_objects WHERE id = ? AND deleted_at IS NULL",
+                arguments: [rfiId]
+            ) else {
+                throw ChatError.threadNotFound(rfiId)
+            }
+
+            try dbConn.execute(sql: """
+                UPDATE rfi_objects
+                SET status = 'responded',
+                    response_text = ?,
+                    response_received_from = ?,
+                    responded_at = datetime('now'),
+                    updated_at = datetime('now')
+                WHERE id = ?
+                """, arguments: [responseText, receivedFrom, rfiId])
+
+            try dbConn.execute(sql: """
+                UPDATE qa_threads
+                SET status = 'answered',
+                    answer_text = ?,
+                    answered_at = datetime('now'),
+                    updated_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [responseText, threadId])
         }
     }
 
@@ -1062,7 +1281,7 @@ public final class ChatService: Sendable {
                         let level: String = qa["current_level"] ?? "worker"
                         let status: String = qa["status"] ?? "open"
                         escalationLevel = level
-                        if status == "open" {
+                        if status == "open" || status == "escalated" {
                             canEscalate = level != "office"
                             canPushBack = level != "worker"
                         }
@@ -1094,7 +1313,7 @@ public final class ChatService: Sendable {
                 case "dm":
                     actions = [.addPeople]
                 case "job":
-                    actions = [.markResolved, .addPeople]
+                    actions = [.addPeople]
                 case "qa", "rfi":
                     if canEscalate { actions.append(.escalate) }
                     if canPushBack { actions.append(.pushBack) }
@@ -1122,6 +1341,55 @@ public final class ChatService: Sendable {
         } catch {
             if isTableNotFoundError(error) { return nil }
             throw error
+        }
+    }
+
+    /// List active users who are not current members of the channel.
+    public func listUsersAvailableForChannel(channelId: Int64) throws -> [User] {
+        try db.writer.read { dbConn in
+            try User.fetchAll(dbConn, sql: """
+                SELECT u.*
+                FROM users u
+                WHERE u.is_active = 1
+                  AND u.deleted_at IS NULL
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM chat_channel_members ccm
+                    WHERE ccm.channel_id = ?
+                      AND ccm.user_id = u.id
+                      AND ccm.left_at IS NULL
+                      AND ccm.deleted_at IS NULL
+                  )
+                ORDER BY u.display_name ASC
+                """, arguments: [channelId])
+        }
+    }
+
+    /// Add an active user to any chat channel. Reactivates a prior soft-deleted
+    /// membership instead of creating a duplicate row.
+    public func addUserToChannel(channelId: Int64, userId: Int64, role: String = "member") throws {
+        try db.writer.write { dbConn in
+            guard try Int64.fetchOne(dbConn, sql: """
+                SELECT id FROM chat_channels
+                WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [channelId]) != nil else {
+                throw ChatError.channelNotFound(channelId)
+            }
+            guard try Int64.fetchOne(dbConn, sql: """
+                SELECT id FROM users
+                WHERE id = ? AND is_active = 1 AND deleted_at IS NULL
+                """, arguments: [userId]) != nil else {
+                throw ChatError.userNotFound(userId)
+            }
+            try dbConn.execute(sql: """
+                INSERT INTO chat_channel_members (channel_id, user_id, role, joined_at)
+                VALUES (?, ?, ?, datetime('now'))
+                ON CONFLICT(channel_id, user_id) DO UPDATE SET
+                    role = excluded.role,
+                    left_at = NULL,
+                    deleted_at = NULL,
+                    joined_at = datetime('now')
+                """, arguments: [channelId, userId, role])
         }
     }
 
@@ -1238,6 +1506,14 @@ public final class ChatService: Sendable {
         }
     }
 
+    /// Escalate the Q&A/RFI thread linked to a channel.
+    public func escalateThreadByChannel(channelId: Int64, escalatedBy: Int64, notes: String) throws {
+        let reason = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !reason.isEmpty else { throw ChatError.requiredFieldEmpty }
+        let threadId = try qaThreadId(forChannel: channelId)
+        try escalateThread(threadId: threadId, escalatedBy: escalatedBy, notes: reason)
+    }
+
     /// Push a Q&A thread back down one level with feedback.
     public func pushBackThread(threadId: Int64, pushedBackBy: Int64, reason: String) throws {
         try db.writer.write { dbConn in
@@ -1265,6 +1541,14 @@ public final class ChatService: Sendable {
         }
     }
 
+    /// Push back the Q&A/RFI thread linked to a channel.
+    public func pushBackThreadByChannel(channelId: Int64, pushedBackBy: Int64, reason: String) throws {
+        let trimmedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedReason.isEmpty else { throw ChatError.requiredFieldEmpty }
+        let threadId = try qaThreadId(forChannel: channelId)
+        try pushBackThread(threadId: threadId, pushedBackBy: pushedBackBy, reason: trimmedReason)
+    }
+
     /// Mark a Q&A thread as resolved.
     public func resolveQAThread(threadId: Int64, resolvedBy: Int64) throws {
         try db.writer.write { dbConn in
@@ -1285,6 +1569,25 @@ public final class ChatService: Sendable {
                     closed_at = datetime('now'), updated_at = datetime('now')
                 WHERE channel_id = ? AND deleted_at IS NULL
                 """, arguments: [resolvedBy, channelId])
+            if dbConn.changesCount == 0 {
+                throw ChatError.threadNotFound(channelId)
+            }
+        }
+    }
+
+    /// Find the newest active Q&A/RFI thread linked to a channel.
+    private func qaThreadId(forChannel channelId: Int64) throws -> Int64 {
+        try db.writer.read { dbConn in
+            guard let threadId = try Int64.fetchOne(dbConn, sql: """
+                SELECT id
+                FROM qa_threads
+                WHERE channel_id = ? AND deleted_at IS NULL
+                ORDER BY created_at DESC
+                LIMIT 1
+                """, arguments: [channelId]) else {
+                throw ChatError.threadNotFound(channelId)
+            }
+            return threadId
         }
     }
 
@@ -1589,5 +1892,37 @@ public final class ChatService: Sendable {
             if isTableNotFoundError(error) { return [] }
             throw error
         }
+    }
+
+    private static func rfiRecord(from row: Row) -> RFIRecord {
+        RFIRecord(
+            id: row["id"] ?? 0,
+            rfiNumber: row["rfi_number"] ?? "",
+            qaThreadId: row["qa_thread_id"] ?? 0,
+            jobId: row["job_id"] ?? 0,
+            subject: row["subject"] ?? "",
+            body: row["body"] ?? "",
+            directedToType: row["directed_to_type"] ?? "external",
+            directedToName: row["directed_to_name"] ?? "",
+            directedToContactId: row["directed_to_contact_id"] as Int64?,
+            priority: row["priority"] ?? "normal",
+            dueDate: row["due_date"] as String?,
+            status: row["status"] ?? "open",
+            responseText: row["response_text"] as String?,
+            responseReceivedFrom: row["response_received_from"] as String?,
+            sentAt: row["sent_at"] as String?,
+            respondedAt: row["responded_at"] as String?,
+            createdAt: row["created_at"] as String?,
+            updatedAt: row["updated_at"] as String?
+        )
+    }
+
+    private func nextRFINumber(_ dbConn: Database) throws -> String {
+        let lastNumber = try Int.fetchOne(dbConn, sql: """
+            SELECT COALESCE(MAX(CAST(SUBSTR(rfi_number, 5) AS INTEGER)), 0)
+            FROM rfi_objects
+            WHERE rfi_number LIKE 'RFI-%'
+            """) ?? 0
+        return String(format: "RFI-%03d", lastNumber + 1)
     }
 }

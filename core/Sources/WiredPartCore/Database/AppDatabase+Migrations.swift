@@ -115,6 +115,7 @@ extension AppDatabase {
         registerMigration076StockMovementsCompositeIndex(&migrator)
         registerMigration077VehicleIssueReports(&migrator)
         registerMigration081ReceivingPriceVerification(&migrator)
+        registerMigration082FormalRFIContract(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4971,6 +4972,32 @@ extension AppDatabase {
                 table: "receiving_session_items",
                 column: "price_verification_status",
                 type: .text
+            )
+        }
+    }
+
+    private static func registerMigration082FormalRFIContract(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("082_formal_rfi_contract") { db in
+            try addColumnIfMissing(db, table: "rfi_objects", column: "rfi_number", type: .text)
+            try addColumnIfMissing(db, table: "rfi_objects", column: "directed_to_type", type: .text, defaultValue: "external")
+            try addColumnIfMissing(db, table: "rfi_objects", column: "directed_to_name", type: .text)
+            try addColumnIfMissing(db, table: "rfi_objects", column: "directed_to_contact_id", type: .integer)
+            try addColumnIfMissing(db, table: "rfi_objects", column: "priority", type: .text, defaultValue: "normal")
+            try addColumnIfMissing(db, table: "rfi_objects", column: "due_date", type: .text)
+            try addColumnIfMissing(db, table: "rfi_objects", column: "response_received_from", type: .text)
+
+            try db.create(
+                index: "idx_rfi_number",
+                on: "rfi_objects",
+                columns: ["rfi_number"],
+                unique: true,
+                ifNotExists: true
+            )
+            try db.create(
+                index: "idx_rfi_job_status_due",
+                on: "rfi_objects",
+                columns: ["job_id", "status", "due_date"],
+                ifNotExists: true
             )
         }
     }
