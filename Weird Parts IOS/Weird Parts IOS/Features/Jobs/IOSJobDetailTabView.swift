@@ -150,7 +150,7 @@ struct IOSJobDetailTabView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
-                    ForEach(tabs, id: \.id) { tab in
+                    ForEach(scrollableTabs, id: \.id) { tab in
                         jobDetailTabButton(tab)
                     }
                 }
@@ -182,6 +182,11 @@ struct IOSJobDetailTabView: View {
                 .padding(.trailing, 8)
             }
         }
+    }
+
+    private var scrollableTabs: [(id: String, label: String, icon: String)] {
+        guard horizontalSizeClass == .compact else { return tabs }
+        return tabs.filter { $0.id != "estimate" }
     }
 
     private func jobDetailTabButton(_ tab: (id: String, label: String, icon: String)) -> some View {

@@ -64,22 +64,6 @@ struct IOSEstimationReviewPage: View {
                     }
 
                     Section {
-                        Button {
-                            activeSheet = .weekly
-                        } label: {
-                            Label("Add Weekly Review", systemImage: "calendar.badge.clock")
-                        }
-
-                        Button {
-                            activeSheet = .endOfJob
-                        } label: {
-                            Label("Add End-of-Job Review", systemImage: "checkmark.seal")
-                        }
-                    } header: {
-                        Text("Actions")
-                    }
-
-                    Section {
                         if reviews.isEmpty {
                             ContentUnavailableView(
                                 "No reviews yet",
@@ -87,6 +71,7 @@ struct IOSEstimationReviewPage: View {
                                 description: Text("Add a weekly review to start tracking estimate accuracy.")
                             )
                         } else {
+                            reviewHistorySummary
                             ForEach(reviews) { review in
                                 reviewRow(review)
                             }
@@ -99,6 +84,11 @@ struct IOSEstimationReviewPage: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .navigationTitle("Estimation Reviews")
+        .safeAreaInset(edge: .bottom) {
+            if !isLoading {
+                reviewActionBar
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
@@ -129,6 +119,30 @@ struct IOSEstimationReviewPage: View {
             }
         }
         .task { await loadData() }
+    }
+
+    private var reviewActionBar: some View {
+        HStack(spacing: 12) {
+            Button {
+                activeSheet = .weekly
+            } label: {
+                Label("Add Weekly Review", systemImage: "calendar.badge.clock")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+
+            Button {
+                activeSheet = .endOfJob
+            } label: {
+                Label("Add End-of-Job Review", systemImage: "checkmark.seal")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .controlSize(.small)
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(.bar)
     }
 
     // MARK: - Review Row
@@ -194,6 +208,39 @@ struct IOSEstimationReviewPage: View {
             }
         }
         .padding(.vertical, 2)
+    }
+
+    private var reviewHistorySummary: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(reviewHistoryHighlights, id: \.self) { highlight in
+                Text(highlight)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var reviewHistoryHighlights: [String] {
+        var highlights: [String] = []
+        var seen = Set<String>()
+        for review in reviews {
+            for factor in review.decodedDelayFactors where seen.insert(factor).inserted {
+                highlights.append(factor)
+            }
+            if let feedback = review.crewFeedback, !feedback.isEmpty {
+                if seen.insert(feedback).inserted {
+                    highlights.append(feedback)
+                }
+            }
+            if let notes = review.lessonsLearned, !notes.isEmpty {
+                let summary = review.reviewType == "weekly" ? "Notes: \(notes)" : "Lessons learned: \(notes)"
+                if seen.insert(summary).inserted {
+                    highlights.append(summary)
+                }
+            }
+        }
+        return highlights
     }
 
     @ViewBuilder
