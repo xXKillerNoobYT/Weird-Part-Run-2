@@ -6005,6 +6005,93 @@ public final class PartsService: Sendable {
         public let relatedId: Int64?
     }
 
+    public struct SupplierMovementTrace: Sendable, Identifiable {
+        public let id: Int64
+        public let occurredAt: String
+        public let partName: String
+        public let quantity: Int
+        public let movementType: String
+        public let fromLocation: String
+        public let toLocation: String
+        public let referenceNumber: String?
+        public let performedByName: String
+    }
+
+    /// Get supplier-linked stock movements with resolved source and destination locations.
+    public func getSupplierMovementTrace(supplierId: Int64, limit: Int = 20) throws -> [SupplierMovementTrace] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT sm.id, sm.created_at, sm.qty, sm.movement_type, sm.reference_number,
+                           COALESCE(p.name, 'Unknown Part') AS part_name,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS performed_by_name,
+                           sm.from_location_type, sm.from_location_id,
+                           sm.to_location_type, sm.to_location_id,
+                           CASE sm.from_location_type
+                               WHEN 'warehouse' THEN (SELECT name FROM warehouse_locations wl WHERE wl.id = sm.from_location_id AND wl.deleted_at IS NULL)
+                               WHEN 'truck' THEN (SELECT vehicle_name FROM vehicles v WHERE v.id = sm.from_location_id AND v.deleted_at IS NULL)
+                               WHEN 'job' THEN (SELECT job_name FROM jobs j WHERE j.id = sm.from_location_id AND j.deleted_at IS NULL)
+                               WHEN 'supplier' THEN (SELECT name FROM suppliers s WHERE s.id = sm.supplier_id AND s.deleted_at IS NULL)
+                               ELSE NULL
+                           END AS from_location_name,
+                           CASE sm.to_location_type
+                               WHEN 'warehouse' THEN (SELECT name FROM warehouse_locations wl WHERE wl.id = sm.to_location_id AND wl.deleted_at IS NULL)
+                               WHEN 'truck' THEN (SELECT vehicle_name FROM vehicles v WHERE v.id = sm.to_location_id AND v.deleted_at IS NULL)
+                               WHEN 'job' THEN (SELECT job_name FROM jobs j WHERE j.id = sm.to_location_id AND j.deleted_at IS NULL)
+                               WHEN 'supplier' THEN (SELECT name FROM suppliers s WHERE s.id = sm.supplier_id AND s.deleted_at IS NULL)
+                               ELSE NULL
+                           END AS to_location_name
+                    FROM stock_movements sm
+                    LEFT JOIN parts p ON p.id = sm.part_id AND p.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = sm.performed_by AND u.deleted_at IS NULL
+                    WHERE sm.supplier_id = ? AND sm.deleted_at IS NULL
+                    ORDER BY sm.created_at DESC, sm.id DESC
+                    LIMIT ?
+                    """, arguments: [supplierId, limit])
+
+                return rows.map { row in
+                    let fromType = row["from_location_type"] as String?
+                    let fromId = row["from_location_id"] as Int64?
+                    let toType = row["to_location_type"] as String?
+                    let toId = row["to_location_id"] as Int64?
+
+                    return SupplierMovementTrace(
+                        id: row["id"] as Int64? ?? 0,
+                        occurredAt: row["created_at"] as String? ?? "",
+                        partName: row["part_name"] as String? ?? "Unknown Part",
+                        quantity: row["qty"] as Int? ?? 0,
+                        movementType: row["movement_type"] as String? ?? "movement",
+                        fromLocation: Self.formatMovementLocation(
+                            type: fromType,
+                            id: fromId,
+                            name: row["from_location_name"] as String?,
+                            supplierFallback: "Supplier #\(supplierId)"
+                        ),
+                        toLocation: Self.formatMovementLocation(
+                            type: toType,
+                            id: toId,
+                            name: row["to_location_name"] as String?,
+                            supplierFallback: "Supplier #\(supplierId)"
+                        ),
+                        referenceNumber: row["reference_number"] as String?,
+                        performedByName: row["performed_by_name"] as String? ?? "Unknown"
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    private static func formatMovementLocation(type: String?, id: Int64?, name: String?, supplierFallback: String) -> String {
+        guard let type, !type.isEmpty else { return "External / unspecified" }
+        if let name, !name.isEmpty { return name }
+        if type == "supplier" { return supplierFallback }
+        if let id { return "\(type.replacingOccurrences(of: "_", with: " ").capitalized) #\(id)" }
+        return type.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
     /// Build a read-only CRM/history timeline for a supplier from existing local records.
     public func getSupplierTimeline(supplierId: Int64, limit: Int = 20) throws -> [SupplierTimelineEvent] {
         try db.writer.read { dbConn in

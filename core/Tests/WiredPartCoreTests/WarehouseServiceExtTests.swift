@@ -1393,6 +1393,20 @@ struct WarehouseServiceExtTests {
             try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM stock_movements WHERE part_id = 0") ?? 0
         }
         #expect(badMovements == 0)
+
+        let movement = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT supplier_id, from_location_type, to_location_type, to_location_id, reference_number
+                FROM stock_movements
+                WHERE part_id = ? AND movement_type = 'receiving' AND deleted_at IS NULL
+                """, arguments: [partId])
+        }
+        let row = try #require(movement)
+        #expect(row["supplier_id"] as Int64? == supplierId)
+        #expect(row["from_location_type"] as String? == "supplier")
+        #expect(row["to_location_type"] as String? == "warehouse")
+        #expect(row["to_location_id"] as Int64? == 1)
+        #expect(row["reference_number"] as String? == "PO-COMPLETE-TEST")
     }
 
     // MARK: - Bin/Area assignment + misplaced-parts validation (iter 82)

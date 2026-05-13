@@ -236,6 +236,39 @@ struct PartsServiceInventoryTests {
         #expect(count == 2, "Supplier should report 2 linked parts")
     }
 
+    @Test("getSupplierMovementTrace resolves specific movement locations")
+    func testGetSupplierMovementTrace_resolvesLocations() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "TraceCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Traceable Part", categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Trace Supplier")
+        let warehouseId = try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO warehouse_locations (name, location_type, is_active, created_at, updated_at)
+                VALUES ('Main Cage', 'warehouse', 1, datetime('now'), datetime('now'))
+                """)
+            let warehouseId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO stock_movements
+                    (part_id, qty, from_location_type, to_location_type, to_location_id,
+                     supplier_id, movement_type, reference_number, performed_by, created_at)
+                VALUES (?, 4, 'supplier', 'warehouse', ?, ?, 'receiving', 'PO-TRACE-1', ?, datetime('now'))
+                """, arguments: [partId, warehouseId, supplierId, env.adminUserId])
+            return warehouseId
+        }
+
+        let trace = try env.parts.getSupplierMovementTrace(supplierId: supplierId)
+
+        let movement = try #require(trace.first)
+        #expect(movement.partName == "Traceable Part")
+        #expect(movement.quantity == 4)
+        #expect(movement.fromLocation == "Trace Supplier")
+        #expect(movement.toLocation == "Main Cage")
+        #expect(movement.referenceNumber == "PO-TRACE-1")
+        #expect(movement.id > 0)
+        #expect(warehouseId > 0)
+    }
+
     // MARK: - getSupplierRecentPOs
 
     @Test("getSupplierRecentPOs returns empty list for supplier with no POs")

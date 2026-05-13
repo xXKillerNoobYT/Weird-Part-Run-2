@@ -1301,9 +1301,11 @@ public final class WarehouseService: Sendable {
                 dbConn,
                 sql: """
                     SELECT rsi.received_qty, rsi.actual_cost,
-                           pli.part_id
+                           pli.part_id, po.supplier_id, po.po_number
                     FROM receiving_session_items rsi
                     JOIN po_line_items pli ON pli.id = rsi.po_line_id
+                    JOIN receiving_sessions rs ON rs.id = rsi.session_id
+                    JOIN purchase_orders po ON po.id = rs.po_id AND po.deleted_at IS NULL
                     WHERE rsi.session_id = ? AND rsi.received_qty > 0 AND rsi.deleted_at IS NULL
                     """,
                 arguments: [sessionId]
@@ -1314,16 +1316,19 @@ public final class WarehouseService: Sendable {
                 let receivedQty: Int = item["received_qty"] ?? 0
                 guard partId > 0, receivedQty > 0 else { continue }
                 let unitCost: Double? = item["actual_cost"] as Double?
+                let supplierId: Int64? = item["supplier_id"]
+                let poNumber: String? = item["po_number"]
 
                 // Insert movement
                 try dbConn.execute(
                     sql: """
                         INSERT INTO stock_movements
-                        (part_id, qty, to_location_type, to_location_id,
-                         movement_type, reason, performed_by, unit_cost_at_move, created_at)
-                        VALUES (?, ?, 'warehouse', 1, 'receiving', 'PO receiving', ?, ?, datetime('now'))
+                        (part_id, qty, from_location_type, to_location_type, to_location_id,
+                         supplier_id, movement_type, reason, reference_number, performed_by,
+                         unit_cost_at_move, created_at)
+                        VALUES (?, ?, 'supplier', 'warehouse', 1, ?, 'receiving', 'PO receiving', ?, ?, ?, datetime('now'))
                         """,
-                    arguments: [partId, receivedQty, completedBy, unitCost]
+                    arguments: [partId, receivedQty, supplierId, poNumber, completedBy, unitCost]
                 )
 
                 // Add to warehouse stock

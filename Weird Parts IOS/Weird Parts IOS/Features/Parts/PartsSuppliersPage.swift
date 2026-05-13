@@ -700,6 +700,7 @@ private struct SupplierDetailSheet: View {
     @State private var linkedBrands: [(brandId: Int64, brandName: String, partCount: Int, carryStatus: String)] = []
     @State private var recentPOs: [(poId: Int64, poNumber: String, status: String, total: Double, date: String)] = []
     @State private var timelineEvents: [PartsService.SupplierTimelineEvent] = []
+    @State private var movementTrace: [PartsService.SupplierMovementTrace] = []
     @State private var supplierScores: PartsService.SupplierScores?
     @State private var contacts: [PartsService.SupplierContact] = []
     @State private var partCount = 0
@@ -750,10 +751,13 @@ private struct SupplierDetailSheet: View {
                 // Section 9: CRM/history timeline
                 timelineSection
 
-                // Section 10: Recent Orders
+                // Section 10: Movement traceability
+                traceabilitySection
+
+                // Section 11: Recent Orders
                 recentOrdersSection
 
-                // Section 11: Notes
+                // Section 12: Notes
                 if let notes = supplier.notes, !notes.isEmpty {
                     Section("Notes") {
                         Text(notes)
@@ -1253,6 +1257,52 @@ private struct SupplierDetailSheet: View {
         }
     }
 
+    @ViewBuilder
+    private var traceabilitySection: some View {
+        Section {
+            if movementTrace.isEmpty {
+                Text("No supplier-linked inventory movements yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(movementTrace) { movement in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(movement.partName)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Spacer()
+                            Text(String(movement.occurredAt.prefix(10)))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        HStack(spacing: 8) {
+                            Label("\(movement.quantity)", systemImage: "number")
+                            Text(movement.movementType.replacingOccurrences(of: "_", with: " ").capitalized)
+                            if let reference = movement.referenceNumber, !reference.isEmpty {
+                                Text(reference)
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                        Label("\(movement.fromLocation) → \(movement.toLocation)", systemImage: "arrow.triangle.swap")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Text("By \(movement.performedByName)")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .frame(minHeight: 44)
+                }
+            }
+        } header: {
+            Text("Inventory Traceability (\(movementTrace.count))")
+        }
+    }
+
     // MARK: - Helpers
 
     @ViewBuilder
@@ -1309,6 +1359,7 @@ private struct SupplierDetailSheet: View {
             linkedBrands = try service.getSupplierBrands(supplierId: supplier.id)
             recentPOs = try service.getSupplierRecentPOs(supplierId: supplier.id)
             timelineEvents = try service.getSupplierTimeline(supplierId: supplier.id)
+            movementTrace = try service.getSupplierMovementTrace(supplierId: supplier.id)
             partCount = try service.getSupplierPartCount(supplierId: supplier.id)
             contacts = try service.getSupplierContacts(supplierId: supplier.id)
             supplierScores = try service.calculateSupplierScores(supplierId: supplier.id)
