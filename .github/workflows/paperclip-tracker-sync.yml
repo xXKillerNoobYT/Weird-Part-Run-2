@@ -1,0 +1,55 @@
+name: Paperclip Tracker Sync
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sync-tracker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PAPERCLIP_API_URL: ${{ secrets.PAPERCLIP_API_URL }}
+      PAPERCLIP_API_KEY: ${{ secrets.PAPERCLIP_API_KEY }}
+      PAPERCLIP_COMPANY_ID: ${{ secrets.PAPERCLIP_COMPANY_ID }}
+      PAPERCLIP_WEB_URL: ${{ vars.PAPERCLIP_WEB_URL }}
+      GITHUB_REPO: ${{ github.repository }}
+      GITHUB_TRACKER_ISSUE: "372"
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore tracker state
+        uses: actions/cache@v4
+        with:
+          path: .paperclip-sync
+          key: paperclip-tracker-sync-${{ github.run_id }}
+          restore-keys: |
+            paperclip-tracker-sync-
+
+      - name: Validate required configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for var in PAPERCLIP_API_URL PAPERCLIP_API_KEY PAPERCLIP_COMPANY_ID; do
+            if [[ -z "${!var:-}" ]]; then
+              echo "::warning::Missing required secret: $var"
+              missing=1
+            fi
+          done
+          if [[ "$missing" -eq 1 ]]; then
+            echo "Skipping sync because required Paperclip secrets are not configured."
+            exit 0
+          fi
+
+      - name: Sync tracker from Paperclip
+        shell: bash
+        run: scripts/paperclip-github-tracker-sync.sh
