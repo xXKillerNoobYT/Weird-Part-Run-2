@@ -117,6 +117,7 @@ extension AppDatabase {
         registerMigration078ForecastingPermissionBackfill(&migrator)
         registerMigration079LogFleetPermission(&migrator)
         registerMigration080ToolMovementsIndex(&migrator)
+        registerMigration081AuthTokenSessions(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4998,6 +4999,22 @@ extension AppDatabase {
                 CREATE INDEX IF NOT EXISTS idx_tool_movements_type
                 ON tool_movements (movement_type, deleted_at, created_at)
                 """)
+        }
+    }
+
+    // MARK: - Migration 081: Auth token sessions
+
+    private static func registerMigration081AuthTokenSessions(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("081_auth_token_sessions") { db in
+            try db.create(table: "auth_token_sessions", ifNotExists: true) { t in
+                t.column("token_id", .text).primaryKey()
+                t.column("user_id", .integer).notNull()
+                t.column("token_type", .text).notNull()
+                t.column("parent_refresh_id", .text)
+                t.column("expires_at_ms", .double).notNull()
+                t.column("revoked_at", .text)
+                t.column("created_at", .text).notNull()
+            }
         }
     }
 
