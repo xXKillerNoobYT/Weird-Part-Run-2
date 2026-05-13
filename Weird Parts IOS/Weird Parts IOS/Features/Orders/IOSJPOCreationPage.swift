@@ -72,6 +72,7 @@ struct IOSJPOCreationPage: View {
     @State private var showSuccessToast = false
     @State private var successMessage = ""
     @State private var pendingRemoveIndex: Int?
+    @State private var fastAddInitialName = ""
 
     private let aiService = FoundationModelsService()
 
@@ -112,11 +113,13 @@ struct IOSJPOCreationPage: View {
     private enum ActiveSheet: Identifiable {
         case qrScanner
         case help
+        case fastAdd
 
         var id: String {
             switch self {
             case .qrScanner: "qrScanner"
             case .help: "help"
+            case .fastAdd: "fastAdd"
             }
         }
     }
@@ -177,26 +180,36 @@ struct IOSJPOCreationPage: View {
             }
         }
         .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .qrScanner:
-                QRScanSheet(expectedType: .part) { result in
-                    if let partId = result.entityId, result.isFound {
-                        addPartById(partId)
+            Group {
+                switch sheet {
+                case .qrScanner:
+                    QRScanSheet(expectedType: .part) { result in
+                        if let partId = result.entityId, result.isFound {
+                            addPartById(partId)
+                        }
+                        activeSheet = nil
                     }
-                    activeSheet = nil
+                    .environmentObject(appCore)
+                case .help:
+                    PageHelpSheet(
+                        title: "New Parts Order Help",
+                        sections: [
+                            ("What This Page Does", "Create a Job Purchase Order (JPO) to request parts for your job. Search for parts, add them to your cart, set quantities, and submit for office approval."),
+                            ("How to Use It", "1. Your clocked-in job auto-fills at the top. Change it if needed.\n2. Set priority (Normal/High/Urgent) and delivery preference.\n3. Search for parts by name or scan a QR code.\n4. Tap the + button to add parts to the cart. Adjust quantities with +/- buttons.\n5. Check the suggestions panel for companion parts you might need.\n6. Add notes for the office, then tap Submit."),
+                            ("Stock Colors", "Green dot = in stock at the shop. Orange dot = low stock. Red dot = out of stock. In-stock parts get transferred from the shop; out-of-stock parts get ordered from suppliers."),
+                            ("Tips", "Enable the Internet toggle on search to get AI-assisted part matching. Tap a cart item to see companion suggestions for that specific part. The cart shows an estimated cost total based on last-known pricing.")
+                        ]
+                    )
+                case .fastAdd:
+                    FastAddCustomPartSheet(initialName: fastAddInitialName) { part, quantity in
+                        addToCart(part: part, quantity: quantity)
+                        searchText = part.name
+                        searchResults = []
+                    }
+                    .environmentObject(appCore)
                 }
-                .environmentObject(appCore)
-            case .help:
-                PageHelpSheet(
-                    title: "New Parts Order Help",
-                    sections: [
-                        ("What This Page Does", "Create a Job Purchase Order (JPO) to request parts for your job. Search for parts, add them to your cart, set quantities, and submit for office approval."),
-                        ("How to Use It", "1. Your clocked-in job auto-fills at the top. Change it if needed.\n2. Set priority (Normal/High/Urgent) and delivery preference.\n3. Search for parts by name or scan a QR code.\n4. Tap the + button to add parts to the cart. Adjust quantities with +/- buttons.\n5. Check the suggestions panel for companion parts you might need.\n6. Add notes for the office, then tap Submit."),
-                        ("Stock Colors", "Green dot = in stock at the shop. Orange dot = low stock. Red dot = out of stock. In-stock parts get transferred from the shop; out-of-stock parts get ordered from suppliers."),
-                        ("Tips", "Enable the Internet toggle on search to get AI-assisted part matching. Tap a cart item to see companion suggestions for that specific part. The cart shows an estimated cost total based on last-known pricing.")
-                    ]
-                )
             }
+            .presentationDetents([.large])
         }
         .alert("Error", isPresented: Binding(
             get: { submitError != nil },
@@ -379,10 +392,21 @@ struct IOSJPOCreationPage: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 8)
             } else if searchResults.isEmpty && !searchText.isEmpty && searchText.count >= 2 {
-                Text("No parts found for \"\(searchText)\"")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 8)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("No parts found for \"\(searchText)\"")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button {
+                        fastAddInitialName = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        activeSheet = .fastAdd
+                    } label: {
+                        Label("Fast Add Custom Part", systemImage: "plus.circle")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel("Fast add custom part")
+                }
+                .padding(.vertical, 8)
             } else {
                 ForEach(searchResults, id: \.id) { part in
                     searchResultRow(part)
@@ -1110,6 +1134,101 @@ struct IOSJPOCreationPage: View {
         } catch {
             submitError = userFriendlyError(error, context: "submit data")
             isSubmitting = false
+        }
+    }
+}
+
+private struct FastAddCustomPartSheet: View {
+    @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
+
+    let initialName: String
+    let onAdd: (Part, Int) -> Void
+
+    @State private var name: String
+    @State private var quantity = 1
+    @State private var code = ""
+    @State private var manufacturerDetail = ""
+    @State private var notes = ""
+    @State private var errorMessage: String?
+
+    init(initialName: String, onAdd: @escaping (Part, Int) -> Void) {
+        self.initialName = initialName
+        self.onAdd = onAdd
+        _name = State(initialValue: initialName)
+    }
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isDirty: Bool {
+        trimmedName != initialName ||
+        quantity != 1 ||
+        !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !manufacturerDetail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Part") {
+                    TextField("Part name", text: $name)
+                    Stepper("Quantity: \(quantity)", value: $quantity, in: 1...9999)
+                }
+
+                Section("Known Details") {
+                    TextField("Code (optional)", text: $code)
+                        .textInputAutocapitalization(.characters)
+                    TextField("Manufacturer detail (optional)", text: $manufacturerDetail)
+                    TextField("Notes (optional)", text: $notes, axis: .vertical)
+                        .lineLimit(2...4)
+                }
+
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("Fast Add Part")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") { save() }
+                        .disabled(trimmedName.isEmpty)
+                }
+            }
+            .interactiveDismissDisabled(isDirty)
+        }
+    }
+
+    private func save() {
+        guard let service = appCore.partsService else {
+            errorMessage = "Parts service not available"
+            return
+        }
+
+        do {
+            let partId = try service.createFastAddCustomPartForJPO(
+                PartsService.FastAddCustomPartDraft(
+                    name: trimmedName,
+                    code: code,
+                    manufacturerPartNumber: manufacturerDetail,
+                    notes: notes
+                )
+            )
+            let part = try service.getPart(id: partId).part
+            onAdd(part, quantity)
+            dismiss()
+        } catch {
+            errorMessage = userFriendlyError(error, context: "fast add custom part")
         }
     }
 }

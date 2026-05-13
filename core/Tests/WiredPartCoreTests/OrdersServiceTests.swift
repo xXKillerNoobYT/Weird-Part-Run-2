@@ -99,6 +99,47 @@ struct OrdersServiceTests {
         #expect(modesByPartId[generalPartId] == "general")
     }
 
+    @Test("Create JPO with catalog and fast-added custom part")
+    func testCreateJPOWithCatalogAndFastAddedCustomPart() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let catalogPartId = try E2ETestHelpers.seedPart(env, name: "Catalog Breaker", categoryId: catId)
+        let customPartId = try env.parts.createFastAddCustomPartForJPO(
+            PartsService.FastAddCustomPartDraft(
+                name: "Mystery panel lug",
+                code: "LUG-TBD",
+                manufacturerPartNumber: "Square D maybe",
+                notes: "Need 2-pole panel fit confirmed"
+            )
+        )
+
+        let jpoId = try env.orders.createJPOWithLines(
+            jobId: jobId,
+            requestedBy: env.adminUserId,
+            priority: "normal",
+            deliveryOption: "partial",
+            notes: "Mixed catalog and custom request",
+            lines: [
+                (partId: catalogPartId, quantity: 1),
+                (partId: customPartId, quantity: 2)
+            ],
+            brandSelectionModes: ["specific", "general"]
+        )
+
+        let detail = try env.orders.getJPODetail(id: jpoId)
+        #expect(detail.lines.count == 2)
+        #expect(detail.lines.contains { $0.partId == catalogPartId && $0.quantity == 1 })
+        #expect(detail.lines.contains { $0.partId == customPartId && $0.quantity == 2 })
+
+        let customPart = try env.parts.getPart(id: customPartId).part
+        #expect(customPart.name == "Mystery panel lug")
+        #expect(customPart.code == "LUG-TBD")
+        #expect(customPart.manufacturerPartNumber == "Square D maybe")
+        #expect(customPart.notes?.contains("[FAST_ADD_INCOMPLETE]") == true)
+        #expect(customPart.notes?.contains("Need 2-pole panel fit confirmed") == true)
+    }
+
     // MARK: - Purchase Orders
 
     @Test("Create and list purchase orders")

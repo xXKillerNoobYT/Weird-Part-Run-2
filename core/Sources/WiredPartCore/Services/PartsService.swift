@@ -165,6 +165,29 @@ public final class PartsService: Sendable {
         }
     }
 
+    /// Partial details captured when an order operator fast-adds a part that is not in the catalog yet.
+    public struct FastAddCustomPartDraft: Sendable {
+        public var name: String
+        public var code: String?
+        public var manufacturerPartNumber: String?
+        public var notes: String?
+        public var categoryName: String
+
+        public init(
+            name: String,
+            code: String? = nil,
+            manufacturerPartNumber: String? = nil,
+            notes: String? = nil,
+            categoryName: String = "Uncategorized"
+        ) {
+            self.name = name
+            self.code = code
+            self.manufacturerPartNumber = manufacturerPartNumber
+            self.notes = notes
+            self.categoryName = categoryName
+        }
+    }
+
     /// Row returned by companion rules list (rule + source/target arrays).
     public struct CompanionRuleWithRelations: Sendable {
         public var id: Int64
@@ -1326,6 +1349,45 @@ public final class PartsService: Sendable {
         // even if part_change_log table doesn't exist yet (pre-migration-033 databases)
         try? logPartChange(partId: partId, userId: nil, userName: nil, action: "created", context: "Catalog")
         return partId
+    }
+
+    /// Create an incomplete placeholder part from the New Parts Order fast-add path.
+    @discardableResult
+    public func createFastAddCustomPartForJPO(_ draft: FastAddCustomPartDraft) throws -> Int64 {
+        let categoryName = draft.categoryName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let categoryId = try findOrCreateCategory(name: categoryName.isEmpty ? "Uncategorized" : categoryName)
+        let notes = buildFastAddNotes(from: draft)
+
+        return try createPart(
+            categoryId: categoryId,
+            name: draft.name,
+            code: normalizedOptional(draft.code),
+            description: "Placeholder catalog part created from New Parts Order fast add. Staging details required.",
+            manufacturerPartNumber: normalizedOptional(draft.manufacturerPartNumber),
+            notes: notes
+        )
+    }
+
+    private func buildFastAddNotes(from draft: FastAddCustomPartDraft) -> String {
+        var lines = [
+            "[FAST_ADD_INCOMPLETE]",
+            "Created from New Parts Order fast-add. Warehouse/order staging must complete catalog details."
+        ]
+        if let code = normalizedOptional(draft.code) {
+            lines.append("Known code: \(code)")
+        }
+        if let manufacturer = normalizedOptional(draft.manufacturerPartNumber) {
+            lines.append("Known manufacturer detail: \(manufacturer)")
+        }
+        if let notes = normalizedOptional(draft.notes) {
+            lines.append("Operator notes: \(notes)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func normalizedOptional(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     /// Update an existing part. Only non-nil fields are updated.
