@@ -51,6 +51,7 @@ struct PartsServiceExtTests {
         let catId = try E2ETestHelpers.seedCategory(env)
         let partId = try env.parts.createPart(categoryId: catId, name: "Test Wire 12AWG", code: "TW-1234")
         #expect(partId > 0)
+        #expect(try env.parts.getPart(id: partId).part.autoAddToWishlist == 0)
 
         let searchResults = try env.parts.searchParts(query: "12AWG")
         #expect(searchResults.count >= 1)
@@ -60,6 +61,40 @@ struct PartsServiceExtTests {
         #expect(updated.part.name == "Updated Wire 12AWG")
 
         try env.parts.deletePart(id: partId)
+    }
+
+    @Test("Admin can persist per-part auto-add-to-wishlist toggle")
+    func testPartAutoAddToWishlistTogglePersists() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "Wishlist Toggle Cat")
+        let partId = try env.parts.createPart(categoryId: catId, name: "Wishlist Toggle Part", code: "WT-001")
+
+        try env.parts.setPartAutoAddToWishlist(partId: partId, enabled: true, byUserId: env.adminUserId)
+        #expect(try env.parts.getPart(id: partId).part.autoAddToWishlist == 1)
+
+        try env.parts.setPartAutoAddToWishlist(partId: partId, enabled: false, byUserId: env.adminUserId)
+        #expect(try env.parts.getPart(id: partId).part.autoAddToWishlist == 0)
+    }
+
+    @Test("Part auto-add-to-wishlist toggle requires Admin or Manager permission")
+    func testPartAutoAddToWishlistToggleRequiresPermission() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "Wishlist Guard Cat")
+        let partId = try env.parts.createPart(categoryId: catId, name: "Wishlist Guard Part", code: "WG-001")
+        let unprivilegedUserId = try env.auth.createUser(displayName: "Wishlist Guard User", pin: "2468")
+
+        do {
+            try env.parts.setPartAutoAddToWishlist(partId: partId, enabled: true, byUserId: unprivilegedUserId)
+            Issue.record("Expected permission failure")
+        } catch let error as PartsService.PartsError {
+            guard case .insufficientPermissions(let required) = error else {
+                Issue.record("Expected insufficientPermissions, got \(error)")
+                return
+            }
+            #expect(required == "wishlist.configure_auto_add")
+        }
+
+        #expect(try env.parts.getPart(id: partId).part.autoAddToWishlist == 0)
     }
 
     @Test("getPart throws partNotFound for soft-deleted parts")

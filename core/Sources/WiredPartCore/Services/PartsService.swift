@@ -1370,6 +1370,7 @@ public final class PartsService: Sendable {
             binLocation: binLocation
         )
         record.isActive = 1
+        record.autoAddToWishlist = 0
         record.isDeprecated = 0
         record.isQrTagged = 0
         let createdFields = [
@@ -1377,7 +1378,8 @@ public final class PartsService: Sendable {
             "description", "brand_id", "manufacturer_part_number", "unit_of_measure",
             "weight_lbs", "company_cost_price", "company_markup_percent", "min_stock_level",
             "max_stock_level", "target_stock_level", "reorder_point", "notes", "image_url",
-            "shelf_location", "bin_location", "is_active", "is_deprecated", "is_qr_tagged"
+            "shelf_location", "bin_location", "auto_add_to_wishlist",
+            "is_active", "is_deprecated", "is_qr_tagged"
         ]
         try db.writer.write { dbConn in
             try record.insert(dbConn)
@@ -1546,6 +1548,45 @@ public final class PartsService: Sendable {
                 try? logPartFieldChanges(partId: id, userId: nil, userName: nil, changes: changes, context: "Catalog Edit")
             }
         }
+    }
+
+    /// Toggle whether below-MIN stock checks may auto-create wishlist demand for this part.
+    /// Restricted to Admin/Manager via the dedicated `wishlist.configure_auto_add` permission.
+    public func setPartAutoAddToWishlist(partId: Int64, enabled: Bool, byUserId: Int64) throws {
+        let requiredPermission = "wishlist.configure_auto_add"
+        guard try auth.hasPermission(byUserId, permissionKey: requiredPermission) else {
+            throw PartsError.insufficientPermissions(required: requiredPermission)
+        }
+
+        try db.writer.write { dbConn in
+            let partExists = try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL",
+                arguments: [partId]
+            ) ?? 0
+            guard partExists > 0 else { throw PartsError.partNotFound(partId) }
+
+            try dbConn.execute(
+                sql: """
+                    UPDATE parts
+                    SET auto_add_to_wishlist = ?, updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [enabled ? 1 : 0, partId]
+            )
+            try FieldTimestampHelper.stamp(["auto_add_to_wishlist"], table: "parts", rowId: partId, in: dbConn)
+        }
+
+        try? logPartChange(
+            partId: partId,
+            userId: byUserId,
+            userName: nil,
+            action: enabled ? "enabled_auto_wishlist" : "disabled_auto_wishlist",
+            fieldName: "auto_add_to_wishlist",
+            oldValue: nil,
+            newValue: enabled ? "1" : "0",
+            context: "Wishlist Automation"
+        )
     }
 
     /// Soft-delete a part.

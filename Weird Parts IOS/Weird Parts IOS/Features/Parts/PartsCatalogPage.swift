@@ -1189,6 +1189,7 @@ struct PartsCatalogPage: View {
                     totalStock: stock,
                     partType: pwd.part.partType,
                     isActive: pwd.part.isActive ?? 1,
+                    autoAddToWishlist: (pwd.part.autoAddToWishlist ?? 0) == 1,
                     isLowStock: minStock.map { stock < $0 } ?? false
                 )
             }
@@ -1303,6 +1304,7 @@ struct CatalogPartRow: Identifiable, Sendable {
     let totalStock: Int
     let partType: String
     let isActive: Int
+    let autoAddToWishlist: Bool
     let isLowStock: Bool
 }
 
@@ -1467,6 +1469,7 @@ private struct PartFormSheet: View {
     @State private var partType = "standard"
     @State private var costPrice = ""
     @State private var markupPercent = ""
+    @State private var autoAddToWishlist = false
     @State private var saveError: String?
     @State private var isSaving = false
 
@@ -1519,6 +1522,13 @@ private struct PartFormSheet: View {
                     }
                     .frame(minHeight: 44)
                 }
+
+                if appCore.hasPermission("wishlist.configure_auto_add") {
+                    Section("Wishlist Automation") {
+                        Toggle("Auto-add below MIN", isOn: $autoAddToWishlist)
+                            .frame(minHeight: 44)
+                    }
+                }
             }
             .navigationTitle(part == nil ? "New Part" : "Edit Part")
             .navigationBarTitleDisplayMode(.inline)
@@ -1556,6 +1566,7 @@ private struct PartFormSheet: View {
                     partType = p.partType
                     costPrice = String(format: "%.2f", p.companyCostPrice)
                     markupPercent = String(format: "%.1f", p.companyMarkupPercent)
+                    autoAddToWishlist = p.autoAddToWishlist
                 }
             }
             .alert("Save Failed", isPresented: Binding(
@@ -1591,8 +1602,9 @@ private struct PartFormSheet: View {
                     companyCostPrice: cost,
                     companyMarkupPercent: markup
                 )
+                try saveWishlistAutomationIfAllowed(partId: p.id)
             } else {
-                _ = try service.createPart(
+                let partId = try service.createPart(
                     categoryId: selectedCategoryId,
                     name: trimmedName,
                     partType: partType,
@@ -1601,10 +1613,23 @@ private struct PartFormSheet: View {
                     companyCostPrice: cost,
                     companyMarkupPercent: markup
                 )
+                try saveWishlistAutomationIfAllowed(partId: partId)
             }
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }
+    }
+
+    private func saveWishlistAutomationIfAllowed(partId: Int64) throws {
+        guard appCore.hasPermission("wishlist.configure_auto_add") else { return }
+        guard let userId = appCore.currentUser?.id else {
+            throw PartsService.PartsError.insufficientPermissions(required: "wishlist.configure_auto_add")
+        }
+        try appCore.partsService?.setPartAutoAddToWishlist(
+            partId: partId,
+            enabled: autoAddToWishlist,
+            byUserId: userId
+        )
     }
 }
 
@@ -1620,7 +1645,17 @@ private struct PartDetailSheet: View {
     @State private var stockEntries: [StockEntry] = []
     @State private var warehouseNames: [Int64: String] = [:]
     @State private var showEditForm = false
+    @State private var autoAddToWishlist: Bool
+    @State private var isSavingWishlistAutomation = false
     @State private var loadError: String?
+
+    init(partRow: CatalogPartRow, categories: [PartCategory], brands: [Brand], onUpdate: @escaping () async -> Void) {
+        self.partRow = partRow
+        self.categories = categories
+        self.brands = brands
+        self.onUpdate = onUpdate
+        _autoAddToWishlist = State(initialValue: partRow.autoAddToWishlist)
+    }
 
     var body: some View {
         NavigationStack {
@@ -1680,6 +1715,20 @@ private struct PartDetailSheet: View {
                     }
                 }
 
+                if appCore.hasPermission("wishlist.configure_auto_add") {
+                    Section("Wishlist Automation") {
+                        Toggle("Auto-add below MIN", isOn: Binding(
+                            get: { autoAddToWishlist },
+                            set: { newValue in
+                                autoAddToWishlist = newValue
+                                Task { await saveWishlistAutomation(enabled: newValue) }
+                            }
+                        ))
+                        .disabled(isSavingWishlistAutomation)
+                        .frame(minHeight: 44)
+                    }
+                }
+
                 Section("Change History") {
                     DisclosureGroup("View History") {
                         PartHistoryView(partId: partRow.id)
@@ -1706,9 +1755,36 @@ private struct PartDetailSheet: View {
                     await onUpdate()
                 }
             }
+            .alert("Wishlist Automation Failed", isPresented: Binding(
+                get: { loadError != nil },
+                set: { if !$0 { loadError = nil } }
+            )) {
+                Button("OK") { loadError = nil }
+            } message: {
+                Text(loadError ?? "")
+            }
             .task { await loadStock() }
             .task { appCore.onboardingManager?.markCompleted("catalog-detail") }
         }
+    }
+
+    @Sendable
+    private func saveWishlistAutomation(enabled: Bool) async {
+        guard let service = appCore.partsService, let userId = appCore.currentUser?.id else {
+            loadError = "Service not available"
+            autoAddToWishlist.toggle()
+            return
+        }
+
+        isSavingWishlistAutomation = true
+        do {
+            try service.setPartAutoAddToWishlist(partId: partRow.id, enabled: enabled, byUserId: userId)
+            await onUpdate()
+        } catch {
+            autoAddToWishlist.toggle()
+            loadError = userFriendlyError(error, context: "save data")
+        }
+        isSavingWishlistAutomation = false
     }
 
     @Sendable

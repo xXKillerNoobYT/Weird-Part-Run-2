@@ -401,6 +401,7 @@ public struct Part: Codable, FetchableRecord, MutablePersistableRecord, Sendable
     public var pdfUrl: String?
     public var shelfLocation: String?
     public var binLocation: String?
+    public var autoAddToWishlist: Int?
     public var isActive: Int?
     public var weightedAvgCost: Double?
     public var customMarginPercent: Double?
@@ -440,6 +441,7 @@ public struct Part: Codable, FetchableRecord, MutablePersistableRecord, Sendable
         case pdfUrl = "pdf_url"
         case shelfLocation = "shelf_location"
         case binLocation = "bin_location"
+        case autoAddToWishlist = "auto_add_to_wishlist"
         case isActive = "is_active"
         case weightedAvgCost = "weighted_avg_cost"
         case customMarginPercent = "custom_margin_percent"

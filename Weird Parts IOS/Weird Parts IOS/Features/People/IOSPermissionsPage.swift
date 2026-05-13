@@ -24,7 +24,7 @@ struct IOSPermissionsPage: View {
     /// All known permission keys
     private let allPermissions: [PermissionGroup] = [
         PermissionGroup(name: "Parts & Warehouse", keys: [
-            "view_parts_catalog", "edit_parts_catalog", "edit_pricing", "show_dollar_values",
+            "view_parts_catalog", "edit_parts_catalog", "edit_pricing", "show_dollar_values", "wishlist.configure_auto_add",
             "manage_deprecation", "view_warehouse", "manage_warehouse", "move_stock_warehouse",
         ]),
         PermissionGroup(name: "Jobs & Labor", keys: [

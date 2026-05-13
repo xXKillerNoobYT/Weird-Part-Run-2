@@ -122,6 +122,7 @@ extension AppDatabase {
         registerMigration083StructuredEstimationReviews(&migrator)
         registerMigration084SyncedTableFieldTimestamps(&migrator)
         registerMigration085CoOccurrenceHierarchyUniqueness(&migrator)
+        registerMigration086PartsAutoAddWishlistToggle(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -937,6 +938,7 @@ extension AppDatabase {
                 t.column("pdf_url", .text)
                 t.column("shelf_location", .text)
                 t.column("bin_location", .text)
+                t.column("auto_add_to_wishlist", .integer).notNull().defaults(to: 0)
                 t.column("is_active", .integer).defaults(to: 1)
                 t.column("weighted_avg_cost", .double).defaults(to: 0)
                 t.column("custom_margin_percent", .double)
@@ -5148,6 +5150,25 @@ extension AppDatabase {
                 columns: ["match_level", "category_a_id", "category_b_id", "style_a_id", "style_b_id", "type_a_id", "type_b_id"],
                 ifNotExists: true
             )
+        }
+    }
+
+    private static func registerMigration086PartsAutoAddWishlistToggle(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("086_parts_auto_add_wishlist_toggle") { db in
+            try addColumnIfMissing(
+                db,
+                table: "parts",
+                column: "auto_add_to_wishlist",
+                type: .integer,
+                defaultValue: 0
+            )
+
+            for hatName in ["Admin", "Manager"] {
+                try db.execute(sql: """
+                    INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+                    SELECT id, 'wishlist.configure_auto_add' FROM hats WHERE name = ?
+                    """, arguments: [hatName])
+            }
         }
     }
 

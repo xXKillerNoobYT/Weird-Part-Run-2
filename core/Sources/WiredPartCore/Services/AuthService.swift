@@ -1035,7 +1035,7 @@ public final class AuthService: Sendable {
                 "companion_vote_power", "vote_veto",
                 // Wishlist management
                 "wishlist.approve", "wishlist.dismiss", "wishlist.send_to_procurement", "wishlist.reopen",
-                "wishlist.auto_approve",
+                "wishlist.auto_approve", "wishlist.configure_auto_add",
                 // Parts recommendation approvals
                 "parts.approve_recommendation", "parts.dismiss_recommendation",
             ],
@@ -1061,7 +1061,7 @@ public final class AuthService: Sendable {
                 "companion_vote_power",
                 // Wishlist management
                 "wishlist.approve", "wishlist.dismiss", "wishlist.send_to_procurement", "wishlist.reopen",
-                "wishlist.auto_approve",
+                "wishlist.auto_approve", "wishlist.configure_auto_add",
                 // Parts recommendation approvals
                 "parts.approve_recommendation", "parts.dismiss_recommendation",
             ],
