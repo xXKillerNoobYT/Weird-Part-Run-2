@@ -862,6 +862,29 @@ struct ToolsServiceTests {
         #expect(pendingEdits.first?.newValue == "Requested Name")
     }
 
+    @Test("editToolWithVerification can require verification for permitted users by policy")
+    func testEditVerificationAlwaysPendingPolicy() throws {
+        let env = try E2ETestHelpers.setUp()
+        var policy = try env.settings.getToolPolicies()
+        policy.editVerificationMode = .alwaysPending
+        _ = try env.settings.updateToolPolicies(policy)
+
+        let toolId = try insertTool(env, toolNumber: "T-EDIT-POL", name: "Policy Original")
+
+        let result = try env.tools.editToolWithVerification(
+            toolId: toolId,
+            userId: env.adminUserId,
+            changes: ["name": "Policy Pending"],
+            hasPermission: true
+        )
+
+        #expect(result.status == "pending_verification")
+        #expect(result.requiresVerification)
+
+        let detail = try env.tools.getToolDetail(toolId: toolId)
+        #expect(detail?.name == "Policy Original")
+    }
+
     // =========================================================================
     // MARK: - Maintenance Configs
     // =========================================================================
@@ -936,6 +959,75 @@ struct ToolsServiceTests {
         }
     }
 
+    @Test("initiateTrade enforces allow trades policy")
+    func testInitiateTradeDisallowedByPolicy() throws {
+        let env = try E2ETestHelpers.setUp()
+        var policy = try env.settings.getToolPolicies()
+        policy.allowTrades = false
+        _ = try env.settings.updateToolPolicies(policy)
+
+        let toolId = try insertTool(
+            env,
+            toolNumber: "T-TRD-POL",
+            name: "Trade Policy Tool",
+            status: "checked_out",
+            assignedTo: env.adminUserId
+        )
+        let recipientId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO users (display_name, pin_hash, is_active, created_at, updated_at)
+                VALUES ('Trade Policy Recipient', 'hash', 1, datetime('now'), datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+
+        #expect(throws: ToolsService.ToolsError.policyDisallowsAction("trades")) {
+            try env.tools.initiateTrade(
+                toolId: toolId,
+                fromUserId: env.adminUserId,
+                toUserId: recipientId,
+                condition: "Good"
+            )
+        }
+    }
+
+    @Test("initiateTrade uses policy timeout days")
+    func testInitiateTradeUsesPolicyTimeout() throws {
+        let env = try E2ETestHelpers.setUp()
+        var policy = try env.settings.getToolPolicies()
+        policy.tradeTimeoutDays = 2
+        _ = try env.settings.updateToolPolicies(policy)
+
+        let toolId = try insertTool(
+            env,
+            toolNumber: "T-TRD-TIME",
+            name: "Trade Timeout Tool",
+            status: "checked_out",
+            assignedTo: env.adminUserId
+        )
+        let recipientId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO users (display_name, pin_hash, is_active, created_at, updated_at)
+                VALUES ('Trade Timeout Recipient', 'hash', 1, datetime('now'), datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+
+        let tradeId = try env.tools.initiateTrade(
+            toolId: toolId,
+            fromUserId: env.adminUserId,
+            toUserId: recipientId,
+            condition: "Good"
+        )
+
+        let expiresAt = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT expires_at FROM tool_trades WHERE id = ?", arguments: [tradeId])
+        }
+        let expiresDate = try #require(expiresAt.flatMap { CoreFormatters.iso8601.date(from: $0) })
+        let delta = Calendar.current.dateComponents([.day], from: Date(), to: expiresDate).day
+        #expect(delta == 1 || delta == 2)
+    }
+
     // =========================================================================
     // MARK: - Version History
     // =========================================================================
@@ -980,6 +1072,50 @@ struct ToolsServiceTests {
         #expect(detail?.status == "lost")
     }
 
+    @Test("reportToolLostOrStolen enforces policy location requirement")
+    func testReportLostOrStolenRequiresLocationByPolicy() throws {
+        let env = try E2ETestHelpers.setUp()
+        var policy = try env.settings.getToolPolicies()
+        policy.requireLostStolenLocation = true
+        _ = try env.settings.updateToolPolicies(policy)
+
+        let toolId = try insertTool(env, toolNumber: "T-LOST-POL", name: "Policy Lost Tool", status: "available")
+        #expect(throws: ToolsService.ToolsError.requiredFieldEmpty("lastKnownLocation")) {
+            try env.tools.reportToolLostOrStolen(
+                toolId: toolId,
+                reportedBy: env.adminUserId,
+                reportType: "lost",
+                description: "Missing after shift"
+            )
+        }
+    }
+
+    @Test("reportToolLostOrStolen keeps active checkout open when policy disables auto-close")
+    func testReportLostOrStolenHonorsCloseCheckoutPolicy() throws {
+        let env = try E2ETestHelpers.setUp()
+        var policy = try env.settings.getToolPolicies()
+        policy.closeCheckoutOnLostStolen = false
+        _ = try env.settings.updateToolPolicies(policy)
+
+        let toolId = try insertTool(env, toolNumber: "T-LOST-OPEN", name: "Open Lost Tool", status: "available")
+        try env.tools.checkoutTool(toolId: toolId, userId: env.adminUserId)
+        try env.tools.reportToolLostOrStolen(
+            toolId: toolId,
+            reportedBy: env.adminUserId,
+            reportType: "lost",
+            description: "Could not find it",
+            lastKnownLocation: "North yard"
+        )
+
+        let openCheckoutCount = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM tool_checkouts
+                WHERE tool_id = ? AND checked_in_at IS NULL AND deleted_at IS NULL
+                """, arguments: [toolId])
+        }
+        #expect(openCheckoutCount == 1)
+    }
+
     // =========================================================================
     // MARK: - Basic Checkout / Return (Legacy API)
     // =========================================================================
@@ -1005,6 +1141,41 @@ struct ToolsServiceTests {
 
         let detail = try env.tools.getToolDetail(toolId: toolId)
         #expect(detail?.status == "available")
+    }
+
+    @Test("checkoutTool uses policy max checkout days for expected return")
+    func testCheckoutToolUsesPolicyDuration() throws {
+        let env = try E2ETestHelpers.setUp()
+        var policy = try env.settings.getToolPolicies()
+        policy.maxCheckoutDays = 3
+        _ = try env.settings.updateToolPolicies(policy)
+
+        let toolId = try insertTool(env, toolNumber: "T-POL-CO", name: "Policy Checkout Tool", status: "available")
+        try env.tools.checkoutTool(toolId: toolId, userId: env.adminUserId)
+
+        let dayDelta = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT ROUND(julianday(expected_return) - julianday(checked_out_at))
+                FROM tool_checkouts
+                WHERE tool_id = ?
+                """, arguments: [toolId])
+        }
+        #expect(dayDelta == 3)
+    }
+
+    @Test("returnTool auto-schedules maintenance after policy checkout threshold")
+    func testReturnToolUsesMaintenanceThresholdPolicy() throws {
+        let env = try E2ETestHelpers.setUp()
+        var policy = try env.settings.getToolPolicies()
+        policy.maintenanceAfterCheckouts = 1
+        _ = try env.settings.updateToolPolicies(policy)
+
+        let toolId = try insertTool(env, toolNumber: "T-POL-MAINT", name: "Maintenance Policy Tool", status: "available")
+        try env.tools.checkoutTool(toolId: toolId, userId: env.adminUserId)
+        try env.tools.returnTool(toolId: toolId, userId: env.adminUserId)
+
+        let detail = try env.tools.getToolDetail(toolId: toolId)
+        #expect(detail?.status == "maintenance")
     }
 
     // =========================================================================

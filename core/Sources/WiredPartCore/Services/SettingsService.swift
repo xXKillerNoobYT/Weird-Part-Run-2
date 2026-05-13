@@ -90,6 +90,137 @@ public final class SettingsService: Sendable {
         public static let defaults = PayPeriodSettings(periodType: "biweekly", startDay: 1)
     }
 
+    public struct ToolPolicySettings: Codable, Equatable, Sendable {
+        public enum EditVerificationMode: String, Codable, CaseIterable, Hashable, Sendable {
+            case pendingWithoutPermission = "pending_without_permission"
+            case alwaysPending = "always_pending"
+            case directEdits = "direct_edits"
+        }
+
+        public var maxCheckoutDays: Int
+        public var overdueNotificationDays: Int
+        public var autoExtendOnActiveJob: Bool
+        public var requireCheckoutCondition: Bool
+        public var requireReturnCondition: Bool
+        public var requireDamagePhoto: Bool
+        public var maintenanceAfterCheckouts: Int
+        public var maintenanceReminderDays: Int
+        public var allowTrades: Bool
+        public var tradeTimeoutDays: Int
+        public var requireTradeCondition: Bool
+        public var allowLostStolenReports: Bool
+        public var requireLostStolenLocation: Bool
+        public var closeCheckoutOnLostStolen: Bool
+        public var editVerificationMode: EditVerificationMode
+
+        public init(
+            maxCheckoutDays: Int,
+            overdueNotificationDays: Int,
+            autoExtendOnActiveJob: Bool,
+            requireCheckoutCondition: Bool,
+            requireReturnCondition: Bool,
+            requireDamagePhoto: Bool,
+            maintenanceAfterCheckouts: Int,
+            maintenanceReminderDays: Int,
+            allowTrades: Bool,
+            tradeTimeoutDays: Int,
+            requireTradeCondition: Bool,
+            allowLostStolenReports: Bool,
+            requireLostStolenLocation: Bool,
+            closeCheckoutOnLostStolen: Bool,
+            editVerificationMode: EditVerificationMode
+        ) {
+            self.maxCheckoutDays = maxCheckoutDays
+            self.overdueNotificationDays = overdueNotificationDays
+            self.autoExtendOnActiveJob = autoExtendOnActiveJob
+            self.requireCheckoutCondition = requireCheckoutCondition
+            self.requireReturnCondition = requireReturnCondition
+            self.requireDamagePhoto = requireDamagePhoto
+            self.maintenanceAfterCheckouts = maintenanceAfterCheckouts
+            self.maintenanceReminderDays = maintenanceReminderDays
+            self.allowTrades = allowTrades
+            self.tradeTimeoutDays = tradeTimeoutDays
+            self.requireTradeCondition = requireTradeCondition
+            self.allowLostStolenReports = allowLostStolenReports
+            self.requireLostStolenLocation = requireLostStolenLocation
+            self.closeCheckoutOnLostStolen = closeCheckoutOnLostStolen
+            self.editVerificationMode = editVerificationMode
+        }
+
+        public static let defaults = ToolPolicySettings(
+            maxCheckoutDays: 30,
+            overdueNotificationDays: 7,
+            autoExtendOnActiveJob: true,
+            requireCheckoutCondition: true,
+            requireReturnCondition: true,
+            requireDamagePhoto: false,
+            maintenanceAfterCheckouts: 50,
+            maintenanceReminderDays: 14,
+            allowTrades: true,
+            tradeTimeoutDays: 7,
+            requireTradeCondition: true,
+            allowLostStolenReports: true,
+            requireLostStolenLocation: false,
+            closeCheckoutOnLostStolen: true,
+            editVerificationMode: .pendingWithoutPermission
+        )
+
+        public static func fromMap(_ map: [String: String]) -> ToolPolicySettings {
+            let defaults = ToolPolicySettings.defaults
+            return ToolPolicySettings(
+                maxCheckoutDays: positiveInt(map["tool_policy_max_checkout_days"], defaultValue: defaults.maxCheckoutDays),
+                overdueNotificationDays: positiveInt(map["tool_policy_overdue_notification_days"], defaultValue: defaults.overdueNotificationDays),
+                autoExtendOnActiveJob: bool(map["tool_policy_auto_extend_active_job"], defaultValue: defaults.autoExtendOnActiveJob),
+                requireCheckoutCondition: bool(map["tool_policy_require_checkout_condition"], defaultValue: defaults.requireCheckoutCondition),
+                requireReturnCondition: bool(map["tool_policy_require_return_condition"], defaultValue: defaults.requireReturnCondition),
+                requireDamagePhoto: bool(map["tool_policy_require_damage_photo"], defaultValue: defaults.requireDamagePhoto),
+                maintenanceAfterCheckouts: positiveInt(map["tool_policy_maintenance_after_checkouts"], defaultValue: defaults.maintenanceAfterCheckouts),
+                maintenanceReminderDays: positiveInt(map["tool_policy_maintenance_reminder_days"], defaultValue: defaults.maintenanceReminderDays),
+                allowTrades: bool(map["tool_policy_allow_trades"], defaultValue: defaults.allowTrades),
+                tradeTimeoutDays: positiveInt(map["tool_policy_trade_timeout_days"], defaultValue: defaults.tradeTimeoutDays),
+                requireTradeCondition: bool(map["tool_policy_require_trade_condition"], defaultValue: defaults.requireTradeCondition),
+                allowLostStolenReports: bool(map["tool_policy_allow_lost_stolen_reports"], defaultValue: defaults.allowLostStolenReports),
+                requireLostStolenLocation: bool(map["tool_policy_require_lost_stolen_location"], defaultValue: defaults.requireLostStolenLocation),
+                closeCheckoutOnLostStolen: bool(map["tool_policy_close_checkout_on_lost_stolen"], defaultValue: defaults.closeCheckoutOnLostStolen),
+                editVerificationMode: EditVerificationMode(rawValue: map["tool_policy_edit_verification_mode"] ?? "") ?? defaults.editVerificationMode
+            )
+        }
+
+        public var storageMap: [String: String] {
+            [
+                "tool_policy_max_checkout_days": String(maxCheckoutDays),
+                "tool_policy_overdue_notification_days": String(overdueNotificationDays),
+                "tool_policy_auto_extend_active_job": autoExtendOnActiveJob ? "true" : "false",
+                "tool_policy_require_checkout_condition": requireCheckoutCondition ? "true" : "false",
+                "tool_policy_require_return_condition": requireReturnCondition ? "true" : "false",
+                "tool_policy_require_damage_photo": requireDamagePhoto ? "true" : "false",
+                "tool_policy_maintenance_after_checkouts": String(maintenanceAfterCheckouts),
+                "tool_policy_maintenance_reminder_days": String(maintenanceReminderDays),
+                "tool_policy_allow_trades": allowTrades ? "true" : "false",
+                "tool_policy_trade_timeout_days": String(tradeTimeoutDays),
+                "tool_policy_require_trade_condition": requireTradeCondition ? "true" : "false",
+                "tool_policy_allow_lost_stolen_reports": allowLostStolenReports ? "true" : "false",
+                "tool_policy_require_lost_stolen_location": requireLostStolenLocation ? "true" : "false",
+                "tool_policy_close_checkout_on_lost_stolen": closeCheckoutOnLostStolen ? "true" : "false",
+                "tool_policy_edit_verification_mode": editVerificationMode.rawValue,
+            ]
+        }
+
+        private static func positiveInt(_ raw: String?, defaultValue: Int) -> Int {
+            guard let raw, let value = Int(raw), value > 0 else { return defaultValue }
+            return value
+        }
+
+        private static func bool(_ raw: String?, defaultValue: Bool) -> Bool {
+            guard let raw else { return defaultValue }
+            switch raw.lowercased() {
+            case "true", "1", "yes": return true
+            case "false", "0", "no": return false
+            default: return defaultValue
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     /// Read a single setting value by key. Returns nil when not found.
@@ -168,6 +299,17 @@ public final class SettingsService: Sendable {
             "font_family": theme.fontFamily,
         ], category: "theme")
         return try getTheme()
+    }
+
+    // MARK: - Tool Policies
+
+    public func getToolPolicies() throws -> ToolPolicySettings {
+        ToolPolicySettings.fromMap(try getSettingsByCategory("tool_policy"))
+    }
+
+    public func updateToolPolicies(_ policies: ToolPolicySettings) throws -> ToolPolicySettings {
+        try upsertSettingsMap(policies.storageMap, category: "tool_policy")
+        return try getToolPolicies()
     }
 
     // MARK: - Generic Settings

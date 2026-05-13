@@ -37,6 +37,14 @@ struct IOSToolPoliciesPage: View {
     @State private var tradeTimeoutDays: Int = 7
     @State private var requireTradeCondition = true
 
+    // Lost / stolen
+    @State private var allowLostStolenReports = true
+    @State private var requireLostStolenLocation = false
+    @State private var closeCheckoutOnLostStolen = true
+
+    // Edit verification
+    @State private var editVerificationMode: SettingsService.ToolPolicySettings.EditVerificationMode = .pendingWithoutPermission
+
     private enum ActiveSheet: Identifiable {
         case help
         var id: String { "help" }
@@ -81,6 +89,8 @@ struct IOSToolPoliciesPage: View {
                     ("Condition Checks", "Require workers to report tool condition during checkout, return, and damage events."),
                     ("Maintenance", "Schedule automatic maintenance after a number of checkouts or set reminder lead times."),
                     ("Trades", "Allow workers to trade tools directly. Trades expire after the timeout period."),
+                    ("Lost/Stolen", "Control whether reports are allowed, whether location is required, and whether active checkouts close automatically."),
+                    ("Edit Verification", "Choose whether tool edits are applied directly or held for manager verification."),
                 ])
             }
             .presentationDetents([.medium, .large])
@@ -152,6 +162,32 @@ struct IOSToolPoliciesPage: View {
                 Text("When enabled, workers can trade tools directly. Unaccepted trades expire after the timeout.")
             }
 
+            // Lost / Stolen
+            Section {
+                Toggle("Allow lost/stolen reports", isOn: $allowLostStolenReports)
+                if allowLostStolenReports {
+                    Toggle("Require last known location", isOn: $requireLostStolenLocation)
+                    Toggle("Close active checkout", isOn: $closeCheckoutOnLostStolen)
+                }
+            } header: {
+                Label("Lost/Stolen", systemImage: "exclamationmark.octagon")
+            } footer: {
+                Text("Lost or stolen reports update tool status and can close the open checkout automatically.")
+            }
+
+            // Edit Verification
+            Section {
+                Picker("Edit handling", selection: $editVerificationMode) {
+                    Text("Verify unapproved users").tag(SettingsService.ToolPolicySettings.EditVerificationMode.pendingWithoutPermission)
+                    Text("Verify every edit").tag(SettingsService.ToolPolicySettings.EditVerificationMode.alwaysPending)
+                    Text("Apply edits directly").tag(SettingsService.ToolPolicySettings.EditVerificationMode.directEdits)
+                }
+            } header: {
+                Label("Edit Verification", systemImage: "checkmark.seal")
+            } footer: {
+                Text("Verification creates manager-review records before changes are applied.")
+            }
+
             // Save
             Section {
                 Button { saveSettings() } label: {
@@ -174,6 +210,10 @@ struct IOSToolPoliciesPage: View {
         .onChange(of: allowTrades) { _, _ in markDirty() }
         .onChange(of: tradeTimeoutDays) { _, _ in markDirty() }
         .onChange(of: requireTradeCondition) { _, _ in markDirty() }
+        .onChange(of: allowLostStolenReports) { _, _ in markDirty() }
+        .onChange(of: requireLostStolenLocation) { _, _ in markDirty() }
+        .onChange(of: closeCheckoutOnLostStolen) { _, _ in markDirty() }
+        .onChange(of: editVerificationMode) { _, _ in markDirty() }
     }
 
     // MARK: - Actions
@@ -192,22 +232,27 @@ struct IOSToolPoliciesPage: View {
 
         hasLoadedSettings = false
         do {
-            let map = try service.getSettingsByCategory("tool_policy")
+            let policies = try service.getToolPolicies()
 
-            maxCheckoutDays = Int(map["tool_policy_max_checkout_days"] ?? "") ?? 30
-            overdueNotificationDays = Int(map["tool_policy_overdue_notification_days"] ?? "") ?? 7
-            autoExtendOnActiveJob = (map["tool_policy_auto_extend_active_job"] ?? "true") == "true"
+            maxCheckoutDays = policies.maxCheckoutDays
+            overdueNotificationDays = policies.overdueNotificationDays
+            autoExtendOnActiveJob = policies.autoExtendOnActiveJob
 
-            requireCheckoutCondition = (map["tool_policy_require_checkout_condition"] ?? "true") == "true"
-            requireReturnCondition = (map["tool_policy_require_return_condition"] ?? "true") == "true"
-            requireDamagePhoto = (map["tool_policy_require_damage_photo"] ?? "false") == "true"
+            requireCheckoutCondition = policies.requireCheckoutCondition
+            requireReturnCondition = policies.requireReturnCondition
+            requireDamagePhoto = policies.requireDamagePhoto
 
-            maintenanceAfterCheckouts = Int(map["tool_policy_maintenance_after_checkouts"] ?? "") ?? 50
-            maintenanceReminderDays = Int(map["tool_policy_maintenance_reminder_days"] ?? "") ?? 14
+            maintenanceAfterCheckouts = policies.maintenanceAfterCheckouts
+            maintenanceReminderDays = policies.maintenanceReminderDays
 
-            allowTrades = (map["tool_policy_allow_trades"] ?? "true") == "true"
-            tradeTimeoutDays = Int(map["tool_policy_trade_timeout_days"] ?? "") ?? 7
-            requireTradeCondition = (map["tool_policy_require_trade_condition"] ?? "true") == "true"
+            allowTrades = policies.allowTrades
+            tradeTimeoutDays = policies.tradeTimeoutDays
+            requireTradeCondition = policies.requireTradeCondition
+
+            allowLostStolenReports = policies.allowLostStolenReports
+            requireLostStolenLocation = policies.requireLostStolenLocation
+            closeCheckoutOnLostStolen = policies.closeCheckoutOnLostStolen
+            editVerificationMode = policies.editVerificationMode
         } catch {
             loadError = userFriendlyError(error, context: "load")
         }
@@ -225,20 +270,24 @@ struct IOSToolPoliciesPage: View {
         }
 
         do {
-            let data: [String: String] = [
-                "tool_policy_max_checkout_days": "\(maxCheckoutDays)",
-                "tool_policy_overdue_notification_days": "\(overdueNotificationDays)",
-                "tool_policy_auto_extend_active_job": autoExtendOnActiveJob ? "true" : "false",
-                "tool_policy_require_checkout_condition": requireCheckoutCondition ? "true" : "false",
-                "tool_policy_require_return_condition": requireReturnCondition ? "true" : "false",
-                "tool_policy_require_damage_photo": requireDamagePhoto ? "true" : "false",
-                "tool_policy_maintenance_after_checkouts": "\(maintenanceAfterCheckouts)",
-                "tool_policy_maintenance_reminder_days": "\(maintenanceReminderDays)",
-                "tool_policy_allow_trades": allowTrades ? "true" : "false",
-                "tool_policy_trade_timeout_days": "\(tradeTimeoutDays)",
-                "tool_policy_require_trade_condition": requireTradeCondition ? "true" : "false",
-            ]
-            try service.upsertSettingsMap(data, category: "tool_policy")
+            let policies = SettingsService.ToolPolicySettings(
+                maxCheckoutDays: maxCheckoutDays,
+                overdueNotificationDays: overdueNotificationDays,
+                autoExtendOnActiveJob: autoExtendOnActiveJob,
+                requireCheckoutCondition: requireCheckoutCondition,
+                requireReturnCondition: requireReturnCondition,
+                requireDamagePhoto: requireDamagePhoto,
+                maintenanceAfterCheckouts: maintenanceAfterCheckouts,
+                maintenanceReminderDays: maintenanceReminderDays,
+                allowTrades: allowTrades,
+                tradeTimeoutDays: tradeTimeoutDays,
+                requireTradeCondition: requireTradeCondition,
+                allowLostStolenReports: allowLostStolenReports,
+                requireLostStolenLocation: requireLostStolenLocation,
+                closeCheckoutOnLostStolen: closeCheckoutOnLostStolen,
+                editVerificationMode: editVerificationMode
+            )
+            _ = try service.updateToolPolicies(policies)
             saveError = nil
             isDirty = false
         } catch {
