@@ -86,6 +86,7 @@ struct IOSJPOCreationPage: View {
         var quantity: Int
         let unitPrice: Double?
         let shopStock: Int
+        let warehouseStock: Int
         let stockStatus: StockStatus
         var brandSelectionMode: BrandSelectionMode = .specific
 
@@ -470,7 +471,7 @@ struct IOSJPOCreationPage: View {
                             .monospaced()
                             .foregroundStyle(.secondary)
                     }
-                    stockIndicator(for: part)
+                    searchStockIndicator(for: part)
                 }
             }
 
@@ -497,18 +498,29 @@ struct IOSJPOCreationPage: View {
         .padding(.vertical, 4)
     }
 
-    private func stockIndicator(for part: Part) -> some View {
-        let stock = getShopStock(partId: part.id ?? 0)
-        let color: Color = stock > (part.minStockLevel ?? 0) ? .green :
-                           stock > 0 ? .orange : .red
-        let label = stock > 0 ? "\(stock) in stock" : "Out of stock"
-        return HStack(spacing: 2) {
-            Circle().fill(color).frame(width: 6, height: 6)
-                .accessibilityHidden(true)
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(color)
+    private func searchStockIndicator(for part: Part) -> some View {
+        let stock = getStockDisplay(partId: part.id ?? 0)
+        return HStack(spacing: 4) {
+            if stock.warehouse > 0 {
+                Label("\(stock.warehouse) warehouse", systemImage: "bag.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+                    .labelStyle(.titleAndIcon)
+            } else if stock.total > 0 {
+                Label("\(stock.total) in stock", systemImage: "checkmark.circle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+                    .labelStyle(.titleAndIcon)
+            } else {
+                Label("Procurement", systemImage: "cart.badge.plus")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .labelStyle(.titleAndIcon)
+            }
         }
+        .accessibilityLabel(stock.warehouse > 0
+            ? "\(stock.warehouse) available from warehouse"
+            : (stock.total > 0 ? "\(stock.total) in stock" : "Out of stock, send to procurement"))
     }
 
     // MARK: - Cart Panel
@@ -596,9 +608,7 @@ struct IOSJPOCreationPage: View {
                     .lineLimit(1)
                 HStack(spacing: 4) {
                     stockStatusBadge(item.stockStatus)
-                    Text("\(item.shopStock) in stock")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    sourcingBadge(totalStock: item.shopStock, warehouseStock: item.warehouseStock)
                     if item.brandSelectionMode == .general {
                         generalModeBadge
                     }
@@ -687,6 +697,26 @@ struct IOSJPOCreationPage: View {
         return Image(systemName: icon)
             .font(.caption2)
             .foregroundStyle(color)
+    }
+
+    @ViewBuilder
+    private func sourcingBadge(totalStock: Int, warehouseStock: Int) -> some View {
+        if warehouseStock > 0 {
+            Label("\(warehouseStock) warehouse", systemImage: "bag.fill")
+                .font(.caption2)
+                .foregroundStyle(.green)
+                .labelStyle(.titleAndIcon)
+        } else if totalStock > 0 {
+            Label("\(totalStock) in stock", systemImage: "checkmark.circle.fill")
+                .font(.caption2)
+                .foregroundStyle(.green)
+                .labelStyle(.titleAndIcon)
+        } else {
+            Label("Procurement", systemImage: "cart.badge.plus")
+                .font(.caption2)
+                .foregroundStyle(.orange)
+                .labelStyle(.titleAndIcon)
+        }
     }
 
     // MARK: - Suggestions Panel
@@ -847,10 +877,10 @@ struct IOSJPOCreationPage: View {
             return
         }
 
-        let stock = getShopStock(partId: partId)
+        let stock = getStockDisplay(partId: partId)
         let status: CartItem.StockStatus
-        if stock >= quantity { status = .inStock }
-        else if stock > 0 { status = .lowStock }
+        if stock.total >= quantity { status = .inStock }
+        else if stock.total > 0 { status = .lowStock }
         else { status = .outOfStock }
 
         cartItems.append(CartItem(
@@ -859,7 +889,8 @@ struct IOSJPOCreationPage: View {
             partCode: part.code,
             quantity: quantity,
             unitPrice: part.companyCostPrice,
-            shopStock: stock,
+            shopStock: stock.total,
+            warehouseStock: stock.warehouse,
             stockStatus: status
         ))
         lastAddedPartId = partId
@@ -918,15 +949,19 @@ struct IOSJPOCreationPage: View {
     // MARK: - Stock
 
     private func getShopStock(partId: Int64) -> Int {
+        getStockDisplay(partId: partId).total
+    }
+
+    private func getStockDisplay(partId: Int64) -> (total: Int, warehouse: Int) {
         guard let service = appCore.partsService else {
             submitError = "Parts service not available"
-            return 0
+            return (0, 0)
         }
         do {
             let summary = try service.getPartStockSummary(partId: partId)
-            return summary.total
+            return (summary.total, summary.byLocationType["warehouse"] ?? 0)
         } catch {
-            return 0
+            return (0, 0)
         }
     }
 
