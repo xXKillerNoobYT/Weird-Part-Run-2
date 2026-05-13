@@ -274,6 +274,41 @@ struct PartsServiceCoverageTests {
         #expect(tiers.isEmpty)
     }
 
+    @Test("setPricingTier supports part-level target")
+    func testSetPricingTierPartLevelTarget() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "PartTierCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Part Tier Target", categoryId: catId)
+        _ = try env.parts.addCostLayer(partId: partId, qty: 10, unitCost: 8.0)
+
+        let tier = try env.parts.setPricingTier(partId: partId, markupPercent: 75.0, setBy: env.adminUserId)
+
+        #expect(tier.partId == partId)
+        let tiers = try env.parts.getPricingTiers(partId: partId)
+        #expect(tiers.count == 1)
+        #expect(tiers.first?.partId == partId)
+
+        let resolved = try env.parts.resolvePartPricing(partId: partId)
+        #expect(resolved.tierLevel == "Part")
+        #expect(resolved.isDirectOverride)
+        #expect(abs(resolved.sellPrice - 14.0) < 0.01)
+    }
+
+    @Test("setPricingTier rejects missing or multiple targets")
+    func testSetPricingTierValidatesSingleTarget() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "SingleTargetCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Single Target Part", categoryId: catId)
+
+        #expect(throws: PartsService.PartsError.self) {
+            try env.parts.setPricingTier(markupPercent: 25.0)
+        }
+
+        #expect(throws: PartsService.PartsError.self) {
+            try env.parts.setPricingTier(categoryId: catId, partId: partId, markupPercent: 25.0)
+        }
+    }
+
     // MARK: - Company Cost Settings
 
     @Test("getCompanyCostSetting returns nil for unknown key")
@@ -460,6 +495,17 @@ struct PartsServiceCoverageTests {
         #expect(!conflicts.isEmpty, "Style-level tier should be flagged as conflict for category-level change")
     }
 
+    @Test("findOverrideConflicts returns empty for part-level target")
+    func testFindOverrideConflictsPartLevelTarget() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "PartConflictCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Part Conflict Target", categoryId: catId)
+
+        let conflicts = try env.parts.findOverrideConflicts(partId: partId, newMarkupPercent: 60)
+
+        #expect(conflicts.isEmpty, "Part-level targets are already the most specific tier")
+    }
+
     // MARK: - resolveConflicts decisions (Fix #229)
     // These tests cover the service-layer behavior driven by the iOS PricingOverrideFlow UI.
     // The UI collects Replace/Keep decisions in `conflictDecisions: [Int64: Bool]` and then
@@ -614,6 +660,22 @@ struct PartsServiceCoverageTests {
         // With 80% markup on $5 cost: new sell = $5 * 1.80 = $9
         #expect(abs(row.newSellPrice - 9.0) < 0.01)
         #expect(row.weightedAvgCost > 0)
+    }
+
+    @Test("getPreviewParts can target one part")
+    func testGetPreviewPartsPartLevelTarget() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "PartPreviewCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Part Preview Target", categoryId: catId)
+        _ = try E2ETestHelpers.seedPart(env, name: "Part Preview Other", categoryId: catId)
+        _ = try env.parts.addCostLayer(partId: partId, qty: 10, unitCost: 5.0)
+
+        let preview = try env.parts.getPreviewParts(partId: partId, newMarkupPercent: 80)
+
+        #expect(preview.count == 1)
+        let row = try #require(preview.first)
+        #expect(row.partId == partId)
+        #expect(abs(row.newSellPrice - 9.0) < 0.01)
     }
 
     // MARK: - recalculateWeightedAvgCost

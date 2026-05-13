@@ -2521,6 +2521,11 @@ public final class PartsService: Sendable {
         notes: String? = nil
     ) throws -> PricingTier {
         try db.writer.write { dbConn in
+            let targetCount = [categoryId, styleId, typeId, brandId, partId].compactMap { $0 }.count
+            guard targetCount == 1 else {
+                throw PartsError.invalidInput("Set pricing tiers for exactly one target level")
+            }
+
             // Find existing tier at this level
             var conditions: [String] = []
             var args: [any DatabaseValueConvertible] = []
@@ -2595,6 +2600,7 @@ public final class PartsService: Sendable {
         styleId: Int64? = nil,
         typeId: Int64? = nil,
         brandId: Int64? = nil,
+        partId: Int64? = nil,
         newMarkupPercent: Double? = nil,
         newMarginPercent: Double? = nil,
         newFixedPrice: Double? = nil
@@ -2638,6 +2644,8 @@ public final class PartsService: Sendable {
             } else if let id = brandId {
                 scopeId = id
                 conditions.append(("part_id IN (SELECT id FROM parts WHERE brand_id = ?)", 1))
+            } else if partId != nil {
+                return []
             } else {
                 return []
             }
@@ -2710,6 +2718,7 @@ public final class PartsService: Sendable {
         styleId: Int64? = nil,
         typeId: Int64? = nil,
         brandId: Int64? = nil,
+        partId: Int64? = nil,
         newMarkupPercent: Double? = nil,
         newMarginPercent: Double? = nil,
         newFixedPrice: Double? = nil,
@@ -2727,6 +2736,7 @@ public final class PartsService: Sendable {
             if let id = styleId { conditions.append("p.style_id = ?"); args.append(id) }
             if let id = typeId { conditions.append("p.type_id = ?"); args.append(id) }
             if let id = brandId { conditions.append("p.brand_id = ?"); args.append(id) }
+            if let id = partId { conditions.append("p.id = ?"); args.append(id) }
 
             let whereClause = conditions.joined(separator: " AND ")
 
@@ -3048,7 +3058,8 @@ public final class PartsService: Sendable {
         categoryId: Int64? = nil,
         styleId: Int64? = nil,
         typeId: Int64? = nil,
-        brandId: Int64? = nil
+        brandId: Int64? = nil,
+        partId: Int64? = nil
     ) throws -> [PricingTier] {
         try db.writer.read { dbConn in
             var conditions: [String] = ["deleted_at IS NULL"]
@@ -3058,6 +3069,7 @@ public final class PartsService: Sendable {
             if let id = styleId { conditions.append("style_id = ?"); args.append(id) }
             if let id = typeId { conditions.append("type_id = ?"); args.append(id) }
             if let id = brandId { conditions.append("brand_id = ?"); args.append(id) }
+            if let id = partId { conditions.append("part_id = ?"); args.append(id) }
 
             let whereClause = conditions.joined(separator: " AND ")
             return try PricingTier.fetchAll(dbConn, sql: """

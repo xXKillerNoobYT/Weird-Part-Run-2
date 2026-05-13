@@ -28,6 +28,7 @@ struct PricingTierSetSheet: View {
     @State private var styles: [PartStyle] = []
     @State private var types: [PartType] = []
     @State private var brands: [Brand] = []
+    @State private var parts: [Part] = []
 
     // Price input
     @State private var markupText = ""
@@ -61,6 +62,7 @@ struct PricingTierSetSheet: View {
         case style = "Style"
         case type = "Type"
         case brand = "Brand"
+        case part = "Part"
     }
 
     var body: some View {
@@ -160,6 +162,10 @@ struct PricingTierSetSheet: View {
                 case .brand:
                     ForEach(brands, id: \.id) { brand in
                         entityButton(name: brand.name, id: brand.id ?? 0)
+                    }
+                case .part:
+                    ForEach(parts, id: \.id) { part in
+                        entityButton(name: partDisplayName(part), id: part.id ?? 0)
                     }
                 }
             }
@@ -513,7 +519,13 @@ struct PricingTierSetSheet: View {
         case .style: return "paintbrush"
         case .type: return "cube"
         case .brand: return "tag"
+        case .part: return "wrench.adjustable"
         }
+    }
+
+    private func partDisplayName(_ part: Part) -> String {
+        guard let code = part.code, !code.isEmpty else { return part.name }
+        return "\(part.name) (\(code))"
     }
 
     private func loadEntitiesForLevel(_ level: HierarchyLevel) async {
@@ -532,6 +544,8 @@ struct PricingTierSetSheet: View {
             case .brand:
                 let results = try service.listBrands()
                 brands = results.map(\.brand)
+            case .part:
+                parts = try service.listCatalogParts(limit: 100).parts.map(\.part)
             }
         } catch {
             loadError = userFriendlyError(error, context: "load pricing overrides")
@@ -549,18 +563,19 @@ struct PricingTierSetSheet: View {
             let styId = selectedLevel == .style ? selectedEntityId : nil
             let typId = selectedLevel == .type ? selectedEntityId : nil
             let brnId = selectedLevel == .brand ? selectedEntityId : nil
+            let prtId = selectedLevel == .part ? selectedEntityId : nil
 
             let markup = pricingMode == "markup" ? Double(markupText) : nil
             let margin = pricingMode == "margin" ? Double(marginText) : nil
             let fixed = useFixedPrice ? Double(fixedPriceText) : nil
 
             previewParts = try service.getPreviewParts(
-                categoryId: catId, styleId: styId, typeId: typId, brandId: brnId,
+                categoryId: catId, styleId: styId, typeId: typId, brandId: brnId, partId: prtId,
                 newMarkupPercent: markup, newMarginPercent: margin, newFixedPrice: fixed
             )
 
             conflicts = try service.findOverrideConflicts(
-                categoryId: catId, styleId: styId, typeId: typId, brandId: brnId,
+                categoryId: catId, styleId: styId, typeId: typId, brandId: brnId, partId: prtId,
                 newMarkupPercent: markup, newMarginPercent: margin, newFixedPrice: fixed
             )
 
@@ -593,6 +608,7 @@ struct PricingTierSetSheet: View {
             let styId = selectedLevel == .style ? selectedEntityId : nil
             let typId = selectedLevel == .type ? selectedEntityId : nil
             let brnId = selectedLevel == .brand ? selectedEntityId : nil
+            let prtId = selectedLevel == .part ? selectedEntityId : nil
 
             let markup = pricingMode == "markup" ? Double(markupText) : nil
             let margin = pricingMode == "margin" ? Double(marginText) : nil
@@ -600,7 +616,7 @@ struct PricingTierSetSheet: View {
 
             // Set the tier
             _ = try service.setPricingTier(
-                categoryId: catId, styleId: styId, typeId: typId, brandId: brnId,
+                categoryId: catId, styleId: styId, typeId: typId, brandId: brnId, partId: prtId,
                 markupPercent: markup, marginPercent: margin, fixedSellPrice: fixed
             )
 
