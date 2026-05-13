@@ -5841,7 +5841,9 @@ public final class PartsService: Sendable {
             let receivedRow = try Row.fetchOne(dbConn, sql: """
                 SELECT COALESCE(SUM(qty), 0) AS total_received
                 FROM stock_movements
-                WHERE supplier_id = ? AND movement_type = 'receipt' AND deleted_at IS NULL
+                WHERE supplier_id = ?
+                  AND movement_type IN ('receiving', 'receipt')
+                  AND deleted_at IS NULL
                 """, arguments: [supplierId])
             let totalReceived: Int = receivedRow?["total_received"] ?? 0
 
@@ -5849,9 +5851,13 @@ public final class PartsService: Sendable {
             let returnedRow = try Row.fetchOne(dbConn, sql: """
                 SELECT COALESCE(SUM(qty), 0) AS total_returned
                 FROM stock_movements
-                WHERE supplier_id = ? AND movement_type = 'return' AND deleted_at IS NULL
-                AND from_location_type IN ('warehouse', 'staging')
-                AND to_location_type = 'supplier'
+                WHERE supplier_id = ?
+                  AND movement_type IN ('return_to_supplier', 'return')
+                  AND deleted_at IS NULL
+                  AND (
+                    movement_type = 'return_to_supplier'
+                    OR to_location_type = 'supplier'
+                  )
                 """, arguments: [supplierId])
             let totalReturned: Int = returnedRow?["total_returned"] ?? 0
 
@@ -5867,11 +5873,11 @@ public final class PartsService: Sendable {
             // On-time rate: POs with receiving completed within expected delivery window
             let onTimeRow = try Row.fetchOne(dbConn, sql: """
                 SELECT
-                    COUNT(*) AS total_received_pos,
-                    COUNT(CASE
+                    COUNT(DISTINCT po.id) AS total_received_pos,
+                    COUNT(DISTINCT CASE
                         WHEN rs.completed_at IS NOT NULL
                         AND julianday(rs.completed_at) - julianday(po.created_at) <= COALESCE(CAST(s.delivery_days AS INTEGER), 14)
-                        THEN 1 END) AS on_time_count
+                        THEN po.id END) AS on_time_count
                 FROM purchase_orders po
                 LEFT JOIN receiving_sessions rs ON rs.po_id = po.id AND rs.status = 'completed' AND rs.deleted_at IS NULL
                 LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL

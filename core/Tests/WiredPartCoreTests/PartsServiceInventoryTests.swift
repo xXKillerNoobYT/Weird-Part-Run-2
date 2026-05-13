@@ -360,6 +360,82 @@ struct PartsServiceInventoryTests {
                 "avgDeliveryDays should be nil when every receiving session is tombstoned")
     }
 
+    @Test("calculateSupplierScores counts receiving and return_to_supplier movements")
+    func testCalculateSupplierScores_countsCurrentMovementTypes() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "CurrentMovementSupplier")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "CurrentMovementCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Current Movement Part", categoryId: catId)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO purchase_orders
+                    (supplier_id, po_number, status, created_at, updated_at, deleted_at)
+                VALUES (?, 'PO-CURRENT-MOVES-001', 'received', datetime('now', '-5 days'), datetime('now'), NULL)
+                """, arguments: [supplierId])
+
+            try db.execute(sql: """
+                INSERT INTO stock_movements
+                    (part_id, qty, from_location_type, to_location_type, supplier_id,
+                     movement_type, reference_number, performed_by, created_at, deleted_at)
+                VALUES (?, 10, 'supplier', 'warehouse', ?, 'receiving', 'PO-CURRENT-MOVES-001', ?, datetime('now'), NULL)
+                """, arguments: [partId, supplierId, env.adminUserId])
+
+            try db.execute(sql: """
+                INSERT INTO stock_movements
+                    (part_id, qty, from_location_type, to_location_type, supplier_id,
+                     movement_type, reference_number, performed_by, created_at, deleted_at)
+                VALUES (?, 2, 'warehouse', 'supplier', ?, 'return_to_supplier', 'RMA-CURRENT-MOVES-001', ?, datetime('now'), NULL)
+                """, arguments: [partId, supplierId, env.adminUserId])
+        }
+
+        let scores = try env.parts.calculateSupplierScores(supplierId: supplierId)
+
+        #expect(scores.totalUnitsReceived == 10, "Current receiving movements must feed supplier quality inputs")
+        #expect(scores.totalUnitsReturned == 2, "return_to_supplier movements must count as supplier returns")
+        #expect(scores.qualityScore == 80, "2 returned of 10 received should produce an 80% quality score")
+    }
+
+    @Test("completeSession refreshes persisted supplier scores from new receiving input")
+    func testCompleteSession_refreshesPersistedSupplierScores() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "RefreshScoresSupplier")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "RefreshScoresCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Refresh Score Part", categoryId: catId)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-REFRESH-SCORES-001", supplierId: supplierId)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE suppliers
+                SET quality_score = 1, on_time_rate = 1, reliability_score = 1
+                WHERE id = ?
+                """, arguments: [supplierId])
+            try db.execute(sql: """
+                UPDATE purchase_orders
+                SET status = 'received', created_at = datetime('now', '-5 days')
+                WHERE id = ?
+                """, arguments: [poId])
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, part_id, qty_ordered, unit_cost)
+                VALUES (?, ?, 4, 5.0)
+                """, arguments: [poId, partId])
+        }
+
+        let sessionId = try env.warehouse.startReceivingSession(poId: poId, startedBy: env.adminUserId)
+        try env.warehouse.completeSession(sessionId: sessionId, completedBy: env.adminUserId)
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT quality_score, on_time_rate, reliability_score
+                FROM suppliers WHERE id = ?
+                """, arguments: [supplierId])
+        }
+        let scores = try #require(row)
+        #expect((scores["quality_score"] as Double? ?? 0) == 100)
+        #expect((scores["on_time_rate"] as Double? ?? 0) == 100)
+        #expect((scores["reliability_score"] as Double? ?? 0) == 100)
+    }
+
     @Test("updateSupplierScores persists calculated scores to suppliers table")
     func testUpdateSupplierScores_persisted() throws {
         let env = try E2ETestHelpers.setUp()

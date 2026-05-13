@@ -565,7 +565,8 @@ public final class WarehouseService: Sendable {
         photoPath: String? = nil,
         referenceNumber: String? = nil,
         unitCostAtMove: Double? = nil,
-        unitSellAtMove: Double? = nil
+        unitSellAtMove: Double? = nil,
+        supplierId: Int64? = nil
     ) throws -> Int64 {
         // qty must be positive. Movement direction (pull vs. add) is determined by
         // which of fromLocationType/toLocationType is non-nil, not by sign. A
@@ -600,14 +601,14 @@ public final class WarehouseService: Sendable {
                 sql: """
                     INSERT INTO stock_movements
                     (part_id, qty, from_location_type, from_location_id,
-                     to_location_type, to_location_id, movement_type,
+                     to_location_type, to_location_id, supplier_id, movement_type,
                      reason, notes, performed_by, job_id, photo_path,
                      reference_number, unit_cost_at_move, unit_sell_at_move,
                      created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                     """,
                 arguments: [partId, qty, fromLocationType, fromLocationId,
-                            toLocationType, toLocationId, movementType,
+                            toLocationType, toLocationId, supplierId, movementType,
                             reason, notes, performedBy, jobId, photoPath,
                             referenceNumber, unitCostAtMove, unitSellAtMove]
             )
@@ -1340,6 +1341,7 @@ public final class WarehouseService: Sendable {
                 arguments: [sessionId]
             )
 
+            var affectedSupplierIds = Set<Int64>()
             for item in items {
                 let partId: Int64 = item["part_id"] ?? 0
                 let receivedQty: Int = item["received_qty"] ?? 0
@@ -1356,9 +1358,12 @@ public final class WarehouseService: Sendable {
                          supplier_id, movement_type, reason, reference_number, performed_by,
                          unit_cost_at_move, created_at)
                         VALUES (?, ?, 'supplier', 'warehouse', 1, ?, 'receiving', 'PO receiving', ?, ?, ?, datetime('now'))
-                        """,
+                    """,
                     arguments: [partId, receivedQty, supplierId, poNumber, completedBy, unitCost]
                 )
+                if let supplierId, supplierId > 0 {
+                    affectedSupplierIds.insert(supplierId)
+                }
 
                 // Add to warehouse stock
                 try dbConn.execute(
@@ -1378,6 +1383,10 @@ public final class WarehouseService: Sendable {
                         arguments: [partId, receivedQty]
                     )
                 }
+            }
+
+            for supplierId in affectedSupplierIds {
+                try refreshSupplierScores(supplierId: supplierId, dbConn: dbConn)
             }
         }
     }
@@ -2441,6 +2450,7 @@ public final class WarehouseService: Sendable {
         qty: Int,
         returnType: String,  // "replacement" or "refund"
         performedBy: Int64,
+        supplierId: Int64? = nil,
         notes: String? = nil
     ) throws -> Int64 {
         try createMovement(
@@ -2448,12 +2458,13 @@ public final class WarehouseService: Sendable {
             qty: qty,
             fromLocationType: nil,
             fromLocationId: nil,
-            toLocationType: nil,
-            toLocationId: nil,
+            toLocationType: supplierId == nil ? nil : "supplier",
+            toLocationId: supplierId,
             movementType: "return_to_supplier",
             reason: "Damaged: \(returnType)",
             notes: notes,
-            performedBy: performedBy
+            performedBy: performedBy,
+            supplierId: supplierId
         )
     }
 
@@ -2478,6 +2489,75 @@ public final class WarehouseService: Sendable {
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
         return message.contains("no such table") || message.contains("no such column")
+    }
+
+    /// Keep persisted supplier scores current when warehouse writes new score inputs.
+    private func refreshSupplierScores(supplierId: Int64, dbConn: Database) throws {
+        let totalPOs = try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*)
+            FROM purchase_orders
+            WHERE supplier_id = ? AND deleted_at IS NULL
+            """, arguments: [supplierId]) ?? 0
+
+        let totalReceived = try Int.fetchOne(dbConn, sql: """
+            SELECT COALESCE(SUM(qty), 0)
+            FROM stock_movements
+            WHERE supplier_id = ?
+              AND movement_type IN ('receiving', 'receipt')
+              AND deleted_at IS NULL
+            """, arguments: [supplierId]) ?? 0
+
+        let totalReturned = try Int.fetchOne(dbConn, sql: """
+            SELECT COALESCE(SUM(qty), 0)
+            FROM stock_movements
+            WHERE supplier_id = ?
+              AND movement_type IN ('return_to_supplier', 'return')
+              AND deleted_at IS NULL
+              AND (
+                movement_type = 'return_to_supplier'
+                OR to_location_type = 'supplier'
+              )
+            """, arguments: [supplierId]) ?? 0
+
+        let qualityScore: Double
+        if totalReceived > 0 {
+            let returnRate = (Double(totalReturned) / Double(totalReceived)) * 100
+            qualityScore = max(0, min(100, 100 - returnRate))
+        } else {
+            qualityScore = 0
+        }
+
+        let onTimeRow = try Row.fetchOne(dbConn, sql: """
+            SELECT
+                COUNT(DISTINCT po.id) AS total_received_pos,
+                COUNT(DISTINCT CASE
+                    WHEN rs.completed_at IS NOT NULL
+                    AND julianday(rs.completed_at) - julianday(po.created_at) <= COALESCE(CAST(s.delivery_days AS INTEGER), 14)
+                    THEN po.id END) AS on_time_count
+            FROM purchase_orders po
+            LEFT JOIN receiving_sessions rs ON rs.po_id = po.id AND rs.status = 'completed' AND rs.deleted_at IS NULL
+            LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL
+            WHERE po.supplier_id = ? AND po.deleted_at IS NULL
+            AND po.status IN ('received', 'completed', 'closed')
+            """, arguments: [supplierId])
+        let totalReceivedPOs: Int = onTimeRow?["total_received_pos"] ?? 0
+        let onTimeCount: Int = onTimeRow?["on_time_count"] ?? 0
+        let onTimeRate = totalReceivedPOs > 0
+            ? (Double(onTimeCount) / Double(totalReceivedPOs)) * 100
+            : 0
+
+        let reliabilityScore = totalPOs > 0
+            ? (onTimeRate * 0.6) + (qualityScore * 0.4)
+            : 0
+
+        try dbConn.execute(sql: """
+            UPDATE suppliers SET
+                quality_score = ?,
+                on_time_rate = ?,
+                reliability_score = ?,
+                updated_at = datetime('now')
+            WHERE id = ? AND deleted_at IS NULL
+            """, arguments: [qualityScore, onTimeRate, reliabilityScore, supplierId])
     }
 
     /// Determine the movement_type based on from/to location types.
