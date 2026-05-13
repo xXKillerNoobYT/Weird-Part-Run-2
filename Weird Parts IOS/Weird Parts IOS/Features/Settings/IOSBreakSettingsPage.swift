@@ -95,13 +95,11 @@ struct IOSBreakSettingsPage: View {
         }
         .task { loadSettings() }
         .interactiveDismissDisabled(isDirty)
-        .confirmationDialog(
-            "Discard changes?",
-            isPresented: $showDiscardConfirmation,
-            titleVisibility: .visible
-        ) {
+        .alert("Discard changes?", isPresented: $showDiscardConfirmation) {
             Button("Discard", role: .destructive) { dismiss() }
             Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("You have unsaved changes that will be lost.")
         }
     }
 
