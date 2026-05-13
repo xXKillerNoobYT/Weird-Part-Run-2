@@ -202,36 +202,70 @@ public final class PartsService: Sendable {
     }
 
     /// A source entry for a companion rule.
+    /// Name fields are populated by `listCompanionRulesHierarchy` for display;
+    /// they are `nil` when the referenced hierarchy row no longer exists.
     public struct CompanionRuleSource: Sendable {
         public var id: Int64
         public var ruleId: Int64
         public var categoryId: Int64
         public var styleId: Int64?
         public var typeId: Int64?
+        public var categoryName: String?
+        public var styleName: String?
+        public var typeName: String?
 
-        public init(id: Int64, ruleId: Int64, categoryId: Int64, styleId: Int64?, typeId: Int64? = nil) {
+        public init(
+            id: Int64,
+            ruleId: Int64,
+            categoryId: Int64,
+            styleId: Int64?,
+            typeId: Int64? = nil,
+            categoryName: String? = nil,
+            styleName: String? = nil,
+            typeName: String? = nil
+        ) {
             self.id = id
             self.ruleId = ruleId
             self.categoryId = categoryId
             self.styleId = styleId
             self.typeId = typeId
+            self.categoryName = categoryName
+            self.styleName = styleName
+            self.typeName = typeName
         }
     }
 
     /// A target entry for a companion rule.
+    /// Name fields are populated by `listCompanionRulesHierarchy` for display;
+    /// they are `nil` when the referenced hierarchy row no longer exists.
     public struct CompanionRuleTarget: Sendable {
         public var id: Int64
         public var ruleId: Int64
         public var categoryId: Int64
         public var styleId: Int64?
         public var typeId: Int64?
+        public var categoryName: String?
+        public var styleName: String?
+        public var typeName: String?
 
-        public init(id: Int64, ruleId: Int64, categoryId: Int64, styleId: Int64?, typeId: Int64? = nil) {
+        public init(
+            id: Int64,
+            ruleId: Int64,
+            categoryId: Int64,
+            styleId: Int64?,
+            typeId: Int64? = nil,
+            categoryName: String? = nil,
+            styleName: String? = nil,
+            typeName: String? = nil
+        ) {
             self.id = id
             self.ruleId = ruleId
             self.categoryId = categoryId
             self.styleId = styleId
             self.typeId = typeId
+            self.categoryName = categoryName
+            self.styleName = styleName
+            self.typeName = typeName
         }
     }
 
@@ -4295,12 +4329,45 @@ public final class PartsService: Sendable {
             return try ruleRows.map { ruleRow in
                 let ruleId: Int64 = ruleRow["id"]
 
+                // LEFT JOIN hierarchy tables so source/target rows include
+                // human-readable names. Names are nil when the referenced row
+                // has been soft-deleted (deleted_at IS NOT NULL) or hard-deleted.
                 let sourceRows = try Row.fetchAll(dbConn, sql: """
-                    SELECT * FROM companion_rule_sources WHERE rule_id = ?
+                    SELECT s.id AS id,
+                           s.rule_id AS rule_id,
+                           s.category_id AS category_id,
+                           s.style_id AS style_id,
+                           s.type_id AS type_id,
+                           c.name AS category_name,
+                           st.name AS style_name,
+                           tp.name AS type_name
+                    FROM companion_rule_sources s
+                    LEFT JOIN part_categories c
+                        ON c.id = s.category_id AND c.deleted_at IS NULL
+                    LEFT JOIN part_styles st
+                        ON st.id = s.style_id AND st.deleted_at IS NULL
+                    LEFT JOIN part_types tp
+                        ON tp.id = s.type_id AND tp.deleted_at IS NULL
+                    WHERE s.rule_id = ?
                     """, arguments: [ruleId])
 
                 let targetRows = try Row.fetchAll(dbConn, sql: """
-                    SELECT * FROM companion_rule_targets WHERE rule_id = ?
+                    SELECT t.id AS id,
+                           t.rule_id AS rule_id,
+                           t.category_id AS category_id,
+                           t.style_id AS style_id,
+                           t.type_id AS type_id,
+                           c.name AS category_name,
+                           st.name AS style_name,
+                           tp.name AS type_name
+                    FROM companion_rule_targets t
+                    LEFT JOIN part_categories c
+                        ON c.id = t.category_id AND c.deleted_at IS NULL
+                    LEFT JOIN part_styles st
+                        ON st.id = t.style_id AND st.deleted_at IS NULL
+                    LEFT JOIN part_types tp
+                        ON tp.id = t.type_id AND tp.deleted_at IS NULL
+                    WHERE t.rule_id = ?
                     """, arguments: [ruleId])
 
                 let sources = sourceRows.map { row in
@@ -4309,7 +4376,10 @@ public final class PartsService: Sendable {
                         ruleId: row["rule_id"] as Int64,
                         categoryId: row["category_id"] as Int64,
                         styleId: row["style_id"] as Int64?,
-                        typeId: row["type_id"] as Int64?
+                        typeId: row["type_id"] as Int64?,
+                        categoryName: row["category_name"] as String?,
+                        styleName: row["style_name"] as String?,
+                        typeName: row["type_name"] as String?
                     )
                 }
 
@@ -4319,7 +4389,10 @@ public final class PartsService: Sendable {
                         ruleId: row["rule_id"] as Int64,
                         categoryId: row["category_id"] as Int64,
                         styleId: row["style_id"] as Int64?,
-                        typeId: row["type_id"] as Int64?
+                        typeId: row["type_id"] as Int64?,
+                        categoryName: row["category_name"] as String?,
+                        styleName: row["style_name"] as String?,
+                        typeName: row["type_name"] as String?
                     )
                 }
 
