@@ -1003,9 +1003,8 @@ struct IOSJPODetailPage: View {
         }
     }
 
-    // TODO: When JPODetail gains a dueDate field, replace fallback with TimelinePriorityColor.color(priority:dueDateString:)
     private func priorityColor(_ priority: String) -> Color {
-        return TimelinePriorityColor.fallbackColor(priority: priority)
+        return TimelinePriorityColor.color(priority: priority, dueDateString: nil)
     }
 
     private func formatCurrency(_ value: Double) -> String {

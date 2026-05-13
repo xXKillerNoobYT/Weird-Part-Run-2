@@ -22,18 +22,19 @@ struct TimelinePriorityColor {
     ///
     /// - Parameters:
     ///   - dueDate: The deadline as a `Date`. If `nil`, returns `.secondary`.
+    ///   - now: The comparison time. Defaults to the current date in app code.
     ///   - isCompleted: Whether the item is already completed (returns `.gray`).
     /// - Returns: A `Color` reflecting the urgency of the deadline.
-    static func color(for dueDate: Date?, isCompleted: Bool = false) -> Color {
+    static func color(for dueDate: Date?, now: Date = Date(), isCompleted: Bool = false) -> Color {
         if isCompleted { return .gray }
         guard let dueDate = dueDate else { return .secondary }
 
-        let hoursRemaining = dueDate.timeIntervalSince(Date()) / 3600
+        let hoursRemaining = dueDate.timeIntervalSince(now) / 3600
 
-        if hoursRemaining < 0 { return .red }        // Overdue
-        else if hoursRemaining < 24 { return .orange } // Due today
-        else if hoursRemaining < 96 { return .yellow } // Due within 4 days
-        else { return .green }                          // Plenty of time
+        if hoursRemaining < 0 { return DS.SemanticColor.error }
+        else if hoursRemaining < 24 { return DS.SemanticColor.warning }
+        else if hoursRemaining < 96 { return DS.SemanticColor.caution }
+        else { return DS.SemanticColor.success }
     }
 
     /// Convenience overload: accepts a priority label AND a due date.
@@ -41,8 +42,8 @@ struct TimelinePriorityColor {
     ///
     /// This signature exists so call sites that previously passed a priority string
     /// can migrate without changing their argument structure.
-    static func color(priority: String?, dueDate: Date?, isCompleted: Bool = false) -> Color {
-        return color(for: dueDate, isCompleted: isCompleted)
+    static func color(priority: String?, dueDate: Date?, now: Date = Date(), isCompleted: Bool = false) -> Color {
+        return color(for: dueDate, now: now, isCompleted: isCompleted)
     }
 
     // MARK: - String Date Parsing
@@ -54,14 +55,14 @@ struct TimelinePriorityColor {
     ///   - dateString: An ISO 8601 or "yyyy-MM-dd HH:mm:ss" formatted date string.
     ///   - isCompleted: Whether the item is already completed.
     /// - Returns: A `Color` reflecting the urgency of the deadline.
-    static func color(for dateString: String?, isCompleted: Bool = false) -> Color {
-        return color(for: parseDate(dateString), isCompleted: isCompleted)
+    static func color(for dateString: String?, now: Date = Date(), isCompleted: Bool = false) -> Color {
+        return color(for: parseDate(dateString), now: now, isCompleted: isCompleted)
     }
 
     /// Convenience overload: accepts a priority label AND a date string.
     /// The priority label is intentionally ignored — color comes from time.
-    static func color(priority: String?, dueDateString: String?, isCompleted: Bool = false) -> Color {
-        return color(for: parseDate(dueDateString), isCompleted: isCompleted)
+    static func color(priority: String?, dueDateString: String?, now: Date = Date(), isCompleted: Bool = false) -> Color {
+        return color(for: parseDate(dueDateString), now: now, isCompleted: isCompleted)
     }
 
     // MARK: - Urgency Label
@@ -69,11 +70,11 @@ struct TimelinePriorityColor {
     /// Returns a human-readable urgency label based on time remaining.
     ///
     /// Examples: "Overdue", "Due today", "Due in 3d", "No deadline", "Completed".
-    static func urgencyLabel(for dueDate: Date?, isCompleted: Bool = false) -> String {
+    static func urgencyLabel(for dueDate: Date?, now: Date = Date(), isCompleted: Bool = false) -> String {
         if isCompleted { return "Completed" }
         guard let dueDate = dueDate else { return "No deadline" }
 
-        let hoursRemaining = dueDate.timeIntervalSince(Date()) / 3600
+        let hoursRemaining = dueDate.timeIntervalSince(now) / 3600
 
         if hoursRemaining < 0 { return "Overdue" }
         else if hoursRemaining < 24 { return "Due today" }
@@ -84,25 +85,8 @@ struct TimelinePriorityColor {
     }
 
     /// String-based convenience overload for urgency label.
-    static func urgencyLabel(for dateString: String?, isCompleted: Bool = false) -> String {
-        return urgencyLabel(for: parseDate(dateString), isCompleted: isCompleted)
-    }
-
-    // MARK: - Fallback (No Due Date)
-
-    /// Fallback color for items that have a priority label but no due date.
-    /// Uses the old label-based mapping so items without dates still get some color.
-    ///
-    /// Use this ONLY when no due date is available on the model.
-    static func fallbackColor(priority: String?) -> Color {
-        // TODO: When due dates are added to these models, replace with time-based color
-        switch priority?.lowercased() {
-        case "urgent": return .red
-        case "high": return .orange
-        case "normal": return .blue
-        case "low": return .secondary
-        default: return .secondary
-        }
+    static func urgencyLabel(for dateString: String?, now: Date = Date(), isCompleted: Bool = false) -> String {
+        return urgencyLabel(for: parseDate(dateString), now: now, isCompleted: isCompleted)
     }
 
     // MARK: - Date Parsing

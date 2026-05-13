@@ -358,9 +358,7 @@ struct JobsListPage: View {
 
     private func priorityBadge(_ priority: String, dueDate: String? = nil, status: String? = nil) -> some View {
         let isCompleted = status == "completed" || status == "cancelled"
-        let color: Color = dueDate != nil
-            ? TimelinePriorityColor.color(priority: priority, dueDateString: dueDate, isCompleted: isCompleted)
-            : TimelinePriorityColor.fallbackColor(priority: priority)
+        let color = TimelinePriorityColor.color(priority: priority, dueDateString: dueDate, isCompleted: isCompleted)
         return Text(priority.capitalized)
             .font(.caption2)
             .foregroundStyle(color)

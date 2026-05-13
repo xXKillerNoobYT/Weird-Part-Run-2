@@ -20,6 +20,9 @@ extension DS {
         /// Attention needed: pending, expiring, approaching limit
         static let warning: Color = .orange
 
+        /// Caution: upcoming deadline, watch state
+        static let caution: Color = .yellow
+
         /// Critical: overdue, failed, over-budget, deleted
         static let error: Color = .red
 
@@ -63,16 +66,6 @@ extension DS {
             }
         }
 
-        /// Map a priority level to a semantic color.
-        static func priority(_ level: String) -> Color {
-            switch level.lowercased() {
-            case "critical", "urgent": return error
-            case "high": return warning
-            case "medium", "normal": return info
-            case "low": return .secondary
-            default: return .secondary
-            }
-        }
     }
 
     // MARK: - Background Aliases

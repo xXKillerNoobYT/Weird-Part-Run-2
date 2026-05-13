@@ -226,14 +226,9 @@ struct IOSManageJobsPage: View {
         }
     }
 
-    /// Returns a time-based priority color for the given job.
-    /// Uses the job's due date to determine urgency; falls back to label-based color if no due date.
     private func priorityColor(_ priority: String, dueDate: String? = nil, status: String? = nil) -> Color {
         let isCompleted = status == "completed" || status == "cancelled"
-        if dueDate != nil {
-            return TimelinePriorityColor.color(priority: priority, dueDateString: dueDate, isCompleted: isCompleted)
-        }
-        return TimelinePriorityColor.fallbackColor(priority: priority)
+        return TimelinePriorityColor.color(priority: priority, dueDateString: dueDate, isCompleted: isCompleted)
     }
 
     // MARK: - Data

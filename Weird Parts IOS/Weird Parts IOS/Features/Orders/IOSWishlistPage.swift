@@ -354,7 +354,7 @@ struct IOSWishlistPage: View {
     // MARK: - Badges
 
     private func priorityColor(_ priority: String) -> Color {
-        return TimelinePriorityColor.fallbackColor(priority: priority)
+        return TimelinePriorityColor.color(priority: priority, dueDateString: nil)
     }
 
     private func priorityBadge(_ priority: String) -> some View {

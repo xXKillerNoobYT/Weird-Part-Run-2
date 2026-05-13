@@ -312,9 +312,8 @@ struct IOSRFIListPage: View {
         }
     }
 
-    // TODO: When QAThreadRow gains a dueDate field, replace fallback with TimelinePriorityColor.color(priority:dueDateString:)
     private func priorityColor(_ priority: String) -> Color {
-        return TimelinePriorityColor.fallbackColor(priority: priority)
+        return TimelinePriorityColor.color(priority: priority, dueDateString: nil)
     }
 
     // MARK: - Data

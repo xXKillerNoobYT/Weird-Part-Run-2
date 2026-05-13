@@ -571,9 +571,8 @@ struct IOSUnifiedApprovalsPage: View {
             .foregroundStyle(color)
     }
 
-    // TODO: When approval items gain a dueDate field, replace fallback with TimelinePriorityColor.color(priority:dueDateString:)
     private func priorityBadge(_ priority: String) -> some View {
-        let color = TimelinePriorityColor.fallbackColor(priority: priority)
+        let color = TimelinePriorityColor.color(priority: priority, dueDateString: nil)
         return Text(priority.capitalized)
             .font(.system(.caption2, weight: .semibold))
             .padding(.horizontal, 6)
