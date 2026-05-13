@@ -118,6 +118,7 @@ extension AppDatabase {
         registerMigration079LogFleetPermission(&migrator)
         registerMigration080ToolMovementsIndex(&migrator)
         registerMigration081AuthTokenSessions(&migrator)
+        registerMigration082StructuredEstimationReviews(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5014,6 +5015,29 @@ extension AppDatabase {
                 t.column("expires_at_ms", .double).notNull()
                 t.column("revoked_at", .text)
                 t.column("created_at", .text).notNull()
+            }
+        }
+    }
+
+    private static func registerMigration082StructuredEstimationReviews(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("082_structured_estimation_reviews") { db in
+            try addColumnIfMissing(db, table: "estimation_reviews", column: "delay_factors", type: .text)
+            try addColumnIfMissing(db, table: "estimation_reviews", column: "on_track_status", type: .text)
+            try addColumnIfMissing(db, table: "estimation_reviews", column: "unresolved_question_count", type: .integer)
+            try addColumnIfMissing(db, table: "estimation_reviews", column: "crew_feedback", type: .text)
+            try addColumnIfMissing(db, table: "estimation_reviews", column: "gc_rating", type: .integer)
+
+            try db.create(table: "estimation_question_accuracy_reviews", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("review_id", .integer).notNull()
+                    .references("estimation_reviews", onDelete: .cascade)
+                t.column("question_id", .integer).notNull()
+                    .references("estimation_questions")
+                t.column("predicted_impact", .text)
+                t.column("actual_impact", .text)
+                t.column("accuracy_rating", .integer).notNull()
+                t.column("notes", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
             }
         }
     }
