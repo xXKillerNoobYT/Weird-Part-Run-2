@@ -202,6 +202,9 @@ extension Notification.Name {
     /// `userInfo` should contain `"moduleId"` (String) and optionally `"tabId"` (String).
     static let navigateToModule = Notification.Name("WiredPart.navigateToModule")
 
+    /// Posted when a nested settings route should close the Settings sheet.
+    static let dismissSettingsSheet = Notification.Name("WiredPart.dismissSettingsSheet")
+
     /// Posted when the Parts Catalog page appears, with current context for AI.
     static let catalogPageActive = Notification.Name("WiredPart.catalogPageActive")
 

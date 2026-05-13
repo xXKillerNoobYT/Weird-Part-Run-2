@@ -24,6 +24,8 @@ struct SettingsRouter: View {
     @ViewBuilder
     private var routedView: some View {
         switch tabId {
+        case "settings-help":
+            SettingsHelpPage()
         case "settings-themes":
             ThemesPage()
         case "settings-app-config":

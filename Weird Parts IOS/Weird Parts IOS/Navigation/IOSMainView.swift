@@ -113,12 +113,18 @@ struct IOSMainView: View {
         // automatically cancels the Combine subscription. No manual deregistration needed.
         .onReceive(NotificationCenter.default.publisher(for: .navigateToModule)) { notification in
             if let moduleId = notification.userInfo?["moduleId"] as? String {
+                let requestedTabId = notification.userInfo?["tabId"] as? String
                 if tabPrefs.navigationStyle == .fullSidebar {
                     // Navigate within full sidebar
                     expandedModuleId = moduleId
-                    if let module = allModulesById[moduleId],
-                       let firstTab = visibleTabs(for: module, permissions: appCore.permissions).first {
-                        selectedTabPath = firstTab.path
+                    if let module = allModulesById[moduleId] {
+                        let tabs = visibleTabs(for: module, permissions: appCore.permissions)
+                        if let requestedTabId,
+                           let requestedTab = tabs.first(where: { $0.id == requestedTabId }) {
+                            selectedTabPath = requestedTab.path
+                        } else if let firstTab = tabs.first {
+                            selectedTabPath = firstTab.path
+                        }
                     }
                 } else {
                     selectedModuleId = moduleId
@@ -572,6 +578,13 @@ struct ModuleHostView: View {
             if selectedTabId.isEmpty, let first = visibleTabsList.first {
                 selectedTabId = first.id
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .navigateToModule)) { notification in
+            guard notification.userInfo?["moduleId"] as? String == module.id,
+                  let requestedTabId = notification.userInfo?["tabId"] as? String,
+                  visibleTabsList.contains(where: { $0.id == requestedTabId })
+            else { return }
+            selectedTabId = requestedTabId
         }
     }
 

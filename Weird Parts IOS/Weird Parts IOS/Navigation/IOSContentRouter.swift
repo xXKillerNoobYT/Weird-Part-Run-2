@@ -61,6 +61,8 @@ struct IOSContentRouter: View {
             PartsRouter(tabId: "parts-import-export")
 
         // Settings sub-routes
+        case "/settings/help":
+            SettingsRouter(tabId: "settings-help")
         case "/settings/themes":
             SettingsRouter(tabId: "settings-themes")
         case "/settings/app-config":

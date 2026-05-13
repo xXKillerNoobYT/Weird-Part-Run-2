@@ -42,6 +42,9 @@ struct UserMenuSheet: View {
                 MenuItem(id: "settings-about", label: "About", icon: "info.circle.fill",
                          tabId: "settings-about", permission: nil,
                          keywords: ["about", "version", "app info", "build"]),
+                MenuItem(id: "settings-help", label: "Help", icon: "questionmark.circle.fill",
+                         tabId: "settings-help", permission: nil,
+                         keywords: ["help", "setup", "onboarding", "restart setup", "getting set up"]),
                 MenuItem(id: "settings-themes", label: "Themes", icon: "paintpalette.fill",
                          tabId: "settings-themes", permission: nil,
                          keywords: ["themes", "dark mode", "light mode", "appearance", "colors"]),
@@ -320,6 +323,9 @@ struct UserMenuSheet: View {
             .navigationDestination(for: String.self) { tabId in
                 SettingsRouter(tabId: tabId)
                     .environmentObject(appCore)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .dismissSettingsSheet)) { _ in
+                dismiss()
             }
         }
     }
