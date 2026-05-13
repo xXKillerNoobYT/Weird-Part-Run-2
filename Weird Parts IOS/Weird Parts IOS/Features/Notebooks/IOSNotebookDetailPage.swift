@@ -22,6 +22,7 @@ struct IOSNotebookDetailPage: View {
     @State private var panelSchedule = PanelSchedule()
     @State private var blockConflicts: [NotebookBlockConflict] = []
     @State private var pendingDelete: PendingDelete?
+    @State private var showingNotebookSections = false
 
     // MARK: - PendingDelete
 
@@ -66,7 +67,6 @@ struct IOSNotebookDetailPage: View {
         case editGroup(groupId: Int64, name: String)
         case panelScheduleEditor
         case conflictResolution
-        case notebookSections
         case help
 
         var id: String {
@@ -79,7 +79,6 @@ struct IOSNotebookDetailPage: View {
             case .editGroup(let id, _): return "editGroup-\(id)"
             case .panelScheduleEditor: return "panelSchedule"
             case .conflictResolution: return "conflictResolution"
-            case .notebookSections: return "notebookSections"
             case .help: return "help"
             }
         }
@@ -99,37 +98,29 @@ struct IOSNotebookDetailPage: View {
             }
         }
         .navigationTitle(notebook?.title ?? "Notebook")
+        .toolbar(.hidden, for: .tabBar)
         .toolbar {
-            if horizontalSizeClass == .compact {
+            if horizontalSizeClass != .compact {
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        activeSheet = .notebookSections
+                    Menu {
+                        Button {
+                            activeSheet = .addGroup
+                        } label: {
+                            Label("Add Section Group", systemImage: "folder.badge.plus")
+                        }
+                        Button {
+                            activeSheet = .addSection(groupId: nil)
+                        } label: {
+                            Label("Add Section", systemImage: "doc.badge.plus")
+                        }
                     } label: {
-                        Image(systemName: "sidebar.left")
+                        Image(systemName: "plus")
                     }
                     .frame(width: 44, height: 44)
-                    .accessibilityLabel("Notebook sections")
+                    .accessibilityLabel("Add content")
+                    .accessibilityIdentifier("notebookToolbar_addBlock")
+                    .disabled(isReadOnly)
                 }
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button {
-                        activeSheet = .addGroup
-                    } label: {
-                        Label("Add Section Group", systemImage: "folder.badge.plus")
-                    }
-                    Button {
-                        activeSheet = .addSection(groupId: nil)
-                    } label: {
-                        Label("Add Section", systemImage: "doc.badge.plus")
-                    }
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .frame(width: 44, height: 44)
-                .accessibilityLabel("Add content")
-                .accessibilityIdentifier("notebookToolbar_addBlock")
-                .disabled(isReadOnly)
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
@@ -140,6 +131,10 @@ struct IOSNotebookDetailPage: View {
         }
         .sheet(item: $activeSheet) { sheet in
             sheetContent(for: sheet)
+                .environmentObject(appCore)
+        }
+        .navigationDestination(isPresented: $showingNotebookSections) {
+            notebookSectionsView
                 .environmentObject(appCore)
         }
         .confirmationDialog(
@@ -183,7 +178,46 @@ struct IOSNotebookDetailPage: View {
             .background(Color(.systemGroupedBackground))
         } else {
             contentList
+                .safeAreaInset(edge: .bottom) {
+                    compactNotebookActionBar
+                }
         }
+    }
+
+    private var compactNotebookActionBar: some View {
+        HStack(spacing: 12) {
+            Button {
+                showingNotebookSections = true
+            } label: {
+                Label("Notebook sections", systemImage: "sidebar.left")
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel("Notebook sections")
+
+            Menu {
+                Button {
+                    activeSheet = .addGroup
+                } label: {
+                    Label("Add Section Group", systemImage: "folder.badge.plus")
+                }
+                Button {
+                    activeSheet = .addSection(groupId: nil)
+                } label: {
+                    Label("Add Section", systemImage: "doc.badge.plus")
+                }
+            } label: {
+                Label("Add content", systemImage: "plus")
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityLabel("Add content")
+            .accessibilityIdentifier("notebookToolbar_addBlock")
+            .disabled(isReadOnly)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.bar)
     }
 
     private var notebookSidebar: some View {
@@ -947,6 +981,73 @@ struct IOSNotebookDetailPage: View {
         }
     }
 
+    private var notebookSectionsView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                notebookSummaryCard
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Notebook")
+                        .font(.headline)
+                    sidebarRow(id: "overview", title: "Overview", systemImage: "doc.text", badge: nil, isSelected: true)
+                    sidebarRow(id: "dailyLogs", title: "Daily Logs", systemImage: "calendar", badge: nil, isSelected: false)
+                    sidebarRow(id: "todos", title: "To-Dos", systemImage: "checklist", badge: todoBadgeText, isSelected: false)
+                    sidebarRow(id: "photos", title: "Photos", systemImage: "photo.on.rectangle", badge: nil, isSelected: false)
+                    sidebarRow(id: "panelSchedules", title: "Panel Schedules", systemImage: "bolt.rectangle", badge: nil, isSelected: false)
+                    if !blockConflicts.isEmpty {
+                        sidebarRow(id: "openConflicts", title: "Open conflicts", systemImage: "exclamationmark.triangle", badge: "\(blockConflicts.count)", isSelected: false)
+                    }
+                }
+
+                if let groups = hierarchy?.groups, !groups.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Sections")
+                            .font(.headline)
+
+                        ForEach(groups) { group in
+                            Text(group.name)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            ForEach(group.sections) { section in
+                                sidebarRow(
+                                    id: "section_\(section.id)",
+                                    title: section.name,
+                                    systemImage: "doc.text",
+                                    badge: "\(section.entries.count)",
+                                    isSelected: false
+                                )
+                                .accessibilityIdentifier("notebookSectionSheet_section_\(section.id)")
+                            }
+                        }
+                    }
+                }
+
+                if let sections = hierarchy?.ungroupedSections, !sections.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Pages")
+                            .font(.headline)
+
+                        ForEach(sections) { section in
+                            sidebarRow(
+                                id: "section_\(section.id)",
+                                title: section.name,
+                                systemImage: "doc.text",
+                                badge: "\(section.entries.count)",
+                                isSelected: false
+                            )
+                            .accessibilityIdentifier("notebookSectionSheet_section_\(section.id)")
+                        }
+                    }
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle("Notebook Sections")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
     // MARK: - Sheet Content
 
     @ViewBuilder
@@ -1012,66 +1113,6 @@ struct IOSNotebookDetailPage: View {
                     resolveAllConflicts(keepVersion: keepVersion)
                 }
             )
-
-        case .notebookSections:
-            NavigationStack {
-                List {
-                    Section {
-                        notebookSummaryCard
-                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                    }
-                    Section("Notebook") {
-                        sidebarRow(id: "overview", title: "Overview", systemImage: "doc.text", badge: nil, isSelected: true)
-                        sidebarRow(id: "dailyLogs", title: "Daily Logs", systemImage: "calendar", badge: nil, isSelected: false)
-                        sidebarRow(id: "todos", title: "To-Dos", systemImage: "checklist", badge: todoBadgeText, isSelected: false)
-                        sidebarRow(id: "photos", title: "Photos", systemImage: "photo.on.rectangle", badge: nil, isSelected: false)
-                        sidebarRow(id: "panelSchedules", title: "Panel Schedules", systemImage: "bolt.rectangle", badge: nil, isSelected: false)
-                        if !blockConflicts.isEmpty {
-                            sidebarRow(id: "openConflicts", title: "Open conflicts", systemImage: "exclamationmark.triangle", badge: "\(blockConflicts.count)", isSelected: false)
-                        }
-                    }
-                    if let groups = hierarchy?.groups, !groups.isEmpty {
-                        Section("Sections") {
-                            ForEach(groups) { group in
-                                Text(group.name)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                ForEach(group.sections) { section in
-                                    sidebarRow(
-                                        id: "section_\(section.id)",
-                                        title: section.name,
-                                        systemImage: "doc.text",
-                                        badge: "\(section.entries.count)",
-                                        isSelected: false
-                                    )
-                                    .accessibilityIdentifier("notebookSectionSheet_section_\(section.id)")
-                                }
-                            }
-                        }
-                    }
-                    if let sections = hierarchy?.ungroupedSections, !sections.isEmpty {
-                        Section("Pages") {
-                            ForEach(sections) { section in
-                                sidebarRow(
-                                    id: "section_\(section.id)",
-                                    title: section.name,
-                                    systemImage: "doc.text",
-                                    badge: "\(section.entries.count)",
-                                    isSelected: false
-                                )
-                                .accessibilityIdentifier("notebookSectionSheet_section_\(section.id)")
-                            }
-                        }
-                    }
-                }
-                .navigationTitle("Notebook Sections")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { activeSheet = nil }
-                    }
-                }
-            }
 
         case .help:
             PageHelpSheet(title: "Notebook Detail Help", sections: [
