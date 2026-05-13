@@ -328,6 +328,9 @@ struct WarehouseAuditTests {
         #expect(activeSessions.count >= 1)
 
         try env.warehouse.completeSession(sessionId: sessionId, completedBy: env.adminUserId)
+
+        let recentSessions = try env.warehouse.getReceivingSessions(limit: 20)
+        #expect(recentSessions.contains { $0.id == sessionId && $0.status == "completed" })
     }
 
     @Test("Cancel receiving session")
@@ -341,6 +344,9 @@ struct WarehouseAuditTests {
         try env.warehouse.cancelSession(sessionId: sessionId)
         let session = try env.warehouse.getReceivingSession(sessionId: sessionId)
         #expect(session?.status == "cancelled")
+
+        let recentSessions = try env.warehouse.getReceivingSessions(limit: 20)
+        #expect(recentSessions.contains { $0.id == sessionId && $0.status == "cancelled" })
     }
 
     // MARK: - Consolidation Votes

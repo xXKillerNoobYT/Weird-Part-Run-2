@@ -18,6 +18,9 @@ struct IOSReceivingPage: View {
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
     @State private var selectedFilter: StatusFilter?
+    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var customStart: Date = Date().addingTimeInterval(-7 * 86400)
+    @State private var customEnd: Date = Date()
 
     private enum ActiveSheet: Identifiable {
         case startReceiving
@@ -44,6 +47,7 @@ struct IOSReceivingPage: View {
     var body: some View {
         VStack(spacing: 0) {
             OnboardingBanner(pageId: "warehouse-receiving")
+            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
 
             // Smart card filters
             if !sessions.isEmpty {
@@ -130,7 +134,7 @@ struct IOSReceivingPage: View {
     }
 
     private func countForFilter(_ filter: StatusFilter) -> Int {
-        sessions.filter { session in
+        dateFilteredSessions.filter { session in
             filter.matchStatuses.contains(session.status)
         }.count
     }
@@ -229,7 +233,7 @@ struct IOSReceivingPage: View {
     }
 
     private var filteredSessions: [WarehouseService.ReceivingSessionInfo] {
-        var result = sessions
+        var result = dateFilteredSessions
 
         // Status filter
         if let filter = selectedFilter {
@@ -249,6 +253,17 @@ struct IOSReceivingPage: View {
         }
 
         return result
+    }
+
+    private var dateFilteredSessions: [WarehouseService.ReceivingSessionInfo] {
+        sessions.filter {
+            StandardFilterBarDateFilter.contains(
+                $0.createdAt,
+                selectedRange: dateRange,
+                customStart: customStart,
+                customEnd: customEnd
+            )
+        }
     }
 
     private func sessionRow(_ session: WarehouseService.ReceivingSessionInfo) -> some View {
@@ -342,7 +357,7 @@ struct IOSReceivingPage: View {
         isLoading = sessions.isEmpty
         loadError = nil
         do {
-            sessions = try service.getActiveSessions()
+            sessions = try service.getReceivingSessions(limit: 200)
         } catch {
             loadError = userFriendlyError(error, context: "load receiving data")
         }

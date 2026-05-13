@@ -18,6 +18,9 @@ struct IOSNotebooksListPage: View {
     @State private var typeFilter = "all"
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
+    @State private var dateRange: ReportDateRange = .thisMonth
+    @State private var customStart: Date = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
+    @State private var customEnd: Date = Date()
 
     private let typeOptions = ["all", "general", "job", "daily_report", "checklist"]
 
@@ -38,6 +41,7 @@ struct IOSNotebooksListPage: View {
         VStack(spacing: 0) {
             OnboardingBanner(pageId: "notebooks-all")
             SkippedModuleHint(moduleId: "notebooks")
+            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
             typePicker
             notebookList
         }
@@ -104,8 +108,9 @@ struct IOSNotebooksListPage: View {
     // MARK: - Type Picker
 
     private func countForType(_ type: String) -> Int {
-        if type == "all" { return allNotebooks.count }
-        return allNotebooks.filter { $0.notebookType == type }.count
+        let notebooks = dateFilteredAllNotebooks
+        if type == "all" { return notebooks.count }
+        return notebooks.filter { $0.notebookType == type }.count
     }
 
     private var typePicker: some View {
@@ -153,13 +158,33 @@ struct IOSNotebooksListPage: View {
     }
 
     private var filteredNotebooks: [NotebooksService.NotebookListItem] {
-        guard !searchText.isEmpty else { return notebooks }
+        var result = dateFilteredNotebooks
+
+        guard !searchText.isEmpty else { return result }
         let query = searchText.lowercased()
-        return notebooks.filter {
+        result = result.filter {
             $0.title.lowercased().contains(query) ||
             ($0.jobName?.lowercased().contains(query) ?? false) ||
             $0.createdByName.lowercased().contains(query)
         }
+        return result
+    }
+
+    private var dateFilteredNotebooks: [NotebooksService.NotebookListItem] {
+        notebooks.filter(matchesSelectedDateRange)
+    }
+
+    private var dateFilteredAllNotebooks: [NotebooksService.NotebookListItem] {
+        allNotebooks.filter(matchesSelectedDateRange)
+    }
+
+    private func matchesSelectedDateRange(_ notebook: NotebooksService.NotebookListItem) -> Bool {
+        StandardFilterBarDateFilter.contains(
+            notebook.updatedAt,
+            selectedRange: dateRange,
+            customStart: customStart,
+            customEnd: customEnd
+        )
     }
 
     private func notebookRow(_ notebook: NotebooksService.NotebookListItem) -> some View {

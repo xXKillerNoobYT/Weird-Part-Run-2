@@ -17,21 +17,36 @@ struct AuditLogPage: View {
     @State private var errorMessage: String?
     @State private var limit = 50
     @State private var searchText = ""
+    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var customStart: Date = Date().addingTimeInterval(-7 * 86400)
+    @State private var customEnd: Date = Date()
 
     private var filteredEntries: [SettingsService.AuditLogEntry] {
-        guard !searchText.isEmpty else { return entries }
+        var result = entries.filter {
+            StandardFilterBarDateFilter.contains(
+                $0.timestamp,
+                selectedRange: dateRange,
+                customStart: customStart,
+                customEnd: customEnd
+            )
+        }
+
+        guard !searchText.isEmpty else { return result }
         let query = searchText.lowercased()
-        return entries.filter {
+        result = result.filter {
             $0.entityType.lowercased().contains(query) ||
             $0.action.lowercased().contains(query) ||
             $0.timestamp.lowercased().contains(query)
         }
+        return result
     }
 
     // MARK: - Body
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
+
             if isLoading {
                 ProgressView("Loading audit log...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -40,6 +55,12 @@ struct AuditLogPage: View {
                     "No Audit Entries",
                     systemImage: "doc.text.magnifyingglass",
                     description: Text("No recent changes have been recorded.")
+                )
+            } else if filteredEntries.isEmpty {
+                ContentUnavailableView(
+                    "No Matching Audit Entries",
+                    systemImage: "line.3.horizontal.decrease.circle",
+                    description: Text("No audit entries match the selected date range and search.")
                 )
             } else {
                 List {

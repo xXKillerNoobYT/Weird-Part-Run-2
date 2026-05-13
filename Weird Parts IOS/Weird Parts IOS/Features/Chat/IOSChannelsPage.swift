@@ -17,6 +17,9 @@ struct IOSChannelsPage: View {
     @State private var loadError: String?
     @State private var typeFilter: ChannelTypeFilter = .all
     @State private var activeSheet: ActiveSheet?
+    @State private var dateRange: ReportDateRange = .thisMonth
+    @State private var customStart: Date = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
+    @State private var customEnd: Date = Date()
 
     private enum ChannelTypeFilter: String, CaseIterable {
         case all = "All"
@@ -63,6 +66,7 @@ struct IOSChannelsPage: View {
         VStack(spacing: 0) {
             OnboardingBanner(pageId: "chat-channels")
             SkippedModuleHint(moduleId: "chat")
+            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
             channelList
         }
             .task { appCore.onboardingManager?.markCompleted("chat-view-channels") }
@@ -178,9 +182,10 @@ struct IOSChannelsPage: View {
     }
 
     private func countForFilter(_ filter: ChannelTypeFilter) -> Int {
-        if filter == .all { return inboxItems.count }
-        if filter == .unread { return inboxItems.filter { $0.unreadCount > 0 }.count }
-        return inboxItems.filter { filter.matchTypes.contains($0.channelType) }.count
+        let items = dateFilteredItems
+        if filter == .all { return items.count }
+        if filter == .unread { return items.filter { $0.unreadCount > 0 }.count }
+        return items.filter { filter.matchTypes.contains($0.channelType) }.count
     }
 
     private func iconForFilter(_ filter: ChannelTypeFilter) -> String {
@@ -214,7 +219,7 @@ struct IOSChannelsPage: View {
     // MARK: - Filtered Items
 
     private var filteredItems: [ChatService.InboxItem] {
-        var items = inboxItems
+        var items = dateFilteredItems
 
         // Type filter
         if typeFilter == .unread {
@@ -235,6 +240,17 @@ struct IOSChannelsPage: View {
         }
 
         return items
+    }
+
+    private var dateFilteredItems: [ChatService.InboxItem] {
+        inboxItems.filter {
+            StandardFilterBarDateFilter.contains(
+                $0.lastMessageDate,
+                selectedRange: dateRange,
+                customStart: customStart,
+                customEnd: customEnd
+            )
+        }
     }
 
     // MARK: - Channel List

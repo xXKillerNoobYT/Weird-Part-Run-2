@@ -136,10 +136,10 @@ struct WarehouseMovementsPage: View {
     // MARK: - Smart Card Filters
 
     private var smartCardFilters: some View {
-        let transferCount = movements.filter { $0.movementType == "transfer" }.count
-        let receiveCount = movements.filter { $0.movementType == "receive" }.count
-        let returnCount = movements.filter { $0.movementType == "return_to_supplier" }.count
-        let adjustCount = movements.filter { $0.movementType == "adjustment" }.count
+        let transferCount = dateFilteredMovements.filter { $0.movementType == "transfer" }.count
+        let receiveCount = dateFilteredMovements.filter { $0.movementType == "receive" }.count
+        let returnCount = dateFilteredMovements.filter { $0.movementType == "return_to_supplier" }.count
+        let adjustCount = dateFilteredMovements.filter { $0.movementType == "adjustment" }.count
 
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
@@ -183,7 +183,7 @@ struct WarehouseMovementsPage: View {
     // MARK: - Filtered Movements
 
     private var filteredMovements: [WarehouseService.MovementRow] {
-        var result = movements
+        var result = dateFilteredMovements
         if let filter = selectedFilter {
             result = result.filter { $0.movementType == filter.movementType }
         }
@@ -192,6 +192,17 @@ struct WarehouseMovementsPage: View {
             result = result.filter { $0.partName.lowercased().contains(query) }
         }
         return result
+    }
+
+    private var dateFilteredMovements: [WarehouseService.MovementRow] {
+        movements.filter {
+            StandardFilterBarDateFilter.contains(
+                $0.createdAt,
+                selectedRange: dateRange,
+                customStart: customStart,
+                customEnd: customEnd
+            )
+        }
     }
 
     // MARK: - Movements List

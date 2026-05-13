@@ -1190,6 +1190,45 @@ public final class WarehouseService: Sendable {
         }
     }
 
+    /// Get recent receiving sessions for operational history screens.
+    public func getReceivingSessions(limit: Int = 200) throws -> [ReceivingSessionInfo] {
+        do {
+            return try db.writer.read { dbConn -> [ReceivingSessionInfo] in
+                let rows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT rs.*,
+                               COALESCE(u.display_name, u.email, 'Unknown') AS started_by_name,
+                               (SELECT COUNT(*) FROM receiving_session_items
+                                WHERE session_id = rs.id AND deleted_at IS NULL) AS item_count
+                        FROM receiving_sessions rs
+                        LEFT JOIN users u ON u.id = rs.started_by AND u.deleted_at IS NULL
+                        WHERE rs.deleted_at IS NULL
+                        ORDER BY rs.created_at DESC
+                        LIMIT ?
+                        """,
+                    arguments: [limit]
+                )
+                return rows.map { row in
+                    ReceivingSessionInfo(
+                        id: row["id"] ?? 0,
+                        poId: row["po_id"] ?? 0,
+                        startedByName: row["started_by_name"] ?? "Unknown",
+                        mode: row["mode"] ?? "packing_slip",
+                        status: row["status"] ?? "in_progress",
+                        completedAt: row["completed_at"] as String?,
+                        notes: row["notes"] as String?,
+                        createdAt: row["created_at"] ?? "",
+                        itemCount: row["item_count"] ?? 0
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
     /// Get items for a receiving session.
     public func getSessionItems(sessionId: Int64) throws -> [ReceivingItemInfo] {
         do {
