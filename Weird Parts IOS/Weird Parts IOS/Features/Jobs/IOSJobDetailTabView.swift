@@ -7,6 +7,7 @@ import WiredPartCore
 /// Each tab is a separate section that loads data for the given job.
 struct IOSJobDetailTabView: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     let jobId: Int64
 
@@ -141,30 +142,66 @@ struct IOSJobDetailTabView: View {
     // MARK: - Tab Picker
 
     private var tabPicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(tabs, id: \.id) { tab in
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            selectedTab = tab.id
-                        }
-                    } label: {
-                        Label(tab.label, systemImage: tab.icon)
-                            .font(.caption)
-                            .fontWeight(selectedTab == tab.id ? .bold : .regular)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(selectedTab == tab.id ? Color.accentColor : Color.secondary.opacity(0.15))
-                            )
-                            .foregroundStyle(selectedTab == tab.id ? .white : .primary)
-                    }
-                    .buttonStyle(.plain)
-                }
+        HStack(spacing: 8) {
+            if horizontalSizeClass == .compact, let estimateTab = tabs.first(where: { $0.id == "estimate" }) {
+                jobDetailTabButton(estimateTab)
+                    .padding(.leading, 8)
             }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(tabs, id: \.id) { tab in
+                        jobDetailTabButton(tab)
+                    }
+                }
+                .padding(.leading)
+                .padding(.vertical, 8)
+            }
+
+            if horizontalSizeClass == .compact {
+                Menu {
+                    ForEach(tabs, id: \.id) { tab in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                selectedTab = tab.id
+                            }
+                        } label: {
+                            Label(tab.label, systemImage: tab.icon)
+                        }
+                        .accessibilityIdentifier("jobDetailTabMenu_\(tab.id)")
+                    }
+                } label: {
+                    Label("Tabs", systemImage: "ellipsis.circle")
+                        .labelStyle(.iconOnly)
+                        .font(.title3)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityIdentifier("jobDetailTabMenu")
+                .accessibilityLabel("Job detail tabs")
+                .padding(.trailing, 8)
+            }
         }
+    }
+
+    private func jobDetailTabButton(_ tab: (id: String, label: String, icon: String)) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                selectedTab = tab.id
+            }
+        } label: {
+            Label(tab.label, systemImage: tab.icon)
+                .font(.caption)
+                .fontWeight(selectedTab == tab.id ? .bold : .regular)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule().fill(selectedTab == tab.id ? Color.accentColor : Color.secondary.opacity(0.15))
+                )
+                .foregroundStyle(selectedTab == tab.id ? .white : .primary)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("jobDetailTab_\(tab.id)")
     }
 
     // MARK: - Tab Content
