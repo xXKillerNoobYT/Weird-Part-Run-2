@@ -1,0 +1,36 @@
+{
+  "name": "wiredpart-paperclip",
+  "version": "0.1.0",
+  "description": "One-click local Paperclip plugin integration for the WiredPart app workspace.",
+  "author": {
+    "name": "WiredPart",
+    "email": "noreply@wiredpart.local",
+    "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2"
+  },
+  "homepage": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2",
+  "repository": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2",
+  "license": "MIT",
+  "keywords": [
+    "wiredpart",
+    "paperclip",
+    "integration",
+    "plugin"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "WiredPart Paperclip",
+    "shortDescription": "Project-specific plugin integration for WiredPart",
+    "longDescription": "Provides a local plugin package that can be installed into Codex/Paperclip in one command, including marketplace registration for this repository.",
+    "developerName": "WiredPart",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive"
+    ],
+    "websiteURL": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2",
+    "defaultPrompt": [
+      "Use the WiredPart Paperclip workflow for this repository"
+    ],
+    "screenshots": [],
+    "brandColor": "#0F766E"
+  }
+}
