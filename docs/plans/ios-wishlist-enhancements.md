@@ -1,9 +1,9 @@
 # iOS Wishlist Enhancements — Design Plan
 
-> **Status:** ✅ COMPLETE (2026-04-19) — 3-section layout, dismiss reason, auto-approve countdown, certainty scores all implemented. Migration 057b (dismiss_reason, auto_approve_at, certainty_score) added. See `IOSWishlistPage.swift` (711 lines).
+> **Status:** ✅ BASELINE COMPLETE (2026-04-19) — 3-section layout, dismiss reason, auto-approve countdown, certainty scores all implemented. Migration 057b (dismiss_reason, auto_approve_at, certainty_score) added. See `IOSWishlistPage.swift`.
 > **Prompt:** `xcode-ai/fix-prompts/PE-033-wishlist-section-layout.md`
 > **GitHub Issue:** #93
-> **Last updated:** 2026-04-04
+> **Last updated:** 2026-05-13 — WEI-1077 implemented GitHub #423 smart card status filters; WEI-1078 implemented GitHub #424 per-part auto-add toggle.
 
 ---
 
@@ -64,10 +64,11 @@ ALTER TABLE wishlist_items ADD COLUMN certainty_score REAL;
 
 ## Future Enhancements (Post PE-033)
 
-- Per-part auto-add toggle on Part Detail page (Admin/Manager only) — sets `auto_add_to_wishlist = 1` on `parts` table
+- Smart card status filters on Wishlist page — GitHub #423 / WEI-1077 implemented as horizontal status cards for All, Pending, Approved, Dismissed, and Procured.
+- Per-part auto-add toggle on Part Detail page (Admin/Manager only) — GitHub #424 / WEI-1078 implemented with `parts.auto_add_to_wishlist` and `wishlist.configure_auto_add`
 - Push notification when item auto-approves (after PE-033 is stable)
-- Truck/Trailer below-MIN → wishlist creation wired into stock movement checks (WarehouseService)
-- Procurement planner reads from `status = "approved"` wishlist items as a demand source
+- Truck/Trailer below-MIN → shop-check-first movement staging vs. wishlist creation, with low-certainty physical audit routing — GitHub #425
+- Procurement planner integration follow-up is tracked separately in GitHub #361
 
 ---
 

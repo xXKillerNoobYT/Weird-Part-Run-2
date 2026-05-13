@@ -17,6 +17,29 @@ struct IOSWishlistPage: View {
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
     @State private var itemToDelete: WishlistItem?
+    @State private var statusFilter: WishlistStatusFilter = .all
+
+    private enum WishlistStatusFilter: String, CaseIterable {
+        case all = "All"
+        case pending = "Pending"
+        case approved = "Approved"
+        case dismissed = "Dismissed"
+        case sentToProcurement = "Procured"
+
+        var queryValue: String? {
+            switch self {
+            case .all: nil
+            case .pending: "pending"
+            case .approved: "approved"
+            case .dismissed: "dismissed"
+            case .sentToProcurement: "sent_to_procurement"
+            }
+        }
+
+        var accessibilityIdentifier: String {
+            "wishlistFilter_\(queryValue ?? "all")"
+        }
+    }
 
     private enum ActiveSheet: Identifiable {
         case addItem
@@ -121,6 +144,12 @@ struct IOSWishlistPage: View {
 
     private var sectionsView: some View {
         List {
+            Section {
+                smartCards
+                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                    .listRowBackground(Color.clear)
+            }
+
             // Section 1: User Added
             if !filteredUserAdded.isEmpty {
                 Section {
@@ -178,7 +207,7 @@ struct IOSWishlistPage: View {
             // Empty search state
             if filteredUserAdded.isEmpty && filteredForecast.isEmpty && filteredAutoAdded.isEmpty {
                 Section {
-                    Text("No items match your search.")
+                    Text(emptyFilterMessage)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 20)
@@ -186,6 +215,51 @@ struct IOSWishlistPage: View {
             }
         }
         .listStyle(.insetGrouped)
+    }
+
+    // MARK: - Smart Cards
+
+    private var smartCards: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(WishlistStatusFilter.allCases, id: \.self) { filter in
+                    smartCard(filter)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 4)
+        }
+        .accessibilityLabel("Wishlist status filters")
+    }
+
+    private func smartCard(_ filter: WishlistStatusFilter) -> some View {
+        let count = countFor(filter)
+        let isActive = statusFilter == filter
+        let color = colorFor(filter)
+        return Button {
+            Haptics.impact(.light)
+            statusFilter = filter
+        } label: {
+            VStack(spacing: 2) {
+                Text("\(count)")
+                    .font(.system(.title3, weight: .bold))
+                    .foregroundStyle(isActive ? .white : color)
+                Text(filter.rawValue)
+                    .font(.caption2)
+                    .foregroundStyle(isActive ? .white.opacity(0.9) : .secondary)
+            }
+            .frame(minWidth: 74, minHeight: 44)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isActive ? color : color.opacity(0.1))
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(filter.accessibilityIdentifier)
+        .accessibilityLabel("\(filter.rawValue), \(count) items")
+        .accessibilityValue(isActive ? "Selected" : "Not selected")
     }
 
     // MARK: - Section Header
@@ -221,9 +295,38 @@ struct IOSWishlistPage: View {
         }
     }
 
-    private var filteredUserAdded: [WishlistItem] { applySearch(sections.userAdded) }
-    private var filteredForecast: [WishlistItem] { applySearch(sections.forecastDemand) }
-    private var filteredAutoAdded: [WishlistItem] { applySearch(sections.autoAdded) }
+    private func applyStatusFilter(_ items: [WishlistItem]) -> [WishlistItem] {
+        guard let status = statusFilter.queryValue else { return items }
+        return items.filter { $0.status == status }
+    }
+
+    private var filteredUserAdded: [WishlistItem] { applySearch(applyStatusFilter(sections.userAdded)) }
+    private var filteredForecast: [WishlistItem] { applySearch(applyStatusFilter(sections.forecastDemand)) }
+    private var filteredAutoAdded: [WishlistItem] { applySearch(applyStatusFilter(sections.autoAdded)) }
+
+    private var allItems: [WishlistItem] {
+        sections.userAdded + sections.forecastDemand + sections.autoAdded
+    }
+
+    private var emptyFilterMessage: String {
+        if !searchText.isEmpty { return "No items match your search." }
+        return "No \(statusFilter.rawValue.lowercased()) wishlist items."
+    }
+
+    private func countFor(_ filter: WishlistStatusFilter) -> Int {
+        guard let status = filter.queryValue else { return totalCount }
+        return allItems.filter { $0.status == status }.count
+    }
+
+    private func colorFor(_ filter: WishlistStatusFilter) -> Color {
+        switch filter {
+        case .all: .primary
+        case .pending: .orange
+        case .approved: .green
+        case .dismissed: .secondary
+        case .sentToProcurement: .purple
+        }
+    }
 
     // MARK: - Swipe Actions
 
