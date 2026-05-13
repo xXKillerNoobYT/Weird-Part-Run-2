@@ -56,6 +56,17 @@ struct IOSMessageThreadView: View {
         case part = "part_ref"
         case po = "po_ref"
         case job = "job_ref"
+
+        init?(_ triggerKind: ChatReferenceTriggerKind) {
+            switch triggerKind {
+            case .part:
+                self = .part
+            case .purchaseOrder:
+                self = .po
+            case .job:
+                self = .job
+            }
+        }
     }
 
     private enum EscalationReason: String, CaseIterable {
@@ -368,6 +379,9 @@ struct IOSMessageThreadView: View {
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(1...4)
                 .onSubmit { sendMessage() }
+                .onChange(of: messageText) {
+                    handleReferenceTriggerChange()
+                }
 
             Button {
                 sendMessage()
@@ -472,6 +486,17 @@ struct IOSMessageThreadView: View {
             actionError = userFriendlyError(error, context: "send message")
         }
         isSending = false
+    }
+
+    private func handleReferenceTriggerChange() {
+        guard activeSheet == nil,
+              let trigger = ChatReferenceTriggerParser.firstTrigger(in: messageText),
+              let type = ReferenceType(trigger.kind) else {
+            return
+        }
+
+        messageText = ChatReferenceTriggerParser.removingTrigger(trigger, from: messageText)
+        activeSheet = .referencePicker(type)
     }
 
     private func handleAction(_ action: ChatService.ThreadAction) {
