@@ -66,10 +66,11 @@ public final class ChatService: Sendable {
         public let jobId: Int64?
         public let jobName: String?
         public let memberCount: Int
+        public let hasPinnedMessages: Bool
     }
 
     /// Get unified inbox showing all channels with last message info and unread counts.
-    /// Sorted by unread first, then most recent activity.
+    /// Sorted by pinned activity first, then unread, then most recent activity.
     public func getUnifiedInbox(userId: Int64) throws -> [InboxItem] {
         do {
             return try db.writer.read { dbConn -> [InboxItem] in
@@ -84,7 +85,8 @@ public final class ChatService: Sendable {
                         last_msg.created_at AS last_message_date,
                         COALESCE(last_msg_user.display_name, last_msg_user.email) AS last_message_by,
                         COALESCE(unread.cnt, 0) AS unread_count,
-                        COALESCE(mem_count.cnt, 0) AS member_count
+                        COALESCE(mem_count.cnt, 0) AS member_count,
+                        COALESCE(pinned_messages.cnt, 0) AS pinned_message_count
                     FROM chat_channels cc
                     INNER JOIN chat_channel_members my_mem
                         ON my_mem.channel_id = cc.id
@@ -116,8 +118,17 @@ public final class ChatService: Sendable {
                         WHERE left_at IS NULL AND deleted_at IS NULL
                         GROUP BY channel_id
                     ) mem_count ON mem_count.channel_id = cc.id
+                    LEFT JOIN (
+                        SELECT channel_id, COUNT(*) AS cnt
+                        FROM chat_messages
+                        WHERE pinned_at IS NOT NULL AND deleted_at IS NULL
+                        GROUP BY channel_id
+                    ) pinned_messages ON pinned_messages.channel_id = cc.id
                     WHERE cc.is_active = 1 AND cc.deleted_at IS NULL
-                    ORDER BY unread_count DESC, last_msg.created_at DESC NULLS LAST
+                    ORDER BY
+                        CASE WHEN COALESCE(pinned_messages.cnt, 0) > 0 THEN 1 ELSE 0 END DESC,
+                        unread_count DESC,
+                        last_msg.created_at DESC NULLS LAST
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [userId, userId])
@@ -132,7 +143,8 @@ public final class ChatService: Sendable {
                         unreadCount: row["unread_count"] ?? 0,
                         jobId: row["job_id"] as Int64?,
                         jobName: row["job_name"] as String?,
-                        memberCount: row["member_count"] ?? 0
+                        memberCount: row["member_count"] ?? 0,
+                        hasPinnedMessages: (row["pinned_message_count"] ?? 0) > 0
                     )
                 }
             }
@@ -558,10 +570,38 @@ public final class ChatService: Sendable {
             let nextNumber = try nextRFINumber(dbConn)
 
             try dbConn.execute(sql: """
+                INSERT INTO chat_channels
+                    (channel_type, job_id, name, created_by, is_active, created_at, updated_at)
+                VALUES ('rfi', ?, ?, ?, 1, datetime('now'), datetime('now'))
+                """, arguments: [jobId, "\(nextNumber): \(subject)", createdBy])
+            let channelId = dbConn.lastInsertedRowID
+
+            try dbConn.execute(sql: """
+                INSERT OR IGNORE INTO chat_channel_members
+                    (channel_id, user_id, role, joined_at)
+                VALUES (?, ?, 'admin', datetime('now'))
+                """, arguments: [channelId, createdBy])
+
+            let officeUsers = try Int64.fetchAll(dbConn, sql: """
+                SELECT DISTINCT uh.user_id
+                FROM user_hats uh
+                JOIN hats h ON h.id = uh.hat_id
+                WHERE h.name IN ('Admin', 'Manager', 'Office')
+                  AND uh.deleted_at IS NULL
+                """)
+            for officeUserId in officeUsers where officeUserId > 0 {
+                try dbConn.execute(sql: """
+                    INSERT OR IGNORE INTO chat_channel_members
+                        (channel_id, user_id, role, joined_at)
+                    VALUES (?, ?, 'member', datetime('now'))
+                    """, arguments: [channelId, officeUserId])
+            }
+
+            try dbConn.execute(sql: """
                 INSERT INTO qa_threads
-                    (job_id, asked_by, subject, current_level, status, priority, created_at, updated_at)
-                VALUES (?, ?, ?, 'office', 'open', ?, datetime('now'), datetime('now'))
-                """, arguments: [jobId, createdBy, subject, priority])
+                    (channel_id, job_id, asked_by, subject, current_level, status, priority, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'office', 'open', ?, datetime('now'), datetime('now'))
+                """, arguments: [channelId, jobId, createdBy, subject, priority])
             let threadId = dbConn.lastInsertedRowID
 
             try dbConn.execute(sql: """
@@ -573,6 +613,17 @@ public final class ChatService: Sendable {
                 """, arguments: [
                     nextNumber, threadId, jobId, directedToContactId, directedToType,
                     directedToName, directedToContactId, subject, body, priority, dueDate
+                ])
+
+            try dbConn.execute(sql: """
+                INSERT INTO chat_messages
+                    (channel_id, sender_id, message_type, content, qa_thread_id, qa_level, created_at)
+                VALUES (?, ?, 'rfi', ?, ?, 'office', datetime('now'))
+                """, arguments: [
+                    channelId,
+                    createdBy,
+                    "Created \(nextNumber) for \(directedToName): \(subject)",
+                    threadId
                 ])
             return dbConn.lastInsertedRowID
         }
@@ -713,6 +764,29 @@ public final class ChatService: Sendable {
                     updated_at = datetime('now')
                 WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [responseText, threadId])
+
+            if let channelId = try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT channel_id FROM qa_threads WHERE id = ? AND deleted_at IS NULL",
+                arguments: [threadId]
+            ) {
+                let senderId = try Int64.fetchOne(
+                    dbConn,
+                    sql: "SELECT asked_by FROM qa_threads WHERE id = ? AND deleted_at IS NULL",
+                    arguments: [threadId]
+                ) ?? 1
+                let trimmedReceivedFrom = receivedFrom?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let prefix = if let trimmedReceivedFrom, !trimmedReceivedFrom.isEmpty {
+                    "Response from \(trimmedReceivedFrom): "
+                } else {
+                    "RFI response: "
+                }
+                try dbConn.execute(sql: """
+                    INSERT INTO chat_messages
+                        (channel_id, sender_id, message_type, content, qa_thread_id, qa_level, created_at)
+                    VALUES (?, ?, 'rfi_response', ?, ?, 'office', datetime('now'))
+                    """, arguments: [channelId, senderId, "\(prefix)\(responseText)", threadId])
+            }
         }
     }
 

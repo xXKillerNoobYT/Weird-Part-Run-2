@@ -20,21 +20,24 @@ struct IOSChannelsPage: View {
 
     private enum ChannelTypeFilter: String, CaseIterable {
         case all = "All"
+        case unread = "Unread"
         case office = "Office"
         case messages = "Messages"
         case dm = "DMs"
         case job = "Job"
         case qa = "Q&A"
+        case rfi = "RFI"
         case supplier = "Supplier"
 
         var matchTypes: [String] {
             switch self {
-            case .all: return []
+            case .all, .unread: return []
             case .office: return ["office"]
-            case .messages: return ["group", "message"]
+            case .messages: return ["group", "message", "jpo_hold"]
             case .dm: return ["dm"]
             case .job: return ["job"]
-            case .qa: return ["qa", "rfi", "jpo_hold", "jpo_qa"]
+            case .qa: return ["qa", "jpo_qa"]
+            case .rfi: return ["rfi"]
             case .supplier: return ["supplier"]
             }
         }
@@ -176,17 +179,20 @@ struct IOSChannelsPage: View {
 
     private func countForFilter(_ filter: ChannelTypeFilter) -> Int {
         if filter == .all { return inboxItems.count }
+        if filter == .unread { return inboxItems.filter { $0.unreadCount > 0 }.count }
         return inboxItems.filter { filter.matchTypes.contains($0.channelType) }.count
     }
 
     private func iconForFilter(_ filter: ChannelTypeFilter) -> String {
         switch filter {
         case .all: return "tray.full"
+        case .unread: return "envelope.badge"
         case .office: return "building.columns"
         case .messages: return "bubble.left"
         case .dm: return "person.2"
         case .job: return "wrench.and.screwdriver"
         case .qa: return "questionmark.circle"
+        case .rfi: return "doc.text.magnifyingglass"
         case .supplier: return "building.2"
         }
     }
@@ -194,11 +200,13 @@ struct IOSChannelsPage: View {
     private func colorForFilter(_ filter: ChannelTypeFilter) -> Color {
         switch filter {
         case .all: return .accentColor
+        case .unread: return .red
         case .office: return .purple
         case .messages: return .green
         case .dm: return .purple
         case .job: return .blue
         case .qa: return .orange
+        case .rfi: return .indigo
         case .supplier: return .teal
         }
     }
@@ -209,7 +217,9 @@ struct IOSChannelsPage: View {
         var items = inboxItems
 
         // Type filter
-        if typeFilter != .all {
+        if typeFilter == .unread {
+            items = items.filter { $0.unreadCount > 0 }
+        } else if typeFilter != .all {
             items = items.filter { typeFilter.matchTypes.contains($0.channelType) }
         }
 
@@ -299,16 +309,33 @@ struct IOSChannelsPage: View {
                         .fontWeight(item.unreadCount > 0 ? .bold : .regular)
                         .lineLimit(1)
 
-                    // Orange HOLD badge for jpo_hold channels
-                    if item.channelType == "jpo_hold" {
-                        Text("HOLD")
-                            .font(.caption).bold()
+                    if item.hasPinnedMessages {
+                        Image(systemName: "pin.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.yellow)
+                            .accessibilityLabel("Pinned")
+                    }
+
+                    if ["rfi", "jpo_hold"].contains(item.channelType) {
+                        Text(item.channelType == "rfi" ? "RFI" : "HOLD")
+                            .font(.caption)
+                            .fontWeight(.bold)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 2)
-                            .background(.orange)
+                            .background(item.channelType == "rfi" ? .blue : .orange)
                             .clipShape(Capsule())
                     }
+
+                    Text(labelForChannelType(item.channelType))
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(colorForChannelType(item.channelType))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(colorForChannelType(item.channelType).opacity(0.12))
+                        .clipShape(Capsule())
+                        .lineLimit(1)
 
                     if let jobName = item.jobName, !jobName.isEmpty, item.channelType != "job" {
                         Text(jobName)
@@ -368,10 +395,25 @@ struct IOSChannelsPage: View {
         case "group", "message": return "person.3"
         case "supplier": return "shippingbox.circle"
         case "qa": return "questionmark.circle"
-        case "rfi": return "doc.text"
+        case "rfi": return "doc.text.magnifyingglass"
         case "jpo_hold": return "pause.circle.fill"
         case "jpo_qa": return "questionmark.bubble"
         default: return "bubble.left.and.bubble.right"
+        }
+    }
+
+    private func labelForChannelType(_ type: String) -> String {
+        switch type {
+        case "office": return "Office"
+        case "dm": return "DM"
+        case "job": return "Job"
+        case "group", "message": return "Message"
+        case "supplier": return "Supplier"
+        case "qa": return "Q&A"
+        case "rfi": return "RFI"
+        case "jpo_hold": return "JPO Hold"
+        case "jpo_qa": return "JPO Q&A"
+        default: return type.replacingOccurrences(of: "_", with: " ").capitalized
         }
     }
 
@@ -383,7 +425,7 @@ struct IOSChannelsPage: View {
         case "group", "message": return .green
         case "supplier": return .teal
         case "qa": return .orange
-        case "rfi": return .orange
+        case "rfi": return .indigo
         case "jpo_hold": return .orange
         case "jpo_qa": return .orange
         default: return .accentColor

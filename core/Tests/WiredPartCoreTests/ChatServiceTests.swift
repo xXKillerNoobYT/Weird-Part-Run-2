@@ -344,6 +344,64 @@ struct ChatServiceTests {
         #expect(!inbox.isEmpty)
     }
 
+    @Test("Unified inbox exposes formal RFI separately from Q&A and pinned threads sort first")
+    func testUnifiedInboxRFIAndPinnedSort() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-INBOX-RFI")
+
+        let qaChannelId = try env.chat.createChannel(
+            name: "Pinned Q&A",
+            channelType: "qa",
+            jobId: jobId,
+            createdBy: env.adminUserId
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO qa_threads
+                (channel_id, job_id, asked_by, subject, current_level, status, priority, created_at, updated_at)
+                VALUES (?, ?, ?, 'Generic Q&A', 'worker', 'open', 'normal', datetime('now'), datetime('now'))
+                """, arguments: [qaChannelId, jobId, env.adminUserId])
+        }
+        let rfiId = try env.chat.createFormalRFI(
+            jobId: jobId,
+            createdBy: env.adminUserId,
+            subject: "Formal RFI",
+            body: "Need external confirmation.",
+            directedToName: "Project GC",
+            directedToType: "gc"
+        )
+
+        let rfiChannelId = try #require(env.db.writer.read { db in
+            try Int64.fetchOne(db, sql: """
+                SELECT qa.channel_id
+                FROM rfi_objects r
+                JOIN qa_threads qa ON qa.id = r.qa_thread_id
+                WHERE r.id = ?
+                """, arguments: [rfiId])
+        })
+        let pinnedMessageId = try env.chat.sendMessage(
+            channelId: qaChannelId,
+            senderId: env.adminUserId,
+            content: "Pinned Q&A context"
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE chat_messages
+                SET pinned_at = datetime('now'), pinned_by = ?
+                WHERE id = ?
+                """, arguments: [env.adminUserId, pinnedMessageId])
+        }
+
+        let inbox = try env.chat.getUnifiedInbox(userId: env.adminUserId)
+        let qaItem = try #require(inbox.first { $0.id == qaChannelId })
+        let rfiItem = try #require(inbox.first { $0.id == rfiChannelId })
+
+        #expect(qaItem.channelType == "qa")
+        #expect(rfiItem.channelType == "rfi")
+        #expect(qaItem.hasPinnedMessages)
+        #expect(inbox.first?.id == qaChannelId)
+    }
+
     @Test("Unread count")
     func testUnreadCount() throws {
         let env = try E2ETestHelpers.setUp()
