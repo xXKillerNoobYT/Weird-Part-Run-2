@@ -124,6 +124,7 @@ extension AppDatabase {
         registerMigration085CoOccurrenceHierarchyUniqueness(&migrator)
         registerMigration086PartsAutoAddWishlistToggle(&migrator)
         registerMigration087WishlistLocationRouting(&migrator)
+        registerMigration088WarehouseOnboardingNineStepProgress(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5213,6 +5214,19 @@ extension AppDatabase {
                 """)
             try db.execute(sql: "DROP TABLE companion_feedback")
             try db.execute(sql: "ALTER TABLE companion_feedback_new RENAME TO companion_feedback")
+        }
+    }
+
+    private static func registerMigration088WarehouseOnboardingNineStepProgress(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("088_warehouse_onboarding_nine_step_progress") { db in
+            try addColumnIfMissing(db, table: "warehouse_onboarding_progress", column: "completed_steps", type: .text)
+            try addColumnIfMissing(db, table: "warehouse_onboarding_progress", column: "skipped_steps", type: .text)
+            try db.execute(sql: """
+                UPDATE warehouse_onboarding_progress
+                SET total_steps = 9
+                WHERE flow_type = 'floor_plan'
+                  AND total_steps < 9
+                """)
         }
     }
 }

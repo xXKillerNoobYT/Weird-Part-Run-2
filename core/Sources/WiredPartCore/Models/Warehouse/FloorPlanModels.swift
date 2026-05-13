@@ -295,6 +295,8 @@ public struct WarehouseOnboardingProgress: Codable, FetchableRecord, MutablePers
     public var flowType: String
     public var totalSteps: Int
     public var stepsProgress: String?
+    public var completedSteps: String?
+    public var skippedSteps: String?
     public var startedAt: String?
     public var completedAt: String?
     public var updatedAt: String?
@@ -312,6 +314,8 @@ public struct WarehouseOnboardingProgress: Codable, FetchableRecord, MutablePers
         case flowType = "flow_type"
         case totalSteps = "total_steps"
         case stepsProgress = "steps_progress"
+        case completedSteps = "completed_steps"
+        case skippedSteps = "skipped_steps"
         case startedAt = "started_at"
         case completedAt = "completed_at"
         case updatedAt = "updated_at"

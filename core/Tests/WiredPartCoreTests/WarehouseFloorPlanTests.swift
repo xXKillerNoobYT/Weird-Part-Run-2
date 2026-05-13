@@ -307,21 +307,90 @@ struct WarehouseFloorPlanTests {
         // Start onboarding
         let progress = try env.warehouse.startOnboarding()
         #expect(progress.currentStep == 1)
+        #expect(progress.flowType == "floor_plan")
+        #expect(progress.totalSteps == 9)
+        #expect(WarehouseService.completedSteps(for: progress).isEmpty)
+        #expect(WarehouseService.skippedSteps(for: progress).isEmpty)
 
         // Update step
         try env.warehouse.updateOnboardingStep(
             id: progress.id!,
             currentStep: 2,
-            step1Complete: true
+            step1Complete: true,
+            completedSteps: [1],
+            skippedSteps: []
         )
+
+        let updated = try env.db.writer.read { db in
+            try WarehouseOnboardingProgress.fetchOne(db, key: progress.id!)
+        }
+        #expect(updated?.currentStep == 2)
+        #expect(updated?.totalSteps == 9)
+        #expect(WarehouseService.completedSteps(for: updated!).contains(1))
 
         // Complete
         try env.warehouse.completeOnboarding(id: progress.id!)
 
-        // Verify completion by checking the record was updated
         let after = try env.warehouse.getOnboardingProgress()
-        // After completion, either record shows completed or is cleared
-        #expect(after != nil || initial == nil)
+        #expect(after == nil)
+    }
+
+    @Test("Warehouse onboarding persists completed and skipped steps for the 9-step wizard")
+    func testNineStepOnboardingStepStatePersistence() throws {
+        let env = try freshEnv()
+
+        let progress = try env.warehouse.startOnboarding()
+        guard let progressId = progress.id else {
+            #expect(Bool(false), "startOnboarding must return a record with an id")
+            return
+        }
+
+        try env.warehouse.updateOnboardingStep(
+            id: progressId,
+            currentStep: 7,
+            step1Complete: true,
+            step2Complete: true,
+            step3Complete: true,
+            completedSteps: [1, 2, 3, 4, 5, 6],
+            skippedSteps: [5]
+        )
+
+        let resumed = try env.warehouse.getOnboardingProgress()
+        #expect(resumed?.currentStep == 7)
+        #expect(resumed?.flowType == "floor_plan")
+        #expect(resumed?.totalSteps == 9)
+        #expect(WarehouseService.completedSteps(for: resumed!) == Set([1, 2, 3, 4, 5, 6]))
+        #expect(WarehouseService.skippedSteps(for: resumed!) == Set([5]))
+    }
+
+    @Test("Warehouse onboarding reads legacy step4 completed-step JSON compatibly")
+    func testLegacyOnboardingStep4ProgressReadCompatibility() throws {
+        let env = try freshEnv()
+        let progress = try env.warehouse.startOnboarding()
+        guard let progressId = progress.id else {
+            #expect(Bool(false), "startOnboarding must return a record with an id")
+            return
+        }
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE warehouse_onboarding_progress
+                    SET current_step = 6,
+                        step1_complete = 1,
+                        step2_complete = 1,
+                        step3_complete = 1,
+                        completed_steps = NULL,
+                        step4_progress = '[4,5]'
+                    WHERE id = ?
+                    """,
+                arguments: [progressId]
+            )
+        }
+
+        let legacy = try env.warehouse.getOnboardingProgress()
+        #expect(legacy?.currentStep == 6)
+        #expect(WarehouseService.completedSteps(for: legacy!) == Set([1, 2, 3, 4, 5]))
     }
 
     // MARK: - Flow Onboarding (startFlowOnboarding / updateFlowProgress)

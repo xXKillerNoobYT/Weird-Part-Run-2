@@ -59,6 +59,7 @@ struct WarehouseOnboardingWizard: View {
     @State private var loadError: String?
     @State private var isSaving = false
     @State private var completedWizardSteps: Set<Int> = []
+    @State private var skippedWizardSteps: Set<Int> = []
 
     // Step 1 state
     @State private var planName = "Main Warehouse"
@@ -194,10 +195,13 @@ struct WarehouseOnboardingWizard: View {
                         Circle()
                             .fill(step == currentStep ? .blue :
                                   completedWizardSteps.contains(step) ? .green :
+                                  skippedWizardSteps.contains(step) ? .orange :
                                   .gray.opacity(0.3))
                             .frame(width: 10, height: 10)
                             .onTapGesture {
-                                if step <= currentStep || completedWizardSteps.contains(step) {
+                                if step <= currentStep
+                                    || completedWizardSteps.contains(step)
+                                    || skippedWizardSteps.contains(step) {
                                     withAnimation { currentStep = step }
                                 }
                             }
@@ -285,8 +289,7 @@ struct WarehouseOnboardingWizard: View {
             // Skip for Now (steps 2-8 only)
             if currentStep > 1 && currentStep < totalSteps {
                 Button {
-                    completedWizardSteps.insert(currentStep)
-                    withAnimation { currentStep += 1 }
+                    skipCurrentStep()
                 } label: {
                     Text("Skip")
                         .font(.subheadline)
@@ -318,12 +321,8 @@ struct WarehouseOnboardingWizard: View {
                 if existing.step2Complete { completedWizardSteps.insert(2) }
                 if existing.step3Complete { completedWizardSteps.insert(3) }
 
-                // Restore extended step data from JSON
-                if let stepData = existing.step4Progress,
-                   let data = stepData.data(using: .utf8),
-                   let steps = try? JSONDecoder().decode(Set<Int>.self, from: data) {
-                    completedWizardSteps.formUnion(steps)
-                }
+                completedWizardSteps.formUnion(WarehouseService.completedSteps(for: existing))
+                skippedWizardSteps.formUnion(WarehouseService.skippedSteps(for: existing))
             }
         } catch {
             loadError = userFriendlyError(error, context: "load warehouse setup")
@@ -348,13 +347,17 @@ struct WarehouseOnboardingWizard: View {
 
                 if progress == nil {
                     progress = try service.startOnboarding(floorPlanId: plan.id)
-                } else if let id = progress?.id {
+                }
+                if let id = progress?.id {
+                    completedWizardSteps.insert(1)
                     try service.updateOnboardingStep(
                         id: id, currentStep: 2,
-                        step1Complete: true, floorPlanId: plan.id
+                        step1Complete: true,
+                        floorPlanId: plan.id,
+                        completedSteps: completedWizardSteps,
+                        skippedSteps: skippedWizardSteps
                     )
                 }
-                completedWizardSteps.insert(1)
                 withAnimation { currentStep = 2 }
             } catch {
                 loadError = userFriendlyError(error, context: "create floor plan")
@@ -363,47 +366,46 @@ struct WarehouseOnboardingWizard: View {
         }
 
         completedWizardSteps.insert(currentStep)
-        saveProgressToDb()
-        withAnimation { currentStep = min(currentStep + 1, totalSteps) }
+        let nextStep = min(currentStep + 1, totalSteps)
+        if saveProgressToDb(currentStepToStore: nextStep) {
+            withAnimation { currentStep = nextStep }
+        }
     }
 
-    private func saveProgressToDb() {
-        guard let service = appCore.warehouseService, let id = progress?.id else { return }
-        do {
-            // Encode extended completed steps as JSON for steps 4+
-            let extendedSteps = completedWizardSteps.filter { $0 >= 4 }
-            let stepDataJson = try? String(data: JSONEncoder().encode(extendedSteps), encoding: .utf8)
+    private func skipCurrentStep() {
+        skippedWizardSteps.insert(currentStep)
+        completedWizardSteps.insert(currentStep)
+        let nextStep = min(currentStep + 1, totalSteps)
+        if saveProgressToDb(currentStepToStore: nextStep) {
+            withAnimation { currentStep = nextStep }
+        }
+    }
 
-            let nextStep = min(currentStep + 1, totalSteps)
+    @discardableResult
+    private func saveProgressToDb(currentStepToStore: Int) -> Bool {
+        guard let service = appCore.warehouseService, let id = progress?.id else { return true }
+        do {
             try service.updateOnboardingStep(
                 id: id,
-                currentStep: nextStep,
+                currentStep: currentStepToStore,
                 step1Complete: completedWizardSteps.contains(1),
                 step2Complete: completedWizardSteps.contains(2),
                 step3Complete: completedWizardSteps.contains(3),
-                step4Progress: stepDataJson
+                completedSteps: completedWizardSteps,
+                skippedSteps: skippedWizardSteps
             )
+            return true
         } catch {
             loadError = userFriendlyError(error, context: "save progress")
+            return false
         }
     }
 
     private func saveAndExit() {
         isSaving = true
-        saveProgressToDb()
-        // Also persist current step for resume (non-fatal if this fails — main
-        // progress is already saved by saveProgressToDb; resume position may
-        // be off by one step at worst).
-        if let service = appCore.warehouseService, let id = progress?.id {
-            do {
-                try service.updateOnboardingStep(id: id, currentStep: currentStep)
-            } catch {
-                // Non-fatal: intentionally ignored; main progress already saved above
-            }
-        }
+        let saved = saveProgressToDb(currentStepToStore: currentStep)
         isSaving = false
-        // Only dismiss if save succeeded (loadError is set by saveProgressToDb on failure)
-        if loadError == nil {
+        if saved {
             dismiss()
         }
     }

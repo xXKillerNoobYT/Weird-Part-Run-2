@@ -2877,7 +2877,9 @@ public final class WarehouseService: Sendable {
                 step2Complete: false,
                 step3Complete: false,
                 flowType: flowType,
-                totalSteps: totalSteps
+                totalSteps: totalSteps,
+                completedSteps: nil,
+                skippedSteps: nil
             )
             try progress.insert(dbConn)
             return progress
@@ -3556,7 +3558,9 @@ public final class WarehouseService: Sendable {
                 step2Complete: false,
                 step3Complete: false,
                 flowType: "floor_plan",
-                totalSteps: 6
+                totalSteps: 9,
+                completedSteps: try Self.encodeStepSet([]),
+                skippedSteps: try Self.encodeStepSet([])
             )
             try progress.insert(dbConn)
             return progress
@@ -3568,11 +3572,16 @@ public final class WarehouseService: Sendable {
         id: Int64, currentStep: Int,
         step1Complete: Bool? = nil, step2Complete: Bool? = nil, step3Complete: Bool? = nil,
         step4Progress: String? = nil, step5Progress: String? = nil, step6Progress: String? = nil,
-        floorPlanId: Int64? = nil
+        floorPlanId: Int64? = nil,
+        completedSteps: Set<Int>? = nil,
+        skippedSteps: Set<Int>? = nil
     ) throws {
         try db.writer.write { dbConn in
             guard var progress = try WarehouseOnboardingProgress.fetchOne(dbConn, key: id) else { return }
             progress.currentStep = currentStep
+            if progress.flowType == "floor_plan", progress.totalSteps < 9 {
+                progress.totalSteps = 9
+            }
             if let s1 = step1Complete { progress.step1Complete = s1 }
             if let s2 = step2Complete { progress.step2Complete = s2 }
             if let s3 = step3Complete { progress.step3Complete = s3 }
@@ -3580,6 +3589,12 @@ public final class WarehouseService: Sendable {
             if let s5 = step5Progress { progress.step5Progress = s5 }
             if let s6 = step6Progress { progress.step6Progress = s6 }
             if let fp = floorPlanId { progress.floorPlanId = fp }
+            if let completedSteps {
+                progress.completedSteps = try Self.encodeStepSet(completedSteps)
+            }
+            if let skippedSteps {
+                progress.skippedSteps = try Self.encodeStepSet(skippedSteps)
+            }
             try progress.update(dbConn)
         }
     }
@@ -3592,6 +3607,38 @@ public final class WarehouseService: Sendable {
                 arguments: [id]
             )
         }
+    }
+
+    public static func encodeStepSet(_ steps: Set<Int>) throws -> String {
+        let normalized = steps.filter { $0 > 0 }.sorted()
+        let data = try JSONEncoder().encode(normalized)
+        return String(data: data, encoding: .utf8) ?? "[]"
+    }
+
+    public static func decodeStepSet(_ json: String?) -> Set<Int> {
+        guard let json,
+              let data = json.data(using: .utf8),
+              let steps = try? JSONDecoder().decode([Int].self, from: data) else {
+            return []
+        }
+        return Set(steps.filter { $0 > 0 })
+    }
+
+    public static func completedSteps(for progress: WarehouseOnboardingProgress) -> Set<Int> {
+        var completed = decodeStepSet(progress.completedSteps)
+        if progress.step1Complete { completed.insert(1) }
+        if progress.step2Complete { completed.insert(2) }
+        if progress.step3Complete { completed.insert(3) }
+
+        // Legacy 9-step wizard builds encoded completed steps >= 4 in step4_progress.
+        if progress.completedSteps == nil {
+            completed.formUnion(decodeStepSet(progress.step4Progress).filter { $0 >= 4 })
+        }
+        return completed
+    }
+
+    public static func skippedSteps(for progress: WarehouseOnboardingProgress) -> Set<Int> {
+        decodeStepSet(progress.skippedSteps)
     }
 
     // =========================================================================
