@@ -699,6 +699,7 @@ private struct SupplierDetailSheet: View {
 
     @State private var linkedBrands: [(brandId: Int64, brandName: String, partCount: Int, carryStatus: String)] = []
     @State private var recentPOs: [(poId: Int64, poNumber: String, status: String, total: Double, date: String)] = []
+    @State private var timelineEvents: [PartsService.SupplierTimelineEvent] = []
     @State private var supplierScores: PartsService.SupplierScores?
     @State private var contacts: [PartsService.SupplierContact] = []
     @State private var partCount = 0
@@ -746,10 +747,13 @@ private struct SupplierDetailSheet: View {
                 // Section 8: Parts Summary (count only — pricing is on the Pricing page)
                 partsSummarySection
 
-                // Section 9: Recent Orders
+                // Section 9: CRM/history timeline
+                timelineSection
+
+                // Section 10: Recent Orders
                 recentOrdersSection
 
-                // Section 10: Notes
+                // Section 11: Notes
                 if let notes = supplier.notes, !notes.isEmpty {
                     Section("Notes") {
                         Text(notes)
@@ -1175,6 +1179,48 @@ private struct SupplierDetailSheet: View {
     // MARK: - Recent Orders
 
     @ViewBuilder
+    private var timelineSection: some View {
+        Section {
+            if timelineEvents.isEmpty {
+                Text("No supplier activity yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(timelineEvents) { event in
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: timelineIcon(for: event.kind))
+                            .font(.subheadline)
+                            .foregroundStyle(timelineColor(for: event.kind))
+                            .frame(width: 24, height: 24)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(event.title)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                Spacer()
+                                Text(String(event.occurredAt.prefix(10)))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            if let detail = event.detail, !detail.isEmpty {
+                                Text(detail)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(3)
+                            }
+                        }
+                    }
+                    .frame(minHeight: 44)
+                }
+            }
+        } header: {
+            Text("History Timeline (\(timelineEvents.count))")
+        }
+    }
+
+    @ViewBuilder
     private var recentOrdersSection: some View {
         Section {
             if recentPOs.isEmpty {
@@ -1233,6 +1279,26 @@ private struct SupplierDetailSheet: View {
         return .red
     }
 
+    private func timelineIcon(for kind: String) -> String {
+        switch kind {
+        case "purchase_order": return "shippingbox.fill"
+        case "contact": return "person.crop.circle.badge.plus"
+        case "brand": return "tag.fill"
+        case "note": return "note.text"
+        default: return "clock.arrow.circlepath"
+        }
+    }
+
+    private func timelineColor(for kind: String) -> Color {
+        switch kind {
+        case "purchase_order": return .blue
+        case "contact": return .green
+        case "brand": return .purple
+        case "note": return .orange
+        default: return .secondary
+        }
+    }
+
     private func loadAllDetails() async {
         guard let service = appCore.partsService else {
             loadError = "Parts service not available"
@@ -1242,6 +1308,7 @@ private struct SupplierDetailSheet: View {
         do {
             linkedBrands = try service.getSupplierBrands(supplierId: supplier.id)
             recentPOs = try service.getSupplierRecentPOs(supplierId: supplier.id)
+            timelineEvents = try service.getSupplierTimeline(supplierId: supplier.id)
             partCount = try service.getSupplierPartCount(supplierId: supplier.id)
             contacts = try service.getSupplierContacts(supplierId: supplier.id)
             supplierScores = try service.calculateSupplierScores(supplierId: supplier.id)

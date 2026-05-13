@@ -170,6 +170,65 @@ struct PartsServiceExtTests {
         #expect(suppliers.contains(where: { $0.supplier.name == "ElecSupply Co" }))
     }
 
+    @Test("Supplier timeline includes CRM, brand, and order history newest first")
+    func testSupplierTimelineIncludesHistoryEvents() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try env.parts.createSupplier(
+            name: "Timeline Supply",
+            contactName: "Taylor Rep",
+            notes: "Prefers early pickup windows."
+        )
+        let brandId = try env.parts.createBrand(name: "Timeline Brand")
+        _ = try env.parts.linkBrandToSupplier(brandId: brandId, supplierId: supplierId)
+        try env.parts.addSupplierContact(
+            supplierId: supplierId,
+            firstName: "Avery",
+            lastName: "Contact",
+            role: "Inside Sales",
+            phone: "555-0100",
+            email: "avery@example.com",
+            isPrimary: true
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE suppliers
+                SET notes = 'Prefers early pickup windows.',
+                    created_at = '2026-05-01 08:00:00',
+                    updated_at = '2026-05-02 08:00:00'
+                WHERE id = ?
+                """, arguments: [supplierId])
+            try db.execute(sql: """
+                UPDATE entity_contacts
+                SET created_at = '2026-05-03 08:00:00',
+                    updated_at = '2026-05-03 08:00:00'
+                WHERE entity_type = 'supplier' AND entity_id = ?
+                """, arguments: [supplierId])
+            try db.execute(sql: """
+                UPDATE brand_supplier_links
+                SET created_at = '2026-05-04 08:00:00'
+                WHERE supplier_id = ?
+                """, arguments: [supplierId])
+            try db.execute(sql: """
+                INSERT INTO purchase_orders
+                    (po_number, supplier_id, status, order_date, expected_delivery, actual_delivery,
+                     total_cost, supplier_notes, created_at, updated_at)
+                VALUES
+                    ('PO-TL-1', ?, 'received', '2026-05-10 08:00:00', '2026-05-12 08:00:00', '2026-05-13 23:00:00',
+                     125.50, 'Delivered complete.', '2026-05-10 08:00:00', '2026-05-13 23:00:00')
+                """, arguments: [supplierId])
+        }
+
+        let events = try env.parts.getSupplierTimeline(supplierId: supplierId)
+
+        #expect(events.first?.kind == "purchase_order")
+        #expect(events.first?.title == "PO-TL-1 Received")
+        #expect(events.first?.detail?.contains("$125.50") == true)
+        #expect(events.contains { $0.kind == "contact" && $0.title.contains("Avery Contact") })
+        #expect(events.contains { $0.kind == "brand" && $0.title.contains("Timeline Brand") })
+        #expect(events.contains { $0.kind == "note" && ($0.detail?.contains("early pickup") == true) })
+    }
+
     @Test("Part-supplier link")
     func testPartSupplierLink() throws {
         let env = try E2ETestHelpers.setUp()

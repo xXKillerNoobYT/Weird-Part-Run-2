@@ -5996,6 +5996,146 @@ public final class PartsService: Sendable {
         }
     }
 
+    public struct SupplierTimelineEvent: Sendable, Identifiable {
+        public let id: String
+        public let occurredAt: String
+        public let kind: String
+        public let title: String
+        public let detail: String?
+        public let relatedId: Int64?
+    }
+
+    /// Build a read-only CRM/history timeline for a supplier from existing local records.
+    public func getSupplierTimeline(supplierId: Int64, limit: Int = 20) throws -> [SupplierTimelineEvent] {
+        try db.writer.read { dbConn in
+            var events: [SupplierTimelineEvent] = []
+
+            if let supplier = try Row.fetchOne(dbConn, sql: """
+                SELECT id, name, notes, created_at, updated_at
+                FROM suppliers
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [supplierId]) {
+                if let createdAt = supplier["created_at"] as String?, !createdAt.isEmpty {
+                    events.append(SupplierTimelineEvent(
+                        id: "supplier-created-\(supplierId)",
+                        occurredAt: createdAt,
+                        kind: "supplier",
+                        title: "Supplier profile created",
+                        detail: supplier["name"] as String?,
+                        relatedId: supplierId
+                    ))
+                }
+
+                let notes = (supplier["notes"] as String?)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let updatedAt = supplier["updated_at"] as String?,
+                   !updatedAt.isEmpty,
+                   let notes,
+                   !notes.isEmpty {
+                    events.append(SupplierTimelineEvent(
+                        id: "supplier-notes-\(supplierId)-\(updatedAt)",
+                        occurredAt: updatedAt,
+                        kind: "note",
+                        title: "Supplier notes updated",
+                        detail: notes,
+                        relatedId: supplierId
+                    ))
+                }
+            }
+
+            let poRows = try Row.fetchAll(dbConn, sql: """
+                SELECT id, po_number, status, order_date, expected_delivery, actual_delivery,
+                       total_cost, supplier_notes, created_at, updated_at
+                FROM purchase_orders
+                WHERE supplier_id = ? AND deleted_at IS NULL
+                ORDER BY COALESCE(actual_delivery, order_date, created_at) DESC
+                LIMIT ?
+                """, arguments: [supplierId, limit])
+            for row in poRows {
+                let poId = row["id"] as Int64? ?? 0
+                let poNumber = row["po_number"] as String? ?? "PO #\(poId)"
+                let status = row["status"] as String? ?? "unknown"
+                let occurredAt = row["actual_delivery"] as String?
+                    ?? row["order_date"] as String?
+                    ?? row["created_at"] as String?
+                    ?? row["updated_at"] as String?
+                    ?? ""
+                let total = row["total_cost"] as Double? ?? 0
+                let supplierNotes = (row["supplier_notes"] as String?)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let statusText = status.replacingOccurrences(of: "_", with: " ").capitalized
+                let amountText = String(format: "$%.2f", total)
+                let detail = [statusText, amountText, supplierNotes].compactMap { value in
+                    guard let value, !value.isEmpty else { return nil }
+                    return value
+                }.joined(separator: " · ")
+
+                events.append(SupplierTimelineEvent(
+                    id: "po-\(poId)",
+                    occurredAt: occurredAt,
+                    kind: "purchase_order",
+                    title: "\(poNumber) \(statusText)",
+                    detail: detail.isEmpty ? nil : detail,
+                    relatedId: poId
+                ))
+            }
+
+            let contactRows = try Row.fetchAll(dbConn, sql: """
+                SELECT id, first_name, last_name, role, is_primary, created_at, updated_at
+                FROM entity_contacts
+                WHERE entity_type = 'supplier' AND entity_id = ? AND deleted_at IS NULL
+                ORDER BY created_at DESC
+                LIMIT ?
+                """, arguments: [supplierId, limit])
+            for row in contactRows {
+                let contactId = row["id"] as Int64? ?? 0
+                let firstName = row["first_name"] as String? ?? ""
+                let lastName = row["last_name"] as String? ?? ""
+                let role = row["role"] as String?
+                let isPrimary = row["is_primary"] as Int? ?? 0
+                let occurredAt = row["created_at"] as String? ?? row["updated_at"] as String? ?? ""
+                let name = "\(firstName) \(lastName)".trimmingCharacters(in: .whitespaces)
+                let detail = [role, isPrimary == 1 ? "Primary contact" : nil].compactMap { $0 }.joined(separator: " · ")
+
+                events.append(SupplierTimelineEvent(
+                    id: "contact-\(contactId)",
+                    occurredAt: occurredAt,
+                    kind: "contact",
+                    title: name.isEmpty ? "Contact linked" : "Contact linked: \(name)",
+                    detail: detail.isEmpty ? nil : detail,
+                    relatedId: contactId
+                ))
+            }
+
+            let brandRows = try Row.fetchAll(dbConn, sql: """
+                SELECT bs.id, b.name, bs.carry_status, bs.created_at
+                FROM brand_supplier_links bs
+                JOIN brands b ON b.id = bs.brand_id AND b.deleted_at IS NULL
+                WHERE bs.supplier_id = ? AND bs.deleted_at IS NULL
+                ORDER BY bs.created_at DESC
+                LIMIT ?
+                """, arguments: [supplierId, limit])
+            for row in brandRows {
+                let linkId = row["id"] as Int64? ?? 0
+                let brandName = row["name"] as String? ?? "Brand"
+                let carryStatus = row["carry_status"] as String? ?? "carry_on_shelf"
+                let statusText = carryStatus == "need_to_order" ? "Need to order" : "Carried on shelf"
+
+                events.append(SupplierTimelineEvent(
+                    id: "brand-link-\(linkId)",
+                    occurredAt: row["created_at"] as String? ?? "",
+                    kind: "brand",
+                    title: "Brand linked: \(brandName)",
+                    detail: statusText,
+                    relatedId: linkId
+                ))
+            }
+
+            return Array(events
+                .filter { !$0.occurredAt.isEmpty }
+                .sorted { $0.occurredAt > $1.occurredAt }
+                .prefix(limit))
+        }
+    }
+
     /// Count total parts this supplier is linked to.
     public func getSupplierPartCount(supplierId: Int64) throws -> Int {
         try db.writer.read { dbConn in
