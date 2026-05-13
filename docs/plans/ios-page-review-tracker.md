@@ -57,6 +57,27 @@
 
 ---
 
+## T2-04 Smart Card Filter Conversion Inventory — WEI-811
+
+Source: WEI-451 / GH#42 item T2-04. Inventory verified 2026-05-12 by source scan of the archived Xcode prompt `xcode-ai/fix-prompts/done/61B-old-chips-to-smart-cards.md` and current Swift files. Screenshot verification completed in WEI-824 with iPhone 375x812 @3x and iPad 810x1080 @2x simulator captures.
+
+| Page | Old pattern before 61B | Current implementation | Count source | Screenshot status |
+|------|-------------------------|------------------------|--------------|-------------------|
+| `IOSPurchaseOrdersPage` | Horizontal status chip bar for PO statuses | `SmartFilterCard` status picker with All first | `allPurchaseOrders` via `countForStatus(_:)` | Verified in WEI-824: iPhone + iPad screenshots attached |
+| `IOSJPOsPage` | Horizontal status chip bar for JPO statuses | `SmartFilterCard` status picker with All first | `allJPOs` via `countForStatus(_:)` | Verified in WEI-824: iPhone + iPad screenshots attached |
+| `IOSVehiclesPage` | Horizontal status pill bar for vehicle statuses | `SmartFilterCard` status picker with All first | `allVehicles` via `countForStatus(_:)` | Verified in WEI-824: iPhone + iPad screenshots attached |
+| `IOSNotebooksListPage` | Horizontal type chip bar for notebook types | `SmartFilterCard` type picker with All first | `allNotebooks` via `countForType(_:)` | Verified in WEI-824: iPhone + iPad screenshots attached |
+| `IOSManageJobsPage` | Horizontal status chip bar for job statuses | `SmartFilterCard` filter bar with All first | `allJobs` via `countForStatus(_:)` | Verified in WEI-824: iPhone + iPad screenshots attached |
+| `IOSTimeOffPage` | Horizontal status chip bar for time-off statuses | `SmartFilterCard` status picker with All first | `allRequests` via `countForStatus(_:)` | Verified in WEI-824: iPhone + iPad screenshots attached |
+
+Notes:
+- Shared component: `Weird Parts IOS/Weird Parts IOS/Shared/SmartFilterCard.swift`.
+- Source verification: all six pages use the shared component and include counts derived from the unfiltered loaded dataset.
+- Visual verification: WEI-824 confirmed all 12 PNG attachments are present and dimension-checked across the six pages.
+- Follow-up candidate found during scan: `IOSToolCheckoutsPage` still has a binary capsule Active/All toggle, but the current `ToolsService.listCheckouts(active:)` API does not expose enough returned/active data to compute accurate smart-card counts without a service change.
+
+---
+
 ## Completed Reviews — What Was Done & Decisions Made
 
 ### Foundation Fixes (Prompts 01-05) — DONE
