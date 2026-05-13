@@ -406,7 +406,7 @@ struct AuthServiceTests {
         _ = try auth.getLocalUserProfile(token: token) // precondition: token valid
         try auth.revokeLocalSession(token: token)
 
-        #expect(throws: AuthService.AuthError.self) {
+        #expect(throws: AuthService.AuthError.sessionRevoked) {
             _ = try auth.getLocalUserProfile(token: token)
         }
     }
@@ -1133,4 +1133,3 @@ struct AuthServiceTests {
         #expect(duplicates == 0, "INSERT OR IGNORE must not create duplicate hat_permissions rows")
     }
 }
-

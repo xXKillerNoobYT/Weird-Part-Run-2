@@ -26,19 +26,6 @@ public final class AuthService: Sendable {
 
     public init(db: AppDatabase) {
         self.db = db
-        try? db.writer.write { dbConn in
-            try dbConn.execute(sql: """
-                CREATE TABLE IF NOT EXISTS auth_token_sessions (
-                    token_id TEXT PRIMARY KEY,
-                    user_id INTEGER NOT NULL,
-                    token_type TEXT NOT NULL,
-                    parent_refresh_id TEXT,
-                    expires_at_ms REAL NOT NULL,
-                    revoked_at TEXT,
-                    created_at TEXT NOT NULL
-                )
-            """)
-        }
     }
 
     // MARK: - Types
@@ -592,8 +579,13 @@ public final class AuthService: Sendable {
             throw AuthError.sessionRevoked
         }
 
-        try revokeTokenById(payload.jti)
-        return try issueSessionTokens(forUserId: payload.sub, parentRefreshId: payload.jti)
+        let tokens = try Self.makeSessionTokens(forUserId: payload.sub)
+        try db.writer.write { dbConn in
+            let now = Self.currentTimestamp()
+            try Self.revokeTokenById(payload.jti, in: dbConn, revokedAt: now)
+            try Self.insertSessionTokens(tokens, userId: payload.sub, parentRefreshId: payload.jti, createdAt: now, in: dbConn)
+        }
+        return (tokens.access, tokens.refresh)
     }
 
     /// Revoke an access or refresh token string.
@@ -866,7 +858,7 @@ public final class AuthService: Sendable {
     /// Hash a PIN with PBKDF2-HMAC-SHA256. Returns `pbkdf2$<iterations>$<hex>`.
     /// The per-user salt is stored separately in the `pin_salt` column.
     static func hashPin(_ pin: String, salt: String) -> String {
-        let password = Array((pin + ":" + salt).utf8)
+        let password = Array(pin.utf8)
         let saltBytes = Array(salt.utf8)
         var derivedKey = [UInt8](repeating: 0, count: 32) // 256-bit output
         let status = CCKeyDerivationPBKDF(
@@ -894,9 +886,10 @@ public final class AuthService: Sendable {
               let iterations = UInt32(parts[1]) else { return false }
         let expectedHex = String(parts[2])
 
-        let password = Array((pin + ":" + salt).utf8)
+        guard let expectedBytes = hexBytes(expectedHex) else { return false }
+        let password = Array(pin.utf8)
         let saltBytes = Array(salt.utf8)
-        var derivedKey = [UInt8](repeating: 0, count: 32)
+        var derivedKey = [UInt8](repeating: 0, count: expectedBytes.count)
         let status = CCKeyDerivationPBKDF(
             CCPBKDFAlgorithm(kCCPBKDF2),
             password, password.count,
@@ -906,8 +899,7 @@ public final class AuthService: Sendable {
             &derivedKey, derivedKey.count
         )
         guard status == kCCSuccess else { return false }
-        let computedHex = derivedKey.map { String(format: "%02x", $0) }.joined()
-        return computedHex == expectedHex
+        return constantTimeEqual(derivedKey, expectedBytes)
     }
 
     // MARK: - Legacy Hash Functions (verification only)
@@ -1030,8 +1022,7 @@ public final class AuthService: Sendable {
         let payloadB64 = String(parts[0])
         let sigB64 = String(parts[1])
         guard let sigData = Data(base64Encoded: sigB64) else { return nil }
-        let expected = HMAC<SHA256>.authenticationCode(for: Data(payloadB64.utf8), using: signingKey)
-        guard Data(sigData) == Data(expected) else { return nil }
+        guard HMAC<SHA256>.isValidAuthenticationCode(sigData, authenticating: Data(payloadB64.utf8), using: signingKey) else { return nil }
 
         guard let data = Data(base64Encoded: payloadB64) else { return nil }
         guard let payload = try? JSONDecoder().decode(TokenPayload.self, from: data) else { return nil }
@@ -1039,41 +1030,67 @@ public final class AuthService: Sendable {
         return payload
     }
 
-    private func issueSessionTokens(forUserId userId: Int64, parentRefreshId: String?) throws -> (accessToken: String, refreshToken: String) {
+    private struct SessionTokenPair {
+        let access: String
+        let refresh: String
+        let accessPayload: TokenPayload
+        let refreshPayload: TokenPayload
+    }
+
+    private static func makeSessionTokens(forUserId userId: Int64) throws -> SessionTokenPair {
         guard let access = Self.generateLocalToken(userId: userId),
               let refresh = Self.generateLocalRefreshToken(userId: userId),
               let accessPayload = Self.parseLocalToken(access),
               let refreshPayload = Self.parseLocalToken(refresh) else {
             throw AuthError.invalidToken
         }
+        return SessionTokenPair(access: access, refresh: refresh, accessPayload: accessPayload, refreshPayload: refreshPayload)
+    }
+
+    private func issueSessionTokens(forUserId userId: Int64, parentRefreshId: String?) throws -> (accessToken: String, refreshToken: String) {
+        let tokens = try Self.makeSessionTokens(forUserId: userId)
 
         try db.writer.write { dbConn in
             let now = Self.currentTimestamp()
-            try dbConn.execute(
-                sql: """
-                    INSERT INTO auth_token_sessions (token_id, user_id, token_type, parent_refresh_id, expires_at_ms, revoked_at, created_at)
-                    VALUES (?, ?, 'local_access', ?, ?, NULL, ?)
-                """,
-                arguments: [accessPayload.jti, userId, refreshPayload.jti, accessPayload.exp, now]
-            )
-            try dbConn.execute(
-                sql: """
-                    INSERT INTO auth_token_sessions (token_id, user_id, token_type, parent_refresh_id, expires_at_ms, revoked_at, created_at)
-                    VALUES (?, ?, 'local_refresh', ?, ?, NULL, ?)
-                """,
-                arguments: [refreshPayload.jti, userId, parentRefreshId, refreshPayload.exp, now]
-            )
+            try Self.insertSessionTokens(tokens, userId: userId, parentRefreshId: parentRefreshId, createdAt: now, in: dbConn)
         }
-        return (access, refresh)
+        return (tokens.access, tokens.refresh)
     }
 
     private func revokeTokenById(_ tokenId: String) throws {
         try db.writer.write { dbConn in
-            try dbConn.execute(
-                sql: "UPDATE auth_token_sessions SET revoked_at = ? WHERE token_id = ?",
-                arguments: [Self.currentTimestamp(), tokenId]
-            )
+            try Self.revokeTokenById(tokenId, in: dbConn, revokedAt: Self.currentTimestamp())
         }
+    }
+
+    private static func insertSessionTokens(
+        _ tokens: SessionTokenPair,
+        userId: Int64,
+        parentRefreshId: String?,
+        createdAt: String,
+        in dbConn: Database
+    ) throws {
+        try dbConn.execute(
+            sql: """
+                INSERT INTO auth_token_sessions (token_id, user_id, token_type, parent_refresh_id, expires_at_ms, revoked_at, created_at)
+                VALUES (?, ?, 'local_access', ?, ?, NULL, ?)
+            """,
+            arguments: [tokens.accessPayload.jti, userId, tokens.refreshPayload.jti, tokens.accessPayload.exp, createdAt]
+        )
+        try dbConn.execute(
+            sql: """
+                INSERT INTO auth_token_sessions (token_id, user_id, token_type, parent_refresh_id, expires_at_ms, revoked_at, created_at)
+                VALUES (?, ?, 'local_refresh', ?, ?, NULL, ?)
+            """,
+            arguments: [tokens.refreshPayload.jti, userId, parentRefreshId, tokens.refreshPayload.exp, createdAt]
+        )
+    }
+
+    private static func revokeTokenById(_ tokenId: String, in dbConn: Database, revokedAt: String) throws {
+        try dbConn.execute(
+            sql: "UPDATE auth_token_sessions SET revoked_at = ? WHERE token_id = ?",
+            arguments: [revokedAt, tokenId]
+        )
     }
 
     private func isTokenActive(tokenId: String, expectedType: String) throws -> Bool {
@@ -1101,6 +1118,29 @@ public final class AuthService: Sendable {
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         formatter.timeZone = TimeZone(identifier: "UTC")
         return formatter.string(from: Date())
+    }
+
+    private static func hexBytes(_ hex: String) -> [UInt8]? {
+        guard hex.count.isMultiple(of: 2) else { return nil }
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(hex.count / 2)
+        var index = hex.startIndex
+        while index < hex.endIndex {
+            let next = hex.index(index, offsetBy: 2)
+            guard let byte = UInt8(hex[index..<next], radix: 16) else { return nil }
+            bytes.append(byte)
+            index = next
+        }
+        return bytes
+    }
+
+    private static func constantTimeEqual(_ lhs: [UInt8], _ rhs: [UInt8]) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        var difference: UInt8 = 0
+        for (left, right) in zip(lhs, rhs) {
+            difference |= left ^ right
+        }
+        return difference == 0
     }
 
     // MARK: - Default Permission Map

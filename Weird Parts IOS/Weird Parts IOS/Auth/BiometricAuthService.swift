@@ -79,8 +79,9 @@ final class BiometricAuthService {
             defaults.set(true, forKey: optInKey)
             defaults.set(userId, forKey: Keys.preferredUserId)
         } else {
+            let rawPreferredUserId = (defaults.object(forKey: Keys.preferredUserId) as? NSNumber)?.int64Value
             defaults.removeObject(forKey: optInKey)
-            if preferredBiometricUserId == userId {
+            if rawPreferredUserId == userId {
                 defaults.removeObject(forKey: Keys.preferredUserId)
             }
         }
