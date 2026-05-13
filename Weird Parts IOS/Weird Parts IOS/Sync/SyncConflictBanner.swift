@@ -58,6 +58,7 @@ struct SyncConflictBanner: View {
                             .accessibilityHidden(true)
                     }
                 }
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .padding(.horizontal, 16)
                 .padding(.vertical, min(verticalPad, 10))
                 .frame(minHeight: min(minHeight, 80))

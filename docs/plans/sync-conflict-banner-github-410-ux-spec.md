@@ -60,7 +60,7 @@ Root cause: `SyncConflictBanner` is a single `HStack` containing an SF Symbol im
 
 - xSmall–xxxLarge: single line of label.
 - AX1–AX2: label wraps to 2 lines with `minimumScaleFactor(0.85)`.
-- AX3–AX5: label still 2 lines max; padding scales via `@ScaledMetric` up to 10 pt; chevron hides via `.accessibilityHidden(true)` and `.dynamicTypeSize(... .xxLarge)` — at AX3+ the chevron is replaced by a 16-pt SF "ellipsis.circle" decorative glyph the same size as the icon. The whole row remains tappable.
+- AX3–AX5: the visual row caps at `xxxLarge` Dynamic Type while the button keeps the full accessibility label. The label remains 2 lines max, padding scales via `@ScaledMetric` up to 10 pt, and the chevron hides above `.xxLarge`. The whole row remains tappable.
 - Predicted maximum banner height across all DT sizes: **~80 pt**, down from **368 pt**.
 
 ### Accessibility
