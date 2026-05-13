@@ -1,0 +1,35 @@
+name: WeirdPartsMacApp
+options:
+  deploymentTarget:
+    macOS: "14.0"
+configs:
+  Debug: debug
+  Release: release
+targets:
+  WeirdPartsMacApp:
+    type: application
+    platform: macOS
+    sources:
+      - Sources/MacApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ing.paperclip.weirdparts.macapp
+        SWIFT_VERSION: "6.0"
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        GENERATE_INFOPLIST_FILE: YES
+    scheme:
+      testTargets:
+        - WeirdPartsMacAppTests
+  WeirdPartsMacAppTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Tests/MacAppTests
+    dependencies:
+      - target: WeirdPartsMacApp
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: ing.paperclip.weirdparts.macapp.tests
+        SWIFT_VERSION: "6.0"
+        MACOSX_DEPLOYMENT_TARGET: "14.0"

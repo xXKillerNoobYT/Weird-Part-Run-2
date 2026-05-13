@@ -14,10 +14,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "WiredPart"
-               BuildableName = "WiredPart"
-               BlueprintName = "WiredPart"
-               ReferencedContainer = "container:mac">
+               BlueprintIdentifier = "B10ECDFD8943349065C5696D"
+               BuildableName = "WeirdPartsMacApp.app"
+               BlueprintName = "WeirdPartsMacApp"
+               ReferencedContainer = "container:mac/WeirdPartsMacApp.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -28,27 +28,25 @@
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES"
       shouldAutocreateTestPlan = "YES">
+      <MacroExpansion>
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "B10ECDFD8943349065C5696D"
+            BuildableName = "WeirdPartsMacApp.app"
+            BlueprintName = "WeirdPartsMacApp"
+            ReferencedContainer = "container:mac/WeirdPartsMacApp.xcodeproj">
+         </BuildableReference>
+      </MacroExpansion>
       <Testables>
          <TestableReference
             skipped = "NO"
-            parallelizable = "YES">
+            parallelizable = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "WiredPartTests"
-               BuildableName = "WiredPartTests"
-               BlueprintName = "WiredPartTests"
-               ReferencedContainer = "container:mac">
-            </BuildableReference>
-         </TestableReference>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "WiredPartCoreTests"
-               BuildableName = "WiredPartCoreTests"
-               BlueprintName = "WiredPartCoreTests"
-               ReferencedContainer = "container:core">
+               BlueprintIdentifier = "D9E03CB2FE46A67B9274B42B"
+               BuildableName = "WeirdPartsMacAppTests.xctest"
+               BlueprintName = "WeirdPartsMacAppTests"
+               ReferencedContainer = "container:mac/WeirdPartsMacApp.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -67,10 +65,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "WiredPart"
-            BuildableName = "WiredPart"
-            BlueprintName = "WiredPart"
-            ReferencedContainer = "container:mac">
+            BlueprintIdentifier = "B10ECDFD8943349065C5696D"
+            BuildableName = "WeirdPartsMacApp.app"
+            BlueprintName = "WeirdPartsMacApp"
+            ReferencedContainer = "container:mac/WeirdPartsMacApp.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -84,10 +82,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "WiredPart"
-            BuildableName = "WiredPart"
-            BlueprintName = "WiredPart"
-            ReferencedContainer = "container:mac">
+            BlueprintIdentifier = "B10ECDFD8943349065C5696D"
+            BuildableName = "WeirdPartsMacApp.app"
+            BlueprintName = "WeirdPartsMacApp"
+            ReferencedContainer = "container:mac/WeirdPartsMacApp.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

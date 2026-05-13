@@ -8,7 +8,7 @@
       location = "group:core">
    </FileRef>
    <FileRef
-      location = "group:mac">
+      location = "group:mac/WeirdPartsMacApp.xcodeproj">
    </FileRef>
    <FileRef
       location = "group:ios-app">

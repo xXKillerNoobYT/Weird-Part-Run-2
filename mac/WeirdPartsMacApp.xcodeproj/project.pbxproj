@@ -1,0 +1,397 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		36A2535F8D229E7027814463 /* LoadingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D65C570721EAEA1B8F9B33 /* LoadingViewController.swift */; };
+		7E5158E326EC2BA52BFC2FDA /* WeirdPartsMacAppTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7732FE0D085114EF89AC2C /* WeirdPartsMacAppTests.swift */; };
+		809A97D786222A80C0778124 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E91211F2390DA6A54F43A4E /* AppDelegate.swift */; };
+		C958131787567A3ECDCA2DE0 /* BootstrapCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EAAEEDC2BD55041BBC90024 /* BootstrapCoordinator.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		FA0F5E93311055891C8A0907 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0A2AAB0A539A86FB4272E29F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B10ECDFD8943349065C5696D;
+			remoteInfo = WeirdPartsMacApp;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		238CF2A4C3D059D5321B4F2E /* WeirdPartsMacApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WeirdPartsMacApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2F3953E318AECE5AF9C82527 /* WeirdPartsMacAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WeirdPartsMacAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		6E91211F2390DA6A54F43A4E /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		6EAAEEDC2BD55041BBC90024 /* BootstrapCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BootstrapCoordinator.swift; sourceTree = "<group>"; };
+		C1D65C570721EAEA1B8F9B33 /* LoadingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingViewController.swift; sourceTree = "<group>"; };
+		DA7732FE0D085114EF89AC2C /* WeirdPartsMacAppTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeirdPartsMacAppTests.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		2CF41C67D43901E17C8A3236 /* MacAppTests */ = {
+			isa = PBXGroup;
+			children = (
+				DA7732FE0D085114EF89AC2C /* WeirdPartsMacAppTests.swift */,
+			);
+			name = MacAppTests;
+			path = Tests/MacAppTests;
+			sourceTree = "<group>";
+		};
+		C5275CE41BB65810F4929E29 = {
+			isa = PBXGroup;
+			children = (
+				E41960A8B962FEB4202961E3 /* MacApp */,
+				2CF41C67D43901E17C8A3236 /* MacAppTests */,
+				D809057C4C566CD793E4179B /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D809057C4C566CD793E4179B /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				238CF2A4C3D059D5321B4F2E /* WeirdPartsMacApp.app */,
+				2F3953E318AECE5AF9C82527 /* WeirdPartsMacAppTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		E41960A8B962FEB4202961E3 /* MacApp */ = {
+			isa = PBXGroup;
+			children = (
+				6E91211F2390DA6A54F43A4E /* AppDelegate.swift */,
+				6EAAEEDC2BD55041BBC90024 /* BootstrapCoordinator.swift */,
+				C1D65C570721EAEA1B8F9B33 /* LoadingViewController.swift */,
+			);
+			name = MacApp;
+			path = Sources/MacApp;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		B10ECDFD8943349065C5696D /* WeirdPartsMacApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 171305C7AE35FACD2B20209E /* Build configuration list for PBXNativeTarget "WeirdPartsMacApp" */;
+			buildPhases = (
+				D8CAAA5253A57AE5A59FEA04 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = WeirdPartsMacApp;
+			packageProductDependencies = (
+			);
+			productName = WeirdPartsMacApp;
+			productReference = 238CF2A4C3D059D5321B4F2E /* WeirdPartsMacApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+		D9E03CB2FE46A67B9274B42B /* WeirdPartsMacAppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 62D7713582B164D7F71A73A3 /* Build configuration list for PBXNativeTarget "WeirdPartsMacAppTests" */;
+			buildPhases = (
+				73A64B6A862B9334415AD693 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				CF2C608AC2E5BBDB2256251F /* PBXTargetDependency */,
+			);
+			name = WeirdPartsMacAppTests;
+			packageProductDependencies = (
+			);
+			productName = WeirdPartsMacAppTests;
+			productReference = 2F3953E318AECE5AF9C82527 /* WeirdPartsMacAppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		0A2AAB0A539A86FB4272E29F /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = D8AA913D839CCED63509D2F8 /* Build configuration list for PBXProject "WeirdPartsMacApp" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = C5275CE41BB65810F4929E29;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = D809057C4C566CD793E4179B /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				B10ECDFD8943349065C5696D /* WeirdPartsMacApp */,
+				D9E03CB2FE46A67B9274B42B /* WeirdPartsMacAppTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		73A64B6A862B9334415AD693 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7E5158E326EC2BA52BFC2FDA /* WeirdPartsMacAppTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D8CAAA5253A57AE5A59FEA04 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				809A97D786222A80C0778124 /* AppDelegate.swift in Sources */,
+				C958131787567A3ECDCA2DE0 /* BootstrapCoordinator.swift in Sources */,
+				36A2535F8D229E7027814463 /* LoadingViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		CF2C608AC2E5BBDB2256251F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B10ECDFD8943349065C5696D /* WeirdPartsMacApp */;
+			targetProxy = FA0F5E93311055891C8A0907 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		1FFCF64712375D7AD73062CC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ing.paperclip.weirdparts.macapp.tests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WeirdPartsMacApp.app/Contents/MacOS/WeirdPartsMacApp";
+			};
+			name = Debug;
+		};
+		21EF1737DC5A3DD4FDE048F3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ing.paperclip.weirdparts.macapp;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		3CFEA06B588E3F120F080335 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		3F7F6FC3430C465C288BEBED /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ing.paperclip.weirdparts.macapp;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		87AA4484CBC28FC235E9356A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		9CFD5D490E414D03392B3AA3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ing.paperclip.weirdparts.macapp.tests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WeirdPartsMacApp.app/Contents/MacOS/WeirdPartsMacApp";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		171305C7AE35FACD2B20209E /* Build configuration list for PBXNativeTarget "WeirdPartsMacApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3F7F6FC3430C465C288BEBED /* Debug */,
+				21EF1737DC5A3DD4FDE048F3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		62D7713582B164D7F71A73A3 /* Build configuration list for PBXNativeTarget "WeirdPartsMacAppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1FFCF64712375D7AD73062CC /* Debug */,
+				9CFD5D490E414D03392B3AA3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D8AA913D839CCED63509D2F8 /* Build configuration list for PBXProject "WeirdPartsMacApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				87AA4484CBC28FC235E9356A /* Debug */,
+				3CFEA06B588E3F120F080335 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 0A2AAB0A539A86FB4272E29F /* Project object */;
+}
