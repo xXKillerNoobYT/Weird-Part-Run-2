@@ -8,12 +8,16 @@ struct OnboardingChecklistCard: View {
     let supplierCount: Int
     let totalParts: Int
     let warehouseLocationCount: Int
+    let onCardShown: () -> Void
     let onDismiss: () -> Void
+    let onStepTapped: (String) -> Void
     let onSetUpCompany: () -> Void
     let onCreateFirstJob: () -> Void
 
-    @State private var isExpanded = true
+    @AppStorage("onboarding_checklist_optional_strip_collapsed")
+    private var optionalStripCollapsed = true
     @State private var employeeName = UIDevice.current.name
+    @State private var hasLoggedCardShown = false
 
     private var steps: [OnboardingChecklistStep] {
         [
@@ -24,6 +28,7 @@ struct OnboardingChecklistCard: View {
                 icon: "building.2.fill",
                 isRequired: true,
                 isComplete: hasCompletedCompanySetup,
+                telemetryId: "company-setup",
                 action: onSetUpCompany
             ),
             OnboardingChecklistStep(
@@ -33,6 +38,7 @@ struct OnboardingChecklistCard: View {
                 icon: "person.crop.circle.badge.plus",
                 isRequired: true,
                 isComplete: employeeCount > 0,
+                telemetryId: "add-yourself",
                 action: {},
                 destinationPath: "/people/employees?addPersonOnAppear=true"
             ),
@@ -43,6 +49,7 @@ struct OnboardingChecklistCard: View {
                 icon: "briefcase.fill",
                 isRequired: true,
                 isComplete: activeJobs > 0,
+                telemetryId: "create-first-job",
                 action: onCreateFirstJob
             ),
             OnboardingChecklistStep(
@@ -52,6 +59,7 @@ struct OnboardingChecklistCard: View {
                 icon: "shippingbox.fill",
                 isRequired: false,
                 isComplete: supplierCount > 0,
+                telemetryId: "add-supplier",
                 action: {},
                 destinationPath: "/parts/suppliers?add=1"
             ),
@@ -62,6 +70,7 @@ struct OnboardingChecklistCard: View {
                 icon: "wrench.and.screwdriver.fill",
                 isRequired: false,
                 isComplete: totalParts > 0,
+                telemetryId: "bring-in-parts",
                 action: {},
                 destinationPath: "/parts/catalog?bottomSheet=importOrAdd"
             ),
@@ -72,6 +81,7 @@ struct OnboardingChecklistCard: View {
                 icon: "square.grid.3x3.fill",
                 isRequired: false,
                 isComplete: warehouseLocationCount > 0,
+                telemetryId: "setup-warehouse",
                 action: {},
                 destinationPath: "/warehouse/locations?showFloorPlanTutorial=1"
             ),
@@ -80,6 +90,14 @@ struct OnboardingChecklistCard: View {
 
     private var requiredCompleted: Int {
         steps.filter { $0.isRequired && $0.isComplete }.count
+    }
+
+    private var requiredSteps: [OnboardingChecklistStep] {
+        steps.filter(\.isRequired)
+    }
+
+    private var recommendedSteps: [OnboardingChecklistStep] {
+        steps.filter { !$0.isRequired }
     }
 
     private var completedCount: Int {
@@ -95,7 +113,11 @@ struct OnboardingChecklistCard: View {
     }
 
     private var shouldCollapseToStrip: Bool {
-        remainingRequired == 0 && remainingOptional > 0 && !isExpanded
+        requiredCompleted == 3 && remainingOptional > 0 && optionalStripCollapsed
+    }
+
+    private var optionalStepsText: String {
+        remainingOptional == 1 ? "1 optional step left" : "\(remainingOptional) optional steps left"
     }
 
     private var subtitle: String {
@@ -128,28 +150,38 @@ struct OnboardingChecklistCard: View {
 
     private var collapsedStrip: some View {
         Button {
-            withAnimation { isExpanded = true }
+            withAnimation { optionalStripCollapsed = false }
         } label: {
-            HStack(spacing: DS.Space.sm) {
+            HStack(alignment: .center, spacing: DS.Space.sm) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
+                    .font(.title3)
                     .accessibilityHidden(true)
-                Text("Required setup done · \(remainingOptional) optional steps left")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.primary)
+
+                VStack(alignment: .leading, spacing: DS.Space.xxxs) {
+                    Text("Required setup done")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.primary)
+
+                    Text(optionalStepsText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Spacer()
-                Image(systemName: "chevron.down")
+                Image(systemName: "chevron.right")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
             }
-            .frame(minHeight: 44)
+            .frame(minHeight: 56)
             .padding(.horizontal, DS.Space.md)
+            .padding(.vertical, DS.Space.sm)
             .background(cardBackground)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Required setup done, \(remainingOptional) optional steps left")
+        .accessibilityLabel("Required setup done, \(optionalStepsText)")
     }
 
     private var fullCard: some View {
@@ -158,14 +190,28 @@ struct OnboardingChecklistCard: View {
             progress
 
             VStack(spacing: DS.Space.xs) {
-                ForEach(steps) { step in
-                    OnboardingChecklistRow(step: step, employeeName: step.number == 2 ? $employeeName : nil)
+                ForEach(requiredSteps) { step in
+                    OnboardingChecklistRow(
+                        step: step,
+                        employeeName: step.number == 2 ? $employeeName : nil,
+                        onStepTapped: onStepTapped
+                    )
+                }
+
+                optionalDivider
+
+                ForEach(recommendedSteps) { step in
+                    OnboardingChecklistRow(
+                        step: step,
+                        employeeName: step.number == 2 ? $employeeName : nil,
+                        onStepTapped: onStepTapped
+                    )
                 }
             }
 
             if remainingRequired == 0 && remainingOptional > 0 {
                 Button {
-                    withAnimation { isExpanded = false }
+                    withAnimation { optionalStripCollapsed = true }
                 } label: {
                     Label("Show optional setup as a small reminder", systemImage: "chevron.up")
                         .font(.caption)
@@ -177,6 +223,30 @@ struct OnboardingChecklistCard: View {
         }
         .padding(DS.Space.lg)
         .background(cardBackground)
+        .onAppear {
+            guard !hasLoggedCardShown else { return }
+            hasLoggedCardShown = true
+            onCardShown()
+        }
+    }
+
+    private var optionalDivider: some View {
+        HStack(spacing: DS.Space.sm) {
+            Rectangle()
+                .fill(Color.secondary.opacity(0.25))
+                .frame(height: 1)
+
+            Text("Optional")
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(.secondary)
+
+            Rectangle()
+                .fill(Color.secondary.opacity(0.25))
+                .frame(height: 1)
+        }
+        .padding(.vertical, DS.Space.xs)
+        .accessibilityHidden(true)
     }
 
     private var header: some View {
@@ -234,6 +304,7 @@ private struct OnboardingChecklistStep: Identifiable {
     let icon: String
     let isRequired: Bool
     let isComplete: Bool
+    let telemetryId: String
     let action: () -> Void
     var destinationPath: String? = nil
 
@@ -243,6 +314,7 @@ private struct OnboardingChecklistStep: Identifiable {
 private struct OnboardingChecklistRow: View {
     let step: OnboardingChecklistStep
     let employeeName: Binding<String>?
+    let onStepTapped: (String) -> Void
 
     var body: some View {
         Group {
@@ -252,10 +324,14 @@ private struct OnboardingChecklistRow: View {
                 } label: {
                     rowContent
                 }
+                .simultaneousGesture(TapGesture().onEnded {
+                    onStepTapped(step.telemetryId)
+                })
                 .buttonStyle(.plain)
             } else {
                 Button {
                     if !step.isComplete {
+                        onStepTapped(step.telemetryId)
                         step.action()
                     }
                 } label: {
@@ -280,12 +356,6 @@ private struct OnboardingChecklistRow: View {
                             .fontWeight(.semibold)
                             .strikethrough(step.isComplete)
                             .foregroundStyle(step.isComplete ? .secondary : .primary)
-
-                        if !step.isRequired {
-                            Text("Optional")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
                     }
 
                     Text(step.helper)
