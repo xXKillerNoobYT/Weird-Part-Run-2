@@ -1379,7 +1379,7 @@ public final class ChatService: Sendable {
                 SELECT id FROM users
                 WHERE id = ? AND is_active = 1 AND deleted_at IS NULL
                 """, arguments: [userId]) != nil else {
-                throw ChatError.userNotFound(userId)
+                throw ChatError.messageNotFound(userId)
             }
             try dbConn.execute(sql: """
                 INSERT INTO chat_channel_members (channel_id, user_id, role, joined_at)

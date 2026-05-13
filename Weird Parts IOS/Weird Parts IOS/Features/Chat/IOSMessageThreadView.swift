@@ -37,11 +37,17 @@ struct IOSMessageThreadView: View {
     private enum ActiveSheet: Identifiable {
         case help
         case referencePicker(ReferenceType)
+        case escalationReason
+        case pushBackReason
+        case addPeople
 
         var id: String {
             switch self {
             case .help: return "help"
             case .referencePicker(let type): return "refpicker-\(type.rawValue)"
+            case .escalationReason: return "escalationReason"
+            case .pushBackReason: return "pushBackReason"
+            case .addPeople: return "addPeople"
             }
         }
     }
@@ -50,6 +56,22 @@ struct IOSMessageThreadView: View {
         case part = "part_ref"
         case po = "po_ref"
         case job = "job_ref"
+    }
+
+    private enum EscalationReason: String, CaseIterable {
+        case needApproval = "Need Approval"
+        case technicalQuestion = "Technical Question"
+        case customerIssue = "Customer Issue"
+        case safetyConcern = "Safety Concern"
+        case other = "Other"
+    }
+
+    private enum PushBackReason: String, CaseIterable {
+        case needMoreInfo = "Need More Info"
+        case answerProvided = "Answer Provided"
+        case assignToCrew = "Assign to Crew"
+        case incompleteRequest = "Incomplete Request"
+        case other = "Other"
     }
 
     // Toast
@@ -106,6 +128,26 @@ struct IOSMessageThreadView: View {
                         pendingAttachments.append(attachment)
                     }
                 )
+            case .escalationReason:
+                ThreadReasonSheet(
+                    title: "Escalate Thread",
+                    options: EscalationReason.allCases.map(\.rawValue),
+                    submitLabel: "Escalate"
+                ) { reason in
+                    escalateThread(reason: reason)
+                }
+            case .pushBackReason:
+                ThreadReasonSheet(
+                    title: "Push Back Thread",
+                    options: PushBackReason.allCases.map(\.rawValue),
+                    submitLabel: "Push Back"
+                ) { reason in
+                    pushBackThread(reason: reason)
+                }
+            case .addPeople:
+                AddPeopleToThreadSheet(channelId: channelId, appCore: appCore) {
+                    loadThreadInfo()
+                }
             }
         }
         .task {
@@ -433,23 +475,73 @@ struct IOSMessageThreadView: View {
     }
 
     private func handleAction(_ action: ChatService.ThreadAction) {
-        guard let service = appCore.chatService,
-              let userId = appCore.currentUser?.id else {
+        guard appCore.chatService != nil,
+              appCore.currentUser?.id != nil else {
             actionError = "Chat service unavailable"
             return
         }
 
         switch action {
         case .markResolved:
-            do {
-                try service.resolveQAThreadByChannel(channelId: channelId, resolvedBy: userId)
-                loadThreadInfo()
-            } catch {
-                actionError = userFriendlyError(error, context: "resolve thread")
-            }
-        case .addPeople, .escalate, .pushBack, .approve, .reject:
-            break // Wired in later prompts (42D)
+            resolveThread()
+        case .addPeople:
+            activeSheet = .addPeople
+        case .escalate:
+            activeSheet = .escalationReason
+        case .pushBack:
+            activeSheet = .pushBackReason
+        case .approve:
+            actionError = "Approval isn't available for this thread."
+        case .reject:
+            actionError = "Rejection isn't available for this thread."
         }
+    }
+
+    private func resolveThread() {
+        guard let service = appCore.chatService,
+              let userId = appCore.currentUser?.id else {
+            actionError = "Chat service unavailable"
+            return
+        }
+        do {
+            try service.resolveQAThreadByChannel(channelId: channelId, resolvedBy: userId)
+            refreshAfterThreadAction()
+        } catch {
+            actionError = userFriendlyError(error, context: "resolve thread")
+        }
+    }
+
+    private func escalateThread(reason: String) {
+        guard let service = appCore.chatService,
+              let userId = appCore.currentUser?.id else {
+            actionError = "Chat service unavailable"
+            return
+        }
+        do {
+            try service.escalateThreadByChannel(channelId: channelId, escalatedBy: userId, notes: reason)
+            refreshAfterThreadAction()
+        } catch {
+            actionError = userFriendlyError(error, context: "escalate thread")
+        }
+    }
+
+    private func pushBackThread(reason: String) {
+        guard let service = appCore.chatService,
+              let userId = appCore.currentUser?.id else {
+            actionError = "Chat service unavailable"
+            return
+        }
+        do {
+            try service.pushBackThreadByChannel(channelId: channelId, pushedBackBy: userId, reason: reason)
+            refreshAfterThreadAction()
+        } catch {
+            actionError = userFriendlyError(error, context: "push back thread")
+        }
+    }
+
+    private func refreshAfterThreadAction() {
+        loadThreadInfo()
+        loadMessages()
     }
 
     private func iconForAttachmentType(_ type: String) -> String {
@@ -689,6 +781,156 @@ struct ThreadInfoPanel: View {
         case .pushBack: return .orange
         case .markResolved: return .green
         case .addPeople: return .blue
+        }
+    }
+}
+
+// MARK: - Thread Action Sheets
+
+private struct ThreadReasonSheet: View {
+    let title: String
+    let options: [String]
+    let submitLabel: String
+    let onSubmit: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedReason: String
+    @State private var details = ""
+
+    init(title: String, options: [String], submitLabel: String, onSubmit: @escaping (String) -> Void) {
+        self.title = title
+        self.options = options
+        self.submitLabel = submitLabel
+        self.onSubmit = onSubmit
+        _selectedReason = State(initialValue: options.first ?? "Other")
+    }
+
+    private var composedReason: String {
+        let trimmedDetails = details.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedDetails.isEmpty ? selectedReason : "\(selectedReason): \(trimmedDetails)"
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Reason") {
+                    Picker("Reason", selection: $selectedReason) {
+                        ForEach(options, id: \.self) { reason in
+                            Text(reason).tag(reason)
+                        }
+                    }
+                }
+
+                Section("Details") {
+                    TextField("Add context", text: $details, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(submitLabel) {
+                        onSubmit(composedReason)
+                        dismiss()
+                    }
+                    .disabled(composedReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+}
+
+private struct AddPeopleToThreadSheet: View {
+    let channelId: Int64
+    let appCore: AppCore
+    let onAdded: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var users: [User] = []
+    @State private var searchText = ""
+    @State private var isLoading = true
+    @State private var errorMessage: String?
+
+    private var filteredUsers: [User] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else { return users }
+        return users.filter { user in
+            user.displayName.lowercased().contains(query) ||
+                (user.email?.lowercased().contains(query) ?? false)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if isLoading {
+                    ProgressView("Loading people...")
+                } else if let errorMessage {
+                    Text(errorMessage)
+                        .foregroundStyle(.secondary)
+                } else if filteredUsers.isEmpty {
+                    Text("Everyone active is already in this thread.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(filteredUsers, id: \.id) { user in
+                        Button {
+                            addUser(user)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(user.displayName)
+                                if let email = user.email, !email.isEmpty {
+                                    Text(email)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .searchable(text: $searchText, prompt: "Search people...")
+            .navigationTitle("Add People")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .task { loadUsers() }
+        }
+    }
+
+    private func loadUsers() {
+        guard let service = appCore.chatService else {
+            errorMessage = "Chat service unavailable"
+            isLoading = false
+            return
+        }
+        do {
+            users = try service.listUsersAvailableForChannel(channelId: channelId)
+            errorMessage = nil
+        } catch {
+            errorMessage = userFriendlyError(error, context: "load people")
+        }
+        isLoading = false
+    }
+
+    private func addUser(_ user: User) {
+        guard let userId = user.id,
+              let service = appCore.chatService else {
+            errorMessage = "Chat service unavailable"
+            return
+        }
+        do {
+            try service.addUserToChannel(channelId: channelId, userId: userId)
+            users.removeAll { $0.id == userId }
+            onAdded()
+        } catch {
+            errorMessage = userFriendlyError(error, context: "add person")
         }
     }
 }
