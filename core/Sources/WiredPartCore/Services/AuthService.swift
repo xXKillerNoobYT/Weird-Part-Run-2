@@ -1,4 +1,5 @@
 import Foundation
+import CommonCrypto
 import CryptoKit
 import GRDB
 import Security
@@ -11,7 +12,7 @@ import os.log
 ///   1. `seedFirstAdmin()` — the very first device in a new company
 ///   2. Sync from another device — all subsequent devices
 ///
-/// PIN verification uses SHA-256 hashes stored locally. Session tokens
+/// PIN verification uses PBKDF2-HMAC-SHA256 hashes stored locally. Session tokens
 /// are base64-encoded JSON payloads (24-hour expiry).
 ///
 /// Ported from: `src/local/services/auth-service.ts`
@@ -25,6 +26,19 @@ public final class AuthService: Sendable {
 
     public init(db: AppDatabase) {
         self.db = db
+        try? db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                CREATE TABLE IF NOT EXISTS auth_token_sessions (
+                    token_id TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    token_type TEXT NOT NULL,
+                    parent_refresh_id TEXT,
+                    expires_at_ms REAL NOT NULL,
+                    revoked_at TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
+        }
     }
 
     // MARK: - Types
@@ -34,12 +48,14 @@ public final class AuthService: Sendable {
         public let success: Bool
         public let user: User?
         public let token: String?
+        public let refreshToken: String?
         public let message: String
     }
 
     /// Decoded session token payload.
     public struct TokenPayload: Codable, Sendable {
         public let sub: Int64
+        public let jti: String
         public let iat: Double
         public let exp: Double
         public let type: String
@@ -138,7 +154,7 @@ public final class AuthService: Sendable {
     public func authenticateByPin(userId: Int64, pin: String) throws -> AuthResult {
         // Check lockout before attempting authentication
         if let seconds = Self.lockoutSecondsRemaining(userId: userId) {
-            return AuthResult(success: false, user: nil, token: nil, message: "Too many failed attempts. Try again in \(seconds)s.")
+            return AuthResult(success: false, user: nil, token: nil, refreshToken: nil, message: "Too many failed attempts. Try again in \(seconds)s.")
         }
 
         let user: User? = try db.writer.read { dbConnection in
@@ -150,28 +166,30 @@ public final class AuthService: Sendable {
         }
 
         guard let user else {
-            return AuthResult(success: false, user: nil, token: nil, message: "User not found or inactive")
+            return AuthResult(success: false, user: nil, token: nil, refreshToken: nil, message: "User not found or inactive")
         }
 
         guard let pinHash = user.pinHash, pinHash != "__PLACEHOLDER_HASH__" else {
-            return AuthResult(success: false, user: nil, token: nil, message: "PIN not configured. Sync with shop first.")
+            return AuthResult(success: false, user: nil, token: nil, refreshToken: nil, message: "PIN not configured. Sync with shop first.")
         }
 
         let isValid = Self.verifyPinLocally(pin: pin, storedHash: pinHash, salt: user.pinSalt)
         guard isValid else {
             if let lockoutSeconds = Self.recordFailedAttempt(userId: userId) {
-                return AuthResult(success: false, user: nil, token: nil, message: "Invalid PIN. Locked for \(lockoutSeconds)s.")
+                return AuthResult(success: false, user: nil, token: nil, refreshToken: nil, message: "Invalid PIN. Locked for \(lockoutSeconds)s.")
             }
-            return AuthResult(success: false, user: nil, token: nil, message: "Invalid PIN")
+            return AuthResult(success: false, user: nil, token: nil, refreshToken: nil, message: "Invalid PIN")
         }
 
         guard let userId = user.id else {
-            return AuthResult(success: false, user: nil, token: nil, message: "User record missing ID")
+            return AuthResult(success: false, user: nil, token: nil, refreshToken: nil, message: "User record missing ID")
         }
 
-        // Migration path: re-hash legacy PINs with a per-user salt on successful login
-        if user.pinSalt == nil {
-            let newSalt = Self.generateSalt()
+        // Migration path: upgrade legacy hashes to PBKDF2 on successful login.
+        // Tier 1 (no salt) and Tier 2 (iterated SHA-256) both get upgraded transparently.
+        let needsUpgrade = user.pinSalt == nil || !Self.isPBKDF2Hash(pinHash)
+        if needsUpgrade {
+            let newSalt = user.pinSalt ?? Self.generateSalt()
             let newHash = Self.hashPin(pin, salt: newSalt)
             let now = Self.currentTimestamp()
             try db.writer.write { dbConn in
@@ -183,8 +201,8 @@ public final class AuthService: Sendable {
         }
 
         Self.clearFailedAttempts(userId: userId)
-        let token = Self.generateLocalToken(userId: userId)
-        return AuthResult(success: true, user: user, token: token, message: "Authenticated")
+        let session = try issueSessionTokens(forUserId: userId, parentRefreshId: nil)
+        return AuthResult(success: true, user: user, token: session.accessToken, refreshToken: session.refreshToken, message: "Authenticated")
     }
 
     /// Get list of active users for the login screen.
@@ -216,7 +234,7 @@ public final class AuthService: Sendable {
         }
 
         if existingCount > 0 {
-            return AuthResult(success: false, user: nil, token: nil, message: "Users already exist. Seed aborted.")
+            return AuthResult(success: false, user: nil, token: nil, refreshToken: nil, message: "Users already exist. Seed aborted.")
         }
 
         let now = Self.currentTimestamp()
@@ -316,11 +334,11 @@ public final class AuthService: Sendable {
         }
 
         guard let user, let userId = user.id else {
-            return AuthResult(success: false, user: nil, token: nil, message: "Failed to create admin user")
+            return AuthResult(success: false, user: nil, token: nil, refreshToken: nil, message: "Failed to create admin user")
         }
 
-        let token = Self.generateLocalToken(userId: userId)
-        return AuthResult(success: true, user: user, token: token, message: "Company database initialized. Welcome!")
+        let session = try issueSessionTokens(forUserId: userId, parentRefreshId: nil)
+        return AuthResult(success: true, user: user, token: session.accessToken, refreshToken: session.refreshToken, message: "Company database initialized. Welcome!")
     }
 
     // MARK: - User Queries
@@ -457,13 +475,16 @@ public final class AuthService: Sendable {
 
     /// Build a full UserProfile from a local token.
     public func getLocalUserProfile(token: String) throws -> UserProfile {
-        guard let payload = Self.parseLocalToken(token) else {
+        guard let payload = Self.parseLocalToken(token), payload.type == "local_access" else {
             throw AuthError.invalidToken
         }
 
         let nowMs = Date().timeIntervalSince1970 * 1000
         guard payload.exp > nowMs else {
             throw AuthError.tokenExpired
+        }
+        guard try isTokenActive(tokenId: payload.jti, expectedType: "local_access") else {
+            throw AuthError.sessionRevoked
         }
 
         guard let user = try getUser(payload.sub) else {
@@ -504,9 +525,35 @@ public final class AuthService: Sendable {
         case invalidToken
         case tokenExpired
         case userNotFound
+        case sessionRevoked
         case requiredFieldEmpty(String)
         case invalidPin(String)
         case hatNotFound(Int64)
+    }
+
+    /// Rotate a refresh token and return a fresh access+refresh pair.
+    public func refreshLocalSession(refreshToken: String) throws -> (accessToken: String, refreshToken: String) {
+        guard let payload = Self.parseLocalToken(refreshToken), payload.type == "local_refresh" else {
+            throw AuthError.invalidToken
+        }
+        let nowMs = Date().timeIntervalSince1970 * 1000
+        guard payload.exp > nowMs else {
+            throw AuthError.tokenExpired
+        }
+        guard try isTokenActive(tokenId: payload.jti, expectedType: "local_refresh") else {
+            throw AuthError.sessionRevoked
+        }
+
+        try revokeTokenById(payload.jti)
+        return try issueSessionTokens(forUserId: payload.sub, parentRefreshId: payload.jti)
+    }
+
+    /// Revoke an access or refresh token string.
+    public func revokeLocalSession(token: String) throws {
+        guard let payload = Self.parseLocalToken(token) else {
+            throw AuthError.invalidToken
+        }
+        try revokeTokenById(payload.jti)
     }
 
     // MARK: - Security & Device Administration
@@ -604,9 +651,10 @@ public final class AuthService: Sendable {
 
     // MARK: - PIN Upgrade Tracking
 
-    /// Count of active users still using the legacy fixed-salt PIN hash (pre-migration 023).
+    /// Count of active users NOT yet on the current PBKDF2 KDF.
+    /// Includes both legacy tier 1 (no salt) and tier 2 (iterated SHA-256).
     /// These users will be upgraded automatically on their next successful login.
-    /// Returns 0 once all users have logged in since the migration.
+    /// Returns 0 once all users have logged in since the PBKDF2 upgrade.
     ///
     /// Admins can use this to monitor upgrade progress in the People → Permissions area.
     public func getLegacyHashedUserCount() throws -> Int {
@@ -617,7 +665,7 @@ public final class AuthService: Sendable {
                     SELECT COUNT(*) FROM users
                     WHERE is_active = 1
                       AND deleted_at IS NULL
-                      AND pin_salt IS NULL
+                      AND pin_hash NOT LIKE 'pbkdf2$%'
                       AND pin_hash NOT LIKE '$2b$%'
                       AND pin_hash != '__PLACEHOLDER_HASH__'
                     """
@@ -625,9 +673,9 @@ public final class AuthService: Sendable {
         }
     }
 
-    /// Active users still on the legacy fixed-salt PIN hash, returned as (id, displayName) pairs.
+    /// Active users not yet on PBKDF2, returned as (id, displayName) pairs.
     /// Admins can surface these in the People → Permissions area to prompt affected users to log in
-    /// and trigger the automatic per-user migration.
+    /// and trigger the automatic PBKDF2 migration.
     public func getLegacyHashedUsers() throws -> [(id: Int64, displayName: String)] {
         try db.writer.read { dbConn in
             let rows = try Row.fetchAll(
@@ -636,7 +684,7 @@ public final class AuthService: Sendable {
                     SELECT id, display_name FROM users
                     WHERE is_active = 1
                       AND deleted_at IS NULL
-                      AND pin_salt IS NULL
+                      AND pin_hash NOT LIKE 'pbkdf2$%'
                       AND pin_hash NOT LIKE '$2b$%'
                       AND pin_hash != '__PLACEHOLDER_HASH__'
                     ORDER BY display_name
@@ -686,26 +734,90 @@ public final class AuthService: Sendable {
     // MARK: - Internal Helpers
 
     /// Verify a PIN against a stored hash.
-    /// Supports both legacy (fixed salt) and new (per-user salt + key stretching) formats.
+    /// Supports three formats in order of preference:
+    ///   1. PBKDF2  — `pbkdf2$<iterations>$<hex>`  (current, per-user salt in `pin_salt`)
+    ///   2. Iterated SHA-256 — 64-char hex with per-user salt (legacy tier 2)
+    ///   3. Single SHA-256 — 64-char hex with fixed "wiredpart" salt (legacy tier 1, no `pin_salt`)
+    /// Bcrypt hashes (synced from another system) are not verifiable locally.
     static func verifyPinLocally(pin: String, storedHash: String, salt: String?) -> Bool {
-        // If it's a bcrypt hash, we can't verify offline
+        // Bcrypt — can't verify offline
         if storedHash.hasPrefix("$2b$") || storedHash.hasPrefix("$2a$") {
             return false
         }
 
+        // PBKDF2 format: pbkdf2$<iterations>$<hex>
+        if storedHash.hasPrefix("pbkdf2$"), let salt {
+            return verifyPBKDF2(pin: pin, storedHash: storedHash, salt: salt)
+        }
+
         if let salt {
-            // New per-user salted hash with key stretching
-            let computed = hashPin(pin, salt: salt)
+            // Legacy tier 2: iterated SHA-256 with per-user salt
+            let computed = iteratedSHA256Pin(pin, salt: salt)
             return computed == storedHash
         } else {
-            // Legacy fixed-salt hash (pre-migration 023)
+            // Legacy tier 1: single SHA-256 with fixed salt
             let computed = legacyHashPin(pin)
             return computed == storedHash
         }
     }
 
-    /// Hash a PIN with a per-user salt using iterated SHA-256 for key stretching.
+    // MARK: - PBKDF2 Hashing (current)
+
+    /// Default PBKDF2 iteration count — OWASP 2023 minimum for HMAC-SHA256.
+    static let pbkdf2Iterations: UInt32 = 600_000
+
+    /// Hash a PIN with PBKDF2-HMAC-SHA256. Returns `pbkdf2$<iterations>$<hex>`.
+    /// The per-user salt is stored separately in the `pin_salt` column.
     static func hashPin(_ pin: String, salt: String) -> String {
+        let password = Array((pin + ":" + salt).utf8)
+        let saltBytes = Array(salt.utf8)
+        var derivedKey = [UInt8](repeating: 0, count: 32) // 256-bit output
+        let status = CCKeyDerivationPBKDF(
+            CCPBKDFAlgorithm(kCCPBKDF2),
+            password, password.count,
+            saltBytes, saltBytes.count,
+            CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
+            pbkdf2Iterations,
+            &derivedKey, derivedKey.count
+        )
+        guard status == kCCSuccess else {
+            // Fallback should never happen — log and use iterated SHA-256
+            Self.logger.error("PBKDF2 failed with status \(status, privacy: .public), falling back to iterated SHA-256")
+            return iteratedSHA256Pin(pin, salt: salt)
+        }
+        let hex = derivedKey.map { String(format: "%02x", $0) }.joined()
+        return "pbkdf2$\(pbkdf2Iterations)$\(hex)"
+    }
+
+    /// Verify a PIN against a PBKDF2 hash string.
+    private static func verifyPBKDF2(pin: String, storedHash: String, salt: String) -> Bool {
+        let parts = storedHash.split(separator: "$")
+        guard parts.count == 3,
+              parts[0] == "pbkdf2",
+              let iterations = UInt32(parts[1]) else { return false }
+        let expectedHex = String(parts[2])
+
+        let password = Array((pin + ":" + salt).utf8)
+        let saltBytes = Array(salt.utf8)
+        var derivedKey = [UInt8](repeating: 0, count: 32)
+        let status = CCKeyDerivationPBKDF(
+            CCPBKDFAlgorithm(kCCPBKDF2),
+            password, password.count,
+            saltBytes, saltBytes.count,
+            CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
+            iterations,
+            &derivedKey, derivedKey.count
+        )
+        guard status == kCCSuccess else { return false }
+        let computedHex = derivedKey.map { String(format: "%02x", $0) }.joined()
+        return computedHex == expectedHex
+    }
+
+    // MARK: - Legacy Hash Functions (verification only)
+
+    /// Iterated SHA-256 with per-user salt (legacy tier 2, pre-PBKDF2).
+    /// Kept for verifying existing hashes; new hashes use PBKDF2.
+    static func iteratedSHA256Pin(_ pin: String, salt: String) -> String {
         let input = Data((pin + ":" + salt).utf8)
         var hash = SHA256.hash(data: input)
         for _ in 0..<10_000 {
@@ -715,7 +827,7 @@ public final class AuthService: Sendable {
     }
 
     /// Legacy fixed-salt hash for backward compatibility during migration.
-    /// Used only to verify old PINs before re-hashing with a per-user salt.
+    /// Used only to verify old PINs before re-hashing with PBKDF2.
     static func legacyHashPin(_ pin: String) -> String {
         let data = Data((pin + ":wiredpart").utf8)
         let digest = SHA256.hash(data: data)
@@ -726,6 +838,11 @@ public final class AuthService: Sendable {
     static func generateSalt() -> String {
         let bytes = (0..<16).map { _ in UInt8.random(in: 0...255) }
         return Data(bytes).base64EncodedString()
+    }
+
+    /// Check if a stored hash is already using the current PBKDF2 KDF.
+    static func isPBKDF2Hash(_ hash: String) -> Bool {
+        hash.hasPrefix("pbkdf2$")
     }
 
     /// Device-specific signing key. Persisted in the Keychain so tokens survive app
@@ -781,12 +898,21 @@ public final class AuthService: Sendable {
 
     /// Generate a signed local session token (base64 payload + HMAC-SHA256 signature).
     static func generateLocalToken(userId: Int64) -> String? {
+        generateToken(userId: userId, type: "local_access", ttlMs: 15 * 60 * 1000)
+    }
+
+    static func generateLocalRefreshToken(userId: Int64) -> String? {
+        generateToken(userId: userId, type: "local_refresh", ttlMs: 7 * 24 * 60 * 60 * 1000)
+    }
+
+    private static func generateToken(userId: Int64, type: String, ttlMs: Double) -> String? {
         let nowMs = Date().timeIntervalSince1970 * 1000
         let payload = TokenPayload(
             sub: userId,
+            jti: UUID().uuidString.lowercased(),
             iat: nowMs,
-            exp: nowMs + 24 * 60 * 60 * 1000, // 24 hours
-            type: "local"
+            exp: nowMs + ttlMs,
+            type: type
         )
         guard let data = try? JSONEncoder().encode(payload) else {
             return nil
@@ -812,8 +938,64 @@ public final class AuthService: Sendable {
 
         guard let data = Data(base64Encoded: payloadB64) else { return nil }
         guard let payload = try? JSONDecoder().decode(TokenPayload.self, from: data) else { return nil }
-        guard payload.type == "local" else { return nil }
+        guard payload.type == "local_access" || payload.type == "local_refresh" else { return nil }
         return payload
+    }
+
+    private func issueSessionTokens(forUserId userId: Int64, parentRefreshId: String?) throws -> (accessToken: String, refreshToken: String) {
+        guard let access = Self.generateLocalToken(userId: userId),
+              let refresh = Self.generateLocalRefreshToken(userId: userId),
+              let accessPayload = Self.parseLocalToken(access),
+              let refreshPayload = Self.parseLocalToken(refresh) else {
+            throw AuthError.invalidToken
+        }
+
+        try db.writer.write { dbConn in
+            let now = Self.currentTimestamp()
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO auth_token_sessions (token_id, user_id, token_type, parent_refresh_id, expires_at_ms, revoked_at, created_at)
+                    VALUES (?, ?, 'local_access', ?, ?, NULL, ?)
+                """,
+                arguments: [accessPayload.jti, userId, refreshPayload.jti, accessPayload.exp, now]
+            )
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO auth_token_sessions (token_id, user_id, token_type, parent_refresh_id, expires_at_ms, revoked_at, created_at)
+                    VALUES (?, ?, 'local_refresh', ?, ?, NULL, ?)
+                """,
+                arguments: [refreshPayload.jti, userId, parentRefreshId, refreshPayload.exp, now]
+            )
+        }
+        return (access, refresh)
+    }
+
+    private func revokeTokenById(_ tokenId: String) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE auth_token_sessions SET revoked_at = ? WHERE token_id = ?",
+                arguments: [Self.currentTimestamp(), tokenId]
+            )
+        }
+    }
+
+    private func isTokenActive(tokenId: String, expectedType: String) throws -> Bool {
+        try db.writer.read { dbConn in
+            let row = try Row.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT revoked_at, expires_at_ms
+                    FROM auth_token_sessions
+                    WHERE token_id = ? AND token_type = ?
+                """,
+                arguments: [tokenId, expectedType]
+            )
+            guard let row else { return false }
+            if (row["revoked_at"] as String?) != nil { return false }
+            let nowMs = Date().timeIntervalSince1970 * 1000
+            let expMs = row["expires_at_ms"] as Double? ?? 0
+            return expMs > nowMs
+        }
     }
 
     /// Current ISO-8601-ish timestamp (matching the TS format: "YYYY-MM-DD HH:MM:SS").
