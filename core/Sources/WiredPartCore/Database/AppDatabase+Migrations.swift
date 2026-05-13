@@ -125,6 +125,7 @@ extension AppDatabase {
         registerMigration086PartsAutoAddWishlistToggle(&migrator)
         registerMigration087WishlistLocationRouting(&migrator)
         registerMigration088WarehouseOnboardingNineStepProgress(&migrator)
+        registerMigration089BreakPolicyPresets(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -506,11 +507,7 @@ extension AppDatabase {
                 t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
             }
 
-            // Seed Wyoming state labor law defaults
-            try db.execute(sql: """
-                INSERT INTO break_policies (state_code, policy_type, work_day_hours, lunch_minutes, break_count, break_minutes, data_source, data_date)
-                VALUES ('WY', 'state_required_paid', 8, 30, 2, 15, 'us_dept_of_labor', date('now'))
-                """)
+            try seedBreakPolicyPresets(db)
 
             // Seed default company settings
             try db.execute(sql: """
@@ -5227,6 +5224,12 @@ extension AppDatabase {
                 WHERE flow_type = 'floor_plan'
                   AND total_steps < 9
                 """)
+        }
+    }
+
+    private static func registerMigration089BreakPolicyPresets(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("089_break_policy_presets") { db in
+            try seedBreakPolicyPresets(db)
         }
     }
 }

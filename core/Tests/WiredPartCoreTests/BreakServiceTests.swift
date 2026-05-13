@@ -39,8 +39,8 @@ struct BreakServiceTests {
         _ = try breakService.savePolicy(stateCode: "TX", policyType: "state")
 
         let policies = try breakService.getAllPolicies()
-        // Migration seeds 1 default WY policy; CA and TX add 2 more = 3 total
-        #expect(policies.count == 3)
+        #expect(policies.contains { $0.stateCode == "CA" && $0.policyType == "state" })
+        #expect(policies.contains { $0.stateCode == "TX" && $0.policyType == "state" })
     }
 
     @Test("Get break policy by state code")
@@ -52,6 +52,71 @@ struct BreakServiceTests {
 
         let policies = try breakService.getBreakPolicy(stateCode: "NY")
         #expect(!policies.isEmpty)
+    }
+
+    @Test("Seeded break policy presets cover 50 states plus DC for 8 and 10 hour days")
+    func testSeededBreakPolicyPresetCoverage() throws {
+        let env = try freshEnv()
+        let policies = try BreakService(db: env.db).getAllPolicies()
+        let seeded = policies.filter {
+            $0.policyType == "state_required_paid" || $0.policyType == "state_required_offered"
+        }
+
+        for jurisdiction in AppDatabase.breakPolicyJurisdictionCodes {
+            for hours in [8, 10] {
+                let rows = seeded.filter { $0.stateCode == jurisdiction && $0.workDayHours == hours }
+                #expect(rows.contains { $0.policyType == "state_required_paid" })
+                #expect(rows.contains { $0.policyType == "state_required_offered" })
+                #expect(rows.allSatisfy { $0.dataSource != nil && $0.dataDate == "2023-01-01" })
+            }
+        }
+    }
+
+    @Test("DC and 10 hour policy presets are readable")
+    func testDCAndTenHourPolicyReads() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        let dcPolicies = try breakService.getBreakPolicy(stateCode: "DC", dayHours: 10)
+        #expect(dcPolicies.contains {
+            $0.policyType == "state_required_offered" &&
+            $0.workDayHours == 10 &&
+            $0.lunchMinutes == 30
+        })
+
+        let marylandTenHour = try breakService.getBreakPolicy(stateCode: "MD", dayHours: 10)
+        #expect(marylandTenHour.contains {
+            $0.policyType == "state_required_offered" &&
+            $0.workDayHours == 10 &&
+            $0.breakCount == 1 &&
+            $0.breakMinutes == 15
+        })
+    }
+
+    @Test("Company extra policies remain separate from state-required presets")
+    func testCompanyPoliciesRemainSeparateFromStatePresets() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        _ = try breakService.savePolicy(
+            stateCode: nil,
+            policyType: "company_extra_paid",
+            workDayHours: 8,
+            lunchMinutes: 15,
+            breakCount: 1,
+            breakMinutes: 10
+        )
+
+        let policies = try breakService.getAllPolicies()
+        #expect(policies.contains {
+            $0.stateCode == nil &&
+            $0.policyType == "company_extra_paid" &&
+            $0.lunchMinutes == 15
+        })
+        #expect(policies.contains {
+            $0.stateCode == "DC" &&
+            $0.policyType == "state_required_offered"
+        })
     }
 
     @Test("Saving same company policy twice updates active row")

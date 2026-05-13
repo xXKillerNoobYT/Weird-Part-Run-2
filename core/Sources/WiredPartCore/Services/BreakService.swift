@@ -20,7 +20,7 @@ public final class BreakService: Sendable {
                 try BreakPolicy
                     .filter(Column("state_code") == stateCode && Column("deleted_at") == nil)
                     .filter(Column("work_day_hours") <= dayHours)
-                    .order(Column("policy_type").asc)
+                    .order(Column("policy_type").asc, Column("work_day_hours").desc)
                     .fetchAll(dbConn)
             }
         } catch {
@@ -35,7 +35,7 @@ public final class BreakService: Sendable {
             return try db.writer.read { dbConn in
                 try BreakPolicy
                     .filter(Column("deleted_at") == nil)
-                    .order(Column("state_code").asc, Column("policy_type").asc)
+                    .order(Column("state_code").asc, Column("policy_type").asc, Column("work_day_hours").asc)
                     .fetchAll(dbConn)
             }
         } catch {

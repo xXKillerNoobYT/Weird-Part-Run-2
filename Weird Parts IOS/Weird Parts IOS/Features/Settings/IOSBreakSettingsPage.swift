@@ -32,6 +32,7 @@ struct IOSBreakSettingsPage: View {
     @State private var defaultMorningBreak: String = "10:00"
     @State private var defaultLunch: String = "12:00"
     @State private var defaultAfternoonBreak: String = "14:30"
+    @State private var selectedWorkDayHours: Int = 8
 
     // Policies
     @State private var allPolicies: [BreakPolicy] = []
@@ -52,7 +53,7 @@ struct IOSBreakSettingsPage: View {
     @State private var breakBonusEnabled = false
 
     private let stateOptions = [
-        "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+        "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DC", "DE", "FL", "GA",
         "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
         "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
         "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
@@ -143,6 +144,15 @@ struct IOSBreakSettingsPage: View {
                     loadPoliciesForState()
                 }
 
+                Picker("Preset Workday", selection: $selectedWorkDayHours) {
+                    Text("8 hr").tag(8)
+                    Text("10 hr").tag(10)
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: selectedWorkDayHours) { _, _ in
+                    loadPoliciesForState()
+                }
+
                 Button {
                     loadPoliciesForState()
                 } label: {
@@ -151,7 +161,7 @@ struct IOSBreakSettingsPage: View {
             } header: {
                 Text("State Labor Law")
             } footer: {
-                Text("State-required break policies are loaded from stored labor law data. Select your state to see applicable requirements.")
+                Text("State-required break policies are loaded from stored labor law data. Select your state and workday length to see applicable 8-hour or 10-hour presets.")
             }
 
             // Section 1: State Required Paid
@@ -210,7 +220,7 @@ struct IOSBreakSettingsPage: View {
 
     private var stateRequiredPaidSection: some View {
         Section {
-            let policy = allPolicies.first { $0.policyType == "state_required_paid" && $0.stateCode == selectedState }
+            let policy = selectedPolicy(type: "state_required_paid")
             if let p = policy {
                 LabeledContent("Lunch (paid)", value: "\(p.lunchMinutes) min")
                 LabeledContent("Breaks (paid)", value: "\(p.breakCount) × \(p.breakMinutes) min")
@@ -218,6 +228,11 @@ struct IOSBreakSettingsPage: View {
                 LabeledContent("Source", value: p.dataSource ?? "state law")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if let dataDate = p.dataDate {
+                    LabeledContent("Source Date", value: dataDate)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             } else {
                 Text("No state-required paid break policy found for \(selectedState).")
                     .font(.caption)
@@ -239,10 +254,19 @@ struct IOSBreakSettingsPage: View {
 
     private var stateRequiredOfferedSection: some View {
         Section {
-            let policy = allPolicies.first { $0.policyType == "state_required_offered" && $0.stateCode == selectedState }
+            let policy = selectedPolicy(type: "state_required_offered")
             if let p = policy {
                 LabeledContent("Lunch (unpaid, offered)", value: "\(p.lunchMinutes) min")
                 LabeledContent("Breaks (offered)", value: "\(p.breakCount) × \(p.breakMinutes) min")
+                LabeledContent("Work Day", value: "\(p.workDayHours)+ hours")
+                LabeledContent("Source", value: p.dataSource ?? "state law")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if let dataDate = p.dataDate {
+                    LabeledContent("Source Date", value: dataDate)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             } else {
                 Text("No state-required offered break policy found for \(selectedState).")
                     .font(.caption)
@@ -351,7 +375,7 @@ struct IOSBreakSettingsPage: View {
 
     private var fullBreakdownSection: some View {
         Section {
-            let stateP = allPolicies.first { $0.policyType == "state_required_paid" && $0.stateCode == selectedState }
+            let stateP = selectedPolicy(type: "state_required_paid")
 
             // Total paid lunch
             let totalPaidLunch = (stateP?.lunchMinutes ?? 0) + companyPaidLunchMin
@@ -511,7 +535,7 @@ struct IOSBreakSettingsPage: View {
         }
 
         // Find the state policy to get its ID for bonuses
-        let statePolicy = allPolicies.first { $0.policyType == "state_required_paid" && $0.stateCode == selectedState }
+        let statePolicy = selectedPolicy(type: "state_required_paid")
         guard let policyId = statePolicy?.id else { return }
 
         do {
@@ -566,7 +590,7 @@ struct IOSBreakSettingsPage: View {
             )
 
             // Save bonuses
-            let statePolicy = allPolicies.first { $0.policyType == "state_required_paid" && $0.stateCode == selectedState }
+            let statePolicy = selectedPolicy(type: "state_required_paid")
             if let policyId = statePolicy?.id {
                 // Toggle existing bonuses
                 for bonus in bonuses {
@@ -607,6 +631,14 @@ struct IOSBreakSettingsPage: View {
         } catch {
             successMessage = nil
             errorMessage = userFriendlyError(error, context: "save settings")
+        }
+    }
+
+    private func selectedPolicy(type: String) -> BreakPolicy? {
+        allPolicies.first {
+            $0.policyType == type &&
+            $0.stateCode == selectedState &&
+            $0.workDayHours == selectedWorkDayHours
         }
     }
 }
