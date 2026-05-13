@@ -179,6 +179,37 @@ struct JobEstimationServiceTests {
         #expect(review.lessonsLearned == "On track" || review.reviewType == "weekly")
     }
 
+    @Test("Submit structured weekly review persists review fields")
+    func testStructuredWeeklyReviewPersistsFields() throws {
+        let (env, est) = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        let review = try est.submitWeeklyReview(
+            jobId: jobId,
+            reviewedBy: env.adminUserId,
+            notes: "Waiting on inspection",
+            delayFactors: ["inspection", "change_order"],
+            onTrackStatus: "at_risk",
+            unresolvedQuestionCount: 2,
+            crewFeedback: "Need clearer rough-in assumptions",
+            gcRating: 4
+        )
+
+        #expect(review.reviewType == "weekly")
+        #expect(review.decodedDelayFactors == ["inspection", "change_order"])
+        #expect(review.onTrackStatus == "at_risk")
+        #expect(review.unresolvedQuestionCount == 2)
+        #expect(review.crewFeedback == "Need clearer rough-in assumptions")
+        #expect(review.gcRating == 4)
+
+        let stored = try est.getJobReviews(jobId: jobId).first
+        #expect(stored?.decodedDelayFactors == ["inspection", "change_order"])
+        #expect(stored?.onTrackStatus == "at_risk")
+        #expect(stored?.unresolvedQuestionCount == 2)
+        #expect(stored?.crewFeedback == "Need clearer rough-in assumptions")
+        #expect(stored?.gcRating == 4)
+    }
+
     @Test("Submit end-of-job review")
     func testEndOfJobReview() throws {
         let (env, est) = try freshEnv()
@@ -193,6 +224,58 @@ struct JobEstimationServiceTests {
         )
         #expect(review.reviewType == "end_of_job")
         #expect(review.actualDays == 12.5)
+    }
+
+    @Test("Submit structured end-of-job review persists question accuracy")
+    func testStructuredEndOfJobReviewPersistsQuestionAccuracy() throws {
+        let (env, est) = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let question = try est.createQuestion(
+            text: "Was ceiling height above standard?",
+            group: "scope",
+            stage: "bid"
+        )
+
+        let review = try est.submitEndOfJobReview(
+            jobId: jobId,
+            actualDays: 8,
+            actualHours: 64,
+            lessonsLearned: "Ask earlier about access constraints",
+            reviewedBy: env.adminUserId,
+            delayFactors: ["access"],
+            onTrackStatus: "complete",
+            unresolvedQuestionCount: 0,
+            crewFeedback: "Estimate matched field conditions",
+            gcRating: 5,
+            questionAccuracy: [
+                QuestionAccuracyFeedbackInput(
+                    questionId: question.id!,
+                    predictedImpact: "minor",
+                    actualImpact: "major",
+                    accuracyRating: 3,
+                    notes: "Impact was underestimated"
+                )
+            ]
+        )
+
+        #expect(review.reviewType == "end_of_job")
+        #expect(review.decodedDelayFactors == ["access"])
+        #expect(review.onTrackStatus == "complete")
+        #expect(review.unresolvedQuestionCount == 0)
+        #expect(review.crewFeedback == "Estimate matched field conditions")
+        #expect(review.gcRating == 5)
+
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(
+                db,
+                sql: """
+                    SELECT COUNT(*) FROM estimation_question_accuracy_reviews
+                    WHERE review_id = ? AND question_id = ? AND accuracy_rating = 3
+                    """,
+                arguments: [review.id, question.id]
+            ) ?? 0
+        }
+        #expect(count == 1)
     }
 
     @Test("Get job reviews")
