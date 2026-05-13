@@ -2619,31 +2619,32 @@ public final class PartsService: Sendable {
             var conflicts: [OverrideConflict] = []
 
             // Find all active tiers that are MORE specific than the proposed level.
-            // We track (condition, argCount) pairs so that conditions like `brand_id IS NOT NULL`
-            // that contain no `?` placeholders don't produce extra arguments.
+            // Brand tiers are only conflicts when that brand has active parts inside
+            // the proposed scope; a brand override elsewhere does not shadow this
+            // category/style/type change.
             var sql = "SELECT * FROM pricing_tiers WHERE deleted_at IS NULL AND ("
-            var conditions: [(String, Int)] = []  // (SQL fragment, number of ? placeholders)
-            let scopeId: Int64
+            var conditions: [(String, [any DatabaseValueConvertible])] = []
+            let proposedScope: (String, [any DatabaseValueConvertible])
 
             if let id = categoryId {
-                scopeId = id
                 // Category-level change: find style, type, brand, part overrides in this category
-                conditions.append(("style_id IN (SELECT id FROM part_styles WHERE category_id = ?)", 1))
-                conditions.append(("type_id IN (SELECT id FROM part_types WHERE style_id IN (SELECT id FROM part_styles WHERE category_id = ?))", 1))
-                conditions.append(("brand_id IS NOT NULL", 0))
-                conditions.append(("part_id IN (SELECT id FROM parts WHERE category_id = ?)", 1))
+                proposedScope = ("category_id = ?", [id])
+                conditions.append(("style_id IN (SELECT id FROM part_styles WHERE category_id = ?)", [id]))
+                conditions.append(("type_id IN (SELECT id FROM part_types WHERE style_id IN (SELECT id FROM part_styles WHERE category_id = ?))", [id]))
+                conditions.append(("brand_id IN (SELECT DISTINCT brand_id FROM parts WHERE category_id = ? AND brand_id IS NOT NULL AND deleted_at IS NULL)", [id]))
+                conditions.append(("part_id IN (SELECT id FROM parts WHERE category_id = ? AND deleted_at IS NULL)", [id]))
             } else if let id = styleId {
-                scopeId = id
-                conditions.append(("type_id IN (SELECT id FROM part_types WHERE style_id = ?)", 1))
-                conditions.append(("brand_id IS NOT NULL", 0))
-                conditions.append(("part_id IN (SELECT id FROM parts WHERE style_id = ?)", 1))
+                proposedScope = ("style_id = ?", [id])
+                conditions.append(("type_id IN (SELECT id FROM part_types WHERE style_id = ?)", [id]))
+                conditions.append(("brand_id IN (SELECT DISTINCT brand_id FROM parts WHERE style_id = ? AND brand_id IS NOT NULL AND deleted_at IS NULL)", [id]))
+                conditions.append(("part_id IN (SELECT id FROM parts WHERE style_id = ? AND deleted_at IS NULL)", [id]))
             } else if let id = typeId {
-                scopeId = id
-                conditions.append(("brand_id IS NOT NULL", 0))
-                conditions.append(("part_id IN (SELECT id FROM parts WHERE type_id = ?)", 1))
+                proposedScope = ("type_id = ?", [id])
+                conditions.append(("brand_id IN (SELECT DISTINCT brand_id FROM parts WHERE type_id = ? AND brand_id IS NOT NULL AND deleted_at IS NULL)", [id]))
+                conditions.append(("part_id IN (SELECT id FROM parts WHERE type_id = ? AND deleted_at IS NULL)", [id]))
             } else if let id = brandId {
-                scopeId = id
-                conditions.append(("part_id IN (SELECT id FROM parts WHERE brand_id = ?)", 1))
+                proposedScope = ("brand_id = ?", [id])
+                conditions.append(("part_id IN (SELECT id FROM parts WHERE brand_id = ? AND deleted_at IS NULL)", [id]))
             } else if partId != nil {
                 return []
             } else {
@@ -2653,32 +2654,44 @@ public final class PartsService: Sendable {
             guard !conditions.isEmpty else { return [] }
 
             sql += conditions.map { $0.0 }.joined(separator: " OR ") + ")"
-
-            // Build argument list: one scopeId per `?` placeholder across all conditions
-            let args: [any DatabaseValueConvertible] = conditions.flatMap { (_, argCount) in
-                Array(repeating: scopeId as any DatabaseValueConvertible, count: argCount)
-            }
+            let args = conditions.flatMap { $0.1 }
 
             let tiers = try PricingTier.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
 
             for tier in tiers {
-                // Get a representative cost for this tier's parts
+                var tierScopeParts: [String] = []
+                var tierScopeArgs: [any DatabaseValueConvertible] = []
+                if let id = tier.categoryId {
+                    tierScopeParts.append("category_id = ?")
+                    tierScopeArgs.append(id)
+                }
+                if let id = tier.styleId {
+                    tierScopeParts.append("style_id = ?")
+                    tierScopeArgs.append(id)
+                }
+                if let id = tier.typeId {
+                    tierScopeParts.append("type_id = ?")
+                    tierScopeArgs.append(id)
+                }
+                if let id = tier.brandId {
+                    tierScopeParts.append("brand_id = ?")
+                    tierScopeArgs.append(id)
+                }
+                if let id = tier.partId {
+                    tierScopeParts.append("id = ?")
+                    tierScopeArgs.append(id)
+                }
+                guard !tierScopeParts.isEmpty else { continue }
+
+                // Get a representative cost for only the parts where the proposed
+                // scope and existing override overlap.
+                let costRowArgs = proposedScope.1 + tierScopeArgs
                 let costRow = try Row.fetchOne(dbConn, sql: """
                     SELECT AVG(weighted_avg_cost) AS avg_cost, COUNT(*) AS cnt FROM parts
-                    WHERE deleted_at IS NULL AND (
-                        (? IS NOT NULL AND category_id = ?) OR
-                        (? IS NOT NULL AND style_id = ?) OR
-                        (? IS NOT NULL AND type_id = ?) OR
-                        (? IS NOT NULL AND brand_id = ?) OR
-                        (? IS NOT NULL AND id = ?)
-                    )
-                    """, arguments: [
-                        tier.categoryId, tier.categoryId,
-                        tier.styleId, tier.styleId,
-                        tier.typeId, tier.typeId,
-                        tier.brandId, tier.brandId,
-                        tier.partId, tier.partId
-                    ])
+                    WHERE deleted_at IS NULL
+                      AND \(proposedScope.0)
+                      AND \(tierScopeParts.joined(separator: " AND "))
+                    """, arguments: StatementArguments(costRowArgs))
 
                 let avgCost: Double = costRow?["avg_cost"] ?? 0
                 let count: Int = costRow?["cnt"] ?? 0

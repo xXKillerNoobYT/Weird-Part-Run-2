@@ -495,6 +495,49 @@ struct PartsServiceCoverageTests {
         #expect(!conflicts.isEmpty, "Style-level tier should be flagged as conflict for category-level change")
     }
 
+    @Test("findOverrideConflicts ignores brand tier outside category scope")
+    func testFindOverrideConflictsIgnoresUnrelatedBrandTier() throws {
+        let env = try E2ETestHelpers.setUp()
+        let targetCatId = try E2ETestHelpers.seedCategory(env, name: "TargetBrandConflictCat")
+        let unrelatedCatId = try E2ETestHelpers.seedCategory(env, name: "UnrelatedBrandConflictCat")
+        let unrelatedBrandId = try E2ETestHelpers.seedBrand(env, name: "UnrelatedOverrideBrand")
+
+        _ = try env.parts.createPart(
+            categoryId: unrelatedCatId,
+            name: "Unrelated brand override part",
+            code: "UBO-\(UUID().uuidString.prefix(8))",
+            brandId: unrelatedBrandId,
+            companyCostPrice: 10
+        )
+        _ = try env.parts.setPricingTier(brandId: unrelatedBrandId, markupPercent: 35, setBy: env.adminUserId)
+
+        let conflicts = try env.parts.findOverrideConflicts(categoryId: targetCatId, newMarkupPercent: 60)
+
+        #expect(conflicts.isEmpty, "Brand overrides with no active parts in the proposed category must not be flagged")
+    }
+
+    @Test("findOverrideConflicts detects brand tier inside category scope")
+    func testFindOverrideConflictsDetectsScopedBrandTier() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "ScopedBrandConflictCat")
+        let brandId = try E2ETestHelpers.seedBrand(env, name: "ScopedOverrideBrand")
+
+        _ = try env.parts.createPart(
+            categoryId: catId,
+            name: "Scoped brand override part",
+            code: "SBO-\(UUID().uuidString.prefix(8))",
+            brandId: brandId,
+            companyCostPrice: 10
+        )
+        _ = try env.parts.setPricingTier(brandId: brandId, markupPercent: 35, setBy: env.adminUserId)
+
+        let conflicts = try env.parts.findOverrideConflicts(categoryId: catId, newMarkupPercent: 60)
+
+        #expect(conflicts.count == 1)
+        #expect(conflicts.first?.tier.brandId == brandId)
+        #expect(conflicts.first?.affectedPartCount == 1)
+    }
+
     @Test("findOverrideConflicts returns empty for part-level target")
     func testFindOverrideConflictsPartLevelTarget() throws {
         let env = try E2ETestHelpers.setUp()
