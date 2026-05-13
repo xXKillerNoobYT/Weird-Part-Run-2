@@ -121,6 +121,7 @@ extension AppDatabase {
         registerMigration082PartsFieldTimestamps(&migrator)
         registerMigration083StructuredEstimationReviews(&migrator)
         registerMigration084SyncedTableFieldTimestamps(&migrator)
+        registerMigration085CoOccurrenceHierarchyUniqueness(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5091,6 +5092,65 @@ extension AppDatabase {
             }
         }
     }
+
+    private static func registerMigration085CoOccurrenceHierarchyUniqueness(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("085_co_occurrence_hierarchy_uniqueness") { db in
+            guard try db.tableExists("co_occurrence_pairs") else { return }
+
+            try db.execute(sql: """
+                CREATE TABLE co_occurrence_pairs_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    category_a_id INTEGER NOT NULL REFERENCES part_categories,
+                    category_b_id INTEGER NOT NULL REFERENCES part_categories,
+                    co_occurrence_count INTEGER NOT NULL DEFAULT 0,
+                    total_jobs_a INTEGER NOT NULL DEFAULT 0,
+                    total_jobs_b INTEGER NOT NULL DEFAULT 0,
+                    avg_ratio_a_to_b DOUBLE DEFAULT 1.0,
+                    confidence DOUBLE DEFAULT 0.0,
+                    last_computed TEXT DEFAULT (datetime('now')),
+                    points INTEGER NOT NULL DEFAULT 0,
+                    style_a_id INTEGER REFERENCES part_styles,
+                    style_b_id INTEGER REFERENCES part_styles,
+                    type_a_id INTEGER REFERENCES part_types,
+                    type_b_id INTEGER REFERENCES part_types,
+                    brand_a_id INTEGER REFERENCES brands,
+                    brand_b_id INTEGER REFERENCES brands,
+                    match_level TEXT NOT NULL DEFAULT 'category',
+                    rejection_count INTEGER NOT NULL DEFAULT 0,
+                    is_blocked INTEGER NOT NULL DEFAULT 0,
+                    tied_cooldown_until TEXT,
+                    _field_timestamps TEXT
+                )
+                """)
+
+            try db.execute(sql: """
+                INSERT INTO co_occurrence_pairs_new
+                    (id, category_a_id, category_b_id, co_occurrence_count,
+                     total_jobs_a, total_jobs_b, avg_ratio_a_to_b, confidence,
+                     last_computed, points, style_a_id, style_b_id, type_a_id,
+                     type_b_id, brand_a_id, brand_b_id, match_level,
+                     rejection_count, is_blocked, tied_cooldown_until, _field_timestamps)
+                SELECT id, category_a_id, category_b_id, co_occurrence_count,
+                       total_jobs_a, total_jobs_b, avg_ratio_a_to_b, confidence,
+                       last_computed, points, style_a_id, style_b_id, type_a_id,
+                       type_b_id, brand_a_id, brand_b_id, match_level,
+                       rejection_count, is_blocked, tied_cooldown_until, _field_timestamps
+                FROM co_occurrence_pairs
+                """)
+
+            try db.execute(sql: "DROP TABLE co_occurrence_pairs")
+            try db.execute(sql: "ALTER TABLE co_occurrence_pairs_new RENAME TO co_occurrence_pairs")
+            try db.create(index: "idx_co_occurrence_level", on: "co_occurrence_pairs", columns: ["match_level", "points"], ifNotExists: true)
+            try db.create(index: "idx_co_occurrence_blocked", on: "co_occurrence_pairs", columns: ["is_blocked", "match_level"], ifNotExists: true)
+            try db.create(
+                index: "idx_co_occurrence_hierarchy_pair",
+                on: "co_occurrence_pairs",
+                columns: ["match_level", "category_a_id", "category_b_id", "style_a_id", "style_b_id", "type_a_id", "type_b_id"],
+                ifNotExists: true
+            )
+        }
+    }
+
     private static func registerMigration075CompanionFeedbackNullableSuggestionId(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("075_companion_feedback_nullable_suggestion_id") { db in
             try db.execute(sql: """

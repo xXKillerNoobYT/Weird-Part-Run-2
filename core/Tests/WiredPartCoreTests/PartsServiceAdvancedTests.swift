@@ -29,6 +29,11 @@ private func seedCoOccurrencePair(
     _ env: E2ETestHelpers.TestEnvironment,
     catAId: Int64,
     catBId: Int64,
+    styleAId: Int64? = nil,
+    styleBId: Int64? = nil,
+    typeAId: Int64? = nil,
+    typeBId: Int64? = nil,
+    matchLevel: String = "category",
     points: Int = 200,
     confidence: Double = 0.5,
     coOccurrenceCount: Int = 20
@@ -36,11 +41,15 @@ private func seedCoOccurrencePair(
     try env.db.writer.write { db in
         try db.execute(sql: """
             INSERT INTO co_occurrence_pairs
-            (category_a_id, category_b_id, co_occurrence_count, total_jobs_a, total_jobs_b,
+            (category_a_id, category_b_id, style_a_id, style_b_id, type_a_id, type_b_id,
+             co_occurrence_count, total_jobs_a, total_jobs_b,
              confidence, points, match_level, rejection_count, is_blocked, last_computed)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'category', 0, 0, datetime('now'))
-            """, arguments: [catAId, catBId, coOccurrenceCount, coOccurrenceCount,
-                              coOccurrenceCount, confidence, points])
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, datetime('now'))
+            """, arguments: [
+                catAId, catBId, styleAId, styleBId, typeAId, typeBId,
+                coOccurrenceCount, coOccurrenceCount, coOccurrenceCount,
+                confidence, points, matchLevel
+            ])
         return db.lastInsertedRowID
     }
 }
@@ -52,25 +61,69 @@ private func seedPollDirectly(
     pairId: Int64,
     catAId: Int64,
     catBId: Int64,
+    styleAId: Int64? = nil,
+    styleBId: Int64? = nil,
+    typeAId: Int64? = nil,
+    typeBId: Int64? = nil,
+    matchLevel: String = "category",
     startDaysAgo: Int = 0,
     endDaysFromNow: Int = 30,
-    status: String = "active"
+    status: String = "active",
+    result: String? = nil,
+    completed: Bool = false
 ) throws -> Int64 {
     try env.db.writer.write { db in
         let startDate = "date('now', '-\(startDaysAgo) days')"
         let endDate = "date('now', '+\(endDaysFromNow) days')"
+        let completedAtSQL = completed ? "datetime('now')" : "NULL"
         try db.execute(sql: """
             INSERT INTO companion_polls
             (co_occurrence_id, proposed_rule_name, proposed_rule_description,
-             source_category_id, target_category_id,
+             source_category_id, source_style_id, source_type_id,
+             target_category_id, target_style_id, target_type_id,
              match_level, status, try_match_brand, auto_color_match,
-             start_date, end_date, created_at)
+             result, start_date, end_date, completed_at, created_at)
             VALUES (?, 'Test Rule', 'Test description',
-                    ?, ?,
-                    'category', ?, 0, 1,
-                    \(startDate), \(endDate), datetime('now'))
-            """, arguments: [pairId, catAId, catBId, status])
+                    ?, ?, ?,
+                    ?, ?, ?,
+                    ?, ?, 0, 1,
+                    ?, \(startDate), \(endDate), \(completedAtSQL), datetime('now'))
+            """, arguments: [
+                pairId,
+                catAId, styleAId, typeAId,
+                catBId, styleBId, typeBId,
+                matchLevel, status, result
+            ])
         return db.lastInsertedRowID
+    }
+}
+
+private func seedConsumedCompanionJobs(
+    _ env: E2ETestHelpers.TestEnvironment,
+    sourcePartId: Int64,
+    targetPartId: Int64,
+    jobPrefix: String,
+    count: Int = 15,
+    qty: Int = 10
+) throws {
+    for index in 0..<count {
+        let jobId = try E2ETestHelpers.seedJob(
+            env,
+            jobNumber: "\(jobPrefix)-\(index)",
+            name: "Companion Seed \(jobPrefix) \(index)"
+        )
+        _ = try env.jobs.addJobPart(
+            jobId: jobId,
+            partId: sourcePartId,
+            qty: qty,
+            performedBy: env.adminUserId
+        )
+        _ = try env.jobs.addJobPart(
+            jobId: jobId,
+            partId: targetPartId,
+            qty: qty,
+            performedBy: env.adminUserId
+        )
     }
 }
 
@@ -326,6 +379,118 @@ struct PartsServiceAdvancedTests {
 
         #expect(first != nil)
         #expect(second == nil, "Second call this week should return nil — poll already exists")
+    }
+
+    @Test("runAutoDiscoveryCycle creates style poll after accepted category poll")
+    func testAutoDiscoveryCascadeCreatesStylePoll() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (catAId, styleAId, _) = try E2ETestHelpers.seedPartHierarchy(
+            env,
+            category: "CascadeCatA",
+            style: "CascadeStyleA",
+            type: "CascadeTypeA"
+        )
+        let (catBId, styleBId, _) = try E2ETestHelpers.seedPartHierarchy(
+            env,
+            category: "CascadeCatB",
+            style: "CascadeStyleB",
+            type: "CascadeTypeB"
+        )
+        let partAId = try env.parts.createPart(categoryId: catAId, name: "Cascade Part A", styleId: styleAId)
+        let partBId = try env.parts.createPart(categoryId: catBId, name: "Cascade Part B", styleId: styleBId)
+        try seedConsumedCompanionJobs(env, sourcePartId: partAId, targetPartId: partBId, jobPrefix: "STYLE-CASCADE")
+
+        let parentPairId = try seedCoOccurrencePair(env, catAId: catAId, catBId: catBId)
+        _ = try seedPollDirectly(
+            env,
+            pairId: parentPairId,
+            catAId: catAId,
+            catBId: catBId,
+            status: "closed",
+            result: "accepted",
+            completed: true
+        )
+
+        try env.parts.runAutoDiscoveryCycle()
+
+        let poll = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT match_level, source_category_id, source_style_id, target_category_id, target_style_id
+                FROM companion_polls
+                WHERE status = 'active' AND match_level = 'style'
+                """)
+        }
+        let row = try #require(poll)
+        #expect((row["source_category_id"] as Int64) == catAId)
+        #expect((row["source_style_id"] as Int64) == styleAId)
+        #expect((row["target_category_id"] as Int64) == catBId)
+        #expect((row["target_style_id"] as Int64) == styleBId)
+    }
+
+    @Test("runAutoDiscoveryCycle creates type poll after accepted style poll")
+    func testAutoDiscoveryCascadeCreatesTypePoll() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (catAId, styleAId, typeAId) = try E2ETestHelpers.seedPartHierarchy(
+            env,
+            category: "TypeCascadeCatA",
+            style: "TypeCascadeStyleA",
+            type: "TypeCascadeTypeA"
+        )
+        let (catBId, styleBId, typeBId) = try E2ETestHelpers.seedPartHierarchy(
+            env,
+            category: "TypeCascadeCatB",
+            style: "TypeCascadeStyleB",
+            type: "TypeCascadeTypeB"
+        )
+        let partAId = try env.parts.createPart(
+            categoryId: catAId,
+            name: "Type Cascade Part A",
+            styleId: styleAId,
+            typeId: typeAId
+        )
+        let partBId = try env.parts.createPart(
+            categoryId: catBId,
+            name: "Type Cascade Part B",
+            styleId: styleBId,
+            typeId: typeBId
+        )
+        try seedConsumedCompanionJobs(env, sourcePartId: partAId, targetPartId: partBId, jobPrefix: "TYPE-CASCADE")
+
+        let parentPairId = try seedCoOccurrencePair(
+            env,
+            catAId: catAId,
+            catBId: catBId,
+            styleAId: styleAId,
+            styleBId: styleBId,
+            matchLevel: "style"
+        )
+        _ = try seedPollDirectly(
+            env,
+            pairId: parentPairId,
+            catAId: catAId,
+            catBId: catBId,
+            styleAId: styleAId,
+            styleBId: styleBId,
+            matchLevel: "style",
+            status: "closed",
+            result: "accepted",
+            completed: true
+        )
+
+        try env.parts.runAutoDiscoveryCycle()
+
+        let poll = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT match_level, source_style_id, source_type_id, target_style_id, target_type_id
+                FROM companion_polls
+                WHERE status = 'active' AND match_level = 'type'
+                """)
+        }
+        let row = try #require(poll)
+        #expect((row["source_style_id"] as Int64) == styleAId)
+        #expect((row["source_type_id"] as Int64) == typeAId)
+        #expect((row["target_style_id"] as Int64) == styleBId)
+        #expect((row["target_type_id"] as Int64) == typeBId)
     }
 
     // MARK: - Companion Poll: castVote + getActivePolls

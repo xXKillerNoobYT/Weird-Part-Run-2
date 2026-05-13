@@ -4880,34 +4880,60 @@ public final class PartsService: Sendable {
         minConfidence: Double = 0.15,
         minJobs: Int = 15,
         level: String = "category"
-    ) throws -> [(pairId: Int64, catAId: Int64, catBId: Int64, catAName: String, catBName: String, points: Int, confidence: Double, jobCount: Int)] {
+    ) throws -> [(pairId: Int64, catAId: Int64, catBId: Int64, styleAId: Int64?, styleBId: Int64?, typeAId: Int64?, typeBId: Int64?, catAName: String, catBName: String, styleAName: String?, styleBName: String?, typeAName: String?, typeBName: String?, points: Int, confidence: Double, jobCount: Int)] {
         try db.writer.read { dbConn in
             let rows = try Row.fetchAll(dbConn, sql: """
                 SELECT cop.id, cop.category_a_id, cop.category_b_id,
+                       cop.style_a_id, cop.style_b_id,
+                       cop.type_a_id, cop.type_b_id,
                        cop.points, cop.confidence, cop.co_occurrence_count,
-                       ca.name AS cat_a_name, cb.name AS cat_b_name
+                       ca.name AS cat_a_name, cb.name AS cat_b_name,
+                       sa.name AS style_a_name, sb.name AS style_b_name,
+                       ta.name AS type_a_name, tb.name AS type_b_name
                 FROM co_occurrence_pairs cop
                 JOIN part_categories ca ON ca.id = cop.category_a_id AND ca.deleted_at IS NULL
                 JOIN part_categories cb ON cb.id = cop.category_b_id AND cb.deleted_at IS NULL
+                LEFT JOIN part_styles sa ON sa.id = cop.style_a_id AND sa.deleted_at IS NULL
+                LEFT JOIN part_styles sb ON sb.id = cop.style_b_id AND sb.deleted_at IS NULL
+                LEFT JOIN part_types ta ON ta.id = cop.type_a_id AND ta.deleted_at IS NULL
+                LEFT JOIN part_types tb ON tb.id = cop.type_b_id AND tb.deleted_at IS NULL
                 WHERE cop.match_level = ?
                   AND cop.points >= ?
                   AND cop.confidence >= ?
                   AND cop.co_occurrence_count >= ?
                   AND cop.is_blocked = 0
                   AND (cop.tied_cooldown_until IS NULL OR cop.tied_cooldown_until < date('now'))
+                  AND (? != 'style' OR (
+                      cop.style_a_id IS NOT NULL AND cop.style_b_id IS NOT NULL
+                      AND sa.id IS NOT NULL AND sb.id IS NOT NULL
+                  ))
+                  AND (? != 'type' OR (
+                      cop.style_a_id IS NOT NULL AND cop.style_b_id IS NOT NULL
+                      AND cop.type_a_id IS NOT NULL AND cop.type_b_id IS NOT NULL
+                      AND sa.id IS NOT NULL AND sb.id IS NOT NULL
+                      AND ta.id IS NOT NULL AND tb.id IS NOT NULL
+                  ))
                   AND cop.id NOT IN (
                       SELECT co_occurrence_id FROM companion_polls
                       WHERE status = 'active' AND match_level = ?
                   )
                 ORDER BY cop.points DESC
-                """, arguments: [level, minPoints, minConfidence, minJobs, level])
+                """, arguments: [level, minPoints, minConfidence, minJobs, level, level, level])
 
             return rows.map { row in
                 (pairId: row["id"] as Int64,
                  catAId: row["category_a_id"] as Int64,
                  catBId: row["category_b_id"] as Int64,
+                 styleAId: row["style_a_id"] as Int64?,
+                 styleBId: row["style_b_id"] as Int64?,
+                 typeAId: row["type_a_id"] as Int64?,
+                 typeBId: row["type_b_id"] as Int64?,
                  catAName: row["cat_a_name"] as String,
                  catBName: row["cat_b_name"] as String,
+                 styleAName: row["style_a_name"] as String?,
+                 styleBName: row["style_b_name"] as String?,
+                 typeAName: row["type_a_name"] as String?,
+                 typeBName: row["type_b_name"] as String?,
                  points: row["points"] as Int,
                  confidence: row["confidence"] as Double,
                  jobCount: row["co_occurrence_count"] as Int)
@@ -5330,38 +5356,67 @@ public final class PartsService: Sendable {
     /// Returns the new poll ID, or nil if no qualifying pairs exist.
     @discardableResult
     public func createWeeklyPoll() throws -> Int64? {
-        // Check if a poll was already created this week
-        let recentPoll = try db.writer.read { dbConn in
-            try Row.fetchOne(dbConn, sql: """
-                SELECT id FROM companion_polls WHERE start_date >= date('now', '-7 days')
-                """)
-        }
-        if recentPoll != nil { return nil }
+        // Drill-down cascades should not wait behind the category-level cadence.
+        // Each level is still throttled independently to avoid creating poll spam.
+        for level in ["type", "style", "category"] {
+            let recentPoll = try db.writer.read { dbConn in
+                try Row.fetchOne(dbConn, sql: """
+                    SELECT id FROM companion_polls
+                    WHERE match_level = ? AND start_date >= date('now', '-7 days')
+                    """, arguments: [level])
+            }
+            if recentPoll != nil { continue }
 
-        // Get qualified pairs
-        let pairs = try getQualifiedPairs()
-        guard let best = pairs.first else { return nil }
+            let pairs = try getQualifiedPairs(level: level)
+            guard let best = pairs.first else { continue }
+
+            return try createPoll(for: best, level: level, pairsAnalyzed: pairs.count)
+        }
+
+        return nil
+    }
+
+    private func createPoll(
+        for best: (pairId: Int64, catAId: Int64, catBId: Int64, styleAId: Int64?, styleBId: Int64?, typeAId: Int64?, typeBId: Int64?, catAName: String, catBName: String, styleAName: String?, styleBName: String?, typeAName: String?, typeBName: String?, points: Int, confidence: Double, jobCount: Int),
+        level: String,
+        pairsAnalyzed: Int
+    ) throws -> Int64 {
+        let sourceName = buildHierarchyName(
+            category: best.catAName,
+            style: best.styleAName,
+            type: best.typeAName,
+            level: level
+        )
+        let targetName = buildHierarchyName(
+            category: best.catBName,
+            style: best.styleBName,
+            type: best.typeBName,
+            level: level
+        )
 
         let pollId = try db.writer.write { dbConn -> Int64 in
-            let proposedName = "\(best.catAName) → \(best.catBName)"
+            let proposedName = "\(sourceName) → \(targetName)"
 
             try dbConn.execute(sql: """
                 INSERT INTO companion_polls
                 (co_occurrence_id, proposed_rule_name, proposed_rule_description,
-                 source_category_id, target_category_id,
+                 source_category_id, source_style_id, source_type_id,
+                 target_category_id, target_style_id, target_type_id,
                  match_level, status, start_date, end_date, created_at)
-                VALUES (?, ?, ?, ?, ?, 'category', 'active', date('now'), date('now', '+30 days'), datetime('now'))
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', date('now'), date('now', '+30 days'), datetime('now'))
                 """, arguments: [best.pairId, proposedName,
                                  "Auto-suggested from \(best.points) co-occurrence points across \(best.jobCount) jobs",
-                                 best.catAId, best.catBId])
+                                 best.catAId, best.styleAId, best.typeAId,
+                                 best.catBId, best.styleBId, best.typeBId,
+                                 level])
             let pollId = dbConn.lastInsertedRowID
 
             // Log to auto-discovery
             try dbConn.execute(sql: """
                 INSERT INTO companion_auto_discovery_log
                 (analysis_date, match_level, data_window_months, pairs_analyzed, new_pairs_found, poll_created_id, created_at)
-                VALUES (date('now'), 'category', 48, ?, 1, ?, datetime('now'))
-                """, arguments: [pairs.count, pollId])
+                VALUES (date('now'), ?, 48, ?, 1, ?, datetime('now'))
+                """, arguments: [level, pairsAnalyzed, pollId])
 
             // Notify all active users
             let activeUsers = try Int64.fetchAll(dbConn, sql: """
