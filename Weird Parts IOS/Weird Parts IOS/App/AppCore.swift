@@ -544,7 +544,8 @@ final class AppCore: ObservableObject {
     }
 
     nonisolated private static func seedUITestingFixtures(db: AppDatabase, authService: AuthService) throws {
-        _ = try authService.seedFirstAdmin(displayName: "UITest Owner", pin: "1234")
+        let authResult = try authService.seedFirstAdmin(displayName: "UITest Owner", pin: "1234")
+        let uiTestUserId = authResult.user?.id ?? 1
 
         let now = ISO8601DateFormatter().string(from: Date())
         let longNotesLocal = String(repeating: "LOCAL_NOTES_SEGMENT_", count: 22)
@@ -580,10 +581,103 @@ final class AppCore: ObservableObject {
             )
         }
 
+        try seedUITestingJobReviewFixture(db: db, userId: uiTestUserId)
+
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
         UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
         UserDefaults.standard.set(true, forKey: "hasSeenOnboardAIMVPEntry")
         UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
+    }
+
+    nonisolated private static func seedUITestingJobReviewFixture(db: AppDatabase, userId: Int64) throws {
+        let jobs = JobsService(db: db)
+        let estimation = JobEstimationService(db: db)
+        let jobNumber = "UITEST-EST-001"
+
+        let jobId: Int64
+        if let existingJob = try jobs.listJobs(search: jobNumber, status: nil, limit: 1).first {
+            jobId = existingJob.id
+        } else {
+            jobId = try jobs.createJob(
+                jobNumber: jobNumber,
+                jobName: "UITesting Estimation Review Job",
+                customerName: "UITesting Customer",
+                addressLine1: "100 Fixture Way",
+                city: "Denver",
+                state: "CO",
+                zip: "80202",
+                status: "active",
+                priority: "high",
+                jobType: "service",
+                estimatedHours: 48,
+                leadUserId: userId,
+                startDate: "2026-05-11",
+                dueDate: "2026-05-22",
+                notes: "Deterministic UITesting job for Estimate -> Reviews & Actuals verification.",
+                createdBy: userId
+            )
+        }
+
+        let bidQuestions = try estimation.getQuestionsForStage(stage: "bid")
+        for (index, question) in bidQuestions.enumerated() {
+            guard let questionId = question.id else { continue }
+            let value: String?
+            switch question.answerType {
+            case "number":
+                value = index == 0 ? "4" : "2"
+            case "boolean":
+                value = index.isMultiple(of: 2) ? "yes" : "no"
+            case "choice":
+                value = question.decodedChoices?.first ?? "standard"
+            default:
+                value = "UITesting fixture answer"
+            }
+            _ = try estimation.submitResponse(
+                jobId: jobId,
+                questionId: questionId,
+                stage: "bid",
+                value: value,
+                isUnknown: false,
+                answeredBy: userId
+            )
+        }
+
+        _ = try estimation.calculateEstimate(jobId: jobId, stage: "bid")
+        _ = try estimation.submitWeeklyReview(
+            jobId: jobId,
+            reviewedBy: userId,
+            notes: "UITesting seeded weekly review for save-flow comparison.",
+            delayFactors: ["Material delay"],
+            onTrackStatus: "at_risk",
+            unresolvedQuestionCount: 0,
+            crewFeedback: "Fixture crew feedback for Reviews & Actuals history.",
+            gcRating: 4
+        )
+
+        let accuracyInputs = bidQuestions.prefix(3).compactMap { question -> QuestionAccuracyFeedbackInput? in
+            guard let questionId = question.id else { return nil }
+            return QuestionAccuracyFeedbackInput(
+                questionId: questionId,
+                predictedImpact: "Fixture predicted impact",
+                actualImpact: "Fixture actual impact",
+                accuracyRating: 4,
+                notes: "UITesting seeded accuracy feedback."
+            )
+        }
+
+        _ = try estimation.submitEndOfJobReview(
+            jobId: jobId,
+            actualDays: 6,
+            actualHours: 48,
+            lessonsLearned: "UITesting seeded end-of-job review for question accuracy verification.",
+            reviewedBy: userId,
+            delayFactors: ["Weather"],
+            onTrackStatus: "on_track",
+            unresolvedQuestionCount: 0,
+            crewFeedback: "Fixture end-of-job crew feedback.",
+            gcRating: 5,
+            questionAccuracy: accuracyInputs
+        )
     }
 }
