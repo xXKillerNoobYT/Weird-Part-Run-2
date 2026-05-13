@@ -5915,6 +5915,117 @@ public final class PartsService: Sendable {
         }
     }
 
+    /// Cancel active Empty Shelf deletion schedules whose scoped inventory has been restocked.
+    ///
+    /// This is called by stock-increasing workflows after the stock rows have been updated.
+    /// The affected part filter keeps unrelated deletion schedules in their current drain /
+    /// pending-approval state.
+    @discardableResult
+    public func cancelRestockedScheduledDeletions(affectedPartIds: [Int64]) throws -> [Int64] {
+        try db.writer.write { db in
+            try Self.cancelRestockedScheduledDeletions(db: db, affectedPartIds: affectedPartIds)
+        }
+    }
+
+    @discardableResult
+    static func cancelRestockedScheduledDeletions(db: Database, affectedPartIds: [Int64]) throws -> [Int64] {
+        let uniquePartIds = Array(Set(affectedPartIds)).filter { $0 > 0 }
+        guard !uniquePartIds.isEmpty else { return [] }
+
+        let placeholders = Array(repeating: "?", count: uniquePartIds.count).joined(separator: ",")
+        let partIdArguments = StatementArguments(uniquePartIds)
+        let affectedParts = try Row.fetchAll(db, sql: """
+            SELECT id, category_id, style_id, type_id, brand_id, color_id
+            FROM parts
+            WHERE id IN (\(placeholders))
+              AND deleted_at IS NULL
+        """, arguments: partIdArguments)
+        guard !affectedParts.isEmpty else { return [] }
+
+        var affectedEntityKeys = Set<String>()
+        for row in affectedParts {
+            let partId: Int64 = row["id"]
+            affectedEntityKeys.insert("part:\(partId)")
+            Self.insertAffectedEntityKey(&affectedEntityKeys, row: row, column: "category_id", entityType: "category")
+            Self.insertAffectedEntityKey(&affectedEntityKeys, row: row, column: "style_id", entityType: "style")
+            Self.insertAffectedEntityKey(&affectedEntityKeys, row: row, column: "type_id", entityType: "type")
+            Self.insertAffectedEntityKey(&affectedEntityKeys, row: row, column: "brand_id", entityType: "brand")
+            Self.insertAffectedEntityKey(&affectedEntityKeys, row: row, column: "color_id", entityType: "color")
+        }
+
+        let activeSchedules = try Row.fetchAll(db, sql: """
+            SELECT id, entity_type, entity_id
+            FROM scheduled_deletions
+            WHERE deleted_at IS NULL
+              AND status IN ('draining', 'pending_approval')
+        """)
+
+        var cancelledIds: [Int64] = []
+        let now = CoreFormatters.nowISO()
+        for schedule in activeSchedules {
+            let entityType: String = schedule["entity_type"]
+            let entityId: Int64 = schedule["entity_id"]
+            guard affectedEntityKeys.contains("\(entityType):\(entityId)") else { continue }
+            guard try currentStockForDeletionEntity(db: db, entityType: entityType, entityId: entityId) > 0 else { continue }
+
+            try restorePartsForScheduledDeletion(db: db, entityType: entityType, entityId: entityId, timestamp: now)
+            try db.execute(sql: """
+                UPDATE scheduled_deletions
+                SET status = 'cancelled', deleted_at = ?, updated_at = ?
+                WHERE id = ?
+            """, arguments: [now, now, schedule["id"] as Int64])
+            cancelledIds.append(schedule["id"])
+        }
+
+        return cancelledIds
+    }
+
+    private static func insertAffectedEntityKey(_ keys: inout Set<String>, row: Row, column: String, entityType: String) {
+        if let entityId = row[column] as Int64?, entityId > 0 {
+            keys.insert("\(entityType):\(entityId)")
+        }
+    }
+
+    private static func currentStockForDeletionEntity(db: Database, entityType: String, entityId: Int64) throws -> Int {
+        let partColumn: String
+        switch entityType {
+        case "category": partColumn = "category_id"
+        case "style": partColumn = "style_id"
+        case "type": partColumn = "type_id"
+        case "brand": partColumn = "brand_id"
+        case "color": partColumn = "color_id"
+        case "part": partColumn = "id"
+        default: return 0
+        }
+
+        return try Int.fetchOne(db, sql: """
+            SELECT COALESCE(
+                (SELECT SUM(s.qty) FROM stock s JOIN parts p ON p.id = s.part_id
+                 WHERE p.\(partColumn) = ? AND p.deleted_at IS NULL AND s.deleted_at IS NULL), 0)
+            + COALESCE(
+                (SELECT SUM(se.quantity) FROM stock_entries se JOIN parts p ON p.id = se.part_id
+                 WHERE p.\(partColumn) = ? AND p.deleted_at IS NULL AND se.deleted_at IS NULL), 0)
+        """, arguments: [entityId, entityId]) ?? 0
+    }
+
+    private static func restorePartsForScheduledDeletion(db: Database, entityType: String, entityId: Int64, timestamp: String) throws {
+        let whereClause: String
+        switch entityType {
+        case "category": whereClause = "category_id = ?"
+        case "style": whereClause = "style_id = ?"
+        case "type": whereClause = "type_id = ?"
+        case "brand": whereClause = "brand_id = ?"
+        case "color": whereClause = "color_id = ?"
+        case "part": whereClause = "id = ?"
+        default: return
+        }
+
+        try db.execute(sql: """
+            UPDATE parts SET is_deprecated = 0, deprecation_reason = NULL, updated_at = ?
+            WHERE \(whereClause) AND deleted_at IS NULL
+        """, arguments: [timestamp, entityId])
+    }
+
     /// Put an entity into "Empty Shelf Mode" — sets stock targets to 0 and starts monitoring.
     @discardableResult
     public func scheduleEmptyShelfDeletion(entityType: String, entityId: Int64, entityName: String, reason: String?, scheduledBy: Int64?) throws -> Int64 {
@@ -6047,21 +6158,7 @@ public final class PartsService: Sendable {
             let entityId: Int64 = row["entity_id"]
             let now = CoreFormatters.nowISO()
 
-            // Restore parts — remove deprecation flag
-            let whereClause: String
-            switch entityType {
-            case "category": whereClause = "category_id = ?"
-            case "style": whereClause = "style_id = ?"
-            case "type": whereClause = "type_id = ?"
-            case "brand": whereClause = "brand_id = ?"
-            case "color": whereClause = "color_id = ?"
-            case "part": whereClause = "id = ?"
-            default: whereClause = "1=0"
-            }
-            try db.execute(sql: """
-                UPDATE parts SET is_deprecated = 0, deprecation_reason = NULL, updated_at = ?
-                WHERE \(whereClause) AND deleted_at IS NULL
-            """, arguments: [now, entityId])
+            try Self.restorePartsForScheduledDeletion(db: db, entityType: entityType, entityId: entityId, timestamp: now)
 
             // Cancel the schedule
             try db.execute(sql: """

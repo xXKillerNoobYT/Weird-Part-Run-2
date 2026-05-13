@@ -330,6 +330,42 @@ struct WarehouseAuditTests {
         try env.warehouse.completeSession(sessionId: sessionId, completedBy: env.adminUserId)
     }
 
+    @Test("receiving completion restock cancels part Empty Shelf deletion")
+    func testReceivingCompletionCancelsRestockedScheduledDeletion() throws {
+        let env = try freshEnv()
+        let suppId = try E2ETestHelpers.seedSupplier(env, name: "RestockSupplier")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "ReceivingRestockCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Receiving Restock Part", categoryId: catId)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-RESTOCK-CANCEL", supplierId: suppId)
+        let lineId = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 5, unitPrice: 2.0)
+        let sessionId = try env.warehouse.startReceivingSession(poId: poId, startedBy: env.adminUserId)
+        let itemId = try env.db.writer.read { db in
+            try Int64.fetchOne(
+                db,
+                sql: "SELECT id FROM receiving_session_items WHERE session_id = ? AND po_line_id = ?",
+                arguments: [sessionId, lineId]
+            )
+        }
+        #expect(itemId != nil)
+
+        let deletionId = try env.parts.scheduleEmptyShelfDeletion(
+            entityType: "part",
+            entityId: partId,
+            entityName: "Receiving Restock Part",
+            reason: "Empty shelf",
+            scheduledBy: env.adminUserId
+        )
+
+        try env.warehouse.updateSessionItem(itemId: itemId!, receivedQty: 5)
+        try env.warehouse.completeSession(sessionId: sessionId, completedBy: env.adminUserId)
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT status, deleted_at FROM scheduled_deletions WHERE id = ?", arguments: [deletionId])
+        }
+        #expect(row?["status"] as String? == "cancelled")
+        #expect((row?["deleted_at"] as String?) != nil)
+    }
+
     @Test("Cancel receiving session")
     func testCancelReceivingSession() throws {
         let env = try freshEnv()

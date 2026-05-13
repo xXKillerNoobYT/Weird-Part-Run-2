@@ -623,6 +623,96 @@ struct PartsServiceExtTests {
         #expect(!afterCancel.contains { $0.id == deletionId })
     }
 
+    @Test("single destination restock cancels part Empty Shelf deletion")
+    func testRestockCancelsPartScheduledDeletion() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "RestockPartCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Restock Part", categoryId: catId)
+
+        let deletionId = try env.parts.scheduleEmptyShelfDeletion(
+            entityType: "part",
+            entityId: partId,
+            entityName: "Restock Part",
+            reason: "Empty shelf",
+            scheduledBy: env.adminUserId
+        )
+
+        try env.warehouse.createMovement(
+            partId: partId,
+            qty: 4,
+            fromLocationType: nil,
+            fromLocationId: nil,
+            toLocationType: "warehouse",
+            toLocationId: 1,
+            movementType: "receive",
+            performedBy: env.adminUserId
+        )
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT status, deleted_at FROM scheduled_deletions WHERE id = ?", arguments: [deletionId])
+        }
+        #expect(row?["status"] as String? == "cancelled")
+        #expect((row?["deleted_at"] as String?) != nil)
+
+        let part = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT is_deprecated, deprecation_reason FROM parts WHERE id = ?", arguments: [partId])
+        }
+        #expect(part?["is_deprecated"] as Int? == 0)
+        #expect((part?["deprecation_reason"] as String?) == nil)
+    }
+
+    @Test("batch destination restock cancels parent schedule and leaves unrelated schedules alone")
+    func testBatchRestockCancelsParentScheduleOnly() throws {
+        let env = try E2ETestHelpers.setUp()
+        let targetCatId = try E2ETestHelpers.seedCategory(env, name: "RestockParentCat")
+        let targetPartId = try E2ETestHelpers.seedPart(env, name: "Parent Restock Part", categoryId: targetCatId)
+        let otherCatId = try E2ETestHelpers.seedCategory(env, name: "UnrelatedEmptyCat")
+        _ = try E2ETestHelpers.seedPart(env, name: "Still Empty Part", categoryId: otherCatId)
+
+        let parentDeletionId = try env.parts.scheduleEmptyShelfDeletion(
+            entityType: "category",
+            entityId: targetCatId,
+            entityName: "RestockParentCat",
+            reason: "Empty shelf",
+            scheduledBy: env.adminUserId
+        )
+        let unrelatedDeletionId = try env.parts.scheduleEmptyShelfDeletion(
+            entityType: "category",
+            entityId: otherCatId,
+            entityName: "UnrelatedEmptyCat",
+            reason: "Empty shelf",
+            scheduledBy: env.adminUserId
+        )
+
+        try env.warehouse.createBatchMovements(
+            movements: [
+                .init(
+                    partId: targetPartId,
+                    qty: 2,
+                    toLocationType: "warehouse",
+                    toLocationId: 1,
+                    movementType: "receive"
+                )
+            ],
+            performedBy: env.adminUserId
+        )
+
+        let rows = try env.db.writer.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT id, status, deleted_at
+                FROM scheduled_deletions
+                WHERE id IN (?, ?)
+                ORDER BY id
+            """, arguments: [parentDeletionId, unrelatedDeletionId])
+        }
+        let parent = rows.first { ($0["id"] as Int64) == parentDeletionId }
+        let unrelated = rows.first { ($0["id"] as Int64) == unrelatedDeletionId }
+        #expect(parent?["status"] as String? == "cancelled")
+        #expect((parent?["deleted_at"] as String?) != nil)
+        #expect(unrelated?["status"] as String? == "pending_approval")
+        #expect((unrelated?["deleted_at"] as String?) == nil)
+    }
+
     // MARK: - ColorBrandSKU CRUD (PE-COLORS Phase 1)
 
     @Test("upsertColorBrandSKU creates a new SKU row")

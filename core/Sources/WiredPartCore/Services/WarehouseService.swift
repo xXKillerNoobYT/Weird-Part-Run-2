@@ -697,6 +697,7 @@ public final class WarehouseService: Sendable {
                         arguments: [partId, toType, toId, qty]
                     )
                 }
+                try PartsService.cancelRestockedScheduledDeletions(db: dbConn, affectedPartIds: [partId])
             }
 
             return movementId
@@ -765,6 +766,7 @@ public final class WarehouseService: Sendable {
             guard userExists else { throw WarehouseError.userNotFound(performedBy) }
 
             var ids: [Int64] = []
+            var restockedPartIds = Set<Int64>()
             for m in movements {
                 let partExists = (try Int.fetchOne(dbConn, sql: """
                     SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL
@@ -821,8 +823,10 @@ public final class WarehouseService: Sendable {
                             VALUES (?, ?, ?, ?, datetime('now'))
                             """, arguments: [m.partId, toType, toId, m.qty])
                     }
+                    restockedPartIds.insert(m.partId)
                 }
             }
+            try PartsService.cancelRestockedScheduledDeletions(db: dbConn, affectedPartIds: Array(restockedPartIds))
             return ids
         }
     }
@@ -1389,6 +1393,7 @@ public final class WarehouseService: Sendable {
                         arguments: [partId, receivedQty]
                     )
                 }
+                try PartsService.cancelRestockedScheduledDeletions(db: dbConn, affectedPartIds: [partId])
             }
         }
     }
