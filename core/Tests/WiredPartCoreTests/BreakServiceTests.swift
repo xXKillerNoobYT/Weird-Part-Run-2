@@ -54,6 +54,48 @@ struct BreakServiceTests {
         #expect(!policies.isEmpty)
     }
 
+    @Test("Saving same company policy twice updates active row")
+    func testSaveCompanyPolicyIsIdempotent() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        let first = try breakService.savePolicy(
+            stateCode: nil,
+            policyType: "company_extra_paid",
+            workDayHours: 8,
+            lunchMinutes: 30,
+            breakCount: 1,
+            breakMinutes: 10
+        )
+
+        let second = try breakService.savePolicy(
+            stateCode: nil,
+            policyType: "company_extra_paid",
+            workDayHours: 8,
+            lunchMinutes: 45,
+            breakCount: 3,
+            breakMinutes: 20
+        )
+
+        #expect(second.id == first.id)
+        #expect(second.lunchMinutes == 45)
+        #expect(second.breakCount == 3)
+        #expect(second.breakMinutes == 20)
+
+        let activeRows = try env.db.writer.read { db in
+            try BreakPolicy
+                .filter(Column("state_code") == nil)
+                .filter(Column("policy_type") == "company_extra_paid")
+                .filter(Column("work_day_hours") == 8)
+                .filter(Column("deleted_at") == nil)
+                .fetchAll(db)
+        }
+
+        #expect(activeRows.count == 1)
+        #expect(activeRows.first?.id == first.id)
+        #expect(activeRows.first?.lunchMinutes == 45)
+    }
+
     // MARK: - Break Bonus CRUD
 
     @Test("Create and retrieve break bonus")
