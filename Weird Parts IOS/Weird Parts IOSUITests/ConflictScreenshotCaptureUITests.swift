@@ -87,6 +87,7 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
         if welcomeCTA.exists && welcomeCTA.isHittable { welcomeCTA.tap() }
         if skipTour.exists && skipTour.isHittable { skipTour.tap() }
         _ = reviewButton.waitForExistence(timeout: 4)
+        XCTAssertTrue(reviewButton.isHittable, "Sync conflict banner exists but is not hittable before tap")
         reviewButton.tap()
 
         // Sheet may take a moment; wait for any sync-conflict signal rather than
@@ -97,14 +98,20 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
         XCTAssertTrue(onSheet, "Conflict review sheet did not appear after banner tap")
         capture("01-sync-conflicts-overview")
 
-        _ = app.staticTexts["Notes"].waitForExistence(timeout: 3)
+        let notes = app.staticTexts["Notes"]
+        if notes.waitForExistence(timeout: 3), notes.isHittable {
+            notes.tap()
+        }
         capture("02-ai-hard-long-text")
 
         let sheetScroll = app.scrollViews.firstMatch
         if sheetScroll.exists {
             sheetScroll.swipeUp()
         }
-        _ = app.staticTexts["Priority Label"].waitForExistence(timeout: 3)
+        let priorityLabel = app.staticTexts["Priority Label"]
+        if priorityLabel.waitForExistence(timeout: 3), priorityLabel.isHittable {
+            priorityLabel.tap()
+        }
         capture("03-standard-long-value")
 
         if sheetScroll.exists {

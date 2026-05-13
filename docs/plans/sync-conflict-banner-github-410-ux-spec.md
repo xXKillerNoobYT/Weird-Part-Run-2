@@ -65,7 +65,7 @@ Root cause: `SyncConflictBanner` is a single `HStack` containing an SF Symbol im
 
 ### Accessibility
 
-- Single accessibility element: `.accessibilityElement(children: .combine)` + `.accessibilityAddTraits(.isButton)`.
+- Single accessibility element: the outer SwiftUI `Button` owns the accessibility node, decorative children are hidden, and the button overrides label/hint so VoiceOver announces the conflict summary as one action.
 - 44 pt minimum tap height via `.contentShape(Rectangle())` and `@ScaledMetric` min height.
 - `accessibilityIdentifier("syncConflictBanner")` for UI tests.
 
