@@ -5,9 +5,6 @@ import WiredPartCore
 /// Shows checkboxes for all brands (linked vs unlinked), with
 /// manufacturer part number fields for named brands and
 /// supplier part numbers for each brand's suppliers.
-///
-/// "General" is always available as a pseudo-brand — when checked,
-/// no part number is needed and no warnings appear.
 struct CategoriesBrandSection: View {
     let typeId: Int64
     /// If a specific brand is focused, highlight it and scroll to it.
@@ -20,12 +17,8 @@ struct CategoriesBrandSection: View {
     @State private var mfrPartNumbers: [Int64: String] = [:] // brandId -> mfr part number
     @State private var suppliersByBrand: [Int64: [Supplier]] = [:] // brandId -> suppliers
     @State private var supplierPartNumbers: [String: String] = [:] // "brandId-supplierId" -> supplier part number
-    @State private var isGeneralLinked = false
     @State private var isLoading = true
     @State private var loadError: String?
-
-    /// Key constant for the "General" pseudo-brand
-    private static let generalBrandName = "General"
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
@@ -42,12 +35,6 @@ struct CategoriesBrandSection: View {
                     .frame(maxWidth: .infinity)
                     .padding()
             } else {
-                // General brand option (always first)
-                generalBrandRow
-
-                Divider()
-
-                // Named brands
                 ForEach(allBrands, id: \.id) { brand in
                     namedBrandRow(brand)
                 }
@@ -62,35 +49,6 @@ struct CategoriesBrandSection: View {
         }
         .refreshable { await loadBrandData() }
         .task { await loadBrandData() }
-    }
-
-    // MARK: - General Brand Row
-
-    @ViewBuilder
-    private var generalBrandRow: some View {
-        HStack(spacing: DS.Space.md) {
-            Image(systemName: isGeneralLinked ? "checkmark.square.fill" : "square")
-                .foregroundStyle(isGeneralLinked ? Color.accentColor : Color.secondary)
-                .font(.title3)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("General")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                Text("No specific brand — part number not required")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .frame(minHeight: 44)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAddTraits(isGeneralLinked ? .isSelected : [])
-        .onTapGesture {
-            isGeneralLinked.toggle()
-        }
     }
 
     // MARK: - Named Brand Row

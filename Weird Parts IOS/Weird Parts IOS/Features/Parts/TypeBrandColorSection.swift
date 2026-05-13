@@ -1,13 +1,14 @@
 import SwiftUI
 import WiredPartCore
 
-/// Combined brand selection + per-brand color picker for a Type.
+/// Flat variant + SKU section for a Type.
 ///
 /// Layout:
-/// 1. "Brands" header with all available brands as tappable chips
-/// 2. Selected brands shown in a highlighted row
-/// 3. Under each selected brand, a color picker to assign colors
-///    (since not all brands carry the same colors)
+/// 1. "Brands" header with all available brands as tappable chips (link/unlink)
+/// 2. "Variants & SKUs" — flat list of SKU rows from `color_brand_skus`,
+///    grouped by shared Variant (PartColor). Brand data appears only on SKU rows,
+///    never on the Variant chip itself.
+/// 3. Tapping a SKU row opens the SKU editor; editing never mutates the parent `part_colors` row.
 struct TypeBrandColorSection: View {
     let typeId: Int64
     let hierarchy: PartsService.HierarchyTree
@@ -18,11 +19,12 @@ struct TypeBrandColorSection: View {
 
     @State private var allBrands: [Brand] = []
     @State private var linkedBrandIds: Set<Int64> = []
-    @State private var isGeneralLinked = false
     @State private var isLoading = true
     @State private var loadError: String?
-    @State private var expandedBrandId: Int64? // Which brand's color picker is open
-    @State private var mfrPartNumbers: [Int64: String] = [:]
+    @State private var skus: [PartsService.ColorBrandSKU] = []
+    @State private var colorById: [Int64: PartColor] = [:]
+    @State private var brandById: [Int64: Brand] = [:]
+    @State private var editingSKUId: Int64?
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
@@ -42,47 +44,176 @@ struct TypeBrandColorSection: View {
                     .frame(maxWidth: .infinity)
                     .padding()
             } else {
-                // All brands as selectable chips
                 brandChipGrid
-
-                // Selected brands with per-brand color pickers
-                if !selectedBrands.isEmpty || isGeneralLinked {
-                    Divider()
-
-                    Text("Selected Brands")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
-
-                    // General brand card (if linked)
-                    if isGeneralLinked {
-                        selectedBrandCard(name: "General", brandId: nil)
-                    }
-
-                    // Named brand cards
-                    ForEach(selectedBrands, id: \.id) { brand in
-                        selectedBrandCard(name: brand.name, brandId: brand.id)
-                    }
-                }
 
                 Divider()
 
-                // Add color shortcut
-                Button {
-                    onAddColor()
-                } label: {
-                    Label("Create New Color", systemImage: "paintpalette")
+                // MARK: - Variants & SKUs
+                HStack {
+                    Text("Variants & SKUs")
+                        .font(.headline)
+                    Spacer()
+                    Button {
+                        onAddColor()
+                    } label: {
+                        Label("Add Variant", systemImage: "plus")
+                            .font(.caption)
+                    }
                 }
-                .buttonStyle(.bordered)
+
+                if skuGroups.isEmpty {
+                    emptyVariantsView
+                } else {
+                    variantGroupedList
+                }
             }
         }
-        .task { await loadBrandData() }
+        .task { await loadData() }
+        .sheet(item: $editingSKUId) { skuId in
+            NavigationStack {
+                ColorBrandSKUEditorPanel(skuId: skuId, onRefresh: {
+                    await loadSKUs()
+                    await onRefresh()
+                })
+            }
+        }
     }
 
-    // MARK: - Selected brands helper
+    // MARK: - SKU groups keyed by colorId
 
-    private var selectedBrands: [Brand] {
-        allBrands.filter { linkedBrandIds.contains($0.id ?? 0) }
+    private typealias VariantGroup = (variant: PartColor, skus: [PartsService.ColorBrandSKU])
+
+    private var skuGroups: [VariantGroup] {
+        let grouped = Dictionary(grouping: skus, by: \.colorId)
+        return grouped
+            .compactMap { (colorId, skuList) -> VariantGroup? in
+                guard let variant = colorById[colorId] else { return nil }
+                return (variant: variant, skus: skuList)
+            }
+            .sorted { ($0.variant.name) < ($1.variant.name) }
+    }
+
+    // MARK: - Variant Grouped List
+
+    @ViewBuilder
+    private var variantGroupedList: some View {
+        ForEach(skuGroups, id: \.variant.id) { group in
+            VStack(alignment: .leading, spacing: DS.Space.sm) {
+                // Variant chip header — no brand info here
+                variantChip(for: group.variant)
+
+                // SKU rows for this variant
+                ForEach(group.skus, id: \.id) { sku in
+                    skuRow(sku)
+                }
+            }
+            .padding(DS.Space.sm)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(.secondarySystemGroupedBackground))
+            )
+        }
+    }
+
+    // MARK: - Variant Chip (color or named-only)
+
+    @ViewBuilder
+    private func variantChip(for color: PartColor) -> some View {
+        HStack(spacing: 6) {
+            if let hex = color.hexCode, !hex.isEmpty {
+                Circle()
+                    .fill(Color(hex: hex) ?? .gray)
+                    .frame(width: 14, height: 14)
+            }
+            Text(color.name)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(
+            Capsule()
+                .fill(chipBackground(for: color))
+        )
+    }
+
+    private func chipBackground(for color: PartColor) -> Color {
+        if let hex = color.hexCode, !hex.isEmpty {
+            return (Color(hex: hex) ?? .gray).opacity(0.15)
+        }
+        return Color(.tertiarySystemGroupedBackground)
+    }
+
+    // MARK: - SKU Row
+
+    @ViewBuilder
+    private func skuRow(_ sku: PartsService.ColorBrandSKU) -> some View {
+        Button {
+            editingSKUId = sku.id
+        } label: {
+            HStack(spacing: DS.Space.sm) {
+                // Brand badge
+                let brandName = brandById[sku.brandId]?.name ?? "Brand #\(sku.brandId)"
+                Text(brandName)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(Color.accentColor.opacity(0.12))
+                    )
+                    .foregroundStyle(Color.accentColor)
+
+                // Part number
+                if let pn = sku.partNumber, !pn.isEmpty {
+                    Text(pn)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                } else {
+                    Text("No part #")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                // Unit cost if set
+                if let cost = sku.unitCost {
+                    Text(String(format: "$%.2f", cost))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.vertical, 4)
+            .padding(.horizontal, DS.Space.sm)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Empty State
+
+    @ViewBuilder
+    private var emptyVariantsView: some View {
+        VStack(spacing: DS.Space.sm) {
+            if linkedBrandIds.isEmpty {
+                Text("Link brands above, then add variants to create SKU rows.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            } else {
+                Text("No SKU rows yet. Add variants and assign them to linked brands.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, DS.Space.md)
     }
 
     // MARK: - Brand Chip Grid
@@ -90,12 +221,6 @@ struct TypeBrandColorSection: View {
     @ViewBuilder
     private var brandChipGrid: some View {
         BrandFlowLayout(spacing: 8) {
-            // General chip
-            brandChip(name: "General", isSelected: isGeneralLinked) {
-                isGeneralLinked.toggle()
-            }
-
-            // Named brand chips
             ForEach(allBrands, id: \.id) { brand in
                 let brandId = brand.id ?? 0
                 let isLinked = linkedBrandIds.contains(brandId)
@@ -142,112 +267,9 @@ struct TypeBrandColorSection: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Selected Brand Card (with color picker underneath)
-
-    @ViewBuilder
-    private func selectedBrandCard(name: String, brandId: Int64?) -> some View {
-        let isExpanded = expandedBrandId == (brandId ?? -1)
-
-        VStack(alignment: .leading, spacing: 0) {
-            // Brand header row
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    if isExpanded {
-                        expandedBrandId = nil
-                    } else {
-                        expandedBrandId = brandId ?? -1
-                    }
-                }
-            } label: {
-                HStack(spacing: DS.Space.sm) {
-                    Image(systemName: "tag.fill")
-                        .font(.caption)
-                        .foregroundStyle(Color.accentColor)
-
-                    Text(name)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.primary)
-
-                    Spacer()
-
-                    // Mfr part number warning (named brands only)
-                    if let bid = brandId {
-                        let mfrPn = mfrPartNumbers[bid] ?? ""
-                        if mfrPn.trimmingCharacters(in: .whitespaces).isEmpty {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.caption)
-                                .foregroundStyle(.orange)
-                        }
-                    }
-
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(DS.Space.md)
-                .background(
-                    RoundedRectangle(cornerRadius: isExpanded ? 0 : 10)
-                        .fill(Color(.secondarySystemGroupedBackground))
-                )
-                .clipShape(
-                    UnevenRoundedRectangle(
-                        topLeadingRadius: 10,
-                        bottomLeadingRadius: isExpanded ? 0 : 10,
-                        bottomTrailingRadius: isExpanded ? 0 : 10,
-                        topTrailingRadius: 10
-                    )
-                )
-            }
-            .buttonStyle(.plain)
-
-            // Expanded: Mfr part number + Color picker
-            if isExpanded {
-                VStack(alignment: .leading, spacing: DS.Space.md) {
-                    // Manufacturer part number (named brands only)
-                    if let bid = brandId {
-                        HStack(spacing: DS.Space.sm) {
-                            Text("Mfr Part #:")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            TextField("Manufacturer part number", text: Binding(
-                                get: { mfrPartNumbers[bid] ?? "" },
-                                set: { mfrPartNumbers[bid] = $0 }
-                            ))
-                            .textFieldStyle(.roundedBorder)
-                            .font(.subheadline)
-                        }
-                    } else {
-                        Text("General — no specific brand, no part number needed.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    // Color picker for this brand
-                    CategoriesColorPicker(
-                        typeId: typeId,
-                        brandId: brandId,
-                        hierarchy: hierarchy,
-                        onRefresh: onRefresh
-                    )
-                }
-                .padding(DS.Space.md)
-                .background(
-                    UnevenRoundedRectangle(
-                        topLeadingRadius: 0,
-                        bottomLeadingRadius: 10,
-                        bottomTrailingRadius: 10,
-                        topTrailingRadius: 0
-                    )
-                    .fill(Color(.secondarySystemGroupedBackground).opacity(0.5))
-                )
-            }
-        }
-    }
-
     // MARK: - Data Loading
 
-    private func loadBrandData() async {
+    private func loadData() async {
         guard let service = appCore.partsService else {
             loadError = "Parts service not available"
             isLoading = false
@@ -274,22 +296,50 @@ struct TypeBrandColorSection: View {
                 }
             }
 
+            // Build lookup maps
+            var cById: [Int64: PartColor] = [:]
+            for catNode in hierarchy.categories {
+                for styleNode in catNode.styles {
+                    for typeNode in styleNode.types {
+                        for color in typeNode.colors {
+                            if let cid = color.id {
+                                cById[cid] = color
+                            }
+                        }
+                    }
+                }
+            }
+
+            var bById: [Int64: Brand] = [:]
+            for b in allBrandsList {
+                if let bid = b.id { bById[bid] = b }
+            }
+
+            let typeSKUs = try service.getSKUsForType(typeId: typeId)
+
             await MainActor.run {
                 allBrands = allBrandsList
                 linkedBrandIds = linkedIds
+                colorById = cById
+                brandById = bById
+                skus = typeSKUs
                 isLoading = false
-                // Auto-expand first selected brand
-                if let first = allBrandsList.first(where: { linkedIds.contains($0.id ?? 0) }) {
-                    expandedBrandId = first.id
-                } else if isGeneralLinked {
-                    expandedBrandId = -1
-                }
             }
         } catch {
             await MainActor.run {
                 loadError = userFriendlyError(error, context: "load type brands")
                 isLoading = false
             }
+        }
+    }
+
+    private func loadSKUs() async {
+        guard let service = appCore.partsService else { return }
+        do {
+            let typeSKUs = try service.getSKUsForType(typeId: typeId)
+            await MainActor.run { skus = typeSKUs }
+        } catch {
+            // Non-fatal — keep existing state
         }
     }
 
@@ -307,21 +357,17 @@ struct TypeBrandColorSection: View {
                     try service.unlinkTypeBrand(linkId: linkId)
                 }
                 await MainActor.run {
-                    linkedBrandIds.remove(brandId)
-                    if expandedBrandId == brandId {
-                        expandedBrandId = nil
-                    }
+                    _ = linkedBrandIds.remove(brandId)
                 }
             } else {
                 try service.linkTypeToBrand(typeId: typeId, brandId: brandId)
                 await MainActor.run {
-                    linkedBrandIds.insert(brandId)
-                    expandedBrandId = brandId // Auto-expand newly linked brand
+                    _ = linkedBrandIds.insert(brandId)
                 }
             }
             await onRefresh()
         } catch {
-            loadError = userFriendlyError(error, context: "load brands")
+            loadError = userFriendlyError(error, context: "toggle brand")
         }
     }
 }

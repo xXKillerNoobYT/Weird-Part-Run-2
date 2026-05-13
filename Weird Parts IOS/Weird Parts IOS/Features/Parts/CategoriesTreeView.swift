@@ -11,8 +11,9 @@ enum TreeSelection: Equatable {
     case sku(skuId: Int64, colorId: Int64, typeId: Int64, brandId: Int64)
 }
 
-/// Left-panel tree browser: 5-level nested hierarchy showing
-/// Category > Style > Type > Brand > Color.
+/// Left-panel tree browser showing Category > Style > Type > Variant > SKU.
+///
+/// Brands are SKU attributes in this view, not owners of variants.
 ///
 /// Uses manual expand/collapse state so that tapping a row
 /// both **selects** it AND **expands/collapses** its children.
@@ -25,18 +26,13 @@ struct CategoriesTreeView: View {
     @Binding var expandedCategories: Set<Int64>
     @Binding var expandedStyles: Set<Int64>
     @Binding var expandedTypes: Set<Int64>
-    @Binding var expandedBrands: Set<Int64>
+    @Binding var expandedVariants: Set<Int64>
     @State private var searchText = ""
 
     /// Cache of effective cost per colorId, loaded alongside hierarchy.
     @State private var colorPriceCache: [Int64: Double?] = [:]
-    @State private var skuCache: [SKUCacheKey: [PartsService.ColorBrandSKU]] = [:]
-    @State private var skuLoadingKeys: Set<SKUCacheKey> = []
-
-    private struct SKUCacheKey: Hashable {
-        let typeId: Int64
-        let brandId: Int64
-    }
+    @State private var skuCache: [Int64: [PartsService.ColorBrandSKU]] = [:]
+    @State private var skuLoadingTypeIds: Set<Int64> = []
 
     // Single active-sheet enum to avoid multiple .sheet conflicts
     enum ActiveSheet: Identifiable {
@@ -89,7 +85,7 @@ struct CategoriesTreeView: View {
                     }
                     .accessibilityIdentifier("addCategoryMenuItem")
                     Button { activeSheet = .addColor } label: {
-                        Label("New Color", systemImage: "paintpalette")
+                        Label("New Variant", systemImage: "paintpalette")
                     }
                     .accessibilityIdentifier("addColorMenuItem")
                 } label: {
@@ -97,7 +93,7 @@ struct CategoriesTreeView: View {
                         .font(.title3)
                 }
                 .accessibilityIdentifier("categoriesAddMenu")
-                .accessibilityLabel("Add category or color")
+                .accessibilityLabel("Add category or variant")
             }
             .padding(.horizontal, DS.Space.lg)
             .padding(.vertical, DS.Space.md)
@@ -110,7 +106,7 @@ struct CategoriesTreeView: View {
                     .foregroundStyle(.secondary)
                     .font(.subheadline)
                     .accessibilityHidden(true)
-                TextField("Search hierarchy...", text: $searchText)
+                TextField("Search categories, variants, brands...", text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.subheadline)
                     .accessibilityIdentifier("categoriesSearchField")
@@ -146,7 +142,7 @@ struct CategoriesTreeView: View {
                             .font(.title3)
                             .fontWeight(.semibold)
 
-                        Text("The parts hierarchy organizes your inventory into 5 levels:\nCategory > Style > Type > Brand > Color")
+                        Text("The parts hierarchy organizes inventory as:\nCategory > Style > Type > Variant > SKU")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -251,15 +247,13 @@ struct CategoriesTreeView: View {
             for styleNode in catNode.styles {
                 for typeNode in styleNode.types {
                     let typeId = typeNode.type.id ?? 0
-                    for brandNode in typeNode.brandNodes {
-                        for color in brandNode.colors {
-                            let colorId = color.id ?? 0
-                            do {
-                                let resolved = try parts.getEffectivePrice(colorId: colorId, typeId: typeId)
-                                cache[colorId] = resolved.effectiveCost
-                            } catch {
-                                // Price resolution failed for this color; skip silently in cache build
-                            }
+                    for color in typeNode.colors {
+                        let colorId = color.id ?? 0
+                        do {
+                            let resolved = try parts.getEffectivePrice(colorId: colorId, typeId: typeId)
+                            cache[colorId] = resolved.effectiveCost
+                        } catch {
+                            // Price resolution failed for this variant; skip silently in cache build
                         }
                     }
                 }
@@ -285,12 +279,10 @@ struct CategoriesTreeView: View {
                 let filteredTypes = styleNode.types.compactMap { typeNode -> PartsService.TypeNode? in
                     let typeMatches = typeNode.type.name.lowercased().contains(query)
 
-                    let hasBrandMatch = typeNode.brandNodes.contains { brandNode in
-                        brandNode.name.lowercased().contains(query) ||
-                        brandNode.colors.contains { $0.name.lowercased().contains(query) }
-                    }
+                    let hasBrandMatch = typeNode.brands.contains { $0.name.lowercased().contains(query) }
+                    let hasVariantMatch = typeNode.colors.contains { $0.name.lowercased().contains(query) }
 
-                    if typeMatches || hasBrandMatch {
+                    if typeMatches || hasBrandMatch || hasVariantMatch {
                         return typeNode
                     }
                     return nil
@@ -467,8 +459,8 @@ struct CategoriesTreeView: View {
         let typeId = typeNode.type.id ?? 0
         let isSelected = selection == .type(typeId)
         let isExpanded = expandedTypes.contains(typeId)
-        let brandCount = typeNode.brandNodes.filter({ !$0.isGeneral }).count
-        let colorCount = typeNode.totalColorCount
+        let brandCount = typeNode.brands.count
+        let variantCount = typeNode.colors.count
 
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: DS.Space.sm) {
@@ -481,9 +473,9 @@ struct CategoriesTreeView: View {
                     icon: "wrench.and.screwdriver.fill",
                     iconColor: .teal,
                     title: typeNode.type.name,
-                    subtitle: "\(brandCount) brand\(brandCount == 1 ? "" : "s"), \(colorCount) color\(colorCount == 1 ? "" : "s")",
+                    subtitle: "\(variantCount) variant\(variantCount == 1 ? "" : "s"), \(brandCount) brand\(brandCount == 1 ? "" : "s")",
                     isSelected: isSelected,
-                    badgeCount: isExpanded ? nil : typeNode.brandNodes.count
+                    badgeCount: isExpanded ? nil : variantCount
                 )
             }
             .padding(.leading, DS.Space.lg + DS.Space.lg + DS.Space.lg)
@@ -509,14 +501,14 @@ struct CategoriesTreeView: View {
                 }
             }
 
-            // Children (brand nodes, each with their colors)
+            // Children (variants, with brand-specific SKU rows underneath)
             if isExpanded {
-                ForEach(typeNode.brandNodes) { brandNode in
-                    brandSection(brandNode, typeId: typeId)
+                ForEach(typeNode.colors, id: \.id) { color in
+                    variantSection(color, typeNode: typeNode)
                 }
 
-                if typeNode.brandNodes.isEmpty {
-                    Text("No brands linked — add brands to start building catalog entries")
+                if typeNode.colors.isEmpty {
+                    Text("No variants linked yet - add variants from the type editor")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .padding(.leading, DS.Space.lg * 4 + DS.Space.xl)
@@ -526,23 +518,19 @@ struct CategoriesTreeView: View {
         }
     }
 
-    // MARK: - Brand Level (under Type)
+    // MARK: - Variant Level (under Type)
 
     @ViewBuilder
-    private func brandSection(_ brandNode: PartsService.BrandNode, typeId: Int64) -> some View {
-        let brandId = brandNode.id  // -1 for General
-        let isSelected: Bool = {
-            if brandNode.isGeneral {
-                return selection == .brand(brandId: 0, typeId: typeId)
-            } else {
-                return selection == .brand(brandId: brandNode.brand?.id ?? 0, typeId: typeId)
-            }
-        }()
-        let isExpanded = expandedBrands.contains(brandId)
+    private func variantSection(_ color: PartColor, typeNode: PartsService.TypeNode) -> some View {
+        let typeId = typeNode.type.id ?? 0
+        let colorId = color.id ?? 0
+        let isSelected = selection == .color(colorId: colorId, typeId: typeId, brandId: nil)
+        let isExpanded = expandedVariants.contains(colorId)
+        let skuCount = skuCache[typeId]?.filter { $0.colorId == colorId }.count
 
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: DS.Space.sm) {
-                if !brandNode.colors.isEmpty {
+                if skuCount != 0 {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -552,54 +540,46 @@ struct CategoriesTreeView: View {
                 }
 
                 treeRow(
-                    icon: brandNode.isGeneral ? "circle.dashed" : "tag.fill",
-                    iconColor: brandNode.isGeneral ? .secondary : .orange,
-                    title: brandNode.name,
-                    subtitle: "\(brandNode.colors.count) color\(brandNode.colors.count == 1 ? "" : "s")",
-                    isSelected: isSelected
+                    icon: "circle.hexagongrid.fill",
+                    iconColor: .pink,
+                    title: color.name,
+                    subtitle: skuCount.map { "\($0) SKU\($0 == 1 ? "" : "s")" } ?? "Loading SKUs",
+                    isSelected: isSelected,
+                    badgeCount: isExpanded ? nil : skuCount
                 )
             }
             .padding(.leading, DS.Space.lg * 3 + 14)
             .contentShape(Rectangle())
             .onTapGesture {
-                if let brand = brandNode.brand {
-                    selection = .brand(brandId: brand.id ?? 0, typeId: typeId)
-                } else {
-                    selection = .brand(brandId: 0, typeId: typeId) // General
-                }
-                if !brandNode.colors.isEmpty {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        if isExpanded {
-                            expandedBrands.remove(brandId)
-                        } else {
-                            expandedBrands.insert(brandId)
-                        }
+                selection = .color(colorId: colorId, typeId: typeId, brandId: nil)
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if isExpanded {
+                        expandedVariants.remove(colorId)
+                    } else {
+                        expandedVariants.insert(colorId)
                     }
                 }
             }
 
-            // Color children under this brand
             if isExpanded {
-                if let brand = brandNode.brand, let concreteBrandId = brand.id {
-                    skuRows(typeId: typeId, brandId: concreteBrandId, brandName: brand.name)
-                } else {
-                    ForEach(brandNode.colors, id: \.id) { color in
-                        colorRow(color, typeId: typeId, brandId: nil)
-                    }
-                }
+                skuRows(typeNode: typeNode, color: color)
             }
+        }
+        .task {
+            loadSKUsIfNeeded(typeId: typeId)
         }
     }
 
-    // MARK: - SKU Rows (Level 5, under concrete Brand)
+    // MARK: - SKU Rows (under Variant)
 
     @ViewBuilder
-    private func skuRows(typeId: Int64, brandId: Int64, brandName: String) -> some View {
-        let key = SKUCacheKey(typeId: typeId, brandId: brandId)
-        let rows = skuCache[key] ?? []
+    private func skuRows(typeNode: PartsService.TypeNode, color: PartColor) -> some View {
+        let typeId = typeNode.type.id ?? 0
+        let colorId = color.id ?? 0
+        let rows = (skuCache[typeId] ?? []).filter { $0.colorId == colorId }
 
         Group {
-            if skuLoadingKeys.contains(key) && rows.isEmpty {
+            if skuLoadingTypeIds.contains(typeId) && rows.isEmpty {
                 HStack(spacing: DS.Space.sm) {
                     ProgressView()
                     Text("Loading SKUs...")
@@ -609,21 +589,16 @@ struct CategoriesTreeView: View {
                 .padding(.vertical, DS.Space.xs)
                 .padding(.leading, DS.Space.lg * 4 + 14)
             } else if rows.isEmpty {
-                Text("No SKU rows yet - pick variants in the editor to create brand-specific SKUs")
+                Text("No brand-specific SKU rows yet")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, DS.Space.xs)
                     .padding(.leading, DS.Space.lg * 4 + 14)
             } else {
                 ForEach(rows, id: \.id) { sku in
-                    if let color = findColor(sku.colorId) {
-                        skuRow(sku, color: color, brandName: brandName)
-                    }
+                    skuRow(sku, color: color, brandName: brandName(for: sku.brandId, in: typeNode))
                 }
             }
-        }
-        .task {
-            loadSKUsIfNeeded(typeId: typeId, brandId: brandId)
         }
     }
 
@@ -682,7 +657,7 @@ struct CategoriesTreeView: View {
         }
     }
 
-    // MARK: - Color Row (Level 5, under Brand)
+    // MARK: - Variant Row
 
     @ViewBuilder
     private func colorRow(_ color: PartColor, typeId: Int64, brandId: Int64? = nil) -> some View {
@@ -748,17 +723,20 @@ struct CategoriesTreeView: View {
         }
     }
 
-    private func loadSKUsIfNeeded(typeId: Int64, brandId: Int64) {
-        let key = SKUCacheKey(typeId: typeId, brandId: brandId)
-        guard skuCache[key] == nil, !skuLoadingKeys.contains(key), let parts = appCore.partsService else { return }
-        skuLoadingKeys.insert(key)
+    private func loadSKUsIfNeeded(typeId: Int64) {
+        guard skuCache[typeId] == nil, !skuLoadingTypeIds.contains(typeId), let parts = appCore.partsService else { return }
+        skuLoadingTypeIds.insert(typeId)
         Task.detached {
-            let rows = (try? parts.getColorBrandSKUs(typeId: typeId, brandId: brandId)) ?? []
+            let rows = (try? parts.getSKUsForType(typeId: typeId)) ?? []
             await MainActor.run {
-                skuCache[key] = rows
-                skuLoadingKeys.remove(key)
+                skuCache[typeId] = rows
+                skuLoadingTypeIds.remove(typeId)
             }
         }
+    }
+
+    private func brandName(for brandId: Int64, in typeNode: PartsService.TypeNode) -> String {
+        typeNode.brands.first(where: { $0.id == brandId })?.name ?? "Brand #\(brandId)"
     }
 
     private func findColor(_ colorId: Int64) -> PartColor? {
@@ -855,7 +833,7 @@ struct HierarchyHelpView: View {
                         .font(.title2)
                         .fontWeight(.bold)
 
-                    Text("Parts are organized in a 5-level tree. Each level adds specificity:")
+                    Text("Parts are organized from broad category to reusable variant, then specific SKU:")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
@@ -884,25 +862,25 @@ struct HierarchyHelpView: View {
                         icon: "wrench.and.screwdriver.fill",
                         color: .teal,
                         example: "e.g. 12/2 Wire, 14/2 Wire, THHN",
-                        description: "The specific kind of part. This is where you link brands and colors."
+                        description: "The specific kind of part. This is where you link brands and reusable variants."
                     )
 
                     hierarchyLevel(
                         number: 4,
-                        name: "Brand",
-                        icon: "tag.fill",
-                        color: .orange,
-                        example: "e.g. Southwire, Cerro, General",
-                        description: "Which manufacturer makes this type. 'General' means no specific brand."
+                        name: "Variant",
+                        icon: "circle.hexagongrid.fill",
+                        color: .pink,
+                        example: "e.g. White, Black, Red, None",
+                        description: "A reusable option for the type. Variants are shared and are not owned by a brand."
                     )
 
                     hierarchyLevel(
                         number: 5,
-                        name: "Color",
-                        icon: "circle.fill",
-                        color: .pink,
-                        example: "e.g. White, Black, Red, None",
-                        description: "The color variant. Selecting a color under a brand creates a catalog entry you can order and stock."
+                        name: "SKU",
+                        icon: "number.square.fill",
+                        color: .orange,
+                        example: "e.g. Southwire 28827401",
+                        description: "The brand-specific purchasable row for a variant, with its own part number and cost."
                     )
 
                     Divider()
@@ -915,13 +893,13 @@ struct HierarchyHelpView: View {
                         stepRow(step: 1, text: "Tap the **+** button to create a Category")
                         stepRow(step: 2, text: "Tap into the category and add a **Style**")
                         stepRow(step: 3, text: "Add a **Type** under the style")
-                        stepRow(step: 4, text: "Link **Brands** to the type using checkboxes")
-                        stepRow(step: 5, text: "Pick **Colors** under each brand to create catalog entries")
+                        stepRow(step: 4, text: "Link **Brands** and **Variants** to the type")
+                        stepRow(step: 5, text: "Edit **SKU** rows when a brand has a specific part number or cost")
                     }
 
                     Divider()
 
-                    Text("Each catalog entry (Type + Brand + Color) becomes a part you can order, stock, and track.")
+                    Text("Brand deferral belongs in ordering flows, not in the Categories structure.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

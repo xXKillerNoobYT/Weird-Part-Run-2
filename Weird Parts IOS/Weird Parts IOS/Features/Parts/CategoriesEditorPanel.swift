@@ -317,7 +317,7 @@ struct CategoriesEditorPanel: View {
 
                 HStack(spacing: DS.Space.xl) {
                     statPill(value: typeNode.brands.count, label: "Brands")
-                    statPill(value: typeNode.colors.count, label: "Colors")
+                    statPill(value: typeNode.colors.count, label: "Variants")
                 }
 
                 Divider()
@@ -347,7 +347,9 @@ struct CategoriesEditorPanel: View {
 
     @ViewBuilder
     private func brandEditor(brandId: Int64, typeId: Int64) -> some View {
-        if let (_, _, typeNode) = findType(typeId) {
+        if brandId == 0 {
+            typeEditor(typeId: typeId)
+        } else if let (_, _, typeNode) = findType(typeId) {
             let brandNode = typeNode.brandNodes.first(where: { $0.id == brandId })
             VStack(alignment: .leading, spacing: DS.Space.md) {
                 Label("Brand", systemImage: "tag.fill")
@@ -369,7 +371,7 @@ struct CategoriesEditorPanel: View {
                 Divider()
 
                 if let brandNode {
-                    statPill(value: brandNode.colors.count, label: "Colors")
+                    statPill(value: brandNode.colors.count, label: "Variants")
 
                     Divider()
                 }
@@ -379,14 +381,14 @@ struct CategoriesEditorPanel: View {
 
                 Divider()
 
-                // Color picker for this brand — prominent section
+                // Variant picker for this brand — prominent section
                 VStack(alignment: .leading, spacing: DS.Space.sm) {
-                    Label("Available Colors", systemImage: "paintpalette.fill")
+                    Label("Available Variants", systemImage: "paintpalette.fill")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundStyle(.primary)
 
-                    Text("Pick a color below to create a catalog entry for this brand + type + color combination.")
+                    Text("Pick a variant below to create a catalog entry for this brand + type + variant combination.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -442,12 +444,12 @@ struct CategoriesEditorPanel: View {
         }
     }
 
-    // MARK: - Color Editor
+    // MARK: - Variant Editor
 
     @ViewBuilder
     private func colorEditor(colorId: Int64, typeId: Int64, brandId: Int64?) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
-            Label("Color", systemImage: "circle.fill")
+            Label("Variant", systemImage: "circle.fill")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -531,7 +533,7 @@ struct CategoriesEditorPanel: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
-                Text("Color not found")
+                Text("Variant not found")
                     .foregroundStyle(.secondary)
             }
         }

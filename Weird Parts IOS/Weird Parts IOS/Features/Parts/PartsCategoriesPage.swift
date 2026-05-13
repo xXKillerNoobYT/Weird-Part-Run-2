@@ -1,8 +1,8 @@
 import SwiftUI
 import WiredPartCore
 
-/// Parts Categories page — filing system with 5-level drill-down hierarchy:
-/// Category > Style > Type > Brand > Color.
+/// Parts Categories page — filing system with drill-down hierarchy:
+/// Category > Style > Type > Variant > SKU.
 ///
 /// **Layout:**
 /// - iPad/Mac (large screen): split view — tree browser LEFT, editor panel RIGHT
@@ -20,7 +20,7 @@ struct PartsCategoriesPage: View {
     @State private var expandedCategories: Set<Int64> = []
     @State private var expandedStyles: Set<Int64> = []
     @State private var expandedTypes: Set<Int64> = []
-    @State private var expandedBrands: Set<Int64> = []
+    @State private var expandedVariants: Set<Int64> = []
 
     private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
@@ -63,9 +63,9 @@ struct PartsCategoriesPage: View {
             PageHelpSheet(
                 title: "Categories Help",
                 sections: [
-                    ("Hierarchy", "Parts are organized in a 5-level hierarchy: Category > Style > Type > Brand > Color. Tap any level to drill down."),
+                    ("Hierarchy", "Parts are organized as Category > Style > Type > Variant > SKU. Tap any level to drill down."),
                     ("Editing", "Select an item in the tree to view and edit its details in the editor panel. On iPad, the editor appears side-by-side."),
-                    ("Managing", "Add new categories, styles, types, brands, and colors from the editor panel. Changes apply immediately to all parts using that classification.")
+                    ("Managing", "Add new categories, styles, types, brands, and variants from the editor panel. Changes apply immediately to all parts using that classification.")
                 ]
             )
         }
@@ -92,7 +92,7 @@ struct PartsCategoriesPage: View {
                 expandedCategories: $expandedCategories,
                 expandedStyles: $expandedStyles,
                 expandedTypes: $expandedTypes,
-                expandedBrands: $expandedBrands,
+                expandedVariants: $expandedVariants,
                 onRefresh: { await loadHierarchy() }
             )
             .frame(minWidth: 280, idealWidth: 320)
@@ -120,7 +120,7 @@ struct PartsCategoriesPage: View {
                 expandedCategories: $expandedCategories,
                 expandedStyles: $expandedStyles,
                 expandedTypes: $expandedTypes,
-                expandedBrands: $expandedBrands,
+                expandedVariants: $expandedVariants,
                 onRefresh: { await loadHierarchy() }
             )
             .navigationDestination(item: $selection) { sel in

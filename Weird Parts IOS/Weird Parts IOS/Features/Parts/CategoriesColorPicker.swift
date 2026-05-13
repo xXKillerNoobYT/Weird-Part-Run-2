@@ -1,8 +1,8 @@
 import SwiftUI
 import WiredPartCore
 
-/// Color picker for a specific type — selecting a color creates a Part
-/// in the catalog with the full hierarchy path (category, style, type, brand, color).
+/// Variant picker for a specific type — selecting a variant creates a Part
+/// in the catalog with the full hierarchy path (category, style, type, brand, variant).
 struct CategoriesColorPicker: View {
     let typeId: Int64
     let brandId: Int64?
@@ -156,7 +156,7 @@ struct CategoriesColorPicker: View {
             )
         }
         .buttonStyle(.plain)
-        .contentShape(Rectangle())
+        .minTapTarget()
         .disabled(isLinked)
     }
 
@@ -179,7 +179,7 @@ struct CategoriesColorPicker: View {
                         if let bid = brandId {
                             brandName = typeNode.brands.first(where: { $0.id == bid })?.name ?? ""
                         } else {
-                            brandName = "General"
+                            brandName = "brand deferred"
                         }
                         return "\(typeNode.type.name) (\(brandName))"
                     }
@@ -229,15 +229,17 @@ struct CategoriesColorPicker: View {
                 for styleNode in catNode.styles {
                     for typeNode in styleNode.types {
                         if typeNode.type.id == typeId {
-                            // Find the matching brand node
-                            let matchingBrandNode: PartsService.BrandNode?
                             if let bid = brandId {
-                                matchingBrandNode = typeNode.brandNodes.first(where: { $0.brand?.id == bid })
+                                let matchingBrandNode = typeNode.brandNodes.first(where: { $0.brand?.id == bid })
+                                if let brandNode = matchingBrandNode {
+                                    for color in brandNode.colors {
+                                        if let cid = color.id {
+                                            linked.insert(cid)
+                                        }
+                                    }
+                                }
                             } else {
-                                matchingBrandNode = typeNode.brandNodes.first(where: { $0.isGeneral })
-                            }
-                            if let brandNode = matchingBrandNode {
-                                for color in brandNode.colors {
+                                for color in typeNode.colors {
                                     if let cid = color.id {
                                         linked.insert(cid)
                                     }
