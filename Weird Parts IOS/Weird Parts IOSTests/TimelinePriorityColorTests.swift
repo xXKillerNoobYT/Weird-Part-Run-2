@@ -12,7 +12,7 @@ struct TimelinePriorityColorTests {
         let dueDate = now.addingTimeInterval(-3_600)
 
         #expect(colorsMatch(
-            TimelinePriorityColor.color(for: dueDate, now: now),
+            TimelinePriorityColor.color(forDueDate: dueDate, now: now),
             DS.SemanticColor.error
         ))
     }
@@ -21,7 +21,7 @@ struct TimelinePriorityColorTests {
         let dueDate = now.addingTimeInterval(3_600)
 
         #expect(colorsMatch(
-            TimelinePriorityColor.color(for: dueDate, now: now),
+            TimelinePriorityColor.color(forDueDate: dueDate, now: now),
             DS.SemanticColor.warning
         ))
     }
@@ -30,7 +30,7 @@ struct TimelinePriorityColorTests {
         let dueDate = now.addingTimeInterval(24 * 3_600)
 
         #expect(colorsMatch(
-            TimelinePriorityColor.color(for: dueDate, now: now),
+            TimelinePriorityColor.color(forDueDate: dueDate, now: now),
             DS.SemanticColor.caution
         ))
     }
@@ -39,18 +39,18 @@ struct TimelinePriorityColorTests {
         let dueDate = now.addingTimeInterval(96 * 3_600)
 
         #expect(colorsMatch(
-            TimelinePriorityColor.color(for: dueDate, now: now),
+            TimelinePriorityColor.color(forDueDate: dueDate, now: now),
             DS.SemanticColor.success
         ))
     }
 
     @Test func completedAndNilDueDatesUseNeutralTokens() {
         #expect(colorsMatch(
-            TimelinePriorityColor.color(for: now.addingTimeInterval(-3_600), now: now, isCompleted: true),
+            TimelinePriorityColor.color(forDueDate: now.addingTimeInterval(-3_600), now: now, isCompleted: true),
             .gray
         ))
         #expect(colorsMatch(
-            TimelinePriorityColor.color(for: nil as Date?, now: now),
+            TimelinePriorityColor.color(forDueDate: nil as Date?, now: now),
             .secondary
         ))
     }

@@ -385,12 +385,17 @@ struct IOSOfficeDashboardPage: View {
     // MARK: - Helpers
 
     private func colorForPriority(_ priority: DashboardService.AttentionPriority) -> Color {
+        let now = Date()
+        let dueDate: Date
+
         switch priority {
-        case .low: return .green
-        case .medium: return .yellow
-        case .high: return .orange
-        case .overdue: return .red
+        case .overdue: dueDate = now.addingTimeInterval(-3_600)
+        case .high: dueDate = now.addingTimeInterval(3_600)
+        case .medium: dueDate = now.addingTimeInterval(48 * 3_600)
+        case .low: dueDate = now.addingTimeInterval(120 * 3_600)
         }
+
+        return TimelinePriorityColor.color(forDueDate: dueDate, now: now)
     }
 
     private func iconForPriority(_ priority: DashboardService.AttentionPriority) -> String {

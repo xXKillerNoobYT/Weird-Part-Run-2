@@ -169,3 +169,140 @@ Full design token + component library added outside the original plan scope:
 - **#257** — Architecture drift in CLAUDE.md (dual-platform section not fully updated to iOS-only). Tracked for C12/CLAUDE.md update.
 - **Q&A #221** — LWW + field-level merge conflict resolution design pending user decision.
 - **Phase 13 ON HOLD** — Sync implementation blocked on architecture decision.
+
+---
+
+## Token Spec: Time-Based Priority Colors
+
+> **Source:** WEI-810 / WEI-451 / GH#42 T2-03. Design-first deliverable from UXDesigner; engineering hand-off to CTO.
+> **Status:** Spec — ready for implementation. Last revised 2026-05-12.
+
+### Intent
+
+Priority color is a **function of time remaining until the due date**, not a function of the priority label. A "High" task that is 10 days out is calmer than a "Low" task that is overdue. The chip color must reflect the real urgency the user feels — and it must update on its own as time passes. Labels (`urgent`, `high`, `normal`, `low`) remain a sorting/grouping concept, but they no longer drive color.
+
+### Single Source of Truth
+
+One helper. One file. One set of buckets. No duplicate color logic anywhere else in the iOS app.
+
+- **File:** `Weird Parts IOS/Weird Parts IOS/Shared/TimelinePriorityColor.swift`
+- **Naming decision:** The issue text proposes `PriorityColor.color(forDueDate:now:)`. We keep the existing type name `TimelinePriorityColor` instead — it more accurately describes the behavior (time-based, not label-based), and the symbol is already adopted by 17 call sites. Renaming would churn the codebase with zero user-visible benefit. The acceptance criterion "one helper, one source of truth" is what matters; the name is incidental.
+
+### Required API (pure functions)
+
+The helper must be **pure** — every input that affects the result is a parameter. No hidden reads of `Date()` inside the function body. This is what makes the four-bucket unit test reliable.
+
+```swift
+struct TimelinePriorityColor {
+    /// Primary helper — pure function of (dueDate, now, isCompleted).
+    static func color(
+        forDueDate dueDate: Date?,
+        now: Date = Date(),
+        isCompleted: Bool = false
+    ) -> Color
+}
+```
+
+Existing convenience overloads (`color(for:isCompleted:)`, `color(priority:dueDate:)`, string-date variants, `urgencyLabel(...)`) remain, but each one MUST forward to the pure primary and accept an optional `now: Date = Date()` parameter so tests can inject a fixed clock.
+
+### Bucket Boundaries (locked)
+
+Half-open intervals on `hoursRemaining = (dueDate − now) / 3600`:
+
+| Bucket  | Condition                       | Token                       | Raw fallback | Meaning                |
+| ------- | ------------------------------- | --------------------------- | ------------ | ---------------------- |
+| Overdue | `hoursRemaining < 0`            | `DS.SemanticColor.error`    | `.red`       | Past due date          |
+| Soon    | `0 ≤ hoursRemaining < 24`       | `DS.SemanticColor.warning`  | `.orange`    | Due within 24 hours    |
+| Watch   | `24 ≤ hoursRemaining < 96`      | `DS.SemanticColor.caution`  | `.yellow`    | Due within 4 days      |
+| Safe    | `hoursRemaining ≥ 96`           | `DS.SemanticColor.success`  | `.green`     | More than 4 days out   |
+
+Edge-case states (do **not** participate in the four-bucket scale):
+
+| State        | Condition                           | Color                |
+| ------------ | ----------------------------------- | -------------------- |
+| Completed    | `isCompleted == true`               | `Color.gray`         |
+| No deadline  | `dueDate == nil`                    | `Color.secondary`    |
+
+Boundary contract for unit tests: `hoursRemaining == 24.0` is **Watch (yellow)**; `hoursRemaining == 96.0` is **Safe (green)**; `hoursRemaining == 0.0` is **Soon (orange)** (not overdue). These exact boundaries are what the WEI-810 unit test must cover (overdue/24h/4d/safe).
+
+### Design-System Token Additions (required)
+
+Add a `caution` token to `DesignSystem/Tokens/SemanticColors.swift` so the Watch bucket has a proper semantic anchor instead of a raw `Color.yellow`. Without this, dark mode and high-contrast users get an off-system yellow that fights the rest of the palette.
+
+```swift
+extension DS {
+    enum SemanticColor {
+        /// Time-pressure caution (between warning and success). Yellow.
+        /// Use for the 1–4 day priority bucket and any "watch this" surface
+        /// that's not yet at warning level.
+        static let caution: Color = .yellow
+        // existing: success, warning, error, info
+    }
+}
+```
+
+The existing `tint(_:)` and `muted(_:)` helpers automatically work with `caution` since they accept any `Color`. No new tint helper needed.
+
+### Required Removals (no shadowing)
+
+The acceptance criterion is "existing label-based colors removed (not just shadowed)." After CTO lands the change, the following must **not** exist anywhere in the iOS target:
+
+1. **`DS.SemanticColor.priority(_ level: String) -> Color`** in `SemanticColors.swift` — the label→color mapper. Delete the function. Any caller that survives must route through `TimelinePriorityColor` instead.
+2. **`TimelinePriorityColor.fallbackColor(priority:)`** — the legacy label fallback. Delete it. Items that have a priority label but no `dueDate` now render the chip in `Color.secondary` (gray) and rely on the text label / SF Symbol for differentiation, which is the correct outcome: if there's no deadline, there's no time-pressure to show.
+3. Any inline `switch priority { case "urgent": .red ... }` blocks discovered during the sweep. CTO should grep for `"urgent".*\.red` and `priority.*\.orange` patterns and route survivors through the helper.
+
+The 5 call sites currently annotated `// TODO: When X gains a dueDate field, replace fallback with TimelinePriorityColor.color(priority:dueDateString:)` (Questions, RFI, Escalation, Approvals, JPOs/JPODetail) lose their fallback when `fallbackColor` is removed. That's intended — those rows simply render `Color.secondary` until their model gains a `dueDate`. We **do not** add `dueDate` to those models as part of WEI-810; that's a separate model-level decision per area.
+
+### Accessibility Requirements
+
+Color alone is a WCAG fail. Every place this helper is used **must** also surface:
+
+1. **A text urgency label.** `TimelinePriorityColor.urgencyLabel(for:)` already exists ("Overdue", "Due today", "Due in 3d", "No deadline", "Completed"). Pair it with the chip so VoiceOver and color-blind users get the same information.
+2. **An SF Symbol** on the chip, paired with the color:
+   - Overdue → `exclamationmark.triangle.fill`
+   - Soon (<24h) → `clock.badge.exclamationmark`
+   - Watch (1–4d) → `clock`
+   - Safe (>4d) → `checkmark.circle`
+   - Completed → `checkmark.circle.fill`
+   - No deadline → `calendar.badge.minus`
+
+This is not part of the helper's return value — it's a chip-component concern. But the spec calls it out so engineering doesn't ship a color-only chip and call it done.
+
+### Light + Dark Mode + Viewport Verification
+
+Required visual checks before WEI-810 closes:
+
+| Viewport             | Light mode | Dark mode | Required surfaces                                      |
+| -------------------- | ---------- | --------- | ------------------------------------------------------ |
+| iPhone 375×812       | ✓          | ✓         | JobsList row, JPOsList row, RFI list row, dashboard KPI |
+| Desktop 1280×800     | ✓          | ✓         | iPad sidebar layout, ManageJobs table, Approvals queue |
+
+Specifically watch for:
+- Yellow chip foreground vs. light gray card background — must hit ≥ 3:1 contrast.
+- Orange and red chips in dark mode — verify they don't bloom against the dark card.
+- Green at small sizes (chip icon at 12pt) — system green can read as gray in dark mode; check the SF Symbol stroke is visible.
+
+### Unit-Test Contract (for CTO)
+
+Four-bucket boundary tests using injected `now`:
+
+```swift
+let now = Date(timeIntervalSince1970: 1_700_000_000)
+XCTAssertEqual(TimelinePriorityColor.color(forDueDate: now.addingTimeInterval(-3600), now: now), .red)     // overdue
+XCTAssertEqual(TimelinePriorityColor.color(forDueDate: now.addingTimeInterval( 3600), now: now), .orange)  // 1h ahead
+XCTAssertEqual(TimelinePriorityColor.color(forDueDate: now.addingTimeInterval( 24 * 3600), now: now), .yellow) // exactly 24h
+XCTAssertEqual(TimelinePriorityColor.color(forDueDate: now.addingTimeInterval( 96 * 3600), now: now), .green)  // exactly 96h
+```
+
+Plus: completed → gray; nil dueDate → secondary.
+
+### Hand-off Checklist
+
+- [x] Spec landed in `docs/plans/ios-cross-cutting.md` (this section).
+- [x] CTO: add `now: Date = Date()` to `TimelinePriorityColor.color(...)` primary and forward through convenience overloads.
+- [x] CTO: add `DS.SemanticColor.caution` token and switch helper output to semantic tokens.
+- [x] CTO: delete `DS.SemanticColor.priority(_:)`.
+- [x] CTO: delete `TimelinePriorityColor.fallbackColor(priority:)`.
+- [x] CTO: confirm all 17 known call sites compile; sweep for inline label→color switches.
+- [x] CTO: add four-bucket unit test (above contract) plus completed/no-date cases.
+- [x] QA: verify light + dark at iPhone 375×812 and iPad/desktop 1280×800.
