@@ -779,6 +779,73 @@ struct PartsServiceExtTests {
 
     // MARK: - Fix Regression Tests (Iteration 5)
 
+    @Test("listCompanionRulesHierarchy populates hierarchy names on sources and targets")
+    func testListCompanionRulesHierarchyPopulatesNames() throws {
+        // Guards WEI-1080 (GH#426): companion-rule rows used to display
+        // `Cat:<id>` / `Style:<id>` / `Type:<id>` placeholders because the
+        // hierarchy listing didn't join the name tables.
+        let env = try E2ETestHelpers.setUp()
+        let (sourceCat, sourceStyle, sourceType) = try E2ETestHelpers.seedPartHierarchy(
+            env, category: "WEI1080SourceCat", style: "WEI1080SourceStyle", type: "WEI1080SourceType"
+        )
+        let (targetCat, targetStyle, targetType) = try E2ETestHelpers.seedPartHierarchy(
+            env, category: "WEI1080TargetCat", style: "WEI1080TargetStyle", type: "WEI1080TargetType"
+        )
+
+        let ruleId = try env.parts.createCompanionRuleAtLevel(
+            name: "WEI-1080 Type Rule",
+            sources: [(categoryId: sourceCat, styleId: sourceStyle, typeId: sourceType)],
+            targets: [(categoryId: targetCat, styleId: targetStyle, typeId: targetType)]
+        )
+
+        let rule = try env.parts.listCompanionRulesHierarchy().first { $0.id == ruleId }
+        let source = try #require(rule?.sources.first)
+        let target = try #require(rule?.targets.first)
+
+        #expect(source.categoryName == "WEI1080SourceCat")
+        #expect(source.styleName == "WEI1080SourceStyle")
+        #expect(source.typeName == "WEI1080SourceType")
+        #expect(target.categoryName == "WEI1080TargetCat")
+        #expect(target.styleName == "WEI1080TargetStyle")
+        #expect(target.typeName == "WEI1080TargetType")
+    }
+
+    @Test("listCompanionRulesHierarchy returns nil names when hierarchy refs are soft-deleted")
+    func testListCompanionRulesHierarchyDeletedRefsFallBackToNil() throws {
+        // Guards WEI-1080 graceful-degradation contract: the UI renders
+        // "Unknown ..." labels when names come back nil instead of the old
+        // `Cat:<id>` placeholders, so the service must surface nil — not
+        // crash and not silently drop the row when refs are soft-deleted.
+        let env = try E2ETestHelpers.setUp()
+        let (sourceCat, _, _) = try E2ETestHelpers.seedPartHierarchy(
+            env, category: "WEI1080DeletedSourceCat", style: "WEI1080DeletedSourceStyle", type: "WEI1080DeletedSourceType"
+        )
+        let (targetCat, _, _) = try E2ETestHelpers.seedPartHierarchy(
+            env, category: "WEI1080DeletedTargetCat", style: "WEI1080DeletedTargetStyle", type: "WEI1080DeletedTargetType"
+        )
+
+        let ruleId = try env.parts.createCompanionRuleAtLevel(
+            name: "WEI-1080 Orphan Refs Rule",
+            sources: [(categoryId: sourceCat, styleId: nil, typeId: nil)],
+            targets: [(categoryId: targetCat, styleId: nil, typeId: nil)]
+        )
+
+        // Soft-delete the referenced categories (cascades to styles+types).
+        try env.parts.deleteCategory(id: sourceCat)
+        try env.parts.deleteCategory(id: targetCat)
+
+        let rule = try env.parts.listCompanionRulesHierarchy().first { $0.id == ruleId }
+        let source = try #require(rule?.sources.first)
+        let target = try #require(rule?.targets.first)
+
+        // IDs still surface so the UI can render "Unknown (#<id>)".
+        #expect(source.categoryId == sourceCat)
+        #expect(target.categoryId == targetCat)
+        // Names are nil so the UI fallback kicks in.
+        #expect(source.categoryName == nil)
+        #expect(target.categoryName == nil)
+    }
+
     @Test("listCompanionRulesHierarchy excludes soft-deleted parent rules")
     func testListCompanionRulesHierarchyExcludesSoftDeleted() throws {
         let env = try E2ETestHelpers.setUp()
