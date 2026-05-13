@@ -105,7 +105,10 @@ struct IOSJobNotebooksPage: View {
             }
         } else {
             List(filteredNotebooks, id: \.id) { notebook in
-                notebookRow(notebook)
+                NavigationLink(destination: IOSNotebookDetailPage(notebookId: notebook.id).environmentObject(appCore)) {
+                    notebookRow(notebook)
+                }
+                .accessibilityIdentifier("jobNotebookRow_\(notebook.id)")
             }
             .listStyle(.insetGrouped)
         }

@@ -27,6 +27,8 @@ struct IOSJobDetailTabView: View {
     @State private var teamMembers: [JobsService.TeamMemberRow] = []
     @State private var jobParts: [JobsService.JobPartRow] = []
     @State private var jobSupplierChannels: [ChatService.SupplierChannelRow] = []
+    @State private var jobNotebookId: Int64?
+    @State private var isLoadingJobNotebook = false
     @State private var tabError: String?
     /// Job stages with computed statuses (Rough-in, Prep/Makeup, Trim-out).
     @State private var jobStages: [JobsService.JobStageStatus] = []
@@ -171,31 +173,47 @@ struct IOSJobDetailTabView: View {
 
     @ViewBuilder
     private func tabContent(_ job: JobsService.JobDetail) -> some View {
-        ScrollView {
-            switch selectedTab {
-            case "overview":
+        switch selectedTab {
+        case "overview":
+            ScrollView {
                 overviewTab(job)
-            case "team":
-                teamTab(job)
-            case "labor":
-                laborTab(job)
-            case "parts":
-                partsTab(job)
-            case "orders":
-                ordersTab(job)
-            case "notebooks":
-                notebooksTab(job)
-            case "chat":
-                chatTab(job)
-            case "qa":
-                qaTab(job)
-            case "costs":
-                costsTab(job)
-            case "estimate":
-                estimateTab(job)
-            default:
-                Text("Unknown tab")
             }
+        case "team":
+            ScrollView {
+                teamTab(job)
+            }
+        case "labor":
+            ScrollView {
+                laborTab(job)
+            }
+        case "parts":
+            ScrollView {
+                partsTab(job)
+            }
+        case "orders":
+            ScrollView {
+                ordersTab(job)
+            }
+        case "notebooks":
+            notebooksTab(job)
+        case "chat":
+            ScrollView {
+                chatTab(job)
+            }
+        case "qa":
+            ScrollView {
+                qaTab(job)
+            }
+        case "costs":
+            ScrollView {
+                costsTab(job)
+            }
+        case "estimate":
+            ScrollView {
+                estimateTab(job)
+            }
+        default:
+            Text("Unknown tab")
         }
     }
 
@@ -861,29 +879,45 @@ struct IOSJobDetailTabView: View {
     // MARK: - Notebooks Tab
 
     private func notebooksTab(_ job: JobsService.JobDetail) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Job Notebooks")
-                    .font(.headline)
-                Spacer()
-            }
+        Group {
+            if let notebookId = jobNotebookId {
+                IOSNotebookDetailPage(notebookId: notebookId)
+                    .environmentObject(appCore)
+            } else {
+                VStack(alignment: .leading, spacing: 16) {
+                    if isLoadingJobNotebook {
+                        ProgressView("Loading job notebook...")
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    } else {
+                        ContentUnavailableView {
+                            Label("This job does not have a notebook yet", systemImage: "note.text.badge.plus")
+                        } description: {
+                            Text("Create a job notebook for \(job.jobName), or retry loading if it was just created on another device.")
+                        } actions: {
+                            HStack(spacing: 12) {
+                                Button {
+                                    createMissingJobNotebook(for: job)
+                                } label: {
+                                    Label("Create job notebook", systemImage: "plus.circle")
+                                        .frame(minHeight: 44)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .accessibilityIdentifier("jobNotebookCreateRecovery")
 
-            Text("Notebooks for \(job.jobName) can be viewed in the Notebooks module.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            Button {
-                NotificationCenter.default.post(
-                    name: .navigateToModule,
-                    object: nil,
-                    userInfo: ["moduleId": "notebooks", "tabId": "notebooks-job-notebooks"]
-                )
-            } label: {
-                Label("Open Job Notebooks", systemImage: "note.text")
+                                Button {
+                                    loadJobNotebook()
+                                } label: {
+                                    Label("Retry", systemImage: "arrow.clockwise")
+                                        .frame(minHeight: 44)
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                    }
+                }
+                .padding()
             }
-            .buttonStyle(.bordered)
         }
-        .padding()
     }
 
     // MARK: - Chat Tab
@@ -1051,6 +1085,7 @@ struct IOSJobDetailTabView: View {
             job = try service.getJob(id: jobId)
             // Load job stages with computed statuses
             jobStages = try service.listJobStages(forJobId: jobId)
+            loadJobNotebook()
             // Load flex pool status for managers
             if appCore.hasPermission("manage_flex_pool"),
                let svc = appCore.schedulingService {
@@ -1060,6 +1095,39 @@ struct IOSJobDetailTabView: View {
             loadError = userFriendlyError(error, context: "load job data")
         }
         isLoading = false
+    }
+
+    private func loadJobNotebook() {
+        guard let service = appCore.notebooksService else {
+            tabError = "Notebooks service not available"
+            isLoadingJobNotebook = false
+            return
+        }
+        isLoadingJobNotebook = jobNotebookId == nil
+        do {
+            jobNotebookId = try service.listNotebooks(notebookType: "job", jobId: jobId).first?.id
+        } catch {
+            tabError = userFriendlyError(error, context: "load job notebook")
+        }
+        isLoadingJobNotebook = false
+    }
+
+    private func createMissingJobNotebook(for job: JobsService.JobDetail) {
+        guard let service = appCore.notebooksService,
+              let userId = appCore.currentUser?.id else {
+            tabError = "Not logged in. Please log in and try again."
+            return
+        }
+        do {
+            jobNotebookId = try service.createNotebook(
+                title: "\(job.jobName) Job Notebook",
+                notebookType: "job",
+                jobId: job.id,
+                createdBy: userId
+            )
+        } catch {
+            tabError = userFriendlyError(error, context: "create job notebook")
+        }
     }
 
     private func toggleFlexPool(job: JobsService.JobDetail) {
