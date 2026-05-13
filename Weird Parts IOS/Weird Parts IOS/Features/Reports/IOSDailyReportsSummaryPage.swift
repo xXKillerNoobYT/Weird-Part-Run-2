@@ -122,11 +122,11 @@ struct IOSDailyReportsSummaryPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if rows.isEmpty {
-            ContentUnavailableView {
-                Label("No Reports", systemImage: "doc.plaintext")
-            } description: {
-                Text("No daily reports found for \(displayDate).")
-            }
+            EmptyStateView(
+                icon: "doc.plaintext",
+                title: "No Reports",
+                message: "No daily reports found for \(displayDate)."
+            )
         } else {
             List {
                 Section {
