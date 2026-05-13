@@ -172,19 +172,25 @@ public final class PartsService: Sendable {
         public var manufacturerPartNumber: String?
         public var notes: String?
         public var categoryName: String
+        public var sourceLabel: String?
+        public var provenanceNote: String?
 
         public init(
             name: String,
             code: String? = nil,
             manufacturerPartNumber: String? = nil,
             notes: String? = nil,
-            categoryName: String = "Uncategorized"
+            categoryName: String = "Uncategorized",
+            sourceLabel: String? = nil,
+            provenanceNote: String? = nil
         ) {
             self.name = name
             self.code = code
             self.manufacturerPartNumber = manufacturerPartNumber
             self.notes = notes
             self.categoryName = categoryName
+            self.sourceLabel = sourceLabel
+            self.provenanceNote = provenanceNote
         }
     }
 
@@ -355,6 +361,41 @@ public final class PartsService: Sendable {
             self.supplier = supplier
             self.brandCount = brandCount
             self.partCount = partCount
+        }
+    }
+
+    public enum SupplierWebsiteSourcingKind: String, Sendable {
+        case linkedPart
+        case generalWebsite
+    }
+
+    public struct SupplierWebsiteSourcingCandidate: Sendable, Identifiable, Equatable {
+        public let kind: SupplierWebsiteSourcingKind
+        public let supplierId: Int64
+        public let supplierName: String
+        public let supplierPartNumber: String?
+        public let partId: Int64?
+        public let partName: String?
+        public let partCode: String?
+        public let website: String
+        public let handoffURL: URL
+
+        public var id: String {
+            [
+                kind.rawValue,
+                String(supplierId),
+                partId.map(String.init) ?? "general",
+                supplierPartNumber ?? ""
+            ].joined(separator: ":")
+        }
+
+        public var sourceLabel: String {
+            switch kind {
+            case .linkedPart:
+                "Supplier Websites - local supplier link"
+            case .generalWebsite:
+                "Supplier Websites - supplier handoff"
+            }
         }
     }
 
@@ -1379,6 +1420,12 @@ public final class PartsService: Sendable {
         if let manufacturer = normalizedOptional(draft.manufacturerPartNumber) {
             lines.append("Known manufacturer detail: \(manufacturer)")
         }
+        if let sourceLabel = normalizedOptional(draft.sourceLabel) {
+            lines.append("Sourcing source: \(sourceLabel)")
+        }
+        if let provenanceNote = normalizedOptional(draft.provenanceNote) {
+            lines.append("Sourcing provenance: \(provenanceNote)")
+        }
         if let notes = normalizedOptional(draft.notes) {
             lines.append("Operator notes: \(notes)")
         }
@@ -1685,6 +1732,143 @@ public final class PartsService: Sendable {
         }
         guard let record else { throw PartsError.supplierNotFound(id) }
         return record
+    }
+
+    public static func supplierWebsiteHandoffURL(website: String, query: String) -> URL? {
+        let trimmedWebsite = website.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedWebsite.isEmpty else { return nil }
+
+        let normalizedWebsite: String
+        if trimmedWebsite.contains("://") {
+            normalizedWebsite = trimmedWebsite
+        } else {
+            normalizedWebsite = "https://\(trimmedWebsite)"
+        }
+
+        guard var components = URLComponents(string: normalizedWebsite),
+              let scheme = components.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              let host = components.host,
+              !host.isEmpty
+        else {
+            return nil
+        }
+
+        components.fragment = nil
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedQuery.isEmpty {
+            var queryItems = components.queryItems ?? []
+            queryItems.append(URLQueryItem(name: "q", value: trimmedQuery))
+            components.queryItems = queryItems
+        }
+
+        return components.url
+    }
+
+    public func supplierWebsiteSourcingCandidates(query: String, limit: Int = 10) throws -> [SupplierWebsiteSourcingCandidate] {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedQuery.count >= 2 else { return [] }
+        let loweredQuery = trimmedQuery.lowercased()
+
+        do {
+            return try db.writer.read { dbConn in
+                let linkedRows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT DISTINCT
+                               s.id AS supplier_id,
+                               s.name AS supplier_name,
+                               s.website AS supplier_website,
+                               p.id AS part_id,
+                               p.name AS part_name,
+                               p.code AS part_code,
+                               psl.supplier_part_number,
+                               psl.is_preferred
+                        FROM part_supplier_links psl
+                        JOIN parts p ON p.id = psl.part_id
+                            AND p.deleted_at IS NULL
+                            AND COALESCE(p.is_active, 1) = 1
+                        JOIN suppliers s ON s.id = psl.supplier_id
+                            AND s.deleted_at IS NULL
+                            AND COALESCE(s.is_active, 1) = 1
+                        WHERE psl.deleted_at IS NULL
+                          AND s.website IS NOT NULL
+                          AND TRIM(s.website) <> ''
+                          AND (
+                              LOWER(p.name) = ?
+                              OR LOWER(COALESCE(p.code, '')) = ?
+                              OR LOWER(COALESCE(p.manufacturer_part_number, '')) = ?
+                              OR LOWER(COALESCE(psl.supplier_part_number, '')) = ?
+                          )
+                        ORDER BY psl.is_preferred DESC, s.name ASC, p.name ASC
+                        LIMIT ?
+                        """,
+                    arguments: [loweredQuery, loweredQuery, loweredQuery, loweredQuery, limit]
+                )
+
+                let linkedCandidates = linkedRows.compactMap { row -> SupplierWebsiteSourcingCandidate? in
+                    guard let website: String = row["supplier_website"],
+                          let handoffURL = Self.supplierWebsiteHandoffURL(website: website, query: trimmedQuery)
+                    else {
+                        return nil
+                    }
+
+                    return SupplierWebsiteSourcingCandidate(
+                        kind: .linkedPart,
+                        supplierId: row["supplier_id"] as Int64,
+                        supplierName: row["supplier_name"] as String,
+                        supplierPartNumber: row["supplier_part_number"] as String?,
+                        partId: row["part_id"] as Int64,
+                        partName: row["part_name"] as String?,
+                        partCode: row["part_code"] as String?,
+                        website: website,
+                        handoffURL: handoffURL
+                    )
+                }
+
+                if !linkedCandidates.isEmpty {
+                    return linkedCandidates
+                }
+
+                let supplierRows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT id AS supplier_id, name AS supplier_name, website AS supplier_website
+                        FROM suppliers
+                        WHERE deleted_at IS NULL
+                          AND COALESCE(is_active, 1) = 1
+                          AND website IS NOT NULL
+                          AND TRIM(website) <> ''
+                        ORDER BY name ASC
+                        LIMIT ?
+                        """,
+                    arguments: [limit]
+                )
+
+                return supplierRows.compactMap { row -> SupplierWebsiteSourcingCandidate? in
+                    guard let website: String = row["supplier_website"],
+                          let handoffURL = Self.supplierWebsiteHandoffURL(website: website, query: trimmedQuery)
+                    else {
+                        return nil
+                    }
+
+                    return SupplierWebsiteSourcingCandidate(
+                        kind: .generalWebsite,
+                        supplierId: row["supplier_id"] as Int64,
+                        supplierName: row["supplier_name"] as String,
+                        supplierPartNumber: nil,
+                        partId: nil,
+                        partName: nil,
+                        partCode: nil,
+                        website: website,
+                        handoffURL: handoffURL
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
     }
 
     /// Create a new supplier. Returns the inserted row ID.
