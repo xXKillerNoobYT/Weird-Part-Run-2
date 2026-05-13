@@ -52,7 +52,13 @@ struct IOSMainView: View {
 
     /// Filtered modules in the user's preferred order.
     private var orderedModules: [AppModule] {
-        tabPrefs.orderedModules(from: filteredModules)
+        var modules = tabPrefs.orderedModules(from: filteredModules)
+        if let initialModuleId = uiTestingInitialModuleId,
+           let index = modules.firstIndex(where: { $0.id == initialModuleId }) {
+            let module = modules.remove(at: index)
+            modules.insert(module, at: 0)
+        }
+        return modules
     }
 
     /// First 4 ordered modules shown as dedicated bottom tabs.
@@ -63,6 +69,10 @@ struct IOSMainView: View {
     /// Remaining ordered modules shown in the "More" tab.
     private var overflowModules: [AppModule] {
         Array(orderedModules.dropFirst(4))
+    }
+
+    private var uiTestingInitialModuleId: String? {
+        Self.launchArgumentValue(after: "-UITestingInitialModule")
     }
 
     var body: some View {
@@ -100,6 +110,19 @@ struct IOSMainView: View {
         }
         .onAppear {
             tabPrefs.load(userId: appCore.currentUser?.id)
+            if let initialModuleId = uiTestingInitialModuleId {
+                selectedModuleId = initialModuleId
+                expandedModuleId = initialModuleId
+                if let module = allModulesById[initialModuleId] {
+                    let tabs = visibleTabs(for: module, permissions: appCore.permissions)
+                    if let requestedTabId = Self.launchArgumentValue(after: "-UITestingInitialTab"),
+                       let requestedTab = tabs.first(where: { $0.id == requestedTabId }) {
+                        selectedTabPath = requestedTab.path
+                    } else if let firstTab = tabs.first {
+                        selectedTabPath = firstTab.path
+                    }
+                }
+            }
             badgeManager.refresh()
         }
         .onChange(of: scenePhase) {
@@ -213,7 +236,7 @@ struct IOSMainView: View {
                 UserMenuSheet(showLogoutConfirm: $showLogoutConfirm)
                     .environmentObject(appCore)
                     .environmentObject(tabPrefs)
-                    .presentationDetents([.medium, .large])
+                    .presentationDetents([.large, .medium])
                     .presentationDragIndicator(.visible)
             case .tabEditor:
                 TabBarEditorView(allVisibleModules: filteredModules)
@@ -484,6 +507,7 @@ struct IOSMainView: View {
                                 Label(module.label, systemImage: module.icon)
                             }
                             .badge(badgeManager.badge(for: module.id))
+                            .accessibilityIdentifier("moduleLink_\(module.id)")
                         }
                     }
                 }
@@ -519,6 +543,16 @@ struct IOSMainView: View {
                 }
             }
         }
+    }
+}
+
+private extension IOSMainView {
+    static func launchArgumentValue(after flag: String) -> String? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: flag),
+              arguments.indices.contains(arguments.index(after: index))
+        else { return nil }
+        return arguments[arguments.index(after: index)]
     }
 }
 
@@ -571,11 +605,15 @@ struct ModuleHostView: View {
             UserMenuSheet(showLogoutConfirm: $showLogoutConfirm)
                 .environmentObject(appCore)
                 .environmentObject(tabPrefs)
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large, .medium])
                 .presentationDragIndicator(.visible)
         }
         .onAppear {
-            if selectedTabId.isEmpty, let first = visibleTabsList.first {
+            if selectedTabId.isEmpty,
+               let requestedTabId = Self.launchArgumentValue(after: "-UITestingInitialTab"),
+               visibleTabsList.contains(where: { $0.id == requestedTabId }) {
+                selectedTabId = requestedTabId
+            } else if selectedTabId.isEmpty, let first = visibleTabsList.first {
                 selectedTabId = first.id
             }
         }
@@ -626,6 +664,7 @@ struct ModuleHostView: View {
                             sidebarRow(tab: tab, selected: tab.id == selectedTabId)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("moduleTab_\(module.id)_\(tab.id)")
                     }
                 }
                 .padding(.vertical, DS.Space.sm)
@@ -690,6 +729,7 @@ struct ModuleHostView: View {
                         subTabChip(tab: tab, selected: isSelected(tab), chipH: chipH)
                     }
                     .buttonStyle(.glass)
+                    .accessibilityIdentifier("moduleTab_\(module.id)_\(tab.id)")
                 }
             }
             .padding(.horizontal, DS.Space.lg)
@@ -714,5 +754,15 @@ struct ModuleHostView: View {
                 .fill(selected ? Color.accentColor : Color.clear)
         )
         .foregroundStyle(selected ? .white : .primary)
+    }
+}
+
+private extension ModuleHostView {
+    static func launchArgumentValue(after flag: String) -> String? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: flag),
+              arguments.indices.contains(arguments.index(after: index))
+        else { return nil }
+        return arguments[arguments.index(after: index)]
     }
 }

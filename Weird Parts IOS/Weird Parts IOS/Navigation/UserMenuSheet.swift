@@ -51,6 +51,9 @@ struct UserMenuSheet: View {
                 MenuItem(id: "settings-notifications", label: "Notifications", icon: "bell.fill",
                          tabId: "settings-notifications", permission: nil,
                          keywords: ["notifications", "alerts", "sounds", "badges", "push"]),
+                MenuItem(id: "settings-privacy", label: "Privacy", icon: "hand.raised.fill",
+                         tabId: "settings-privacy", permission: nil,
+                         keywords: ["privacy", "telemetry", "onboarding", "local data", "analytics"]),
                 MenuItem(id: "settings-app-config", label: "App Config", icon: "slider.horizontal.3",
                          tabId: "settings-app-config", permission: nil,
                          keywords: ["app config", "configuration", "preferences", "general settings"]),
@@ -218,6 +221,10 @@ struct UserMenuSheet: View {
             List {
                 // User profile header
                 userProfileSection
+
+                Section("Setup") {
+                    FirstLaunchSetupRestartRow(telemetrySource: "settingsRoot")
+                }
 
                 // Navigation style picker
                 Section {

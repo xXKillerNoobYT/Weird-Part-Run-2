@@ -10,7 +10,10 @@ import os.log
 /// can access services and the current user without prop-drilling.
 @MainActor
 final class AppCore: ObservableObject {
-    private static let uiTestingLaunchFlag = "-UITesting"
+    nonisolated private static let uiTestingLaunchFlag = "-UITesting"
+    nonisolated private static let uiTestingAutoLoginLaunchFlag = "-UITestingAutoLogin"
+    nonisolated private static let uiTestingFirstLaunchOnboardingFlag = "-UITestingFirstLaunchOnboarding"
+    nonisolated private static let uiTestingShowOnboardingChecklistFlag = "-UITestingShowOnboardingChecklist"
 
     // MARK: - Published State
 
@@ -47,6 +50,7 @@ final class AppCore: ObservableObject {
     public private(set) var backgroundTaskService: BackgroundTaskService?
     public private(set) var aiDispatchService: AIDispatchService?
     public private(set) var badgeCountService: BadgeCountService?
+    public private(set) var onboardingTelemetryService: OnboardingTelemetryService?
 
     /// Shared sync manager — all views observe this single instance.
     let syncManager = IOSSyncManager()
@@ -73,6 +77,10 @@ final class AppCore: ObservableObject {
 
     private var isUITestingMode: Bool {
         ProcessInfo.processInfo.arguments.contains(Self.uiTestingLaunchFlag)
+    }
+
+    private var isUITestingAutoLoginEnabled: Bool {
+        ProcessInfo.processInfo.arguments.contains(Self.uiTestingAutoLoginLaunchFlag)
     }
 
     private func bootstrap() async {
@@ -145,6 +153,7 @@ final class AppCore: ObservableObject {
                     backgroundTask: BackgroundTaskService(db: database),
                     aiDispatch: AIDispatchService(db: database),
                     badgeCount: BadgeCountService(db: database),
+                    onboardingTelemetry: OnboardingTelemetryService(db: database),
                     theme: theme,
                     users: users,
                     hasProfile: hasProfile
@@ -174,18 +183,22 @@ final class AppCore: ObservableObject {
             backgroundTaskService = result.backgroundTask
             aiDispatchService = result.aiDispatch
             badgeCountService = result.badgeCount
+            onboardingTelemetryService = result.onboardingTelemetry
 
             if let theme = result.theme {
                 self.theme = theme
             }
 
+            if uiTestingMode, isUITestingAutoLoginEnabled,
+               let seededOwnerId = result.users.first?.id {
+                _ = await login(userId: seededOwnerId, pin: "1234")
+            }
+
             if result.users.isEmpty && !result.hasProfile {
                 // Brand-new device — show two-path onboarding.
-                // Clear stale UserDefaults flags so a fresh-build DB doesn't
-                // inherit "already completed" flags from a previous install.
-                UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
-                UserDefaults.standard.removeObject(forKey: "hasCompletedCompanySetup")
-                UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+                // Clear stale first-launch defaults so a fresh DB cannot inherit
+                // "already completed" flags from a previous install.
+                FirstLaunchDefaults.clearForFreshDatabase()
                 needsOnboarding = true
                 needsBootstrap = false
             } else if result.users.isEmpty && result.hasProfile {
@@ -249,7 +262,7 @@ final class AppCore: ObservableObject {
                     if let taskId {
                         try? backgroundTaskService?.failTask(
                             id: taskId,
-                            error: error.localizedDescription
+                            error: userFriendlyError(error, context: "run companion auto-discovery")
                         )
                     }
                 }
@@ -273,7 +286,7 @@ final class AppCore: ObservableObject {
                     if let taskId {
                         try? backgroundTaskService?.failTask(
                             id: taskId,
-                            error: error.localizedDescription
+                            error: userFriendlyError(error, context: "set up Office channel")
                         )
                     }
                 }
@@ -452,9 +465,7 @@ final class AppCore: ObservableObject {
         currentUser = nil
         currentToken = nil
         permissions = []
-        UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
-        UserDefaults.standard.removeObject(forKey: "hasCompletedCompanySetup")
-        UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        FirstLaunchDefaults.clearForFreshDatabase()
 
         // 5. Re-bootstrap — will detect no users/profile and set needsOnboarding = true
         isReady = false
@@ -503,10 +514,13 @@ final class AppCore: ObservableObject {
                 try fm.removeItem(atPath: file)
             }
         }
+        FirstLaunchDefaults.clearForFreshDatabase()
     }
 
     nonisolated private static func seedUITestingFixtures(db: AppDatabase, authService: AuthService) throws {
         _ = try authService.seedFirstAdmin(displayName: "UITest Owner", pin: "1234")
+        let shouldShowFirstLaunchOnboarding = ProcessInfo.processInfo.arguments.contains(Self.uiTestingFirstLaunchOnboardingFlag)
+        let shouldShowOnboardingChecklist = ProcessInfo.processInfo.arguments.contains(Self.uiTestingShowOnboardingChecklistFlag)
 
         let now = ISO8601DateFormatter().string(from: Date())
         let longNotesLocal = String(repeating: "LOCAL_NOTES_SEGMENT_", count: 22)
@@ -542,8 +556,9 @@ final class AppCore: ObservableObject {
             )
         }
 
-        UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
-        UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
-        UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        FirstLaunchDefaults.configureUITestFixture(
+            showWelcome: shouldShowFirstLaunchOnboarding,
+            showChecklist: shouldShowOnboardingChecklist
+        )
     }
 }

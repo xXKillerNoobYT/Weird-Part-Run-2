@@ -10,14 +10,25 @@ struct OnboardingChecklistCard: View {
     let warehouseLocationCount: Int
     let onCardShown: () -> Void
     let onDismiss: () -> Void
+    let onCompletionDismiss: () -> Void
     let onStepTapped: (String) -> Void
     let onSetUpCompany: () -> Void
     let onCreateFirstJob: () -> Void
 
     @AppStorage("onboarding_checklist_optional_strip_collapsed")
     private var optionalStripCollapsed = true
+    @AppStorage("onboarding_checklist_completion_started")
+    private var completionCelebrationStarted = false
+    @Environment(\.horizontalSizeClass)
+    private var horizontalSizeClass
+    @Environment(\.verticalSizeClass)
+    private var verticalSizeClass
+    @Environment(\.accessibilityReduceMotion)
+    private var accessibilityReduceMotion
     @State private var employeeName = UIDevice.current.name
     @State private var hasLoggedCardShown = false
+    @State private var isShowingCompletionCelebration = false
+    @State private var isCardVisible = true
 
     private var steps: [OnboardingChecklistStep] {
         [
@@ -116,6 +127,10 @@ struct OnboardingChecklistCard: View {
         requiredCompleted == 3 && remainingOptional > 0 && optionalStripCollapsed
     }
 
+    private var usesRegularTwoColumnLayout: Bool {
+        horizontalSizeClass == .regular && verticalSizeClass == .regular
+    }
+
     private var optionalStepsText: String {
         remainingOptional == 1 ? "1 optional step left" : "\(remainingOptional) optional steps left"
     }
@@ -133,19 +148,104 @@ struct OnboardingChecklistCard: View {
     }
 
     private var progressCaption: String {
+        guard remainingRequired > 0 else {
+            return "\(completedCount) of 6 complete · \(optionalStepsText)"
+        }
         let requiredText = remainingRequired == 1 ? "1 required left" : "\(remainingRequired) required left"
         return "\(completedCount) of 6 complete · \(requiredText)"
     }
 
     var body: some View {
         Group {
-            if shouldCollapseToStrip {
-                collapsedStrip
-            } else {
-                fullCard
+            if isCardVisible {
+                ZStack {
+                    if isShowingCompletionCelebration {
+                        completionCelebration
+                            .transition(completionTransition)
+                    } else if shouldCollapseToStrip {
+                        collapsedStrip
+                            .transition(.opacity)
+                    } else {
+                        fullCard
+                            .transition(.opacity)
+                    }
+                }
             }
         }
         .padding(.horizontal, DS.Space.lg)
+        .onAppear {
+            handleInitialCompletionState()
+        }
+        .onChange(of: completedCount) { oldValue, newValue in
+            handleCompletedCountChange(from: oldValue, to: newValue)
+        }
+    }
+
+    private var completionTransition: AnyTransition {
+        if accessibilityReduceMotion {
+            return .opacity
+        }
+        return .scale(scale: 0.96).combined(with: .opacity)
+    }
+
+    private var completionCelebration: some View {
+        VStack(spacing: DS.Space.sm) {
+            Image(systemName: "sparkles")
+                .font(.title)
+                .foregroundStyle(.blue)
+                .accessibilityHidden(true)
+
+            Text("You're all set up. Welcome aboard.")
+                .font(.headline)
+                .fontWeight(.semibold)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.primary)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: 220)
+        .padding(DS.Space.lg)
+        .background(cardBackground)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Setup complete")
+    }
+
+    private func handleInitialCompletionState() {
+        guard completedCount == 6 else { return }
+
+        if completionCelebrationStarted {
+            onCompletionDismiss()
+        } else {
+            completionCelebrationStarted = true
+            onCompletionDismiss()
+        }
+    }
+
+    private func handleCompletedCountChange(from oldValue: Int, to newValue: Int) {
+        guard oldValue < 6, newValue == 6 else { return }
+        startCompletionCelebration()
+    }
+
+    private func startCompletionCelebration() {
+        guard !completionCelebrationStarted else {
+            onCompletionDismiss()
+            return
+        }
+
+        completionCelebrationStarted = true
+        UIAccessibility.post(notification: .announcement, argument: "Setup complete")
+
+        withAnimation(.easeInOut(duration: accessibilityReduceMotion ? 0.2 : 0.3)) {
+            isShowingCompletionCelebration = true
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            withAnimation(.easeInOut(duration: accessibilityReduceMotion ? 0.2 : 0.4)) {
+                isCardVisible = false
+            }
+            try? await Task.sleep(nanoseconds: accessibilityReduceMotion ? 200_000_000 : 400_000_000)
+            onCompletionDismiss()
+        }
     }
 
     private var collapsedStrip: some View {
@@ -189,25 +289,7 @@ struct OnboardingChecklistCard: View {
             header
             progress
 
-            VStack(spacing: DS.Space.xs) {
-                ForEach(requiredSteps) { step in
-                    OnboardingChecklistRow(
-                        step: step,
-                        employeeName: step.number == 2 ? $employeeName : nil,
-                        onStepTapped: onStepTapped
-                    )
-                }
-
-                optionalDivider
-
-                ForEach(recommendedSteps) { step in
-                    OnboardingChecklistRow(
-                        step: step,
-                        employeeName: step.number == 2 ? $employeeName : nil,
-                        onStepTapped: onStepTapped
-                    )
-                }
-            }
+            checklistContent
 
             if remainingRequired == 0 && remainingOptional > 0 {
                 Button {
@@ -227,6 +309,55 @@ struct OnboardingChecklistCard: View {
             guard !hasLoggedCardShown else { return }
             hasLoggedCardShown = true
             onCardShown()
+        }
+    }
+
+    @ViewBuilder
+    private var checklistContent: some View {
+        if usesRegularTwoColumnLayout {
+            HStack(alignment: .top, spacing: DS.Space.md) {
+                checklistColumn(title: "Required", steps: requiredSteps)
+
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.18))
+                    .frame(width: 1)
+                    .accessibilityHidden(true)
+
+                checklistColumn(title: "Optional", steps: recommendedSteps)
+            }
+        } else {
+            VStack(spacing: DS.Space.xs) {
+                checklistRows(for: requiredSteps)
+
+                optionalDivider
+
+                checklistRows(for: recommendedSteps)
+            }
+        }
+    }
+
+    private func checklistColumn(title: String, steps: [OnboardingChecklistStep]) -> some View {
+        VStack(alignment: .leading, spacing: DS.Space.xs) {
+            Text(title)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+                .accessibilityAddTraits(.isHeader)
+
+            checklistRows(for: steps)
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private func checklistRows(for steps: [OnboardingChecklistStep]) -> some View {
+        VStack(spacing: DS.Space.xs) {
+            ForEach(steps) { step in
+                OnboardingChecklistRow(
+                    step: step,
+                    employeeName: step.number == 2 ? $employeeName : nil,
+                    onStepTapped: onStepTapped
+                )
+            }
         }
     }
 
@@ -382,6 +513,7 @@ private struct OnboardingChecklistRow: View {
             }
         }
         .frame(minHeight: 56)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, DS.Space.xs)
         .contentShape(Rectangle())
     }

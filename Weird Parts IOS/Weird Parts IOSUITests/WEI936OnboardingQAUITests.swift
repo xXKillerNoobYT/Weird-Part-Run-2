@@ -18,8 +18,13 @@ final class WEI936OnboardingQAUITests: XCTestCase {
         capture("wei936-phone-in-progress-card")
 
         app.buttons["Hide setup checklist"].tap()
-        XCTAssertTrue(app.staticTexts["Setup hidden. Re-open it from Settings → Help."].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Setup hidden. Re-open it in Settings."].waitForExistence(timeout: 5))
         capture("wei936-phone-dismiss-toast")
+
+        app.buttons["person.circle"].tap()
+        XCTAssertTrue(app.staticTexts["Restart setup checklist"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Page Layout"].exists)
+        capture("wei936-phone-settings-root-setup")
     }
 
     private func capture(_ name: String) {

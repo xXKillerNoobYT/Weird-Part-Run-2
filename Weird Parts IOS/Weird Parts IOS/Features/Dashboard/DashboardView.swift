@@ -58,7 +58,10 @@ struct DashboardView: View {
 
     // Onboarding checklist persistence
     @AppStorage("onboarding_checklist_dismissed") private var checklistDismissed = false
+    @AppStorage("onboarding_first_launch_at") private var firstLaunchAt = 0.0
     @AppStorage("hasCompletedCompanySetup") private var hasCompletedCompanySetup = false
+    @State private var showChecklistDismissUndo = false
+    @State private var checklistDismissUndoTask: Task<Void, Never>?
     // showCreateJobSheet and showCompanySetupWizard consolidated into ActiveSheet enum
 
     @State private var isLoading = true
@@ -70,40 +73,51 @@ struct DashboardView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: DS.Space.xl) {
-                    // Greeting
-                    greeting
-                        .padding(.horizontal, DS.Space.lg)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: DS.Space.xl) {
+                        // Greeting
+                        greeting
+                            .padding(.horizontal, DS.Space.lg)
 
-                    OnboardingBanner(pageId: "dashboard-home")
-                        .padding(.horizontal, DS.Space.lg)
+                        OnboardingBanner(pageId: "dashboard-home")
+                            .padding(.horizontal, DS.Space.lg)
 
-                    SkippedModuleHint(moduleId: "dashboard")
-                        .padding(.horizontal, DS.Space.lg)
+                        SkippedModuleHint(moduleId: "dashboard")
+                            .padding(.horizontal, DS.Space.lg)
 
-                    clockStatusBanner
-                        .padding(.horizontal, DS.Space.lg)
+                        clockStatusBanner
+                            .padding(.horizontal, DS.Space.lg)
 
-                    gettingStartedChecklist
+                        gettingStartedChecklist
+                            .id("onboardingChecklist")
 
-                    onboardingProgressSection
+                        onboardingProgressSection
 
-                    if isLoading {
-                        DSLoadingState()
-                            .padding(.top, DS.Space.jumbo)
-                    } else if let error = loadError {
-                        ErrorStateView(message: error) { Task { await loadData() } }
-                            .padding(.top, DS.Space.xl)
-                    } else {
-                        kpiSection
-                        chartsSection
-                        alertsContent
-                        backgroundTasksCard
-                        quickActionsSection
+                        if isLoading {
+                            DSLoadingState()
+                                .padding(.top, DS.Space.jumbo)
+                        } else if let error = loadError {
+                            ErrorStateView(message: error) { Task { await loadData() } }
+                                .padding(.top, DS.Space.xl)
+                        } else {
+                            kpiSection
+                            // TEMP REVERT for WEI-872 before-screenshot capture only.
+                            // Original (pre-WEI-814) ordering: Quick Actions at bottom.
+                            chartsSection
+                            alertsContent
+                            backgroundTasksCard
+                            quickActionsSection
+                        }
+                    }
+                    .padding(.vertical)
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .onboardingScrollToChecklist)) { _ in
+                    checklistDismissed = false
+                    withAnimation {
+                        proxy.scrollTo("onboardingChecklist", anchor: .top)
                     }
                 }
-                .padding(.vertical)
             }
             .refreshable { await loadData() }
             .background(DS.Background.page)
@@ -159,7 +173,7 @@ struct DashboardView: View {
                     sections: [
                         ("Overview", "Your daily command center. See clock status, KPI stats, charts, alerts, and quick actions all in one place."),
                         ("KPI Cards", "Tap any KPI card to see detailed breakdowns. Cards show part types, total stock, active jobs, pending orders, and low stock warnings."),
-                        ("Quick Actions", "Use the quick action buttons at the bottom to scan QR codes, clock in/out, view the daily report, move stock, or create new orders.")
+                        ("Quick Actions", "The quick action row sits right under the KPI cards — swipe horizontally to scan QR codes, clock in/out, view the daily report, move stock, or create new orders.")
                     ]
                 )
             case .kpiDetail(let detail):
@@ -172,6 +186,14 @@ struct DashboardView: View {
             case .companySetup:
                 CompanySetupWizard()
                     .environmentObject(appCore)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if showChecklistDismissUndo {
+                FirstLaunchOptOutToast {
+                    undoChecklistDismissal()
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
     }
@@ -198,7 +220,7 @@ struct DashboardView: View {
             stats.warehouseLocationCount > 0,
         ].filter { $0 }.count
 
-        if !checklistDismissed && (isFirstLaunchState || (completed > 0 && completed < 6)) {
+        if !checklistDismissed && (isFirstLaunchState || (completed > 0 && completed <= 6)) {
             OnboardingChecklistCard(
                 hasCompletedCompanySetup: hasCompletedCompanySetup,
                 employeeCount: stats.employeeCount,
@@ -206,11 +228,72 @@ struct DashboardView: View {
                 supplierCount: stats.supplierCount,
                 totalParts: stats.partTypes,
                 warehouseLocationCount: stats.warehouseLocationCount,
-                onDismiss: { checklistDismissed = true },
+                onCardShown: { recordOnboarding(.cardShown) },
+                onDismiss: {
+                    recordOnboarding(.cardDismissed, payload: [
+                        "reason": .string("x"),
+                        "completedCount": .int(completed),
+                    ])
+                    dismissChecklistWithUndo()
+                },
+                onCompletionDismiss: {
+                    checklistDismissed = true
+                },
+                onStepTapped: { stepId in
+                    recordOnboarding(.stepTapped, payload: ["stepId": .string(stepId)])
+                },
                 onSetUpCompany: { activeSheet = .companySetup },
                 onCreateFirstJob: { activeSheet = .createJob }
             )
+            .onChange(of: completed) { oldValue, newValue in
+                guard newValue > oldValue else { return }
+                recordOnboarding(.stepCompleted, payload: [
+                    "stepId": .string("completed-count-\(newValue)"),
+                    "secondsSinceFirstLaunch": .int(secondsSinceFirstLaunch),
+                ])
+                if newValue == 6 {
+                    recordOnboarding(.cardDismissed, payload: [
+                        "reason": .string("allDone"),
+                        "completedCount": .int(newValue),
+                    ])
+                }
+            }
         }
+    }
+
+    private var secondsSinceFirstLaunch: Int {
+        if firstLaunchAt == 0 {
+            firstLaunchAt = Date().timeIntervalSince1970
+        }
+        return max(0, Int(Date().timeIntervalSince1970 - firstLaunchAt))
+    }
+
+    private func recordOnboarding(_ event: OnboardingTelemetryService.EventType, payload: [String: TelemetryValue] = [:]) {
+        try? appCore.onboardingTelemetryService?.record(event, payload: payload)
+    }
+
+    private func dismissChecklistWithUndo() {
+        checklistDismissed = true
+        checklistDismissUndoTask?.cancel()
+        withAnimation {
+            showChecklistDismissUndo = true
+        }
+        checklistDismissUndoTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation {
+                showChecklistDismissUndo = false
+            }
+        }
+    }
+
+    private func undoChecklistDismissal() {
+        checklistDismissUndoTask?.cancel()
+        checklistDismissed = false
+        withAnimation {
+            showChecklistDismissUndo = false
+        }
+        NotificationCenter.default.post(name: .onboardingScrollToChecklist, object: nil)
     }
 
     // MARK: - Onboarding Progress
