@@ -30,6 +30,7 @@ public final class WarehouseService: Sendable {
         case requiredFieldEmpty
         case invalidDimension
         case invalidQuantity
+        case invalidPriceVerificationStatus(String)
         case jobNotFound(Int64)
         case userNotFound(Int64)
         case areaNotFound(Int64)
@@ -1068,6 +1069,7 @@ public final class WarehouseService: Sendable {
         public let expectedQty: Int
         public let receivedQty: Int
         public let actualCost: Double?
+        public let priceVerificationStatus: String?
         public let unitPrice: Double?
         public let scannedAt: String?
         public let notes: String?
@@ -1218,6 +1220,7 @@ public final class WarehouseService: Sendable {
                         expectedQty: row["expected_qty"] ?? 0,
                         receivedQty: row["received_qty"] ?? 0,
                         actualCost: row["actual_cost"] as Double?,
+                        priceVerificationStatus: row["price_verification_status"] as String?,
                         unitPrice: row["unit_cost"] as Double?,
                         scannedAt: row["scanned_at"] as String?,
                         notes: row["notes"] as String?
@@ -1242,6 +1245,32 @@ public final class WarehouseService: Sendable {
                     WHERE id = ? AND deleted_at IS NULL
                     """,
                 arguments: [receivedQty, notes, itemId]
+            )
+        }
+    }
+
+    /// Persist the price-verification signal collected during receiving.
+    public func updateSessionItemPriceVerification(
+        itemId: Int64,
+        status: String,
+        actualCost: Double? = nil
+    ) throws {
+        let allowedStatuses = Set(["matches", "different", "not_shown"])
+        guard allowedStatuses.contains(status) else { throw WarehouseError.invalidPriceVerificationStatus(status) }
+        guard actualCost == nil || actualCost! >= 0 else { throw WarehouseError.invalidQuantity }
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE receiving_session_items
+                    SET price_verification_status = ?,
+                        actual_cost = CASE
+                            WHEN ? = 'different' THEN ?
+                            ELSE NULL
+                        END
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [status, status, actualCost, itemId]
             )
         }
     }

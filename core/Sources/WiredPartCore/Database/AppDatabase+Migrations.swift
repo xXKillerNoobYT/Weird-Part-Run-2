@@ -114,6 +114,7 @@ extension AppDatabase {
         registerMigration075CompanionFeedbackNullableSuggestionId(&migrator)
         registerMigration076StockMovementsCompositeIndex(&migrator)
         registerMigration077VehicleIssueReports(&migrator)
+        registerMigration081ReceivingPriceVerification(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4960,6 +4961,17 @@ extension AppDatabase {
             }
             try db.create(index: "idx_vehicle_issue_reports_vehicle", on: "vehicle_issue_reports", columns: ["vehicle_id"])
             try db.create(index: "idx_vehicle_issue_reports_status", on: "vehicle_issue_reports", columns: ["status"])
+        }
+    }
+
+    private static func registerMigration081ReceivingPriceVerification(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("081_receiving_price_verification") { db in
+            try addColumnIfMissing(
+                db,
+                table: "receiving_session_items",
+                column: "price_verification_status",
+                type: .text
+            )
         }
     }
 

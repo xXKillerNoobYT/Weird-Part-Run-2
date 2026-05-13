@@ -575,6 +575,41 @@ struct WarehouseAuditTests {
         #expect(explicitScanTime != nil)
     }
 
+    @Test("price verification persists when receiving session is reloaded")
+    func testPriceVerificationPersistsAcrossReceivingResume() throws {
+        let env = try freshEnv()
+        let suppId = try E2ETestHelpers.seedSupplier(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-PRICE-RESUME", supplierId: suppId)
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, part_id, qty_ordered, unit_cost, status, created_at)
+                VALUES (?, ?, 5, 12.50, 'pending', datetime('now'))
+                """, arguments: [poId, partId])
+        }
+
+        let sessionId = try env.warehouse.startReceivingSession(poId: poId, startedBy: env.adminUserId)
+        let itemId = try #require(try env.warehouse.getSessionItems(sessionId: sessionId).first?.id)
+
+        try env.warehouse.updateSessionItemPriceVerification(
+            itemId: itemId,
+            status: "different",
+            actualCost: 14.75
+        )
+
+        let resumedItem = try #require(try env.warehouse.getSessionItems(sessionId: sessionId).first)
+        #expect(resumedItem.priceVerificationStatus == "different")
+        #expect(resumedItem.actualCost == 14.75)
+        #expect(resumedItem.unitPrice == 12.50)
+
+        try env.warehouse.updateSessionItemPriceVerification(itemId: itemId, status: "matches")
+        let matchedItem = try #require(try env.warehouse.getSessionItems(sessionId: sessionId).first)
+        #expect(matchedItem.priceVerificationStatus == "matches")
+        #expect(matchedItem.actualCost == nil)
+    }
+
     @Test("recordScan increments received_qty by the given qty")
     func testRecordScan() throws {
         let env = try freshEnv()

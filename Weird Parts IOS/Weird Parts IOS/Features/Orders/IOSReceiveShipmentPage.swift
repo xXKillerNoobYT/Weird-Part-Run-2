@@ -799,6 +799,7 @@ struct IOSReceiveShipmentPage: View {
             HStack(spacing: 8) {
                 Button {
                     priceVerifications[itemId] = .matches
+                    persistPriceVerification(itemId: itemId, verification: .matches)
                 } label: {
                     Label("Matches", systemImage: currentVerification.isMatches ? "checkmark.circle.fill" : "circle")
                         .font(.caption)
@@ -811,6 +812,7 @@ struct IOSReceiveShipmentPage: View {
 
                 Button {
                     priceVerifications[itemId] = .different(newPrice: 0)
+                    persistPriceVerification(itemId: itemId, verification: .different(newPrice: 0))
                 } label: {
                     Label("Different", systemImage: currentVerification.isDifferent ? "exclamationmark.circle.fill" : "circle")
                         .font(.caption)
@@ -823,6 +825,7 @@ struct IOSReceiveShipmentPage: View {
 
                 Button {
                     priceVerifications[itemId] = .notShown
+                    persistPriceVerification(itemId: itemId, verification: .notShown)
                 } label: {
                     Label("Not Shown", systemImage: currentVerification.isNotShown ? "questionmark.circle.fill" : "circle")
                         .font(.caption)
@@ -847,7 +850,10 @@ struct IOSReceiveShipmentPage: View {
                             return ""
                         },
                         set: { newVal in
-                            priceVerifications[itemId] = .different(newPrice: Double(newVal) ?? 0)
+                            let price = Double(newVal) ?? 0
+                            let verification = PriceVerification.different(newPrice: price)
+                            priceVerifications[itemId] = verification
+                            persistPriceVerification(itemId: itemId, verification: verification)
                         }
                     ))
                     .keyboardType(.decimalPad)
@@ -951,9 +957,43 @@ struct IOSReceiveShipmentPage: View {
                 if item.scannedAt != nil {
                     scanConfirmedItemIds.insert(item.id)
                 }
+                if priceVerifications[item.id] == nil {
+                    priceVerifications[item.id] = restoredPriceVerification(from: item)
+                }
             }
         } catch {
             actionError = userFriendlyError(error, context: "receive shipment")
+        }
+    }
+
+    private func restoredPriceVerification(from item: WarehouseService.ReceivingItemInfo) -> PriceVerification? {
+        switch item.priceVerificationStatus {
+        case "matches":
+            return .matches
+        case "different":
+            return .different(newPrice: item.actualCost ?? 0)
+        case "not_shown":
+            return .notShown
+        default:
+            return nil
+        }
+    }
+
+    private func persistPriceVerification(itemId: Int64, verification: PriceVerification) {
+        let svc = appCore.warehouseService
+        Task {
+            do {
+                switch verification {
+                case .matches:
+                    try svc?.updateSessionItemPriceVerification(itemId: itemId, status: "matches")
+                case .different(let newPrice):
+                    try svc?.updateSessionItemPriceVerification(itemId: itemId, status: "different", actualCost: newPrice)
+                case .notShown:
+                    try svc?.updateSessionItemPriceVerification(itemId: itemId, status: "not_shown")
+                }
+            } catch {
+                actionError = "Could not save price verification."
+            }
         }
     }
 
