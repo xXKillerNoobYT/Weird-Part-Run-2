@@ -123,6 +123,7 @@ extension AppDatabase {
         registerMigration084SyncedTableFieldTimestamps(&migrator)
         registerMigration085CoOccurrenceHierarchyUniqueness(&migrator)
         registerMigration086PartsAutoAddWishlistToggle(&migrator)
+        registerMigration087WishlistLocationRouting(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5169,6 +5170,19 @@ extension AppDatabase {
                     SELECT id, 'wishlist.configure_auto_add' FROM hats WHERE name = ?
                     """, arguments: [hatName])
             }
+        }
+    }
+
+    private static func registerMigration087WishlistLocationRouting(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("087_wishlist_location_routing") { db in
+            try addColumnIfMissing(db, table: "wishlist_items", column: "location_type", type: .text)
+            try addColumnIfMissing(db, table: "wishlist_items", column: "location_id", type: .integer)
+            try db.create(
+                index: "idx_wishlist_part_location_status",
+                on: "wishlist_items",
+                columns: ["part_id", "location_type", "location_id", "status"],
+                ifNotExists: true
+            )
         }
     }
 

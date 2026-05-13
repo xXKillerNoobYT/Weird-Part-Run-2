@@ -25,6 +25,8 @@ public struct WishlistItem: Codable, FetchableRecord, MutablePersistableRecord, 
     public var updatedAt: String?
     public var autoApproveAt: String?
     public var certaintyScore: Double?
+    public var locationType: String?
+    public var locationId: Int64?
 
     public static let databaseTableName = "wishlist_items"
 
@@ -44,6 +46,8 @@ public struct WishlistItem: Codable, FetchableRecord, MutablePersistableRecord, 
         case updatedAt = "updated_at"
         case autoApproveAt = "auto_approve_at"
         case certaintyScore = "certainty_score"
+        case locationType = "location_type"
+        case locationId = "location_id"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) {

@@ -63,6 +63,58 @@ public final class WishlistService: Sendable {
         }
     }
 
+    /// Deterministic outcome for a below-MIN stock candidate.
+    public enum BelowMinRouteAction: String, Sendable, Codable, Equatable {
+        case shopMovement = "shop_movement"
+        case wishlistPending = "wishlist_pending"
+        case wishlistApproved = "wishlist_approved"
+        case physicalAudit = "physical_audit"
+    }
+
+    /// A below-MIN route decision produced by the automation scan.
+    public struct BelowMinRouteDecision: Sendable, Equatable {
+        public let partId: Int64
+        public let partName: String
+        public let locationType: String
+        public let locationId: Int64
+        public let currentQty: Int
+        public let minStock: Int
+        public let targetStock: Int
+        public let suggestedQty: Int
+        public let certaintyScore: Double
+        public let action: BelowMinRouteAction
+        public let wishlistItemId: Int64?
+        public let reason: String
+
+        public init(
+            partId: Int64,
+            partName: String,
+            locationType: String,
+            locationId: Int64,
+            currentQty: Int,
+            minStock: Int,
+            targetStock: Int,
+            suggestedQty: Int,
+            certaintyScore: Double,
+            action: BelowMinRouteAction,
+            wishlistItemId: Int64?,
+            reason: String
+        ) {
+            self.partId = partId
+            self.partName = partName
+            self.locationType = locationType
+            self.locationId = locationId
+            self.currentQty = currentQty
+            self.minStock = minStock
+            self.targetStock = targetStock
+            self.suggestedQty = suggestedQty
+            self.certaintyScore = certaintyScore
+            self.action = action
+            self.wishlistItemId = wishlistItemId
+            self.reason = reason
+        }
+    }
+
     // =========================================================================
     // MARK: - List / Query
     // =========================================================================
@@ -143,7 +195,9 @@ public final class WishlistService: Sendable {
         sourceType: String = "manual",
         requestedBy: String? = nil,
         notes: String? = nil,
-        certaintyScore: Double? = nil
+        certaintyScore: Double? = nil,
+        locationType: String? = nil,
+        locationId: Int64? = nil
     ) throws -> WishlistItem {
         try db.writer.write { dbConn in
             let now = Date()
@@ -171,10 +225,168 @@ public final class WishlistService: Sendable {
                 createdAt: nowString,
                 updatedAt: nowString,
                 autoApproveAt: autoApprove,
-                certaintyScore: certaintyScore
+                certaintyScore: certaintyScore,
+                locationType: locationType,
+                locationId: locationId
             )
             try item.insert(dbConn)
             return item
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Below-MIN Automation
+    // =========================================================================
+
+    /// Generate deterministic below-MIN routes for location-aware stock targets.
+    ///
+    /// The scan follows the shop-check-first policy:
+    /// 1. If the target location is low-confidence, route to physical audit.
+    /// 2. For non-shop locations, use spare shop stock before procurement.
+    /// 3. If procurement is needed, create or update one system wishlist item
+    ///    scoped to the part+location; high-certainty items are auto-approved.
+    @discardableResult
+    public func generateBelowMinWishlistRoutes(
+        locationType: String? = nil,
+        locationId: Int64? = nil,
+        shopLocationType: String = "warehouse",
+        shopLocationId: Int64 = 1,
+        auditCertaintyThreshold: Double = 0.5,
+        autoApproveCertaintyThreshold: Double = 0.8
+    ) throws -> [BelowMinRouteDecision] {
+        try db.writer.write { dbConn in
+            var whereClauses = [
+                "lst.deleted_at IS NULL",
+                "COALESCE(lst.do_not_restock, 0) = 0",
+                "lst.min_stock > 0",
+                "p.deleted_at IS NULL",
+                "COALESCE(p.is_active, 1) = 1",
+                "COALESCE(p.auto_add_to_wishlist, 0) = 1"
+            ]
+            var args: [DatabaseValueConvertible?] = []
+
+            if let locationType {
+                whereClauses.append("lst.location_type = ?")
+                args.append(locationType)
+            }
+            if let locationId {
+                whereClauses.append("lst.location_id = ?")
+                args.append(locationId)
+            }
+
+            let candidates = try Row.fetchAll(dbConn, sql: """
+                SELECT lst.part_id,
+                       p.name AS part_name,
+                       lst.location_type,
+                       lst.location_id,
+                       lst.min_stock,
+                       CASE
+                           WHEN COALESCE(lst.target_stock, 0) > lst.min_stock
+                           THEN lst.target_stock
+                           ELSE lst.min_stock
+                       END AS target_stock,
+                       COALESCE(lst.certainty_rating, 0) AS certainty_score,
+                       COALESCE(SUM(s.qty), 0) AS current_qty
+                FROM location_stock_targets lst
+                JOIN parts p ON p.id = lst.part_id
+                LEFT JOIN stock s ON s.part_id = lst.part_id
+                    AND s.location_type = lst.location_type
+                    AND s.location_id = lst.location_id
+                    AND s.deleted_at IS NULL
+                WHERE \(whereClauses.joined(separator: " AND "))
+                GROUP BY lst.part_id, lst.location_type, lst.location_id
+                HAVING current_qty < lst.min_stock
+                ORDER BY (lst.min_stock - current_qty) DESC, p.name ASC
+                """, arguments: StatementArguments(args))
+
+            var decisions: [BelowMinRouteDecision] = []
+
+            for row in candidates {
+                let partId: Int64 = row["part_id"]
+                let partName: String = row["part_name"] ?? "Unknown Part"
+                let targetLocationType: String = row["location_type"] ?? "warehouse"
+                let targetLocationId: Int64 = row["location_id"] ?? 1
+                let currentQty: Int = row["current_qty"] ?? 0
+                let minStock: Int = row["min_stock"] ?? 0
+                let targetStock: Int = row["target_stock"] ?? minStock
+                let certaintyScore: Double = row["certainty_score"] ?? 0
+                let suggestedQty = max(1, targetStock - currentQty)
+
+                if certaintyScore < auditCertaintyThreshold {
+                    decisions.append(BelowMinRouteDecision(
+                        partId: partId,
+                        partName: partName,
+                        locationType: targetLocationType,
+                        locationId: targetLocationId,
+                        currentQty: currentQty,
+                        minStock: minStock,
+                        targetStock: targetStock,
+                        suggestedQty: suggestedQty,
+                        certaintyScore: certaintyScore,
+                        action: .physicalAudit,
+                        wishlistItemId: nil,
+                        reason: "Below MIN but stock certainty is too low for procurement; route to physical audit first."
+                    ))
+                    continue
+                }
+
+                if targetLocationType != shopLocationType || targetLocationId != shopLocationId {
+                    let shopSpareQty = try Self.spareShopQty(
+                        dbConn,
+                        partId: partId,
+                        shopLocationType: shopLocationType,
+                        shopLocationId: shopLocationId
+                    )
+                    if shopSpareQty > 0 {
+                        decisions.append(BelowMinRouteDecision(
+                            partId: partId,
+                            partName: partName,
+                            locationType: targetLocationType,
+                            locationId: targetLocationId,
+                            currentQty: currentQty,
+                            minStock: minStock,
+                            targetStock: targetStock,
+                            suggestedQty: min(suggestedQty, shopSpareQty),
+                            certaintyScore: certaintyScore,
+                            action: .shopMovement,
+                            wishlistItemId: nil,
+                            reason: "Below MIN and shop has spare stock; move stock from shop before ordering."
+                        ))
+                        continue
+                    }
+                }
+
+                let shouldApprove = certaintyScore >= autoApproveCertaintyThreshold
+                let item = try Self.upsertBelowMinWishlistItem(
+                    dbConn,
+                    partId: partId,
+                    partName: partName,
+                    qtySuggested: suggestedQty,
+                    locationType: targetLocationType,
+                    locationId: targetLocationId,
+                    certaintyScore: certaintyScore,
+                    approve: shouldApprove
+                )
+
+                decisions.append(BelowMinRouteDecision(
+                    partId: partId,
+                    partName: partName,
+                    locationType: targetLocationType,
+                    locationId: targetLocationId,
+                    currentQty: currentQty,
+                    minStock: minStock,
+                    targetStock: targetStock,
+                    suggestedQty: suggestedQty,
+                    certaintyScore: certaintyScore,
+                    action: shouldApprove ? .wishlistApproved : .wishlistPending,
+                    wishlistItemId: item.id,
+                    reason: shouldApprove
+                        ? "Below MIN, shop has no spare stock, and certainty is high enough to approve procurement demand."
+                        : "Below MIN, shop has no spare stock; create pending procurement demand for review."
+                ))
+            }
+
+            return decisions
         }
     }
 
@@ -430,6 +642,103 @@ public final class WishlistService: Sendable {
     // =========================================================================
 
     private static func nowString() -> String { CoreFormatters.nowISO() }
+
+    private static func spareShopQty(
+        _ dbConn: Database,
+        partId: Int64,
+        shopLocationType: String,
+        shopLocationId: Int64
+    ) throws -> Int {
+        let shopCurrent = try Int.fetchOne(dbConn, sql: """
+            SELECT COALESCE(SUM(qty), 0)
+            FROM stock
+            WHERE part_id = ? AND location_type = ? AND location_id = ?
+              AND deleted_at IS NULL
+            """, arguments: [partId, shopLocationType, shopLocationId]) ?? 0
+
+        let shopMin = try Int.fetchOne(dbConn, sql: """
+            SELECT COALESCE(lst.min_stock, p.min_stock_level, 0)
+            FROM parts p
+            LEFT JOIN location_stock_targets lst ON lst.part_id = p.id
+                AND lst.location_type = ? AND lst.location_id = ?
+                AND lst.deleted_at IS NULL
+            WHERE p.id = ? AND p.deleted_at IS NULL
+            """, arguments: [shopLocationType, shopLocationId, partId]) ?? 0
+
+        return max(0, shopCurrent - shopMin)
+    }
+
+    private static func upsertBelowMinWishlistItem(
+        _ dbConn: Database,
+        partId: Int64,
+        partName: String,
+        qtySuggested: Int,
+        locationType: String,
+        locationId: Int64,
+        certaintyScore: Double,
+        approve: Bool
+    ) throws -> WishlistItem {
+        let now = nowString()
+        let status = approve ? "approved" : "pending"
+        let approvedBy = approve ? "System (Below-MIN)" : nil
+        let approvedAt = approve ? now : nil
+        let reason = "Auto-created: \(locationType) #\(locationId) is below MIN and shop has no spare stock."
+
+        if let existingId = try Int64.fetchOne(dbConn, sql: """
+            SELECT id
+            FROM wishlist_items
+            WHERE part_id = ?
+              AND location_type = ?
+              AND location_id = ?
+              AND source_type = 'system'
+              AND status IN ('pending', 'approved')
+            ORDER BY created_at DESC
+            LIMIT 1
+            """, arguments: [partId, locationType, locationId]),
+           var existing = try WishlistItem.fetchOne(dbConn, key: existingId) {
+            existing.partName = partName
+            existing.qtySuggested = qtySuggested
+            existing.reason = reason
+            existing.priority = "high"
+            existing.certaintyScore = certaintyScore
+            existing.locationType = locationType
+            existing.locationId = locationId
+            existing.updatedAt = now
+            if approve && existing.status == "pending" {
+                existing.status = status
+                existing.approvedBy = approvedBy
+                existing.approvedAt = approvedAt
+            }
+            try existing.update(dbConn)
+            return existing
+        }
+
+        var item = WishlistItem(
+            id: nil,
+            partId: partId,
+            partName: partName,
+            qtySuggested: qtySuggested,
+            reason: reason,
+            priority: "high",
+            sourceType: "system",
+            status: status,
+            requestedBy: "System (Below-MIN)",
+            approvedBy: approvedBy,
+            approvedAt: approvedAt,
+            dismissedBy: nil,
+            dismissedAt: nil,
+            dismissReason: nil,
+            notes: "Generated by below-MIN automation after shop-stock check.",
+            createdAt: now,
+            updatedAt: now,
+            autoApproveAt: nil,
+            certaintyScore: certaintyScore,
+            locationType: locationType,
+            locationId: locationId
+        )
+        try item.insert(dbConn)
+        return item
+    }
 
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)

@@ -12,6 +12,33 @@ struct WishlistServiceTests {
         return (env, wishlist)
     }
 
+    private func seedBelowMinTarget(
+        _ env: E2ETestHelpers.TestEnvironment,
+        partId: Int64,
+        locationType: String,
+        locationId: Int64,
+        minStock: Int,
+        targetStock: Int,
+        certainty: Double
+    ) throws {
+        try env.parts.setPartAutoAddToWishlist(partId: partId, enabled: true, byUserId: env.adminUserId)
+        try env.parts.setLocationStockTarget(
+            partId: partId,
+            locationType: locationType,
+            locationId: locationId,
+            minStock: minStock,
+            targetStock: targetStock,
+            maxStock: max(targetStock + 5, minStock + 10)
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE location_stock_targets
+                SET certainty_rating = ?
+                WHERE part_id = ? AND location_type = ? AND location_id = ?
+                """, arguments: [certainty, partId, locationType, locationId])
+        }
+    }
+
     // MARK: - CRUD
 
     @Test("Add and list wishlist items")
@@ -243,6 +270,66 @@ struct WishlistServiceTests {
 
         #expect(sections.autoAdded.count == 1)
         #expect(sections.autoAdded[0].partName == "System Part")
+    }
+
+    // MARK: - Below-MIN Automation (WEI-1079 / GitHub #425)
+
+    @Test("Below-MIN generation routes to shop movement when shop has spare stock")
+    func testBelowMinRoutesToShopMovementWhenShopHasStock() throws {
+        let (env, wishlist) = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "BelowMinMoveCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "BelowMinMovePart", categoryId: catId)
+
+        try seedBelowMinTarget(env, partId: partId, locationType: "warehouse", locationId: 1, minStock: 5, targetStock: 20, certainty: 0.95)
+        try seedBelowMinTarget(env, partId: partId, locationType: "truck", locationId: 7, minStock: 4, targetStock: 8, certainty: 0.9)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 20, locationType: "warehouse", locationId: 1)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 1, locationType: "truck", locationId: 7)
+
+        let decisions = try wishlist.generateBelowMinWishlistRoutes(locationType: "truck", locationId: 7)
+        let decision = try #require(decisions.first)
+
+        #expect(decision.action == .shopMovement)
+        #expect(decision.suggestedQty == 7)
+        #expect(decision.wishlistItemId == nil)
+        #expect(try wishlist.listItems().isEmpty)
+    }
+
+    @Test("Below-MIN generation creates approved wishlist when shop is out and certainty is high")
+    func testBelowMinCreatesApprovedWishlistForHighCertaintyProcurement() throws {
+        let (env, wishlist) = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "BelowMinApprovedCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "BelowMinApprovedPart", categoryId: catId)
+
+        try seedBelowMinTarget(env, partId: partId, locationType: "warehouse", locationId: 1, minStock: 5, targetStock: 12, certainty: 0.92)
+
+        let decisions = try wishlist.generateBelowMinWishlistRoutes(locationType: "warehouse", locationId: 1)
+        let decision = try #require(decisions.first)
+        let itemId = try #require(decision.wishlistItemId)
+        let item = try #require(try wishlist.getItem(id: itemId))
+
+        #expect(decision.action == .wishlistApproved)
+        #expect(decision.suggestedQty == 12)
+        #expect(item.status == "approved")
+        #expect(item.partId == partId)
+        #expect(item.locationType == "warehouse")
+        #expect(item.locationId == 1)
+        #expect(item.certaintyScore == 0.92)
+    }
+
+    @Test("Below-MIN generation routes low-certainty rows to physical audit before wishlist")
+    func testBelowMinRoutesLowCertaintyToPhysicalAudit() throws {
+        let (env, wishlist) = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "BelowMinAuditCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "BelowMinAuditPart", categoryId: catId)
+
+        try seedBelowMinTarget(env, partId: partId, locationType: "warehouse", locationId: 1, minStock: 5, targetStock: 10, certainty: 0.25)
+
+        let decisions = try wishlist.generateBelowMinWishlistRoutes(locationType: "warehouse", locationId: 1)
+        let decision = try #require(decisions.first)
+
+        #expect(decision.action == .physicalAudit)
+        #expect(decision.wishlistItemId == nil)
+        #expect(try wishlist.listItems().isEmpty)
     }
 
     // MARK: - Edge Cases & Error Paths
