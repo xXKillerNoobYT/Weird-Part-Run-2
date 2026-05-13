@@ -26,6 +26,7 @@ public final class OrdersService: Sendable {
         case returnNotFound(Int64)
         case invalidStatusTransition(entity: String, from: String, to: String)
         case invalidStatus(String)
+        case invalidLineNotesCount(expected: Int, actual: Int)
         case jobNotFound(Int64)
         case supplierNotFound(Int64)
         case partNotFound(Int64)
@@ -41,6 +42,8 @@ public final class OrdersService: Sendable {
             case .invalidStatusTransition(let entity, let from, let to):
                 "Cannot change \(entity) from \(from) to \(to)"
             case .invalidStatus(let msg): msg
+            case .invalidLineNotesCount(let expected, let actual):
+                "Line notes count must match JPO line count (expected \(expected), got \(actual))"
             case .jobNotFound(let id): "Job #\(id) not found or has been deleted"
             case .supplierNotFound(let id): "Supplier #\(id) not found or has been deleted"
             case .partNotFound(let id): "Part #\(id) not found or has been deleted"
@@ -1063,7 +1066,7 @@ public final class OrdersService: Sendable {
 
             if let lineNotes {
                 guard lineNotes.count == lines.count else {
-                    throw OrdersError.invalidStatus("Line notes count must match JPO line count")
+                    throw OrdersError.invalidLineNotesCount(expected: lines.count, actual: lineNotes.count)
                 }
             }
 

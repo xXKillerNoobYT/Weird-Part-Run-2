@@ -98,7 +98,7 @@ struct OrdersServiceTests {
         let catId = try E2ETestHelpers.seedCategory(env)
         let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
 
-        #expect(throws: OrdersService.OrdersError.invalidStatus("Line notes count must match JPO line count")) {
+        #expect(throws: OrdersService.OrdersError.invalidLineNotesCount(expected: 1, actual: 2)) {
             try env.orders.createJPOWithLines(
                 jobId: jobId,
                 requestedBy: env.adminUserId,

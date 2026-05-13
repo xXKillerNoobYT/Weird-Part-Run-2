@@ -470,70 +470,43 @@ public final class JobEstimationService: Sendable {
     ) throws -> EstimationReview {
         let originalEstimate = try getLatestResult(jobId: jobId, stage: "bid")
 
-        do {
-            return try db.writer.write { dbConn in
-                let actualHours = try Double.fetchOne(dbConn, sql: """
-                    SELECT COALESCE(SUM(regular_hours + overtime_hours), 0) FROM labor_entries
-                    WHERE job_id = ? AND deleted_at IS NULL
-                    """, arguments: [jobId]) ?? 0
+        return try db.writer.write { dbConn in
+            let actualHours = try Double.fetchOne(dbConn, sql: """
+                SELECT COALESCE(SUM(regular_hours + overtime_hours), 0) FROM labor_entries
+                WHERE job_id = ? AND deleted_at IS NULL
+                """, arguments: [jobId]) ?? 0
 
-                let actualDays = actualHours / 8.0
-                let estimateAtStart = originalEstimate?.estimatedDays
-                let variance: Double? = if let est = estimateAtStart, est > 0 {
-                    ((actualDays - est) / est) * 100.0
-                } else {
-                    nil
-                }
-
-                var review = EstimationReview(
-                    id: nil,
-                    jobId: jobId,
-                    reviewType: "weekly",
-                    actualDays: actualDays,
-                    actualHours: actualHours,
-                    estimateAtStart: estimateAtStart,
-                    variancePercent: variance,
-                    lessonsLearned: notes,
-                    reviewedBy: reviewedBy,
-                    reviewedAt: nil
-                )
-                try review.insert(dbConn)
-
-                guard let reviewId = review.id else { return review }
-                let encodedDelayFactors = String(
-                    data: try JSONEncoder().encode(delayFactors),
-                    encoding: .utf8
-                ) ?? "[]"
-                review.delayFactors = encodedDelayFactors
-                review.onTrackStatus = onTrackStatus
-                review.unresolvedQuestionCount = unresolvedQuestionCount
-                review.crewFeedback = crewFeedback
-                review.gcRating = gcRating
-
-                try dbConn.execute(sql: """
-                    UPDATE estimation_reviews
-                    SET delay_factors = ?,
-                        on_track_status = ?,
-                        unresolved_question_count = ?,
-                        crew_feedback = ?,
-                        gc_rating = ?
-                    WHERE id = ?
-                    """, arguments: [
-                        encodedDelayFactors,
-                        onTrackStatus,
-                        unresolvedQuestionCount,
-                        crewFeedback,
-                        gcRating,
-                        reviewId
-                    ])
-
-                return review
+            let actualDays = actualHours / 8.0
+            let estimateAtStart = originalEstimate?.estimatedDays
+            let variance: Double? = if let est = estimateAtStart, est > 0 {
+                ((actualDays - est) / est) * 100.0
+            } else {
+                nil
             }
-        } catch {
-            if isTableNotFoundError(error) {
-                return try submitWeeklyReview(jobId: jobId, reviewedBy: reviewedBy, notes: notes)
-            }
-            throw error
+
+            let encodedDelayFactors = String(
+                data: try JSONEncoder().encode(delayFactors),
+                encoding: .utf8
+            ) ?? "[]"
+            var review = EstimationReview(
+                id: nil,
+                jobId: jobId,
+                reviewType: "weekly",
+                actualDays: actualDays,
+                actualHours: actualHours,
+                estimateAtStart: estimateAtStart,
+                variancePercent: variance,
+                lessonsLearned: notes,
+                reviewedBy: reviewedBy,
+                reviewedAt: nil,
+                delayFactors: encodedDelayFactors,
+                onTrackStatus: onTrackStatus,
+                unresolvedQuestionCount: unresolvedQuestionCount,
+                crewFeedback: crewFeedback,
+                gcRating: gcRating
+            )
+            try review.insert(dbConn)
+            return review
         }
     }
 
@@ -623,86 +596,55 @@ public final class JobEstimationService: Sendable {
     ) throws -> EstimationReview {
         let originalEstimate = try getLatestResult(jobId: jobId, stage: "bid")
 
-        do {
-            return try db.writer.write { dbConn in
-                let estimateAtStart = originalEstimate?.estimatedDays
-                let variance: Double? = if let est = estimateAtStart, est > 0 {
-                    ((actualDays - est) / est) * 100.0
-                } else {
-                    nil
-                }
+        return try db.writer.write { dbConn in
+            let estimateAtStart = originalEstimate?.estimatedDays
+            let variance: Double? = if let est = estimateAtStart, est > 0 {
+                ((actualDays - est) / est) * 100.0
+            } else {
+                nil
+            }
 
-                var review = EstimationReview(
-                    id: nil,
-                    jobId: jobId,
-                    reviewType: "end_of_job",
-                    actualDays: actualDays,
-                    actualHours: actualHours,
-                    estimateAtStart: estimateAtStart,
-                    variancePercent: variance,
-                    lessonsLearned: lessonsLearned,
-                    reviewedBy: reviewedBy,
-                    reviewedAt: nil
-                )
-                try review.insert(dbConn)
+            let encodedDelayFactors = String(
+                data: try JSONEncoder().encode(delayFactors),
+                encoding: .utf8
+            ) ?? "[]"
+            var review = EstimationReview(
+                id: nil,
+                jobId: jobId,
+                reviewType: "end_of_job",
+                actualDays: actualDays,
+                actualHours: actualHours,
+                estimateAtStart: estimateAtStart,
+                variancePercent: variance,
+                lessonsLearned: lessonsLearned,
+                reviewedBy: reviewedBy,
+                reviewedAt: nil,
+                delayFactors: encodedDelayFactors,
+                onTrackStatus: onTrackStatus,
+                unresolvedQuestionCount: unresolvedQuestionCount,
+                crewFeedback: crewFeedback,
+                gcRating: gcRating
+            )
+            try review.insert(dbConn)
 
-                guard let reviewId = review.id else { return review }
-                let encodedDelayFactors = String(
-                    data: try JSONEncoder().encode(delayFactors),
-                    encoding: .utf8
-                ) ?? "[]"
-                review.delayFactors = encodedDelayFactors
-                review.onTrackStatus = onTrackStatus
-                review.unresolvedQuestionCount = unresolvedQuestionCount
-                review.crewFeedback = crewFeedback
-                review.gcRating = gcRating
-
+            guard let reviewId = review.id else { return review }
+            for input in questionAccuracy {
                 try dbConn.execute(sql: """
-                    UPDATE estimation_reviews
-                    SET delay_factors = ?,
-                        on_track_status = ?,
-                        unresolved_question_count = ?,
-                        crew_feedback = ?,
-                        gc_rating = ?
-                    WHERE id = ?
+                    INSERT INTO estimation_question_accuracy_reviews
+                    (review_id, question_id, predicted_impact, actual_impact,
+                     accuracy_rating, notes, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
                     """, arguments: [
-                        encodedDelayFactors,
-                        onTrackStatus,
-                        unresolvedQuestionCount,
-                        crewFeedback,
-                        gcRating,
-                        reviewId
+                        reviewId,
+                        input.questionId,
+                        input.predictedImpact,
+                        input.actualImpact,
+                        input.accuracyRating,
+                        input.notes
                     ])
-
-                for input in questionAccuracy {
-                    try dbConn.execute(sql: """
-                        INSERT INTO estimation_question_accuracy_reviews
-                        (review_id, question_id, predicted_impact, actual_impact,
-                         accuracy_rating, notes, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-                        """, arguments: [
-                            reviewId,
-                            input.questionId,
-                            input.predictedImpact,
-                            input.actualImpact,
-                            input.accuracyRating,
-                            input.notes
-                        ])
-                }
-
-                return review
             }
-        } catch {
-            if isTableNotFoundError(error) {
-                return try submitEndOfJobReview(
-                    jobId: jobId,
-                    actualDays: actualDays,
-                    actualHours: actualHours,
-                    lessonsLearned: lessonsLearned,
-                    reviewedBy: reviewedBy
-                )
-            }
-            throw error
+
+            return review
         }
     }
 

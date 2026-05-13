@@ -8,7 +8,7 @@ public final class AppDatabase: Sendable {
     public let writer: any DatabaseWriter
 
     /// The total number of registered migrations. Update when adding new migrations.
-    /// Migrations are 000-080, so count = 81.
+    /// Migrations are 000-082, so count = 83.
     public static let schemaVersion = 82
 
     /// Initialize with an existing database writer and run all migrations.
