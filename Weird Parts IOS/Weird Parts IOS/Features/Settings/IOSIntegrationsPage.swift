@@ -26,10 +26,12 @@ struct IOSIntegrationsPage: View {
                 }
             } else if integrations.isEmpty {
                 Section {
-                    ContentUnavailableView(
-                        "No Integrations",
-                        systemImage: "puzzlepiece.extension",
-                        description: Text("No integrations have been configured. Set up integrations from the desktop application.")
+                    EmptyStateView(
+                        icon: "puzzlepiece.extension",
+                        title: "No Integrations",
+                        message: "No integrations have been configured. Set up integrations from the desktop application.",
+                        helpLabel: "Learn how integrations work",
+                        helpAction: { activeSheet = .help }
                     )
                 }
             } else {

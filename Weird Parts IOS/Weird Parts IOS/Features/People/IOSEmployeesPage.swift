@@ -147,7 +147,9 @@ struct IOSEmployeesPage: View {
                     icon: "person.3",
                     title: "No Employees",
                     message: "No employees match your filters.",
-                    actionLabel: "Clear filters"
+                    actionLabel: "Clear filters",
+                    helpLabel: "Learn how employees work",
+                    helpAction: { activeSheet = .help }
                 ) {
                     clearFilters()
                 }
@@ -155,7 +157,11 @@ struct IOSEmployeesPage: View {
                 EmptyStateView(
                     icon: "person.3",
                     title: "No Employees",
-                    message: "No employees have been added yet."
+                    message: "No employees have been added yet.",
+                    actionLabel: "Add Employee",
+                    helpLabel: "Learn how employees work",
+                    helpAction: { activeSheet = .help },
+                    action: { activeSheet = .addEmployee }
                 )
             }
         } else {
@@ -298,6 +304,7 @@ private struct AddEmployeeSheet: View {
     @State private var email = ""
     @State private var phone = ""
     @State private var errorMessage: String?
+    @State private var isSaving = false
     @State private var isDirty = false
     @State private var showDiscardAlert = false
 
@@ -335,19 +342,20 @@ private struct AddEmployeeSheet: View {
             .navigationTitle("Add Employee")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                CreationFormActions(
+                    isEditing: false,
+                    isSaving: isSaving,
+                    isValid: !displayName.trimmingCharacters(in: .whitespaces).isEmpty && pin.count >= 4,
+                    onCancel: {
                         if isDirty {
                             showDiscardAlert = true
                         } else {
                             dismiss()
                         }
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
-                        .disabled(displayName.trimmingCharacters(in: .whitespaces).isEmpty || pin.count < 4)
-                }
+                    },
+                    onSaveAndExit: { save(shouldDismiss: true) },
+                    onSaveAndAddAnother: { save(shouldDismiss: false) }
+                )
             }
             .alert("Discard changes?", isPresented: $showDiscardAlert) {
                 Button("Discard", role: .destructive) { dismiss() }
@@ -356,10 +364,10 @@ private struct AddEmployeeSheet: View {
                 Text("Your unsaved changes will be lost.")
             }
         }
-        .interactiveDismissDisabled(isDirty)
+        .interactiveDismissDisabled(isDirty || isSaving)
     }
 
-    private func save() {
+    private func save(shouldDismiss: Bool) {
         guard let authService = appCore.authService else {
             errorMessage = "Auth service unavailable"
             return
@@ -373,6 +381,8 @@ private struct AddEmployeeSheet: View {
             errorMessage = "PIN must be at least 4 digits."
             return
         }
+        isSaving = true
+        errorMessage = nil
         do {
             try authService.createUser(
                 displayName: trimmedName,
@@ -380,10 +390,23 @@ private struct AddEmployeeSheet: View {
                 email: email.isEmpty ? nil : email,
                 phone: phone.isEmpty ? nil : phone
             )
-            dismiss()
+            if shouldDismiss {
+                dismiss()
+            } else {
+                resetForm()
+            }
             onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "load employees")
         }
+        isSaving = false
+    }
+
+    private func resetForm() {
+        displayName = ""
+        pin = ""
+        email = ""
+        phone = ""
+        isDirty = false
     }
 }

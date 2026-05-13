@@ -98,11 +98,13 @@ struct IOSJobNotebooksPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredNotebooks.isEmpty {
-            ContentUnavailableView {
-                Label("No Job Notebooks", systemImage: "hammer.circle")
-            } description: {
-                Text("No job-linked notebooks match your criteria.")
-            }
+            EmptyStateView(
+                icon: "hammer.circle",
+                title: "No Job Notebooks",
+                message: "No job-linked notebooks match your criteria.",
+                helpLabel: "Learn how job notebooks work",
+                helpAction: { activeSheet = .help }
+            )
         } else {
             List(filteredNotebooks, id: \.id) { notebook in
                 notebookRow(notebook)

@@ -39,7 +39,11 @@ struct IOSContractorsPage: View {
                 EmptyStateView(
                     icon: "person.badge.shield.checkmark.fill",
                     title: "No Contractors",
-                    message: "No sub-contractors have been added yet."
+                    message: "No sub-contractors have been added yet.",
+                    actionLabel: "Add Contractor",
+                    helpLabel: "Learn how contractors work",
+                    helpAction: { activeSheet = .help },
+                    action: { activeSheet = .create }
                 )
             } else {
                 contractorList
@@ -153,6 +157,7 @@ private struct AddContractorSheet: View {
     @State private var phone = ""
     @State private var trade = ""
     @State private var errorMessage: String?
+    @State private var isSaving = false
     @State private var isDirty = false
     @State private var showDiscardAlert = false
 
@@ -190,15 +195,16 @@ private struct AddContractorSheet: View {
             .navigationTitle("Add Contractor")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                CreationFormActions(
+                    isEditing: false,
+                    isSaving: isSaving,
+                    isValid: !companyName.trimmingCharacters(in: .whitespaces).isEmpty,
+                    onCancel: {
                         if isDirty { showDiscardAlert = true } else { dismiss() }
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
-                        .disabled(companyName.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
+                    },
+                    onSaveAndExit: { save(shouldDismiss: true) },
+                    onSaveAndAddAnother: { save(shouldDismiss: false) }
+                )
             }
             .alert("Discard changes?", isPresented: $showDiscardAlert) {
                 Button("Discard", role: .destructive) { dismiss() }
@@ -207,14 +213,16 @@ private struct AddContractorSheet: View {
                 Text("Your unsaved changes will be lost.")
             }
         }
-        .interactiveDismissDisabled(isDirty)
+        .interactiveDismissDisabled(isDirty || isSaving)
     }
 
-    private func save() {
+    private func save(shouldDismiss: Bool) {
         guard let service = appCore.peopleService else {
             errorMessage = "People service unavailable"
             return
         }
+        isSaving = true
+        errorMessage = nil
         do {
             try service.createContractor(
                 companyName: companyName.trimmingCharacters(in: .whitespaces),
@@ -223,10 +231,24 @@ private struct AddContractorSheet: View {
                 phone: phone.isEmpty ? nil : phone,
                 notes: trade.isEmpty ? nil : "Trade: \(trade)"
             )
-            dismiss()
+            if shouldDismiss {
+                dismiss()
+            } else {
+                resetForm()
+            }
             onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "load contractors")
         }
+        isSaving = false
+    }
+
+    private func resetForm() {
+        companyName = ""
+        contactName = ""
+        email = ""
+        phone = ""
+        trade = ""
+        isDirty = false
     }
 }

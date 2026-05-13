@@ -108,11 +108,15 @@ struct IOSHatsPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredHats.isEmpty {
-            ContentUnavailableView {
-                Label("No Hats", systemImage: "graduationcap")
-            } description: {
-                Text("No roles have been created yet.")
-            }
+            EmptyStateView(
+                icon: "graduationcap",
+                title: "No Hats",
+                message: searchText.isEmpty ? "No roles have been created yet." : "No roles match your current search.",
+                actionLabel: "Add Hat",
+                helpLabel: "Learn how hats work",
+                helpAction: { activeSheet = .help },
+                action: { activeSheet = .addHat }
+            )
         } else {
             List(filteredHats, id: \.id) { hat in
                 Button {
@@ -471,6 +475,7 @@ private struct AddEmployeeToHatSheet: View {
     @State private var employees: [PeopleService.EmployeeListItem] = []
     @State private var searchText = ""
     @State private var loadError: String?
+    @State private var showHelp = false
 
     var body: some View {
         NavigationStack {
@@ -478,11 +483,13 @@ private struct AddEmployeeToHatSheet: View {
                 if let error = loadError {
                     ErrorStateView(message: error) { loadEmployees() }
                 } else if availableEmployees.isEmpty {
-                    ContentUnavailableView {
-                        Label("No Employees Available", systemImage: "person.slash")
-                    } description: {
-                        Text("All employees are already assigned to this hat.")
-                    }
+                    EmptyStateView(
+                        icon: "person.slash",
+                        title: "No Employees Available",
+                        message: "All employees are already assigned to this hat.",
+                        helpLabel: "Learn how hats work",
+                        helpAction: { showHelp = true }
+                    )
                 } else {
                     List(availableEmployees) { emp in
                         Button {
@@ -519,6 +526,21 @@ private struct AddEmployeeToHatSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    Button { showHelp = true } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                    .accessibilityLabel("Help")
+                }
+            }
+            .sheet(isPresented: $showHelp) {
+                PageHelpSheet(
+                    title: "Add Employee to Hat Help",
+                    sections: [
+                        ("What This Sheet Does", "Lists employees who are not already assigned to the selected hat."),
+                        ("How to Use It", "Search for an employee, then tap a row to assign that employee to the hat. Employees already wearing the hat are hidden from this list.")
+                    ]
+                )
             }
             .task { loadEmployees() }
         }
@@ -555,4 +577,3 @@ private struct AddEmployeeToHatSheet: View {
         }
     }
 }
-

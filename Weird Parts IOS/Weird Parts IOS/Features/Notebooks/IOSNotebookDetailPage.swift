@@ -283,7 +283,9 @@ struct IOSNotebookDetailPage: View {
                     EmptyStateView(
                         icon: "note.text",
                         title: "No Content",
-                        message: "Add section groups and sections to organize this notebook."
+                        message: "Add section groups and sections to organize this notebook.",
+                        helpLabel: "Learn how notebook content works",
+                        helpAction: { activeSheet = .help }
                     )
                 }
             }

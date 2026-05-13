@@ -181,10 +181,12 @@ struct IOSDailyReportTemplatesPage: View {
         // so the preview doesn't render an empty list with no explanation.
         let enabledSections = sections.filter(\.enabled)
         if enabledSections.isEmpty {
-            ContentUnavailableView(
-                "No Sections Enabled",
-                systemImage: "doc.text.magnifyingglass",
-                description: Text("Enable at least one section in the template editor to preview it here.")
+            EmptyStateView(
+                icon: "doc.text.magnifyingglass",
+                title: "No Sections Enabled",
+                message: "Enable at least one section in the template editor to preview it here.",
+                helpLabel: "Learn how daily report templates work",
+                helpAction: { activeSheet = .help }
             )
         } else {
         List {

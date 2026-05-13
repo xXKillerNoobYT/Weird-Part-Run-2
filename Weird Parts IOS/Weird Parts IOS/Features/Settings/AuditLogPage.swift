@@ -51,16 +51,20 @@ struct AuditLogPage: View {
                 ProgressView("Loading audit log...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if entries.isEmpty {
-                ContentUnavailableView(
-                    "No Audit Entries",
-                    systemImage: "doc.text.magnifyingglass",
-                    description: Text("No recent changes have been recorded.")
+                EmptyStateView(
+                    icon: "doc.text.magnifyingglass",
+                    title: "No Audit Entries",
+                    message: "No recent changes have been recorded.",
+                    helpLabel: "Learn how audit log works",
+                    helpAction: { activeSheet = .help }
                 )
             } else if filteredEntries.isEmpty {
-                ContentUnavailableView(
-                    "No Matching Audit Entries",
-                    systemImage: "line.3.horizontal.decrease.circle",
-                    description: Text("No audit entries match the selected date range and search.")
+                EmptyStateView(
+                    icon: "line.3.horizontal.decrease.circle",
+                    title: "No Matching Audit Entries",
+                    message: "No audit entries match the selected date range and search.",
+                    helpLabel: "Learn how audit log works",
+                    helpAction: { activeSheet = .help }
                 )
             } else {
                 List {

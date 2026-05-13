@@ -123,7 +123,15 @@ struct IOSReportTemplatesPage: View {
             }
 
             if templates.isEmpty {
-                ContentUnavailableView("No Templates", systemImage: "doc.on.doc", description: Text("Tap + to create a report template."))
+                EmptyStateView(
+                    icon: "doc.on.doc",
+                    title: "No Templates",
+                    message: "Tap + to create a report template.",
+                    actionLabel: "Add Template",
+                    helpLabel: "Learn how report templates work",
+                    helpAction: { activeSheet = .help },
+                    action: { activeSheet = .create }
+                )
             } else {
                 // My templates
                 let myTemplates = templates.filter { !$0.isShared }

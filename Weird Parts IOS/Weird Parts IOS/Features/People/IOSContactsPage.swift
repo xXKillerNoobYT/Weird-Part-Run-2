@@ -155,11 +155,15 @@ struct IOSContactsPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredActive.isEmpty && filteredInactive.isEmpty {
-            ContentUnavailableView {
-                Label("No Contacts", systemImage: "person.crop.rectangle.stack")
-            } description: {
-                Text("No contacts match your criteria.")
-            }
+            EmptyStateView(
+                icon: "person.crop.rectangle.stack",
+                title: "No Contacts",
+                message: "No contacts match your criteria.",
+                actionLabel: "Add Contact",
+                helpLabel: "Learn how contacts work",
+                helpAction: { activeSheet = .help },
+                action: { activeSheet = .addContact }
+            )
         } else {
             List {
                 // Active contacts

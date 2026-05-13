@@ -154,18 +154,23 @@ struct IOSTeamsPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if teams.isEmpty {
-            ContentUnavailableView {
-                Label("No Teams Yet", systemImage: "person.3.fill")
-            } description: {
-                Text("Teams are built from employees. Create your employees first, then organize them into teams here.")
-            } actions: {
-                NavigationLink(destination: IOSEmployeesPage().environmentObject(appCore)) {
-                    Label("Go to Employees", systemImage: "person.badge.plus")
-                }
-                .buttonStyle(.borderedProminent)
-            }
+            EmptyStateView(
+                icon: "person.3.fill",
+                title: "No Teams Yet",
+                message: "Teams are built from employees. Create your employees first, then organize them into teams here.",
+                actionLabel: "Add Team",
+                helpLabel: "Learn how teams work",
+                helpAction: { activeSheet = .help },
+                action: { activeSheet = .addTeam }
+            )
         } else if filteredTeams.isEmpty {
-            ContentUnavailableView.search(text: searchText)
+            EmptyStateView(
+                icon: "line.3.horizontal.decrease.circle",
+                title: "No Matching Teams",
+                message: "No teams match your current search and filter.",
+                helpLabel: "Learn how teams work",
+                helpAction: { activeSheet = .help }
+            )
         } else {
             List {
                 Section {
@@ -265,6 +270,7 @@ private struct AddTeamSheet: View {
     @State private var teamName = ""
     @State private var teamDescription = ""
     @State private var errorMessage: String?
+    @State private var isSaving = false
     @State private var isDirty = false
     @State private var showDiscardAlert = false
 
@@ -290,15 +296,16 @@ private struct AddTeamSheet: View {
             .navigationTitle("Add Team")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                CreationFormActions(
+                    isEditing: false,
+                    isSaving: isSaving,
+                    isValid: !teamName.trimmingCharacters(in: .whitespaces).isEmpty,
+                    onCancel: {
                         if isDirty { showDiscardAlert = true } else { dismiss() }
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
-                        .disabled(teamName.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
+                    },
+                    onSaveAndExit: { save(shouldDismiss: true) },
+                    onSaveAndAddAnother: { save(shouldDismiss: false) }
+                )
             }
             .alert("Discard changes?", isPresented: $showDiscardAlert) {
                 Button("Discard", role: .destructive) { dismiss() }
@@ -307,23 +314,36 @@ private struct AddTeamSheet: View {
                 Text("Your unsaved changes will be lost.")
             }
         }
-        .interactiveDismissDisabled(isDirty)
+        .interactiveDismissDisabled(isDirty || isSaving)
     }
 
-    private func save() {
+    private func save(shouldDismiss: Bool) {
         guard let service = appCore.peopleService else {
             errorMessage = "People service unavailable"
             return
         }
+        isSaving = true
+        errorMessage = nil
         do {
             try service.createTeam(
                 name: teamName.trimmingCharacters(in: .whitespaces),
                 description: teamDescription.isEmpty ? nil : teamDescription
             )
-            dismiss()
+            if shouldDismiss {
+                dismiss()
+            } else {
+                resetForm()
+            }
             onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "load teams")
         }
+        isSaving = false
+    }
+
+    private func resetForm() {
+        teamName = ""
+        teamDescription = ""
+        isDirty = false
     }
 }

@@ -70,7 +70,7 @@ struct IOSNotebooksListPage: View {
             case .help:
                 PageHelpSheet(title: "Notebooks Help", sections: [
                 ("What This Page Does", "Displays all notebooks in the system. Notebooks are organized documents that hold structured entries such as text blocks, checklists, photos, and part references. They can be general-purpose or linked to specific jobs."),
-                ("How to Use It", "Use the type filter chips at the top to narrow by notebook type (General, Job, Daily Report, or Checklist). Use the search bar to find notebooks by title, job name, or author. Tap a notebook to view its full contents. Pull down to refresh the list."),
+                ("How to Use It", "Use the type smart cards at the top to narrow by notebook type (General, Job, Daily Report, or Checklist). Use the search bar to find notebooks by title, job name, or author. Tap a notebook to view its full contents. Pull down to refresh the list."),
                 ("Creating a Notebook", "Tap the + button in the toolbar to create a new notebook. You can choose a type, assign it to a job, and optionally start from a template."),
                 ("Notebook Types", "General notebooks are standalone. Job notebooks are linked to a specific job. Daily Report notebooks track daily progress. Checklist notebooks contain to-do items that can be checked off.")
             ])
@@ -142,11 +142,15 @@ struct IOSNotebooksListPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredNotebooks.isEmpty {
-            ContentUnavailableView {
-                Label("No Notebooks", systemImage: "book.closed")
-            } description: {
-                Text("No notebooks match your criteria.")
-            }
+            EmptyStateView(
+                icon: "book.closed",
+                title: "No Notebooks",
+                message: "No notebooks match your criteria.",
+                actionLabel: "Create Notebook",
+                helpLabel: "Learn how notebooks work",
+                helpAction: { activeSheet = .help },
+                action: { activeSheet = .createNotebook }
+            )
         } else {
             List(filteredNotebooks, id: \.id) { notebook in
                 NavigationLink(destination: IOSNotebookDetailPage(notebookId: notebook.id).environmentObject(appCore)) {

@@ -166,8 +166,17 @@ struct IOSPermissionsPage: View {
     }
 
     private var permissionsList: some View {
-        List {
-            if let hat = selectedHat {
+        Group {
+            if hats.isEmpty {
+                EmptyStateView(
+                    icon: "lock.shield",
+                    title: "No Hats Available",
+                    message: "Create a hat before assigning permissions.",
+                    helpLabel: "Learn how permissions work",
+                    helpAction: { activeSheet = .help }
+                )
+            } else if let hat = selectedHat {
+                List {
                 ForEach(allPermissions) { group in
                     Section(group.name) {
                         ForEach(group.keys, id: \.self) { key in
@@ -175,14 +184,18 @@ struct IOSPermissionsPage: View {
                         }
                     }
                 }
-            } else {
-                Section {
-                    Text("Select a hat above to view and edit permissions")
-                        .foregroundStyle(.secondary)
                 }
+                .listStyle(.insetGrouped)
+            } else {
+                EmptyStateView(
+                    icon: "graduationcap",
+                    title: "Select a Hat",
+                    message: "Select a hat above to view and edit permissions.",
+                    helpLabel: "Learn how permissions work",
+                    helpAction: { activeSheet = .help }
+                )
             }
         }
-        .listStyle(.insetGrouped)
     }
 
     private func permissionRow(key: String, hatId: Int64) -> some View {

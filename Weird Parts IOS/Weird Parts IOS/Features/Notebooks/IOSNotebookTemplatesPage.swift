@@ -32,11 +32,13 @@ struct IOSNotebookTemplatesPage: View {
             } else if let error = loadError {
                 ErrorStateView(message: error) { loadData() }
             } else if filteredTemplates.isEmpty {
-                ContentUnavailableView {
-                    Label("No Templates", systemImage: "doc.text")
-                } description: {
-                    Text("No notebook templates found.")
-                }
+                EmptyStateView(
+                    icon: "doc.text",
+                    title: "No Templates",
+                    message: "No notebook templates found.",
+                    helpLabel: "Learn how notebook templates work",
+                    helpAction: { activeSheet = .help }
+                )
             } else {
                 templateList
             }

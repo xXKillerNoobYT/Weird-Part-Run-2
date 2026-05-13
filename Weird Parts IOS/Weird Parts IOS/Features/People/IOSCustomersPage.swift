@@ -78,7 +78,11 @@ struct IOSCustomersPage: View {
             EmptyStateView(
                 icon: "building.2",
                 title: "No Customers",
-                message: searchText.isEmpty ? "No customers have been added yet." : "No customers match your search."
+                message: searchText.isEmpty ? "No customers have been added yet." : "No customers match your search.",
+                actionLabel: "Add Customer",
+                helpLabel: "Learn how customers work",
+                helpAction: { activeSheet = .help },
+                action: { activeSheet = .addCustomer }
             )
         } else {
             List(filteredCustomers, id: \.id) { customer in
@@ -170,6 +174,7 @@ private struct AddCustomerSheet: View {
     @State private var phone = ""
     @State private var address = ""
     @State private var errorMessage: String?
+    @State private var isSaving = false
     @State private var isDirty = false
     @State private var showDiscardAlert = false
 
@@ -208,15 +213,16 @@ private struct AddCustomerSheet: View {
             .navigationTitle("Add Customer")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                CreationFormActions(
+                    isEditing: false,
+                    isSaving: isSaving,
+                    isValid: !name.trimmingCharacters(in: .whitespaces).isEmpty,
+                    onCancel: {
                         if isDirty { showDiscardAlert = true } else { dismiss() }
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
+                    },
+                    onSaveAndExit: { save(shouldDismiss: true) },
+                    onSaveAndAddAnother: { save(shouldDismiss: false) }
+                )
             }
             .alert("Discard changes?", isPresented: $showDiscardAlert) {
                 Button("Discard", role: .destructive) { dismiss() }
@@ -225,14 +231,16 @@ private struct AddCustomerSheet: View {
                 Text("Your unsaved changes will be lost.")
             }
         }
-        .interactiveDismissDisabled(isDirty)
+        .interactiveDismissDisabled(isDirty || isSaving)
     }
 
-    private func save() {
+    private func save(shouldDismiss: Bool) {
         guard let service = appCore.peopleService else {
             errorMessage = "People service unavailable"
             return
         }
+        isSaving = true
+        errorMessage = nil
         do {
             try service.createCustomer(
                 name: name.trimmingCharacters(in: .whitespaces),
@@ -241,10 +249,24 @@ private struct AddCustomerSheet: View {
                 phone: phone.isEmpty ? nil : phone,
                 address: address.isEmpty ? nil : address
             )
-            dismiss()
+            if shouldDismiss {
+                dismiss()
+            } else {
+                resetForm()
+            }
             onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "load customers")
         }
+        isSaving = false
+    }
+
+    private func resetForm() {
+        name = ""
+        companyName = ""
+        email = ""
+        phone = ""
+        address = ""
+        isDirty = false
     }
 }
