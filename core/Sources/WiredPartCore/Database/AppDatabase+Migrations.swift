@@ -126,6 +126,7 @@ extension AppDatabase {
         registerMigration087WishlistLocationRouting(&migrator)
         registerMigration088WarehouseOnboardingNineStepProgress(&migrator)
         registerMigration089BreakPolicyPresets(&migrator)
+        registerMigration090InspectionTemplateRequiredFlag(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5230,6 +5231,23 @@ extension AppDatabase {
     private static func registerMigration089BreakPolicyPresets(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("089_break_policy_presets") { db in
             try seedBreakPolicyPresets(db)
+        }
+    }
+
+    private static func registerMigration090InspectionTemplateRequiredFlag(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("090_inspection_template_required_flag") { db in
+            try addColumnIfMissing(
+                db,
+                table: "inspection_templates",
+                column: "is_required",
+                type: .boolean,
+                defaultValue: true
+            )
+            try db.execute(sql: """
+                UPDATE inspection_templates
+                SET is_required = 1
+                WHERE is_required IS NULL
+                """)
         }
     }
 }

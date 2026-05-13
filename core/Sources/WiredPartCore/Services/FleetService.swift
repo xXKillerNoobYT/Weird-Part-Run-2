@@ -2192,19 +2192,47 @@ public final class FleetService: Sendable {
         public let section: String
         public let itemName: String
         public let itemDescription: String?
+        public let isRequired: Bool
         public let isCritical: Bool
         public let sortOrder: Int
 
         public init(
             id: Int64, vehicleType: String, section: String,
             itemName: String, itemDescription: String?,
-            isCritical: Bool, sortOrder: Int
+            isRequired: Bool = true, isCritical: Bool, sortOrder: Int
         ) {
             self.id = id
             self.vehicleType = vehicleType
             self.section = section
             self.itemName = itemName
             self.itemDescription = itemDescription
+            self.isRequired = isRequired
+            self.isCritical = isCritical
+            self.sortOrder = sortOrder
+        }
+    }
+
+    /// Editable template payload used by Settings -> Operations -> Pre-Trip Checklists.
+    public struct InspectionTemplateDraftItem: Sendable, Equatable {
+        public let section: String
+        public let itemName: String
+        public let itemDescription: String?
+        public let isRequired: Bool
+        public let isCritical: Bool
+        public let sortOrder: Int
+
+        public init(
+            section: String,
+            itemName: String,
+            itemDescription: String? = nil,
+            isRequired: Bool,
+            isCritical: Bool,
+            sortOrder: Int
+        ) {
+            self.section = section
+            self.itemName = itemName
+            self.itemDescription = itemDescription
+            self.isRequired = isRequired
             self.isCritical = isCritical
             self.sortOrder = sortOrder
         }
@@ -2266,7 +2294,7 @@ public final class FleetService: Sendable {
 
                 let placeholders = types.map { _ in "?" }.joined(separator: ", ")
                 let sql = """
-                    SELECT id, vehicle_type, section, item_name, item_description, is_critical, sort_order
+                    SELECT id, vehicle_type, section, item_name, item_description, is_required, is_critical, sort_order
                     FROM inspection_templates
                     WHERE vehicle_type IN (\(placeholders))
                       AND is_active = 1 AND deleted_at IS NULL
@@ -2288,6 +2316,7 @@ public final class FleetService: Sendable {
                         section: row["section"] ?? "",
                         itemName: row["item_name"] ?? "",
                         itemDescription: row["item_description"] as String?,
+                        isRequired: (row["is_required"] as Bool?) ?? true,
                         isCritical: row["is_critical"] as Bool? ?? false,
                         sortOrder: row["sort_order"] ?? 0
                     )
@@ -2296,6 +2325,44 @@ public final class FleetService: Sendable {
         } catch {
             if isTableNotFoundError(error) { return [] }
             throw error
+        }
+    }
+
+    /// Replace the editable inspection template rows for one vehicle type.
+    ///
+    /// Existing rows are soft-deleted so historical inspection results keep their
+    /// template-item foreign keys. New rows become the active runtime template.
+    public func replaceInspectionTemplate(vehicleType: String, items: [InspectionTemplateDraftItem]) throws {
+        let normalizedVehicleType = vehicleType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedVehicleType.isEmpty else { throw FleetError.requiredFieldEmpty("vehicleType") }
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE inspection_templates
+                SET is_active = 0, deleted_at = datetime('now')
+                WHERE vehicle_type = ? AND deleted_at IS NULL
+                """, arguments: [normalizedVehicleType])
+
+            for item in items {
+                let section = item.section.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let itemName = item.itemName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !section.isEmpty else { throw FleetError.requiredFieldEmpty("section") }
+                guard !itemName.isEmpty else { throw FleetError.requiredFieldEmpty("itemName") }
+
+                try dbConn.execute(sql: """
+                    INSERT INTO inspection_templates
+                    (vehicle_type, section, item_name, item_description, is_required, is_critical, sort_order)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [
+                        normalizedVehicleType,
+                        section,
+                        itemName,
+                        item.itemDescription,
+                        item.isRequired,
+                        item.isCritical,
+                        item.sortOrder,
+                    ])
+            }
         }
     }
 

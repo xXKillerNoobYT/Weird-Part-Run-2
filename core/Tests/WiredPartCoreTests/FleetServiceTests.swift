@@ -444,6 +444,55 @@ struct FleetServiceTests {
         #expect(checklist.count >= 0)
     }
 
+    @Test("Inspection template editor persists custom item flags")
+    func testInspectionTemplateEditorPersistsCustomItemFlags() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        try env.fleet.replaceInspectionTemplate(vehicleType: "truck", items: [
+            FleetService.InspectionTemplateDraftItem(
+                section: "exterior",
+                itemName: "Custom brake controller",
+                itemDescription: "Verify controller powers on",
+                isRequired: false,
+                isCritical: true,
+                sortOrder: 0
+            ),
+        ])
+
+        let checklist = try env.fleet.getInspectionChecklist(vehicleType: "truck")
+        #expect(checklist.count == 1)
+        #expect(checklist.first?.itemName == "Custom brake controller")
+        #expect(checklist.first?.itemDescription == "Verify controller powers on")
+        #expect(checklist.first?.isRequired == false)
+        #expect(checklist.first?.isCritical == true)
+    }
+
+    @Test("Inspection template editor persists reorder through sort order")
+    func testInspectionTemplateEditorPersistsReorder() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        try env.fleet.replaceInspectionTemplate(vehicleType: "van", items: [
+            FleetService.InspectionTemplateDraftItem(
+                section: "equipment",
+                itemName: "Second after reorder",
+                isRequired: true,
+                isCritical: false,
+                sortOrder: 1
+            ),
+            FleetService.InspectionTemplateDraftItem(
+                section: "equipment",
+                itemName: "First after reorder",
+                isRequired: true,
+                isCritical: false,
+                sortOrder: 0
+            ),
+        ])
+
+        let checklist = try env.fleet.getInspectionChecklist(vehicleType: "van")
+        #expect(checklist.map(\.itemName) == ["First after reorder", "Second after reorder"])
+        #expect(checklist.map(\.sortOrder) == [0, 1])
+    }
+
     // MARK: - Vehicle Stock & Tools
 
     @Test("Vehicle stock empty on fresh DB")
