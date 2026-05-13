@@ -60,6 +60,19 @@ struct StandardFilterBarTests {
         #expect(ReportDateRange.custom.dateInterval(containing: date(2026, 5, 13), calendar: calendar) == nil)
     }
 
+    @Test func dateFilterMatchesInclusiveCustomDates() {
+        let start = date(2026, 5, 10)
+        let end = date(2026, 5, 13)
+
+        #expect(StandardFilterBarDateFilter.contains("2026-05-10", selectedRange: .custom, customStart: start, customEnd: end, calendar: calendar))
+        #expect(StandardFilterBarDateFilter.contains("2026-05-13T18:55:40Z", selectedRange: .custom, customStart: start, customEnd: end, calendar: calendar))
+        #expect(!StandardFilterBarDateFilter.contains("2026-05-14", selectedRange: .custom, customStart: start, customEnd: end, calendar: calendar))
+    }
+
+    @Test func reportBuilderKeepsOriginalQuickRangeChoices() {
+        #expect(ReportBuilderFilterConfiguration.quickDateRanges == [.thisWeek, .thisMonth, .thisQuarter, .custom])
+    }
+
     private func date(_ year: Int, _ month: Int, _ day: Int, hour: Int = 0) -> Date {
         calendar.date(from: DateComponents(timeZone: calendar.timeZone, year: year, month: month, day: day, hour: hour))!
     }

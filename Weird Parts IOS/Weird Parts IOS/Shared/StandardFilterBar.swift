@@ -16,6 +16,41 @@ struct StandardFilterBarCustomRange: Equatable {
     }
 }
 
+enum StandardFilterBarDateFilter {
+    static func contains(
+        _ isoDateString: String?,
+        selectedRange: ReportDateRange,
+        customStart: Date,
+        customEnd: Date,
+        calendar: Calendar = .current
+    ) -> Bool {
+        guard let date = date(from: isoDateString, calendar: calendar) else { return false }
+        let interval = selectedRange.dateInterval(containing: Date(), calendar: calendar)
+        let start = calendar.startOfDay(for: interval?.start ?? customStart)
+        let end = calendar.startOfDay(for: interval?.end ?? customEnd)
+        let itemDate = calendar.startOfDay(for: date)
+
+        return itemDate >= min(start, end) && itemDate <= max(start, end)
+    }
+
+    private static func date(from isoDateString: String?, calendar: Calendar) -> Date? {
+        guard let raw = isoDateString?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return nil
+        }
+
+        let dateOnly = String(raw.prefix(10))
+        let components = dateOnly.split(separator: "-")
+        guard components.count == 3,
+              let year = Int(components[0]),
+              let month = Int(components[1]),
+              let day = Int(components[2]) else {
+            return nil
+        }
+
+        return calendar.date(from: DateComponents(year: year, month: month, day: day))
+    }
+}
+
 /// Reusable horizontal date filter bar with quick-pick buttons and custom date range picker.
 ///
 /// Usage:
@@ -92,18 +127,9 @@ struct StandardFilterBar: View {
 
             // Custom date pickers — only show when Custom is selected
             if selectedRange == .custom {
-                HStack(spacing: 12) {
-                    DatePicker("From", selection: validatedCustomStart, in: ...customEnd, displayedComponents: .date)
-                        .labelsHidden()
-                        .frame(minHeight: StandardFilterBarLayout.minimumTapTarget)
-                        .accessibilityIdentifier("dateRangeCustomStart")
-                    Image(systemName: "arrow.right")
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    DatePicker("To", selection: validatedCustomEnd, in: customStart..., displayedComponents: .date)
-                        .labelsHidden()
-                        .frame(minHeight: StandardFilterBarLayout.minimumTapTarget)
-                        .accessibilityIdentifier("dateRangeCustomEnd")
+                ViewThatFits(in: .horizontal) {
+                    customRangeControls(axis: .horizontal)
+                    customRangeControls(axis: .vertical)
                 }
                 .padding(.horizontal)
                 .padding(.bottom, 8)
@@ -128,6 +154,42 @@ struct StandardFilterBar: View {
             get: { customEnd },
             set: { customEnd = max($0, customStart) }
         )
+    }
+
+    @ViewBuilder
+    private func customRangeControls(axis: Axis) -> some View {
+        if axis == .horizontal {
+            HStack(spacing: 12) {
+                customStartPicker
+                rangeSeparator
+                customEndPicker
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                customStartPicker
+                customEndPicker
+            }
+        }
+    }
+
+    private var customStartPicker: some View {
+        DatePicker("From", selection: validatedCustomStart, in: ...customEnd, displayedComponents: .date)
+            .labelsHidden()
+            .frame(minHeight: StandardFilterBarLayout.minimumTapTarget)
+            .accessibilityIdentifier("dateRangeCustomStart")
+    }
+
+    private var customEndPicker: some View {
+        DatePicker("To", selection: validatedCustomEnd, in: customStart..., displayedComponents: .date)
+            .labelsHidden()
+            .frame(minHeight: StandardFilterBarLayout.minimumTapTarget)
+            .accessibilityIdentifier("dateRangeCustomEnd")
+    }
+
+    private var rangeSeparator: some View {
+        Image(systemName: "arrow.right")
+            .foregroundStyle(.secondary)
+            .accessibilityHidden(true)
     }
 
     private func normalizeCustomRange() {

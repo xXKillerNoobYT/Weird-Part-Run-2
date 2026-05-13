@@ -102,6 +102,10 @@ struct ReportColumn: Identifiable, Sendable {
     var id: String { key }
 }
 
+enum ReportBuilderFilterConfiguration {
+    static let quickDateRanges: [ReportDateRange] = [.thisWeek, .thisMonth, .thisQuarter, .custom]
+}
+
 // MARK: - Report Builder View
 
 /// 4-step wizard for building custom reports: Type → Fields → Filters → Results.
@@ -109,6 +113,7 @@ struct ReportBuilderView: View {
     @EnvironmentObject private var appCore: AppCore
     @State private var selectedType: CustomReportType = .laborHours
     @State private var selectedColumns: Set<String> = []
+    @State private var dateRange: ReportDateRange = .custom
     @State private var startDate = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
     @State private var endDate = Date()
     @State private var step: BuilderStep = .type
@@ -171,6 +176,9 @@ struct ReportBuilderView: View {
             Button("OK") { savedSuccessfully = false }
         } message: {
             Text("'\(reportName)' has been saved and can be re-run from the Custom Reports list.")
+        }
+        .onChange(of: dateRange) { _, newValue in
+            applyDateRange(newValue)
         }
     }
 
@@ -318,17 +326,13 @@ struct ReportBuilderView: View {
     @ViewBuilder
     private var filtersStep: some View {
         Section("Date Range") {
-            DatePicker("Start Date", selection: $startDate, displayedComponents: .date)
-            DatePicker("End Date", selection: $endDate, displayedComponents: .date)
-        }
-
-        Section("Quick Ranges") {
-            HStack(spacing: 8) {
-                quickRangeButton("This Week", range: .thisWeek)
-                quickRangeButton("This Month", range: .thisMonth)
-                quickRangeButton("This Quarter", range: .thisQuarter)
-            }
-            .listRowBackground(Color.clear)
+            StandardFilterBar(
+                selectedRange: $dateRange,
+                customStart: $startDate,
+                customEnd: $endDate,
+                quickOptions: ReportBuilderFilterConfiguration.quickDateRanges
+            )
+            .listRowInsets(EdgeInsets())
         }
 
         Section {
@@ -354,17 +358,6 @@ struct ReportBuilderView: View {
             }
             .listRowBackground(Color.clear)
         }
-    }
-
-    private func quickRangeButton(_ label: String, range: ReportDateRange) -> some View {
-        Button(label) {
-            if let interval = range.dateInterval {
-                startDate = interval.start
-                endDate = interval.end
-            }
-        }
-        .buttonStyle(.bordered)
-        .font(.caption)
     }
 
     // MARK: - Step 4: Results
@@ -494,6 +487,12 @@ struct ReportBuilderView: View {
             generateError = userFriendlyError(error, context: "generate document")
         }
         isGenerating = false
+    }
+
+    private func applyDateRange(_ range: ReportDateRange) {
+        guard let interval = range.dateInterval else { return }
+        startDate = interval.start
+        endDate = interval.end
     }
 
     private func saveReport() {
