@@ -27,8 +27,8 @@ struct IOSReceiveShipmentPage: View {
     @State private var routingResults: [Int64: RoutingResult] = [:]  // itemId -> result
 
     // Barcode scanner (61K)
-    @State private var showBarcodeScanner = false
     @State private var highlightedItemId: Int64?
+    @State private var scanConfirmedItemIds: Set<Int64> = []
     @State private var scanError: String?
 
     // Unrouted items warning (62H)
@@ -36,7 +36,7 @@ struct IOSReceiveShipmentPage: View {
 
     private enum ActiveSheet: Identifiable {
         case qrScanner
-        case barcodeScanner
+        case barcodeScanner(expectedItemId: Int64?)
         case routeItem(WarehouseService.ReceivingItemInfo)
         case help
         var id: String { String(describing: self) }
@@ -148,6 +148,7 @@ struct IOSReceiveShipmentPage: View {
                 priceVerifications = [:]
                 receivedQtys = [:]
                 routingResults = [:]
+                scanConfirmedItemIds = []
                 loadData()
             }
         } message: {
@@ -180,9 +181,9 @@ struct IOSReceiveShipmentPage: View {
                     }
                 }
                 .environmentObject(appCore)
-            case .barcodeScanner:
+            case .barcodeScanner(let expectedItemId):
                 QRScanSheet(expectedType: .part) { result in
-                    handleScannedBarcode(code: result.code)
+                    handleScannedBarcode(code: result.code, expectedItemId: expectedItemId)
                 }
                 .environmentObject(appCore)
             case .routeItem(let item):
@@ -451,6 +452,7 @@ struct IOSReceiveShipmentPage: View {
                         priceVerifications = [:]
                         receivedQtys = [:]
                         routingResults = [:]
+                        scanConfirmedItemIds = []
                         loadData()
                     } label: {
                         HStack {
@@ -489,6 +491,7 @@ struct IOSReceiveShipmentPage: View {
                     priceVerifications = [:]
                     receivedQtys = [:]
                     routingResults = [:]
+                    scanConfirmedItemIds = []
                     loadData()
                 } label: {
                     HStack(spacing: 4) {
@@ -500,7 +503,7 @@ struct IOSReceiveShipmentPage: View {
             // Barcode scan button (61K)
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    activeSheet = .barcodeScanner
+                    activeSheet = .barcodeScanner(expectedItemId: nil)
                 } label: {
                     Image(systemName: "barcode.viewfinder")
                 }
@@ -598,6 +601,31 @@ struct IOSReceiveShipmentPage: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            if item.expectedQty == 0 {
+                Label(
+                    "No expected quantity was available on the PO, so this line starts at 0. Use +/- after confirming what arrived.",
+                    systemImage: "info.circle"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            Button {
+                activeSheet = .barcodeScanner(expectedItemId: item.id)
+            } label: {
+                Label(
+                    scanConfirmedItemIds.contains(item.id) || item.scannedAt != nil ? "Barcode Confirmed" : "Scan This Part",
+                    systemImage: scanConfirmedItemIds.contains(item.id) || item.scannedAt != nil ? "checkmark.seal.fill" : "barcode.viewfinder"
+                )
+                .font(.subheadline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            }
+            .buttonStyle(.bordered)
+            .tint(scanConfirmedItemIds.contains(item.id) || item.scannedAt != nil ? .green : .blue)
+            .frame(minHeight: 44)
+            .accessibilityLabel("Scan barcode for \(item.partName)")
 
             // Quantity input
             HStack {
@@ -833,8 +861,8 @@ struct IOSReceiveShipmentPage: View {
     // MARK: - Barcode Scan Handler (61K)
 
     /// Match scanned barcode/code against session line items by partCode or partName.
-    /// Auto-increments received quantity and highlights the matched item.
-    private func handleScannedBarcode(code: String) {
+    /// Confirms the matched row without changing the pre-filled receiving quantity.
+    private func handleScannedBarcode(code: String, expectedItemId: Int64?) {
         guard !code.isEmpty else {
             scanError = "Empty barcode scanned."
             return
@@ -858,14 +886,21 @@ struct IOSReceiveShipmentPage: View {
             return
         }
 
-        // Auto-increment received quantity and auto-save (PE-041)
-        let currentQty = receivedQtys[item.id] ?? item.expectedQty
-        let newQty = currentQty + 1
-        receivedQtys[item.id] = newQty
+        if let expectedItemId, expectedItemId != item.id {
+            let expectedName = sessionItems.first { $0.id == expectedItemId }?.partName ?? "selected line item"
+            scanError = "Scanned \(item.partName), but this row is \(expectedName). Scan the barcode for this part or use the matching line."
+            return
+        }
+
+        // Confirm the line and persist the current displayed quantity. Fresh sessions
+        // are pre-filled to expected quantity; scanning should not over-receive by +1.
+        let confirmedQty = receivedQtys[item.id] ?? item.receivedQty
+        receivedQtys[item.id] = confirmedQty
+        scanConfirmedItemIds.insert(item.id)
         let svc = appCore.warehouseService
         let iid = item.id
         Task {
-            do { try svc?.updateSessionItem(itemId: iid, receivedQty: newQty) }
+            do { try svc?.updateSessionItem(itemId: iid, receivedQty: confirmedQty, markScanned: true) }
             catch { scanError = "Barcode scan quantity could not be saved." }
         }
 
@@ -888,6 +923,7 @@ struct IOSReceiveShipmentPage: View {
         }
         do {
             let sessionId = try service.startReceivingSession(poId: poId, startedBy: userId)
+            scanConfirmedItemIds = []
             activeSessionId = sessionId
             loadSessionItems()
         } catch {
@@ -909,7 +945,11 @@ struct IOSReceiveShipmentPage: View {
             // Otherwise fall back to expectedQty so fresh sessions are pre-filled (61L).
             for item in sessionItems {
                 if receivedQtys[item.id] == nil {
-                    receivedQtys[item.id] = item.receivedQty > 0 ? item.receivedQty : item.expectedQty
+                    let hasSavedInteraction = item.scannedAt != nil || item.notes != nil
+                    receivedQtys[item.id] = item.receivedQty > 0 || hasSavedInteraction ? item.receivedQty : item.expectedQty
+                }
+                if item.scannedAt != nil {
+                    scanConfirmedItemIds.insert(item.id)
                 }
             }
         } catch {

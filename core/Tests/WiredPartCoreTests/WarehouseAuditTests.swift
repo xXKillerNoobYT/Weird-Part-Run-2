@@ -544,6 +544,37 @@ struct WarehouseAuditTests {
         #expect((updated?["notes"] as String?) == "Partial delivery")
     }
 
+    @Test("updateSessionItem does not mark an item scanned unless requested")
+    func testUpdateSessionItemScannedAtGuard() throws {
+        let env = try freshEnv()
+        let suppId = try E2ETestHelpers.seedSupplier(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-UPD-SCAN-GUARD", supplierId: suppId)
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, part_id, qty_ordered, status, created_at)
+                VALUES (?, ?, 5, 'pending', datetime('now'))
+                """, arguments: [poId, partId])
+        }
+
+        let sessionId = try env.warehouse.startReceivingSession(poId: poId, startedBy: env.adminUserId)
+        let itemId = try #require(try env.warehouse.getSessionItems(sessionId: sessionId).first?.id)
+
+        try env.warehouse.updateSessionItem(itemId: itemId, receivedQty: 3)
+        let quantityOnlyScanTime = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT scanned_at FROM receiving_session_items WHERE id = ?", arguments: [itemId])
+        }
+        #expect(quantityOnlyScanTime == nil)
+
+        try env.warehouse.updateSessionItem(itemId: itemId, receivedQty: 3, markScanned: true)
+        let explicitScanTime = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT scanned_at FROM receiving_session_items WHERE id = ?", arguments: [itemId])
+        }
+        #expect(explicitScanTime != nil)
+    }
+
     @Test("recordScan increments received_qty by the given qty")
     func testRecordScan() throws {
         let env = try freshEnv()
@@ -563,14 +594,15 @@ struct WarehouseAuditTests {
         let items = try env.warehouse.getSessionItems(sessionId: sessionId)
         let itemId = items[0].id
 
-        // Start at 0, scan 2 then scan 3 more → should be 5
+        // Receiving now starts at the expected PO quantity (10). Scanning 2 then
+        // 3 more records extra arrivals, so the final count should be 15.
         try env.warehouse.recordScan(itemId: itemId, qty: 2)
         try env.warehouse.recordScan(itemId: itemId, qty: 3)
 
         let row = try env.db.writer.read { db in
             try Row.fetchOne(db, sql: "SELECT received_qty FROM receiving_session_items WHERE id = ?", arguments: [itemId])
         }
-        #expect((row?["received_qty"] as Int?) == 5)
+        #expect((row?["received_qty"] as Int?) == 15)
     }
 
     // MARK: - Return Processing

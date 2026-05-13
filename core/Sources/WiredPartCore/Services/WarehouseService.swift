@@ -1102,8 +1102,8 @@ public final class WarehouseService: Sendable {
             // Pre-populate items from PO line items
             try dbConn.execute(
                 sql: """
-                    INSERT INTO receiving_session_items (session_id, po_line_id, expected_qty, created_at)
-                    SELECT ?, id, qty_ordered, datetime('now')
+                    INSERT INTO receiving_session_items (session_id, po_line_id, expected_qty, received_qty, created_at)
+                    SELECT ?, id, qty_ordered, qty_ordered, datetime('now')
                     FROM po_line_items
                     WHERE po_id = ? AND deleted_at IS NULL
                     """,
@@ -1231,13 +1231,14 @@ public final class WarehouseService: Sendable {
     }
 
     /// Update a receiving session item's received quantity.
-    public func updateSessionItem(itemId: Int64, receivedQty: Int, notes: String? = nil) throws {
+    public func updateSessionItem(itemId: Int64, receivedQty: Int, notes: String? = nil, markScanned: Bool = false) throws {
         guard receivedQty >= 0 else { throw WarehouseError.invalidQuantity }
         try db.writer.write { dbConn in
+            let scannedAtClause = markScanned ? ", scanned_at = datetime('now')" : ""
             try dbConn.execute(
                 sql: """
                     UPDATE receiving_session_items
-                    SET received_qty = ?, notes = COALESCE(?, notes), scanned_at = datetime('now')
+                    SET received_qty = ?, notes = COALESCE(?, notes)\(scannedAtClause)
                     WHERE id = ? AND deleted_at IS NULL
                     """,
                 arguments: [receivedQty, notes, itemId]

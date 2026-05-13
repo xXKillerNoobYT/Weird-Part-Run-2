@@ -1001,13 +1001,13 @@ struct WarehouseServiceExtTests {
             try db.execute(sql: "UPDATE receiving_session_items SET deleted_at = datetime('now') WHERE id = ?",
                            arguments: [item.id])
         }
-        // Should be a silent no-op — received_qty stays at 0
+        // Should be a silent no-op — received_qty stays at its expected-qty default.
         try env.warehouse.updateSessionItem(itemId: item.id, receivedQty: 99)
         let qty = try env.db.writer.read { db -> Int in
             try Int.fetchOne(db, sql: "SELECT received_qty FROM receiving_session_items WHERE id = ?",
                              arguments: [item.id]) ?? 0
         }
-        #expect(qty == 0, "updateSessionItem on a soft-deleted item must not change received_qty")
+        #expect(qty == 3, "updateSessionItem on a soft-deleted item must not change received_qty")
     }
 
     @Test("recordScan is a no-op on soft-deleted item")
@@ -1026,13 +1026,13 @@ struct WarehouseServiceExtTests {
             try db.execute(sql: "UPDATE receiving_session_items SET deleted_at = datetime('now') WHERE id = ?",
                            arguments: [item.id])
         }
-        // Should be a silent no-op — received_qty stays at 0
+        // Should be a silent no-op — received_qty stays at its expected-qty default.
         try env.warehouse.recordScan(itemId: item.id, qty: 5)
         let qty = try env.db.writer.read { db -> Int in
             try Int.fetchOne(db, sql: "SELECT received_qty FROM receiving_session_items WHERE id = ?",
                              arguments: [item.id]) ?? 0
         }
-        #expect(qty == 0, "recordScan on a soft-deleted item must not increment received_qty")
+        #expect(qty == 2, "recordScan on a soft-deleted item must not increment received_qty")
     }
 
     @Test("markBoxOpen is a no-op on soft-deleted box")
