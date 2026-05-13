@@ -25,10 +25,10 @@ struct SyncConflictReviewPage: View {
                     ProgressView("Loading conflicts...")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if conflicts.isEmpty {
-                    ContentUnavailableView(
-                        "No Unreviewed Conflicts",
-                        systemImage: "checkmark.circle",
-                        description: Text("All sync conflicts have been reviewed.")
+                    EmptyStateView(
+                        icon: "checkmark.circle",
+                        title: "No Unreviewed Conflicts",
+                        message: "All sync conflicts have been reviewed."
                     )
                 } else {
                     conflictList
