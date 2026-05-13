@@ -382,7 +382,7 @@ Key service methods:
 - **Cursor-based pagination** (`before:` parameter for `getMessages`): Implemented in WEI-1137 as `getMessages(channelId:limit:before:)`, where `before` is a message ID cursor. Service still returns newest first; UI callers should keep reversing before rendering oldest-to-newest.
 - **Formal RFI contract**: Implemented in WEI-1137 with `rfi_number` (`RFI-001` sequence), external-party fields, priority, due date, submitted/responded timestamps, response text/source, soft delete, and service methods for create/list/update/response. Existing `qa_threads` remains the internal escalation link.
 - **Dedicated Supplier Bridge list page**: Plan implies a standalone page; current implementation surfaces supplier channels through the unified inbox filter only. Phase 2 item.
-- **`@part:`, `@po:`, `@job:` inline picker** (plan section 5): Reference cards exist as attachment types but the `@`-trigger picker in the message input is not implemented. Phase 2 item.
+- **`@part:`, `@po:`, `@job:` inline picker** (plan section 5): Implemented in WEI-1139. `IOSMessageThreadView` now detects supported composer triggers, removes the trigger token from the outgoing message text, and opens the existing `ReferencePickerSheet` so selected items follow the same `message_attachments` persistence path as manual reference links.
 
 ### Code-ahead-of-plan (plan should acknowledge)
 
