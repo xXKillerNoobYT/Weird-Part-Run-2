@@ -23,29 +23,34 @@ struct CategoryFormSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Category Details") {
-                    TextField("Name", text: $name)
-                        .frame(minHeight: 44)
-                        .accessibilityIdentifier("categoryNameField")
-                    TextField("Description (optional)", text: $description)
-                        .frame(minHeight: 44)
-                        .accessibilityIdentifier("categoryDescriptionField")
-                    Stepper("Sort Order: \(sortOrder)", value: $sortOrder, in: 0...999)
-                        .accessibilityIdentifier("categorySortOrderStepper")
-                }
+            ZStack {
+                Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityIdentifier("categoryFormSheet")
 
-                if let error = saveError {
-                    Section {
-                        Label(error, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
-                            .font(.subheadline)
-                            .accessibilityIdentifier("categoryFormError")
+                Form {
+                    Section("Category Details") {
+                        TextField("Name", text: $name)
+                            .frame(minHeight: 44)
+                            .accessibilityIdentifier("categoryNameField")
+                        TextField("Description (optional)", text: $description)
+                            .frame(minHeight: 44)
+                            .accessibilityIdentifier("categoryDescriptionField")
+                        Stepper("Sort Order: \(sortOrder)", value: $sortOrder, in: 0...999)
+                            .accessibilityIdentifier("categorySortOrderStepper")
+                    }
+
+                    if let error = saveError {
+                        Section {
+                            Label(error, systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.red)
+                                .font(.subheadline)
+                                .accessibilityIdentifier("categoryFormError")
+                        }
                     }
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
-            .scrollDismissesKeyboard(.interactively)
-            .accessibilityIdentifier("categoryFormSheet")
             .navigationTitle(category == nil ? "New Category" : "Edit Category")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

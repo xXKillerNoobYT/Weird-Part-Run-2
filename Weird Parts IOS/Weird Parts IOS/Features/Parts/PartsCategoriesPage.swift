@@ -25,30 +25,35 @@ struct PartsCategoriesPage: View {
     private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
     var body: some View {
-        VStack(spacing: 0) {
-            OnboardingBanner(pageId: "parts-categories")
+        ZStack {
+            Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("partsCategoriesPage")
 
-            Group {
-                if isLoading {
-                    ProgressView("Loading hierarchy...")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .accessibilityIdentifier("categoriesLoadingIndicator")
-                } else if let error = loadError {
-                    ErrorStateView(message: error) {
-                        Task { await loadHierarchy() }
+            VStack(spacing: 0) {
+                OnboardingBanner(pageId: "parts-categories")
+
+                Group {
+                    if isLoading {
+                        ProgressView("Loading hierarchy...")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .accessibilityIdentifier("categoriesLoadingIndicator")
+                    } else if let error = loadError {
+                        ErrorStateView(message: error) {
+                            Task { await loadHierarchy() }
+                        }
+                        .accessibilityIdentifier("categoriesErrorState")
+                    } else if DeviceContext.isLargeScreen {
+                        splitLayout
+                    } else {
+                        compactLayout
                     }
-                    .accessibilityIdentifier("categoriesErrorState")
-                } else if DeviceContext.isLargeScreen {
-                    splitLayout
-                } else {
-                    compactLayout
                 }
+                // Force SwiftUI to rebuild the view tree when data changes.
+                // This prevents stale data from persisting after sheet edits.
+                .id(dataVersion)
             }
-            // Force SwiftUI to rebuild the view tree when data changes.
-            // This prevents stale data from persisting after sheet edits.
-            .id(dataVersion)
         }
-        .accessibilityIdentifier("partsCategoriesPage")
         .background(DS.Background.page)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -194,4 +199,3 @@ extension TreeSelection: Hashable {
 #Preview {
     PartsCategoriesPage()
 }
-

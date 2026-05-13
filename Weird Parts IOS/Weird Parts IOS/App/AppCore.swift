@@ -188,7 +188,25 @@ final class AppCore: ObservableObject {
                 self.theme = theme
             }
 
-            if result.users.isEmpty && !result.hasProfile {
+            if Self.isUITesting {
+                let session = try await Self.ensureUITestingSession(
+                    auth: result.auth,
+                    users: result.users
+                )
+                currentUser = session.user
+                currentToken = session.token
+                permissions = session.permissions
+                if let userId = session.user.id {
+                    onboardingManager = OnboardingProgressManager(userId: userId)
+                    badgeCountManager.setUserId(userId)
+                    UserDefaults.standard.set(
+                        ["dashboard", "parts", "jobs", "orders"],
+                        forKey: "tabOrder_\(userId)"
+                    )
+                }
+                needsBootstrap = false
+                needsOnboarding = false
+            } else if result.users.isEmpty && !result.hasProfile {
                 // Brand-new device — show two-path onboarding.
                 // Clear stale UserDefaults flags so a fresh-build DB doesn't
                 // inherit "already completed" flags from a previous install.
@@ -514,11 +532,58 @@ final class AppCore: ObservableObject {
     /// Make UI test launch deterministic across dirty simulator state.
     /// Only applies when tests pass the `-UITesting` launch argument.
     private static func seedUITestingFixtures() {
-        guard ProcessInfo.processInfo.arguments.contains("-UITesting") else {
+        guard isUITesting else {
             return
         }
 
         UserDefaults.standard.set(false, forKey: OnboardAIFeatureFlag.onboardingMVP)
+        UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
+        UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
         UserDefaults.standard.set(true, forKey: "hasSeenOnboardAIMVPEntry")
+        UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+        UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
+    }
+
+    private static var isUITesting: Bool {
+        ProcessInfo.processInfo.arguments.contains("-UITesting")
+    }
+
+    private static func ensureUITestingSession(
+        auth: AuthService,
+        users initialUsers: [User]
+    ) async throws -> (user: User, token: String?, permissions: [String]) {
+        let result = try await Task.detached(priority: .userInitiated) {
+            let users: [User]
+            let token: String?
+
+            if initialUsers.isEmpty {
+                let seed = try auth.seedFirstAdmin(displayName: "UITest Admin", pin: "1234")
+                guard seed.success, let user = seed.user else {
+                    throw UITestingBootstrapError.adminSeedFailed(seed.message)
+                }
+                users = [user]
+                token = seed.token
+            } else {
+                users = initialUsers
+                token = nil
+            }
+
+            guard let user = users.first, let userId = user.id else {
+                throw UITestingBootstrapError.missingUser
+            }
+
+            return (
+                user: user,
+                token: token,
+                permissions: try auth.getUserPermissions(userId)
+            )
+        }.value
+
+        return result
+    }
+
+    private enum UITestingBootstrapError: Error {
+        case adminSeedFailed(String?)
+        case missingUser
     }
 }
