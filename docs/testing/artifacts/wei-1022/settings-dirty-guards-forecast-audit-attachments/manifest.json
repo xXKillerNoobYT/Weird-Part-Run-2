@@ -1,0 +1,50 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "81B76C8A-9A4F-46CE-8A89-ED1DC5842F43",
+        "deviceName" : "iPhone 17 Pro",
+        "exportedFileName" : "CED91DCC-7883-4D85-9CF0-F5B1FE12ED15.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "WEI-1022-Audit Settings-discard-confirmation_0_55C341B0-AC61-4D19-AB92-BB82FD6A00DE.png",
+        "timestamp" : 1778649490.303
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "81B76C8A-9A4F-46CE-8A89-ED1DC5842F43",
+        "deviceName" : "iPhone 17 Pro",
+        "exportedFileName" : "08825D97-F8B9-4BB8-AB58-41E1E8BD80F8.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "WEI-1022-Audit Settings-dirty_0_4F9C311C-E581-433E-A8C2-684ACF60F4B8.png",
+        "timestamp" : 1778649481.612
+      }
+    ],
+    "testIdentifier" : "Weird_Parts_IOSUITests/testWEI1022AuditDirtyDiscardGuard()",
+    "testIdentifierURL" : "test://com.apple.xcode/Weird%20Parts/Weird%20PartsUITests/Weird_Parts_IOSUITests/testWEI1022AuditDirtyDiscardGuard"
+  },
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "81B76C8A-9A4F-46CE-8A89-ED1DC5842F43",
+        "deviceName" : "iPhone 17 Pro",
+        "exportedFileName" : "41A4737A-529A-41EF-929C-B46224CC31C8.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "WEI-1022-Forecast Config-discard-confirmation_0_2834D5D9-F1CB-4A44-88C6-B6F6A5D57BB5.png",
+        "timestamp" : 1778649550.767
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "81B76C8A-9A4F-46CE-8A89-ED1DC5842F43",
+        "deviceName" : "iPhone 17 Pro",
+        "exportedFileName" : "01B26729-B25C-4382-96FD-0D0F4B9AD973.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "WEI-1022-Forecast Config-dirty_0_6B82DBDB-258F-48D1-AC00-596ADA809CAC.png",
+        "timestamp" : 1778649542.067
+      }
+    ],
+    "testIdentifier" : "Weird_Parts_IOSUITests/testWEI1022ForecastDirtyDiscardGuard()",
+    "testIdentifierURL" : "test://com.apple.xcode/Weird%20Parts/Weird%20PartsUITests/Weird_Parts_IOSUITests/testWEI1022ForecastDirtyDiscardGuard"
+  }
+]

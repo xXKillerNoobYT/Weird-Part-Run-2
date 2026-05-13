@@ -759,9 +759,14 @@ struct PartsCompanionsPage: View {
     private var filteredRules: [PartsService.CompanionRuleHierarchyRow] {
         if searchText.isEmpty { return companionRules }
         let query = searchText.lowercased()
-        return companionRules.filter {
-            $0.name.lowercased().contains(query) ||
-            ($0.description?.lowercased().contains(query) ?? false)
+        return companionRules.filter { rule in
+            if rule.name.lowercased().contains(query) { return true }
+            if rule.description?.lowercased().contains(query) ?? false { return true }
+            // Match the same hierarchy labels rendered in the row so users
+            // can find rules by the visible "Category > Style > Type" path.
+            if sourceDisplayName(rule).lowercased().contains(query) { return true }
+            if targetDisplayName(rule).lowercased().contains(query) { return true }
+            return false
         }
     }
 
@@ -778,24 +783,60 @@ struct PartsCompanionsPage: View {
 
     private func sourceDisplayName(_ rule: PartsService.CompanionRuleHierarchyRow) -> String {
         if !rule.sources.isEmpty {
-            return rule.sources.map { buildEntryName($0.categoryId, $0.styleId, $0.typeId) }.joined(separator: ", ")
+            return rule.sources.map(buildEntryName(forSource:)).joined(separator: ", ")
         }
         return rule.name
     }
 
     private func targetDisplayName(_ rule: PartsService.CompanionRuleHierarchyRow) -> String {
         if !rule.targets.isEmpty {
-            return rule.targets.map { buildEntryName($0.categoryId, $0.styleId, $0.typeId) }.joined(separator: ", ")
+            return rule.targets.map(buildEntryName(forTarget:)).joined(separator: ", ")
         }
         return rule.description ?? ""
     }
 
-    private func buildEntryName(_ categoryId: Int64, _ styleId: Int64?, _ typeId: Int64?) -> String {
-        // Build "Category > Style > Type" from the cached names
-        // Use the names loaded from the hierarchy query
-        var parts: [String] = ["Cat:\(categoryId)"]
-        if let sid = styleId { parts.append("Style:\(sid)") }
-        if let tid = typeId { parts.append("Type:\(tid)") }
+    private func buildEntryName(forSource source: PartsService.CompanionRuleSource) -> String {
+        buildEntryName(
+            categoryId: source.categoryId,
+            styleId: source.styleId,
+            typeId: source.typeId,
+            categoryName: source.categoryName,
+            styleName: source.styleName,
+            typeName: source.typeName
+        )
+    }
+
+    private func buildEntryName(forTarget target: PartsService.CompanionRuleTarget) -> String {
+        buildEntryName(
+            categoryId: target.categoryId,
+            styleId: target.styleId,
+            typeId: target.typeId,
+            categoryName: target.categoryName,
+            styleName: target.styleName,
+            typeName: target.typeName
+        )
+    }
+
+    /// Build a "Category > Style > Type" label using the names resolved by
+    /// `listCompanionRulesHierarchy`. When a hierarchy row has been soft- or
+    /// hard-deleted, the join returns a nil name; fall back to an "Unknown"
+    /// placeholder that still surfaces the original ID for cleanup, instead
+    /// of the old `Cat:<id>` / `Style:<id>` / `Type:<id>` placeholders.
+    private func buildEntryName(
+        categoryId: Int64,
+        styleId: Int64?,
+        typeId: Int64?,
+        categoryName: String?,
+        styleName: String?,
+        typeName: String?
+    ) -> String {
+        var parts: [String] = [categoryName ?? "Unknown category (#\(categoryId))"]
+        if let sid = styleId {
+            parts.append(styleName ?? "Unknown style (#\(sid))")
+        }
+        if let tid = typeId {
+            parts.append(typeName ?? "Unknown type (#\(tid))")
+        }
         return parts.joined(separator: " > ")
     }
 

@@ -16,7 +16,7 @@ struct DatabaseTests {
         #expect(tableExists)
     }
 
-    @Test("All 74 migrations (000-073) apply successfully")
+    @Test("All registered migrations apply successfully")
     func testAllMigrationsApply() throws {
         let db = try AppDatabase.openInMemoryDatabase()
 
@@ -71,6 +71,7 @@ struct DatabaseTests {
             "payment_records",   // 043
             // Scheduling & estimation (046-047)
             "estimation_questions", // 047
+            "estimation_question_accuracy_reviews", // 082
             // Tools detail (048-050)
             "tool_checkouts",    // 048
             // Vehicle & trailer (051-053)
@@ -93,9 +94,22 @@ struct DatabaseTests {
         }
     }
 
-    @Test("Schema version is 74")
+    @Test("Schema version is 82")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 74)
+        #expect(AppDatabase.schemaVersion == 82)
+    }
+
+    @Test("Migration 082 adds structured estimation review columns")
+    func testMigration082StructuredEstimationReviewColumns() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let columns = try db.writer.read { db in
+            try db.columns(in: "estimation_reviews").map(\.name)
+        }
+        #expect(columns.contains("delay_factors"))
+        #expect(columns.contains("on_track_status"))
+        #expect(columns.contains("unresolved_question_count"))
+        #expect(columns.contains("crew_feedback"))
+        #expect(columns.contains("gc_rating"))
     }
 
     @Test("Migration 073 adds grid_rows and grid_cols to warehouse_floor_plans")

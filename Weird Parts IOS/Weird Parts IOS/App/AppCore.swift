@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import WiredPartCore
+import Security
 import GRDB
 import os.log
 
@@ -99,7 +100,18 @@ final class AppCore: ObservableObject {
 
                 let database: AppDatabase
                 do {
-                    database = try AppDatabase.openDatabase(atPath: path)
+// SQLCipher: derive a device-bound bootstrap key from the Keychain.
+                    // This key never changes unless the Keychain is wiped (device reset).
+                    // User PIN changes update authentication credentials only; the app DB
+                    // stays on this device key so startup can always open it before login.
+                    //
+                    // Migration path: if the DB file is still plaintext (pre-SQLCipher binary),
+                    // `migratePlaintextDBIfNeeded` converts it in-place before opening.
+                    let keyHex = try Self.deviceBootstrapKeyHex()
+                    try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
+                    database = try AppDatabase.openEncryptedDatabase(atPath: path, keyHex: keyHex)
+                    // Remove the .unencrypted.bak file after it has been retained for 7 days.
+                    AppDatabase.cleanupStaleUnencryptedBackup(atPath: path)
                 } catch {
                     #if !DEBUG
                     // Migration failed — try to restore from backup
@@ -126,11 +138,11 @@ final class AppCore: ObservableObject {
                     database: database,
                     auth: auth,
                     settings: settings,
-                    parts: PartsService(db: database),
+                    parts: PartsService(db: database, auth: auth),
                     warehouse: WarehouseService(db: database),
                     jobs: JobsService(db: database),
                     orders: OrdersService(db: database),
-                    fleet: FleetService(db: database),
+                    fleet: FleetService(db: database, auth: auth),
                     people: PeopleService(db: database),
                     scheduling: SchedulingService(db: database),
                     chat: ChatService(db: database),
@@ -470,7 +482,90 @@ final class AppCore: ObservableObject {
     // The function compared binary mod dates and wiped the DB on every
     // Cmd+R, making data persistence impossible during development.
 
-    // MARK: - Database Path
+    // MARK: - SQLCipher Device Bootstrap Key
+
+    /// Return the device-bound SQLCipher bootstrap key (hex-encoded 64 chars).
+    ///
+    /// This key is used exclusively to encrypt the database file. It is a random
+    /// 32-byte value generated on first launch and stored in the Keychain with
+    /// `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. It never changes.
+    ///
+    /// User PIN changes do not re-key the app database. Startup must open the DB
+    /// before any user can enter a PIN, so the persistent DB key remains device-bound.
+    nonisolated static func deviceBootstrapKeyHex() throws -> String {
+        let service = "com.wiredpart.dbcipher.bootstrap-key"
+        let account = "device-bootstrap-key"
+
+        // Try to read existing key.
+        let readQuery: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: account,
+            kSecReturnData: true,
+            kSecMatchLimit: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        let readStatus = SecItemCopyMatching(readQuery as CFDictionary, &result)
+        if readStatus == errSecSuccess, let data = result as? Data, data.count == 32 {
+            return data.map { String(format: "%02x", $0) }.joined()
+        }
+
+        // Generate 32 fresh random bytes.
+        var keyBytes = [UInt8](repeating: 0, count: 32)
+        let rc = SecRandomCopyBytes(kSecRandomDefault, 32, &keyBytes)
+        guard rc == errSecSuccess else {
+            throw CipherKeyError.bootstrapKeyGenerationFailed(rc)
+        }
+        let keyData = Data(keyBytes)
+
+        let addQuery: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: account,
+            kSecValueData: keyData,
+            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        ]
+        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        if addStatus == errSecDuplicateItem {
+            // Another thread or launch already stored a bootstrap key — read and return it
+            // so we don't encrypt the DB with a key that won't be retrievable next launch.
+            var existing: AnyObject?
+            let rereadStatus = SecItemCopyMatching(readQuery as CFDictionary, &existing)
+            if rereadStatus == errSecSuccess, let data = existing as? Data, data.count == 32 {
+                return data.map { String(format: "%02x", $0) }.joined()
+            }
+            throw CipherKeyError.keychainAccessFailed(rereadStatus)
+        } else if addStatus != errSecSuccess {
+            throw CipherKeyError.keychainAccessFailed(addStatus)
+        }
+        return keyData.map { String(format: "%02x", $0) }.joined()
+    }
+
+    // MARK: - PIN Change
+
+    /// Change a user's PIN (hash only — does not re-key the database).
+    ///
+    /// The SQLCipher database remains encrypted with the device bootstrap key.
+    /// Re-keying to a per-user PIN would require a pre-open unlock flow on startup,
+    /// which this app does not have.
+    ///
+    /// - Parameters:
+    ///   - userId: The ID of the authenticated user.
+    ///   - oldPin: The current PIN (verified before update runs).
+    ///   - newPin: The replacement PIN (4–8 digits).
+    /// - Returns: nil on success, or a user-friendly error string.
+    func changePin(userId: Int64, oldPin: String, newPin: String) async -> String? {
+        guard let authService else { return "App not ready. Please wait." }
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                try authService.changePin(userId: userId, oldPin: oldPin, newPin: newPin)
+            }.value
+            return nil
+        } catch {
+            return userFriendlyError(error, context: "change PIN")
+        }
+    }
+
 
     enum AppCoreError: LocalizedError {
         case noDocumentsDirectory

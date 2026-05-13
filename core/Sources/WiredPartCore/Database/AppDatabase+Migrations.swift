@@ -114,6 +114,11 @@ extension AppDatabase {
         registerMigration075CompanionFeedbackNullableSuggestionId(&migrator)
         registerMigration076StockMovementsCompositeIndex(&migrator)
         registerMigration077VehicleIssueReports(&migrator)
+        registerMigration078ForecastingPermissionBackfill(&migrator)
+        registerMigration079LogFleetPermission(&migrator)
+        registerMigration080ToolMovementsIndex(&migrator)
+        registerMigration081AuthTokenSessions(&migrator)
+        registerMigration082StructuredEstimationReviews(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4963,6 +4968,80 @@ extension AppDatabase {
         }
     }
 
+    private static func registerMigration079LogFleetPermission(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("079_log_fleet_permission") { db in
+            // Backfill the new `log_fleet` permission key for existing hats.
+            // `log_fleet` allows Workers, Leads, Managers, and Admins to log fuel levels
+            // and add vehicle stock items — actions that don't require full fleet management
+            // access (`manage_fleet`).
+            let hatsToGrant = ["Admin", "Manager", "Lead", "Worker"]
+            for hatName in hatsToGrant {
+                try db.execute(sql: """
+                    INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+                    SELECT id, 'log_fleet' FROM hats WHERE name = ?
+                    """, arguments: [hatName])
+            }
+        }
+    }
+
+    // MARK: - Migration 080: tool_movements composite indexes
+
+    private static func registerMigration080ToolMovementsIndex(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("080_tool_movements_index") { db in
+            // Covers tool-specific queries: WHERE tool_id = ? [AND deleted_at IS NULL] [AND movement_type = ?] ORDER BY created_at DESC
+            // deleted_at before movement_type so the index is usable when movement_type is unconstrained (active:false).
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_tool_movements_tool
+                ON tool_movements (tool_id, deleted_at, movement_type, created_at)
+                """)
+            // Covers movement-type-only queries (e.g. listCheckouts active:true, no toolId):
+            // WHERE movement_type = 'checkout' AND deleted_at IS NULL ORDER BY created_at DESC
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_tool_movements_type
+                ON tool_movements (movement_type, deleted_at, created_at)
+                """)
+        }
+    }
+
+    // MARK: - Migration 081: Auth token sessions
+
+    private static func registerMigration081AuthTokenSessions(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("081_auth_token_sessions") { db in
+            try db.create(table: "auth_token_sessions", ifNotExists: true) { t in
+                t.column("token_id", .text).primaryKey()
+                t.column("user_id", .integer).notNull()
+                t.column("token_type", .text).notNull()
+                t.column("parent_refresh_id", .text)
+                t.column("expires_at_ms", .double).notNull()
+                t.column("revoked_at", .text)
+                t.column("created_at", .text).notNull()
+            }
+        }
+    }
+
+    private static func registerMigration082StructuredEstimationReviews(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("082_structured_estimation_reviews") { db in
+            try addColumnIfMissing(db, table: "estimation_reviews", column: "delay_factors", type: .text)
+            try addColumnIfMissing(db, table: "estimation_reviews", column: "on_track_status", type: .text)
+            try addColumnIfMissing(db, table: "estimation_reviews", column: "unresolved_question_count", type: .integer)
+            try addColumnIfMissing(db, table: "estimation_reviews", column: "crew_feedback", type: .text)
+            try addColumnIfMissing(db, table: "estimation_reviews", column: "gc_rating", type: .integer)
+
+            try db.create(table: "estimation_question_accuracy_reviews", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("review_id", .integer).notNull()
+                    .references("estimation_reviews", onDelete: .cascade)
+                t.column("question_id", .integer).notNull()
+                    .references("estimation_questions")
+                t.column("predicted_impact", .text)
+                t.column("actual_impact", .text)
+                t.column("accuracy_rating", .integer).notNull()
+                t.column("notes", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+            }
+        }
+    }
+
     private static func registerMigration075CompanionFeedbackNullableSuggestionId(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("075_companion_feedback_nullable_suggestion_id") { db in
             try db.execute(sql: """
@@ -4990,6 +5069,39 @@ extension AppDatabase {
                 """)
             try db.execute(sql: "DROP TABLE companion_feedback")
             try db.execute(sql: "ALTER TABLE companion_feedback_new RENAME TO companion_feedback")
+        }
+    }
+
+    // MARK: - Migration 078: Backfill forecasting permission keys
+
+    /// Grants `forecasting.approve_recommendation` and `forecasting.dismiss_recommendation`
+    /// to the Admin and Manager hats in existing production databases.
+    ///
+    /// `INSERT OR IGNORE` makes this idempotent — fresh databases seeded via
+    /// `defaultPermissionMap` already have these rows and will not be double-inserted.
+    ///
+    /// Motivation: The permission-gate logic added in PR #367 requires these keys to
+    /// exist in `hat_permissions`. The `defaultPermissionMap` seeds them for *new*
+    /// installs, but existing hats in upgraded databases need this backfill to avoid
+    /// denying all approve/dismiss actions after the upgrade.
+    private static func registerMigration078ForecastingPermissionBackfill(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("078_forecasting_permission_backfill") { db in
+            let permissions = [
+                "forecasting.approve_recommendation",
+                "forecasting.dismiss_recommendation",
+            ]
+            let hats = ["Admin", "Manager"]
+            for permKey in permissions {
+                for hatName in hats {
+                    try db.execute(
+                        sql: """
+                            INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+                            SELECT id, ? FROM hats WHERE name = ?
+                            """,
+                        arguments: [permKey, hatName]
+                    )
+                }
+            }
         }
     }
 }

@@ -11,14 +11,24 @@ struct AuthServiceTests {
         try AppDatabase.openInMemoryDatabase()
     }
 
-    // MARK: - PIN Hashing
+    // MARK: - PIN Hashing (PBKDF2)
 
-    @Test("hashPin produces consistent SHA-256 hex")
+    @Test("hashPin produces PBKDF2 prefixed output")
+    func testHashPinPBKDF2Format() throws {
+        let hash = AuthService.hashPin("1234", salt: "test-salt")
+        #expect(hash.hasPrefix("pbkdf2$"))
+        let parts = hash.split(separator: "$")
+        #expect(parts.count == 3)
+        #expect(parts[0] == "pbkdf2")
+        #expect(parts[1] == "600000")
+        #expect(parts[2].count == 64) // 32 bytes = 64 hex chars
+    }
+
+    @Test("hashPin produces consistent output")
     func testHashPinConsistent() throws {
         let hash1 = AuthService.hashPin("1234", salt: "test-salt")
         let hash2 = AuthService.hashPin("1234", salt: "test-salt")
         #expect(hash1 == hash2)
-        #expect(hash1.count == 64) // SHA-256 = 32 bytes = 64 hex chars
     }
 
     @Test("hashPin produces different hashes for different PINs")
@@ -28,7 +38,7 @@ struct AuthServiceTests {
         #expect(hash1 != hash2)
     }
 
-    @Test("verifyPinLocally returns true for correct PIN")
+    @Test("verifyPinLocally returns true for correct PBKDF2 PIN")
     func testVerifyPinCorrect() throws {
         let pin = "9876"
         let hash = AuthService.hashPin(pin, salt: "test-salt")
@@ -44,6 +54,16 @@ struct AuthServiceTests {
     @Test("verifyPinLocally returns false for bcrypt hash")
     func testVerifyPinBcrypt() throws {
         #expect(!AuthService.verifyPinLocally(pin: "1234", storedHash: "$2b$12$someBcryptHash", salt: "test-salt"))
+    }
+
+    @Test("verifyPinLocally verifies legacy iterated SHA-256 hashes")
+    func testVerifyPinLegacyIteratedSHA256() throws {
+        // Simulate a hash created by the old iteratedSHA256Pin function
+        let pin = "4567"
+        let salt = "old-salt"
+        let legacyHash = AuthService.iteratedSHA256Pin(pin, salt: salt)
+        #expect(AuthService.verifyPinLocally(pin: pin, storedHash: legacyHash, salt: salt))
+        #expect(!AuthService.verifyPinLocally(pin: "0000", storedHash: legacyHash, salt: salt))
     }
 
     // MARK: - Token Generation & Parsing
@@ -65,7 +85,7 @@ struct AuthServiceTests {
         let payload = AuthService.parseLocalToken(token)
         #expect(payload != nil)
         #expect(payload?.sub == 42)
-        #expect(payload?.type == "local")
+        #expect(payload?.type == "local_access")
         #expect(payload?.exp ?? 0 > payload?.iat ?? 0)
     }
 
@@ -78,7 +98,7 @@ struct AuthServiceTests {
     func testParseTokenRejectsUnsigned() throws {
         // Simulate a pre-PE-008a unsigned token: plain base64 payload with no signature.
         // These should now be rejected since the shim was removed 2026-04-08.
-        let payload = AuthService.TokenPayload(sub: 42, iat: 1000, exp: 9999999999999, type: "local")
+        let payload = AuthService.TokenPayload(sub: 42, jti: UUID().uuidString, iat: 1000, exp: 9999999999999, type: "local_access")
         let data = try JSONEncoder().encode(payload)
         let unsignedToken = data.base64EncodedString()  // no "." separator — legacy format
         #expect(AuthService.parseLocalToken(unsignedToken) == nil)
@@ -169,6 +189,7 @@ struct AuthServiceTests {
         #expect(result.success)
         #expect(result.user?.displayName == "Admin")
         #expect(result.token != nil)
+        #expect(result.refreshToken != nil)
     }
 
     @Test("authenticateByPin rejects wrong PIN")
@@ -375,6 +396,21 @@ struct AuthServiceTests {
         }
     }
 
+    @Test("revoked local session token is denied by getLocalUserProfile")
+    func testRevokedTokenDenied() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
+        let token = try #require(seed.token)
+
+        _ = try auth.getLocalUserProfile(token: token) // precondition: token valid
+        try auth.revokeLocalSession(token: token)
+
+        #expect(throws: AuthService.AuthError.sessionRevoked) {
+            _ = try auth.getLocalUserProfile(token: token)
+        }
+    }
+
     // MARK: - Legacy PIN Hash Tracking (PE-008c)
 
     @Test("getLegacyHashedUserCount returns 0 when all users have pin_salt")
@@ -400,6 +436,25 @@ struct AuthServiceTests {
         #expect(try auth.getLegacyHashedUserCount() == 1)
     }
 
+    @Test("getLegacyHashedUserCount returns 1 for user with iterated SHA-256 hash")
+    func testLegacyCountIteratedSHA256User() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
+
+        // Insert a user with iterated SHA-256 (has salt but no pbkdf2$ prefix)
+        let oldHash = AuthService.iteratedSHA256Pin("5555", salt: "some-salt")
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "INSERT INTO users (display_name, pin_hash, pin_salt, is_active) VALUES ('OldSalted', ?, 'some-salt', 1)",
+                arguments: [oldHash]
+            )
+        }
+
+        // Should count as legacy (not yet PBKDF2)
+        #expect(try auth.getLegacyHashedUserCount() == 1)
+    }
+
     @Test("getLegacyHashedUserCount ignores placeholder hashes and inactive users")
     func testLegacyCountIgnoresPlaceholdersAndInactive() throws {
         let db = try freshDB()
@@ -417,7 +472,7 @@ struct AuthServiceTests {
         #expect(try auth.getLegacyHashedUserCount() == 0)
     }
 
-    @Test("getLegacyHashedUserCount drops to 0 after legacy user logs in")
+    @Test("getLegacyHashedUserCount drops to 0 after legacy user logs in (upgrades to PBKDF2)")
     func testLegacyCountDecrementOnLogin() throws {
         let db = try freshDB()
         let auth = AuthService(db: db)
@@ -438,10 +493,50 @@ struct AuthServiceTests {
 
         #expect(try auth.getLegacyHashedUserCount() == 1)
 
-        // Login triggers automatic re-hash with a per-user salt
+        // Login triggers automatic re-hash to PBKDF2
         let result = try auth.authenticateByPin(userId: legacyUserId, pin: "9999")
         #expect(result.success)
         #expect(try auth.getLegacyHashedUserCount() == 0)
+
+        // Verify the stored hash is now PBKDF2 format
+        let updatedHash = try db.writer.read { dbConn -> String? in
+            try String.fetchOne(dbConn, sql: "SELECT pin_hash FROM users WHERE id = ?", arguments: [legacyUserId])
+        }
+        #expect(updatedHash?.hasPrefix("pbkdf2$") == true)
+    }
+
+    @Test("Iterated SHA-256 user upgrades to PBKDF2 on login")
+    func testIteratedSHA256UpgradesToPBKDF2OnLogin() throws {
+        AuthService.resetAllLoginAttempts()
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "0000")
+
+        // Insert a user with iterated SHA-256 hash (has salt, but not PBKDF2)
+        let salt = AuthService.generateSalt()
+        let oldHash = AuthService.iteratedSHA256Pin("7777", salt: salt)
+        var userId: Int64 = 0
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "INSERT INTO users (display_name, pin_hash, pin_salt, is_active) VALUES ('OldWorker', ?, ?, 1)",
+                arguments: [oldHash, salt]
+            )
+            userId = dbConn.lastInsertedRowID
+        }
+
+        // Login should succeed with old hash and transparently upgrade
+        let result = try auth.authenticateByPin(userId: userId, pin: "7777")
+        #expect(result.success)
+
+        // Verify upgrade to PBKDF2
+        let updatedHash = try db.writer.read { dbConn -> String? in
+            try String.fetchOne(dbConn, sql: "SELECT pin_hash FROM users WHERE id = ?", arguments: [userId])
+        }
+        #expect(updatedHash?.hasPrefix("pbkdf2$") == true)
+
+        // Re-login should still work with the new PBKDF2 hash
+        let result2 = try auth.authenticateByPin(userId: userId, pin: "7777")
+        #expect(result2.success)
     }
 
     // MARK: - Active Users
@@ -717,5 +812,324 @@ struct AuthServiceTests {
         #expect(throws: AuthService.AuthError.self) {
             try env.auth.addHatPermission(hatId: 99999, permissionKey: "manage_devices")
         }
+    }
+
+    // MARK: - PIN Change + SQLCipher
+
+    @Test("changePin keeps DB openable with device bootstrap key after restart")
+    func testChangePinKeepsBootstrapKeyAfterRestart() throws {
+        AuthService.resetAllLoginAttempts()
+
+        let tmpDir = NSTemporaryDirectory()
+        let dbPath = (tmpDir as NSString).appendingPathComponent("wp_pin_restart_test_\(UUID().uuidString).sqlite")
+        defer {
+            try? FileManager.default.removeItem(atPath: dbPath)
+            try? FileManager.default.removeItem(atPath: dbPath + "-wal")
+            try? FileManager.default.removeItem(atPath: dbPath + "-shm")
+        }
+
+        let bootstrapKeyHex = CipherKeyManager.deriveKey(
+            pin: "device-bootstrap",
+            salt: Data(repeating: 0x34, count: 32)
+        )
+        let db = try AppDatabase.openEncryptedDatabase(atPath: dbPath, keyHex: bootstrapKeyHex)
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
+        let userId = try #require(seed.user?.id)
+
+        #expect(try auth.changePin(userId: userId, oldPin: "1234", newPin: "9876"))
+        try (db.writer as? DatabasePool)?.close()
+
+        let reopened = try AppDatabase.openEncryptedDatabase(atPath: dbPath, keyHex: bootstrapKeyHex)
+        let reopenedAuth = AuthService(db: reopened)
+        let authResult = try reopenedAuth.authenticateByPin(userId: userId, pin: "9876")
+        try (reopened.writer as? DatabasePool)?.close()
+
+        #expect(authResult.success)
+    }
+
+    @Test("testDatabaseRekeyLowLevel — old key fails, new key works, rows preserved")
+    func testDatabaseRekeyLowLevel() throws {
+        AuthService.resetAllLoginAttempts()
+
+        let tmpDir = NSTemporaryDirectory()
+        let dbPath = (tmpDir as NSString).appendingPathComponent("wp_pinchange_test_\(UUID().uuidString).sqlite")
+        defer {
+            try? FileManager.default.removeItem(atPath: dbPath)
+            try? FileManager.default.removeItem(atPath: dbPath + "-wal")
+            try? FileManager.default.removeItem(atPath: dbPath + "-shm")
+        }
+
+        // Derive an initial key.
+        let salt = Data(repeating: 0x12, count: 32)
+        let oldPin = "1111"
+        let newPin = "9999"
+        let oldKeyHex = CipherKeyManager.deriveKey(pin: oldPin, salt: salt)
+        let newKeyHex = CipherKeyManager.deriveKey(pin: newPin, salt: salt)
+        #expect(oldKeyHex != newKeyHex)
+
+        // Open an encrypted file-based DB with old key.
+        let pool = try AppDatabase.makeEncryptedPool(path: dbPath, keyHex: oldKeyHex)
+
+        // Seed a minimal schema + row so we can verify data survives re-key.
+        try pool.write { db in
+            try db.execute(sql: "CREATE TABLE IF NOT EXISTS _rekey_test (v TEXT)")
+            try db.execute(sql: "INSERT INTO _rekey_test (v) VALUES ('preserved')")
+        }
+
+        // Re-key to new key.
+        try AppDatabase.rekey(pool: pool, newKeyHex: newKeyHex)
+        try pool.close()
+
+        // Verify: old key CANNOT open the DB.
+        var oldKeyFailed = false
+        do {
+            let badPool = try AppDatabase.makeEncryptedPool(path: dbPath, keyHex: oldKeyHex)
+            try badPool.read { db in
+                _ = try Row.fetchOne(db, sql: "SELECT 1 FROM _rekey_test LIMIT 1")
+            }
+            try badPool.close()
+        } catch {
+            oldKeyFailed = true
+        }
+        #expect(oldKeyFailed, "Old key should not open re-keyed DB")
+
+        // Verify: new key CAN open the DB and rows are preserved.
+        let goodPool = try AppDatabase.makeEncryptedPool(path: dbPath, keyHex: newKeyHex)
+        let value: String? = try goodPool.read { db in
+            let row = try Row.fetchOne(db, sql: "SELECT v FROM _rekey_test LIMIT 1")
+            return row?["v"]
+        }
+        try goodPool.close()
+        #expect(value == "preserved", "Rows must survive re-key")
+    }
+
+    // MARK: - hasPermission backdoor fix (#366)
+
+    @Test("hasPermission returns true for an active admin user (regression guard)")
+    func testHasPermission_returnsTrueForActiveUser() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "ActiveAdmin", pin: "1234")
+        let userId = seed.user!.id!
+
+        #expect(try auth.hasPermission(userId, permissionKey: "manage_settings"),
+                "hasPermission must return true for an active admin with the correct key")
+    }
+
+    @Test("hasPermission returns false after user is soft-deleted even if user_hats row is still active")
+    func testHasPermission_returnsFalseAfterSoftDelete() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "SoftDeletedAdmin", pin: "1234")
+        let userId = seed.user!.id!
+
+        // Confirm permission exists before deletion
+        #expect(try auth.hasPermission(userId, permissionKey: "manage_settings"))
+
+        // Soft-delete the user only — leave user_hats untouched to validate the JOIN guard
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE users SET deleted_at = datetime('now'), is_active = 0 WHERE id = ?",
+                arguments: [userId]
+            )
+        }
+
+        #expect(try !auth.hasPermission(userId, permissionKey: "manage_settings"),
+                "hasPermission must return false for a soft-deleted user even if their user_hats row is still active")
+    }
+
+    @Test("getUserPermissions returns empty for a soft-deleted user")
+    func testGetUserPermissions_emptyForSoftDeletedUser() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "PermDeletedAdmin", pin: "1234")
+        let userId = seed.user!.id!
+
+        let before = try auth.getUserPermissions(userId)
+        #expect(!before.isEmpty, "admin must have permissions before deletion")
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE users SET deleted_at = datetime('now'), is_active = 0 WHERE id = ?",
+                arguments: [userId]
+            )
+        }
+
+        let after = try auth.getUserPermissions(userId)
+        #expect(after.isEmpty,
+                "getUserPermissions must return empty for a soft-deleted user to prevent permission leakage")
+    }
+
+    @Test("softDeleteUser sets deleted_at and is_active=0 on the user row")
+    func testSoftDeleteUser_marksUserDeleted() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "ToDelete", pin: "1234")
+        let userId = seed.user!.id!
+
+        try auth.softDeleteUser(userId: userId)
+
+        let row = try db.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: "SELECT deleted_at, is_active FROM users WHERE id = ?",
+                             arguments: [userId])
+        }
+        let r = try #require(row)
+        #expect((r["deleted_at"] as String?) != nil, "deleted_at must be set after softDeleteUser")
+        #expect((r["is_active"] as Int) == 0, "is_active must be 0 after softDeleteUser")
+    }
+
+    @Test("softDeleteUser cascades to deactivate user_hats rows")
+    func testSoftDeleteUser_cascadesUserHats() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "HatCascade", pin: "1234")
+        let userId = seed.user!.id!
+
+        // Confirm hat assignment exists and is active before delete
+        let countBefore = try db.writer.read { dbConn in
+            try Int.fetchOne(dbConn,
+                sql: "SELECT COUNT(*) FROM user_hats WHERE user_id = ? AND is_active = 1 AND deleted_at IS NULL",
+                arguments: [userId]) ?? 0
+        }
+        #expect(countBefore > 0, "admin must have at least one active hat before soft-delete")
+
+        try auth.softDeleteUser(userId: userId)
+
+        let countAfter = try db.writer.read { dbConn in
+            try Int.fetchOne(dbConn,
+                sql: "SELECT COUNT(*) FROM user_hats WHERE user_id = ? AND is_active = 1 AND deleted_at IS NULL",
+                arguments: [userId]) ?? 0
+        }
+        #expect(countAfter == 0,
+                "softDeleteUser must cascade-deactivate all user_hats rows for the deleted user")
+    }
+
+    // MARK: - Migration 078: forecasting permission backfill (#4258864571)
+
+    /// Run the migration 078 backfill SQL in the context of an already-seeded database.
+    /// This simulates the upgrade scenario: hats exist, forecasting keys are missing, migration adds them.
+    private func applyMigration078BackfillSQL(_ db: AppDatabase) throws {
+        let permissions = [
+            "forecasting.approve_recommendation",
+            "forecasting.dismiss_recommendation",
+        ]
+        let hats = ["Admin", "Manager"]
+        try db.writer.write { dbConn in
+            for permKey in permissions {
+                for hatName in hats {
+                    try dbConn.execute(
+                        sql: """
+                            INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+                            SELECT id, ? FROM hats WHERE name = ?
+                            """,
+                        arguments: [permKey, hatName]
+                    )
+                }
+            }
+        }
+    }
+
+    @Test("migration078 backfills forecasting permissions into existing Admin hat")
+    func testMigration078_backfillsForecastingPermissions_Admin() throws {
+        // Use E2ETestHelpers.setUp() so that seedFirstAdmin() populates the hats table.
+        // freshDB() alone does NOT insert hat rows — hats are created by seedFirstAdmin(),
+        // so migration 078 (which runs during DB init before hats exist) is a no-op on
+        // fresh databases. The migration matters for EXISTING (pre-upgrade) databases.
+        let env = try E2ETestHelpers.setUp()
+
+        // Simulate pre-upgrade state: delete the forecasting permission keys that were
+        // seeded by defaultPermissionMap so we can verify the migration restores them.
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                DELETE FROM hat_permissions
+                WHERE permission_key IN (
+                    'forecasting.approve_recommendation',
+                    'forecasting.dismiss_recommendation'
+                )
+                """)
+        }
+
+        // Re-apply the migration 078 backfill SQL
+        try applyMigration078BackfillSQL(env.db)
+
+        let adminApprove = try env.db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM hat_permissions hp
+                JOIN hats h ON h.id = hp.hat_id
+                WHERE h.name = 'Admin' AND hp.permission_key = 'forecasting.approve_recommendation'
+                """) ?? 0
+        }
+        let adminDismiss = try env.db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM hat_permissions hp
+                JOIN hats h ON h.id = hp.hat_id
+                WHERE h.name = 'Admin' AND hp.permission_key = 'forecasting.dismiss_recommendation'
+                """) ?? 0
+        }
+        #expect(adminApprove == 1, "Admin hat must have forecasting.approve_recommendation after backfill")
+        #expect(adminDismiss == 1, "Admin hat must have forecasting.dismiss_recommendation after backfill")
+    }
+
+    @Test("migration078 backfills forecasting permissions into existing Manager hat")
+    func testMigration078_backfillsForecastingPermissions_Manager() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                DELETE FROM hat_permissions
+                WHERE permission_key IN (
+                    'forecasting.approve_recommendation',
+                    'forecasting.dismiss_recommendation'
+                )
+                """)
+        }
+
+        try applyMigration078BackfillSQL(env.db)
+
+        let managerApprove = try env.db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM hat_permissions hp
+                JOIN hats h ON h.id = hp.hat_id
+                WHERE h.name = 'Manager' AND hp.permission_key = 'forecasting.approve_recommendation'
+                """) ?? 0
+        }
+        let managerDismiss = try env.db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM hat_permissions hp
+                JOIN hats h ON h.id = hp.hat_id
+                WHERE h.name = 'Manager' AND hp.permission_key = 'forecasting.dismiss_recommendation'
+                """) ?? 0
+        }
+        #expect(managerApprove == 1, "Manager hat must have forecasting.approve_recommendation after backfill")
+        #expect(managerDismiss == 1, "Manager hat must have forecasting.dismiss_recommendation after backfill")
+    }
+
+    @Test("migration078 is idempotent — duplicate INSERT OR IGNORE does not create extra rows")
+    func testMigration078_isIdempotent() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Run the backfill twice (first run: keys already seeded; second run: idempotent)
+        try applyMigration078BackfillSQL(env.db)
+        try applyMigration078BackfillSQL(env.db)
+
+        // Each (hat, key) pair must appear exactly once
+        let duplicates = try env.db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM (
+                    SELECT hp.hat_id, hp.permission_key, COUNT(*) AS cnt
+                    FROM hat_permissions hp
+                    JOIN hats h ON h.id = hp.hat_id
+                    WHERE h.name IN ('Admin', 'Manager')
+                      AND hp.permission_key IN (
+                          'forecasting.approve_recommendation',
+                          'forecasting.dismiss_recommendation'
+                      )
+                    GROUP BY hp.hat_id, hp.permission_key
+                    HAVING cnt > 1
+                )
+                """) ?? 0
+        }
+        #expect(duplicates == 0, "INSERT OR IGNORE must not create duplicate hat_permissions rows")
     }
 }
