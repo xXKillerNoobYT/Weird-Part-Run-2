@@ -573,6 +573,7 @@ struct ModuleHostView: View {
     @Binding var showLogoutConfirm: Bool
     @EnvironmentObject private var appCore: AppCore
     @EnvironmentObject private var tabPrefs: TabBarPreferences
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var selectedTabId: String = ""
     @State private var showUserMenu = false
 
@@ -630,7 +631,7 @@ struct ModuleHostView: View {
     @ViewBuilder
     private var topTabsLayout: some View {
         VStack(spacing: 0) {
-            if visibleTabsList.count > 1 {
+            if visibleTabsList.count > 1 && !hidesTopTabsForLargestJobsLayout {
                 subTabPicker
             }
 
@@ -638,6 +639,10 @@ struct ModuleHostView: View {
                 .environmentObject(appCore)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private var hidesTopTabsForLargestJobsLayout: Bool {
+        module.id == "jobs" && dynamicTypeSize >= .accessibility5
     }
 
     // MARK: - Sidebar Layout

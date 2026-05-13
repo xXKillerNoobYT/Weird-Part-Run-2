@@ -70,7 +70,9 @@ struct JobsListPage: View {
     /// Global job stages list (Rough-in, Prep/Makeup, Trim-out). Loaded once.
     @State private var globalStages: [JobsService.JobStageStatus] = []
     @ScaledMetric(relativeTo: .body) private var searchBarBottomReserve: CGFloat = 12
-    @ScaledMetric(relativeTo: .body) private var accessibilitySearchBarBottomReserve: CGFloat = 44
+    @ScaledMetric(relativeTo: .body) private var accessibilitySearchBarBottomReserve: CGFloat = 24
+    @ScaledMetric(relativeTo: .body) private var largestAccessibilitySearchBarBottomReserve: CGFloat = 44
+    @ScaledMetric(relativeTo: .body) private var largestAccessibilitySearchBarTopReserve: CGFloat = 72
 
     var body: some View {
         VStack(spacing: 0) {
@@ -85,12 +87,13 @@ struct JobsListPage: View {
                     placement: .navigationBarDrawer(displayMode: .always),
                     prompt: "Search jobs..."
                 )
+                .safeAreaInset(edge: .top) {
+                    if usesLargestAccessibilityLayout {
+                        Color.clear.frame(height: largestAccessibilitySearchBarTopReserve)
+                    }
+                }
                 .safeAreaInset(edge: .bottom) {
-                    Color.clear.frame(
-                        height: usesLargestAccessibilityLayout
-                            ? accessibilitySearchBarBottomReserve
-                            : searchBarBottomReserve
-                    )
+                    Color.clear.frame(height: jobsListBottomReserve)
                 }
         }
         .task { appCore.onboardingManager?.markCompleted("jobs-view-list") }
@@ -167,6 +170,16 @@ struct JobsListPage: View {
 
     private var usesLargestAccessibilityLayout: Bool {
         dynamicTypeSize >= .accessibility5
+    }
+
+    private var jobsListBottomReserve: CGFloat {
+        if usesLargestAccessibilityLayout {
+            return largestAccessibilitySearchBarBottomReserve
+        }
+        if dynamicTypeSize.isAccessibilitySize {
+            return accessibilitySearchBarBottomReserve
+        }
+        return searchBarBottomReserve
     }
 
     private var smartCards: some View {
