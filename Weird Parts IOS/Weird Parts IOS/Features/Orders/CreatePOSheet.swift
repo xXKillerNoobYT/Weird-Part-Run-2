@@ -19,11 +19,20 @@ struct CreatePOSheet: View {
     @State private var isSaving = false
     @State private var saveError: String?
     @State private var loadError: String?
+    @State private var initialPONumber = ""
+    @State private var showCancelConfirmation = false
     private enum POSheet: Identifiable {
         case supplierScanner
         var id: String { "supplierScanner" }
     }
     @State private var activePOSheet: POSheet?
+
+    private var isDirty: Bool {
+        poNumber != initialPONumber ||
+        selectedSupplierId != nil ||
+        !supplierSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         NavigationStack {
@@ -86,10 +95,20 @@ struct CreatePOSheet: View {
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle("New Purchase Order")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(isSaving)
+            .interactiveDismissDisabled(isDirty || isSaving)
+            .confirmationDialog(
+                "Discard changes?",
+                isPresented: $showCancelConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) {}
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showCancelConfirmation = true } else { dismiss() }
+                    }
                         .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -140,6 +159,7 @@ struct CreatePOSheet: View {
         } catch {
             poNumber = "PO-NEW"
         }
+        initialPONumber = poNumber
     }
 
     private func loadSuppliers() {

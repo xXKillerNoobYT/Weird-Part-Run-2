@@ -429,7 +429,8 @@ public actor PeerManager {
         let lastSyncAt = state.lastPeerSyncs[peer.deviceId]?.syncedAt
 
         // Resolve shared key for this peer (fetches /sync/key once then caches)
-        let sharedKeyData = await resolveSharedKey(baseURL: baseURL, peerDeviceId: peer.deviceId)
+        // Fix #385: throws on key derivation failure instead of silently falling back
+        let sharedKeyData = try await resolveSharedKey(baseURL: baseURL, peerDeviceId: peer.deviceId)
 
         // 1. Push our changes
         if !enrichedChanges.isEmpty {
@@ -449,16 +450,16 @@ public actor PeerManager {
             var urlRequest = URLRequest(url: pushURL)
             urlRequest.httpMethod = "POST"
             urlRequest.timeoutInterval = 30
-            applyPayload(&urlRequest, plain: plainPushBody, sharedKeyData: sharedKeyData)
+            try applyPayload(&urlRequest, plain: plainPushBody, sharedKeyData: sharedKeyData)
 
             let (pushData, pushResp) = try await URLSession.shared.data(for: urlRequest)
             if let httpResp = pushResp as? HTTPURLResponse, httpResp.statusCode == 200 {
-                let plainPushData = decrypt(pushData, sharedKeyData: sharedKeyData)
-                if let result = try? JSONDecoder().decode(SyncPushResponse.self, from: plainPushData) {
-                    pushed = result.accepted
-                    let syncedIds = pendingChanges.compactMap { $0.id }
-                    try ChangeTracker.markSynced(db: db, ids: syncedIds, batchId: result.syncBatchId)
-                }
+                // Fix #385: decrypt and decode throw on failure — no silent data loss
+                let plainPushData = try decrypt(pushData, sharedKeyData: sharedKeyData)
+                let pushResult = try JSONDecoder().decode(SyncPushResponse.self, from: plainPushData)
+                pushed = pushResult.accepted
+                let syncedIds = pendingChanges.compactMap { $0.id }
+                try ChangeTracker.markSynced(db: db, ids: syncedIds, batchId: pushResult.syncBatchId)
             }
         }
 
@@ -478,31 +479,31 @@ public actor PeerManager {
         var pullURLRequest = URLRequest(url: pullURL)
         pullURLRequest.httpMethod = "POST"
         pullURLRequest.timeoutInterval = 30
-        applyPayload(&pullURLRequest, plain: plainPullBody, sharedKeyData: sharedKeyData)
+        try applyPayload(&pullURLRequest, plain: plainPullBody, sharedKeyData: sharedKeyData)
 
         let (pullData, pullResp) = try await URLSession.shared.data(for: pullURLRequest)
         if let httpResp = pullResp as? HTTPURLResponse, httpResp.statusCode == 200 {
-            let plainPullData = decrypt(pullData, sharedKeyData: sharedKeyData)
-            if let result = try? JSONDecoder().decode(SyncPullResponse.self, from: plainPullData) {
-                pulled = result.changes.count
+            // Fix #385: decrypt and decode throw on failure — no silent data loss
+            let plainPullData = try decrypt(pullData, sharedKeyData: sharedKeyData)
+            let pullResult = try JSONDecoder().decode(SyncPullResponse.self, from: plainPullData)
+            pulled = pullResult.changes.count
 
-                if !result.changes.isEmpty {
-                    _ = try ConflictResolver.resolveAndApplyChanges(
+            if !pullResult.changes.isEmpty {
+                _ = try ConflictResolver.resolveAndApplyChanges(
+                    db: db,
+                    changes: pullResult.changes,
+                    localDeviceId: deviceId
+                )
+
+                // Update vector clock with highest sequence from this peer
+                let maxSeq = pullResult.changes.compactMap { $0.id }.max() ?? 0
+                if maxSeq > 0 {
+                    try ChangeTracker.updateVectorClock(
                         db: db,
-                        changes: result.changes,
-                        localDeviceId: deviceId
+                        peerId: pullResult.serverDeviceId,
+                        lastSequence: maxSeq,
+                        deviceId: deviceId
                     )
-
-                    // Update vector clock with highest sequence from this peer
-                    let maxSeq = result.changes.compactMap { $0.id }.max() ?? 0
-                    if maxSeq > 0 {
-                        try ChangeTracker.updateVectorClock(
-                            db: db,
-                            peerId: result.serverDeviceId,
-                            lastSequence: maxSeq,
-                            deviceId: deviceId
-                        )
-                    }
                 }
             }
         }
@@ -514,7 +515,8 @@ public actor PeerManager {
 
     /// Fetch the peer's X25519 KA public key from GET /sync/key (cached).
     /// Returns nil if the peer doesn't support encryption (old version or network error).
-    private func resolveSharedKey(baseURL: String, peerDeviceId: String) async -> Data? {
+    /// Throws if key derivation fails after a key was fetched (Fix #385).
+    private func resolveSharedKey(baseURL: String, peerDeviceId: String) async throws -> Data? {
         // Use cached peer KA public key if available
         let peerKAKey: String
         if let cached = peerKAPublicKeys[peerDeviceId], !cached.isEmpty {
@@ -526,7 +528,8 @@ public actor PeerManager {
             return nil
         }
         guard !peerKAKey.isEmpty, !kaPrivateKeyB64.isEmpty else { return nil }
-        return try? SyncCrypto.deriveSharedKeyData(
+        // Fix #385: throw on key derivation failure instead of silently falling back to unencrypted
+        return try SyncCrypto.deriveSharedKeyData(
             ourPrivateKeyB64: kaPrivateKeyB64,
             theirPublicKeyB64: peerKAKey
         )
@@ -561,13 +564,14 @@ public actor PeerManager {
 
     /// Attach encrypted or plaintext body + headers to a URLRequest.
     /// If sharedKeyData is nil, sends plaintext JSON (backward compat).
+    /// Fix #385: throws when encryption was negotiated but fails — never silently downgrades to plaintext.
     private func applyPayload(
         _ request: inout URLRequest,
         plain: Data,
         sharedKeyData: Data?
-    ) {
-        if let keyData = sharedKeyData,
-           let encrypted = try? SyncCrypto.encryptAESGCM(data: plain, keyData: keyData) {
+    ) throws {
+        if let keyData = sharedKeyData {
+            let encrypted = try SyncCrypto.encryptAESGCM(data: plain, keyData: keyData)
             request.httpBody = encrypted
             request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
             request.setValue("1", forHTTPHeaderField: "X-Sync-Encrypted")
@@ -579,13 +583,13 @@ public actor PeerManager {
     }
 
     /// Decrypt a response body if a shared key was used for this request.
-    /// Falls back to the raw data if decryption isn't needed or fails.
-    private func decrypt(_ data: Data, sharedKeyData: Data?) -> Data {
-        guard let keyData = sharedKeyData,
-              let plain = try? SyncCrypto.decryptAESGCM(data: data, keyData: keyData) else {
-            return data
+    /// Returns the raw data if no encryption was negotiated (sharedKeyData is nil).
+    /// Fix #385: throws when decryption was negotiated but fails — never silently returns ciphertext as plaintext.
+    private func decrypt(_ data: Data, sharedKeyData: Data?) throws -> Data {
+        guard let keyData = sharedKeyData else {
+            return data  // No encryption negotiated — plaintext is expected
         }
-        return plain
+        return try SyncCrypto.decryptAESGCM(data: data, keyData: keyData)
     }
 
     // MARK: - Private: Inbox Processing

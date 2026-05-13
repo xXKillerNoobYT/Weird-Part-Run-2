@@ -383,9 +383,16 @@ struct IOSJPODetailPage: View {
                     Text(line.partName ?? "Unknown Part")
                         .font(.subheadline)
                         .fontWeight(.medium)
-                    Text("Qty: \(line.quantity)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        Text("Qty: \(line.quantity)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if line.brandSelectionMode == "general" {
+                            Label("General", systemImage: "circle.dashed")
+                                .font(.caption2)
+                                .foregroundStyle(.teal)
+                        }
+                    }
                 }
 
                 Spacer()
@@ -735,7 +742,7 @@ struct IOSJPODetailPage: View {
                 fromLocationId: 1,
                 toLocationType: "pulled",
                 toLocationId: 1,
-                movementType: "transfer",
+                movementType: .transfer,
                 reason: "JPO smart route — in stock",
                 notes: "Auto-transfer from JPO #\(line.jpoId), line #\(line.id)",
                 performedBy: userId
@@ -1026,6 +1033,14 @@ private struct AddJPOLineItemSheet: View {
     @State private var quantity = 1
     @State private var notes = ""
     @State private var errorMessage: String?
+    @State private var showCancelConfirmation = false
+
+    private var isDirty: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        selectedPart != nil ||
+        quantity != 1 ||
+        !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         NavigationStack {
@@ -1081,7 +1096,9 @@ private struct AddJPOLineItemSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showCancelConfirmation = true } else { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") { save() }
@@ -1089,7 +1106,15 @@ private struct AddJPOLineItemSheet: View {
                 }
             }
             .scrollDismissesKeyboard(.interactively)
-            .interactiveDismissDisabled(selectedPart != nil || !notes.isEmpty)
+            .interactiveDismissDisabled(isDirty)
+            .confirmationDialog(
+                "Discard changes?",
+                isPresented: $showCancelConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) {}
+            }
         }
     }
 

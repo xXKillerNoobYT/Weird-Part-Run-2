@@ -54,6 +54,31 @@ struct WarehouseServiceExtTests {
         #expect(movements.count >= 1)
     }
 
+    @Test("Unknown movement type is rejected")
+    func testUnknownMovementTypeRejected() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        do {
+            _ = try env.warehouse.createMovement(
+                partId: partId,
+                qty: 1,
+                fromLocationType: nil,
+                fromLocationId: nil,
+                toLocationType: "warehouse",
+                toLocationId: 1,
+                movementType: "consumed",
+                performedBy: env.adminUserId
+            )
+            Issue.record("Unknown movement type should be rejected")
+        } catch let error as WarehouseService.WarehouseError {
+            #expect(error == .invalidMovementType("consumed"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
     @Test("Validate movement")
     func testValidateMovement() throws {
         let env = try E2ETestHelpers.setUp()
@@ -357,7 +382,7 @@ struct WarehouseServiceExtTests {
         // Verify movement was recorded
         let movement = try env.warehouse.getMovement(id: movId)
         #expect(movement?.qty == 10)
-        #expect(movement?.movementType == "transfer")
+        #expect(movement?.movementType == WarehouseMovementType.consume.rawValue)
     }
 
     // MARK: - getStockAtLocation
@@ -1207,7 +1232,7 @@ struct WarehouseServiceExtTests {
             partId: partId, qty: 2,
             fromLocationType: nil, fromLocationId: nil,
             toLocationType: "warehouse", toLocationId: 1,
-            movementType: "add_stock", performedBy: env.adminUserId
+            movementType: .receive, performedBy: env.adminUserId
         )
 
         // Try to move 5 — should throw insufficientStock(available:2, requested:5)
@@ -1216,7 +1241,7 @@ struct WarehouseServiceExtTests {
                 partId: partId, qty: 5,
                 fromLocationType: "warehouse", fromLocationId: 1,
                 toLocationType: "vehicle", toLocationId: 1,
-                movementType: "transfer", performedBy: env.adminUserId
+                movementType: .transfer, performedBy: env.adminUserId
             )
         }
     }

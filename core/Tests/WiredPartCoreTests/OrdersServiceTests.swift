@@ -70,6 +70,76 @@ struct OrdersServiceTests {
         #expect(detail.lines.count == 1)
     }
 
+    @Test("Create JPO with lines persists mixed brand selection modes")
+    func testCreateJPOWithLinesPersistsMixedBrandSelectionModes() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let specificPartId = try E2ETestHelpers.seedPart(env, name: "Specific Wire", categoryId: catId)
+        let generalPartId = try E2ETestHelpers.seedPart(env, name: "General Wire", categoryId: catId)
+
+        let jpoId = try env.orders.createJPOWithLines(
+            jobId: jobId,
+            requestedBy: env.adminUserId,
+            priority: "normal",
+            deliveryOption: "partial",
+            notes: nil,
+            lines: [
+                (partId: specificPartId, quantity: 2),
+                (partId: generalPartId, quantity: 3)
+            ],
+            brandSelectionModes: ["specific", "general"]
+        )
+
+        let detail = try env.orders.getJPODetail(id: jpoId)
+        let modesByPartId = Dictionary(uniqueKeysWithValues: detail.lines.compactMap { line in
+            line.partId.map { ($0, line.brandSelectionMode) }
+        })
+        #expect(modesByPartId[specificPartId] == "specific")
+        #expect(modesByPartId[generalPartId] == "general")
+    }
+
+    @Test("Create JPO with catalog and fast-added custom part")
+    func testCreateJPOWithCatalogAndFastAddedCustomPart() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let catalogPartId = try E2ETestHelpers.seedPart(env, name: "Catalog Breaker", categoryId: catId)
+        let customPartId = try env.parts.createFastAddCustomPartForJPO(
+            PartsService.FastAddCustomPartDraft(
+                name: "Mystery panel lug",
+                code: "LUG-TBD",
+                manufacturerPartNumber: "Square D maybe",
+                notes: "Need 2-pole panel fit confirmed"
+            )
+        )
+
+        let jpoId = try env.orders.createJPOWithLines(
+            jobId: jobId,
+            requestedBy: env.adminUserId,
+            priority: "normal",
+            deliveryOption: "partial",
+            notes: "Mixed catalog and custom request",
+            lines: [
+                (partId: catalogPartId, quantity: 1),
+                (partId: customPartId, quantity: 2)
+            ],
+            brandSelectionModes: ["specific", "general"]
+        )
+
+        let detail = try env.orders.getJPODetail(id: jpoId)
+        #expect(detail.lines.count == 2)
+        #expect(detail.lines.contains { $0.partId == catalogPartId && $0.quantity == 1 })
+        #expect(detail.lines.contains { $0.partId == customPartId && $0.quantity == 2 })
+
+        let customPart = try env.parts.getPart(id: customPartId).part
+        #expect(customPart.name == "Mystery panel lug")
+        #expect(customPart.code == "LUG-TBD")
+        #expect(customPart.manufacturerPartNumber == "Square D maybe")
+        #expect(customPart.notes?.contains("[FAST_ADD_INCOMPLETE]") == true)
+        #expect(customPart.notes?.contains("Need 2-pole panel fit confirmed") == true)
+    }
+
     // MARK: - Purchase Orders
 
     @Test("Create and list purchase orders")
@@ -132,6 +202,44 @@ struct OrdersServiceTests {
         let env = try E2ETestHelpers.setUp()
         let demand = try env.orders.getProcurementDemand()
         #expect(demand.count >= 0)
+    }
+
+    @Test("Procurement demand includes wishlist items sent to procurement")
+    func testProcurementDemandIncludesSentWishlistItems() throws {
+        let env = try E2ETestHelpers.setUp()
+        let wishlist = WishlistService(db: env.db, auth: env.auth)
+        let catId = try E2ETestHelpers.seedCategory(env, name: "Wishlist Procurement")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Wishlist Demand Part", categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Wishlist Supplier")
+        _ = try env.parts.addPartSupplierLink(
+            partId: partId,
+            supplierId: supplierId,
+            supplierPartNumber: "WISH-001",
+            costPrice: 4.25,
+            isPreferred: true
+        )
+
+        let item = try wishlist.addItem(
+            partId: partId,
+            partName: "Wishlist Demand Part",
+            qtySuggested: 7,
+            reason: "Crew requested replenishment",
+            priority: "high",
+            sourceType: "manual",
+            requestedBy: "Crew Lead"
+        )
+        let approved = try wishlist.approveItem(id: item.id!, byUserId: env.adminUserId)
+        _ = try wishlist.sendToProcurement(id: approved.id!, byUserId: env.adminUserId)
+
+        let demand = try env.orders.getProcurementDemand()
+        let procurementItem = try #require(demand.first { $0.id == partId })
+        let wishlistSource = try #require(procurementItem.sources.first { $0.sourceType == "wishlist" })
+
+        #expect(procurementItem.totalDemand == 7)
+        #expect(wishlistSource.sourceId == item.id)
+        #expect(wishlistSource.quantity == 7)
+        #expect(wishlistSource.sourceName.contains("Crew Lead"))
+        #expect(procurementItem.suppliers.contains { $0.id == supplierId && $0.isPreferred })
     }
 
     // MARK: - Returns
@@ -206,6 +314,32 @@ struct OrdersServiceTests {
 
         let pos = try env.orders.listPurchaseOrders()
         #expect(pos.contains(where: { $0.id == poId }))
+    }
+
+    @Test("Generate PO from JPO advances line status to in procurement")
+    func testGeneratePOFromJPO_advancesLineStatusToInProcurement() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-GEN-LINE", name: "Generate PO Line Status")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Line Status Supplier")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "LineStatusCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Line Status Part", categoryId: catId)
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let lineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 4)
+        try env.orders.updateJPOLineStatus(lineId: lineId, status: "approved", updatedBy: env.adminUserId)
+
+        let poId = try env.orders.generatePOFromJPO(jpoId: jpoId, supplierId: supplierId)
+
+        let linkedLine = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT jli.line_status, jli.po_line_id, pli.po_id
+                FROM jpo_line_items jli
+                LEFT JOIN po_line_items pli ON pli.id = jli.po_line_id AND pli.deleted_at IS NULL
+                WHERE jli.id = ? AND jli.deleted_at IS NULL
+                """, arguments: [lineId])
+        }
+        #expect(linkedLine?["line_status"] as String? == "in_procurement")
+        #expect(linkedLine?["po_line_id"] as Int64? != nil)
+        #expect(linkedLine?["po_id"] as Int64? == poId)
     }
 
     // MARK: - Update Return Status

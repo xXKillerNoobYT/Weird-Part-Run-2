@@ -301,21 +301,31 @@ struct IOSMyTruckPage: View {
     private var trailerSection: some View {
         if let stats = vehicleStats, stats.hasTrailer {
             Section {
-                HStack {
-                    Image(systemName: "truck.box.fill")
-                        .foregroundStyle(.blue)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading) {
-                        Text(stats.trailerName ?? "Trailer")
-                            .font(.subheadline).fontWeight(.medium)
-                        Text("Attached")
-                            .font(.caption).foregroundStyle(.green)
+                if let trailerId = stats.trailerId {
+                    NavigationLink(destination: IOSTrailerDetailPage(trailerId: trailerId)) {
+                        trailerRow(stats)
                     }
-                    Spacer()
+                } else {
+                    trailerRow(stats)
                 }
             } header: {
                 Text("Trailer")
             }
+        }
+    }
+
+    private func trailerRow(_ stats: FleetService.MyVehicleStats) -> some View {
+        HStack {
+            Image(systemName: "truck.box.fill")
+                .foregroundStyle(.blue)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading) {
+                Text(stats.trailerName ?? "Trailer")
+                    .font(.subheadline).fontWeight(.medium)
+                Text("Attached")
+                    .font(.caption).foregroundStyle(.green)
+            }
+            Spacer()
         }
     }
 
@@ -480,27 +490,13 @@ struct IOSMyTruckPage: View {
                 return
             }
 
-            // Get smart card stats
-            vehicleStats = try fleet.getMyVehicleStats(userId: currentUserId)
-
-            if let stats = vehicleStats {
-                // Load vehicle detail
-                vehicle = try fleet.getVehicleDetail(id: stats.vehicleId)
-
-                // Load inventory by type
-                truckStock = try fleet.getVehicleStock(vehicleId: stats.vehicleId, stockType: "truck_stock")
-                transferItems = try fleet.getVehicleStock(vehicleId: stats.vehicleId, stockType: "transfer")
-
-                // Load recent logs
-                recentMileage = try fleet.listMileageLogs(vehicleId: stats.vehicleId, limit: 5)
-                recentFuel = try fleet.listFuelLogs(vehicleId: stats.vehicleId, limit: 5)
-            } else {
-                vehicle = nil
-                truckStock = []
-                transferItems = []
-                recentMileage = []
-                recentFuel = []
-            }
+            let dashboardData = try fleet.getMyTruckDashboardData(userId: currentUserId)
+            vehicleStats = dashboardData.vehicleStats
+            vehicle = dashboardData.vehicle
+            truckStock = dashboardData.truckStock
+            transferItems = dashboardData.transferItems
+            recentMileage = dashboardData.recentMileage
+            recentFuel = dashboardData.recentFuel
         } catch {
             loadError = userFriendlyError(error, context: "load truck data")
         }

@@ -17,6 +17,8 @@ struct IOSToolsDashboardPage: View {
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
 
+    private let recentActivityLimit = 10
+
     private enum ActiveSheet: Identifiable {
         case help
         var id: String { "help" }
@@ -47,6 +49,8 @@ struct IOSToolsDashboardPage: View {
                         ("Tips", "Pull down anywhere on the page to refresh the data. If you see a high number of tools in maintenance, check the Maintenance tab for details.")
                     ]
                 )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
             }
             .refreshable { await loadData() }
             .task { await loadData() }
@@ -212,7 +216,7 @@ struct IOSToolsDashboardPage: View {
         isLoading = stats == nil
         do {
             stats = try service.getToolsStats()
-            recentCheckouts = try service.listCheckouts(active: false)
+            recentCheckouts = try service.listCheckouts(active: false, limit: recentActivityLimit)
         } catch {
             loadError = userFriendlyError(error, context: "load tools dashboard")
         }

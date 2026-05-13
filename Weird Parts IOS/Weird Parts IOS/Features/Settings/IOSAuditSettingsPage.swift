@@ -6,6 +6,7 @@ import WiredPartCore
 /// All values stored with `audit_` prefix via SettingsService.
 struct IOSAuditSettingsPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
 
     // MARK: - State
 
@@ -13,6 +14,9 @@ struct IOSAuditSettingsPage: View {
     @State private var loadError: String?
     @State private var saveError: String?
     @State private var activeSheet: ActiveSheet?
+    @State private var isDirty = false
+    @State private var hasLoadedSettings = false
+    @State private var showDiscardConfirmation = false
 
     // General
     @State private var enableAutoScheduling = true
@@ -45,6 +49,17 @@ struct IOSAuditSettingsPage: View {
         "spot_check": "Spot Check",
     ]
 
+    private var hasValidSettings: Bool {
+        misplacementPenalty > 0
+    }
+
+    private var validationMessage: String? {
+        guard hasValidSettings else {
+            return "Misplacement penalty must be greater than zero."
+        }
+        return nil
+    }
+
     var body: some View {
         Group {
             if isLoading {
@@ -58,7 +73,17 @@ struct IOSAuditSettingsPage: View {
         }
         .navigationTitle("Audit Settings")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(isDirty)
         .toolbar {
+            if isDirty {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showDiscardConfirmation = true
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -74,6 +99,13 @@ struct IOSAuditSettingsPage: View {
             ])
         }
         .task { loadSettings() }
+        .interactiveDismissDisabled(isDirty)
+        .alert("Discard changes?", isPresented: $showDiscardConfirmation) {
+            Button("Discard", role: .destructive) { dismiss() }
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("You have unsaved changes that will be lost.")
+        }
     }
 
     // MARK: - Form
@@ -84,6 +116,14 @@ struct IOSAuditSettingsPage: View {
                 Section {
                     Label(saveError, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
+                        .font(.caption)
+                }
+            }
+
+            if let validationMessage {
+                Section {
+                    Label(validationMessage, systemImage: "exclamationmark.circle")
+                        .foregroundStyle(.orange)
                         .font(.caption)
                 }
             }
@@ -156,13 +196,31 @@ struct IOSAuditSettingsPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!isDirty || !hasValidSettings)
+                .accessibilityHint(hasValidSettings ? (isDirty ? "Saves audit setting changes" : "Make an audit setting change before saving") : "Fix audit setting values before saving")
             }
         }
         // Fix #149: dismiss keyboard when scrolling audit settings
         .scrollDismissesKeyboard(.interactively)
+        .onChange(of: enableAutoScheduling) { _, _ in markDirty() }
+        .onChange(of: defaultAuditType) { _, _ in markDirty() }
+        .onChange(of: maxConcurrentAudits) { _, _ in markDirty() }
+        .onChange(of: allowSpeedMode) { _, _ in markDirty() }
+        .onChange(of: speedModeRequiresQR) { _, _ in markDirty() }
+        .onChange(of: speedModeTimeLimit) { _, _ in markDirty() }
+        .onChange(of: verificationThreshold) { _, _ in markDirty() }
+        .onChange(of: misplacementPenalty) { _, _ in markDirty() }
+        .onChange(of: keepHistoryMonths) { _, _ in markDirty() }
+        .onChange(of: autoArchive) { _, _ in markDirty() }
+        .onChange(of: includeInDailyReport) { _, _ in markDirty() }
     }
 
     // MARK: - Actions
+
+    private func markDirty() {
+        guard hasLoadedSettings else { return }
+        isDirty = true
+    }
 
     private func loadSettings() {
         guard let service = appCore.settingsService else {
@@ -171,6 +229,7 @@ struct IOSAuditSettingsPage: View {
             return
         }
 
+        hasLoadedSettings = false
         do {
             let map = try service.getSettingsByCategory("audit")
 
@@ -192,9 +251,18 @@ struct IOSAuditSettingsPage: View {
             loadError = userFriendlyError(error, context: "load")
         }
         isLoading = false
+        isDirty = false
+        Task { @MainActor in
+            hasLoadedSettings = true
+        }
     }
 
     private func saveSettings() {
+        guard hasValidSettings else {
+            saveError = validationMessage
+            return
+        }
+
         guard let service = appCore.settingsService else {
             saveError = "Settings service unavailable"
             return
@@ -216,6 +284,7 @@ struct IOSAuditSettingsPage: View {
             ]
             try service.upsertSettingsMap(data, category: "audit")
             saveError = nil
+            isDirty = false
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }

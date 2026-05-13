@@ -561,12 +561,7 @@ struct IOSVehicleDetailPage: View {
     }
 
     private func inspectionColor(_ result: String) -> Color {
-        switch result.lowercased() {
-        case "pass": return .green
-        case "fail": return .red
-        case "conditional": return .orange
-        default: return .secondary
-        }
+        DS.SemanticColor.inspectionStatus(result)
     }
 
     // MARK: - Data Loading

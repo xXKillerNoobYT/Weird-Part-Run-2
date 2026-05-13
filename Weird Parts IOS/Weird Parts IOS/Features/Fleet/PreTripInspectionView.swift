@@ -80,6 +80,7 @@ struct PreTripInspectionView: View {
             }
             .task { loadChecklist() }
         }
+        .presentationDetents([.large])
     }
 
     // MARK: - Form
@@ -270,12 +271,7 @@ struct PreTripInspectionView: View {
     }
 
     private func resultColor(_ result: String) -> Color {
-        switch result {
-        case "pass": return .green
-        case "fail": return .red
-        case "conditional": return .orange
-        default: return .gray
-        }
+        DS.SemanticColor.inspectionStatus(result)
     }
 
     private func resultIcon(_ result: String) -> String {

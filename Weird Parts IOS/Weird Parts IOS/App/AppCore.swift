@@ -95,7 +95,7 @@ final class AppCore: ObservableObject {
             let result = try await Task.detached(priority: .userInitiated) {
                 // Production safety: back up before migration so we can roll back
                 #if !DEBUG
-                let backupPath = AppDatabase.backupDatabase(atPath: path)
+                let backupPath = try AppDatabase.backupDatabase(atPath: path)
                 #endif
 
                 let database: AppDatabase
@@ -116,9 +116,14 @@ final class AppCore: ObservableObject {
                     #if !DEBUG
                     // Migration failed — try to restore from backup
                     if let backup = backupPath {
-                        try? AppDatabase.restoreDatabase(from: backup, to: path)
-                        // Retry with restored DB (old schema, but data preserved)
-                        logger.error("[AppCore] Migration failed, restored from backup. Error: \(error.localizedDescription)")
+                        do {
+                            try AppDatabase.restoreDatabase(from: backup, to: path)
+                            // Retry with restored DB (old schema, but data preserved)
+                            logger.error("[AppCore] Migration failed, restored from backup. Error: \(error.localizedDescription)")
+                        } catch {
+                            logger.error("[AppCore] Migration failed and backup restore also failed: \(error.localizedDescription)")
+                            throw error
+                        }
                     }
                     #endif
                     throw error
@@ -133,6 +138,13 @@ final class AppCore: ObservableObject {
                 let theme = try? settings.getTheme()
                 let users = try auth.getActiveUsers()
                 let hasProfile = try settings.hasBusinessProfile()
+
+                // Compute UITesting permissions here (off main thread) to avoid
+                // priority inversion from synchronous DB reads on @MainActor.
+                var uiTestingPermissions: [String] = []
+                if uiTestingMode, let user = users.first, let userId = user.id {
+                    uiTestingPermissions = (try? auth.getUserPermissions(userId)) ?? []
+                }
 
                 return (
                     database: database,
@@ -159,7 +171,8 @@ final class AppCore: ObservableObject {
                     badgeCount: BadgeCountService(db: database),
                     theme: theme,
                     users: users,
-                    hasProfile: hasProfile
+                    hasProfile: hasProfile,
+                    uiTestingPermissions: uiTestingPermissions
                 )
             }.value
 
@@ -189,6 +202,14 @@ final class AppCore: ObservableObject {
 
             if let theme = result.theme {
                 self.theme = theme
+            }
+
+            if uiTestingMode, let user = result.users.first, let userId = user.id {
+                currentUser = user
+                permissions = result.uiTestingPermissions
+                currentToken = "ui-testing"
+                onboardingManager = OnboardingProgressManager(userId: userId)
+                badgeCountManager.setUserId(userId)
             }
 
             if result.users.isEmpty && !result.hasProfile {
@@ -242,6 +263,7 @@ final class AppCore: ObservableObject {
                 _ = try? backgroundTaskService?.cleanupStaleTasks()
                 _ = try? backgroundTaskService?.cleanupOldEntries()
             }
+            runScheduledMaintenanceIfNeeded()
 
             // Run companion auto-discovery cycle in the background (logged)
             Task.detached { [partsService, backgroundTaskService] in
@@ -300,6 +322,18 @@ final class AppCore: ObservableObject {
         loadError = nil
         Task { @MainActor in
             await bootstrap()
+        }
+    }
+
+    func runScheduledMaintenanceIfNeeded() {
+        guard let backgroundTaskService, let toolsService else { return }
+        let logger = self.logger
+        Task.detached { [backgroundTaskService, toolsService] in
+            do {
+                _ = try backgroundTaskService.runToolsMaintenance(toolsService: toolsService)
+            } catch {
+                logger.error("[AppCore] Tools maintenance failed: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -408,8 +442,12 @@ final class AppCore: ObservableObject {
 
     /// Reload theme settings from the database and apply them.
     func updateTheme() {
-        if let settings = settingsService {
-            self.theme = (try? settings.getTheme()) ?? .defaults
+        guard let settings = settingsService else { return }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let theme = (try? settings.getTheme()) ?? .defaults
+            await MainActor.run {
+                self?.theme = theme
+            }
         }
     }
 
@@ -601,7 +639,8 @@ final class AppCore: ObservableObject {
     }
 
     nonisolated private static func seedUITestingFixtures(db: AppDatabase, authService: AuthService) throws {
-        _ = try authService.seedFirstAdmin(displayName: "UITest Owner", pin: "1234")
+        let authResult = try authService.seedFirstAdmin(displayName: "UITest Owner", pin: "1234")
+        let uiTestUserId = authResult.user?.id ?? 1
 
         let now = ISO8601DateFormatter().string(from: Date())
         let longNotesLocal = String(repeating: "LOCAL_NOTES_SEGMENT_", count: 22)
@@ -637,8 +676,103 @@ final class AppCore: ObservableObject {
             )
         }
 
+        try seedUITestingJobReviewFixture(db: db, userId: uiTestUserId)
+
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
-        UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
+        UserDefaults.standard.set(true, forKey: "hasSeenOnboardAIMVPEntry")
+        UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
+    }
+
+    nonisolated private static func seedUITestingJobReviewFixture(db: AppDatabase, userId: Int64) throws {
+        let jobs = JobsService(db: db)
+        let estimation = JobEstimationService(db: db)
+        let jobNumber = "UITEST-EST-001"
+
+        let jobId: Int64
+        if let existingJob = try jobs.listJobs(search: jobNumber, status: nil, limit: 1).first {
+            jobId = existingJob.id
+        } else {
+            jobId = try jobs.createJob(
+                jobNumber: jobNumber,
+                jobName: "UITesting Estimation Review Job",
+                customerName: "UITesting Customer",
+                addressLine1: "100 Fixture Way",
+                city: "Denver",
+                state: "CO",
+                zip: "80202",
+                status: "active",
+                priority: "high",
+                jobType: "service",
+                estimatedHours: 48,
+                leadUserId: userId,
+                startDate: "2026-05-11",
+                dueDate: "2026-05-22",
+                notes: "Deterministic UITesting job for Estimate -> Reviews & Actuals verification.",
+                createdBy: userId
+            )
+        }
+
+        let bidQuestions = try estimation.getQuestionsForStage(stage: "bid")
+        for (index, question) in bidQuestions.enumerated() {
+            guard let questionId = question.id else { continue }
+            let value: String?
+            switch question.answerType {
+            case "number":
+                value = index == 0 ? "4" : "2"
+            case "boolean":
+                value = index.isMultiple(of: 2) ? "yes" : "no"
+            case "choice":
+                value = question.decodedChoices?.first ?? "standard"
+            default:
+                value = "UITesting fixture answer"
+            }
+            _ = try estimation.submitResponse(
+                jobId: jobId,
+                questionId: questionId,
+                stage: "bid",
+                value: value,
+                isUnknown: false,
+                answeredBy: userId
+            )
+        }
+
+        _ = try estimation.calculateEstimate(jobId: jobId, stage: "bid")
+        _ = try estimation.submitWeeklyReview(
+            jobId: jobId,
+            reviewedBy: userId,
+            notes: "UITesting seeded weekly review for save-flow comparison.",
+            delayFactors: ["Material delay"],
+            onTrackStatus: "at_risk",
+            unresolvedQuestionCount: 0,
+            crewFeedback: "Fixture crew feedback for Reviews & Actuals history.",
+            gcRating: 4
+        )
+
+        let accuracyInputs = bidQuestions.prefix(3).compactMap { question -> QuestionAccuracyFeedbackInput? in
+            guard let questionId = question.id else { return nil }
+            return QuestionAccuracyFeedbackInput(
+                questionId: questionId,
+                predictedImpact: "Fixture predicted impact",
+                actualImpact: "Fixture actual impact",
+                accuracyRating: 4,
+                notes: "UITesting seeded accuracy feedback."
+            )
+        }
+
+        _ = try estimation.submitEndOfJobReview(
+            jobId: jobId,
+            actualDays: 6,
+            actualHours: 48,
+            lessonsLearned: "UITesting seeded end-of-job review for question accuracy verification.",
+            reviewedBy: userId,
+            delayFactors: ["Weather"],
+            onTrackStatus: "on_track",
+            unresolvedQuestionCount: 0,
+            crewFeedback: "Fixture end-of-job crew feedback.",
+            gcRating: 5,
+            questionAccuracy: accuracyInputs
+        )
     }
 }

@@ -18,6 +18,8 @@ struct CreateScheduleEntrySheet: View {
     @State private var notes = ""
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var isDirty = false
+    @State private var showDiscardConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -33,11 +35,13 @@ struct CreateScheduleEntrySheet: View {
                                 Text(job.jobName).tag(job.id as Int64?)
                             }
                         }
+                        .onChange(of: selectedJobId) { _, _ in isDirty = true }
                     }
                 }
 
                 Section("Date") {
                     DatePicker("Date", selection: $entryDate, displayedComponents: .date)
+                        .onChange(of: entryDate) { _, _ in isDirty = true }
                 }
 
                 Section("Time Slot") {
@@ -47,16 +51,20 @@ struct CreateScheduleEntrySheet: View {
                         Text("PM Only").tag("pm")
                     }
                     .pickerStyle(.segmented)
+                    .onChange(of: timeSlot) { _, _ in isDirty = true }
                 }
 
                 Section("Time (Optional)") {
                     TextField("Start time (e.g. 07:00)", text: $startTime)
+                        .onChange(of: startTime) { _, _ in isDirty = true }
                     TextField("End time (e.g. 15:30)", text: $endTime)
+                        .onChange(of: endTime) { _, _ in isDirty = true }
                 }
 
                 Section("Notes (Optional)") {
                     TextEditor(text: $notes)
                         .frame(minHeight: 60)
+                        .onChange(of: notes) { _, _ in isDirty = true }
                 }
 
                 if let error = saveError {
@@ -73,7 +81,9 @@ struct CreateScheduleEntrySheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showDiscardConfirmation = true } else { dismiss() }
+                    }
                         .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -86,7 +96,17 @@ struct CreateScheduleEntrySheet: View {
                     }
                 }
             }
-            .interactiveDismissDisabled(isSaving)
+            .interactiveDismissDisabled(isDirty || isSaving)
+            .confirmationDialog(
+                "Discard changes?",
+                isPresented: $showDiscardConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved schedule entry changes will be lost.")
+            }
             .task { loadJobs() }
         }
     }
@@ -118,6 +138,7 @@ struct CreateScheduleEntrySheet: View {
                 notes: notes.isEmpty ? nil : notes,
                 timeSlot: timeSlot
             )
+            isDirty = false
             dismiss()
             onSave()
         } catch {

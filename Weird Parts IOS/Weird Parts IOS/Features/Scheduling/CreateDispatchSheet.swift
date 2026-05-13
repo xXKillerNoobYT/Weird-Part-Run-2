@@ -16,6 +16,8 @@ struct CreateDispatchSheet: View {
     @State private var notes = ""
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var isDirty = false
+    @State private var showDiscardConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -31,6 +33,7 @@ struct CreateDispatchSheet: View {
                                 Text(emp.displayName).tag(emp.id as Int64?)
                             }
                         }
+                        .onChange(of: selectedUserId) { _, _ in isDirty = true }
                     }
                 }
 
@@ -45,6 +48,7 @@ struct CreateDispatchSheet: View {
                                 Text(job.jobName).tag(job.id as Int64?)
                             }
                         }
+                        .onChange(of: selectedJobId) { _, _ in isDirty = true }
                     }
                 }
 
@@ -56,6 +60,7 @@ struct CreateDispatchSheet: View {
                 Section("Notes (Optional)") {
                     TextEditor(text: $notes)
                         .frame(minHeight: 60)
+                        .onChange(of: notes) { _, _ in isDirty = true }
                 }
 
                 if let error = saveError {
@@ -70,16 +75,29 @@ struct CreateDispatchSheet: View {
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle("New Dispatch")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(isSaving)
+            .interactiveDismissDisabled(isDirty || isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showDiscardConfirmation = true } else { dismiss() }
+                    }
+                    .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") { saveDispatch() }
                         .disabled(selectedJobId == nil || selectedUserId == nil || isSaving)
                         .fontWeight(.semibold)
                 }
+            }
+            .confirmationDialog(
+                "Discard changes?",
+                isPresented: $showDiscardConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved dispatch changes will be lost.")
             }
             .task { loadData() }
         }
@@ -110,6 +128,7 @@ struct CreateDispatchSheet: View {
                 date: date,
                 notes: notes.isEmpty ? nil : notes
             )
+            isDirty = false
             dismiss()
             onSave()
         } catch {

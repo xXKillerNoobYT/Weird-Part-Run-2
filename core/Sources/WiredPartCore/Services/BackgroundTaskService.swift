@@ -93,6 +93,23 @@ public final class BackgroundTaskService: Sendable {
         }
     }
 
+    /// Result from the tools maintenance task.
+    public struct ToolsMaintenanceResult: Sendable {
+        public let didRun: Bool
+        public let expiredTrades: Int
+        public let updatedConfidenceScores: Int
+
+        public var itemsProcessed: Int {
+            expiredTrades + updatedConfidenceScores
+        }
+
+        public init(didRun: Bool, expiredTrades: Int, updatedConfidenceScores: Int) {
+            self.didRun = didRun
+            self.expiredTrades = expiredTrades
+            self.updatedConfidenceScores = updatedConfidenceScores
+        }
+    }
+
     // =========================================================================
     // MARK: - Task Lifecycle
     // =========================================================================
@@ -233,6 +250,48 @@ public final class BackgroundTaskService: Sendable {
     }
 
     // =========================================================================
+    // MARK: - Scheduled Maintenance Jobs
+    // =========================================================================
+
+    /// Run daily tools maintenance through the existing background task log.
+    ///
+    /// The confidence score update is intentionally throttled because it is a
+    /// daily decay operation, not an idempotent status reconciliation. Expired
+    /// trades are also safe to run through this path and remain idempotent after
+    /// the first update.
+    @discardableResult
+    public func runToolsMaintenance(
+        toolsService: ToolsService,
+        minimumIntervalHours: Int = 24
+    ) throws -> ToolsMaintenanceResult {
+        let taskType = "tools_maintenance"
+        let taskName = "Tools Maintenance"
+
+        guard minimumIntervalHours > 0 else {
+            return try performToolsMaintenance(
+                toolsService: toolsService,
+                taskName: taskName,
+                taskType: taskType
+            )
+        }
+
+        let cutoff = Date().addingTimeInterval(-Double(minimumIntervalHours) * 3600)
+        guard try !hasRecentToolsMaintenanceTask(type: taskType, since: cutoff) else {
+            return ToolsMaintenanceResult(
+                didRun: false,
+                expiredTrades: 0,
+                updatedConfidenceScores: 0
+            )
+        }
+
+        return try performToolsMaintenance(
+            toolsService: toolsService,
+            taskName: taskName,
+            taskType: taskType
+        )
+    }
+
+    // =========================================================================
     // MARK: - Cleanup
     // =========================================================================
 
@@ -285,6 +344,49 @@ public final class BackgroundTaskService: Sendable {
     // =========================================================================
     // MARK: - Helpers
     // =========================================================================
+
+    private func performToolsMaintenance(
+        toolsService: ToolsService,
+        taskName: String,
+        taskType: String
+    ) throws -> ToolsMaintenanceResult {
+        let taskId = try startTask(name: taskName, type: taskType)
+        do {
+            let expiredTrades = try toolsService.expireOldTrades()
+            let updatedConfidenceScores = try toolsService.updateConfidenceScores()
+            let result = ToolsMaintenanceResult(
+                didRun: true,
+                expiredTrades: expiredTrades,
+                updatedConfidenceScores: updatedConfidenceScores
+            )
+            try completeTask(
+                id: taskId,
+                summary: "Expired \(expiredTrades) trade(s), updated \(updatedConfidenceScores) confidence score(s)",
+                itemsProcessed: result.itemsProcessed
+            )
+            return result
+        } catch {
+            try? failTask(id: taskId, error: error.localizedDescription)
+            throw error
+        }
+    }
+
+    private func hasRecentToolsMaintenanceTask(type: String, since: Date) throws -> Bool {
+        do {
+            return try db.writer.read { dbConn in
+                let count = try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM background_task_log
+                    WHERE task_type = ?
+                      AND status IN ('running', 'completed')
+                      AND started_at >= ?
+                    """, arguments: [type, since]) ?? 0
+                return count > 0
+            }
+        } catch {
+            if isTableNotFoundError(error) { return false }
+            throw error
+        }
+    }
 
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)

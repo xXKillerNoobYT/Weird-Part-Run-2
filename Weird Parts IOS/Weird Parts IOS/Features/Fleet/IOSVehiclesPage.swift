@@ -13,8 +13,9 @@ struct IOSVehiclesPage: View {
     // MARK: - State
 
     @State private var vehicles: [FleetService.VehicleListItem] = []
-    @State private var allVehicles: [FleetService.VehicleListItem] = []
-    @State private var isLoading = true
+    @State private var statusCounts = FleetService.VehicleStatusCounts()
+    @State private var isInitialLoading = true
+    @State private var isRefreshing = false
     @State private var searchText = ""
     @State private var statusFilter = "all"
     @State private var loadError: String?
@@ -43,11 +44,11 @@ struct IOSVehiclesPage: View {
         .task { appCore.onboardingManager?.markCompleted("fleet-vehicles-view") }
         .navigationTitle("Vehicles")
         .searchable(text: $searchText, prompt: "Search vehicles...")
-        .onChange(of: searchText) { loadData() }
-        .refreshable { loadData() }
+        .onChange(of: searchText) { loadData(isRefresh: true) }
+        .refreshable { loadData(isRefresh: true) }
         .task { loadData() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { loadData() }
+            if phase == .active { loadData(isRefresh: !vehicles.isEmpty) }
         }
         .onAppear {
             NotificationCenter.default.post(
@@ -64,7 +65,7 @@ struct IOSVehiclesPage: View {
                 options: statusOptions,
                 activate: { value in
                     statusFilter = value
-                    loadData()
+                    loadData(isRefresh: true)
                 }
             )
             appCore.aiFilterRegistry.applyPendingFilter(pageId: "vehicles")
@@ -74,6 +75,13 @@ struct IOSVehiclesPage: View {
             appCore.aiFilterRegistry.deregister(pageId: "vehicles")
         }
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                if isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel("Refreshing vehicles")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     activeSheet = .createVehicle
@@ -93,7 +101,7 @@ struct IOSVehiclesPage: View {
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .createVehicle:
-                IOSCreateVehicleSheet(onSaved: { loadData() })
+                IOSCreateVehicleSheet(onSaved: { loadData(isRefresh: true) })
             case .help:
                 PageHelpSheet(
                     title: "Vehicles Help",
@@ -112,8 +120,7 @@ struct IOSVehiclesPage: View {
     // MARK: - Status Picker
 
     private func countForStatus(_ status: String) -> Int {
-        if status == "all" { return allVehicles.count }
-        return allVehicles.filter { $0.status == status }.count
+        statusCounts.count(for: status)
     }
 
     private var statusPicker: some View {
@@ -126,7 +133,7 @@ struct IOSVehiclesPage: View {
                         isSelected: statusFilter == status
                     ) {
                         statusFilter = status
-                        loadData()
+                        loadData(isRefresh: true)
                     }
                 }
             }
@@ -139,7 +146,7 @@ struct IOSVehiclesPage: View {
 
     @ViewBuilder
     private var vehicleList: some View {
-        if isLoading {
+        if isInitialLoading {
             ProgressView("Loading vehicles...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
@@ -261,22 +268,26 @@ struct IOSVehiclesPage: View {
 
     // MARK: - Data Loading
 
-    private func loadData() {
+    private func loadData(isRefresh: Bool = false) {
         guard let service = appCore.fleetService else {
             loadError = "Service not available"
-            isLoading = false
+            isInitialLoading = false
+            isRefreshing = false
             return
         }
-        isLoading = vehicles.isEmpty
+        let shouldShowInitialLoader = !isRefresh && vehicles.isEmpty
+        isInitialLoading = shouldShowInitialLoader
+        isRefreshing = !shouldShowInitialLoader
         loadError = nil
+        defer {
+            isInitialLoading = false
+            isRefreshing = false
+        }
         do {
-            allVehicles = try service.listVehicles(status: nil)
-            vehicles = statusFilter == "all"
-                ? allVehicles
-                : allVehicles.filter { $0.status == statusFilter }
+            statusCounts = try service.getVehicleStatusCounts()
+            vehicles = try service.listVehicles(status: statusFilter == "all" ? nil : statusFilter)
         } catch {
             loadError = userFriendlyError(error, context: "load vehicles")
         }
-        isLoading = false
     }
 }

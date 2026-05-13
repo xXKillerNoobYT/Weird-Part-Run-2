@@ -777,6 +777,41 @@ struct PartsServiceExtTests {
                 "searchParts must return the part when the SKU-level part_number matches")
     }
 
+    @Test("New Parts Order catalog search covers name, code, supplier, color, and SKU aliases")
+    func testNewPartsOrderCatalogSearchAliases() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (catId, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let colorId = try env.parts.createColor(name: "Warehouse Green", hexCode: "#00AA55", partNumber: "WPG-COLOR-400")
+        let brandId = try E2ETestHelpers.seedBrand(env, name: "Warehouse Brand")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Warehouse Supplier")
+
+        let partId = try env.parts.createPart(
+            categoryId: catId,
+            name: "Warehouse Pull Bag",
+            typeId: typeId,
+            colorId: colorId,
+            code: "WPB-400",
+            brandId: brandId
+        )
+        _ = try env.parts.addPartSupplierLink(
+            partId: partId,
+            supplierId: supplierId,
+            supplierPartNumber: "SUP-WPB-400",
+            costPrice: 4.25
+        )
+        _ = try env.parts.upsertColorBrandSKU(
+            colorId: colorId,
+            brandId: brandId,
+            typeId: typeId,
+            partNumber: "SKU-WPB-400"
+        )
+
+        for query in ["Warehouse Pull", "WPB-400", "SUP-WPB-400", "WPG-COLOR-400", "SKU-WPB-400"] {
+            let results = try env.parts.searchParts(query: query)
+            #expect(results.contains { $0.id == partId }, "Expected New Parts Order search alias \(query) to return the catalog part")
+        }
+    }
+
     // MARK: - Fix Regression Tests (Iteration 5)
 
     @Test("listCompanionRulesHierarchy excludes soft-deleted parent rules")
@@ -925,6 +960,48 @@ struct PartsServiceExtTests {
         let cantexFitting = try env.parts.getColorBrandSKUs(typeId: typeId2, brandId: brandId1)
         #expect(cantexFitting.count == 1)
         #expect(cantexFitting[0].partNumber == "CX-GRAY-FIT-001")
+    }
+
+    @Test("getHierarchy surfaces SKU colors under brand nodes without requiring concrete parts")
+    func testHierarchyIncludesColorBrandSKUsWithoutParts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(
+            env, category: "Conduit", style: "PVC", type: "3/4 Inch"
+        )
+        let colorId = try env.parts.createColor(name: "Reusable Gray", hexCode: "#808080")
+        let cantexId = try E2ETestHelpers.seedBrand(env, name: "Hierarchy Cantex")
+        let carlonId = try E2ETestHelpers.seedBrand(env, name: "Hierarchy Carlon")
+
+        _ = try env.parts.upsertColorBrandSKU(
+            colorId: colorId,
+            brandId: cantexId,
+            typeId: typeId,
+            partNumber: "HC-GRAY-001"
+        )
+        _ = try env.parts.upsertColorBrandSKU(
+            colorId: colorId,
+            brandId: carlonId,
+            typeId: typeId,
+            partNumber: "HL-GRAY-001"
+        )
+
+        let tree = try env.parts.getHierarchy()
+        let typeNode = try #require(
+            tree.categories
+                .flatMap(\.styles)
+                .flatMap(\.types)
+                .first { $0.type.id == typeId }
+        )
+
+        let cantexNode = try #require(typeNode.brandNodes.first { $0.brand?.id == cantexId })
+        let carlonNode = try #require(typeNode.brandNodes.first { $0.brand?.id == carlonId })
+
+        #expect(cantexNode.colors.map(\.id).contains(colorId))
+        #expect(carlonNode.colors.map(\.id).contains(colorId))
+        #expect(
+            typeNode.colors.filter { $0.id == colorId }.count == 1,
+            "The flat compatibility color list should still dedupe the shared color."
+        )
     }
 
     @Test("PE-COLORS Plan Test 1: upsert returns same id for duplicate (color, brand, type) triple")

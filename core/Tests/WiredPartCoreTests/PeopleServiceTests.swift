@@ -5,6 +5,12 @@ import GRDB
 
 @Suite("PeopleService Tests")
 struct PeopleServiceTests {
+    private func certificationDateString(daysFromToday days: Int) -> String {
+        let date = Calendar.current.date(byAdding: .day, value: days, to: Date()) ?? Date()
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
 
     // MARK: - Employee Lifecycle
 
@@ -247,6 +253,61 @@ struct PeopleServiceTests {
         let env = try E2ETestHelpers.setUp()
         let certs = try env.people.getExpiringCertifications(withinDays: 30)
         #expect(certs.isEmpty)
+    }
+
+    @Test("Expiring certifications includes expired and upcoming active certs")
+    func testExpiringCertificationsIncludesExpiredAndUpcoming() throws {
+        let env = try E2ETestHelpers.setUp()
+        let expired = certificationDateString(daysFromToday: -5)
+        let today = certificationDateString(daysFromToday: 0)
+        let upcoming = certificationDateString(daysFromToday: 5)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO certifications (user_id, cert_type, cert_name, expiry_date, is_active)
+                VALUES
+                    (?, 'license', 'Expired CDL', ?, 1),
+                    (?, 'license', 'Due Today OSHA', ?, 1),
+                    (?, 'license', 'Upcoming Electrical', ?, 1)
+                """, arguments: [
+                    env.adminUserId, expired,
+                    env.adminUserId, today,
+                    env.adminUserId, upcoming
+                ])
+        }
+
+        let certs = try env.people.getExpiringCertifications(withinDays: 30)
+        #expect(certs.map(\.certName) == ["Expired CDL", "Due Today OSHA", "Upcoming Electrical"])
+        #expect(certs.allSatisfy { $0.employeeName == "TestAdmin" })
+    }
+
+    @Test("Expiring certifications excludes inactive deleted null and outside-window certs")
+    func testExpiringCertificationsExcludesNonComplianceMatches() throws {
+        let env = try E2ETestHelpers.setUp()
+        let expired = certificationDateString(daysFromToday: -1)
+        let upcoming = certificationDateString(daysFromToday: 10)
+        let outsideWindow = certificationDateString(daysFromToday: 45)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO certifications (user_id, cert_type, cert_name, expiry_date, is_active, deleted_at)
+                VALUES
+                    (?, 'license', 'Active Match', ?, 1, NULL),
+                    (?, 'license', 'Inactive Cert', ?, 0, NULL),
+                    (?, 'license', 'Deleted Cert', ?, 1, datetime('now')),
+                    (?, 'license', 'Outside Window', ?, 1, NULL),
+                    (?, 'license', 'No Expiry', NULL, 1, NULL)
+                """, arguments: [
+                    env.adminUserId, expired,
+                    env.adminUserId, expired,
+                    env.adminUserId, upcoming,
+                    env.adminUserId, outsideWindow,
+                    env.adminUserId
+                ])
+        }
+
+        let certs = try env.people.getExpiringCertifications(withinDays: 30)
+        #expect(certs.map(\.certName) == ["Active Match"])
     }
 
     @Test("Today's team assignments returns empty on fresh DB")
@@ -602,8 +663,8 @@ struct PeopleServiceTests {
         #expect(workers.first?.name == "Unknown")
     }
 
-    @Test("getExpiringCertifications shows Unknown for soft-deleted user")
-    func testGetExpiringCertificationsHidesDeletedUserName() throws {
+    @Test("getExpiringCertifications excludes soft-deleted user")
+    func testGetExpiringCertificationsExcludesDeletedUser() throws {
         let env = try E2ETestHelpers.setUp()
         let expiryDate = "2099-12-31"
         try env.db.writer.write { db in
@@ -615,8 +676,7 @@ struct PeopleServiceTests {
                            arguments: [env.adminUserId])
         }
         let certs = try env.people.getExpiringCertifications(withinDays: 36500)
-        #expect(certs.isEmpty == false)
-        #expect(certs.first?.employeeName == "Unknown")
+        #expect(certs.isEmpty)
     }
 
     @Test("updateTeam is a no-op on a soft-deleted team")

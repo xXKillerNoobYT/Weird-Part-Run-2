@@ -7,6 +7,7 @@ import WiredPartCore
 /// Configuration stored as JSON in `daily_report_template` setting key.
 struct IOSDailyReportTemplatesPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
 
     // MARK: - Types
 
@@ -35,6 +36,9 @@ struct IOSDailyReportTemplatesPage: View {
     @State private var loadError: String?
     @State private var saveError: String?
     @State private var successMessage: String?
+    @State private var isDirty = false
+    @State private var hasLoadedSettings = false
+    @State private var showDiscardConfirmation = false
 
     private enum ActiveSheet: Identifiable {
         case help
@@ -64,7 +68,17 @@ struct IOSDailyReportTemplatesPage: View {
         }
         .navigationTitle("Daily Report Templates")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(isDirty)
         .toolbar {
+            if isDirty {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showDiscardConfirmation = true
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -97,6 +111,13 @@ struct IOSDailyReportTemplatesPage: View {
         }
         .refreshable { loadSettings() }
         .task { loadSettings() }
+        .interactiveDismissDisabled(isDirty)
+        .alert("Discard changes?", isPresented: $showDiscardConfirmation) {
+            Button("Discard", role: .destructive) { dismiss() }
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("You have unsaved changes that will be lost.")
+        }
     }
 
     // MARK: - Editor
@@ -167,10 +188,14 @@ struct IOSDailyReportTemplatesPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!isDirty)
+                .accessibilityHint(isDirty ? "Saves daily report template changes" : "Make a template change before saving")
             }
         }
         // Fix #149: dismiss keyboard when scrolling template editor
         .scrollDismissesKeyboard(.interactively)
+        .onChange(of: sections) { _, _ in markDirty() }
+        .onChange(of: aiInstructions) { _, _ in markDirty() }
     }
 
     // MARK: - Preview
@@ -248,6 +273,7 @@ struct IOSDailyReportTemplatesPage: View {
             return
         }
 
+        hasLoadedSettings = false
         do {
             if let json = try service.getSettingValue("daily_report_template"),
                let data = json.data(using: .utf8) {
@@ -263,6 +289,15 @@ struct IOSDailyReportTemplatesPage: View {
             aiInstructions = Self.defaultAIInstructions
         }
         isLoading = false
+        isDirty = false
+        Task { @MainActor in
+            hasLoadedSettings = true
+        }
+    }
+
+    private func markDirty() {
+        guard hasLoadedSettings else { return }
+        isDirty = true
     }
 
     private func saveSettings() {
@@ -279,6 +314,7 @@ struct IOSDailyReportTemplatesPage: View {
             try service.upsertSetting(key: "daily_report_template", value: json, category: "templates")
             saveError = nil
             successMessage = "Template saved."
+            isDirty = false
         } catch {
             saveError = userFriendlyError(error, context: "save daily report")
         }

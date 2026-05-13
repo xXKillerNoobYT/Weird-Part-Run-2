@@ -22,6 +22,7 @@ public final class WarehouseService: Sendable {
 
     public enum WarehouseError: Error, Sendable, Equatable {
         case invalidMovementPath(from: String, to: String)
+        case invalidMovementType(String)
         case insufficientStock(available: Int, requested: Int)
         case partNotFound(Int64)
         case sessionNotFound(Int64)
@@ -134,7 +135,7 @@ public final class WarehouseService: Sendable {
         let pendingReturns = try safeCount(
             sql: """
                 SELECT COUNT(*) FROM stock_movements
-                WHERE movement_type = 'return'
+                WHERE movement_type = '\(WarehouseMovementType.returnToStock.rawValue)'
                   AND date(created_at) = date('now')
                   AND deleted_at IS NULL
                 """
@@ -173,7 +174,7 @@ public final class WarehouseService: Sendable {
                 return rows.map { row in
                     let partName = (row["part_name"] as String?) ?? "Unknown Part"
                     let qty: Int = row["qty"] ?? 0
-                    let moveType = (row["movement_type"] as String?) ?? "transfer"
+                    let moveType = (row["movement_type"] as String?) ?? WarehouseMovementType.transfer.rawValue
                     let fromType = (row["from_location_type"] as String?) ?? ""
                     let toType = (row["to_location_type"] as String?) ?? ""
                     let desc = "\(moveType.capitalized): \(qty)× \(partName) (\(fromType) → \(toType))"
@@ -436,14 +437,14 @@ public final class WarehouseService: Sendable {
             ) ?? "Unknown Part"
         }
 
-        let movementType = Self.determineMovementType(from: fromLocationType, to: toLocationType)
+        let movementType = WarehouseMovementType.from(sourceLocationType: fromLocationType, destinationLocationType: toLocationType)
 
         return PreviewLine(
             partName: partName,
             qty: qty,
             fromLabel: Self.locationDisplayName(type: fromLocationType, id: fromLocationId),
             toLabel: Self.locationDisplayName(type: toLocationType, id: toLocationId),
-            movementType: movementType
+            movementType: movementType.rawValue
         )
     }
 
@@ -556,6 +557,43 @@ public final class WarehouseService: Sendable {
         fromLocationId: Int64?,
         toLocationType: String?,
         toLocationId: Int64?,
+        movementType: WarehouseMovementType,
+        reason: String? = nil,
+        notes: String? = nil,
+        performedBy: Int64,
+        jobId: Int64? = nil,
+        photoPath: String? = nil,
+        referenceNumber: String? = nil,
+        unitCostAtMove: Double? = nil,
+        unitSellAtMove: Double? = nil
+    ) throws -> Int64 {
+        try createMovement(
+            partId: partId,
+            qty: qty,
+            fromLocationType: fromLocationType,
+            fromLocationId: fromLocationId,
+            toLocationType: toLocationType,
+            toLocationId: toLocationId,
+            movementType: movementType.rawValue,
+            reason: reason,
+            notes: notes,
+            performedBy: performedBy,
+            jobId: jobId,
+            photoPath: photoPath,
+            referenceNumber: referenceNumber,
+            unitCostAtMove: unitCostAtMove,
+            unitSellAtMove: unitSellAtMove
+        )
+    }
+
+    @discardableResult
+    public func createMovement(
+        partId: Int64,
+        qty: Int,
+        fromLocationType: String?,
+        fromLocationId: Int64?,
+        toLocationType: String?,
+        toLocationId: Int64?,
         movementType: String,
         reason: String? = nil,
         notes: String? = nil,
@@ -570,8 +608,12 @@ public final class WarehouseService: Sendable {
         // which of fromLocationType/toLocationType is non-nil, not by sign. A
         // negative qty inverts the stock delta: `qty = qty - (-3)` = qty + 3.
         guard qty > 0 else { throw WarehouseError.invalidQuantity }
-        guard !movementType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        let trimmedMovementType = movementType.trimmingCharacters(in: .whitespaces)
+        guard !trimmedMovementType.isEmpty else {
             throw WarehouseError.requiredFieldEmpty
+        }
+        guard let canonicalMovementType = WarehouseMovementType(rawValue: trimmedMovementType) else {
+            throw WarehouseError.invalidMovementType(movementType)
         }
         return try db.writer.write { dbConn in
             // Guard: part must exist and not be tombstoned — otherwise the INSERT
@@ -606,7 +648,7 @@ public final class WarehouseService: Sendable {
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                     """,
                 arguments: [partId, qty, fromLocationType, fromLocationId,
-                            toLocationType, toLocationId, movementType,
+                            toLocationType, toLocationId, canonicalMovementType.rawValue,
                             reason, notes, performedBy, jobId, photoPath,
                             referenceNumber, unitCostAtMove, unitSellAtMove]
             )
@@ -708,8 +750,12 @@ public final class WarehouseService: Sendable {
         guard !movements.isEmpty else { return [] }
         for m in movements {
             guard m.qty > 0 else { throw WarehouseError.invalidQuantity }
-            guard !m.movementType.trimmingCharacters(in: .whitespaces).isEmpty else {
+            let trimmedMovementType = m.movementType.trimmingCharacters(in: .whitespaces)
+            guard !trimmedMovementType.isEmpty else {
                 throw WarehouseError.requiredFieldEmpty
+            }
+            guard WarehouseMovementType(rawValue: trimmedMovementType) != nil else {
+                throw WarehouseError.invalidMovementType(m.movementType)
             }
         }
         return try db.writer.write { dbConn in
@@ -742,7 +788,7 @@ public final class WarehouseService: Sendable {
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                     """,
                     arguments: [m.partId, m.qty, m.fromLocationType, m.fromLocationId,
-                                m.toLocationType, m.toLocationId, m.movementType,
+                                m.toLocationType, m.toLocationId, WarehouseMovementType(rawValue: m.movementType.trimmingCharacters(in: .whitespaces))!.rawValue,
                                 m.reason, m.notes, performedBy, m.jobId, m.photoPath,
                                 m.referenceNumber, m.unitCostAtMove, m.unitSellAtMove])
                 ids.append(dbConn.lastInsertedRowID)
@@ -806,7 +852,7 @@ public final class WarehouseService: Sendable {
             throw WarehouseError.invalidMovementPath(from: fromLocationType, to: toLocationType)
         }
 
-        let movementType = Self.determineMovementType(from: fromLocationType, to: toLocationType)
+        let movementType = WarehouseMovementType.from(sourceLocationType: fromLocationType, destinationLocationType: toLocationType)
 
         return try createMovement(
             partId: partId, qty: qty,
@@ -1320,9 +1366,9 @@ public final class WarehouseService: Sendable {
                         INSERT INTO stock_movements
                         (part_id, qty, to_location_type, to_location_id,
                          movement_type, reason, performed_by, unit_cost_at_move, created_at)
-                        VALUES (?, ?, 'warehouse', 1, 'receiving', 'PO receiving', ?, ?, datetime('now'))
+                        VALUES (?, ?, 'warehouse', 1, ?, 'PO receiving', ?, ?, datetime('now'))
                         """,
-                    arguments: [partId, receivedQty, completedBy, unitCost]
+                    arguments: [partId, receivedQty, WarehouseMovementType.receive.rawValue, completedBy, unitCost]
                 )
 
                 // Add to warehouse stock
@@ -1378,7 +1424,7 @@ public final class WarehouseService: Sendable {
                         FROM stock_movements sm
                         LEFT JOIN parts p ON p.id = sm.part_id AND p.deleted_at IS NULL
                         LEFT JOIN users u ON u.id = sm.performed_by AND u.deleted_at IS NULL
-                        WHERE sm.movement_type = 'return' AND sm.deleted_at IS NULL
+                        WHERE sm.movement_type = '\(WarehouseMovementType.returnToStock.rawValue)' AND sm.deleted_at IS NULL
                         ORDER BY sm.created_at DESC
                         LIMIT ?
                         """,
@@ -1430,7 +1476,7 @@ public final class WarehouseService: Sendable {
             fromLocationId: fromLocationId,
             toLocationType: toLocationType,
             toLocationId: toLocationId,
-            movementType: "return",
+            movementType: .returnToStock,
             reason: isDamaged ? "damaged" : (reason ?? "return"),
             notes: notes,
             performedBy: performedBy
@@ -1655,6 +1701,16 @@ public final class WarehouseService: Sendable {
                     """, arguments: [uid]) ?? 0) > 0
                 guard userExists else { throw WarehouseError.userNotFound(uid) }
             }
+            let currentQty = try Int.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT qty FROM stock
+                    WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [partId, locationType, locationId]
+            ) ?? 0
+            let deltaQty = newQty - currentQty
+
             // Update the stock record
             try dbConn.execute(
                 sql: """
@@ -1663,14 +1719,24 @@ public final class WarehouseService: Sendable {
                     """,
                 arguments: [newQty, partId, locationType, locationId]
             )
+            if dbConn.changesCount == 0 {
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO stock (part_id, location_type, location_id, qty, last_counted, updated_at)
+                        VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+                        """,
+                    arguments: [partId, locationType, locationId, newQty]
+                )
+            }
 
             // Record the adjustment as a movement
+            let signedDelta = deltaQty >= 0 ? "+\(deltaQty)" : "\(deltaQty)"
             try dbConn.execute(
                 sql: """
                     INSERT INTO stock_movements (part_id, qty, from_location_type, from_location_id, to_location_type, to_location_id, movement_type, reason, notes, performed_by, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 'adjustment', ?, 'Audit count adjustment', ?, datetime('now'))
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                     """,
-                arguments: [partId, newQty, locationType, locationId, locationType, locationId, reason ?? "Audit adjustment", performedBy]
+                arguments: [partId, deltaQty, locationType, locationId, locationType, locationId, WarehouseMovementType.adjustment.rawValue, reason ?? "Audit adjustment", "Audit count adjustment: \(currentQty) -> \(newQty) (\(signedDelta))", performedBy]
             )
         }
     }
@@ -2368,7 +2434,7 @@ public final class WarehouseService: Sendable {
             fromLocationId: nil,
             toLocationType: "pulled",
             toLocationId: jobId,
-            movementType: "receiving_staged",
+            movementType: .receivingStaged,
             reason: "Received and staged for job",
             notes: notes,
             performedBy: performedBy,
@@ -2392,7 +2458,7 @@ public final class WarehouseService: Sendable {
             fromLocationId: nil,
             toLocationType: nil,
             toLocationId: nil,
-            movementType: "write_off",
+            movementType: .writeOff,
             reason: reason,
             notes: notes,
             performedBy: performedBy
@@ -2415,7 +2481,7 @@ public final class WarehouseService: Sendable {
             fromLocationId: nil,
             toLocationType: nil,
             toLocationId: nil,
-            movementType: "return_to_supplier",
+            movementType: .returnToSupplier,
             reason: "Damaged: \(returnType)",
             notes: notes,
             performedBy: performedBy
@@ -2447,13 +2513,7 @@ public final class WarehouseService: Sendable {
 
     /// Determine the movement_type based on from/to location types.
     private static func determineMovementType(from: String, to: String) -> String {
-        if to == "warehouse" && (from == "truck" || from == "trailer") {
-            return "return"
-        }
-        if from == "job" {
-            return "return"
-        }
-        return "transfer"
+        WarehouseMovementType.from(sourceLocationType: from, destinationLocationType: to).rawValue
     }
 
     /// Build a human-readable display name for a location.
@@ -4653,10 +4713,10 @@ public final class WarehouseService: Sendable {
                     INSERT INTO stock_movements
                     (part_id, qty, from_location_type, to_location_type,
                      movement_type, reason, notes, performed_by, created_at)
-                    VALUES (?, ?, 'warehouse', 'warehouse', 'adjustment',
+                    VALUES (?, ?, 'warehouse', 'warehouse', ?,
                             'Multi-user audit consensus', ?, ?, datetime('now'))
                     """, arguments: [
-                        partId, finalQty,
+                        partId, finalQty, WarehouseMovementType.adjustment.rawValue,
                         "Consensus from \(countedAssignments.count) independent counts",
                         resolvedBy
                     ])

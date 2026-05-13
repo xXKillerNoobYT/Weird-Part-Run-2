@@ -33,6 +33,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         // Pass a launch argument so the app can detect testing mode
         // (useful for seeding test data or skipping onboarding)
         app.launchArguments += ["-UITesting"]
+        app.launchArguments += ["-UITestPrimaryModule", "parts"]
         app.launch()
     }
 
@@ -40,26 +41,116 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app = nil
     }
 
+    private func loginIfNeeded() {
+        let loginView = app.otherElements["loginView"]
+        guard loginView.waitForExistence(timeout: 10) else { return }
+
+        let userRows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "loginUserRow_"))
+        let firstUser = userRows.firstMatch
+        XCTAssertTrue(firstUser.waitForExistence(timeout: 10), "Seeded UI test user should be available")
+        firstUser.tap()
+
+        let pinField = app.secureTextFields["loginPINField"]
+        XCTAssertTrue(pinField.waitForExistence(timeout: 5), "PIN field should appear after selecting user")
+        pinField.tap()
+        pinField.typeText("1234")
+
+        let signInButton = app.buttons["loginSignInButton"]
+        XCTAssertTrue(signInButton.waitForExistence(timeout: 5), "Sign in button should be available")
+        signInButton.tap()
+
+        XCTAssertFalse(loginView.waitForExistence(timeout: 10), "Login screen should dismiss after valid PIN")
+    }
+
+    private func openPartsFromTabBarOrMore(timeout: TimeInterval = 10) {
+        let partsTab = app.tabBars.buttons["Parts"]
+        if partsTab.waitForExistence(timeout: timeout) {
+            partsTab.tap()
+            return
+        }
+
+        let moreTab = app.tabBars.buttons["More"]
+        XCTAssertTrue(moreTab.waitForExistence(timeout: timeout), "More tab should be visible")
+        moreTab.tap()
+
+        let partsMoreRow = app.buttons["moreModule_parts"]
+        if partsMoreRow.waitForExistence(timeout: 5) {
+            partsMoreRow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            let partsTitle = app.navigationBars["Parts"]
+            if partsTitle.waitForExistence(timeout: 5) {
+                return
+            }
+        }
+
+        let partsButton = app.buttons.matching(NSPredicate(format: "label == %@", "Parts")).firstMatch
+        if partsButton.waitForExistence(timeout: 3) {
+            partsButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            return
+        }
+
+        let partsText = app.staticTexts["Parts"]
+        if partsText.waitForExistence(timeout: 3) {
+            partsText.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            return
+        }
+
+        let partsCell = app.cells.staticTexts["Parts"]
+        XCTAssertTrue(partsCell.waitForExistence(timeout: timeout), "Parts module should be listed under More")
+        if partsCell.exists {
+            partsCell.tap()
+        }
+    }
+
     // MARK: - Helper: Navigate to Parts > Categories
+
+    @MainActor
+    func testUITestingLaunchBypassesOnDeviceAIGate() throws {
+        loginIfNeeded()
+
+        XCTAssertFalse(
+            app.staticTexts["On-Device AI"].waitForExistence(timeout: 2),
+            "-UITesting should bypass the On-Device AI onboarding gate"
+        )
+        XCTAssertFalse(
+            app.buttons["Continue Onboarding"].exists,
+            "-UITesting should not require tapping the On-Device AI continuation button"
+        )
+
+        let partsTab = app.tabBars.buttons["Parts"]
+        let moreTab = app.tabBars.buttons["More"]
+        XCTAssertTrue(
+            partsTab.waitForExistence(timeout: 5) || moreTab.waitForExistence(timeout: 5),
+            "-UITesting launch should reach the post-login tab UI"
+        )
+    }
+
+    @MainActor
+    func testRootAIAssistantSheetCanReopen() throws {
+        loginIfNeeded()
+
+        let aiButton = app.buttons["aiAssistantButton"]
+        XCTAssertTrue(aiButton.waitForExistence(timeout: 5), "AI assistant button should be available")
+        aiButton.tap()
+
+        let assistantTitle = app.navigationBars["AI Assistant"]
+        XCTAssertTrue(assistantTitle.waitForExistence(timeout: 5), "AI assistant sheet should open")
+
+        let closeButton = app.buttons["Close"]
+        XCTAssertTrue(closeButton.waitForExistence(timeout: 3), "AI assistant sheet should expose Close")
+        closeButton.tap()
+        XCTAssertFalse(assistantTitle.waitForExistence(timeout: 3), "AI assistant sheet should dismiss")
+
+        XCTAssertTrue(aiButton.waitForExistence(timeout: 5), "AI assistant button should remain available after dismissal")
+        aiButton.tap()
+        XCTAssertTrue(assistantTitle.waitForExistence(timeout: 5), "AI assistant sheet should reopen from the root coordinator")
+    }
 
     /// Navigates from the main tab bar to the Parts > Categories page.
     /// Handles the case where the app may be on a different tab.
     private func navigateToCategories() {
-        // Tap the "Parts" tab (or "More" then "Parts" on iPhone)
-        let partsTab = app.tabBars.buttons["Parts"]
-        if partsTab.waitForExistence(timeout: 10) {
-            partsTab.tap()
-        } else {
-            // On iPhone with many tabs, Parts may be under "More"
-            let moreTab = app.tabBars.buttons["More"]
-            if moreTab.waitForExistence(timeout: 5) {
-                moreTab.tap()
-                let partsCell = app.cells.staticTexts["Parts"]
-                if partsCell.waitForExistence(timeout: 5) {
-                    partsCell.tap()
-                }
-            }
-        }
+        loginIfNeeded()
+
+        openPartsFromTabBarOrMore()
 
         // Now navigate to the Categories sub-tab
         let categoriesButton = app.buttons["Categories"]
@@ -79,6 +170,25 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                       "Parts Categories page should appear after navigation")
     }
 
+    private func navigateToCatalog() {
+        loginIfNeeded()
+
+        openPartsFromTabBarOrMore(timeout: 5)
+
+        let catalogButton = app.buttons["Catalog"]
+        if catalogButton.waitForExistence(timeout: 5) {
+            catalogButton.tap()
+        } else {
+            let catalogText = app.staticTexts["Catalog"]
+            if catalogText.waitForExistence(timeout: 3) {
+                catalogText.tap()
+            }
+        }
+
+        let searchField = app.textFields["partsCatalogSearchField"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 10), "Catalog search field should be visible")
+    }
+
     // MARK: - Helper: Wait for loading to complete
 
     /// Waits for the loading indicator to disappear, indicating data has loaded.
@@ -90,6 +200,10 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             expectation(for: disappeared, evaluatedWith: loadingIndicator, handler: nil)
             waitForExpectations(timeout: timeout)
         }
+    }
+
+    private var categoryFormSheet: XCUIElement {
+        app.descendants(matching: .any)["categoryFormSheet"]
     }
 
     // MARK: - Test 1: Category Sheet Opens and Closes
@@ -116,7 +230,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         }
 
         // Verify the category form sheet appeared
-        let formSheet = app.otherElements["categoryFormSheet"]
+        let formSheet = categoryFormSheet
         XCTAssertTrue(formSheet.waitForExistence(timeout: 5),
                       "Category form sheet should appear after tapping Add")
 
@@ -159,7 +273,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         }
 
         // Wait for form to appear
-        let formSheet = app.otherElements["categoryFormSheet"]
+        let formSheet = categoryFormSheet
         XCTAssertTrue(formSheet.waitForExistence(timeout: 5),
                       "Category form sheet should appear")
 
@@ -254,7 +368,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app.buttons["categoryFormSaveButton"].tap()
 
         // Wait for sheet to dismiss
-        let formSheet = app.otherElements["categoryFormSheet"]
+        let formSheet = categoryFormSheet
         let disappeared = NSPredicate(format: "exists == false")
         expectation(for: disappeared, evaluatedWith: formSheet)
         waitForExpectations(timeout: 10)
@@ -299,7 +413,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             app.buttons["addCategoryMenuItem"].tap()
         }
 
-        let formSheet = app.otherElements["categoryFormSheet"]
+        let formSheet = categoryFormSheet
         XCTAssertTrue(formSheet.waitForExistence(timeout: 5))
 
         // Save button should be disabled when name is empty
@@ -380,5 +494,64 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         measure(metrics: [XCTApplicationLaunchMetric()]) {
             XCUIApplication().launch()
         }
+    }
+
+    // MARK: - WEI-299 QA: NL filters-applied banner
+
+    @MainActor
+    func testCatalogNLSearchShowsAndClearsAppliedFiltersBanner() throws {
+        navigateToCatalog()
+
+        let searchField = app.textFields["partsCatalogSearchField"]
+        searchField.tap()
+        searchField.typeText("low stock")
+
+        let banner = app.otherElements["partsCatalogNLFilterBanner"]
+        XCTAssertTrue(banner.waitForExistence(timeout: 10), "NL filters banner should appear")
+
+        let filterList = app.staticTexts["partsCatalogNLFilterList"]
+        XCTAssertTrue(filterList.waitForExistence(timeout: 5), "Banner should list applied filters")
+        XCTAssertTrue((filterList.label).contains("Low Stock"), "Banner should list Low Stock")
+
+        let visibleScreenshot = XCTAttachment(screenshot: app.screenshot())
+        visibleScreenshot.name = "WEI-299-banner-visible"
+        visibleScreenshot.lifetime = .keepAlways
+        add(visibleScreenshot)
+
+        let lowStockFilter = app.buttons["partsCatalogLowStockFilter"]
+        XCTAssertTrue(lowStockFilter.waitForExistence(timeout: 5), "Low Stock filter should be present")
+        XCTAssertTrue(lowStockFilter.isHittable, "Low Stock filter should be hittable on phone after NL filters apply")
+        lowStockFilter.tap()
+        XCTAssertFalse(banner.waitForExistence(timeout: 3), "Manual filter changes should dismiss stale NL banner state")
+
+        searchField.tap()
+        searchField.press(forDuration: 1)
+        let initialSelectAll = app.menuItems["Select All"]
+        if initialSelectAll.waitForExistence(timeout: 2) {
+            initialSelectAll.tap()
+            app.keys["delete"].tap()
+        }
+        searchField.typeText("low stock")
+        XCTAssertTrue(banner.waitForExistence(timeout: 10), "NL filters banner should reappear for a fresh structured query")
+
+        app.buttons["partsCatalogNLClearFiltersButton"].tap()
+
+        XCTAssertFalse(banner.waitForExistence(timeout: 3), "Banner should dismiss after clearing NL-applied filters")
+        XCTAssertEqual(searchField.value as? String, "low stock", "Clearing NL filters should preserve typed search text")
+
+        let clearedScreenshot = XCTAttachment(screenshot: app.screenshot())
+        clearedScreenshot.name = "WEI-299-banner-cleared"
+        clearedScreenshot.lifetime = .keepAlways
+        add(clearedScreenshot)
+
+        searchField.tap()
+        searchField.press(forDuration: 1)
+        let selectAll = app.menuItems["Select All"]
+        if selectAll.waitForExistence(timeout: 2) {
+            selectAll.tap()
+            app.keys["delete"].tap()
+        }
+        searchField.typeText("ordinary search")
+        XCTAssertFalse(banner.waitForExistence(timeout: 3), "Non-structured search should not show NL filters banner")
     }
 }

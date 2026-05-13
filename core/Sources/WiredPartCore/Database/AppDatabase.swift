@@ -8,8 +8,8 @@ public final class AppDatabase: Sendable {
     public let writer: any DatabaseWriter
 
     /// The total number of registered migrations. Update when adding new migrations.
-    /// Migrations are 000-080, so count = 81.
-    public static let schemaVersion = 81
+    /// Migrations are 000-087, so count = 88.
+    public static let schemaVersion = 88
 
     /// Initialize with an existing database writer and run all migrations.
     public init(_ writer: any DatabaseWriter) throws {
@@ -107,6 +107,9 @@ public final class AppDatabase: Sendable {
     /// Restore database from a backup file.
     public static func restoreDatabase(from backupPath: String, to dbPath: String) throws {
         let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: backupPath) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
         // Remove current DB files
         try? fileManager.removeItem(atPath: dbPath)
         try? fileManager.removeItem(atPath: dbPath + "-wal")

@@ -237,6 +237,7 @@ struct CategoriesTreeView: View {
 
     /// Load effective cost for every color in the hierarchy into the cache.
     private func loadColorPrices() {
+        // usability-hunter: acceptable - non-critical cache warm-up; hierarchy rows still render without price chips.
         guard let parts = appCore.partsService else { return }
         var cache: [Int64: Double?] = [:]
         for catNode in hierarchy.categories {

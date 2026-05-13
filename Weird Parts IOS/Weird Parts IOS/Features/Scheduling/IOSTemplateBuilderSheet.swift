@@ -16,6 +16,8 @@ struct IOSTemplateBuilderSheet: View {
     @State private var defaultJobId: Int64?
     @State private var isSaving = false
     @State private var actionError: String?
+    @State private var isDirty = false
+    @State private var showDiscardConfirmation = false
 
     private let weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
@@ -31,7 +33,9 @@ struct IOSTemplateBuilderSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showDiscardConfirmation = true } else { dismiss() }
+                    }
                         .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -44,7 +48,17 @@ struct IOSTemplateBuilderSheet: View {
                     }
                 }
             }
-            .interactiveDismissDisabled(isSaving)
+            .interactiveDismissDisabled(isDirty || isSaving)
+            .confirmationDialog(
+                "Discard changes?",
+                isPresented: $showDiscardConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved template changes will be lost.")
+            }
             .alert("Save Failed", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
                 Button("OK") { actionError = nil }
             } message: {
@@ -56,7 +70,9 @@ struct IOSTemplateBuilderSheet: View {
     private var basicInfoSection: some View {
         Section("Template Info") {
             TextField("Template Name", text: $templateName)
+                .onChange(of: templateName) { _, _ in isDirty = true }
             TextField("Description (optional)", text: $templateDescription)
+                .onChange(of: templateDescription) { _, _ in isDirty = true }
         }
     }
 
@@ -66,6 +82,7 @@ struct IOSTemplateBuilderSheet: View {
                 Toggle(day, isOn: Binding(
                     get: { selectedDays.contains(day) },
                     set: { isOn in
+                        isDirty = true
                         if isOn { selectedDays.insert(day) }
                         else { selectedDays.remove(day) }
                     }
@@ -77,6 +94,7 @@ struct IOSTemplateBuilderSheet: View {
     private var crewSection: some View {
         Section {
             Stepper("Default Crew Size: \(crewSize)", value: $crewSize, in: 1...20)
+                .onChange(of: crewSize) { _, _ in isDirty = true }
         } header: {
             Text("Crew")
         } footer: {
@@ -101,6 +119,7 @@ struct IOSTemplateBuilderSheet: View {
                 "\(key)_days": daysString,
                 "\(key)_crew_size": "\(crewSize)",
             ], category: "dispatch_templates")
+            isDirty = false
             isSaving = false
             dismiss()
         } catch {

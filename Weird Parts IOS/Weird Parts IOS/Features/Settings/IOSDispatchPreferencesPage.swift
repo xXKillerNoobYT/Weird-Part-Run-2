@@ -6,6 +6,7 @@ import WiredPartCore
 /// All values are stored as key-value settings using the `dispatch_` prefix.
 struct IOSDispatchPreferencesPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
 
     // MARK: - State
 
@@ -13,6 +14,9 @@ struct IOSDispatchPreferencesPage: View {
     @State private var loadError: String?
     @State private var saveError: String?
     @State private var activeSheet: ActiveSheet?
+    @State private var isDirty = false
+    @State private var hasLoadedSettings = false
+    @State private var showDiscardConfirmation = false
 
     // AI Dispatch
     @State private var enableAISuggestions = true
@@ -56,7 +60,17 @@ struct IOSDispatchPreferencesPage: View {
         }
         .navigationTitle("Dispatch Preferences")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(isDirty)
         .toolbar {
+            if isDirty {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showDiscardConfirmation = true
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -73,6 +87,13 @@ struct IOSDispatchPreferencesPage: View {
             ])
         }
         .task { loadSettings() }
+        .interactiveDismissDisabled(isDirty)
+        .alert("Discard changes?", isPresented: $showDiscardConfirmation) {
+            Button("Discard", role: .destructive) { dismiss() }
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("You have unsaved changes that will be lost.")
+        }
     }
 
     // MARK: - Form
@@ -150,11 +171,29 @@ struct IOSDispatchPreferencesPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!isDirty)
+                .accessibilityHint(isDirty ? "Saves dispatch preference changes" : "Make a dispatch preference change before saving")
             }
         }
+        .onChange(of: enableAISuggestions) { _, _ in markDirty() }
+        .onChange(of: enableAILearning) { _, _ in markDirty() }
+        .onChange(of: showConfidenceScores) { _, _ in markDirty() }
+        .onChange(of: enableFlexSelfAssign) { _, _ in markDirty() }
+        .onChange(of: requireManagerApproval) { _, _ in markDirty() }
+        .onChange(of: startAnytimeTarget) { _, _ in markDirty() }
+        .onChange(of: scheduleNeededTarget) { _, _ in markDirty() }
+        .onChange(of: favoriteGCTarget) { _, _ in markDirty() }
+        .onChange(of: defaultView) { _, _ in markDirty() }
+        .onChange(of: crewHistoryMonths) { _, _ in markDirty() }
+        .onChange(of: crewContinuityWeight) { _, _ in markDirty() }
     }
 
     // MARK: - Actions
+
+    private func markDirty() {
+        guard hasLoadedSettings else { return }
+        isDirty = true
+    }
 
     private func loadSettings() {
         guard let service = appCore.settingsService else {
@@ -163,6 +202,7 @@ struct IOSDispatchPreferencesPage: View {
             return
         }
 
+        hasLoadedSettings = false
         do {
             let map = try service.getSettingsByCategory("dispatch")
 
@@ -184,6 +224,10 @@ struct IOSDispatchPreferencesPage: View {
             loadError = userFriendlyError(error, context: "load")
         }
         isLoading = false
+        isDirty = false
+        Task { @MainActor in
+            hasLoadedSettings = true
+        }
     }
 
     private func saveSettings() {
@@ -208,6 +252,7 @@ struct IOSDispatchPreferencesPage: View {
             ]
             try service.upsertSettingsMap(data, category: "dispatch")
             saveError = nil
+            isDirty = false
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }

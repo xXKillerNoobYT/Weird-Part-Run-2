@@ -13,7 +13,8 @@ struct IOSFuelPage: View {
     // MARK: - State
 
     @State private var fuelLogs: [FleetService.FuelRow] = []
-    @State private var isLoading = true
+    @State private var isInitialLoading = true
+    @State private var isRefreshing = false
     @State private var searchText = ""
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
@@ -38,15 +39,22 @@ struct IOSFuelPage: View {
         }
             .navigationTitle("Fuel Logs")
             .searchable(text: $searchText, prompt: "Search fuel logs...")
-            .refreshable { loadData() }
+            .refreshable { loadData(isRefresh: true) }
             .task { loadData() }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { loadData() }
+                if phase == .active { loadData(isRefresh: !fuelLogs.isEmpty) }
             }
-            .onChange(of: dateRange) { loadData() }
-            .onChange(of: customStart) { loadData() }
-            .onChange(of: customEnd) { loadData() }
+            .onChange(of: dateRange) { loadData(isRefresh: true) }
+            .onChange(of: customStart) { loadData(isRefresh: true) }
+            .onChange(of: customEnd) { loadData(isRefresh: true) }
             .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    if isRefreshing {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Refreshing fuel logs")
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
@@ -71,7 +79,7 @@ struct IOSFuelPage: View {
 
     @ViewBuilder
     private var fuelList: some View {
-        if isLoading {
+        if isInitialLoading {
             ProgressView("Loading fuel logs...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
@@ -144,23 +152,27 @@ struct IOSFuelPage: View {
 
     // MARK: - Data Loading
 
-    private func loadData() {
+    private func loadData(isRefresh: Bool = false) {
         guard let service = appCore.fleetService else {
             loadError = "Fleet service not available"
-            isLoading = false
+            isInitialLoading = false
+            isRefreshing = false
             return
         }
-        isLoading = fuelLogs.isEmpty
+        let shouldShowInitialLoader = !isRefresh && fuelLogs.isEmpty
+        isInitialLoading = shouldShowInitialLoader
+        isRefreshing = !shouldShowInitialLoader
         loadError = nil
+        defer {
+            isInitialLoading = false
+            isRefreshing = false
+        }
         do {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd"
-            let startStr = formatter.string(from: effectiveStart)
-            let endStr = formatter.string(from: effectiveEnd)
+            let startStr = Formatters.localDateFormatter.string(from: effectiveStart)
+            let endStr = Formatters.localDateFormatter.string(from: effectiveEnd)
             fuelLogs = try service.listFuelLogs(start: startStr, end: endStr)
         } catch {
             loadError = userFriendlyError(error, context: "load fuel data")
         }
-        isLoading = false
     }
 }

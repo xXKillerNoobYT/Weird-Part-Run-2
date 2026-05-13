@@ -262,6 +262,39 @@ struct SettingsServiceTests {
         #expect(map["size"] == "14")
     }
 
+    @Test("upsertSettingsMap rolls back all writes when a later write fails")
+    func testUpsertSettingsMapRollsBackPartialWrites() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: "CREATE TEMP TABLE settings_write_probe (attempts INTEGER NOT NULL)")
+            try dbConn.execute(sql: "INSERT INTO settings_write_probe (attempts) VALUES (0)")
+            try dbConn.execute(sql: """
+                CREATE TEMP TRIGGER fail_second_atomic_probe_insert
+                BEFORE INSERT ON settings
+                WHEN NEW.category = 'atomic_probe'
+                BEGIN
+                    UPDATE settings_write_probe SET attempts = attempts + 1;
+                    SELECT CASE
+                        WHEN (SELECT attempts FROM settings_write_probe) > 1
+                        THEN RAISE(ABORT, 'probe settings write failure')
+                    END;
+                END
+                """)
+        }
+
+        #expect(throws: Error.self) {
+            try svc.upsertSettingsMap(
+                ["first": "saved", "second": "must fail"],
+                category: "atomic_probe"
+            )
+        }
+
+        let map = try svc.getSettingsByCategory("atomic_probe")
+        #expect(map.isEmpty)
+    }
+
     // MARK: - Business Profile
 
     @Test("createBusinessProfile and hasBusinessProfile")

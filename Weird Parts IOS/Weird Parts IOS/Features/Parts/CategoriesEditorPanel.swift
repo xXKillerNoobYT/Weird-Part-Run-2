@@ -688,12 +688,18 @@ struct ColorSupplierPartNumbersSection: View {
     @State private var supplierParts: [(supplierId: Int64, supplierName: String, supplierPartNumber: String?)] = []
     @State private var isExpanded = false
     @State private var isLoading = false
+    @State private var loadError: String?
 
     var body: some View {
         DisclosureGroup("Supplier Part Numbers", isExpanded: $isExpanded) {
             if isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, DS.Space.sm)
+            } else if let loadError {
+                Label(loadError, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
                     .padding(.vertical, DS.Space.sm)
             } else if supplierParts.isEmpty {
                 Text("No suppliers linked to parts with this color.")
@@ -737,17 +743,28 @@ struct ColorSupplierPartNumbersSection: View {
     }
 
     private func loadSupplierParts() {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            isLoading = false
+            loadError = "Parts service not available"
+            return
+        }
         isLoading = true
+        loadError = nil
         Task.detached {
             let results: [(supplierId: Int64, supplierName: String, supplierPartNumber: String?)]
+            let errorMessage: String?
             do {
                 results = try service.getColorSupplierPartNumbers(colorId: colorId)
+                errorMessage = nil
             } catch {
-                results = [] // Non-critical: supplier part numbers may not be configured
+                results = []
+                errorMessage = await MainActor.run {
+                    userFriendlyError(error, context: "load supplier part numbers")
+                }
             }
             await MainActor.run {
                 supplierParts = results
+                loadError = errorMessage
                 isLoading = false
             }
         }

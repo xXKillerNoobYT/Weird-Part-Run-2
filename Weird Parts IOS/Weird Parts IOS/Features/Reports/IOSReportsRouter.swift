@@ -46,6 +46,7 @@ enum ReportCategory: String, CaseIterable {
 /// Warehouse, Scheduling, Custom, Shared.
 struct IOSReportsRouter: View {
     let tabId: String
+    var initialCategory: ReportCategory? = nil
     @EnvironmentObject private var appCore: AppCore
     @State private var selectedCategory: ReportCategory = .labor
 
@@ -58,6 +59,12 @@ struct IOSReportsRouter: View {
             categoryContent
         }
         .navigationTitle("Reports")
+        .onAppear {
+            guard let initialCategory else { return }
+            if visibleCategories.contains(initialCategory) {
+                selectedCategory = initialCategory
+            }
+        }
     }
 
     // MARK: - Category Picker

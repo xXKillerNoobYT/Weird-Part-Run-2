@@ -13,7 +13,8 @@ struct IOSTrailersPage: View {
     // MARK: - State
 
     @State private var trailers: [FleetService.TrailerListItem] = []
-    @State private var isLoading = true
+    @State private var isInitialLoading = true
+    @State private var isRefreshing = false
     @State private var searchText = ""
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
@@ -33,12 +34,19 @@ struct IOSTrailersPage: View {
         trailerList
             .navigationTitle("Trailers")
             .searchable(text: $searchText, prompt: "Search trailers...")
-            .refreshable { loadData() }
+            .refreshable { loadData(isRefresh: true) }
             .task { loadData() }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { loadData() }
+                if phase == .active { loadData(isRefresh: !trailers.isEmpty) }
             }
             .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    if isRefreshing {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Refreshing trailers")
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         activeSheet = .createTrailer
@@ -58,7 +66,7 @@ struct IOSTrailersPage: View {
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
                 case .createTrailer:
-                    IOSCreateTrailerSheet(onSaved: { loadData() })
+                    IOSCreateTrailerSheet(onSaved: { loadData(isRefresh: true) })
                 case .help:
                     PageHelpSheet(
                         title: "Trailers Help",
@@ -78,7 +86,7 @@ struct IOSTrailersPage: View {
 
     @ViewBuilder
     private var trailerList: some View {
-        if isLoading {
+        if isInitialLoading {
             ProgressView("Loading trailers...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
@@ -174,19 +182,25 @@ struct IOSTrailersPage: View {
 
     // MARK: - Data Loading
 
-    private func loadData() {
+    private func loadData(isRefresh: Bool = false) {
         guard let service = appCore.fleetService else {
             loadError = "Fleet service not available"
-            isLoading = false
+            isInitialLoading = false
+            isRefreshing = false
             return
         }
-        isLoading = trailers.isEmpty
+        let shouldShowInitialLoader = !isRefresh && trailers.isEmpty
+        isInitialLoading = shouldShowInitialLoader
+        isRefreshing = !shouldShowInitialLoader
         loadError = nil
+        defer {
+            isInitialLoading = false
+            isRefreshing = false
+        }
         do {
             trailers = try service.listTrailers()
         } catch {
             loadError = userFriendlyError(error, context: "load trailers")
         }
-        isLoading = false
     }
 }

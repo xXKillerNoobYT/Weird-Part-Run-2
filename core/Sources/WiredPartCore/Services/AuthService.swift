@@ -933,6 +933,7 @@ public final class AuthService: Sendable {
                 "view_orders", "manage_orders", "approve_returns", "view_people", "manage_people",
                 "view_reports", "export_reports", "manage_settings", "manage_devices",
                 "manage_templates", "manage_notebooks", "perform_audit", "manager_override", "view_activity_log",
+                "notebooks.classify_todo", "notebooks.reclassify_todo", "notebooks.review_classification",
                 "view_fleet", "manage_fleet", "log_fleet", "view_tools", "manage_tools",
                 "view_scheduling", "manage_scheduling", "manage_dispatch",
                 "view_schedule", "manage_schedule", "dispatch_employees",
@@ -952,6 +953,8 @@ public final class AuthService: Sendable {
                 "wishlist.auto_approve",
                 // Forecasting / recommendation pipeline
                 "forecasting.approve_recommendation", "forecasting.dismiss_recommendation",
+                // Parts recommendation approvals
+                "parts.approve_recommendation", "parts.dismiss_recommendation",
             ],
             "Manager": [
                 "view_parts_catalog", "edit_parts_catalog", "edit_pricing", "show_dollar_values",
@@ -960,6 +963,7 @@ public final class AuthService: Sendable {
                 "clock_in_out", "consume_parts_any_job", "view_labor", "manage_labor",
                 "view_orders", "manage_orders", "approve_returns", "view_people", "manage_people",
                 "view_reports", "export_reports", "manage_templates", "manage_notebooks", "perform_audit",
+                "notebooks.classify_todo", "notebooks.reclassify_todo", "notebooks.review_classification",
                 "manager_override", "view_activity_log",
                 "view_fleet", "manage_fleet", "log_fleet", "view_tools", "manage_tools",
                 "view_scheduling", "manage_scheduling", "manage_dispatch",
@@ -977,6 +981,8 @@ public final class AuthService: Sendable {
                 "wishlist.auto_approve",
                 // Forecasting / recommendation pipeline
                 "forecasting.approve_recommendation", "forecasting.dismiss_recommendation",
+                // Parts recommendation approvals
+                "parts.approve_recommendation", "parts.dismiss_recommendation",
             ],
             "Office": [
                 "view_parts_catalog", "edit_parts_catalog", "show_dollar_values",

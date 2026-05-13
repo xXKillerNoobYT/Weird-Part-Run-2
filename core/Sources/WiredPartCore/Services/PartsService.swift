@@ -13,9 +13,9 @@ public final class PartsService: Sendable {
     private let db: AppDatabase
     private let auth: AuthService
 
-    public init(db: AppDatabase, auth: AuthService) {
+    public init(db: AppDatabase, auth: AuthService? = nil) {
         self.db = db
-        self.auth = auth
+        self.auth = auth ?? AuthService(db: db)
     }
 
     // MARK: - Result Types
@@ -162,6 +162,35 @@ public final class PartsService: Sendable {
             self.colorName = colorName
             self.brandName = brandName
             self.totalStock = totalStock
+        }
+    }
+
+    /// Partial details captured when an order operator fast-adds a part that is not in the catalog yet.
+    public struct FastAddCustomPartDraft: Sendable {
+        public var name: String
+        public var code: String?
+        public var manufacturerPartNumber: String?
+        public var notes: String?
+        public var categoryName: String
+        public var sourceLabel: String?
+        public var provenanceNote: String?
+
+        public init(
+            name: String,
+            code: String? = nil,
+            manufacturerPartNumber: String? = nil,
+            notes: String? = nil,
+            categoryName: String = "Uncategorized",
+            sourceLabel: String? = nil,
+            provenanceNote: String? = nil
+        ) {
+            self.name = name
+            self.code = code
+            self.manufacturerPartNumber = manufacturerPartNumber
+            self.notes = notes
+            self.categoryName = categoryName
+            self.sourceLabel = sourceLabel
+            self.provenanceNote = provenanceNote
         }
     }
 
@@ -335,6 +364,41 @@ public final class PartsService: Sendable {
         }
     }
 
+    public enum SupplierWebsiteSourcingKind: String, Sendable {
+        case linkedPart
+        case generalWebsite
+    }
+
+    public struct SupplierWebsiteSourcingCandidate: Sendable, Identifiable, Equatable {
+        public let kind: SupplierWebsiteSourcingKind
+        public let supplierId: Int64
+        public let supplierName: String
+        public let supplierPartNumber: String?
+        public let partId: Int64?
+        public let partName: String?
+        public let partCode: String?
+        public let website: String
+        public let handoffURL: URL
+
+        public var id: String {
+            [
+                kind.rawValue,
+                String(supplierId),
+                partId.map(String.init) ?? "general",
+                supplierPartNumber ?? ""
+            ].joined(separator: ":")
+        }
+
+        public var sourceLabel: String {
+            switch kind {
+            case .linkedPart:
+                "Supplier Websites - local supplier link"
+            case .generalWebsite:
+                "Supplier Websites - supplier handoff"
+            }
+        }
+    }
+
     // MARK: - Errors
 
     public enum PartsError: Error, LocalizedError, Sendable, Equatable {
@@ -451,6 +515,30 @@ public final class PartsService: Sendable {
                     guard let colorId: Int64 = row["color_id"] else { continue }
                     let key = "\(typeId)-\(brandId)"
                     brandTypeColorMap[key, default: []].insert(colorId)
+                }
+
+                // PE-COLORS: SKU rows are the additive source of truth for reusable colors
+                // under brand+type contexts. Keep the legacy parts-derived map above as a
+                // non-destructive fallback for existing data.
+                let skuRows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT type_id, brand_id, color_id
+                        FROM color_brand_skus
+                        WHERE deleted_at IS NULL AND is_active = 1
+                        """
+                )
+                for row in skuRows {
+                    let typeId: Int64 = row["type_id"]
+                    let brandId: Int64 = row["brand_id"]
+                    let colorId: Int64 = row["color_id"]
+                    let key = "\(typeId)-\(brandId)"
+                    brandTypeColorMap[key, default: []].insert(colorId)
+
+                    if let brand = brandById[brandId],
+                       typeBrandMap[typeId]?.contains(where: { $0.id == brandId }) != true {
+                        typeBrandMap[typeId, default: []].append(brand)
+                    }
                 }
 
                 // Merge type_color_links into the General (no brand) node for each type
@@ -1303,14 +1391,69 @@ public final class PartsService: Sendable {
         record.isActive = 1
         record.isDeprecated = 0
         record.isQrTagged = 0
+        let createdFields = [
+            "category_id", "style_id", "type_id", "color_id", "part_type", "code", "name",
+            "description", "brand_id", "manufacturer_part_number", "unit_of_measure",
+            "weight_lbs", "company_cost_price", "company_markup_percent", "min_stock_level",
+            "max_stock_level", "target_stock_level", "reorder_point", "notes", "image_url",
+            "shelf_location", "bin_location", "is_active", "is_deprecated", "is_qr_tagged"
+        ]
         try db.writer.write { dbConn in
             try record.insert(dbConn)
+            if let partId = record.id {
+                try FieldTimestampHelper.stamp(createdFields, table: "parts", rowId: partId, in: dbConn)
+            }
         }
         guard let partId = record.id else { throw PartsError.invalidInput("Failed to get ID after insert") }
         // Log creation in audit trail — intentionally non-fatal: part creation must succeed
         // even if part_change_log table doesn't exist yet (pre-migration-033 databases)
         try? logPartChange(partId: partId, userId: nil, userName: nil, action: "created", context: "Catalog")
         return partId
+    }
+
+    /// Create an incomplete placeholder part from the New Parts Order fast-add path.
+    @discardableResult
+    public func createFastAddCustomPartForJPO(_ draft: FastAddCustomPartDraft) throws -> Int64 {
+        let categoryName = draft.categoryName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let categoryId = try findOrCreateCategory(name: categoryName.isEmpty ? "Uncategorized" : categoryName)
+        let notes = buildFastAddNotes(from: draft)
+
+        return try createPart(
+            categoryId: categoryId,
+            name: draft.name,
+            code: normalizedOptional(draft.code),
+            description: "Placeholder catalog part created from New Parts Order fast add. Staging details required.",
+            manufacturerPartNumber: normalizedOptional(draft.manufacturerPartNumber),
+            notes: notes
+        )
+    }
+
+    private func buildFastAddNotes(from draft: FastAddCustomPartDraft) -> String {
+        var lines = [
+            "[FAST_ADD_INCOMPLETE]",
+            "Created from New Parts Order fast-add. Warehouse/order staging must complete catalog details."
+        ]
+        if let code = normalizedOptional(draft.code) {
+            lines.append("Known code: \(code)")
+        }
+        if let manufacturer = normalizedOptional(draft.manufacturerPartNumber) {
+            lines.append("Known manufacturer detail: \(manufacturer)")
+        }
+        if let sourceLabel = normalizedOptional(draft.sourceLabel) {
+            lines.append("Sourcing source: \(sourceLabel)")
+        }
+        if let provenanceNote = normalizedOptional(draft.provenanceNote) {
+            lines.append("Sourcing provenance: \(provenanceNote)")
+        }
+        if let notes = normalizedOptional(draft.notes) {
+            lines.append("Operator notes: \(notes)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func normalizedOptional(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     /// Update an existing part. Only non-nil fields are updated.
@@ -1350,31 +1493,32 @@ public final class PartsService: Sendable {
         try db.writer.write { dbConn in
             var setClauses: [String] = []
             var args: [DatabaseValueConvertible?] = []
+            var touchedFields: [String] = []
 
-            if let name { setClauses.append("name = ?"); args.append(name) }
-            if let code { setClauses.append("code = ?"); args.append(code) }
-            if let description { setClauses.append("description = ?"); args.append(description) }
-            if let categoryId { setClauses.append("category_id = ?"); args.append(categoryId) }
-            if let styleId { setClauses.append("style_id = ?"); args.append(styleId) }
-            if let typeId { setClauses.append("type_id = ?"); args.append(typeId) }
-            if let colorId { setClauses.append("color_id = ?"); args.append(colorId) }
-            if let brandId { setClauses.append("brand_id = ?"); args.append(brandId) }
-            if let partType { setClauses.append("part_type = ?"); args.append(partType) }
-            if let manufacturerPartNumber { setClauses.append("manufacturer_part_number = ?"); args.append(manufacturerPartNumber) }
-            if let unitOfMeasure { setClauses.append("unit_of_measure = ?"); args.append(unitOfMeasure) }
-            if let weightLbs { setClauses.append("weight_lbs = ?"); args.append(weightLbs) }
-            if let companyCostPrice { setClauses.append("company_cost_price = ?"); args.append(companyCostPrice) }
-            if let companyMarkupPercent { setClauses.append("company_markup_percent = ?"); args.append(companyMarkupPercent) }
-            if let minStockLevel { setClauses.append("min_stock_level = ?"); args.append(minStockLevel) }
-            if let maxStockLevel { setClauses.append("max_stock_level = ?"); args.append(maxStockLevel) }
-            if let targetStockLevel { setClauses.append("target_stock_level = ?"); args.append(targetStockLevel) }
-            if let reorderPoint { setClauses.append("reorder_point = ?"); args.append(reorderPoint) }
-            if let isDeprecated { setClauses.append("is_deprecated = ?"); args.append(isDeprecated) }
-            if let deprecationReason { setClauses.append("deprecation_reason = ?"); args.append(deprecationReason) }
-            if let notes { setClauses.append("notes = ?"); args.append(notes) }
-            if let imageUrl { setClauses.append("image_url = ?"); args.append(imageUrl) }
-            if let shelfLocation { setClauses.append("shelf_location = ?"); args.append(shelfLocation) }
-            if let binLocation { setClauses.append("bin_location = ?"); args.append(binLocation) }
+            if let name { setClauses.append("name = ?"); args.append(name); touchedFields.append("name") }
+            if let code { setClauses.append("code = ?"); args.append(code); touchedFields.append("code") }
+            if let description { setClauses.append("description = ?"); args.append(description); touchedFields.append("description") }
+            if let categoryId { setClauses.append("category_id = ?"); args.append(categoryId); touchedFields.append("category_id") }
+            if let styleId { setClauses.append("style_id = ?"); args.append(styleId); touchedFields.append("style_id") }
+            if let typeId { setClauses.append("type_id = ?"); args.append(typeId); touchedFields.append("type_id") }
+            if let colorId { setClauses.append("color_id = ?"); args.append(colorId); touchedFields.append("color_id") }
+            if let brandId { setClauses.append("brand_id = ?"); args.append(brandId); touchedFields.append("brand_id") }
+            if let partType { setClauses.append("part_type = ?"); args.append(partType); touchedFields.append("part_type") }
+            if let manufacturerPartNumber { setClauses.append("manufacturer_part_number = ?"); args.append(manufacturerPartNumber); touchedFields.append("manufacturer_part_number") }
+            if let unitOfMeasure { setClauses.append("unit_of_measure = ?"); args.append(unitOfMeasure); touchedFields.append("unit_of_measure") }
+            if let weightLbs { setClauses.append("weight_lbs = ?"); args.append(weightLbs); touchedFields.append("weight_lbs") }
+            if let companyCostPrice { setClauses.append("company_cost_price = ?"); args.append(companyCostPrice); touchedFields.append("company_cost_price") }
+            if let companyMarkupPercent { setClauses.append("company_markup_percent = ?"); args.append(companyMarkupPercent); touchedFields.append("company_markup_percent") }
+            if let minStockLevel { setClauses.append("min_stock_level = ?"); args.append(minStockLevel); touchedFields.append("min_stock_level") }
+            if let maxStockLevel { setClauses.append("max_stock_level = ?"); args.append(maxStockLevel); touchedFields.append("max_stock_level") }
+            if let targetStockLevel { setClauses.append("target_stock_level = ?"); args.append(targetStockLevel); touchedFields.append("target_stock_level") }
+            if let reorderPoint { setClauses.append("reorder_point = ?"); args.append(reorderPoint); touchedFields.append("reorder_point") }
+            if let isDeprecated { setClauses.append("is_deprecated = ?"); args.append(isDeprecated); touchedFields.append("is_deprecated") }
+            if let deprecationReason { setClauses.append("deprecation_reason = ?"); args.append(deprecationReason); touchedFields.append("deprecation_reason") }
+            if let notes { setClauses.append("notes = ?"); args.append(notes); touchedFields.append("notes") }
+            if let imageUrl { setClauses.append("image_url = ?"); args.append(imageUrl); touchedFields.append("image_url") }
+            if let shelfLocation { setClauses.append("shelf_location = ?"); args.append(shelfLocation); touchedFields.append("shelf_location") }
+            if let binLocation { setClauses.append("bin_location = ?"); args.append(binLocation); touchedFields.append("bin_location") }
 
             guard !setClauses.isEmpty else { return }
             setClauses.append("updated_at = datetime('now')")
@@ -1382,6 +1526,7 @@ public final class PartsService: Sendable {
 
             let sql = "UPDATE parts SET \(setClauses.joined(separator: ", ")) WHERE id = ? AND deleted_at IS NULL"
             try dbConn.execute(sql: sql, arguments: StatementArguments(args))
+            try FieldTimestampHelper.stamp(touchedFields, table: "parts", rowId: id, in: dbConn)
         }
 
         // Log field-level changes to audit trail (non-fatal)
@@ -1606,6 +1751,143 @@ public final class PartsService: Sendable {
         }
         guard let record else { throw PartsError.supplierNotFound(id) }
         return record
+    }
+
+    public static func supplierWebsiteHandoffURL(website: String, query: String) -> URL? {
+        let trimmedWebsite = website.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedWebsite.isEmpty else { return nil }
+
+        let normalizedWebsite: String
+        if trimmedWebsite.contains("://") {
+            normalizedWebsite = trimmedWebsite
+        } else {
+            normalizedWebsite = "https://\(trimmedWebsite)"
+        }
+
+        guard var components = URLComponents(string: normalizedWebsite),
+              let scheme = components.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              let host = components.host,
+              !host.isEmpty
+        else {
+            return nil
+        }
+
+        components.fragment = nil
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedQuery.isEmpty {
+            var queryItems = components.queryItems ?? []
+            queryItems.append(URLQueryItem(name: "q", value: trimmedQuery))
+            components.queryItems = queryItems
+        }
+
+        return components.url
+    }
+
+    public func supplierWebsiteSourcingCandidates(query: String, limit: Int = 10) throws -> [SupplierWebsiteSourcingCandidate] {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedQuery.count >= 2 else { return [] }
+        let loweredQuery = trimmedQuery.lowercased()
+
+        do {
+            return try db.writer.read { dbConn in
+                let linkedRows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT DISTINCT
+                               s.id AS supplier_id,
+                               s.name AS supplier_name,
+                               s.website AS supplier_website,
+                               p.id AS part_id,
+                               p.name AS part_name,
+                               p.code AS part_code,
+                               psl.supplier_part_number,
+                               psl.is_preferred
+                        FROM part_supplier_links psl
+                        JOIN parts p ON p.id = psl.part_id
+                            AND p.deleted_at IS NULL
+                            AND COALESCE(p.is_active, 1) = 1
+                        JOIN suppliers s ON s.id = psl.supplier_id
+                            AND s.deleted_at IS NULL
+                            AND COALESCE(s.is_active, 1) = 1
+                        WHERE psl.deleted_at IS NULL
+                          AND s.website IS NOT NULL
+                          AND TRIM(s.website) <> ''
+                          AND (
+                              LOWER(p.name) = ?
+                              OR LOWER(COALESCE(p.code, '')) = ?
+                              OR LOWER(COALESCE(p.manufacturer_part_number, '')) = ?
+                              OR LOWER(COALESCE(psl.supplier_part_number, '')) = ?
+                          )
+                        ORDER BY psl.is_preferred DESC, s.name ASC, p.name ASC
+                        LIMIT ?
+                        """,
+                    arguments: [loweredQuery, loweredQuery, loweredQuery, loweredQuery, limit]
+                )
+
+                let linkedCandidates = linkedRows.compactMap { row -> SupplierWebsiteSourcingCandidate? in
+                    guard let website: String = row["supplier_website"],
+                          let handoffURL = Self.supplierWebsiteHandoffURL(website: website, query: trimmedQuery)
+                    else {
+                        return nil
+                    }
+
+                    return SupplierWebsiteSourcingCandidate(
+                        kind: .linkedPart,
+                        supplierId: row["supplier_id"] as Int64,
+                        supplierName: row["supplier_name"] as String,
+                        supplierPartNumber: row["supplier_part_number"] as String?,
+                        partId: row["part_id"] as Int64,
+                        partName: row["part_name"] as String?,
+                        partCode: row["part_code"] as String?,
+                        website: website,
+                        handoffURL: handoffURL
+                    )
+                }
+
+                if !linkedCandidates.isEmpty {
+                    return linkedCandidates
+                }
+
+                let supplierRows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT id AS supplier_id, name AS supplier_name, website AS supplier_website
+                        FROM suppliers
+                        WHERE deleted_at IS NULL
+                          AND COALESCE(is_active, 1) = 1
+                          AND website IS NOT NULL
+                          AND TRIM(website) <> ''
+                        ORDER BY name ASC
+                        LIMIT ?
+                        """,
+                    arguments: [limit]
+                )
+
+                return supplierRows.compactMap { row -> SupplierWebsiteSourcingCandidate? in
+                    guard let website: String = row["supplier_website"],
+                          let handoffURL = Self.supplierWebsiteHandoffURL(website: website, query: trimmedQuery)
+                    else {
+                        return nil
+                    }
+
+                    return SupplierWebsiteSourcingCandidate(
+                        kind: .generalWebsite,
+                        supplierId: row["supplier_id"] as Int64,
+                        supplierName: row["supplier_name"] as String,
+                        supplierPartNumber: nil,
+                        partId: nil,
+                        partName: nil,
+                        partCode: nil,
+                        website: website,
+                        handoffURL: handoffURL
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
     }
 
     /// Create a new supplier. Returns the inserted row ID.
@@ -3256,14 +3538,14 @@ public final class PartsService: Sendable {
                     LEFT JOIN (
                         SELECT part_id, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
-                        WHERE movement_type IN ('consume', 'return_to_supplier')
+                        WHERE movement_type IN (\(WarehouseMovementType.consumptionSQLLiteralList))
                           AND created_at >= datetime('now', '-30 days') AND deleted_at IS NULL
                         GROUP BY part_id
                     ) m30 ON m30.part_id = p.id
                     LEFT JOIN (
                         SELECT part_id, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
-                        WHERE movement_type IN ('consume', 'return_to_supplier')
+                        WHERE movement_type IN (\(WarehouseMovementType.consumptionSQLLiteralList))
                           AND created_at >= datetime('now', '-90 days') AND deleted_at IS NULL
                         GROUP BY part_id
                     ) m90 ON m90.part_id = p.id
@@ -3519,14 +3801,14 @@ public final class PartsService: Sendable {
                     LEFT JOIN (
                         SELECT part_id, from_location_type AS lt, from_location_id AS lid, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
-                        WHERE movement_type IN ('consume')
+                        WHERE movement_type IN (\(WarehouseMovementType.consumptionSQLLiteralList))
                           AND created_at >= datetime('now','-30 days') AND deleted_at IS NULL
                         GROUP BY part_id, from_location_type, from_location_id
                     ) c30 ON c30.part_id = combos.part_id AND c30.lt = combos.lt AND c30.lid = combos.lid
                     LEFT JOIN (
                         SELECT part_id, from_location_type AS lt, from_location_id AS lid, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
-                        WHERE movement_type IN ('consume')
+                        WHERE movement_type IN (\(WarehouseMovementType.consumptionSQLLiteralList))
                           AND created_at >= datetime('now','-90 days') AND deleted_at IS NULL
                         GROUP BY part_id, from_location_type, from_location_id
                     ) c90 ON c90.part_id = combos.part_id AND c90.lt = combos.lt AND c90.lid = combos.lid
@@ -3792,7 +4074,7 @@ public final class PartsService: Sendable {
                     let consumed = try Int.fetchOne(dbConn, sql: """
                         SELECT COALESCE(SUM(ABS(qty)), 0) FROM stock_movements
                         WHERE part_id = ? AND from_location_type = ? AND from_location_id = ?
-                          AND movement_type IN ('consume')
+                          AND movement_type IN (\(WarehouseMovementType.consumptionSQLLiteralList))
                           AND created_at >= datetime('now', '-\(windowDays) days')
                           AND deleted_at IS NULL
                         """, arguments: [partId, locType, locId]) ?? 0
@@ -3803,7 +4085,7 @@ public final class PartsService: Sendable {
                     let consumed = try Int.fetchOne(dbConn, sql: """
                         SELECT COALESCE(SUM(ABS(qty)), 0) FROM stock_movements
                         WHERE part_id = ? AND from_location_type = ? AND from_location_id = ?
-                          AND movement_type IN ('consume')
+                          AND movement_type IN (\(WarehouseMovementType.consumptionSQLLiteralList))
                           AND created_at >= datetime('now', '-\(s.aduLookbackDays) days')
                           AND deleted_at IS NULL
                         """, arguments: [partId, locType, locId]) ?? 0
@@ -3963,17 +4245,20 @@ public final class PartsService: Sendable {
         }
     }
 
-    /// Approve a recommendation — applies the new values to location_stock_targets.
-    ///
-    /// - Parameters:
-    ///   - id: The `target_recommendations.id` to approve.
-    ///   - byUserId: The user performing the approval. Must hold the
-    ///     `forecasting.approve_recommendation` permission.
-    /// - Throws: `PartsError.insufficientPermissions` if the user lacks permission.
     public func approveRecommendation(id: Int64, byUserId: Int64) throws {
-        guard try auth.hasPermission(byUserId, permissionKey: "forecasting.approve_recommendation") else {
-            throw PartsError.insufficientPermissions(required: "forecasting.approve_recommendation")
+        try approveRecommendation(id: id, actorUserId: byUserId, requiredPermission: "forecasting.approve_recommendation")
+    }
+
+    public func approveRecommendation(id: Int64, userId: Int64) throws {
+        try approveRecommendation(id: id, actorUserId: userId, requiredPermission: "parts.approve_recommendation")
+    }
+
+    /// Approve a recommendation — applies the new values to location_stock_targets.
+    private func approveRecommendation(id: Int64, actorUserId: Int64, requiredPermission: String) throws {
+        guard try auth.hasPermission(actorUserId, permissionKey: requiredPermission) else {
+            throw PartsError.insufficientPermissions(required: requiredPermission)
         }
+
         try db.writer.write { dbConn in
             guard let rec = try TargetRecommendation.fetchOne(dbConn, key: id),
                   rec.status == "pending" else { return }
@@ -4009,7 +4294,7 @@ public final class PartsService: Sendable {
                 UPDATE target_recommendations SET
                     status = 'approved', approved_by = ?, approved_at = datetime('now')
                 WHERE id = ?
-                """, arguments: [byUserId, id])
+                """, arguments: [actorUserId, id])
         }
     }
 
@@ -4023,18 +4308,27 @@ public final class PartsService: Sendable {
     /// - Throws: `PartsError.insufficientPermissions` if the user lacks permission.
     /// - Throws: `PartsError.invalidInput` if `reason` is blank.
     public func dismissRecommendation(id: Int64, byUserId: Int64, reason: String) throws {
-        guard try auth.hasPermission(byUserId, permissionKey: "forecasting.dismiss_recommendation") else {
-            throw PartsError.insufficientPermissions(required: "forecasting.dismiss_recommendation")
-        }
+        try dismissRecommendation(id: id, actorUserId: byUserId, reason: reason, requiredPermission: "forecasting.dismiss_recommendation")
+    }
+
+    public func dismissRecommendation(id: Int64, userId: Int64, reason: String) throws {
+        try dismissRecommendation(id: id, actorUserId: userId, reason: reason, requiredPermission: "parts.dismiss_recommendation")
+    }
+
+    private func dismissRecommendation(id: Int64, actorUserId: Int64, reason: String, requiredPermission: String) throws {
         guard !reason.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw PartsError.invalidInput("Dismiss reason is required")
         }
+        guard try auth.hasPermission(actorUserId, permissionKey: requiredPermission) else {
+            throw PartsError.insufficientPermissions(required: requiredPermission)
+        }
+
         try db.writer.write { dbConn in
             try dbConn.execute(sql: """
                 UPDATE target_recommendations SET
                     status = 'dismissed', dismissed_by = ?, dismissed_reason = ?
                 WHERE id = ? AND status = 'pending'
-                """, arguments: [byUserId, reason, id])
+                """, arguments: [actorUserId, reason, id])
         }
     }
 
@@ -5858,7 +6152,7 @@ public final class PartsService: Sendable {
             let receivedRow = try Row.fetchOne(dbConn, sql: """
                 SELECT COALESCE(SUM(qty), 0) AS total_received
                 FROM stock_movements
-                WHERE supplier_id = ? AND movement_type = 'receipt' AND deleted_at IS NULL
+                WHERE supplier_id = ? AND movement_type = '\(WarehouseMovementType.receive.rawValue)' AND deleted_at IS NULL
                 """, arguments: [supplierId])
             let totalReceived: Int = receivedRow?["total_received"] ?? 0
 
@@ -5866,7 +6160,7 @@ public final class PartsService: Sendable {
             let returnedRow = try Row.fetchOne(dbConn, sql: """
                 SELECT COALESCE(SUM(qty), 0) AS total_returned
                 FROM stock_movements
-                WHERE supplier_id = ? AND movement_type = 'return' AND deleted_at IS NULL
+                WHERE supplier_id = ? AND movement_type = '\(WarehouseMovementType.returnToSupplier.rawValue)' AND deleted_at IS NULL
                 AND from_location_type IN ('warehouse', 'staging')
                 AND to_location_type = 'supplier'
                 """, arguments: [supplierId])
@@ -6881,6 +7175,23 @@ public final class PartsService: Sendable {
                     WHERE color_id = ? AND deleted_at IS NULL
                     ORDER BY type_id, brand_id
                     """, arguments: [colorId])
+                    .map(colorBrandSKUFromRow)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Fetch all active SKUs for a given type (across all brands and colors).
+    public func getSKUsForType(typeId: Int64) throws -> [ColorBrandSKU] {
+        do {
+            return try db.writer.read { dbConn in
+                try Row.fetchAll(dbConn, sql: """
+                    SELECT * FROM color_brand_skus
+                    WHERE type_id = ? AND deleted_at IS NULL AND is_active = 1
+                    ORDER BY color_id, brand_id
+                    """, arguments: [typeId])
                     .map(colorBrandSKUFromRow)
             }
         } catch {

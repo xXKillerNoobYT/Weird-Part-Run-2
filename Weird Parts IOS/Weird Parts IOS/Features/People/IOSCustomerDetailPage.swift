@@ -410,6 +410,8 @@ private struct AddCustomerContactSheet: View {
     @State private var email = ""
     @State private var errorMessage: String?
     @State private var isSaving = false
+    @State private var isDirty = false
+    @State private var showDiscardAlert = false
 
     var body: some View {
         NavigationStack {
@@ -417,18 +419,23 @@ private struct AddCustomerContactSheet: View {
                 Section("Contact") {
                     TextField("First Name", text: $firstName)
                         .textContentType(.givenName)
+                        .onChange(of: firstName) { _, _ in isDirty = true }
                     TextField("Last Name", text: $lastName)
                         .textContentType(.familyName)
+                        .onChange(of: lastName) { _, _ in isDirty = true }
                     TextField("Role (e.g. Site Contact, Billing)", text: $role)
+                        .onChange(of: role) { _, _ in isDirty = true }
                 }
                 Section("Details") {
                     TextField("Phone", text: $phone)
                         .textContentType(.telephoneNumber)
                         .keyboardType(.phonePad)
+                        .onChange(of: phone) { _, _ in isDirty = true }
                     TextField("Email", text: $email)
                         .textContentType(.emailAddress)
                         .keyboardType(.emailAddress)
                         .autocapitalization(.none)
+                        .onChange(of: email) { _, _ in isDirty = true }
                 }
                 if let error = errorMessage {
                     Section {
@@ -439,10 +446,11 @@ private struct AddCustomerContactSheet: View {
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Add Contact")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showDiscardAlert = true } else { dismiss() }
+                    }
                         .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -450,7 +458,14 @@ private struct AddCustomerContactSheet: View {
                         .disabled(firstName.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
                 }
             }
+            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved changes will be lost.")
+            }
         }
+        .interactiveDismissDisabled(isDirty || isSaving)
     }
 
     private func save() {
@@ -470,6 +485,7 @@ private struct AddCustomerContactSheet: View {
                 phone: phone,
                 email: email.isEmpty ? nil : email
             )
+            isDirty = false
             dismiss()
             onSave()
         } catch {
@@ -491,6 +507,8 @@ private struct AddCommunicationSheet: View {
     @State private var content = ""
     @State private var errorMessage: String?
     @State private var isSaving = false
+    @State private var isDirty = false
+    @State private var showDiscardAlert = false
 
     private let typeOptions = ["note", "call", "email", "meeting"]
 
@@ -504,10 +522,12 @@ private struct AddCommunicationSheet: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                    .onChange(of: commType) { _, _ in isDirty = true }
                 }
                 Section("Details") {
                     TextField("Notes", text: $content, axis: .vertical)
                         .lineLimit(3...8)
+                        .onChange(of: content) { _, _ in isDirty = true }
                 }
                 if let error = errorMessage {
                     Section {
@@ -518,10 +538,11 @@ private struct AddCommunicationSheet: View {
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Add Note")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showDiscardAlert = true } else { dismiss() }
+                    }
                         .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -529,7 +550,14 @@ private struct AddCommunicationSheet: View {
                         .disabled(content.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
                 }
             }
+            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved changes will be lost.")
+            }
         }
+        .interactiveDismissDisabled(isDirty || isSaving)
     }
 
     private func save() {
@@ -550,6 +578,7 @@ private struct AddCommunicationSheet: View {
                 content: content.trimmingCharacters(in: .whitespaces),
                 createdBy: userId
             )
+            isDirty = false
             dismiss()
             onSave()
         } catch {
@@ -572,15 +601,20 @@ private struct AddPaymentSheet: View {
     @State private var dueDate = Date().addingTimeInterval(30 * 86400)
     @State private var errorMessage: String?
     @State private var isSaving = false
+    @State private var isDirty = false
+    @State private var showDiscardAlert = false
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Invoice") {
                     TextField("Invoice Number", text: $invoiceNumber)
+                        .onChange(of: invoiceNumber) { _, _ in isDirty = true }
                     TextField("Amount", text: $amountText)
                         .keyboardType(.decimalPad)
+                        .onChange(of: amountText) { _, _ in isDirty = true }
                     DatePicker("Due Date", selection: $dueDate, displayedComponents: .date)
+                        .onChange(of: dueDate) { _, _ in isDirty = true }
                 }
                 if let error = errorMessage {
                     Section {
@@ -591,10 +625,11 @@ private struct AddPaymentSheet: View {
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Add Invoice")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showDiscardAlert = true } else { dismiss() }
+                    }
                         .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -602,7 +637,14 @@ private struct AddPaymentSheet: View {
                         .disabled(amountText.isEmpty || isSaving)
                 }
             }
+            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved changes will be lost.")
+            }
         }
+        .interactiveDismissDisabled(isDirty || isSaving)
     }
 
     private func save() {
@@ -633,6 +675,7 @@ private struct AddPaymentSheet: View {
                 invoiceNumber: invoiceNumber.isEmpty ? nil : invoiceNumber,
                 createdBy: userId
             )
+            isDirty = false
             dismiss()
             onSave()
         } catch {

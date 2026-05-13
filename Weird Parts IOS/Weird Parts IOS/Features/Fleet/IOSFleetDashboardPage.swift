@@ -279,11 +279,11 @@ struct IOSFleetDashboardPage: View {
                     let isToday = inspDate.hasPrefix(todayString)
                     Text(isToday ? "Inspected" : "No inspection today")
                         .font(.caption2)
-                        .foregroundStyle(isToday ? .green : .red)
+                        .foregroundStyle(DS.SemanticColor.inspectionStatus(isToday ? "inspected" : "missing"))
                 } else {
                     Text("Never inspected")
                         .font(.caption2)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(DS.SemanticColor.inspectionStatus("never_inspected"))
                 }
             }
 
@@ -454,9 +454,7 @@ struct IOSFleetDashboardPage: View {
                 .padding(.horizontal, 4)
 
             NavigationLink {
-                Text("Fleet Reports")
-                    .font(.title2)
-                    .foregroundStyle(.secondary)
+                IOSReportsRouter(tabId: "reports-hub", initialCategory: .fleet)
             } label: {
                 HStack {
                     Image(systemName: "chart.bar.fill")
@@ -502,9 +500,7 @@ struct IOSFleetDashboardPage: View {
     }
 
     private var todayString: String {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
-        return fmt.string(from: Date())
+        Formatters.localDateFormatter.string(from: Date())
     }
 
     // MARK: - Data Loading

@@ -24,6 +24,55 @@ struct JobsServiceTests {
         #expect(jobs.contains(where: { $0.jobNumber == "J-TEST" }))
     }
 
+    @Test("Create job creates exactly one active linked job notebook")
+    func testCreateJobCreatesLinkedNotebook() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try env.jobs.createJob(
+            jobNumber: "J-NB-001",
+            jobName: "Notebook Atomic Job",
+            createdBy: env.adminUserId
+        )
+
+        let notebooks = try env.notebooks.listNotebooks(notebookType: "job", jobId: jobId)
+        #expect(notebooks.count == 1)
+        #expect(notebooks.first?.status == "active")
+        #expect(notebooks.first?.title == "Notebook Atomic Job Job Notebook")
+    }
+
+    @Test("Create job rolls back when linked notebook cannot be created")
+    func testCreateJobRollsBackWhenNotebookCreationFails() throws {
+        let env = try E2ETestHelpers.setUp()
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now')")
+        }
+
+        var threw = false
+        do {
+            _ = try env.jobs.createJob(jobNumber: "J-NB-ROLLBACK", jobName: "Rollback Job")
+        } catch JobsService.JobsError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+
+        let jobCount = try env.db.writer.read { db in
+            try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM jobs WHERE job_number = ?",
+                arguments: ["J-NB-ROLLBACK"]
+            ) ?? 0
+        }
+        let notebookCount = try env.db.writer.read { db in
+            try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM notebooks WHERE title = ?",
+                arguments: ["Rollback Job Job Notebook"]
+            ) ?? 0
+        }
+
+        #expect(threw)
+        #expect(jobCount == 0)
+        #expect(notebookCount == 0)
+    }
+
     @Test("Get job detail")
     func testGetJobDetail() throws {
         let env = try E2ETestHelpers.setUp()
@@ -77,6 +126,86 @@ struct JobsServiceTests {
 
         let summary = try env.jobs.getLaborSummary(jobId: jobId)
         #expect(summary.totalEntries >= 1)
+    }
+
+    @Test("Clock out applies daily overtime across split jobs")
+    func testClockOutAggregatesDailyOvertimeAcrossSplitJobs() throws {
+        let env = try E2ETestHelpers.setUp()
+        let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-A", name: "Morning Job")
+        let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-B", name: "Afternoon Job")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES
+                    (?, ?, datetime('now', '-10 hours'), datetime('now', '-5 hours'), 5, 0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, firstJobId])
+        }
+
+        let secondEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: secondJobId)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE labor_entries SET clock_in = datetime('now', '-5 hours') WHERE id = ?",
+                arguments: [secondEntryId]
+            )
+        }
+
+        try env.jobs.clockOut(laborEntryId: secondEntryId)
+        let hours = try laborHours(env, entryId: secondEntryId)
+
+        #expect(hours.regular == 3.0)
+        #expect(hours.overtime == 2.0)
+    }
+
+    @Test("Clock out keeps single long entry overtime")
+    func testClockOutSingleEntryOvertime() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let entryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE labor_entries SET clock_in = datetime('now', '-10 hours') WHERE id = ?",
+                arguments: [entryId]
+            )
+        }
+
+        try env.jobs.clockOut(laborEntryId: entryId)
+        let hours = try laborHours(env, entryId: entryId)
+
+        #expect(hours.regular == 8.0)
+        #expect(hours.overtime == 2.0)
+    }
+
+    @Test("Clock out remains regular below daily threshold")
+    func testClockOutBelowDailyThreshold() throws {
+        let env = try E2ETestHelpers.setUp()
+        let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-REG-A", name: "Short Morning Job")
+        let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-REG-B", name: "Short Afternoon Job")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES
+                    (?, ?, datetime('now', '-5 hours'), datetime('now', '-3 hours'), 2, 0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, firstJobId])
+        }
+
+        let secondEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: secondJobId)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE labor_entries SET clock_in = datetime('now', '-3 hours') WHERE id = ?",
+                arguments: [secondEntryId]
+            )
+        }
+
+        try env.jobs.clockOut(laborEntryId: secondEntryId)
+        let hours = try laborHours(env, entryId: secondEntryId)
+
+        #expect(hours.regular == 3.0)
+        #expect(hours.overtime == 0.0)
     }
 
     // MARK: - Team Members
@@ -1632,5 +1761,16 @@ struct JobsServiceTests {
             threw = true
         } catch {}
         #expect(threw, "setClockEntryWorkType must throw requiredFieldEmpty when workType is whitespace-only")
+    }
+
+    private func laborHours(_ env: E2ETestHelpers.TestEnvironment, entryId: Int64) throws -> (regular: Double, overtime: Double) {
+        try env.db.writer.read { db in
+            let row = try Row.fetchOne(
+                db,
+                sql: "SELECT regular_hours, overtime_hours FROM labor_entries WHERE id = ?",
+                arguments: [entryId]
+            )
+            return (row?["regular_hours"] ?? 0.0, row?["overtime_hours"] ?? 0.0)
+        }
     }
 }

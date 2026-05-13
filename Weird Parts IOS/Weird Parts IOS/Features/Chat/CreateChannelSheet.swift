@@ -13,24 +13,43 @@ struct CreateChannelSheet: View {
     @State private var description = ""
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var showDiscardConfirmation = false
 
     // Supplier channel state
     @State private var selectedSupplierId: Int64 = 0
     @State private var suppliers: [PartsService.SupplierWithCount] = []
+    @State private var isLoadingSuppliers = false
+    @State private var supplierLoadError: String?
 
     private var isDM: Bool { channelType == "dm" }
     private var isSupplier: Bool { channelType == "supplier" }
+    private var isDirty: Bool {
+        !channelName.trimmingCharacters(in: .whitespaces).isEmpty ||
+            !description.trimmingCharacters(in: .whitespaces).isEmpty ||
+            selectedSupplierId != 0
+    }
 
     var body: some View {
         NavigationStack {
             Form {
                 if isSupplier {
                     Section("Supplier") {
+                        if isLoadingSuppliers && suppliers.isEmpty {
+                            ProgressView("Loading suppliers...")
+                        }
+
                         Picker("Select Supplier", selection: $selectedSupplierId) {
                             Text("Choose...").tag(Int64(0))
                             ForEach(suppliers, id: \.supplier.id) { item in
                                 Text(item.supplier.name).tag(item.supplier.id ?? Int64(0))
                             }
+                        }
+                        .disabled(isLoadingSuppliers)
+
+                        if let error = supplierLoadError {
+                            Text(error)
+                                .foregroundStyle(.red)
+                                .font(.caption)
                         }
                     }
                     Section("Channel Name (Optional)") {
@@ -60,10 +79,20 @@ struct CreateChannelSheet: View {
             .navigationTitle(isSupplier ? "Supplier Channel" : (isDM ? "New Message" : "New Channel"))
             .navigationBarTitleDisplayMode(.inline)
             .scrollDismissesKeyboard(.immediately)
-            .interactiveDismissDisabled(isSaving)
+            .refreshable {
+                await loadSuppliers()
+            }
+            .interactiveDismissDisabled(isDirty || isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty {
+                            showDiscardConfirmation = true
+                        } else {
+                            dismiss()
+                        }
+                    }
+                    .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") { saveChannel() }
@@ -72,9 +101,13 @@ struct CreateChannelSheet: View {
                 }
             }
             .task {
-                if isSupplier, let service = appCore.partsService {
-                    suppliers = (try? service.listSuppliers()) ?? []
-                }
+                await loadSuppliers()
+            }
+            .alert("Discard changes?", isPresented: $showDiscardConfirmation) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved conversation details will be lost.")
             }
         }
     }
@@ -82,6 +115,29 @@ struct CreateChannelSheet: View {
     private var isCreateDisabled: Bool {
         if isSupplier { return selectedSupplierId == 0 }
         return channelName.isEmpty
+    }
+
+    @MainActor
+    private func loadSuppliers() async {
+        guard isSupplier, !isLoadingSuppliers, !isSaving else { return }
+
+        isLoadingSuppliers = true
+        supplierLoadError = nil
+        defer { isLoadingSuppliers = false }
+
+        guard let service = appCore.partsService else {
+            supplierLoadError = "Parts service not available"
+            return
+        }
+
+        do {
+            suppliers = try service.listSuppliers()
+            if selectedSupplierId != 0 && !suppliers.contains(where: { ($0.supplier.id ?? 0) == selectedSupplierId }) {
+                selectedSupplierId = 0
+            }
+        } catch {
+            supplierLoadError = userFriendlyError(error, context: "load suppliers")
+        }
     }
 
     private func saveChannel() {

@@ -511,13 +511,13 @@ struct DashboardServiceTests {
         let (env, dash) = try freshEnv()
         let suppId = try E2ETestHelpers.seedSupplier(env)
 
-        // Create a submitted PO (counts toward outstanding value)
+        // Create an ordered PO (counts toward outstanding value)
         let poId = try env.orders.createPurchaseOrder(
             poNumber: "PO-SNAP-001",
             supplierId: suppId
         )
         try env.db.writer.write { db in
-            try db.execute(sql: "UPDATE purchase_orders SET status = 'submitted', total_cost = 500.0 WHERE id = ?", arguments: [poId])
+            try db.execute(sql: "UPDATE purchase_orders SET status = 'ordered', total_cost = 500.0 WHERE id = ?", arguments: [poId])
         }
 
         let snap = try dash.getFinancialSnapshot()

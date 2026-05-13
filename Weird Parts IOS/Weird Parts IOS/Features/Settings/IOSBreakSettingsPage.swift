@@ -12,6 +12,7 @@ import WiredPartCore
 /// 6. Full Breakdown (combined view)
 struct IOSBreakSettingsPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
 
     // MARK: - State
 
@@ -19,6 +20,9 @@ struct IOSBreakSettingsPage: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var successMessage: String?
+    @State private var isDirty = false
+    @State private var hasLoadedSettings = false
+    @State private var showDiscardConfirmation = false
 
     // Company settings
     @State private var selectedState: String = "WY"
@@ -65,7 +69,17 @@ struct IOSBreakSettingsPage: View {
             }
         }
         .navigationTitle("Break & Lunch")
+        .navigationBarBackButtonHidden(isDirty)
         .toolbar {
+            if isDirty {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showDiscardConfirmation = true
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -80,6 +94,13 @@ struct IOSBreakSettingsPage: View {
             ])
         }
         .task { loadSettings() }
+        .interactiveDismissDisabled(isDirty)
+        .alert("Discard changes?", isPresented: $showDiscardConfirmation) {
+            Button("Discard", role: .destructive) { dismiss() }
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("You have unsaved changes that will be lost.")
+        }
     }
 
     private enum ActiveSheet: Identifiable {
@@ -115,6 +136,7 @@ struct IOSBreakSettingsPage: View {
                     }
                 }
                 .onChange(of: selectedState) { _, _ in
+                    markDirty()
                     loadPoliciesForState()
                 }
 
@@ -163,6 +185,22 @@ struct IOSBreakSettingsPage: View {
         }
         // Fix #149: dismiss keyboard when scrolling break settings
         .scrollDismissesKeyboard(.interactively)
+        .onChange(of: roundingMinutes) { _, _ in markDirty() }
+        .onChange(of: roundingEnabled) { _, _ in markDirty() }
+        .onChange(of: autoFillBreaks) { _, _ in markDirty() }
+        .onChange(of: defaultMorningBreak) { _, _ in markDirty() }
+        .onChange(of: defaultLunch) { _, _ in markDirty() }
+        .onChange(of: defaultAfternoonBreak) { _, _ in markDirty() }
+        .onChange(of: companyPaidLunchMin) { _, _ in markDirty() }
+        .onChange(of: companyPaidBreakCount) { _, _ in markDirty() }
+        .onChange(of: companyPaidBreakMin) { _, _ in markDirty() }
+        .onChange(of: companyOfferedLunchMin) { _, _ in markDirty() }
+        .onChange(of: companyOfferedBreakCount) { _, _ in markDirty() }
+        .onChange(of: companyOfferedBreakMin) { _, _ in markDirty() }
+        .onChange(of: lunchBonusAmount) { _, _ in markDirty() }
+        .onChange(of: breakBonusAmount) { _, _ in markDirty() }
+        .onChange(of: lunchBonusEnabled) { _, _ in markDirty() }
+        .onChange(of: breakBonusEnabled) { _, _ in markDirty() }
     }
 
     // MARK: - Section 1: State Required Paid
@@ -398,6 +436,12 @@ struct IOSBreakSettingsPage: View {
 
     // MARK: - Actions
 
+    private func markDirty() {
+        guard hasLoadedSettings else { return }
+        isDirty = true
+        successMessage = nil
+    }
+
     private func loadSettings() {
         guard let breakSvc = appCore.breakService else {
             errorMessage = "Break service unavailable"
@@ -405,6 +449,7 @@ struct IOSBreakSettingsPage: View {
             return
         }
 
+        hasLoadedSettings = false
         do {
             let settings = try breakSvc.getCompanyBreakSettings()
             selectedState = settings.stateCode
@@ -422,6 +467,10 @@ struct IOSBreakSettingsPage: View {
             errorMessage = userFriendlyError(error, context: "load settings")
         }
         isLoading = false
+        isDirty = false
+        Task { @MainActor in
+            hasLoadedSettings = true
+        }
     }
 
     private func loadPoliciesForState() {
@@ -548,6 +597,7 @@ struct IOSBreakSettingsPage: View {
 
             errorMessage = nil
             successMessage = "Break settings saved successfully."
+            isDirty = false
 
             // Reload to confirm
             loadSettings()

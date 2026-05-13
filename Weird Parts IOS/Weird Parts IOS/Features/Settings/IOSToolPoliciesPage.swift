@@ -6,6 +6,7 @@ import WiredPartCore
 /// All values are stored as key-value settings using the `tool_policy_` prefix.
 struct IOSToolPoliciesPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
 
     // MARK: - State
 
@@ -13,6 +14,9 @@ struct IOSToolPoliciesPage: View {
     @State private var loadError: String?
     @State private var saveError: String?
     @State private var activeSheet: ActiveSheet?
+    @State private var isDirty = false
+    @State private var hasLoadedSettings = false
+    @State private var showDiscardConfirmation = false
 
     // Checkout Limits
     @State private var maxCheckoutDays: Int = 30
@@ -51,7 +55,17 @@ struct IOSToolPoliciesPage: View {
         }
         .navigationTitle("Tool Policies")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(isDirty)
         .toolbar {
+            if isDirty {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showDiscardConfirmation = true
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -69,6 +83,13 @@ struct IOSToolPoliciesPage: View {
             ])
         }
         .task { loadSettings() }
+        .interactiveDismissDisabled(isDirty)
+        .alert("Discard changes?", isPresented: $showDiscardConfirmation) {
+            Button("Discard", role: .destructive) { dismiss() }
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("You have unsaved changes that will be lost.")
+        }
     }
 
     // MARK: - Form
@@ -135,11 +156,29 @@ struct IOSToolPoliciesPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!isDirty)
+                .accessibilityHint(isDirty ? "Saves tool policy changes" : "Make a tool policy change before saving")
             }
         }
+        .onChange(of: maxCheckoutDays) { _, _ in markDirty() }
+        .onChange(of: overdueNotificationDays) { _, _ in markDirty() }
+        .onChange(of: autoExtendOnActiveJob) { _, _ in markDirty() }
+        .onChange(of: requireCheckoutCondition) { _, _ in markDirty() }
+        .onChange(of: requireReturnCondition) { _, _ in markDirty() }
+        .onChange(of: requireDamagePhoto) { _, _ in markDirty() }
+        .onChange(of: maintenanceAfterCheckouts) { _, _ in markDirty() }
+        .onChange(of: maintenanceReminderDays) { _, _ in markDirty() }
+        .onChange(of: allowTrades) { _, _ in markDirty() }
+        .onChange(of: tradeTimeoutDays) { _, _ in markDirty() }
+        .onChange(of: requireTradeCondition) { _, _ in markDirty() }
     }
 
     // MARK: - Actions
+
+    private func markDirty() {
+        guard hasLoadedSettings else { return }
+        isDirty = true
+    }
 
     private func loadSettings() {
         guard let service = appCore.settingsService else {
@@ -148,6 +187,7 @@ struct IOSToolPoliciesPage: View {
             return
         }
 
+        hasLoadedSettings = false
         do {
             let map = try service.getSettingsByCategory("tool_policy")
 
@@ -169,6 +209,10 @@ struct IOSToolPoliciesPage: View {
             loadError = userFriendlyError(error, context: "load")
         }
         isLoading = false
+        isDirty = false
+        Task { @MainActor in
+            hasLoadedSettings = true
+        }
     }
 
     private func saveSettings() {
@@ -193,6 +237,7 @@ struct IOSToolPoliciesPage: View {
             ]
             try service.upsertSettingsMap(data, category: "tool_policy")
             saveError = nil
+            isDirty = false
         } catch {
             saveError = userFriendlyError(error, context: "save order")
         }

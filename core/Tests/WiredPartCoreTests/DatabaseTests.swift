@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 import GRDB
 @testable import WiredPartCore
 
@@ -16,7 +17,7 @@ struct DatabaseTests {
         #expect(tableExists)
     }
 
-    @Test("All 81 migrations (000-080) apply successfully")
+    @Test("All 88 migrations (000-087) apply successfully")
     func testAllMigrationsApply() throws {
         let db = try AppDatabase.openInMemoryDatabase()
 
@@ -71,6 +72,8 @@ struct DatabaseTests {
             "payment_records",   // 043
             // Scheduling & estimation (046-047)
             "estimation_questions", // 047
+            "estimation_question_accuracy_reviews", // 083
+            "estimation_question_candidates", // 083
             // Tools detail (048-050)
             "tool_checkouts",    // 048
             // Vehicle & trailer (051-053)
@@ -83,6 +86,7 @@ struct DatabaseTests {
             "wishlist_items",    // 057
             "background_task_log", // 058
             // Audit assignments & permissions (059-060)
+            "vehicle_location_logs", // 079
         ]
 
         for table in tables {
@@ -93,9 +97,144 @@ struct DatabaseTests {
         }
     }
 
-    @Test("Schema version is 81")
+    @Test("Schema version is 88")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 81)
+        #expect(AppDatabase.schemaVersion == 88)
+    }
+
+    @Test("Synced tables have nullable field timestamps column")
+    func testSyncedTablesFieldTimestampsColumn() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+
+        let missingTables = try db.writer.read { db in
+            try ConflictResolver.allowedSyncTables
+                .filter { !$0.hasPrefix("_") }
+                .filter { try db.tableExists($0) }
+                .filter { table in
+                    let columns = try db.columns(in: table).map(\.name)
+                    return !columns.contains(FieldTimestampHelper.columnName)
+                }
+                .sorted()
+        }
+
+        let missingList = missingTables.joined(separator: ", ")
+        #expect(missingTables.isEmpty, "Missing \(FieldTimestampHelper.columnName): \(missingList)")
+    }
+
+    @Test("Restore reports missing backup without deleting current database")
+    func testRestoreReportsMissingBackupWithoutDeletingCurrentDatabase() throws {
+        let fixture = try makeBackupFixture()
+        try "current database".write(toFile: fixture.dbPath, atomically: true, encoding: .utf8)
+
+        #expect(throws: (any Error).self) {
+            try AppDatabase.restoreDatabase(from: fixture.backupPath, to: fixture.dbPath)
+        }
+
+        let current = try String(contentsOfFile: fixture.dbPath, encoding: .utf8)
+        #expect(current == "current database")
+    }
+
+    @Test("Restore copies backup and sidecar files")
+    func testRestoreCopiesBackupAndSidecars() throws {
+        let fixture = try makeBackupFixture()
+        try FileManager.default.createDirectory(atPath: fixture.backupDir, withIntermediateDirectories: true)
+        try "backup database".write(toFile: fixture.backupPath, atomically: true, encoding: .utf8)
+        try "backup wal".write(toFile: fixture.backupPath + "-wal", atomically: true, encoding: .utf8)
+        try "backup shm".write(toFile: fixture.backupPath + "-shm", atomically: true, encoding: .utf8)
+        try "current database".write(toFile: fixture.dbPath, atomically: true, encoding: .utf8)
+
+        try AppDatabase.restoreDatabase(from: fixture.backupPath, to: fixture.dbPath)
+
+        #expect(try String(contentsOfFile: fixture.dbPath, encoding: .utf8) == "backup database")
+        #expect(try String(contentsOfFile: fixture.dbPath + "-wal", encoding: .utf8) == "backup wal")
+        #expect(try String(contentsOfFile: fixture.dbPath + "-shm", encoding: .utf8) == "backup shm")
+    }
+
+    @Test("Migration 080 adds live inspection records vehicle performed-at index")
+    func testMigration080InspectionRecordsVehiclePerformedAtIndex() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+
+        let indexes = try db.writer.read { db in
+            try Row.fetchAll(db, sql: "PRAGMA index_list('inspection_records')")
+        }
+
+        let index = indexes.first { row in
+            (row["name"] as String?) == "idx_ir_vehicle_performed_at_live"
+        }
+        #expect(index != nil, "inspection_records should have vehicle/performed_at index")
+        #expect((index?["partial"] as Int?) == 1, "vehicle/performed_at index should exclude deleted rows")
+
+        let indexedColumns = try db.writer.read { db in
+            try Row.fetchAll(db, sql: "PRAGMA index_info('idx_ir_vehicle_performed_at_live')")
+                .compactMap { $0["name"] as String? }
+        }
+        #expect(indexedColumns == ["vehicle_id", "performed_at"])
+
+        let queryPlan = try db.writer.read { db in
+            try Row.fetchAll(db, sql: """
+                EXPLAIN QUERY PLAN
+                SELECT result, performed_at FROM inspection_records
+                WHERE vehicle_id = ? AND deleted_at IS NULL
+                ORDER BY performed_at DESC LIMIT 1
+                """, arguments: [1])
+                .compactMap { $0["detail"] as String? }
+                .joined(separator: "\n")
+        }
+        #expect(queryPlan.contains("idx_ir_vehicle_performed_at_live"))
+    }
+
+    @Test("Migration 079 adds live vehicle latest-location index")
+    func testMigration079VehicleLocationLogsIndex() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+
+        let indexes = try db.writer.read { db in
+            try Row.fetchAll(db, sql: "PRAGMA index_list('vehicle_location_logs')")
+        }
+
+        let index = indexes.first { row in
+            (row["name"] as String?) == "idx_vll_vehicle_latest_live"
+        }
+        #expect(index != nil, "vehicle_location_logs should have latest-location index")
+        #expect((index?["partial"] as Int?) == 1, "latest-location index should exclude deleted rows")
+
+        let indexedColumns = try db.writer.read { db in
+            try Row.fetchAll(db, sql: "PRAGMA index_info('idx_vll_vehicle_latest_live')")
+                .compactMap { $0["name"] as String? }
+        }
+        #expect(indexedColumns == ["vehicle_id", "id"])
+
+        let queryPlan = try db.writer.read { db in
+            try Row.fetchAll(db, sql: """
+                EXPLAIN QUERY PLAN
+                SELECT MAX(id)
+                FROM vehicle_location_logs
+                WHERE deleted_at IS NULL
+                GROUP BY vehicle_id
+                """)
+                .compactMap { $0["detail"] as String? }
+                .joined(separator: "\n")
+        }
+        #expect(queryPlan.contains("idx_vll_vehicle_latest_live"))
+    }
+
+    private func makeBackupFixture() throws -> (
+        dbPath: String,
+        backupDir: String,
+        backupPath: String,
+        timestamp: String
+    ) {
+        let timestamp = "2026-05-12_120000"
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WiredPartCoreTests")
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let dbPath = root.appendingPathComponent("wiredpart.sqlite").path
+        let backupDir = root.appendingPathComponent("Backups").path
+        let backupPath = root
+            .appendingPathComponent("Backups")
+            .appendingPathComponent("pre-migration-\(timestamp).sqlite")
+            .path
+        return (dbPath, backupDir, backupPath, timestamp)
     }
 
     @Test("Migration 073 adds grid_rows and grid_cols to warehouse_floor_plans")

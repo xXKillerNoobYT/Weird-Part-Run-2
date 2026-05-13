@@ -580,6 +580,40 @@ struct PartsServiceInventoryTests {
         #expect(adu == 99.0)
     }
 
+    @Test("recalculateForecasts counts canonical consume movements")
+    func testRecalculateForecastsCountsCanonicalConsumeMovements() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "ConsumeForecastCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "ConsumeForecastPart", categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 100)
+
+        _ = try env.warehouse.createMovement(
+            partId: partId,
+            qty: 6,
+            fromLocationType: "warehouse",
+            fromLocationId: 1,
+            toLocationType: nil,
+            toLocationId: nil,
+            movementType: .consume,
+            performedBy: env.adminUserId
+        )
+
+        try env.parts.recalculateForecasts()
+
+        let forecast = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT forecast_adu_30, forecast_adu_90
+                FROM parts
+                WHERE id = ?
+                """, arguments: [partId])
+        }
+        let row = try #require(forecast)
+        let adu30: Double = row["forecast_adu_30"]
+        let adu90: Double = row["forecast_adu_90"]
+        #expect(abs(adu30 - 0.2) < 0.0001)
+        #expect(abs(adu90 - (6.0 / 90.0)) < 0.0001)
+    }
+
     @Test("recalculateForecastsPerLocation skips inactive parts")
     func testRecalculateForecastsPerLocationSkipsInactiveParts() throws {
         let env = try E2ETestHelpers.setUp()

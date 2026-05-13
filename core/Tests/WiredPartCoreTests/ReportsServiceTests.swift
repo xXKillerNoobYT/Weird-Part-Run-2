@@ -292,13 +292,12 @@ struct ReportsServiceTests {
         let partId = try E2ETestHelpers.seedPart(env, name: "Usage Part", categoryId: catId)
         _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
 
-        // Create a pull movement so the part appears in the usage report.
-        // qty must be positive; "pull" semantics come from fromLocationType="warehouse" + nil destination.
+        // Create a consume movement so the part appears in the usage report.
         _ = try env.warehouse.createMovement(
             partId: partId, qty: 3,
             fromLocationType: "warehouse", fromLocationId: 1,
             toLocationType: nil, toLocationId: nil,
-            movementType: "pull",
+            movementType: .consume,
             performedBy: env.adminUserId,
             unitCostAtMove: 5.0
         )
@@ -491,6 +490,42 @@ struct ReportsServiceTests {
         let row = rows.first(where: { $0.id == jobId })
         #expect(row != nil)
         #expect(row?.regularHours ?? 0.0 >= 4.0)
+    }
+
+    @Test("getPreBillingData excludes labor from locked billing periods")
+    func testPreBillingDataExcludesLockedBillingPeriods() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-PB-LOCK", name: "Locked Period Job")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO billing_periods
+                (job_id, period_start, period_end, locked_at, locked_by, created_at)
+                VALUES (?, '2026-03-01', '2026-03-31', '2026-04-02 09:00:00', ?, datetime('now'))
+                """, arguments: [jobId, env.adminUserId])
+
+            try db.execute(sql: """
+                INSERT INTO billing_periods
+                (job_id, period_start, period_end, locked_at, locked_by, created_at)
+                VALUES (?, '2026-04-01', '2026-04-30', NULL, NULL, datetime('now'))
+                """, arguments: [jobId])
+
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES
+                    (?, ?, '2026-03-15 07:00:00', '2026-03-15 11:00:00', 4.0, 0.0, 'completed', datetime('now')),
+                    (?, ?, '2026-04-15 07:00:00', '2026-04-15 10:00:00', 3.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId, env.adminUserId, jobId])
+        }
+
+        let mixedRows = try env.reports.getPreBillingData(startDate: "2026-03-01", endDate: "2026-04-30")
+        let mixedRow = mixedRows.first(where: { $0.id == jobId })
+        #expect(mixedRow != nil)
+        #expect(abs((mixedRow?.regularHours ?? 0.0) - 3.0) < 0.01)
+
+        let lockedRows = try env.reports.getPreBillingData(startDate: "2026-03-01", endDate: "2026-03-31")
+        #expect(lockedRows.first(where: { $0.id == jobId }) == nil)
     }
 
     @Test("getDailyReportSummary aggregates labor entries for a specific date")

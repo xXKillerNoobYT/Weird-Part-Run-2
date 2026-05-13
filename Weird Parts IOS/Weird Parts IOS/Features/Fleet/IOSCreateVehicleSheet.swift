@@ -51,6 +51,7 @@ struct IOSCreateVehicleSheet: View {
                 }
             }
         }
+        .presentationDetents([.large])
     }
 
     // MARK: - Sections

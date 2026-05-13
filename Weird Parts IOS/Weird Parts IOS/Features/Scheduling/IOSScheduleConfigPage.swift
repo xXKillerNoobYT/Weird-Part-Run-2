@@ -477,7 +477,11 @@ struct IOSScheduleConfigPage: View {
     // MARK: - Template & Holiday Actions
 
     private func saveShiftTemplate(_ data: ShiftTemplateEditSheet.TemplateData) {
-        guard let svc = appCore.schedulingService else { return }
+        guard let svc = appCore.schedulingService else {
+            saveError = "Service not available"
+            activeSheet = nil
+            return
+        }
         do {
             try svc.saveShiftTemplate(
                 id: data.existingId, name: data.name, hatId: data.hatId,
@@ -493,7 +497,11 @@ struct IOSScheduleConfigPage: View {
     }
 
     private func deleteShiftTemplate(_ id: Int64) {
-        guard let svc = appCore.schedulingService else { return }
+        guard let svc = appCore.schedulingService else {
+            saveError = "Service not available"
+            activeSheet = nil
+            return
+        }
         do {
             try svc.deleteShiftTemplate(id: id)
             shiftTemplates = (try? svc.getShiftTemplates()) ?? []
@@ -504,7 +512,11 @@ struct IOSScheduleConfigPage: View {
     }
 
     private func saveHoliday(_ data: HolidayEditSheet.HolidayData) {
-        guard let svc = appCore.schedulingService else { return }
+        guard let svc = appCore.schedulingService else {
+            saveError = "Service not available"
+            activeSheet = nil
+            return
+        }
         do {
             try svc.saveHoliday(
                 id: data.existingId, name: data.name, date: data.date,
@@ -518,7 +530,11 @@ struct IOSScheduleConfigPage: View {
     }
 
     private func deleteHoliday(_ id: Int64) {
-        guard let svc = appCore.schedulingService else { return }
+        guard let svc = appCore.schedulingService else {
+            saveError = "Service not available"
+            activeSheet = nil
+            return
+        }
         do {
             try svc.deleteHoliday(id: id)
             holidays = (try? svc.getHolidays()) ?? []

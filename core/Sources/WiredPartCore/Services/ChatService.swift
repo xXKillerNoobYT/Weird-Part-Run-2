@@ -19,11 +19,30 @@ public final class ChatService: Sendable {
     // MARK: - Error Types
     // =========================================================================
 
-    public enum ChatError: Error, Sendable {
+    public enum ChatError: LocalizedError, Sendable {
         case channelNotFound(Int64)
         case messageNotFound(Int64)
         case threadNotFound(Int64)
         case requiredFieldEmpty
+        case attachmentImportFailed
+        case readReceiptPersistenceFailed
+
+        public var errorDescription: String? {
+            switch self {
+            case .channelNotFound:
+                return "Chat channel not found."
+            case .messageNotFound:
+                return "Chat message not found."
+            case .threadNotFound:
+                return "Chat thread not found."
+            case .requiredFieldEmpty:
+                return "Required chat field is empty."
+            case .attachmentImportFailed:
+                return "Could not save the chat attachment."
+            case .readReceiptPersistenceFailed:
+                return "Could not update the read receipt."
+            }
+        }
     }
 
     // =========================================================================
@@ -318,6 +337,24 @@ public final class ChatService: Sendable {
             throw ChatError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
+            let canSend = try Bool.fetchOne(dbConn, sql: """
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM chat_channels cc
+                    INNER JOIN chat_channel_members ccm
+                        ON ccm.channel_id = cc.id
+                        AND ccm.user_id = ?
+                        AND ccm.left_at IS NULL
+                        AND ccm.deleted_at IS NULL
+                    WHERE cc.id = ?
+                      AND cc.is_active = 1
+                      AND cc.deleted_at IS NULL
+                )
+                """, arguments: [senderId, channelId]) ?? false
+            guard canSend else {
+                throw ChatError.channelNotFound(channelId)
+            }
+
             try dbConn.execute(
                 sql: """
                     INSERT INTO chat_messages
@@ -334,14 +371,49 @@ public final class ChatService: Sendable {
     /// Safe to call on every thread-view appearance — idempotent and monotonic
     /// (will not move the read pointer backwards if `messageId` is older).
     public func markRead(channelId: Int64, userId: Int64, messageId: Int64) throws {
-        try db.writer.write { dbConn in
-            try dbConn.execute(sql: """
-                INSERT INTO chat_read_receipts (channel_id, user_id, last_read_message_id, read_at)
-                VALUES (?, ?, ?, datetime('now'))
-                ON CONFLICT(channel_id, user_id) DO UPDATE
-                SET last_read_message_id = MAX(last_read_message_id, excluded.last_read_message_id),
-                    read_at = datetime('now')
-                """, arguments: [channelId, userId, messageId])
+        do {
+            try db.writer.write { dbConn in
+                let canRead = try Bool.fetchOne(dbConn, sql: """
+                    SELECT EXISTS(
+                        SELECT 1
+                        FROM chat_channels cc
+                        INNER JOIN chat_channel_members ccm
+                            ON ccm.channel_id = cc.id
+                            AND ccm.user_id = ?
+                            AND ccm.left_at IS NULL
+                            AND ccm.deleted_at IS NULL
+                        WHERE cc.id = ?
+                          AND cc.is_active = 1
+                          AND cc.deleted_at IS NULL
+                    )
+                    """, arguments: [userId, channelId]) ?? false
+                guard canRead else {
+                    throw ChatError.channelNotFound(channelId)
+                }
+
+                let messageExists = try Bool.fetchOne(dbConn, sql: """
+                    SELECT EXISTS(
+                        SELECT 1
+                        FROM chat_messages
+                        WHERE id = ? AND channel_id = ? AND deleted_at IS NULL
+                    )
+                    """, arguments: [messageId, channelId]) ?? false
+                guard messageExists else {
+                    throw ChatError.messageNotFound(messageId)
+                }
+
+                try dbConn.execute(sql: """
+                    INSERT INTO chat_read_receipts (channel_id, user_id, last_read_message_id, read_at)
+                    VALUES (?, ?, ?, datetime('now'))
+                    ON CONFLICT(channel_id, user_id) DO UPDATE
+                    SET last_read_message_id = MAX(last_read_message_id, excluded.last_read_message_id),
+                        read_at = datetime('now')
+                    """, arguments: [channelId, userId, messageId])
+            }
+        } catch let error as ChatError {
+            throw error
+        } catch {
+            throw ChatError.readReceiptPersistenceFailed
         }
     }
 
@@ -520,6 +592,71 @@ public final class ChatService: Sendable {
             unreadMentions: unreadMentions,
             openQuestions: openQuestions
         )
+    }
+
+    /// Job-scoped RFI counts for the job dashboard.
+    public struct JobRFISummary: Sendable {
+        public let jobId: Int64
+        public let totalCount: Int
+        public let openCount: Int
+        public let waitingCount: Int
+        public let closedCount: Int
+        public let supplierWaitingCount: Int
+        public let latestUpdatedAt: String?
+
+        public var hasSupplierWaiting: Bool { supplierWaitingCount > 0 }
+
+        public static func empty(jobId: Int64) -> JobRFISummary {
+            JobRFISummary(
+                jobId: jobId, totalCount: 0, openCount: 0, waitingCount: 0,
+                closedCount: 0, supplierWaitingCount: 0, latestUpdatedAt: nil
+            )
+        }
+    }
+
+    /// Summarize RFIs for one job without loading global RFI lists.
+    public func getRFISummaryForJob(jobId: Int64) throws -> JobRFISummary {
+        do {
+            return try db.writer.read { dbConn -> JobRFISummary in
+                guard let row = try Row.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) AS total_count,
+                           SUM(CASE
+                               WHEN LOWER(status) IN ('closed', 'resolved', 'answered', 'complete', 'completed')
+                               THEN 0 ELSE 1
+                           END) AS open_count,
+                           SUM(CASE
+                               WHEN LOWER(status) IN ('waiting', 'waiting_supplier', 'waiting_on_supplier', 'sent')
+                               THEN 1 ELSE 0
+                           END) AS waiting_count,
+                           SUM(CASE
+                               WHEN LOWER(status) IN ('closed', 'resolved', 'answered', 'complete', 'completed')
+                               THEN 1 ELSE 0
+                           END) AS closed_count,
+                           SUM(CASE
+                               WHEN LOWER(status) IN ('waiting', 'waiting_supplier', 'waiting_on_supplier', 'sent')
+                               THEN 1 ELSE 0
+                           END) AS supplier_waiting_count,
+                           MAX(updated_at) AS latest_updated_at
+                    FROM rfi_objects
+                    WHERE job_id = ? AND deleted_at IS NULL
+                    """, arguments: [jobId]) else {
+                    return .empty(jobId: jobId)
+                }
+
+                return JobRFISummary(
+                    jobId: jobId,
+                    totalCount: row["total_count"] ?? 0,
+                    openCount: row["open_count"] ?? 0,
+                    waitingCount: row["waiting_count"] ?? 0,
+                    closedCount: row["closed_count"] ?? 0,
+                    supplierWaitingCount: row["supplier_waiting_count"] ?? 0,
+                    latestUpdatedAt: row["latest_updated_at"] as String?
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) { return .empty(jobId: jobId) }
+            throw error
+        }
     }
 
     // =========================================================================
@@ -807,33 +944,61 @@ public final class ChatService: Sendable {
         userId: Int64,
         attachments: [PendingAttachment]
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
-            // Insert message
-            try dbConn.execute(
-                sql: """
-                    INSERT INTO chat_messages
-                    (channel_id, sender_id, message_type, content, created_at)
-                    VALUES (?, ?, 'text', ?, datetime('now'))
-                    """,
-                arguments: [channelId, userId, content]
-            )
-            let messageId = dbConn.lastInsertedRowID
+        guard !content.trimmingCharacters(in: .whitespaces).isEmpty || !attachments.isEmpty else {
+            throw ChatError.requiredFieldEmpty
+        }
 
-            // Insert each attachment
-            for att in attachments {
+        do {
+            return try db.writer.write { dbConn in
+                let canSend = try Bool.fetchOne(dbConn, sql: """
+                    SELECT EXISTS(
+                        SELECT 1
+                        FROM chat_channels cc
+                        INNER JOIN chat_channel_members ccm
+                            ON ccm.channel_id = cc.id
+                            AND ccm.user_id = ?
+                            AND ccm.left_at IS NULL
+                            AND ccm.deleted_at IS NULL
+                        WHERE cc.id = ?
+                          AND cc.is_active = 1
+                          AND cc.deleted_at IS NULL
+                    )
+                    """, arguments: [userId, channelId]) ?? false
+                guard canSend else {
+                    throw ChatError.channelNotFound(channelId)
+                }
+
+                // Insert message and attachments in one transaction so a failed
+                // attachment import never leaves a message that appears sent.
                 try dbConn.execute(
                     sql: """
-                        INSERT INTO message_attachments
-                        (message_id, attachment_type, file_path, file_name, file_size,
-                         mime_type, reference_id, reference_label)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO chat_messages
+                        (channel_id, sender_id, message_type, content, created_at)
+                        VALUES (?, ?, 'text', ?, datetime('now'))
                         """,
-                    arguments: [messageId, att.type, att.filePath, att.fileName,
-                                att.fileSize, att.mimeType, att.referenceId, att.referenceLabel]
+                    arguments: [channelId, userId, content]
                 )
-            }
+                let messageId = dbConn.lastInsertedRowID
 
-            return messageId
+                for att in attachments {
+                    try dbConn.execute(
+                        sql: """
+                            INSERT INTO message_attachments
+                            (message_id, attachment_type, file_path, file_name, file_size,
+                             mime_type, reference_id, reference_label)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                        arguments: [messageId, att.type, att.filePath, att.fileName,
+                                    att.fileSize, att.mimeType, att.referenceId, att.referenceLabel]
+                    )
+                }
+
+                return messageId
+            }
+        } catch let error as ChatError {
+            throw error
+        } catch {
+            throw ChatError.attachmentImportFailed
         }
     }
 

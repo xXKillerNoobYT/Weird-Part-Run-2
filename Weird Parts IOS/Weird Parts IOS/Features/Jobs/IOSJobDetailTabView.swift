@@ -1,12 +1,12 @@
 import SwiftUI
 import WiredPartCore
 
-/// 9-tab job detail view.
+/// Dashboard-first job detail view.
 ///
-/// Tabs: Overview, Team, Labor, Parts, Orders, Notebooks, Chat, Q&A, Costs.
-/// Each tab is a separate section that loads data for the given job.
+/// The overview is the command center; legacy tabs remain available as deep sections.
 struct IOSJobDetailTabView: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     let jobId: Int64
 
@@ -24,10 +24,17 @@ struct IOSJobDetailTabView: View {
     }
     @State private var jobJPOs: [OrdersService.JPOListItem] = []
     @State private var jobQAThreads: [ChatService.QAThreadRow] = []
+    @State private var oneTimeQuestions: [JobsService.OneTimeQuestionRow] = []
+    @State private var activeTodos: [JobsService.ClockTodoItem] = []
+    @State private var todoSummary = JobsService.JobTodoSummary(totalTodos: 0, completedTodos: 0)
+    @State private var laborSummary: JobsService.LaborSummary?
     @State private var teamMembers: [JobsService.TeamMemberRow] = []
     @State private var jobParts: [JobsService.JobPartRow] = []
     @State private var jobSupplierChannels: [ChatService.SupplierChannelRow] = []
+    @State private var jobNotebookId: Int64?
+    @State private var isLoadingJobNotebook = false
     @State private var tabError: String?
+    @State private var dashboardSectionErrors: [String: String] = [:]
     /// Job stages with computed statuses (Rough-in, Prep/Makeup, Trim-out).
     @State private var jobStages: [JobsService.JobStageStatus] = []
 
@@ -58,7 +65,9 @@ struct IOSJobDetailTabView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Tab picker
-            tabPicker
+            if selectedTab != "overview" {
+                tabPicker
+            }
 
             // Tab error banner
             if let tabError {
@@ -97,6 +106,23 @@ struct IOSJobDetailTabView: View {
         .navigationTitle(job?.jobName ?? "Job Detail")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    ForEach(tabs, id: \.id) { tab in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                selectedTab = tab.id
+                            }
+                        } label: {
+                            Label(tab.label, systemImage: tab.icon)
+                        }
+                        .accessibilityIdentifier("jobDetailToolbarSection_\(tab.id)")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("More job sections")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     activeSheet = .editJob
@@ -141,62 +167,391 @@ struct IOSJobDetailTabView: View {
     // MARK: - Tab Picker
 
     private var tabPicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(tabs, id: \.id) { tab in
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            selectedTab = tab.id
-                        }
-                    } label: {
-                        Label(tab.label, systemImage: tab.icon)
-                            .font(.caption)
-                            .fontWeight(selectedTab == tab.id ? .bold : .regular)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(selectedTab == tab.id ? Color.accentColor : Color.secondary.opacity(0.15))
-                            )
-                            .foregroundStyle(selectedTab == tab.id ? .white : .primary)
-                    }
-                    .buttonStyle(.plain)
-                }
+        HStack(spacing: 8) {
+            if horizontalSizeClass == .compact, let estimateTab = tabs.first(where: { $0.id == "estimate" }) {
+                jobDetailTabButton(estimateTab)
+                    .padding(.leading, 8)
             }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(scrollableTabs, id: \.id) { tab in
+                        jobDetailTabButton(tab)
+                    }
+                }
+                .padding(.leading)
+                .padding(.vertical, 8)
+            }
+
+            if horizontalSizeClass == .compact {
+                Menu {
+                    ForEach(tabs, id: \.id) { tab in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                selectedTab = tab.id
+                            }
+                        } label: {
+                            Label(tab.label, systemImage: tab.icon)
+                        }
+                        .accessibilityIdentifier("jobDetailTabMenu_\(tab.id)")
+                    }
+                } label: {
+                    Label("Tabs", systemImage: "ellipsis.circle")
+                        .labelStyle(.iconOnly)
+                        .font(.title3)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityIdentifier("jobDetailTabMenu")
+                .accessibilityLabel("Job detail tabs")
+                .padding(.trailing, 8)
+            }
         }
+    }
+
+    private var scrollableTabs: [(id: String, label: String, icon: String)] {
+        guard horizontalSizeClass == .compact else { return tabs }
+        return tabs.filter { $0.id != "estimate" }
+    }
+
+    private func jobDetailTabButton(_ tab: (id: String, label: String, icon: String)) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                selectedTab = tab.id
+            }
+        } label: {
+            Label(tab.label, systemImage: tab.icon)
+                .font(.caption)
+                .fontWeight(selectedTab == tab.id ? .bold : .regular)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule().fill(selectedTab == tab.id ? Color.accentColor : Color.secondary.opacity(0.15))
+                )
+                .foregroundStyle(selectedTab == tab.id ? .white : .primary)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("jobDetailTab_\(tab.id)")
     }
 
     // MARK: - Tab Content
 
     @ViewBuilder
     private func tabContent(_ job: JobsService.JobDetail) -> some View {
-        ScrollView {
-            switch selectedTab {
-            case "overview":
-                overviewTab(job)
-            case "team":
+        switch selectedTab {
+        case "overview":
+            dashboardOverview(job)
+        case "team":
+            ScrollView {
                 teamTab(job)
-            case "labor":
+            }
+        case "labor":
+            ScrollView {
                 laborTab(job)
-            case "parts":
+            }
+        case "parts":
+            ScrollView {
                 partsTab(job)
-            case "orders":
+            }
+        case "orders":
+            ScrollView {
                 ordersTab(job)
-            case "notebooks":
-                notebooksTab(job)
-            case "chat":
+            }
+        case "notebooks":
+            notebooksTab(job)
+        case "chat":
+            ScrollView {
                 chatTab(job)
-            case "qa":
+            }
+        case "qa":
+            ScrollView {
                 qaTab(job)
-            case "costs":
+            }
+        case "costs":
+            ScrollView {
                 costsTab(job)
-            case "estimate":
+            }
+        case "estimate":
+            ScrollView {
                 estimateTab(job)
-            default:
-                Text("Unknown tab")
+            }
+        default:
+            Text("Unknown tab")
+        }
+    }
+
+    // MARK: - Dashboard Overview
+
+    private func dashboardOverview(_ job: JobsService.JobDetail) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                jobHeaderCard(job)
+                blockerStrip(job)
+                actionSummaryGrid(job)
+                highUseRoutes(job)
+                workProgressSection(job)
+                peopleLaborFinancialSection(job)
+                notesAndProvenanceSection(job)
+            }
+            .padding()
+        }
+        .background(Color(.systemGroupedBackground))
+        .accessibilityIdentifier("jobDetailDashboard")
+    }
+
+    private func jobHeaderCard(_ job: JobsService.JobDetail) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(job.jobName)
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(job.jobNumber)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                StatusBadge(text: job.status.replacingOccurrences(of: "_", with: " ").capitalized, color: statusColor(job.status))
+            }
+
+            HStack(spacing: 8) {
+                StatusBadge(text: job.priority.capitalized, color: priorityColor(job.priority))
+                StatusBadge(text: job.jobType.capitalized, color: .secondary)
+            }
+
+            dashboardInfoRow(icon: "person.crop.circle", title: "Customer", value: emptyFallback(job.customerName, fallback: "No customer set"))
+            dashboardInfoRow(icon: "mappin.and.ellipse", title: "Address", value: formattedAddress(job))
+            dashboardInfoRow(icon: "person.badge.key", title: "Lead", value: emptyFallback(job.leadUserName, fallback: "No lead assigned"))
+            if let due = job.dueDate, !due.isEmpty {
+                dashboardInfoRow(icon: "calendar", title: "Due", value: due)
             }
         }
+        .padding()
+        .dsCard()
+    }
+
+    private func blockerStrip(_ job: JobsService.JobDetail) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Status")
+                .font(.headline)
+
+            if job.status == "payment_hold" {
+                dashboardAlertRow(
+                    severity: .error,
+                    icon: "exclamationmark.octagon.fill",
+                    title: "Payment hold. Clock-in blocked.",
+                    message: "Resolve billing status before crews add labor.",
+                    destinationTab: "labor"
+                )
+            }
+
+            let openQA = jobQAThreads.filter { $0.status != "answered" }.count + oneTimeQuestions.filter { $0.status != "answered" }.count
+            if openQA > 0 {
+                dashboardAlertRow(
+                    severity: .warning,
+                    icon: "questionmark.bubble.fill",
+                    title: "\(openQA) open questions.",
+                    message: "Review job Q&A before work continues.",
+                    destinationTab: "qa"
+                )
+            }
+
+            let waitingRFIs = jobSupplierChannels.filter { $0.unreadCount > 0 }.count
+            if waitingRFIs > 0 {
+                dashboardAlertRow(
+                    severity: .warning,
+                    icon: "envelope.badge.fill",
+                    title: "\(waitingRFIs) RFIs need attention.",
+                    message: "Supplier channels have unread activity.",
+                    destinationTab: "chat"
+                )
+            }
+
+            let openTodos = max(todoSummary.totalTodos - todoSummary.completedTodos, activeTodos.count)
+            if openTodos > 0 {
+                dashboardAlertRow(
+                    severity: .warning,
+                    icon: "checklist.unchecked",
+                    title: "\(openTodos) open todos.",
+                    message: "Open the job todo list for the next work items.",
+                    destinationTab: "notebooks"
+                )
+            }
+
+            if job.status != "payment_hold" && openQA == 0 && waitingRFIs == 0 && openTodos == 0 {
+                dashboardAlertRow(
+                    severity: .info,
+                    icon: "checkmark.seal.fill",
+                    title: "No open blockers found.",
+                    message: "Dashboard modules loaded without active holds."
+                )
+            }
+        }
+    }
+
+    private func actionSummaryGrid(_ job: JobsService.JobDetail) -> some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            DashboardMetricCard(title: "Todos", value: "\(max(todoSummary.totalTodos - todoSummary.completedTodos, activeTodos.count)) open", subtitle: "\(todoSummary.totalTodos) total", icon: "checklist", color: .orange) {
+                selectedTab = "notebooks"
+            }
+
+            DashboardMetricCard(title: "Q&A", value: "\(jobQAThreads.filter { $0.status != "answered" }.count + oneTimeQuestions.filter { $0.status != "answered" }.count) open", subtitle: "Job questions", icon: "questionmark.circle", color: .purple) {
+                selectedTab = "qa"
+            }
+
+            DashboardMetricCard(title: "RFIs", value: "\(jobSupplierChannels.filter { $0.unreadCount > 0 }.count) waiting", subtitle: "\(jobSupplierChannels.count) supplier channels", icon: "envelope.badge", color: .blue) {
+                selectedTab = "chat"
+            }
+
+            DashboardMetricCard(title: "Notebook", value: activeTodos.isEmpty ? "No open todos" : "Has todos", subtitle: "Open job notes", icon: "note.text", color: .green) {
+                selectedTab = "notebooks"
+            }
+
+            DashboardMetricCard(title: "Parts/orders", value: "\(jobJPOs.count) orders", subtitle: "\(jobParts.count) parts", icon: "shippingbox", color: .indigo) {
+                selectedTab = "orders"
+            }
+
+            DashboardMetricCard(title: "Trailer", value: "No trailer onsite", subtitle: "Inventory unavailable", icon: "truck.box", color: .teal) {
+                selectedTab = "overview"
+            }
+        }
+    }
+
+    private func highUseRoutes(_ job: JobsService.JobDetail) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Routes")
+                .font(.headline)
+
+            dashboardRouteRow(icon: "questionmark.circle", title: "Job Q&A", subtitle: qASummaryText, tab: "qa", accessibilityIdentifier: "jobDetailQALink")
+            dashboardRouteRow(icon: "checklist", title: "Job todo list", subtitle: todoSummaryText, tab: "notebooks", accessibilityIdentifier: "jobDetailTodosLink")
+            dashboardRouteRow(icon: "note.text", title: "Job notebook", subtitle: "Open notes and job todos.", tab: "notebooks", accessibilityIdentifier: "jobDetailNotebookLink")
+            dashboardRouteRow(icon: "envelope.badge", title: "Requests for info", subtitle: rfiSummaryText, tab: "chat", accessibilityIdentifier: "jobDetailRFILink")
+            dashboardRouteRow(icon: "truck.box", title: "Trailer inventory", subtitle: "No trailer onsite for this job.", tab: "overview", accessibilityIdentifier: "jobDetailTrailerInventoryLink")
+            dashboardRouteRow(icon: "clock", title: "Labor and clock entries", subtitle: laborSummaryText(job), tab: "labor")
+            dashboardRouteRow(icon: "shippingbox", title: "Parts and orders", subtitle: "\(jobParts.count) parts, \(jobJPOs.count) purchase orders.", tab: "orders")
+
+            NavigationLink {
+                IOSEstimationReviewPage(jobId: jobId)
+                    .environmentObject(appCore)
+            } label: {
+                routeRowLabel(icon: "chart.line.uptrend.xyaxis", title: "Estimate reviews and actuals", subtitle: "Review estimate stages and actual work.")
+            }
+            .buttonStyle(.plain)
+
+            NavigationLink {
+                IOSDailyReportsPage()
+                    .environmentObject(appCore)
+            } label: {
+                routeRowLabel(icon: "doc.text.magnifyingglass", title: "Daily reports", subtitle: "Open daily job reporting.")
+            }
+            .buttonStyle(.plain)
+
+            dashboardRouteRow(icon: "person.2", title: "Team", subtitle: "\(teamMembers.count) loaded team members.", tab: "team")
+        }
+    }
+
+    private func workProgressSection(_ job: JobsService.JobDetail) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Work Progress")
+                .font(.headline)
+
+            stageProgressionBar(currentStage: job.status)
+                .padding(.vertical, 4)
+
+            if !jobStages.isEmpty {
+                JobStageProgressBar(stages: jobStages, compact: false)
+            }
+
+            if let est = job.estimatedHours, est > 0 {
+                progressRow(title: "Hours", value: "\(String(format: "%.1f", job.laborHours))/\(String(format: "%.1f", est))h", progress: min(job.laborHours / est, 1.0), tint: job.laborHours > est ? .red : .blue)
+            }
+
+            if appCore.hasPermission("view_job_financials"), let budget = job.budgetLimit, budget > 0 {
+                progressRow(title: "Budget", value: "\(formatCurrency(job.partsCost))/\(formatCurrency(budget))", progress: min(job.partsCost / budget, 1.0), tint: job.partsCost > budget ? .red : .green)
+            }
+        }
+        .padding()
+        .dsCard()
+    }
+
+    private func peopleLaborFinancialSection(_ job: JobsService.JobDetail) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("People and Labor")
+                .font(.headline)
+
+            dashboardInfoRow(icon: "person.2", title: "Team", value: "\(job.teamCount) assigned, \(teamMembers.count) loaded")
+            dashboardInfoRow(icon: "clock", title: "Labor", value: laborSummaryText(job))
+
+            if appCore.hasPermission("view_job_financials") {
+                let laborCost = job.laborHours * (job.billingRate ?? 0)
+                dashboardInfoRow(icon: "dollarsign.circle", title: "Costs", value: "\(formatCurrency(laborCost + job.partsCost)) total")
+            }
+
+            if job.status == "warranty" {
+                dashboardInfoRow(icon: "shield.checkered", title: "Warranty", value: warrantySummary(job))
+            }
+
+            if appCore.hasPermission("manage_flex_pool") {
+                dashboardInfoRow(icon: "person.badge.clock", title: "Flex pool", value: isInFlexPool ? "In pool" : "Not in pool")
+            }
+        }
+        .padding()
+        .dsCard()
+    }
+
+    private func notesAndProvenanceSection(_ job: JobsService.JobDetail) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Notes")
+                .font(.headline)
+
+            if let notes = job.notes, !notes.isEmpty {
+                Text(notes)
+                    .font(.subheadline)
+                    .lineLimit(4)
+            } else {
+                Text("No job notes yet.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !dashboardSectionErrors.isEmpty {
+                ForEach(dashboardSectionErrors.sorted(by: { $0.key < $1.key }), id: \.key) { key, message in
+                    dashboardInfoRow(icon: "exclamationmark.triangle", title: "\(key) unavailable", value: message)
+                }
+            }
+
+            if let updated = job.updatedAt {
+                Text("Updated \(updated)")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+
+            if isLoadingAISummary {
+                Label("Generating summary...", systemImage: "sparkles")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if let summary = aiSummary {
+                Text(summary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if let loadedAt = aiSummaryLoadedAt {
+                    Text("Generated \(loadedAt, style: .relative) ago")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            } else {
+                Button {
+                    Task { await loadAISummary(job) }
+                } label: {
+                    Label("Generate AI summary", systemImage: "sparkles")
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding()
+        .dsCard()
     }
 
     // MARK: - Overview Tab
@@ -861,29 +1216,46 @@ struct IOSJobDetailTabView: View {
     // MARK: - Notebooks Tab
 
     private func notebooksTab(_ job: JobsService.JobDetail) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Job Notebooks")
-                    .font(.headline)
-                Spacer()
-            }
+        Group {
+            if let notebookId = jobNotebookId {
+                IOSNotebookDetailPage(notebookId: notebookId)
+                    .environmentObject(appCore)
+            } else {
+                VStack(alignment: .leading, spacing: 16) {
+                    if isLoadingJobNotebook {
+                        ProgressView("Loading job notebook...")
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    } else {
+                        ContentUnavailableView {
+                            Label("This job does not have a notebook yet", systemImage: "note.text.badge.plus")
+                        } description: {
+                            Text("Create a job notebook for \(job.jobName), or retry loading if it was just created on another device.")
+                        } actions: {
+                            HStack(spacing: 12) {
+                                Button {
+                                    createMissingJobNotebook(for: job)
+                                } label: {
+                                    Label("Create job notebook", systemImage: "plus.circle")
+                                        .frame(minHeight: 44)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .accessibilityIdentifier("jobNotebookCreateRecovery")
 
-            Text("Notebooks for \(job.jobName) can be viewed in the Notebooks module.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            Button {
-                NotificationCenter.default.post(
-                    name: .navigateToModule,
-                    object: nil,
-                    userInfo: ["moduleId": "notebooks", "tabId": "notebooks-job-notebooks"]
-                )
-            } label: {
-                Label("Open Job Notebooks", systemImage: "note.text")
+                                Button {
+                                    loadJobNotebook()
+                                } label: {
+                                    Label("Retry", systemImage: "arrow.clockwise")
+                                        .frame(minHeight: 44)
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                    }
+                }
+                .padding()
             }
-            .buttonStyle(.bordered)
         }
-        .padding()
+        .task { loadJobNotebook() }
     }
 
     // MARK: - Chat Tab
@@ -982,6 +1354,175 @@ struct IOSJobDetailTabView: View {
         }
     }
 
+    // MARK: - Dashboard Components
+
+    private func dashboardInfoRow(icon: String, title: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .foregroundStyle(.secondary)
+                .frame(width: 22)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func dashboardAlertRow(
+        severity: DSAlertSeverity,
+        icon: String,
+        title: String,
+        message: String,
+        destinationTab: String? = nil,
+        accessibilityIdentifier: String? = nil
+    ) -> some View {
+        Button {
+            if let destinationTab {
+                selectedTab = destinationTab
+            }
+        } label: {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: icon)
+                    .foregroundStyle(severity.color)
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.primary)
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if destinationTab != nil {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding()
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .dsAlertCard(severity)
+        }
+        .buttonStyle(.plain)
+        .disabled(destinationTab == nil)
+        .accessibilityIdentifier(accessibilityIdentifier ?? "")
+    }
+
+    private func dashboardRouteRow(icon: String, title: String, subtitle: String, tab: String, accessibilityIdentifier: String? = nil) -> some View {
+        Button {
+            selectedTab = tab
+        } label: {
+            routeRowLabel(icon: icon, title: title, subtitle: subtitle)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(accessibilityIdentifier ?? "")
+    }
+
+    private func routeRowLabel(icon: String, title: String, subtitle: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.primary)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .dsCard()
+        .accessibilityElement(children: .combine)
+    }
+
+    private func progressRow(title: String, value: String, progress: Double, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title)
+                    .font(.subheadline)
+                Spacer()
+                Text(value)
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+            ProgressView(value: progress)
+                .tint(tint)
+        }
+    }
+
+    private var qASummaryText: String {
+        let openCount = jobQAThreads.filter { $0.status != "answered" }.count + oneTimeQuestions.filter { $0.status != "answered" }.count
+        return openCount == 0 ? "No open job questions." : "\(openCount) open job questions."
+    }
+
+    private var todoSummaryText: String {
+        let openCount = max(todoSummary.totalTodos - todoSummary.completedTodos, activeTodos.count)
+        return openCount == 0 ? "No open todos for this job." : "\(openCount) open / \(todoSummary.totalTodos) total."
+    }
+
+    private var rfiSummaryText: String {
+        let waitingCount = jobSupplierChannels.filter { $0.unreadCount > 0 }.count
+        if waitingCount > 0 { return "\(waitingCount) supplier channels waiting." }
+        return jobSupplierChannels.isEmpty ? "No open requests for info." : "\(jobSupplierChannels.count) supplier channels."
+    }
+
+    private func laborSummaryText(_ job: JobsService.JobDetail) -> String {
+        if let laborSummary {
+            let total = laborSummary.totalRegularHours + laborSummary.totalOvertimeHours
+            return "\(String(format: "%.1f", total)) hours from \(laborSummary.uniqueWorkers) workers."
+        }
+        return "\(String(format: "%.1f", job.laborHours)) total hours."
+    }
+
+    private func emptyFallback(_ value: String?, fallback: String) -> String {
+        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return fallback
+        }
+        return value
+    }
+
+    private func formattedAddress(_ job: JobsService.JobDetail) -> String {
+        let parts = [job.addressLine1, job.city, job.state, job.zip]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return parts.isEmpty ? "No address set" : parts.joined(separator: ", ")
+    }
+
+    private func warrantySummary(_ job: JobsService.JobDetail) -> String {
+        switch (job.warrantyStartDate, job.warrantyEndDate) {
+        case let (start?, end?):
+            return "\(start) to \(end)"
+        case let (_, end?):
+            return "Ends \(end)"
+        default:
+            return "Warranty active"
+        }
+    }
+
     // MARK: - Q&A Tab
 
     private func qaTab(_ job: JobsService.JobDetail) -> some View {
@@ -1051,6 +1592,8 @@ struct IOSJobDetailTabView: View {
             job = try service.getJob(id: jobId)
             // Load job stages with computed statuses
             jobStages = try service.listJobStages(forJobId: jobId)
+            loadDashboardSections()
+            loadJobNotebook()
             // Load flex pool status for managers
             if appCore.hasPermission("manage_flex_pool"),
                let svc = appCore.schedulingService {
@@ -1060,6 +1603,51 @@ struct IOSJobDetailTabView: View {
             loadError = userFriendlyError(error, context: "load job data")
         }
         isLoading = false
+    }
+
+    private func loadDashboardSections() {
+        dashboardSectionErrors = [:]
+        loadTodoDashboardData()
+        loadJobQuestionsDashboardData()
+        loadTeamMembers()
+        loadJobParts()
+        loadJobOrders()
+        loadJobQA()
+        loadJobSupplierChannels()
+        loadLaborSummary()
+    }
+
+    private func loadJobNotebook() {
+        guard let service = appCore.notebooksService else {
+            tabError = "Notebooks service not available"
+            isLoadingJobNotebook = false
+            return
+        }
+        isLoadingJobNotebook = jobNotebookId == nil
+        do {
+            jobNotebookId = try service.listNotebooks(notebookType: "job", jobId: jobId).first?.id
+        } catch {
+            tabError = userFriendlyError(error, context: "load job notebook")
+        }
+        isLoadingJobNotebook = false
+    }
+
+    private func createMissingJobNotebook(for job: JobsService.JobDetail) {
+        guard let service = appCore.notebooksService,
+              let userId = appCore.currentUser?.id else {
+            tabError = "Not logged in. Please log in and try again."
+            return
+        }
+        do {
+            jobNotebookId = try service.createNotebook(
+                title: "\(job.jobName) Job Notebook",
+                notebookType: "job",
+                jobId: job.id,
+                createdBy: userId
+            )
+        } catch {
+            tabError = userFriendlyError(error, context: "create job notebook")
+        }
     }
 
     private func toggleFlexPool(job: JobsService.JobDetail) {
@@ -1078,66 +1666,129 @@ struct IOSJobDetailTabView: View {
 
     private func loadTeamMembers() {
         guard let service = appCore.jobsService else {
-            tabError = "Service not available"
+            setDashboardSectionError("Team", "Service not available")
             return
         }
         do {
             teamMembers = try service.getTeamMembers(jobId: jobId)
+            clearDashboardSectionError("Team")
         } catch {
-            tabError = userFriendlyError(error, context: "load job details")
+            let message = userFriendlyError(error, context: "load job details")
+            tabError = message
+            setDashboardSectionError("Team", message)
         }
     }
 
     private func loadJobParts() {
         guard let service = appCore.jobsService else {
-            tabError = "Service not available"
+            setDashboardSectionError("Parts", "Service not available")
             return
         }
         do {
             jobParts = try service.getJobParts(jobId: jobId)
+            clearDashboardSectionError("Parts")
         } catch {
-            tabError = userFriendlyError(error, context: "load job details")
+            let message = userFriendlyError(error, context: "load job details")
+            tabError = message
+            setDashboardSectionError("Parts", message)
         }
     }
 
     private func loadJobOrders() {
         guard let service = appCore.ordersService else {
-            tabError = "Service not available"
+            setDashboardSectionError("Orders", "Service not available")
             return
         }
         do {
             jobJPOs = try service.listJPOs(jobId: jobId)
+            clearDashboardSectionError("Orders")
         } catch {
-            tabError = userFriendlyError(error, context: "load job details")
+            let message = userFriendlyError(error, context: "load job details")
+            tabError = message
+            setDashboardSectionError("Orders", message)
         }
     }
 
     private func loadJobQA() {
         guard let service = appCore.chatService else {
-            tabError = "Service not available"
+            setDashboardSectionError("Q&A", "Service not available")
             return
         }
         do {
             jobQAThreads = try service.listQAThreads(jobId: jobId)
+            clearDashboardSectionError("Q&A")
         } catch {
-            tabError = userFriendlyError(error, context: "load job details")
+            let message = userFriendlyError(error, context: "load job details")
+            tabError = message
+            setDashboardSectionError("Q&A", message)
         }
     }
 
     private func loadJobSupplierChannels() {
         guard let service = appCore.chatService else {
-            tabError = "Service not available"
+            setDashboardSectionError("RFIs", "Service not available")
             return
         }
         guard let userId = appCore.currentUser?.id else {
-            tabError = "Not logged in"
+            setDashboardSectionError("RFIs", "Not logged in")
             return
         }
         do {
             jobSupplierChannels = try service.listSupplierChannelsForJob(jobId: jobId, userId: userId)
+            clearDashboardSectionError("RFIs")
         } catch {
-            tabError = userFriendlyError(error, context: "load job details")
+            let message = userFriendlyError(error, context: "load job details")
+            tabError = message
+            setDashboardSectionError("RFIs", message)
         }
+    }
+
+    private func loadTodoDashboardData() {
+        guard let service = appCore.jobsService else {
+            setDashboardSectionError("Todos", "Service not available")
+            return
+        }
+        do {
+            todoSummary = try service.getJobTodoSummary(jobId: jobId)
+            activeTodos = try service.getActiveJobTodos(jobId: jobId)
+            clearDashboardSectionError("Todos")
+        } catch {
+            setDashboardSectionError("Todos", userFriendlyError(error, context: "load job todos"))
+        }
+    }
+
+    private func loadJobQuestionsDashboardData() {
+        guard let service = appCore.jobsService else {
+            setDashboardSectionError("Questions", "Service not available")
+            return
+        }
+        do {
+            oneTimeQuestions = try service.getQuestionsForJob(jobId: jobId)
+            clearDashboardSectionError("Questions")
+        } catch {
+            setDashboardSectionError("Questions", userFriendlyError(error, context: "load job questions"))
+        }
+    }
+
+    private func loadLaborSummary() {
+        guard let service = appCore.jobsService else {
+            setDashboardSectionError("Labor", "Service not available")
+            return
+        }
+        do {
+            laborSummary = try service.getLaborSummary(jobId: jobId)
+            clearDashboardSectionError("Labor")
+        } catch {
+            setDashboardSectionError("Labor", userFriendlyError(error, context: "load labor summary"))
+        }
+    }
+
+    private func setDashboardSectionError(_ section: String, _ message: String) {
+        dashboardSectionErrors[section] = message
+    }
+
+    private func clearDashboardSectionError(_ section: String) {
+        dashboardSectionErrors.removeValue(forKey: section)
     }
 
     // MARK: - Overview Helpers
@@ -1264,7 +1915,7 @@ struct IOSJobDetailTabView: View {
 
         isLoadingAISummary = true
 
-        let context: [String: String] = [
+        var context: [String: String] = [
             "job_name": job.jobName,
             "job_number": job.jobNumber,
             "status": job.status,
@@ -1274,13 +1925,15 @@ struct IOSJobDetailTabView: View {
             "team_size": "\(job.teamCount) members",
             "labor_hours": String(format: "%.1f hours", job.laborHours),
             "estimated_hours": job.estimatedHours.map { String(format: "%.1f hours", $0) } ?? "N/A",
-            "parts_cost": formatCurrency(job.partsCost),
-            "budget": job.budgetLimit.map { formatCurrency($0) } ?? "No budget set",
             "lead": job.leadUserName ?? "Unassigned",
             "start_date": job.startDate ?? "Not set",
             "due_date": job.dueDate ?? "Not set",
             "notes": job.notes ?? "",
         ]
+        if appCore.hasPermission("view_job_financials") || appCore.hasPermission("show_dollar_values") {
+            context["parts_cost"] = formatCurrency(job.partsCost)
+            context["budget"] = job.budgetLimit.map { formatCurrency($0) } ?? "No budget set"
+        }
 
         let result = await aiService.generatePreFill(
             fieldType: "brief job overview summary (2-3 sentences covering status, progress, and anything notable)",
@@ -1355,6 +2008,46 @@ private struct MetricCard: View {
         .frame(minWidth: 100)
         .background(color.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+private struct DashboardMetricCard: View {
+    let title: String
+    let value: String
+    let subtitle: String
+    let icon: String
+    let color: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: icon)
+                        .foregroundStyle(color)
+                        .accessibilityHidden(true)
+                    Text(title)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Text(value)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
+            .background(color.opacity(0.10))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
     }
 }
 

@@ -6,6 +6,7 @@ import WiredPartCore
 /// Per-location-type defaults (Shop, Truck, Trailer) stored with `forecast_` prefix.
 struct IOSForecastSettingsPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
 
     // MARK: - State
 
@@ -13,6 +14,9 @@ struct IOSForecastSettingsPage: View {
     @State private var loadError: String?
     @State private var saveError: String?
     @State private var activeSheet: ActiveSheet?
+    @State private var isDirty = false
+    @State private var hasLoadedSettings = false
+    @State private var showDiscardConfirmation = false
 
     @State private var selectedLocationType: String = "shop"
 
@@ -61,7 +65,17 @@ struct IOSForecastSettingsPage: View {
         }
         .navigationTitle("Forecast Config")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(isDirty)
         .toolbar {
+            if isDirty {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showDiscardConfirmation = true
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -77,6 +91,36 @@ struct IOSForecastSettingsPage: View {
             ])
         }
         .task { loadSettings() }
+        .interactiveDismissDisabled(isDirty)
+        .alert("Discard changes?", isPresented: $showDiscardConfirmation) {
+            Button("Discard", role: .destructive) { dismiss() }
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("You have unsaved changes that will be lost.")
+        }
+    }
+
+    // MARK: - Validation
+
+    private var hasValidSettings: Bool {
+        commonMinMult > 0 && commonTargetMult > 0 && commonMaxMult > 0 &&
+        criticalMinMult > 0 && criticalTargetMult > 0 && criticalMaxMult > 0 &&
+        commonMinMult <= commonTargetMult && commonTargetMult <= commonMaxMult &&
+        criticalMinMult <= criticalTargetMult && criticalTargetMult <= criticalMaxMult
+    }
+
+    private var validationMessage: String? {
+        if commonMinMult <= 0 || commonTargetMult <= 0 || commonMaxMult <= 0 ||
+           criticalMinMult <= 0 || criticalTargetMult <= 0 || criticalMaxMult <= 0 {
+            return "All multipliers must be greater than zero."
+        }
+        if commonMinMult > commonTargetMult || commonTargetMult > commonMaxMult {
+            return "Common multipliers must follow MIN ≤ TARGET ≤ MAX."
+        }
+        if criticalMinMult > criticalTargetMult || criticalTargetMult > criticalMaxMult {
+            return "Critical multipliers must follow MIN ≤ TARGET ≤ MAX."
+        }
+        return nil
     }
 
     // MARK: - Form
@@ -87,6 +131,14 @@ struct IOSForecastSettingsPage: View {
                 Section {
                     Label(saveError, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
+                        .font(.caption)
+                }
+            }
+
+            if let validationMessage {
+                Section {
+                    Label(validationMessage, systemImage: "exclamationmark.circle")
+                        .foregroundStyle(.orange)
                         .font(.caption)
                 }
             }
@@ -185,10 +237,26 @@ struct IOSForecastSettingsPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!hasValidSettings)
+                .accessibilityHint(hasValidSettings ? "Saves forecast settings" : "Fix multiplier values before saving")
             }
         }
         // Fix #149: dismiss keyboard when scrolling forecast settings
         .scrollDismissesKeyboard(.interactively)
+        .onChange(of: method) { _, _ in markDirty() }
+        .onChange(of: lookbackDays) { _, _ in markDirty() }
+        .onChange(of: minDataDays) { _, _ in markDirty() }
+        .onChange(of: apwWindow) { _, _ in markDirty() }
+        .onChange(of: commonMinMult) { _, _ in markDirty() }
+        .onChange(of: commonTargetMult) { _, _ in markDirty() }
+        .onChange(of: commonMaxMult) { _, _ in markDirty() }
+        .onChange(of: criticalMinMult) { _, _ in markDirty() }
+        .onChange(of: criticalTargetMult) { _, _ in markDirty() }
+        .onChange(of: criticalMaxMult) { _, _ in markDirty() }
+        .onChange(of: freeSpaceThreshold) { _, _ in markDirty() }
+        .onChange(of: autoRecalcDaily) { _, _ in markDirty() }
+        .onChange(of: recalcHour) { _, _ in markDirty() }
+        .onChange(of: categorySuggestionMonths) { _, _ in markDirty() }
     }
 
     private func multiplierRow(_ label: String, value: Binding<Double>) -> some View {
@@ -204,6 +272,11 @@ struct IOSForecastSettingsPage: View {
 
     // MARK: - Actions
 
+    private func markDirty() {
+        guard hasLoadedSettings else { return }
+        isDirty = true
+    }
+
     private func loadSettings() {
         guard let service = appCore.settingsService else {
             loadError = "Settings service unavailable"
@@ -211,6 +284,7 @@ struct IOSForecastSettingsPage: View {
             return
         }
 
+        hasLoadedSettings = false
         do {
             let map = try service.getSettingsByCategory("forecast")
 
@@ -236,6 +310,10 @@ struct IOSForecastSettingsPage: View {
             loadError = userFriendlyError(error, context: "load")
         }
         isLoading = false
+        isDirty = false
+        Task { @MainActor in
+            hasLoadedSettings = true
+        }
     }
 
     private func saveSettings() {
@@ -268,6 +346,7 @@ struct IOSForecastSettingsPage: View {
 
             try service.upsertSettingsMap(data, category: "forecast")
             saveError = nil
+            isDirty = false
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }

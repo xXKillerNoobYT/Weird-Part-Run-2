@@ -10,6 +10,7 @@ struct IOSJPOCreationPage: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.openURL) private var openURL
 
     // MARK: - Job Context
 
@@ -30,10 +31,11 @@ struct IOSJPOCreationPage: View {
 
     @State private var searchText = ""
     @State private var searchResults: [Part] = []
+    @State private var supplierWebsiteCandidates: [PartsService.SupplierWebsiteSourcingCandidate] = []
     @State private var isSearching = false
     @State private var recentSearches: [String] = []
     @State private var bestMatchName: String?
-    @State private var internetHelpEnabled = false
+    @State private var sourcingSourceMode: SourcingSourceMode = .localCatalog
 
     // MARK: - Suggestions
 
@@ -48,6 +50,57 @@ struct IOSJPOCreationPage: View {
         let reason: String
         let suggestedQty: Int
         let partId: Int64?
+    }
+
+    enum SourcingSourceMode: String, CaseIterable, Identifiable {
+        case localCatalog
+        case supplierWebsites
+        case web
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .localCatalog: "Local Catalog"
+            case .supplierWebsites: "Supplier Websites"
+            case .web: "Web"
+            }
+        }
+
+        var compactTitle: String {
+            switch self {
+            case .localCatalog: "Catalog"
+            case .supplierWebsites: "Suppliers"
+            case .web: "Web"
+            }
+        }
+
+        var searchPlaceholder: String {
+            switch self {
+            case .localCatalog: "Search catalog parts..."
+            case .supplierWebsites: "Search connected suppliers..."
+            case .web: "Search the web for a part..."
+            }
+        }
+
+        var helperText: String {
+            switch self {
+            case .localCatalog:
+                "Known parts and warehouse stock."
+            case .supplierWebsites:
+                "Opens configured supplier websites with this part query."
+            case .web:
+                "Open Web stays Safari-only; no in-app search service is connected."
+            }
+        }
+
+        var provenanceLabel: String {
+            switch self {
+            case .localCatalog: "Local Catalog"
+            case .supplierWebsites: "Supplier Websites"
+            case .web: "Web placeholder"
+            }
+        }
     }
 
     private var suggestionContextPartId: Int64? {
@@ -72,6 +125,8 @@ struct IOSJPOCreationPage: View {
     @State private var showSuccessToast = false
     @State private var successMessage = ""
     @State private var pendingRemoveIndex: Int?
+    @State private var fastAddInitialName = ""
+    @State private var fastAddSourceMode: SourcingSourceMode = .localCatalog
 
     private let aiService = FoundationModelsService()
 
@@ -85,23 +140,44 @@ struct IOSJPOCreationPage: View {
         var quantity: Int
         let unitPrice: Double?
         let shopStock: Int
+        let warehouseStock: Int
         let stockStatus: StockStatus
+        let sourceMode: SourcingSourceMode
+        let provenanceLabel: String?
+        let requiresStaging: Bool
+        var brandSelectionMode: BrandSelectionMode = .specific
 
         enum StockStatus: String {
             case inStock
             case lowStock
             case outOfStock
         }
+
+        enum BrandSelectionMode: String, CaseIterable, Identifiable {
+            case specific
+            case general
+
+            var id: String { rawValue }
+
+            var title: String {
+                switch self {
+                case .specific: "Specific brand"
+                case .general: "General"
+                }
+            }
+        }
     }
 
     private enum ActiveSheet: Identifiable {
         case qrScanner
         case help
+        case fastAdd
 
         var id: String {
             switch self {
             case .qrScanner: "qrScanner"
             case .help: "help"
+            case .fastAdd: "fastAdd"
             }
         }
     }
@@ -162,26 +238,45 @@ struct IOSJPOCreationPage: View {
             }
         }
         .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .qrScanner:
-                QRScanSheet(expectedType: .part) { result in
-                    if let partId = result.entityId, result.isFound {
-                        addPartById(partId)
+            Group {
+                switch sheet {
+                case .qrScanner:
+                    QRScanSheet(expectedType: .part) { result in
+                        if let partId = result.entityId, result.isFound {
+                            addPartById(partId)
+                        }
+                        activeSheet = nil
                     }
-                    activeSheet = nil
+                    .environmentObject(appCore)
+                case .help:
+                    PageHelpSheet(
+                        title: "New Parts Order Help",
+                        sections: [
+                            ("What This Page Does", "Create a Job Purchase Order (JPO) to request parts for your job. Search for parts, add them to your cart, set quantities, and submit for office approval."),
+                            ("How to Use It", "1. Your clocked-in job auto-fills at the top. Change it if needed.\n2. Set priority (Normal/High/Urgent) and delivery preference.\n3. Choose a search source, then search by name or scan a QR code.\n4. Tap the + button to add parts to the cart. Adjust quantities with +/- buttons.\n5. Check the suggestions panel for companion parts you might need.\n6. Add notes for the office, then tap Submit."),
+                            ("Stock Colors", "Green dot = in stock at the shop. Orange dot = low stock. Red dot = out of stock. In-stock parts get transferred from the shop; out-of-stock parts get ordered from suppliers."),
+                            ("Tips", "Local Catalog is available now. Supplier Websites only opens configured supplier sites, and Web is Safari/browser-handoff only until an explicit provider and privacy approval exist. Tap a cart item to see companion suggestions for that specific part. The cart shows an estimated cost total based on last-known pricing.")
+                        ]
+                    )
+                case .fastAdd:
+                    FastAddCustomPartSheet(
+                        initialName: fastAddInitialName,
+                        sourceMode: fastAddSourceMode
+                    ) { part, quantity in
+                        addToCart(
+                            part: part,
+                            quantity: quantity,
+                            sourceMode: fastAddSourceMode,
+                            provenanceLabel: fastAddSourceMode.provenanceLabel,
+                            requiresStaging: true
+                        )
+                        searchText = part.name
+                        searchResults = []
+                    }
+                    .environmentObject(appCore)
                 }
-                .environmentObject(appCore)
-            case .help:
-                PageHelpSheet(
-                    title: "New Parts Order Help",
-                    sections: [
-                        ("What This Page Does", "Create a Job Purchase Order (JPO) to request parts for your job. Search for parts, add them to your cart, set quantities, and submit for office approval."),
-                        ("How to Use It", "1. Your clocked-in job auto-fills at the top. Change it if needed.\n2. Set priority (Normal/High/Urgent) and delivery preference.\n3. Search for parts by name or scan a QR code.\n4. Tap the + button to add parts to the cart. Adjust quantities with +/- buttons.\n5. Check the suggestions panel for companion parts you might need.\n6. Add notes for the office, then tap Submit."),
-                        ("Stock Colors", "Green dot = in stock at the shop. Orange dot = low stock. Red dot = out of stock. In-stock parts get transferred from the shop; out-of-stock parts get ordered from suppliers."),
-                        ("Tips", "Enable the Internet toggle on search to get AI-assisted part matching. Tap a cart item to see companion suggestions for that specific part. The cart shows an estimated cost total based on last-known pricing.")
-                    ]
-                )
             }
+            .presentationDetents([.large])
         }
         .alert("Error", isPresented: Binding(
             get: { submitError != nil },
@@ -320,14 +415,6 @@ struct IOSJPOCreationPage: View {
                     .font(.headline)
                 Spacer()
 
-                Toggle(isOn: $internetHelpEnabled) {
-                    Label("Internet", systemImage: "globe")
-                        .font(.caption2)
-                }
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .fixedSize()
-
                 Button { activeSheet = .qrScanner } label: {
                     Label("Scan", systemImage: "qrcode.viewfinder")
                         .font(.caption)
@@ -335,17 +422,42 @@ struct IOSJPOCreationPage: View {
                 .accessibilityLabel("Scan QR code")
             }
 
+            Picker("Search source", selection: $sourcingSourceMode) {
+                ForEach(SourcingSourceMode.allCases) { mode in
+                    Text(sizeClass == .regular ? mode.title : mode.compactTitle)
+                        .tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityLabel("Search source")
+            .onChange(of: sourcingSourceMode) {
+                searchResults = []
+                supplierWebsiteCandidates = []
+                bestMatchName = nil
+                if sourcingSourceMode != .web {
+                    searchParts()
+                } else {
+                    isSearching = false
+                }
+            }
+
+            Text(sourcingSourceMode.helperText)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(sizeClass == .regular ? 2 : 3)
+
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
-                TextField("Search parts...", text: $searchText)
+                TextField(sourcingSourceMode.searchPlaceholder, text: $searchText)
                     .textFieldStyle(.plain)
                     .onChange(of: searchText) { searchParts() }
                 if !searchText.isEmpty {
                     Button {
                         searchText = ""
                         searchResults = []
+                        supplierWebsiteCandidates = []
                         bestMatchName = nil
                     } label: {
                         Image(systemName: "xmark.circle.fill")
@@ -360,22 +472,30 @@ struct IOSJPOCreationPage: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
             if isSearching {
-                ProgressView()
+                Label(loadingSearchText, systemImage: "magnifyingglass")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 8)
             } else if searchResults.isEmpty && !searchText.isEmpty && searchText.count >= 2 {
-                Text("No parts found for \"\(searchText)\"")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 8)
+                if supplierWebsiteCandidates.isEmpty {
+                    sourceEmptyState
+                } else {
+                    ForEach(supplierWebsiteCandidates) { candidate in
+                        supplierWebsiteCandidateRow(candidate)
+                    }
+                }
             } else {
                 ForEach(searchResults, id: \.id) { part in
                     searchResultRow(part)
                 }
+                ForEach(supplierWebsiteCandidates) { candidate in
+                    supplierWebsiteCandidateRow(candidate)
+                }
             }
 
             // Recent searches
-            if searchText.isEmpty && !recentSearches.isEmpty {
+            if sourcingSourceMode == .localCatalog && searchText.isEmpty && !recentSearches.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Recent")
                         .font(.caption2)
@@ -398,13 +518,143 @@ struct IOSJPOCreationPage: View {
                 }
             }
 
-            if searchText.isEmpty && recentSearches.isEmpty {
+            if searchText.isEmpty && (recentSearches.isEmpty || sourcingSourceMode != .localCatalog) {
                 Text("Type at least 2 characters to search")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
         }
         .padding(sizeClass == .regular ? 12 : 0)
+    }
+
+    private var loadingSearchText: String {
+        switch sourcingSourceMode {
+        case .localCatalog: "Searching local catalog..."
+        case .supplierWebsites: "Checking connected suppliers..."
+        case .web: "Preparing browser handoff..."
+        }
+    }
+
+    @ViewBuilder
+    private var sourceEmptyState: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            switch sourcingSourceMode {
+            case .localCatalog:
+                Text("No catalog parts found for \"\(searchText)\"")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    fastAddButton(accessibilityLabel: "Fast add custom part")
+                    Button {
+                        sourcingSourceMode = .supplierWebsites
+                    } label: {
+                        Label("Search Supplier Websites", systemImage: "building.2")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel("Search supplier websites")
+                }
+            case .supplierWebsites:
+                Label("No supplier website connections", systemImage: "building.2")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Add supplier websites in Parts > Suppliers, use Local Catalog, or fast-add the part for staging.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    Button {
+                        sourcingSourceMode = .localCatalog
+                    } label: {
+                        Label("Use Local Catalog", systemImage: "shippingbox")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    fastAddButton(accessibilityLabel: "Fast add custom part from supplier website search")
+                }
+            case .web:
+                Label("Open Web uses Safari only", systemImage: "safari")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("No search provider or API is connected. Use Safari outside the app for open-web research, then fast-add only the details you choose to bring back.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    Button {
+                        sourcingSourceMode = .localCatalog
+                    } label: {
+                        Label("Use Local Catalog", systemImage: "shippingbox")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    fastAddButton(accessibilityLabel: "Fast add custom part from web search")
+                }
+            }
+        }
+        .padding(.vertical, 8)
+    }
+
+    private func fastAddButton(accessibilityLabel: String) -> some View {
+        Button {
+            fastAddInitialName = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            fastAddSourceMode = sourcingSourceMode
+            activeSheet = .fastAdd
+        } label: {
+            Label("Fast Add Part", systemImage: "plus.circle")
+                .font(.caption)
+        }
+        .buttonStyle(.bordered)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private func supplierWebsiteCandidateRow(_ candidate: PartsService.SupplierWebsiteSourcingCandidate) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: candidate.kind == .linkedPart ? "link.circle.fill" : "building.2")
+                .font(.title3)
+                .foregroundStyle(candidate.kind == .linkedPart ? .green : .blue)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(candidate.supplierName)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                if let partName = candidate.partName {
+                    Text(partName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                HStack(spacing: 4) {
+                    Text(candidate.sourceLabel)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    if let supplierPartNumber = candidate.supplierPartNumber, !supplierPartNumber.isEmpty {
+                        Text(supplierPartNumber)
+                            .font(.caption2)
+                            .monospaced()
+                            .foregroundStyle(.secondary)
+                    } else if let partCode = candidate.partCode, !partCode.isEmpty {
+                        Text(partCode)
+                            .font(.caption2)
+                            .monospaced()
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            Spacer()
+
+            Button {
+                openURL(candidate.handoffURL)
+            } label: {
+                Image(systemName: "safari")
+                    .font(.title3)
+                    .accessibilityHidden(true)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open \(candidate.supplierName) website")
+        }
+        .padding(.vertical, 4)
     }
 
     private func searchResultRow(_ part: Part) -> some View {
@@ -431,7 +681,7 @@ struct IOSJPOCreationPage: View {
                             .monospaced()
                             .foregroundStyle(.secondary)
                     }
-                    stockIndicator(for: part)
+                    searchStockIndicator(for: part)
                 }
             }
 
@@ -458,18 +708,29 @@ struct IOSJPOCreationPage: View {
         .padding(.vertical, 4)
     }
 
-    private func stockIndicator(for part: Part) -> some View {
-        let stock = getShopStock(partId: part.id ?? 0)
-        let color: Color = stock > (part.minStockLevel ?? 0) ? .green :
-                           stock > 0 ? .orange : .red
-        let label = stock > 0 ? "\(stock) in stock" : "Out of stock"
-        return HStack(spacing: 2) {
-            Circle().fill(color).frame(width: 6, height: 6)
-                .accessibilityHidden(true)
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(color)
+    private func searchStockIndicator(for part: Part) -> some View {
+        let stock = getStockDisplay(partId: part.id ?? 0)
+        return HStack(spacing: 4) {
+            if stock.warehouse > 0 {
+                Label("\(stock.warehouse) warehouse", systemImage: "bag.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+                    .labelStyle(.titleAndIcon)
+            } else if stock.total > 0 {
+                Label("\(stock.total) in stock", systemImage: "checkmark.circle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+                    .labelStyle(.titleAndIcon)
+            } else {
+                Label("Procurement", systemImage: "cart.badge.plus")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .labelStyle(.titleAndIcon)
+            }
         }
+        .accessibilityLabel(stock.warehouse > 0
+            ? "\(stock.warehouse) available from warehouse"
+            : (stock.total > 0 ? "\(stock.total) in stock" : "Out of stock, send to procurement"))
     }
 
     // MARK: - Cart Panel
@@ -557,10 +818,23 @@ struct IOSJPOCreationPage: View {
                     .lineLimit(1)
                 HStack(spacing: 4) {
                     stockStatusBadge(item.stockStatus)
-                    Text("\(item.shopStock) in stock")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    sourcingBadge(totalStock: item.shopStock, warehouseStock: item.warehouseStock)
+                    if item.requiresStaging {
+                        stagingSourceBadge(item)
+                    }
+                    if item.brandSelectionMode == .general {
+                        generalModeBadge
+                    }
                 }
+                Picker("Brand mode", selection: $cartItems[index].brandSelectionMode) {
+                    ForEach(CartItem.BrandSelectionMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .controlSize(.mini)
+                .frame(maxWidth: 220)
+                .accessibilityLabel("Brand selection mode for \(item.partName)")
             }
 
             Spacer()
@@ -620,6 +894,20 @@ struct IOSJPOCreationPage: View {
         .padding(.vertical, 4)
     }
 
+    private var generalModeBadge: some View {
+        Label("General", systemImage: "circle.dashed")
+            .font(.caption2)
+            .foregroundStyle(.teal)
+            .labelStyle(.titleAndIcon)
+    }
+
+    private func stagingSourceBadge(_ item: CartItem) -> some View {
+        Label("Custom - needs staging: \(item.sourceMode.compactTitle)", systemImage: "tray.and.arrow.down")
+            .font(.caption2)
+            .foregroundStyle(.orange)
+            .labelStyle(.titleAndIcon)
+    }
+
     private func stockStatusBadge(_ status: CartItem.StockStatus) -> some View {
         let (color, icon): (Color, String) = switch status {
         case .inStock: (.green, "checkmark.circle.fill")
@@ -629,6 +917,26 @@ struct IOSJPOCreationPage: View {
         return Image(systemName: icon)
             .font(.caption2)
             .foregroundStyle(color)
+    }
+
+    @ViewBuilder
+    private func sourcingBadge(totalStock: Int, warehouseStock: Int) -> some View {
+        if warehouseStock > 0 {
+            Label("\(warehouseStock) warehouse", systemImage: "bag.fill")
+                .font(.caption2)
+                .foregroundStyle(.green)
+                .labelStyle(.titleAndIcon)
+        } else if totalStock > 0 {
+            Label("\(totalStock) in stock", systemImage: "checkmark.circle.fill")
+                .font(.caption2)
+                .foregroundStyle(.green)
+                .labelStyle(.titleAndIcon)
+        } else {
+            Label("Procurement", systemImage: "cart.badge.plus")
+                .font(.caption2)
+                .foregroundStyle(.orange)
+                .labelStyle(.titleAndIcon)
+        }
     }
 
     // MARK: - Suggestions Panel
@@ -779,7 +1087,13 @@ struct IOSJPOCreationPage: View {
 
     // MARK: - Cart Logic
 
-    private func addToCart(part: Part, quantity: Int = 1) {
+    private func addToCart(
+        part: Part,
+        quantity: Int = 1,
+        sourceMode: SourcingSourceMode = .localCatalog,
+        provenanceLabel: String? = nil,
+        requiresStaging: Bool = false
+    ) {
         guard let partId = part.id else { return }
 
         // Already in cart — increment
@@ -789,10 +1103,10 @@ struct IOSJPOCreationPage: View {
             return
         }
 
-        let stock = getShopStock(partId: partId)
+        let stock = getStockDisplay(partId: partId)
         let status: CartItem.StockStatus
-        if stock >= quantity { status = .inStock }
-        else if stock > 0 { status = .lowStock }
+        if stock.total >= quantity { status = .inStock }
+        else if stock.total > 0 { status = .lowStock }
         else { status = .outOfStock }
 
         cartItems.append(CartItem(
@@ -801,8 +1115,13 @@ struct IOSJPOCreationPage: View {
             partCode: part.code,
             quantity: quantity,
             unitPrice: part.companyCostPrice,
-            shopStock: stock,
-            stockStatus: status
+            shopStock: stock.total,
+            warehouseStock: stock.warehouse,
+            stockStatus: status,
+            sourceMode: sourceMode,
+            provenanceLabel: provenanceLabel,
+            requiresStaging: requiresStaging,
+            brandSelectionMode: requiresStaging ? .general : .specific
         ))
         lastAddedPartId = partId
     }
@@ -860,47 +1179,73 @@ struct IOSJPOCreationPage: View {
     // MARK: - Stock
 
     private func getShopStock(partId: Int64) -> Int {
+        getStockDisplay(partId: partId).total
+    }
+
+    private func getStockDisplay(partId: Int64) -> (total: Int, warehouse: Int) {
         guard let service = appCore.partsService else {
             submitError = "Parts service not available"
-            return 0
+            return (0, 0)
         }
         do {
             let summary = try service.getPartStockSummary(partId: partId)
-            return summary.total
+            return (summary.total, summary.byLocationType["warehouse"] ?? 0)
         } catch {
-            return 0
+            return (0, 0)
         }
     }
 
     // MARK: - Search
 
     private func searchParts() {
-        guard let service = appCore.partsService, searchText.count >= 2 else {
+        guard searchText.count >= 2 else {
+            searchResults = []
+            supplierWebsiteCandidates = []
+            bestMatchName = nil
+            isSearching = false
+            return
+        }
+        guard let service = appCore.partsService else {
             submitError = "Parts service not available"
             searchResults = []
+            supplierWebsiteCandidates = []
             bestMatchName = nil
+            isSearching = false
             return
         }
         isSearching = true
         bestMatchName = nil
 
-        // Standard search
-        do {
-            searchResults = try service.searchParts(query: searchText, limit: 20)
-        } catch {
+        switch sourcingSourceMode {
+        case .localCatalog:
+            supplierWebsiteCandidates = []
+            do {
+                searchResults = try service.searchParts(query: searchText, limit: 20)
+            } catch {
+                searchResults = []
+            }
+        case .supplierWebsites:
             searchResults = []
+            do {
+                supplierWebsiteCandidates = try service.supplierWebsiteSourcingCandidates(query: searchText, limit: 10)
+            } catch {
+                supplierWebsiteCandidates = []
+            }
+        case .web:
+            searchResults = []
+            supplierWebsiteCandidates = []
         }
         isSearching = false
 
-        // Track recent search
+        // Track recent local catalog search
         let trimmed = searchText.trimmingCharacters(in: .whitespaces)
-        if !trimmed.isEmpty && !recentSearches.contains(trimmed) {
+        if sourcingSourceMode == .localCatalog && !trimmed.isEmpty && !recentSearches.contains(trimmed) {
             recentSearches.insert(trimmed, at: 0)
             if recentSearches.count > 5 { recentSearches.removeLast() }
         }
 
         // AI re-ranking (if available and results exist)
-        if !searchResults.isEmpty && aiService.checkAvailability() == .available {
+        if sourcingSourceMode == .localCatalog && !searchResults.isEmpty && aiService.checkAvailability() == .available {
             let currentQuery = searchText
             let partNames = searchResults.prefix(10).map(\.name).joined(separator: ", ")
             let context = buildSearchContext()
@@ -935,9 +1280,7 @@ struct IOSJPOCreationPage: View {
         if !selectedJobName.isEmpty {
             context += " Job: \(selectedJobName)."
         }
-        if internetHelpEnabled {
-            context += " Internet help is enabled for part identification."
-        }
+        context += " Search source: \(sourcingSourceMode.title)."
         return context
     }
 
@@ -1047,13 +1390,19 @@ struct IOSJPOCreationPage: View {
 
         do {
             let lines = cartItems.map { (partId: $0.partId, quantity: $0.quantity) }
+            let brandSelectionModes = cartItems.map(\.brandSelectionMode.rawValue)
+            let lineNotes = cartItems.map { item in
+                stagingNote(for: item)
+            }
             let jpoId = try service.createJPOWithLines(
                 jobId: jobId,
                 requestedBy: userId,
                 priority: priority,
                 deliveryOption: deliveryOption,
                 notes: notes.isEmpty ? nil : notes,
-                lines: lines
+                lines: lines,
+                brandSelectionModes: brandSelectionModes,
+                lineNotes: lineNotes
             )
 
             appCore.onboardingManager?.markCompleted("jpo-create")
@@ -1074,6 +1423,123 @@ struct IOSJPOCreationPage: View {
         } catch {
             submitError = userFriendlyError(error, context: "submit data")
             isSubmitting = false
+        }
+    }
+
+    private func stagingNote(for item: CartItem) -> String? {
+        guard item.requiresStaging else { return nil }
+        var details = [
+            "[CUSTOM_NEEDS_STAGING]",
+            "Source: \(item.sourceMode.title)"
+        ]
+        if let provenance = item.provenanceLabel, !provenance.isEmpty {
+            details.append("Provenance: \(provenance)")
+        }
+        details.append("Created from New Parts Order fast-add; verify supplier/catalog details before procurement.")
+        return details.joined(separator: "\n")
+    }
+}
+
+private struct FastAddCustomPartSheet: View {
+    @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
+
+    let initialName: String
+    let sourceMode: IOSJPOCreationPage.SourcingSourceMode
+    let onAdd: (Part, Int) -> Void
+
+    @State private var name: String
+    @State private var quantity = 1
+    @State private var code = ""
+    @State private var manufacturerDetail = ""
+    @State private var notes = ""
+    @State private var errorMessage: String?
+
+    init(
+        initialName: String,
+        sourceMode: IOSJPOCreationPage.SourcingSourceMode,
+        onAdd: @escaping (Part, Int) -> Void
+    ) {
+        self.initialName = initialName
+        self.sourceMode = sourceMode
+        self.onAdd = onAdd
+        _name = State(initialValue: initialName)
+    }
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isDirty: Bool {
+        trimmedName != initialName ||
+        quantity != 1 ||
+        !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !manufacturerDetail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Part") {
+                    TextField("Part name", text: $name)
+                    Stepper("Quantity: \(quantity)", value: $quantity, in: 1...9999)
+                }
+
+                Section("Known Details") {
+                    LabeledContent("Source", value: sourceMode.title)
+                    TextField("Code (optional)", text: $code)
+                        .textInputAutocapitalization(.characters)
+                    TextField("Manufacturer detail (optional)", text: $manufacturerDetail)
+                    TextField("Notes (optional)", text: $notes, axis: .vertical)
+                        .lineLimit(2...4)
+                }
+
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("Fast Add Part")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") { save() }
+                        .disabled(trimmedName.isEmpty)
+                }
+            }
+            .interactiveDismissDisabled(isDirty)
+        }
+    }
+
+    private func save() {
+        guard let service = appCore.partsService else {
+            errorMessage = "Parts service not available"
+            return
+        }
+
+        do {
+            let partId = try service.createFastAddCustomPartForJPO(
+                PartsService.FastAddCustomPartDraft(
+                    name: trimmedName,
+                    code: code,
+                    manufacturerPartNumber: manufacturerDetail,
+                    notes: notes,
+                    sourceLabel: sourceMode.title,
+                    provenanceNote: sourceMode.provenanceLabel
+                )
+            )
+            let part = try service.getPart(id: partId).part
+            onAdd(part, quantity)
+            dismiss()
+        } catch {
+            errorMessage = userFriendlyError(error, context: "fast add custom part")
         }
     }
 }

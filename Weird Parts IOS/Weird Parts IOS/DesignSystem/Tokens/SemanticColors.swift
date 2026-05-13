@@ -63,6 +63,16 @@ extension DS {
             }
         }
 
+        /// Map a vehicle inspection result/status string to a semantic color.
+        static func inspectionStatus(_ status: String) -> Color {
+            switch status.lowercased() {
+            case "pass", "passed", "inspected": return success
+            case "conditional": return warning
+            case "fail", "failed", "missing", "never_inspected": return error
+            default: return .secondary
+            }
+        }
+
         /// Map a priority level to a semantic color.
         static func priority(_ level: String) -> Color {
             switch level.lowercased() {

@@ -1,7 +1,6 @@
 import SwiftUI
 import PhotosUI
 import WiredPartCore
-import OSLog
 
 /// Full message thread view for a chat channel.
 ///
@@ -11,11 +10,10 @@ import OSLog
 /// Supports photo, file, and reference attachments.
 struct IOSMessageThreadView: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
 
     let channelId: Int64
     let channelName: String
-
-    private let logger = Logger(subsystem: "com.wiredpart.ios", category: "MessageThreadView")
 
     @State private var messages: [ChatService.MessageRow] = []
     @State private var messageAttachments: [Int64: [ChatService.MessageAttachment]] = [:]
@@ -33,6 +31,7 @@ struct IOSMessageThreadView: View {
     @State private var pendingAttachments: [ChatService.PendingAttachment] = []
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var activeSheet: ActiveSheet?
+    @State private var showDiscardDraftConfirmation = false
 
     private enum ActiveSheet: Identifiable {
         case help
@@ -55,6 +54,12 @@ struct IOSMessageThreadView: View {
     // Toast
     @State private var showComingSoon = false
 
+    private var isComposerDirty: Bool {
+        !messageText.trimmingCharacters(in: .whitespaces).isEmpty ||
+            !pendingAttachments.isEmpty ||
+            !selectedPhotoItems.isEmpty
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Expandable header + info panel
@@ -76,8 +81,18 @@ struct IOSMessageThreadView: View {
         }
         .navigationTitle(channelName)
         .navigationBarTitleDisplayMode(.inline)
-        .interactiveDismissDisabled(isSending)
+        .interactiveDismissDisabled(isComposerDirty || isSending)
         .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") {
+                    if isComposerDirty {
+                        showDiscardDraftConfirmation = true
+                    } else {
+                        dismiss()
+                    }
+                }
+                .disabled(isSending)
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -116,6 +131,12 @@ struct IOSMessageThreadView: View {
             Button("OK") { actionError = nil }
         } message: {
             Text(actionError ?? "")
+        }
+        .alert("Discard message draft?", isPresented: $showDiscardDraftConfirmation) {
+            Button("Discard", role: .destructive) { dismiss() }
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("Your unsent message and pending attachments will be lost.")
         }
         .overlay(alignment: .bottom) {
             if showComingSoon {
@@ -368,7 +389,7 @@ struct IOSMessageThreadView: View {
 
             // Mark up to the newest (last after reversal) message as read.
             if let userId = appCore.currentUser?.id, let lastId = messages.last?.id {
-                try? service.markRead(channelId: channelId, userId: userId, messageId: lastId)
+                try service.markRead(channelId: channelId, userId: userId, messageId: lastId)
             }
         } catch {
             loadError = userFriendlyError(error, context: "load messages")
@@ -410,15 +431,11 @@ struct IOSMessageThreadView: View {
                     attachments: pendingAttachments
                 )
 
-                // Auto-save photo/file attachments to job notebook (best effort — failure is non-fatal)
+                // Surface import failures so attachments are not silently lost from the job notebook.
                 for att in pendingAttachments where att.type == "photo" || att.type == "file" {
-                    if let attachments = try? service.getMessageAttachments(messageId: msgId),
-                       let saved = attachments.first(where: { $0.attachmentType == att.type }) {
-                        do {
-                            try service.autoSaveToJobNotebook(channelId: channelId, attachment: saved, userId: userId)
-                        } catch {
-                            logger.warning("autoSaveToJobNotebook failed for attachment \(saved.id) — attachment exists in chat but not in job notebook: \(error.localizedDescription)")
-                        }
+                    let attachments = try service.getMessageAttachments(messageId: msgId)
+                    if let saved = attachments.first(where: { $0.attachmentType == att.type }) {
+                        try service.autoSaveToJobNotebook(channelId: channelId, attachment: saved, userId: userId)
                     }
                 }
             }

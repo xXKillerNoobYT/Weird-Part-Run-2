@@ -567,8 +567,31 @@ public final class JobsService: Sendable {
                     jobClassification
                 ]
             )
-            return dbConn.lastInsertedRowID
+            let jobId = dbConn.lastInsertedRowID
+            let notebookCreatorId = try resolveJobNotebookCreatorId(dbConn: dbConn, preferredUserId: createdBy)
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO notebooks
+                    (title, notebook_type, job_id, created_by, status, created_at, updated_at)
+                    VALUES (?, 'job', ?, ?, 'active', datetime('now'), datetime('now'))
+                    """,
+                arguments: ["\(jobName) Job Notebook", jobId, notebookCreatorId]
+            )
+            return jobId
         }
+    }
+
+    private func resolveJobNotebookCreatorId(dbConn: Database, preferredUserId: Int64?) throws -> Int64 {
+        if let preferredUserId {
+            return preferredUserId
+        }
+        if let fallbackUserId = try Int64.fetchOne(
+            dbConn,
+            sql: "SELECT id FROM users WHERE deleted_at IS NULL ORDER BY id ASC LIMIT 1"
+        ) {
+            return fallbackUserId
+        }
+        throw JobsError.requiredFieldEmpty
     }
 
     /// Update an existing job. Only non-nil fields are updated.
@@ -952,9 +975,18 @@ public final class JobsService: Sendable {
                 """, arguments: [laborEntryId]) ?? 0
             let totalHours = max(0, rawHours - (breakMinutes / 60.0))
 
-            // Split into regular/overtime at 8-hour daily threshold
-            let regularHours = min(totalHours, 8.0)
-            let overtimeHours = max(0, totalHours - 8.0)
+            let priorDailyHours = try Double.fetchOne(dbConn, sql: """
+                SELECT COALESCE(SUM(regular_hours + overtime_hours), 0)
+                FROM labor_entries
+                WHERE user_id = (SELECT user_id FROM labor_entries WHERE id = ?)
+                  AND id != ?
+                  AND deleted_at IS NULL
+                  AND date(clock_in) = (SELECT date(clock_in) FROM labor_entries WHERE id = ?)
+                """, arguments: [laborEntryId, laborEntryId, laborEntryId]) ?? 0
+
+            let remainingRegularHours = max(0, 8.0 - priorDailyHours)
+            let regularHours = min(totalHours, remainingRegularHours)
+            let overtimeHours = max(0, totalHours - regularHours)
 
             try dbConn.execute(
                 sql: """

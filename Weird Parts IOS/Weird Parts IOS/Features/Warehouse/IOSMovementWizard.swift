@@ -53,11 +53,10 @@ struct IOSMovementWizard: View {
 
     // Derived
     private var movementType: String {
-        switch (fromLocationType, toLocationType) {
-        case ("job", _): return "return_to_supplier"
-        case (_, "job"): return "consume"
-        default: return "transfer"
-        }
+        WarehouseMovementType.from(
+            sourceLocationType: fromLocationType,
+            destinationLocationType: toLocationType
+        ).rawValue
     }
 
     private var canAdvance: Bool {

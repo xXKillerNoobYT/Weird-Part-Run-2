@@ -26,6 +26,10 @@ struct PartsCategoriesPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            Color.clear
+                .frame(width: 1, height: 1)
+                .accessibilityIdentifier("partsCategoriesPage")
+
             OnboardingBanner(pageId: "parts-categories")
 
             Group {
@@ -48,7 +52,6 @@ struct PartsCategoriesPage: View {
             // This prevents stale data from persisting after sheet edits.
             .id(dataVersion)
         }
-        .accessibilityIdentifier("partsCategoriesPage")
         .background(DS.Background.page)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -194,4 +197,3 @@ extension TreeSelection: Hashable {
 #Preview {
     PartsCategoriesPage()
 }
-

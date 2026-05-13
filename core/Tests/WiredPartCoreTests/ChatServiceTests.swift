@@ -78,6 +78,99 @@ struct ChatServiceTests {
         #expect(messages.count >= 3)
     }
 
+    @Test("sendMessage allows active channel members")
+    func testSendMessageAllowsActiveMember() throws {
+        let env = try E2ETestHelpers.setUp()
+        let senderId = try env.auth.createUser(displayName: "Chat Member", pin: "1111", email: "chat-member@test.com")
+        let channelId = try env.chat.createChannel(
+            name: "Member Gate",
+            channelType: "group",
+            jobId: nil,
+            createdBy: env.adminUserId
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO chat_channel_members (channel_id, user_id, role, joined_at)
+                VALUES (?, ?, 'member', datetime('now'))
+                """, arguments: [channelId, senderId])
+        }
+
+        let msgId = try env.chat.sendMessage(
+            channelId: channelId,
+            senderId: senderId,
+            content: "Active member can send"
+        )
+
+        #expect(msgId > 0)
+    }
+
+    @Test("sendMessage rejects non-members without inserting")
+    func testSendMessageRejectsNonMember() throws {
+        let env = try E2ETestHelpers.setUp()
+        let outsiderId = try env.auth.createUser(displayName: "Chat Outsider", pin: "2222", email: "chat-outsider@test.com")
+        let channelId = try env.chat.createChannel(
+            name: "Private Channel",
+            channelType: "group",
+            jobId: nil,
+            createdBy: env.adminUserId
+        )
+
+        var threw = false
+        do {
+            _ = try env.chat.sendMessage(channelId: channelId, senderId: outsiderId, content: "Let me in")
+        } catch ChatService.ChatError.channelNotFound(let deniedChannelId) {
+            threw = deniedChannelId == channelId
+        } catch {}
+
+        let messageCount = try Self.messageCount(env: env, channelId: channelId)
+        #expect(threw, "sendMessage must reject users without active channel membership")
+        #expect(messageCount == 0, "Rejected non-member sends must not insert chat_messages rows")
+    }
+
+    @Test("sendMessage rejects members who left or were soft-deleted")
+    func testSendMessageRejectsRemovedMembers() throws {
+        let env = try E2ETestHelpers.setUp()
+        let leftMemberId = try env.auth.createUser(displayName: "Left Member", pin: "3333", email: "left-member@test.com")
+        let deletedMemberId = try env.auth.createUser(displayName: "Deleted Member", pin: "4444", email: "deleted-member@test.com")
+        let channelId = try env.chat.createChannel(
+            name: "Removed Members",
+            channelType: "group",
+            jobId: nil,
+            createdBy: env.adminUserId
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO chat_channel_members (channel_id, user_id, role, joined_at, left_at)
+                VALUES (?, ?, 'member', datetime('now'), datetime('now'))
+                """, arguments: [channelId, leftMemberId])
+            try db.execute(sql: """
+                INSERT INTO chat_channel_members (channel_id, user_id, role, joined_at, deleted_at)
+                VALUES (?, ?, 'member', datetime('now'), datetime('now'))
+                """, arguments: [channelId, deletedMemberId])
+        }
+
+        var leftMemberDenied = false
+        do {
+            _ = try env.chat.sendMessage(channelId: channelId, senderId: leftMemberId, content: "I left")
+        } catch ChatService.ChatError.channelNotFound(let deniedChannelId) {
+            leftMemberDenied = deniedChannelId == channelId
+        } catch {}
+
+        var deletedMemberDenied = false
+        do {
+            _ = try env.chat.sendMessage(channelId: channelId, senderId: deletedMemberId, content: "I was removed")
+        } catch ChatService.ChatError.channelNotFound(let deniedChannelId) {
+            deletedMemberDenied = deniedChannelId == channelId
+        } catch {}
+
+        let messageCount = try Self.messageCount(env: env, channelId: channelId)
+        #expect(leftMemberDenied, "sendMessage must reject memberships with left_at set")
+        #expect(deletedMemberDenied, "sendMessage must reject memberships with deleted_at set")
+        #expect(messageCount == 0, "Rejected removed-member sends must not insert chat_messages rows")
+    }
+
     // MARK: - Q&A Threads
 
     @Test("Create and list QA threads")
@@ -376,6 +469,72 @@ struct ChatServiceTests {
         #expect(closedQuestions.isEmpty)
     }
 
+    @Test("getRFISummaryForJob returns job-scoped dashboard counts")
+    func testGetRFISummaryForJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-RFI-SUM", name: "RFI Summary Job")
+        let otherJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-RFI-OTHER", name: "Other RFI Job")
+        let qaId = try env.chat.createQAThread(jobId: jobId, askedBy: env.adminUserId, subject: "Open RFI")
+        let qaId2 = try env.chat.createQAThread(jobId: jobId, askedBy: env.adminUserId, subject: "Waiting RFI")
+        let qaId3 = try env.chat.createQAThread(jobId: jobId, askedBy: env.adminUserId, subject: "Closed RFI")
+        let otherQaId = try env.chat.createQAThread(jobId: otherJobId, askedBy: env.adminUserId, subject: "Other RFI")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO rfi_objects
+                (qa_thread_id, job_id, subject, body, status, created_at, updated_at)
+                VALUES (?, ?, 'Open RFI', 'Body', 'open', datetime('now'), '2026-05-13 08:00:00'),
+                       (?, ?, 'Waiting RFI', 'Body', 'sent', datetime('now'), '2026-05-13 09:00:00'),
+                       (?, ?, 'Closed RFI', 'Body', 'closed', datetime('now'), '2026-05-13 10:00:00'),
+                       (?, ?, 'Other RFI', 'Body', 'open', datetime('now'), '2026-05-13 11:00:00')
+                """, arguments: [qaId, jobId, qaId2, jobId, qaId3, jobId, otherQaId, otherJobId])
+        }
+
+        let summary = try env.chat.getRFISummaryForJob(jobId: jobId)
+
+        #expect(summary.jobId == jobId)
+        #expect(summary.totalCount == 3)
+        #expect(summary.openCount == 2)
+        #expect(summary.waitingCount == 1)
+        #expect(summary.closedCount == 1)
+        #expect(summary.supplierWaitingCount == 1)
+        #expect(summary.hasSupplierWaiting)
+        #expect(summary.latestUpdatedAt == "2026-05-13 10:00:00")
+    }
+
+    @Test("getRFISummaryForJob returns empty summary when no RFIs exist")
+    func testGetRFISummaryForJobEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-RFI-EMPTY", name: "Empty RFI Job")
+
+        let summary = try env.chat.getRFISummaryForJob(jobId: jobId)
+
+        #expect(summary.jobId == jobId)
+        #expect(summary.totalCount == 0)
+        #expect(summary.openCount == 0)
+        #expect(summary.waitingCount == 0)
+        #expect(summary.closedCount == 0)
+        #expect(summary.hasSupplierWaiting == false)
+    }
+
+    @Test("getRFISummaryForJob returns empty summary when RFI table is missing")
+    func testGetRFISummaryForJobMissingTable() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-RFI-MISSING", name: "Missing RFI Table")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "DROP TABLE rfi_objects")
+        }
+
+        let summary = try env.chat.getRFISummaryForJob(jobId: jobId)
+
+        #expect(summary.jobId == jobId)
+        #expect(summary.totalCount == 0)
+        #expect(summary.openCount == 0)
+        #expect(summary.waitingCount == 0)
+        #expect(summary.closedCount == 0)
+    }
+
     @Test("deactivateSupplierBridge soft-deletes the bridge")
     func testDeactivateSupplierBridge() throws {
         let env = try E2ETestHelpers.setUp()
@@ -469,6 +628,44 @@ struct ChatServiceTests {
         #expect(attachments[0].attachmentType == "photo")
         #expect(attachments[0].fileName == "photo.jpg")
         #expect(attachments[0].fileSize == 204800)
+    }
+
+    @Test("sendMessageWithAttachments surfaces attachment import persistence failures")
+    func testSendMessageWithAttachmentsSurfacesImportFailure() throws {
+        let env = try E2ETestHelpers.setUp()
+        let channelId = try env.chat.createChannel(
+            name: "Broken Attachment Import",
+            channelType: "group",
+            jobId: nil,
+            createdBy: env.adminUserId
+        )
+        let attachment = ChatService.PendingAttachment(
+            type: "photo",
+            filePath: "/private/tmp/customer-panel.jpg",
+            fileName: "customer-panel.jpg",
+            fileSize: 12_345,
+            mimeType: "image/jpeg"
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "DROP TABLE message_attachments")
+        }
+
+        var surfaced = false
+        do {
+            _ = try env.chat.sendMessageWithAttachments(
+                channelId: channelId,
+                content: "Panel photo",
+                userId: env.adminUserId,
+                attachments: [attachment]
+            )
+        } catch ChatService.ChatError.attachmentImportFailed {
+            surfaced = true
+        } catch {}
+
+        let messageCount = try Self.messageCount(env: env, channelId: channelId)
+        #expect(surfaced, "attachment import persistence failures must be surfaced")
+        #expect(messageCount == 0, "failed attachment import must roll back the chat message")
     }
 
     @Test("getMessageAttachments returns empty for message with no attachments")
@@ -910,5 +1107,43 @@ struct ChatServiceTests {
                 """, arguments: [channelId, userId])
         }
         #expect(stored == msg2, "markRead must not move the read pointer backwards")
+    }
+
+    @Test("markRead surfaces read receipt persistence failures")
+    func testMarkRead_surfacesPersistenceFailure() throws {
+        let env = try E2ETestHelpers.setUp()
+        let channelId = try env.chat.createChannel(
+            name: "Broken Read Receipts",
+            channelType: "group",
+            createdBy: env.adminUserId
+        )
+        let messageId = try env.chat.sendMessage(
+            channelId: channelId,
+            senderId: env.adminUserId,
+            content: "Please acknowledge"
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "DROP TABLE chat_read_receipts")
+        }
+
+        var surfaced = false
+        do {
+            try env.chat.markRead(channelId: channelId, userId: env.adminUserId, messageId: messageId)
+        } catch ChatService.ChatError.readReceiptPersistenceFailed {
+            surfaced = true
+        } catch {}
+
+        #expect(surfaced, "read receipt persistence failures must be surfaced")
+    }
+
+    private static func messageCount(env: E2ETestHelpers.TestEnvironment, channelId: Int64) throws -> Int {
+        try env.db.writer.read { db in
+            try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM chat_messages WHERE channel_id = ?",
+                arguments: [channelId]
+            ) ?? 0
+        }
     }
 }
