@@ -5653,6 +5653,14 @@ public final class PartsService: Sendable {
 
     /// Admin "I know the answer" — lock the poll result.
     public func adminLockPoll(pollId: Int64, result: String, lockedBy: Int64) throws {
+        let requiredPermission = "vote_veto"
+        guard try auth.hasPermission(lockedBy, permissionKey: requiredPermission) else {
+            throw PartsError.insufficientPermissions(required: requiredPermission)
+        }
+        guard result == "accept" || result == "reject" else {
+            throw PartsError.invalidInput("Admin lock result must be accept or reject")
+        }
+
         try db.writer.write { dbConn in
             try dbConn.execute(sql: """
                 UPDATE companion_polls
@@ -5665,7 +5673,12 @@ public final class PartsService: Sendable {
 
     /// Admin skip — close the current poll and replace with the next-best suggestion.
     @discardableResult
-    public func adminSkipPoll(pollId: Int64) throws -> Int64? {
+    public func adminSkipPoll(pollId: Int64, skippedBy: Int64) throws -> Int64? {
+        let requiredPermission = "vote_veto"
+        guard try auth.hasPermission(skippedBy, permissionKey: requiredPermission) else {
+            throw PartsError.insufficientPermissions(required: requiredPermission)
+        }
+
         try db.writer.write { dbConn in
             guard let poll = try Row.fetchOne(dbConn, sql: "SELECT co_occurrence_id FROM companion_polls WHERE id = ?", arguments: [pollId]) else { return }
             let coOccurrenceId: Int64 = poll["co_occurrence_id"]

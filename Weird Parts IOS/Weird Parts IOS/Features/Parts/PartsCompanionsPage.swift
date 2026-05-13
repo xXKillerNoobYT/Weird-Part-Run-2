@@ -111,7 +111,7 @@ struct PartsCompanionsPage: View {
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 HStack(spacing: 12) {
-                    if appCore.hasPermission("manage_people") {
+                    if appCore.hasPermission("vote_veto") {
                         Button { activeSheet = .adminDashboard } label: {
                             Image(systemName: "chart.bar.xaxis")
                         }
@@ -188,12 +188,13 @@ struct PartsCompanionsPage: View {
         .alert("Skip This Poll?", isPresented: $showSkipConfirm) {
             Button("Skip (-50 points)", role: .destructive) {
                 Task {
-                    guard let pollId = pollToSkip, let service = appCore.partsService else {
+                    guard let pollId = pollToSkip, let service = appCore.partsService,
+                          let userId = appCore.currentUser?.id else {
                         actionError = "Service not available"
                         return
                     }
                     do {
-                        _ = try service.adminSkipPoll(pollId: pollId)
+                        _ = try service.adminSkipPoll(pollId: pollId, skippedBy: userId)
                         await loadData()
                     } catch { actionError = userFriendlyError(error, context: "complete action") }
                 }

@@ -698,7 +698,7 @@ struct PartsServiceAdvancedTests {
         let pairId = try seedCoOccurrencePair(env, catAId: catAId, catBId: catBId, points: 200)
         let pollId = try #require(try env.parts.createWeeklyPoll())
 
-        try env.parts.adminSkipPoll(pollId: pollId)
+        try env.parts.adminSkipPoll(pollId: pollId, skippedBy: env.adminUserId)
 
         // Poll should be skipped
         let row = try env.db.writer.read { db in
@@ -715,6 +715,79 @@ struct PartsServiceAdvancedTests {
                              arguments: [pairId])
         }
         #expect((try #require(pairRow)["points"] as Int) == 150, "200 - 50 skip penalty = 150")
+    }
+
+    @Test("companion admin mutations require vote_veto permission")
+    func testCompanionAdminMutationsRequireVoteVeto() throws {
+        let env = try E2ETestHelpers.setUp()
+        let workerUserId = try env.auth.createUser(displayName: "Poll Worker", pin: "2468")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO user_hats (user_id, hat_id, is_active)
+                SELECT ?, id, 1 FROM hats WHERE name = 'Worker'
+                """, arguments: [workerUserId])
+        }
+
+        let lockCatAId = try E2ETestHelpers.seedCategory(env, name: "LockDeniedA")
+        let lockCatBId = try E2ETestHelpers.seedCategory(env, name: "LockDeniedB")
+        _ = try seedCoOccurrencePair(env, catAId: lockCatAId, catBId: lockCatBId)
+        let lockPollId = try #require(try env.parts.createWeeklyPoll())
+
+        do {
+            try env.parts.adminLockPoll(pollId: lockPollId, result: "accept", lockedBy: workerUserId)
+            Issue.record("adminLockPoll should reject users without vote_veto")
+        } catch PartsService.PartsError.insufficientPermissions(let required) {
+            #expect(required == "vote_veto")
+        } catch {
+            Issue.record("Expected insufficientPermissions, got \(error)")
+        }
+
+        let lockRow = try env.db.writer.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT status, admin_locked_result, admin_locked_by FROM companion_polls WHERE id = ?",
+                arguments: [lockPollId]
+            )
+        }
+        let lockResult = try #require(lockRow)
+        #expect((lockResult["status"] as String) == "active")
+        #expect((lockResult["admin_locked_result"] as String?) == nil)
+        #expect((lockResult["admin_locked_by"] as Int64?) == nil)
+
+        try env.parts.adminLockPoll(pollId: lockPollId, result: "reject", lockedBy: env.adminUserId)
+
+        let skipCatAId = try E2ETestHelpers.seedCategory(env, name: "SkipDeniedA")
+        let skipCatBId = try E2ETestHelpers.seedCategory(env, name: "SkipDeniedB")
+        let skipPairId = try seedCoOccurrencePair(env, catAId: skipCatAId, catBId: skipCatBId, points: 200)
+        let skipPollId = try seedPollDirectly(env, pairId: skipPairId, catAId: skipCatAId, catBId: skipCatBId)
+
+        do {
+            _ = try env.parts.adminSkipPoll(pollId: skipPollId, skippedBy: workerUserId)
+            Issue.record("adminSkipPoll should reject users without vote_veto")
+        } catch PartsService.PartsError.insufficientPermissions(let required) {
+            #expect(required == "vote_veto")
+        } catch {
+            Issue.record("Expected insufficientPermissions, got \(error)")
+        }
+
+        let skipRow = try env.db.writer.read { db in
+            try Row.fetchOne(
+                db,
+                sql: """
+                    SELECT cp.status, cp.result, cop.points
+                    FROM companion_polls cp
+                    JOIN co_occurrence_pairs cop ON cop.id = cp.co_occurrence_id
+                    WHERE cp.id = ?
+                    """,
+                arguments: [skipPollId]
+            )
+        }
+        let skipResult = try #require(skipRow)
+        #expect((skipResult["status"] as String) == "active")
+        #expect((skipResult["result"] as String?) == nil)
+        #expect((skipResult["points"] as Int) == 200)
+
+        _ = try env.parts.adminSkipPoll(pollId: skipPollId, skippedBy: env.adminUserId)
     }
 
     // MARK: - getUserVotingAccuracy
