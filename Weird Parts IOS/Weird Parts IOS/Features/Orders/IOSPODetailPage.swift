@@ -125,7 +125,7 @@ struct IOSPODetailPage: View {
                         actionMessage = "Cancellation reason is required."
                         return
                     }
-                    await transitionPO(to: "cancelled")
+                    await transitionPO(to: "cancelled", reason: cancelReason)
                     cancelReason = ""
                 }
             }
@@ -142,7 +142,7 @@ struct IOSPODetailPage: View {
                         actionMessage = "Cancellation reason is required."
                         return
                     }
-                    await transitionPO(to: "cancelled")
+                    await transitionPO(to: "cancelled", reason: cancelReason)
                     cancelReason = ""
                 }
             }
@@ -2066,7 +2066,7 @@ struct IOSPODetailPage: View {
 
     // MARK: - Status Transitions
 
-    private func transitionPO(to newStatus: String) async {
+    private func transitionPO(to newStatus: String, reason: String? = nil) async {
         guard let service = appCore.ordersService else {
             loadError = "Orders service not available"
             actionMessage = "Service not available"
@@ -2074,10 +2074,14 @@ struct IOSPODetailPage: View {
         }
         guard let userId = appCore.currentUser?.id else { return }
         do {
-            try service.updatePOStatus(id: poId, status: newStatus, userId: userId)
+            try service.updatePOStatus(id: poId, status: newStatus, userId: userId, reason: reason)
             loadData()
             if newStatus == "submitted" {
                 actionMessage = "PO marked as Submitted. Remember to send the order to the supplier."
+            } else if newStatus == "drafting" {
+                actionMessage = "PO moved back to Drafting for clarification."
+            } else if newStatus == "cancelled" {
+                actionMessage = "PO cancelled."
             }
         } catch {
             actionMessage = userFriendlyError(error, context: "update status")

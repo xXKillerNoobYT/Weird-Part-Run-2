@@ -4349,7 +4349,7 @@ public final class WarehouseService: Sendable {
                                 FROM po_line_items pol
                                 JOIN purchase_orders po ON po.id = pol.po_id
                                 WHERE pol.part_id = p.id AND pol.deleted_at IS NULL
-                                  AND po.deleted_at IS NULL AND po.status IN ('sent', 'partial')
+                                  AND po.deleted_at IS NULL AND po.status IN ('ordered', 'partial')
                                   AND pol.qty_received < pol.qty_ordered), 0) AS on_order_value
                     FROM part_categories pc
                     LEFT JOIN parts p ON p.category_id = pc.id AND p.deleted_at IS NULL AND p.is_active = 1
@@ -4391,7 +4391,7 @@ public final class WarehouseService: Sendable {
                     LEFT JOIN suppliers sup ON sup.id = po.supplier_id AND sup.deleted_at IS NULL
                     WHERE pol.deleted_at IS NULL AND po.deleted_at IS NULL
                       AND pol.qty_received < pol.qty_ordered
-                      AND po.status IN ('sent', 'partial')
+                      AND po.status IN ('ordered', 'partial')
                     ORDER BY qty_backordered DESC
                     """)
                 return rows.map { row in

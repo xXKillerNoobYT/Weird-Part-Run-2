@@ -53,6 +53,23 @@ Add sort picker in toolbar or as a menu:
 - If 3 suppliers are needed, at least 3 POs are created
 - Supplier is picked **per part** (not per PO)
 
+### Canonical PO Status Contract
+
+The iOS PO lifecycle uses these canonical persisted statuses:
+
+`draft`, `submitted`, `drafting`, `ordered`, `partial`, `received`, `cancelled`
+
+Allowed service transitions:
+
+- `draft` -> `submitted`, `cancelled`
+- `submitted` -> `ordered`, `drafting`, `cancelled`
+- `drafting` -> `draft`, `cancelled`
+- `ordered` -> `partial`, `received`, `cancelled`
+- `partial` -> `received`, `cancelled`
+- `received` and `cancelled` are terminal; no status transition out is valid
+
+Retired status names are not canonical for iOS POs: `sent`, `confirmed`, `acknowledged`, `closed`, `complete`, and `deleted`.
+
 ### Status Flow
 
 ```

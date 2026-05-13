@@ -73,12 +73,20 @@ public final class OrdersService: Sendable {
         "delivered":      ["complete"],
     ]
 
-    /// Valid PO status transitions.
+    /// Canonical iOS PO statuses. Retired names like sent/confirmed/acknowledged/complete/deleted are rejected.
+    private static let canonicalPOStatuses: Set<String> = [
+        "draft", "submitted", "drafting", "ordered", "partial", "received", "cancelled"
+    ]
+
+    /// Valid PO status transitions. Terminal statuses intentionally have no outgoing targets.
     private static let validPOTransitions: [String: Set<String>] = [
-        "draft":    ["ordered"],
-        "ordered":  ["partial", "received"],
-        "partial":  ["received"],
-        "received": ["complete"],
+        "draft":     ["submitted", "cancelled"],
+        "submitted": ["ordered", "drafting", "cancelled"],
+        "drafting":  ["draft", "cancelled"],
+        "ordered":   ["partial", "received", "cancelled"],
+        "partial":   ["received", "cancelled"],
+        "received":  [],
+        "cancelled": [],
     ]
 
     // =========================================================================
@@ -2062,7 +2070,15 @@ public final class OrdersService: Sendable {
 
     /// Update the status of a purchase order.
     /// Fixes #195: fetch old status BEFORE update. Fixes #204: accept userId instead of hardcoding 1.
-    public func updatePOStatus(id: Int64, status: String, userId: Int64) throws {
+    public func updatePOStatus(id: Int64, status: String, userId: Int64, reason: String? = nil) throws {
+        let newStatus = status.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !newStatus.isEmpty else {
+            throw OrdersError.requiredFieldEmpty("status")
+        }
+        guard Self.canonicalPOStatuses.contains(newStatus) else {
+            throw OrdersError.invalidStatus("Unknown PO status: \(newStatus)")
+        }
+
         try db.writer.write { dbConn in
             // 1. Fetch old status BEFORE the update (fixes #195)
             guard let row = try Row.fetchOne(
@@ -2072,11 +2088,8 @@ public final class OrdersService: Sendable {
             ) else { return }
             let oldStatus: String = row["status"] ?? "draft"
 
-            // Validate status transition (fixes #205)
-            if let allowed = Self.validPOTransitions[oldStatus] {
-                guard allowed.contains(status) else {
-                    throw OrdersError.invalidStatusTransition(entity: "PO", from: oldStatus, to: status)
-                }
+            guard let allowed = Self.validPOTransitions[oldStatus], allowed.contains(newStatus) else {
+                throw OrdersError.invalidStatusTransition(entity: "PO", from: oldStatus, to: newStatus)
             }
 
             // 2. Update status
@@ -2086,16 +2099,17 @@ public final class OrdersService: Sendable {
                     SET status = ?, updated_at = datetime('now')
                     WHERE id = ? AND deleted_at IS NULL
                     """,
-                arguments: [status, id]
+                arguments: [newStatus, id]
             )
 
             // 3. Record in status history with captured oldStatus and real userId
             try dbConn.execute(
                 sql: """
-                    INSERT INTO order_status_history (entity_type, entity_id, old_status, new_status, changed_by, created_at)
-                    VALUES ('purchase_order', ?, ?, ?, ?, datetime('now'))
+                    INSERT INTO order_status_history
+                    (entity_type, entity_id, old_status, new_status, notes, changed_by, created_at)
+                    VALUES ('purchase_order', ?, ?, ?, ?, ?, datetime('now'))
                     """,
-                arguments: [id, oldStatus, status, userId]
+                arguments: [id, oldStatus, newStatus, reason, userId]
             )
         }
     }
@@ -2610,7 +2624,7 @@ public final class OrdersService: Sendable {
         )
 
         let activePOs = try safeCount(
-            sql: "SELECT COUNT(*) FROM purchase_orders WHERE status IN ('draft', 'submitted', 'ordered', 'partial') AND deleted_at IS NULL"
+            sql: "SELECT COUNT(*) FROM purchase_orders WHERE status IN ('draft', 'submitted', 'drafting', 'ordered', 'partial') AND deleted_at IS NULL"
         )
 
         let pendingReturns = try safeCount(

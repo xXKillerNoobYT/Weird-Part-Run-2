@@ -181,8 +181,91 @@ struct OrdersServiceTests {
         let env = try E2ETestHelpers.setUp()
         let supplierId = try E2ETestHelpers.seedSupplier(env)
         let poId = try env.orders.createPurchaseOrder(poNumber: "PO-STS", supplierId: supplierId, notes: nil)
-        // draft → ordered is the valid first PO transition (fixes #205 validation; "sent" removed)
+        // Canonical iOS PO flow starts draft -> submitted -> ordered.
+        try env.orders.updatePOStatus(id: poId, status: "submitted", userId: env.adminUserId)
         try env.orders.updatePOStatus(id: poId, status: "ordered", userId: env.adminUserId)
+    }
+
+    @Test("Canonical PO status transitions allow every iOS detail action path")
+    func testCanonicalPOStatusTransitions() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+
+        let submittedId = try env.orders.createPurchaseOrder(poNumber: "PO-CAN-SUB", supplierId: supplierId, notes: nil)
+        try env.orders.updatePOStatus(id: submittedId, status: "submitted", userId: env.adminUserId)
+
+        let draftingId = try env.orders.createPurchaseOrder(poNumber: "PO-CAN-DRF", supplierId: supplierId, notes: nil)
+        try env.orders.updatePOStatus(id: draftingId, status: "submitted", userId: env.adminUserId)
+        try env.orders.updatePOStatus(id: draftingId, status: "drafting", userId: env.adminUserId)
+        try env.orders.updatePOStatus(id: draftingId, status: "draft", userId: env.adminUserId)
+
+        let orderedId = try env.orders.createPurchaseOrder(poNumber: "PO-CAN-ORD", supplierId: supplierId, notes: nil)
+        try env.orders.updatePOStatus(id: orderedId, status: "submitted", userId: env.adminUserId)
+        try env.orders.updatePOStatus(id: orderedId, status: "ordered", userId: env.adminUserId)
+
+        let partialId = try env.orders.createPurchaseOrder(poNumber: "PO-CAN-PAR", supplierId: supplierId, notes: nil)
+        try env.orders.updatePOStatus(id: partialId, status: "submitted", userId: env.adminUserId)
+        try env.orders.updatePOStatus(id: partialId, status: "ordered", userId: env.adminUserId)
+        try env.orders.updatePOStatus(id: partialId, status: "partial", userId: env.adminUserId)
+        try env.orders.updatePOStatus(id: partialId, status: "received", userId: env.adminUserId)
+    }
+
+    @Test("PO status transitions allow cancellation before terminal states and persist reason")
+    func testPOStatusCancellationReason() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-CAN-RSN", supplierId: supplierId, notes: nil)
+
+        try env.orders.updatePOStatus(id: poId, status: "submitted", userId: env.adminUserId)
+        try env.orders.updatePOStatus(
+            id: poId,
+            status: "cancelled",
+            userId: env.adminUserId,
+            reason: "Supplier confirmed they cannot fulfill this order"
+        )
+
+        let history = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT old_status, new_status, notes
+                FROM order_status_history
+                WHERE entity_type = 'purchase_order' AND entity_id = ? AND new_status = 'cancelled'
+                """, arguments: [poId])
+        }
+
+        #expect(history?["old_status"] as String? == "submitted")
+        #expect(history?["new_status"] as String? == "cancelled")
+        #expect(history?["notes"] as String? == "Supplier confirmed they cannot fulfill this order")
+    }
+
+    @Test("PO status transitions reject terminal and retired statuses")
+    func testPOStatusTransitionRejections() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+
+        let draftId = try env.orders.createPurchaseOrder(poNumber: "PO-REJ-DRF", supplierId: supplierId, notes: nil)
+        #expect(throws: OrdersService.OrdersError.invalidStatusTransition(entity: "PO", from: "draft", to: "ordered")) {
+            try env.orders.updatePOStatus(id: draftId, status: "ordered", userId: env.adminUserId)
+        }
+        #expect(throws: OrdersService.OrdersError.invalidStatus("Unknown PO status: sent")) {
+            try env.orders.updatePOStatus(id: draftId, status: "sent", userId: env.adminUserId)
+        }
+        #expect(throws: OrdersService.OrdersError.invalidStatus("Unknown PO status: complete")) {
+            try env.orders.updatePOStatus(id: draftId, status: "complete", userId: env.adminUserId)
+        }
+
+        let receivedId = try env.orders.createPurchaseOrder(poNumber: "PO-REJ-RCV", supplierId: supplierId, notes: nil)
+        try env.orders.updatePOStatus(id: receivedId, status: "submitted", userId: env.adminUserId)
+        try env.orders.updatePOStatus(id: receivedId, status: "ordered", userId: env.adminUserId)
+        try env.orders.updatePOStatus(id: receivedId, status: "received", userId: env.adminUserId)
+        #expect(throws: OrdersService.OrdersError.invalidStatusTransition(entity: "PO", from: "received", to: "cancelled")) {
+            try env.orders.updatePOStatus(id: receivedId, status: "cancelled", userId: env.adminUserId)
+        }
+
+        let cancelledId = try env.orders.createPurchaseOrder(poNumber: "PO-REJ-CAN", supplierId: supplierId, notes: nil)
+        try env.orders.updatePOStatus(id: cancelledId, status: "cancelled", userId: env.adminUserId)
+        #expect(throws: OrdersService.OrdersError.invalidStatusTransition(entity: "PO", from: "cancelled", to: "draft")) {
+            try env.orders.updatePOStatus(id: cancelledId, status: "draft", userId: env.adminUserId)
+        }
     }
 
     @Test("Delete PO")
@@ -505,7 +588,8 @@ struct OrdersServiceTests {
         let partId = try E2ETestHelpers.seedPart(env, name: "Lock Line Part", categoryId: catId)
         let lineId = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 5, unitPrice: 1.00)
 
-        // Move PO out of draft (draft → ordered is valid; "sent" removed in #205)
+        // Move PO out of draft.
+        try env.orders.updatePOStatus(id: poId, status: "submitted", userId: env.adminUserId)
         try env.orders.updatePOStatus(id: poId, status: "ordered", userId: env.adminUserId)
 
         #expect(throws: (any Error).self) {

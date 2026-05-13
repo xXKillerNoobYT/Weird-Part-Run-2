@@ -62,7 +62,7 @@ struct IOSPurchaseOrdersPage: View {
         case status = "By Status"
     }
 
-    private let statusOptions = ["all", "draft", "submitted", "ordered", "partial", "received", "cancelled"]
+    private let statusOptions = ["all", "draft", "submitted", "drafting", "ordered", "partial", "received", "cancelled"]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -265,7 +265,7 @@ struct IOSPurchaseOrdersPage: View {
 
     private var pendingTotal: Double {
         allPurchaseOrders
-            .filter { ["ordered", "partial", "draft", "submitted"].contains($0.status) }
+            .filter { ["ordered", "partial", "draft", "submitted", "drafting"].contains($0.status) }
             .compactMap(\.totalCost)
             .reduce(0, +)
     }
@@ -340,7 +340,7 @@ struct IOSPurchaseOrdersPage: View {
         case .supplierAZ:
             return filtered.sorted { $0.supplierName < $1.supplierName }
         case .status:
-            let order = ["draft": 0, "submitted": 1, "ordered": 2, "partial": 3, "received": 4, "cancelled": 5]
+            let order = ["draft": 0, "submitted": 1, "drafting": 2, "ordered": 3, "partial": 4, "received": 5, "cancelled": 6]
             return filtered.sorted { (order[$0.status] ?? 99) < (order[$1.status] ?? 99) }
         }
     }
@@ -384,6 +384,7 @@ struct IOSPurchaseOrdersPage: View {
         let color: Color = switch status {
         case "draft": .secondary
         case "submitted": .orange
+        case "drafting": .yellow
         case "ordered": .blue
         case "partial": .purple
         case "received": .green

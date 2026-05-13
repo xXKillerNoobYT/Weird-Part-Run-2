@@ -165,7 +165,7 @@ public final class BadgeCountService: Sendable {
             SELECT COUNT(*) FROM purchase_orders
             WHERE expected_delivery IS NOT NULL
               AND date(expected_delivery) < date('now')
-              AND status NOT IN ('received', 'cancelled', 'deleted')
+              AND status NOT IN ('received', 'cancelled')
               AND deleted_at IS NULL
         """)
 
@@ -253,7 +253,7 @@ public final class BadgeCountService: Sendable {
             SELECT COUNT(*) FROM purchase_orders
             WHERE expected_delivery IS NOT NULL
               AND date(expected_delivery) < date('now')
-              AND status NOT IN ('received', 'cancelled', 'deleted')
+              AND status NOT IN ('received', 'cancelled')
               AND deleted_at IS NULL
         """)
     }

@@ -164,7 +164,7 @@ public final class DashboardService: Sendable {
         let pendingOrders = try safeCount(
             sql: """
                 SELECT COUNT(*) FROM purchase_orders
-                WHERE status IN ('draft', 'submitted', 'acknowledged')
+                WHERE status IN ('draft', 'submitted', 'drafting', 'ordered', 'partial')
                   AND deleted_at IS NULL
                 """
         )
@@ -327,7 +327,7 @@ public final class DashboardService: Sendable {
         )
 
         let pendingPOs = try safeCount(
-            sql: "SELECT COUNT(*) FROM purchase_orders WHERE status = 'submitted' AND deleted_at IS NULL"
+            sql: "SELECT COUNT(*) FROM purchase_orders WHERE status IN ('draft', 'submitted', 'drafting') AND deleted_at IS NULL"
         )
 
         let returnsToSort = try safeCount(
@@ -1859,7 +1859,7 @@ public final class DashboardService: Sendable {
                 // Outstanding PO value (submitted/ordered, not yet received)
                 let outstandingPOValue = try Double.fetchOne(dbConn, sql: """
                     SELECT COALESCE(SUM(total_cost), 0) FROM purchase_orders
-                    WHERE status IN ('submitted', 'ordered', 'acknowledged')
+                    WHERE status IN ('submitted', 'ordered', 'partial')
                       AND deleted_at IS NULL
                     """) ?? 0
 
