@@ -383,9 +383,19 @@ struct IOSJPODetailPage: View {
                     Text(line.partName ?? "Unknown Part")
                         .font(.subheadline)
                         .fontWeight(.medium)
-                    Text("Qty: \(line.quantity)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        Text("Qty: \(line.quantity)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(line.brandSelectionMode == "general" ? "General mode" : "Specific mode")
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(modeTint(line.brandSelectionMode).opacity(0.12))
+                            .foregroundStyle(modeTint(line.brandSelectionMode))
+                            .clipShape(Capsule())
+                    }
                 }
 
                 Spacer()
@@ -583,6 +593,10 @@ struct IOSJPODetailPage: View {
         default:
             EmptyView()
         }
+    }
+
+    private func modeTint(_ mode: String) -> Color {
+        mode == "general" ? .orange : .blue
     }
 
     // MARK: - Line Status Icon
@@ -1045,6 +1059,7 @@ private struct AddJPOLineItemSheet: View {
     @State private var searchResults: [Part] = []
     @State private var selectedPart: Part?
     @State private var quantity = 1
+    @State private var brandSelectionMode = "specific"
     @State private var notes = ""
     @State private var errorMessage: String?
 
@@ -1087,6 +1102,11 @@ private struct AddJPOLineItemSheet: View {
 
                 Section("Details") {
                     Stepper("Quantity: \(quantity)", value: $quantity, in: 1...9999)
+                    Picker("Ordering mode", selection: $brandSelectionMode) {
+                        Text("Specific").tag("specific")
+                        Text("General").tag("general")
+                    }
+                    .pickerStyle(.segmented)
                     TextField("Notes (optional)", text: $notes)
                 }
 
@@ -1141,6 +1161,7 @@ private struct AddJPOLineItemSheet: View {
                 partId: partId,
                 quantity: quantity,
                 notes: notes.isEmpty ? nil : notes,
+                brandSelectionMode: brandSelectionMode,
                 userId: userId
             )
             dismiss()

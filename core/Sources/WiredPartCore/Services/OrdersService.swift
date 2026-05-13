@@ -51,6 +51,10 @@ public final class OrdersService: Sendable {
         }
     }
 
+    private static func isValidBrandSelectionMode(_ mode: String) -> Bool {
+        mode == "general" || mode == "specific"
+    }
+
     // MARK: - Status Transition Rules (fixes #205)
 
     /// Valid JPO status transitions. Any transition not in this map is rejected.
@@ -249,6 +253,7 @@ public final class OrdersService: Sendable {
         public let chatThreadId: Int64?
         public let poLineId: Int64?
         public let transferId: Int64?
+        public let brandSelectionMode: String
         public let createdAt: String?
 
         public init(
@@ -257,7 +262,8 @@ public final class OrdersService: Sendable {
             notes: String?, priority: String, createdAt: String?,
             lineStatus: String = "pending", holdReason: String? = nil,
             rejectReason: String? = nil, chatThreadId: Int64? = nil,
-            poLineId: Int64? = nil, transferId: Int64? = nil
+            poLineId: Int64? = nil, transferId: Int64? = nil,
+            brandSelectionMode: String = "specific"
         ) {
             self.id = id
             self.jpoId = jpoId
@@ -274,6 +280,7 @@ public final class OrdersService: Sendable {
             self.chatThreadId = chatThreadId
             self.poLineId = poLineId
             self.transferId = transferId
+            self.brandSelectionMode = brandSelectionMode
             self.createdAt = createdAt
         }
     }
@@ -613,7 +620,8 @@ public final class OrdersService: Sendable {
                     rejectReason: lr["reject_reason"] as String?,
                     chatThreadId: lr["chat_thread_id"] as Int64?,
                     poLineId: lr["po_line_id"] as Int64?,
-                    transferId: lr["transfer_id"] as Int64?
+                    transferId: lr["transfer_id"] as Int64?,
+                    brandSelectionMode: lr["brand_selection_mode"] ?? "specific"
                 )
             }
 
@@ -741,6 +749,9 @@ public final class OrdersService: Sendable {
     ) throws -> Int64 {
         // Validate inputs before touching the database.
         guard quantity > 0 else { throw OrdersError.invalidQuantity(quantity) }
+        guard Self.isValidBrandSelectionMode(brandSelectionMode) else {
+            throw OrdersError.invalidStatus("Brand selection mode must be 'general' or 'specific'")
+        }
 
         let lineId = try db.writer.write { dbConn -> Int64 in
             // Guard: parent JPO must exist and not be tombstoned.
@@ -1079,6 +1090,27 @@ public final class OrdersService: Sendable {
         notes: String?,
         lines: [(partId: Int64, quantity: Int)]
     ) throws -> Int64 {
+        try createJPOWithLines(
+            jobId: jobId,
+            requestedBy: requestedBy,
+            priority: priority,
+            deliveryOption: deliveryOption,
+            notes: notes,
+            lines: lines.map { (partId: $0.partId, quantity: $0.quantity, brandSelectionMode: "specific") }
+        )
+    }
+
+    /// Create a JPO with all line items in one transaction. Smart-routes each line.
+    /// Returns the new JPO ID.
+    @discardableResult
+    public func createJPOWithLines(
+        jobId: Int64,
+        requestedBy: Int64,
+        priority: String,
+        deliveryOption: String,
+        notes: String?,
+        lines: [(partId: Int64, quantity: Int, brandSelectionMode: String)]
+    ) throws -> Int64 {
         try db.writer.write { dbConn in
             // Guard: job and requesting user must exist and not be tombstoned (mirrors createJPO).
             let jobExists = (try Int.fetchOne(dbConn, sql: """
@@ -1094,6 +1126,9 @@ public final class OrdersService: Sendable {
             // Guard: every line must have qty > 0 and a live part.
             for line in lines {
                 guard line.quantity > 0 else { throw OrdersError.invalidQuantity(line.quantity) }
+                guard Self.isValidBrandSelectionMode(line.brandSelectionMode) else {
+                    throw OrdersError.invalidStatus("Brand selection mode must be 'general' or 'specific'")
+                }
                 let partExists = (try Int.fetchOne(dbConn, sql: """
                     SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL
                     """, arguments: [line.partId]) ?? 0) > 0
@@ -1114,9 +1149,9 @@ public final class OrdersService: Sendable {
             for line in lines {
                 try dbConn.execute(sql: """
                     INSERT INTO jpo_line_items
-                    (jpo_id, part_id, qty_requested, priority, notes, created_at)
-                    VALUES (?, ?, ?, ?, NULL, datetime('now'))
-                    """, arguments: [jpoId, line.partId, line.quantity, priority])
+                    (jpo_id, part_id, qty_requested, priority, notes, brand_selection_mode, created_at)
+                    VALUES (?, ?, ?, ?, NULL, ?, datetime('now'))
+                    """, arguments: [jpoId, line.partId, line.quantity, priority, line.brandSelectionMode])
                 let lineId = dbConn.lastInsertedRowID
 
                 // Check shop stock for smart routing

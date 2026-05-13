@@ -983,6 +983,44 @@ struct OrdersServiceTests {
                 "brand_selection_mode must be stored as 'general' — required by resolveGeneralLineItem for General Mode workflow")
     }
 
+    @Test("createJPOWithLines persists per-line brand selection modes and returns them in detail")
+    func testCreateJPOWithLinesPersistsPerLineBrandSelectionModes() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let generalPartId = try E2ETestHelpers.seedPart(env, name: "General Mode Part", categoryId: catId)
+        let specificPartId = try E2ETestHelpers.seedPart(env, name: "Specific Mode Part", categoryId: catId)
+
+        let jpoId = try env.orders.createJPOWithLines(
+            jobId: jobId,
+            requestedBy: env.adminUserId,
+            priority: "normal",
+            deliveryOption: "partial",
+            notes: nil,
+            lines: [
+                (partId: generalPartId, quantity: 2, brandSelectionMode: "general"),
+                (partId: specificPartId, quantity: 1, brandSelectionMode: "specific"),
+            ]
+        )
+
+        let storedModes: [String] = try env.db.writer.read { db in
+            try String.fetchAll(
+                db,
+                sql: """
+                    SELECT brand_selection_mode
+                    FROM jpo_line_items
+                    WHERE jpo_id = ?
+                    ORDER BY id
+                    """,
+                arguments: [jpoId]
+            )
+        }
+        #expect(storedModes == ["general", "specific"])
+
+        let detail = try env.orders.getJPODetail(id: jpoId)
+        #expect(detail.lines.map(\.brandSelectionMode) == ["general", "specific"])
+    }
+
     // MARK: - resolveGeneralLineItem (PE-COLORS Phase 3)
 
     /// Helper: create a JPO line item and immediately flip it to general mode.

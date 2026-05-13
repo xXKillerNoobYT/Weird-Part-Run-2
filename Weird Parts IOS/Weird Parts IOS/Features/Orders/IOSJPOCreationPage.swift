@@ -86,6 +86,7 @@ struct IOSJPOCreationPage: View {
         let unitPrice: Double?
         let shopStock: Int
         let stockStatus: StockStatus
+        var brandSelectionMode: String = "specific"
 
         enum StockStatus: String {
             case inStock
@@ -561,6 +562,14 @@ struct IOSJPOCreationPage: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
+                Picker("Ordering mode", selection: $cartItems[index].brandSelectionMode) {
+                    Text("Specific").tag("specific")
+                    Text("General").tag("general")
+                }
+                .pickerStyle(.segmented)
+                .controlSize(.mini)
+                .frame(maxWidth: 180)
+                .accessibilityLabel("Brand selection mode for \(item.partName)")
             }
 
             Spacer()
@@ -1046,7 +1055,9 @@ struct IOSJPOCreationPage: View {
         submitError = nil
 
         do {
-            let lines = cartItems.map { (partId: $0.partId, quantity: $0.quantity) }
+            let lines = cartItems.map {
+                (partId: $0.partId, quantity: $0.quantity, brandSelectionMode: $0.brandSelectionMode)
+            }
             let jpoId = try service.createJPOWithLines(
                 jobId: jobId,
                 requestedBy: userId,
