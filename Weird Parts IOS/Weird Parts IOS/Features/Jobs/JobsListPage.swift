@@ -8,6 +8,7 @@ import WiredPartCore
 /// and search filtering.
 struct JobsListPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     // MARK: - Types
 
@@ -69,12 +70,15 @@ struct JobsListPage: View {
     /// Global job stages list (Rough-in, Prep/Makeup, Trim-out). Loaded once.
     @State private var globalStages: [JobsService.JobStageStatus] = []
     @ScaledMetric(relativeTo: .body) private var searchBarBottomReserve: CGFloat = 12
+    @ScaledMetric(relativeTo: .body) private var accessibilitySearchBarBottomReserve: CGFloat = 44
 
     var body: some View {
         VStack(spacing: 0) {
             OnboardingBanner(pageId: "jobs-list")
             SkippedModuleHint(moduleId: "jobs")
-            smartCards
+            if !usesLargestAccessibilityLayout {
+                smartCards
+            }
             jobsList
                 .searchable(
                     text: $searchText,
@@ -82,7 +86,11 @@ struct JobsListPage: View {
                     prompt: "Search jobs..."
                 )
                 .safeAreaInset(edge: .bottom) {
-                    Color.clear.frame(height: searchBarBottomReserve)
+                    Color.clear.frame(
+                        height: usesLargestAccessibilityLayout
+                            ? accessibilitySearchBarBottomReserve
+                            : searchBarBottomReserve
+                    )
                 }
         }
         .task { appCore.onboardingManager?.markCompleted("jobs-view-list") }
@@ -156,6 +164,10 @@ struct JobsListPage: View {
     }
 
     // MARK: - Smart Cards
+
+    private var usesLargestAccessibilityLayout: Bool {
+        dynamicTypeSize >= .accessibility5
+    }
 
     private var smartCards: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -260,55 +272,92 @@ struct JobsListPage: View {
     }
 
     private func jobRow(_ job: JobsService.JobListItem) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(job.jobNumber)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                    priorityBadge(job.priority, dueDate: job.dueDate, status: job.status)
-                    if job.jobType == "continuous" {
-                        Text("Continuous")
-                            .font(.caption2)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Capsule().fill(.gray))
-                    }
-                }
-                Text(job.jobName)
-                    .fontWeight(.medium)
-                if let customer = job.customerName, !customer.isEmpty {
-                    Text(customer)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                // Compact stage progression bar
-                if !globalStages.isEmpty {
-                    let stageStatuses = JobsService.computeStageStatuses(
-                        allStages: globalStages,
-                        currentStageId: job.currentStageId,
-                        jobStatus: job.status
-                    )
-                    JobStageProgressBar(stages: stageStatuses, compact: true)
-                }
-            }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 4) {
-                jobStatusBadge(job.status)
-                if job.teamCount > 0 {
-                    Label("\(job.teamCount)", systemImage: "person.2")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                accessibilityJobRow(job)
+            } else {
+                compactJobRow(job)
             }
         }
         .padding(.vertical, 4)
         .accessibilityIdentifier("jobRow_\(job.id)")
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(job.jobName), \(job.jobNumber), status \(job.status), priority \(job.priority)")
+    }
+
+    private func compactJobRow(_ job: JobsService.JobListItem) -> some View {
+        HStack(spacing: 12) {
+            jobPrimaryDetails(job)
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 4) {
+                jobStatusBadge(job.status)
+                teamCountLabel(job)
+            }
+        }
+    }
+
+    private func accessibilityJobRow(_ job: JobsService.JobListItem) -> some View {
+        Text(job.jobName)
+            .fontWeight(.medium)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func jobPrimaryDetails(
+        _ job: JobsService.JobListItem,
+        showsCustomer: Bool = true,
+        jobNameLineLimit: Int? = nil
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            jobNumberAndPriority(job)
+            Text(job.jobName)
+                .fontWeight(.medium)
+                .lineLimit(jobNameLineLimit)
+            if showsCustomer, let customer = job.customerName, !customer.isEmpty {
+                Text(customer)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if !globalStages.isEmpty && !dynamicTypeSize.isAccessibilitySize {
+                let stageStatuses = JobsService.computeStageStatuses(
+                    allStages: globalStages,
+                    currentStageId: job.currentStageId,
+                    jobStatus: job.status
+                )
+                JobStageProgressBar(stages: stageStatuses, compact: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func jobNumberAndPriority(_ job: JobsService.JobListItem) -> some View {
+        HStack(spacing: 6) {
+            Text(job.jobNumber)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            priorityBadge(job.priority, dueDate: job.dueDate, status: job.status)
+            if job.jobType == "continuous" {
+                Text("Continuous")
+                    .font(.caption2)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(.gray))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func teamCountLabel(_ job: JobsService.JobListItem) -> some View {
+        if job.teamCount > 0 {
+            Label("\(job.teamCount)", systemImage: "person.2")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     // MARK: - Badges
