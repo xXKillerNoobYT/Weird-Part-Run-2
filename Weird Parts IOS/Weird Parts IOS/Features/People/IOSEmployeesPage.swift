@@ -15,7 +15,6 @@ struct IOSEmployeesPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var statusFilter = "all"
-    @State private var statusCounts: [String: Int] = [:]
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
     @State private var didHandleAddPersonOnAppear = false
@@ -38,15 +37,18 @@ struct IOSEmployeesPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            OnboardingBanner(pageId: "people-employees")
-            SkippedModuleHint(moduleId: "people")
-            statusPicker
+            FilterStack(
+                onboardingPageId: "people-employees",
+                skippedModuleId: "people",
+                primaryChips: {
+                    FilterChipRow(items: statusChipItems)
+                }
+            )
             employeeList
         }
         .task { appCore.onboardingManager?.markCompleted("people-view") }
         .navigationTitle("Employees")
         .searchable(text: $searchText, prompt: "Search employees...")
-        .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }
         .onAppear {
@@ -111,27 +113,22 @@ struct IOSEmployeesPage: View {
 
     // MARK: - Status Picker
 
-    private var statusPicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                let total = statusCounts.values.reduce(0, +)
-                SmartFilterCard(
-                    title: "All",
-                    count: total,
-                    isSelected: statusFilter == "all",
-                    action: { statusFilter = "all"; loadData() }
-                )
-                ForEach(statusOptions.dropFirst(), id: \.self) { status in
-                    SmartFilterCard(
-                        title: status.capitalized,
-                        count: statusCounts[status] ?? 0,
-                        isSelected: statusFilter == status,
-                        action: { statusFilter = status; loadData() }
-                    )
-                }
+    private var statusChipItems: [FilterChipItem] {
+        statusOptions.map { status in
+            FilterChipItem(
+                id: status,
+                title: title(forStatus: status),
+                count: statusCounts[status] ?? 0,
+                isSelected: statusFilter == status
+            ) {
+                statusFilter = status
             }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
+        }
+    }
+
+    private var statusCounts: [String: Int] {
+        filterCounts(base: searchFilteredEmployees, keys: statusOptions) { employee, status in
+            employee.status == status
         }
     }
 
@@ -145,11 +142,22 @@ struct IOSEmployeesPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredEmployees.isEmpty {
-            EmptyStateView(
-                icon: "person.3",
-                title: "No Employees",
-                message: searchText.isEmpty ? "No employees have been added yet." : "No employees match your criteria."
-            )
+            if hasNonDefaultFilters {
+                EmptyStateView(
+                    icon: "person.3",
+                    title: "No Employees",
+                    message: "No employees match your filters.",
+                    actionLabel: "Clear filters"
+                ) {
+                    clearFilters()
+                }
+            } else {
+                EmptyStateView(
+                    icon: "person.3",
+                    title: "No Employees",
+                    message: "No employees have been added yet."
+                )
+            }
         } else {
             List(filteredEmployees, id: \.id) { employee in
                 NavigationLink(destination: IOSEmployeeDetailPage(employeeId: employee.id)) {
@@ -161,6 +169,14 @@ struct IOSEmployeesPage: View {
     }
 
     private var filteredEmployees: [PeopleService.EmployeeListItem] {
+        let result = searchFilteredEmployees
+        if statusFilter == "all" {
+            return result
+        }
+        return result.filter { $0.status == statusFilter }
+    }
+
+    private var searchFilteredEmployees: [PeopleService.EmployeeListItem] {
         guard !searchText.isEmpty else { return employees }
         let query = searchText.lowercased()
         return employees.filter {
@@ -169,6 +185,19 @@ struct IOSEmployeesPage: View {
             ($0.phone?.lowercased().contains(query) ?? false) ||
             ($0.hatNames?.lowercased().contains(query) ?? false)
         }
+    }
+
+    private var hasNonDefaultFilters: Bool {
+        statusFilter != "all" || !searchText.isEmpty
+    }
+
+    private func clearFilters() {
+        statusFilter = "all"
+        searchText = ""
+    }
+
+    private func title(forStatus status: String) -> String {
+        status == "all" ? "All" : status.capitalized
     }
 
     private func employeeRow(_ employee: PeopleService.EmployeeListItem) -> some View {
@@ -246,18 +275,9 @@ struct IOSEmployeesPage: View {
         loadError = nil
         do {
             employees = try service.listEmployees(
-                search: searchText.isEmpty ? nil : searchText,
-                status: statusFilter == "all" ? nil : statusFilter
+                search: nil,
+                status: nil
             )
-            // Load status counts for SmartFilterCard
-            if statusCounts.isEmpty {
-                let allEmployees = try service.listEmployees(search: nil, status: nil)
-                var counts: [String: Int] = [:]
-                for emp in allEmployees {
-                    counts[emp.status, default: 0] += 1
-                }
-                statusCounts = counts
-            }
         } catch {
             loadError = userFriendlyError(error, context: "load employees")
         }
