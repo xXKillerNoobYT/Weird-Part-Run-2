@@ -66,11 +66,19 @@ struct IOSPurchaseOrdersPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            OnboardingBanner(pageId: "orders-pos")
-            SkippedModuleHint(moduleId: "orders")
-            statusPicker
-            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
-            kpiSummary
+            FilterStack(
+                onboardingPageId: "orders-pos",
+                skippedModuleId: "orders",
+                dateRange: $dateRange,
+                customStart: $customStart,
+                customEnd: $customEnd,
+                primaryChips: {
+                    FilterChipRow(items: statusChipItems)
+                },
+                summaryKPI: {
+                    kpiSummary
+                }
+            )
             poList
         }
         .task { appCore.onboardingManager?.markCompleted("po-view-list") }
@@ -150,10 +158,6 @@ struct IOSPurchaseOrdersPage: View {
         } message: {
             Text(actionMessage ?? "")
         }
-        .onChange(of: searchText) { loadData() }
-        .onChange(of: dateRange) { loadData() }
-        .onChange(of: customStart) { loadData() }
-        .onChange(of: customEnd) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }
         .onAppear {
@@ -205,34 +209,34 @@ struct IOSPurchaseOrdersPage: View {
                 title: "Purchase Orders Help",
                 sections: [
                     ("What This Page Does", "Lists all purchase orders sent to suppliers. Track POs from draft through ordering, receiving, and completion. See totals, line counts, and delivery status at a glance."),
-                    ("How to Use It", "Filter by status with the chips at the top (Draft, Submitted, Ordered, Partial, Received, Cancelled). Search by PO number or supplier name. Tap a PO to see full details. Tap + to create a new PO or scan a QR code."),
+                    ("How to Use It", "Filter by status with the smart cards at the top (Draft, Submitted, Ordered, Partial, Received, Cancelled). Search by PO number or supplier name. Tap a PO to see full details. Tap + to create a new PO or scan a QR code."),
                     ("Sorting", "Use the sort button (arrows icon) to order by newest, oldest, total cost (high/low), supplier name, or status."),
                     ("Swipe Actions", "Swipe left on a draft PO to delete it, or swipe left on an active PO to cancel it. Cancellations require a reason. The system generates an AI summary of the PO to help you confirm."),
                     ("KPI Bar", "The summary bar shows how many POs are awaiting delivery and the total dollar amount of pending orders. This helps you track outstanding spending."),
-                    ("Tips", "Pull down to refresh. Status counts in the filter chips update in real time. Tap into a PO to receive shipments, update ETAs, contact the supplier, or report issues.")
+                    ("Tips", "Pull down to refresh. Status counts in the filter cards update in real time. Tap into a PO to receive shipments, update ETAs, contact the supplier, or report issues.")
                 ]
             )
         }
     }
 
-    // MARK: - Status Picker
+    // MARK: - Status Chips
 
-    private var statusPicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(statusOptions, id: \.self) { status in
-                    SmartFilterCard(
-                        title: status == "all" ? "All" : status.capitalized,
-                        count: countForStatus(status),
-                        isSelected: statusFilter == status
-                    ) {
-                        statusFilter = status
-                        loadData()
-                    }
-                }
+    private var statusChipItems: [FilterChipItem] {
+        statusOptions.map { status in
+            FilterChipItem(
+                id: status,
+                title: title(forStatus: status),
+                count: statusCounts[status] ?? 0,
+                isSelected: statusFilter == status
+            ) {
+                statusFilter = status
             }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
+        }
+    }
+
+    private var statusCounts: [String: Int] {
+        filterCounts(base: searchAndDateFilteredPOs, keys: statusOptions) { po, status in
+            po.status == status
         }
     }
 
@@ -280,11 +284,22 @@ struct IOSPurchaseOrdersPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if sortedPOs.isEmpty {
-            EmptyStateView(
-                icon: "doc.text.fill",
-                title: "No Purchase Orders",
-                message: searchText.isEmpty ? "No purchase orders yet." : "No POs match your criteria."
-            )
+            if hasNonDefaultFilters {
+                EmptyStateView(
+                    icon: "doc.text.fill",
+                    title: "No Purchase Orders",
+                    message: "No purchase orders match your filters.",
+                    actionLabel: "Clear filters"
+                ) {
+                    clearFilters()
+                }
+            } else {
+                EmptyStateView(
+                    icon: "doc.text.fill",
+                    title: "No Purchase Orders",
+                    message: "No purchase orders yet."
+                )
+            }
         } else {
             List(sortedPOs, id: \.id) { po in
                 NavigationLink {
@@ -318,12 +333,32 @@ struct IOSPurchaseOrdersPage: View {
     }
 
     private var filteredPOs: [OrdersService.POListItem] {
-        guard !searchText.isEmpty else { return purchaseOrders }
-        let query = searchText.lowercased()
-        return purchaseOrders.filter {
-            $0.poNumber.lowercased().contains(query) ||
-            $0.supplierName.lowercased().contains(query)
+        let result = searchAndDateFilteredPOs
+        if statusFilter == "all" {
+            return result
         }
+        return result.filter { $0.status == statusFilter }
+    }
+
+    private var searchAndDateFilteredPOs: [OrdersService.POListItem] {
+        var result = allPurchaseOrders.filter {
+            StandardFilterBarDateFilter.contains(
+                $0.orderDate,
+                selectedRange: dateRange,
+                customStart: customStart,
+                customEnd: customEnd
+            )
+        }
+
+        if !searchText.isEmpty {
+            let query = searchText.lowercased()
+            result = result.filter {
+                $0.poNumber.lowercased().contains(query) ||
+                $0.supplierName.lowercased().contains(query)
+            }
+        }
+
+        return result
     }
 
     private var sortedPOs: [OrdersService.POListItem] {
@@ -400,9 +435,20 @@ struct IOSPurchaseOrdersPage: View {
 
     // MARK: - Helpers
 
-    private func countForStatus(_ status: String) -> Int {
-        if status == "all" { return allPurchaseOrders.count }
-        return allPurchaseOrders.filter { $0.status == status }.count
+    private var hasNonDefaultFilters: Bool {
+        statusFilter != "all" || !searchText.isEmpty || dateRange != .thisWeek
+    }
+
+    private func clearFilters() {
+        statusFilter = "all"
+        searchText = ""
+        dateRange = .thisWeek
+        customStart = Date().addingTimeInterval(-7 * 86400)
+        customEnd = Date()
+    }
+
+    private func title(forStatus status: String) -> String {
+        status == "all" ? "All" : status.capitalized
     }
 
     private func formatDate(_ isoString: String?) -> String? {
