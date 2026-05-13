@@ -1280,13 +1280,17 @@ private struct CompanionRuleFormSheet: View {
             ]
 
             if let existing = editingRule {
-                // Update existing rule fields
-                try service.updateCompanionRule(
+                try service.updateCompanionRuleAtLevel(
                     id: existing.id,
                     name: ruleName,
                     description: ruleDescription.isEmpty ? nil : ruleDescription,
                     qtyMode: qtyMode,
-                    qtyRatio: qtyRatio
+                    qtyRatio: qtyRatio,
+                    tryMatchBrand: tryMatchBrand,
+                    autoColorMatch: autoColorMatch,
+                    parentRuleId: existing.parentRuleId,
+                    sources: sources,
+                    targets: targets
                 )
             } else {
                 _ = try service.createCompanionRuleAtLevel(

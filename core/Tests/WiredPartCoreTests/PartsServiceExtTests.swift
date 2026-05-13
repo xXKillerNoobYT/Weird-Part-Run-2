@@ -292,6 +292,65 @@ struct PartsServiceExtTests {
         #expect(rules.count >= 1)
     }
 
+    @Test("Update companion rule persists hierarchy endpoints and options")
+    func testUpdateCompanionRuleAtLevelPersistsHierarchyAndOptions() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (sourceCat, _, _) = try E2ETestHelpers.seedPartHierarchy(
+            env, category: "EditRuleSourceCat", style: "EditRuleSourceStyle", type: "EditRuleSourceType"
+        )
+        let (targetCat, _, _) = try E2ETestHelpers.seedPartHierarchy(
+            env, category: "EditRuleTargetCat", style: "EditRuleTargetStyle", type: "EditRuleTargetType"
+        )
+        let (newSourceCat, newSourceStyle, newSourceType) = try E2ETestHelpers.seedPartHierarchy(
+            env, category: "EditedRuleSourceCat", style: "EditedRuleSourceStyle", type: "EditedRuleSourceType"
+        )
+        let (newTargetCat, newTargetStyle, newTargetType) = try E2ETestHelpers.seedPartHierarchy(
+            env, category: "EditedRuleTargetCat", style: "EditedRuleTargetStyle", type: "EditedRuleTargetType"
+        )
+        let parentRuleId = try env.parts.createCompanionRule(name: "Edited Parent Rule")
+        let ruleId = try env.parts.createCompanionRuleAtLevel(
+            name: "Original Rule",
+            description: "Original description",
+            qtyMode: "sum",
+            qtyRatio: 1.0,
+            tryMatchBrand: false,
+            autoColorMatch: true,
+            sources: [(categoryId: sourceCat, styleId: nil, typeId: nil)],
+            targets: [(categoryId: targetCat, styleId: nil, typeId: nil)]
+        )
+
+        try env.parts.updateCompanionRuleAtLevel(
+            id: ruleId,
+            name: "Edited Rule",
+            description: nil,
+            qtyMode: "fixed",
+            qtyRatio: 2.5,
+            tryMatchBrand: true,
+            autoColorMatch: false,
+            parentRuleId: parentRuleId,
+            sources: [(categoryId: newSourceCat, styleId: newSourceStyle, typeId: newSourceType)],
+            targets: [(categoryId: newTargetCat, styleId: newTargetStyle, typeId: newTargetType)]
+        )
+
+        let updated = try env.parts.listCompanionRulesHierarchy().first { $0.id == ruleId }
+        #expect(updated?.name == "Edited Rule")
+        #expect(updated?.description == nil)
+        #expect(updated?.matchLevel == "type")
+        #expect(updated?.tryMatchBrand == 1)
+        #expect(updated?.autoColorMatch == 0)
+        #expect(updated?.qtyMode == "fixed")
+        #expect(updated?.qtyRatio == 2.5)
+        #expect(updated?.parentRuleId == parentRuleId)
+        #expect(updated?.sources.count == 1)
+        #expect(updated?.sources.first?.categoryId == newSourceCat)
+        #expect(updated?.sources.first?.styleId == newSourceStyle)
+        #expect(updated?.sources.first?.typeId == newSourceType)
+        #expect(updated?.targets.count == 1)
+        #expect(updated?.targets.first?.categoryId == newTargetCat)
+        #expect(updated?.targets.first?.styleId == newTargetStyle)
+        #expect(updated?.targets.first?.typeId == newTargetType)
+    }
+
     @Test("listCompanionRules excludes soft-deleted rules")
     func testListCompanionRulesExcludesSoftDeleted() throws {
         let env = try E2ETestHelpers.setUp()

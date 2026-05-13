@@ -4414,6 +4414,74 @@ public final class PartsService: Sendable {
         }
     }
 
+    /// Update a hierarchy-aware companion rule and replace its source/target endpoints atomically.
+    public func updateCompanionRuleAtLevel(
+        id: Int64,
+        name: String,
+        description: String?,
+        qtyMode: String,
+        qtyRatio: Double,
+        tryMatchBrand: Bool,
+        autoColorMatch: Bool,
+        parentRuleId: Int64?,
+        sources: [(categoryId: Int64, styleId: Int64?, typeId: Int64?)],
+        targets: [(categoryId: Int64, styleId: Int64?, typeId: Int64?)]
+    ) throws {
+        try db.writer.write { dbConn in
+            let existingCount = try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COUNT(*) FROM companion_rules WHERE id = ? AND deleted_at IS NULL",
+                arguments: [id]
+            ) ?? 0
+            guard existingCount == 1 else { throw PartsError.companionRuleNotFound(id) }
+
+            let matchLevel: String
+            if sources.first?.typeId != nil { matchLevel = "type" }
+            else if sources.first?.styleId != nil { matchLevel = "style" }
+            else { matchLevel = "category" }
+
+            try dbConn.execute(sql: """
+                UPDATE companion_rules
+                SET name = ?,
+                    description = ?,
+                    style_match = ?,
+                    qty_mode = ?,
+                    qty_ratio = ?,
+                    try_match_brand = ?,
+                    auto_color_match = ?,
+                    parent_rule_id = ?,
+                    updated_at = datetime('now')
+                WHERE id = ?
+                """, arguments: [
+                    name, description, matchLevel, qtyMode, qtyRatio,
+                    tryMatchBrand ? 1 : 0, autoColorMatch ? 1 : 0, parentRuleId, id
+                ])
+
+            try dbConn.execute(
+                sql: "DELETE FROM companion_rule_sources WHERE rule_id = ?",
+                arguments: [id]
+            )
+            try dbConn.execute(
+                sql: "DELETE FROM companion_rule_targets WHERE rule_id = ?",
+                arguments: [id]
+            )
+
+            for source in sources {
+                try dbConn.execute(sql: """
+                    INSERT INTO companion_rule_sources (rule_id, category_id, style_id, type_id)
+                    VALUES (?, ?, ?, ?)
+                    """, arguments: [id, source.categoryId, source.styleId, source.typeId])
+            }
+
+            for target in targets {
+                try dbConn.execute(sql: """
+                    INSERT INTO companion_rule_targets (rule_id, category_id, style_id, type_id)
+                    VALUES (?, ?, ?, ?)
+                    """, arguments: [id, target.categoryId, target.styleId, target.typeId])
+            }
+        }
+    }
+
     /// Soft-delete a companion rule — sets both is_active and deleted_at for consistency (fixes #211).
     public func deleteCompanionRule(id: Int64) throws {
         try db.writer.write { dbConn in
