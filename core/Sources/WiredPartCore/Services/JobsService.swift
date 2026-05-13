@@ -567,8 +567,31 @@ public final class JobsService: Sendable {
                     jobClassification
                 ]
             )
-            return dbConn.lastInsertedRowID
+            let jobId = dbConn.lastInsertedRowID
+            let notebookCreatorId = try resolveJobNotebookCreatorId(dbConn: dbConn, preferredUserId: createdBy)
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO notebooks
+                    (title, notebook_type, job_id, created_by, status, created_at, updated_at)
+                    VALUES (?, 'job', ?, ?, 'active', datetime('now'), datetime('now'))
+                    """,
+                arguments: ["\(jobName) Job Notebook", jobId, notebookCreatorId]
+            )
+            return jobId
         }
+    }
+
+    private func resolveJobNotebookCreatorId(dbConn: Database, preferredUserId: Int64?) throws -> Int64 {
+        if let preferredUserId {
+            return preferredUserId
+        }
+        if let fallbackUserId = try Int64.fetchOne(
+            dbConn,
+            sql: "SELECT id FROM users WHERE deleted_at IS NULL ORDER BY id ASC LIMIT 1"
+        ) {
+            return fallbackUserId
+        }
+        throw JobsError.requiredFieldEmpty
     }
 
     /// Update an existing job. Only non-nil fields are updated.
