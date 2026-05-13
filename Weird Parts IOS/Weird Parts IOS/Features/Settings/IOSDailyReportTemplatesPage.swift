@@ -87,27 +87,30 @@ struct IOSDailyReportTemplatesPage: View {
             }
         }
         .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .help:
-                NavigationStack {
-                    List {
-                        Section("About Daily Reports") {
-                            Text("Configure which sections appear in daily reports and in what order. Mandatory sections (Hours Summary, Jobs Worked) cannot be disabled.")
+            Group {
+                switch sheet {
+                case .help:
+                    NavigationStack {
+                        List {
+                            Section("About Daily Reports") {
+                                Text("Configure which sections appear in daily reports and in what order. Mandatory sections (Hours Summary, Jobs Worked) cannot be disabled.")
+                            }
+                            Section("AI Summary") {
+                                Text("The AI summary is generated at the end of the report. Customize the instructions to control what the AI focuses on.")
+                            }
                         }
-                        Section("AI Summary") {
-                            Text("The AI summary is generated at the end of the report. Customize the instructions to control what the AI focuses on.")
-                        }
-                    }
-                    .navigationTitle("Template Help")
-                    .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { activeSheet = nil } } }
-                }
-            case .preview:
-                NavigationStack {
-                    previewView
-                        .navigationTitle("Report Preview")
+                        .navigationTitle("Template Help")
                         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { activeSheet = nil } } }
+                    }
+                case .preview:
+                    NavigationStack {
+                        previewView
+                            .navigationTitle("Report Preview")
+                            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { activeSheet = nil } } }
+                    }
                 }
             }
+            .presentationDetents([.medium, .large])
         }
         .refreshable { loadSettings() }
         .task { loadSettings() }

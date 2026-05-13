@@ -53,10 +53,13 @@ struct SecurityAdminPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Security Help", sections: [
-                ("What This Page Does", "Shows registered devices and active user sessions. Administrators can force-logout sessions from this page."),
-                ("How to Use It", "Review device status and active sessions. To end a session, tap the red X button next to it (admin permission required). Full device and session management is available on the desktop application."),
-            ])
+            Group {
+                PageHelpSheet(title: "Security Help", sections: [
+                    ("What This Page Does", "Shows registered devices and active user sessions. Administrators can force-logout sessions from this page."),
+                    ("How to Use It", "Review device status and active sessions. To end a session, tap the red X button next to it (admin permission required). Full device and session management is available on the desktop application."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .task { loadData() }
         .alert("Force Logout", isPresented: $showForceLogoutConfirm) {

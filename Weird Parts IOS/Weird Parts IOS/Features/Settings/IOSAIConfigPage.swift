@@ -158,10 +158,13 @@ struct IOSAIConfigPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "AI Config Help", sections: [
-                ("What This Page Does", "Configures on-device AI features including model selection, availability checking, and language preferences. AI powers text suggestions, smart search, and predictive ordering."),
-                ("How to Use It", "Toggle AI features on or off. Select Apple Foundation Models for on-device processing. Tap 'Check Availability' to verify your device supports on-device AI. Choose a language for AI responses."),
-            ])
+            Group {
+                PageHelpSheet(title: "AI Config Help", sections: [
+                    ("What This Page Does", "Configures on-device AI features including model selection, availability checking, and language preferences. AI powers text suggestions, smart search, and predictive ordering."),
+                    ("How to Use It", "Toggle AI features on or off. Select Apple Foundation Models for on-device processing. Tap 'Check Availability' to verify your device supports on-device AI. Choose a language for AI responses."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
     }
 

@@ -80,23 +80,26 @@ struct IOSReportTemplatesPage: View {
             }
         }
         .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .help:
-                NavigationStack {
-                    List {
-                        Section("About Report Templates") {
-                            Text("Save report configurations as templates to quickly generate the same type of report with your preferred columns and filters.")
+            Group {
+                switch sheet {
+                case .help:
+                    NavigationStack {
+                        List {
+                            Section("About Report Templates") {
+                                Text("Save report configurations as templates to quickly generate the same type of report with your preferred columns and filters.")
+                            }
+                            Section("Sharing") {
+                                Text("Shared templates are visible to all team members. Private templates are only visible to you.")
+                            }
                         }
-                        Section("Sharing") {
-                            Text("Shared templates are visible to all team members. Private templates are only visible to you.")
-                        }
+                        .navigationTitle("Templates Help")
+                        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { activeSheet = nil } } }
                     }
-                    .navigationTitle("Templates Help")
-                    .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { activeSheet = nil } } }
+                case .create:
+                    createSheet
                 }
-            case .create:
-                createSheet
             }
+            .presentationDetents([.medium, .large])
         }
         .alert("Delete Template?", isPresented: Binding(
             get: { deleteCandidate != nil },

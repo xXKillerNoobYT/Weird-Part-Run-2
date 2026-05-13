@@ -92,11 +92,14 @@ struct IOSAuditSettingsPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Audit Help", sections: [
-                ("Audit Types", "Full Count: count every item in a location. Cycle Count: count a rotating subset. Spot Check: quick verification of specific items."),
-                ("Speed Mode", "Speed mode streamlines the audit process by timing each item. QR scanning ensures accuracy even at speed."),
-                ("Multi-User Verification", "Multiple independent counts increase accuracy. The threshold sets how many people need to count before the result is accepted."),
-            ])
+            Group {
+                PageHelpSheet(title: "Audit Help", sections: [
+                    ("Audit Types", "Full Count: count every item in a location. Cycle Count: count a rotating subset. Spot Check: quick verification of specific items."),
+                    ("Speed Mode", "Speed mode streamlines the audit process by timing each item. QR scanning ensures accuracy even at speed."),
+                    ("Multi-User Verification", "Multiple independent counts increase accuracy. The threshold sets how many people need to count before the result is accepted."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .task { loadSettings() }
         .interactiveDismissDisabled(isDirty)

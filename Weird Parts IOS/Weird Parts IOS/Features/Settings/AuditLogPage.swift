@@ -77,10 +77,13 @@ struct AuditLogPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Audit Log Help", sections: [
-                ("What This Page Does", "Shows a chronological log of all data changes recorded on this device. Each entry shows the entity type, action (insert/update/delete), device, and timestamp."),
-                ("How to Use It", "Scroll through recent changes or use the search bar to filter by table name or action. Pull down to refresh. Tap 'Load More' to see older entries."),
-            ])
+            Group {
+                PageHelpSheet(title: "Audit Log Help", sections: [
+                    ("What This Page Does", "Shows a chronological log of all data changes recorded on this device. Each entry shows the entity type, action (insert/update/delete), device, and timestamp."),
+                    ("How to Use It", "Scroll through recent changes or use the search bar to filter by table name or action. Pull down to refresh. Tap 'Load More' to see older entries."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .searchable(text: $searchText, prompt: "Filter by table or action...")
         .refreshable { loadData() }

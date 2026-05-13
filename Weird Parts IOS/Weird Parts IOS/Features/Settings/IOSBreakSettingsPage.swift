@@ -88,10 +88,13 @@ struct IOSBreakSettingsPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Break & Lunch Help", sections: [
-                ("What This Page Does", "Configures break and lunch compliance rules. Shows state-required breaks (read-only), company extra breaks (editable), bonus incentives, and a full breakdown of total break allowances."),
-                ("How to Use It", "Select your state to load legal requirements. Adjust company-paid and offered breaks using the steppers. Enable bonuses to reward employees who use break buttons. Tap Save to apply all changes."),
-            ])
+            Group {
+                PageHelpSheet(title: "Break & Lunch Help", sections: [
+                    ("What This Page Does", "Configures break and lunch compliance rules. Shows state-required breaks (read-only), company extra breaks (editable), bonus incentives, and a full breakdown of total break allowances."),
+                    ("How to Use It", "Select your state to load legal requirements. Adjust company-paid and offered breaks using the steppers. Enable bonuses to reward employees who use break buttons. Tap Save to apply all changes."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .task { loadSettings() }
         .interactiveDismissDisabled(isDirty)

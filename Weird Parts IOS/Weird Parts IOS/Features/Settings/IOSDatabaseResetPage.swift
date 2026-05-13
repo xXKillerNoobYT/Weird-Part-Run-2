@@ -60,10 +60,13 @@ struct IOSDatabaseResetPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Database Reset Help", sections: [
-                ("What This Page Does", "Permanently erases all data on this device and returns it to the first-run setup screen. This is useful when decommissioning a device or starting fresh."),
-                ("How to Use It", "Tap 'Request Database Reset' to begin. An administrator must enter their 4-digit PIN to authorize the reset. Once confirmed, the process cannot be undone."),
-            ])
+            Group {
+                PageHelpSheet(title: "Database Reset Help", sections: [
+                    ("What This Page Does", "Permanently erases all data on this device and returns it to the first-run setup screen. This is useful when decommissioning a device or starting fresh."),
+                    ("How to Use It", "Tap 'Request Database Reset' to begin. An administrator must enter their 4-digit PIN to authorize the reset. Once confirmed, the process cannot be undone."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .task {
             loadDeviceStatus()

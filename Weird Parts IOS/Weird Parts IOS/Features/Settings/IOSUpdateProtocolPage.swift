@@ -53,10 +53,13 @@ struct IOSUpdateProtocolPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Updates Help", sections: [
-                ("What This Page Does", "Shows the current app version, checks for available updates, and lets you choose an update channel (stable, beta, or nightly)."),
-                ("How to Use It", "Tap 'Check for Updates' to see if a new version is available. Select an update channel to control which releases you receive. Updates are delivered from the shop server via the bootstrap process."),
-            ])
+            Group {
+                PageHelpSheet(title: "Updates Help", sections: [
+                    ("What This Page Does", "Shows the current app version, checks for available updates, and lets you choose an update channel (stable, beta, or nightly)."),
+                    ("How to Use It", "Tap 'Check for Updates' to see if a new version is available. Select an update channel to control which releases you receive. Updates are delivered from the shop server via the bootstrap process."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .task { loadData() }
     }

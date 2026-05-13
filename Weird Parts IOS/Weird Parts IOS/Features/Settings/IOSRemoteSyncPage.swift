@@ -86,10 +86,13 @@ struct IOSRemoteSyncPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Remote Sync Help", sections: [
-                ("What This Page Does", "Configures internet-based sync between multiple shop locations. Remote sync allows data to travel between shops that are not on the same local network."),
-                ("How to Use It", "Enable remote sync and set a sync interval. This feature is planned for a future release. Currently all sync happens over LAN and Bluetooth."),
-            ])
+            Group {
+                PageHelpSheet(title: "Remote Sync Help", sections: [
+                    ("What This Page Does", "Configures internet-based sync between multiple shop locations. Remote sync allows data to travel between shops that are not on the same local network."),
+                    ("How to Use It", "Enable remote sync and set a sync interval. This feature is planned for a future release. Currently all sync happens over LAN and Bluetooth."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .task { loadSettings() }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {

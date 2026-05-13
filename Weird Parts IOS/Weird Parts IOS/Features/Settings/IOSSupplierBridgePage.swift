@@ -46,10 +46,13 @@ struct IOSSupplierBridgePage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Supplier Bridge Help", sections: [
-                ("What This Page Does", "Shows the status of supplier portal connections. Bridges sync order and pricing data between your system and supplier portals."),
-                ("How to Use It", "Review connected suppliers and their sync status here. Bridge credentials and configuration are managed on the desktop application. Portal notes are automatically attached to purchase orders."),
-            ])
+            Group {
+                PageHelpSheet(title: "Supplier Bridge Help", sections: [
+                    ("What This Page Does", "Shows the status of supplier portal connections. Bridges sync order and pricing data between your system and supplier portals."),
+                    ("How to Use It", "Review connected suppliers and their sync status here. Bridge credentials and configuration are managed on the desktop application. Portal notes are automatically attached to purchase orders."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .task { loadData() }
     }

@@ -162,10 +162,13 @@ struct SyncPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "LAN Sync Help", sections: [
-                ("What This Page Does", "Configures local network sync between this device and the shop server. Shows current sync status, pending changes, and recent sync history."),
-                ("How to Use It", "Enter the shop server address, set a sync interval, and enable auto-sync. Tap 'Sync Now' for an immediate sync. Changes are merged using last-writer-wins with field-level conflict resolution."),
-            ])
+            Group {
+                PageHelpSheet(title: "LAN Sync Help", sections: [
+                    ("What This Page Does", "Configures local network sync between this device and the shop server. Shows current sync status, pending changes, and recent sync history."),
+                    ("How to Use It", "Enter the shop server address, set a sync interval, and enable auto-sync. Tap 'Sync Now' for an immediate sync. Changes are merged using last-writer-wins with field-level conflict resolution."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .task { loadSettings() }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {

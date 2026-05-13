@@ -84,11 +84,14 @@ struct IOSForecastSettingsPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Forecast Help", sections: [
-                ("Calculation Methods", "ADU (Average Daily Usage) divides total usage over the lookback period. APW (Average Per Window) uses rolling windows for more responsive estimates on trucks/trailers."),
-                ("Multipliers", "MIN = usage x multiplier. TARGET = the optimal stock level. MAX = the upper bound before overstock warnings."),
-                ("Free Space", "Locations with low free space won't receive 'add new part' recommendations to avoid overcrowding."),
-            ])
+            Group {
+                PageHelpSheet(title: "Forecast Help", sections: [
+                    ("Calculation Methods", "ADU (Average Daily Usage) divides total usage over the lookback period. APW (Average Per Window) uses rolling windows for more responsive estimates on trucks/trailers."),
+                    ("Multipliers", "MIN = usage x multiplier. TARGET = the optimal stock level. MAX = the upper bound before overstock warnings."),
+                    ("Free Space", "Locations with low free space won't receive 'add new part' recommendations to avoid overcrowding."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .task { loadSettings() }
         .interactiveDismissDisabled(isDirty)

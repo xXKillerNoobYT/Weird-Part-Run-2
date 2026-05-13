@@ -93,17 +93,20 @@ struct IOSClockOutQuestionsPage: View {
         }
         .task { loadData() }
         .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .help:
-                PageHelpSheet(title: "Clock-Out Questions Help", sections: [
-                    ("What This Page Does", "Manages the questionnaire employees see when clocking out. Questions can be text, yes/no, or multiple choice. Answers are saved with the time entry for reporting."),
-                    ("How to Use It", "Tap + to add a new question. Set the question type and whether it's required. Swipe left on a question to edit or delete it. Reorder by dragging. Pull down to refresh."),
-                ])
-            case .add:
-                questionFormSheet
-            case .edit(let question):
-                questionEditSheet(question)
+            Group {
+                switch sheet {
+                case .help:
+                    PageHelpSheet(title: "Clock-Out Questions Help", sections: [
+                        ("What This Page Does", "Manages the questionnaire employees see when clocking out. Questions can be text, yes/no, or multiple choice. Answers are saved with the time entry for reporting."),
+                        ("How to Use It", "Tap + to add a new question. Set the question type and whether it's required. Swipe left on a question to edit or delete it. Reorder by dragging. Pull down to refresh."),
+                    ])
+                case .add:
+                    questionFormSheet
+                case .edit(let question):
+                    questionEditSheet(question)
+                }
             }
+            .presentationDetents([.medium, .large])
         }
         .alert("Delete Question", isPresented: $showDeleteConfirm) {
             Button("Cancel", role: .cancel) { questionToDelete = nil }

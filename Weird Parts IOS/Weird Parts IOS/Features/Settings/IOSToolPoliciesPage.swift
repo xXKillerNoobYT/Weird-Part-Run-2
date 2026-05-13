@@ -74,13 +74,16 @@ struct IOSToolPoliciesPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Tool Policies Help", sections: [
-                ("About Tool Policies", "Configure how tools are checked out, returned, maintained, and traded between workers."),
-                ("Checkout Limits", "Set maximum durations and overdue notifications for tool checkouts. Auto-extend keeps tools checked out while the worker is on the job."),
-                ("Condition Checks", "Require workers to report tool condition during checkout, return, and damage events."),
-                ("Maintenance", "Schedule automatic maintenance after a number of checkouts or set reminder lead times."),
-                ("Trades", "Allow workers to trade tools directly. Trades expire after the timeout period."),
-            ])
+            Group {
+                PageHelpSheet(title: "Tool Policies Help", sections: [
+                    ("About Tool Policies", "Configure how tools are checked out, returned, maintained, and traded between workers."),
+                    ("Checkout Limits", "Set maximum durations and overdue notifications for tool checkouts. Auto-extend keeps tools checked out while the worker is on the job."),
+                    ("Condition Checks", "Require workers to report tool condition during checkout, return, and damage events."),
+                    ("Maintenance", "Schedule automatic maintenance after a number of checkouts or set reminder lead times."),
+                    ("Trades", "Allow workers to trade tools directly. Trades expire after the timeout period."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .task { loadSettings() }
         .interactiveDismissDisabled(isDirty)

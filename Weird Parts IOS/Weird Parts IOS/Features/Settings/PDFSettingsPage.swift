@@ -94,10 +94,13 @@ struct PDFSettingsPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "PDF Settings Help", sections: [
-                ("What This Page Does", "Customizes the appearance and content of generated PDF documents such as purchase orders and invoices. Controls accent color, price display, payment terms, and footer text."),
-                ("How to Use It", "Adjust display options, pick an accent color, set payment terms, and enter footer or delivery notes. Tap Save to apply changes to all future PDF exports."),
-            ])
+            Group {
+                PageHelpSheet(title: "PDF Settings Help", sections: [
+                    ("What This Page Does", "Customizes the appearance and content of generated PDF documents such as purchase orders and invoices. Controls accent color, price display, payment terms, and footer text."),
+                    ("How to Use It", "Adjust display options, pick an accent color, set payment terms, and enter footer or delivery notes. Tap Save to apply changes to all future PDF exports."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .task { loadPDFSettings() }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {

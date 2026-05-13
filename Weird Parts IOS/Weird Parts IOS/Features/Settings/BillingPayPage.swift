@@ -97,10 +97,13 @@ struct BillingPayPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Billing & Pay Help", sections: [
-                ("What This Page Does", "Sets your company's billing cycle and pay period. These control how reports, invoices, and payroll are grouped by date range."),
-                ("How to Use It", "Choose cycle and period types, set the start day of each, then tap Save. The start day determines when each period begins (1-28)."),
-            ])
+            Group {
+                PageHelpSheet(title: "Billing & Pay Help", sections: [
+                    ("What This Page Does", "Sets your company's billing cycle and pay period. These control how reports, invoices, and payroll are grouped by date range."),
+                    ("How to Use It", "Choose cycle and period types, set the start day of each, then tap Save. The start day determines when each period begins (1-28)."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK") { errorMessage = nil }

@@ -109,25 +109,28 @@ struct CompanyProfilesPage: View {
             }
         }
         .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .help:
-                PageHelpSheet(title: "Company Profiles Help", sections: [
-                    ("What This Page Does", "Manages your company profiles including company name, address, contact info, and licensing details. The primary profile appears on generated documents."),
-                    ("How to Use It", "Tap + to create a new profile. Tap a profile to edit it. Swipe left to delete. Toggle 'Primary Profile' to set which profile appears on PDFs and official documents."),
-                ])
-            case .create:
-                CompanyProfileEditor(profile: nil) { _ in
-                    loadProfiles()
-                    activeSheet = nil
+            Group {
+                switch sheet {
+                case .help:
+                    PageHelpSheet(title: "Company Profiles Help", sections: [
+                        ("What This Page Does", "Manages your company profiles including company name, address, contact info, and licensing details. The primary profile appears on generated documents."),
+                        ("How to Use It", "Tap + to create a new profile. Tap a profile to edit it. Swipe left to delete. Toggle 'Primary Profile' to set which profile appears on PDFs and official documents."),
+                    ])
+                case .create:
+                    CompanyProfileEditor(profile: nil) { _ in
+                        loadProfiles()
+                        activeSheet = nil
+                    }
+                    .environmentObject(appCore)
+                case .edit(let profile):
+                    CompanyProfileEditor(profile: profile) { _ in
+                        loadProfiles()
+                        activeSheet = nil
+                    }
+                    .environmentObject(appCore)
                 }
-                .environmentObject(appCore)
-            case .edit(let profile):
-                CompanyProfileEditor(profile: profile) { _ in
-                    loadProfiles()
-                    activeSheet = nil
-                }
-                .environmentObject(appCore)
             }
+            .presentationDetents([.medium, .large])
         }
         .refreshable { loadProfiles() }
         .task { loadProfiles() }

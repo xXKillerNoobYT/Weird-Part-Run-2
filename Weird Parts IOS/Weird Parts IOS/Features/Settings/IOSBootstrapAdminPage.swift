@@ -51,10 +51,13 @@ struct IOSBootstrapAdminPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Bootstrap Admin Help", sections: [
-                ("What This Page Does", "Lists devices that registered through the bootstrap process. Shows each device's enrollment status, type, app version, and last check-in time."),
-                ("How to Use It", "Review registered devices and their statuses here. Device approval and rejection must be performed from the desktop application. Pull down to refresh the list."),
-            ])
+            Group {
+                PageHelpSheet(title: "Bootstrap Admin Help", sections: [
+                    ("What This Page Does", "Lists devices that registered through the bootstrap process. Shows each device's enrollment status, type, app version, and last check-in time."),
+                    ("How to Use It", "Review registered devices and their statuses here. Device approval and rejection must be performed from the desktop application. Pull down to refresh the list."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .refreshable { loadData() }
         .task { loadData() }

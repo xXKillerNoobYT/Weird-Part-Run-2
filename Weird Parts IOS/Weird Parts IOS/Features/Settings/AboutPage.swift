@@ -40,10 +40,13 @@ struct AboutPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "About Help", sections: [
-                ("What This Page Does", "Displays app version, core library version, database location, device information, and legal notices."),
-                ("How to Use It", "Use this page to verify which version of the app and core library are running. Share device and version info when reporting issues."),
-            ])
+            Group {
+                PageHelpSheet(title: "About Help", sections: [
+                    ("What This Page Does", "Displays app version, core library version, database location, device information, and legal notices."),
+                    ("How to Use It", "Use this page to verify which version of the app and core library are running. Share device and version info when reporting issues."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
     }
 

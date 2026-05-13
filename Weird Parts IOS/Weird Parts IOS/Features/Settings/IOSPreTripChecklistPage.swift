@@ -111,10 +111,13 @@ struct IOSPreTripChecklistPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Checklist Help", sections: [
-                ("About Pre-Trip Checklists", "Define the inspection items drivers must check before starting their trip. Items marked as critical will fail the inspection if not OK."),
-                ("Vehicle Types", "Each vehicle type can have its own checklist. Toggle 'Use Default' to inherit from the All Vehicles list."),
-            ])
+            Group {
+                PageHelpSheet(title: "Checklist Help", sections: [
+                    ("About Pre-Trip Checklists", "Define the inspection items drivers must check before starting their trip. Items marked as critical will fail the inspection if not OK."),
+                    ("Vehicle Types", "Each vehicle type can have its own checklist. Toggle 'Use Default' to inherit from the All Vehicles list."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .task { loadSettings() }
         .interactiveDismissDisabled(isDirty)

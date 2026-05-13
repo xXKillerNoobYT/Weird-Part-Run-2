@@ -73,12 +73,15 @@ struct IOSOrganizationThresholdsPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Thresholds Help", sections: [
-                ("Confidence Decay", "Each location's confidence score decreases daily. Moving parts accelerates decay since items may have been misplaced during the move."),
-                ("Audit Triggers", "When a location's confidence drops below the threshold, the system recommends an audit. Cooldown prevents excessive recommendations."),
-                ("Consolidation", "Consolidation votes let the team decide when to merge low-stock locations. Unanimous votes can auto-approve."),
-                ("Organization Rating", "The overall warehouse organization score reflects how well-organized and accurately tracked your inventory is."),
-            ])
+            Group {
+                PageHelpSheet(title: "Thresholds Help", sections: [
+                    ("Confidence Decay", "Each location's confidence score decreases daily. Moving parts accelerates decay since items may have been misplaced during the move."),
+                    ("Audit Triggers", "When a location's confidence drops below the threshold, the system recommends an audit. Cooldown prevents excessive recommendations."),
+                    ("Consolidation", "Consolidation votes let the team decide when to merge low-stock locations. Unanimous votes can auto-approve."),
+                    ("Organization Rating", "The overall warehouse organization score reflects how well-organized and accurately tracked your inventory is."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .task { loadSettings() }
     }

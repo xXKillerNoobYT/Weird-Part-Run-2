@@ -74,10 +74,13 @@ struct NotificationPrefsPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Notifications Help", sections: [
-                ("What This Page Does", "Controls which alert categories you receive and whether notification sounds are enabled. Categories include order status, certification expiry, vehicle maintenance, and sync status."),
-                ("How to Use It", "Toggle each category on or off, then tap Save Preferences. Notification preferences are stored locally on this device."),
-            ])
+            Group {
+                PageHelpSheet(title: "Notifications Help", sections: [
+                    ("What This Page Does", "Controls which alert categories you receive and whether notification sounds are enabled. Categories include order status, certification expiry, vehicle maintenance, and sync status."),
+                    ("How to Use It", "Toggle each category on or off, then tap Save Preferences. Notification preferences are stored locally on this device."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .task { loadPrefs() }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {

@@ -55,10 +55,13 @@ struct IOSDeviceManagementPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Device Management Help", sections: [
-                ("What This Page Does", "Shows this device's identity and lists all paired devices in your shop network. Paired devices can sync data with each other."),
-                ("How to Use It", "View your current device info at the top. Device pairing will be available when multi-device sync infrastructure is enabled in a future update."),
-            ])
+            Group {
+                PageHelpSheet(title: "Device Management Help", sections: [
+                    ("What This Page Does", "Shows this device's identity and lists all paired devices in your shop network. Paired devices can sync data with each other."),
+                    ("How to Use It", "View your current device info at the top. Device pairing will be available when multi-device sync infrastructure is enabled in a future update."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
     }
 

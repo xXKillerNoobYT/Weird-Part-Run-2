@@ -50,10 +50,13 @@ struct IOSBackupsPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Backups Help", sections: [
-                ("What This Page Does", "Manages local database backups. Shows the last backup time, database size, and stored backup count. You can create new backups manually."),
-                ("How to Use It", "Tap 'Create Backup Now' to snapshot the current database. Automatic backups run daily. Up to 7 rolling backups are retained. Database restore must be done from the desktop application."),
-            ])
+            Group {
+                PageHelpSheet(title: "Backups Help", sections: [
+                    ("What This Page Does", "Manages local database backups. Shows the last backup time, database size, and stored backup count. You can create new backups manually."),
+                    ("How to Use It", "Tap 'Create Backup Now' to snapshot the current database. Automatic backups run daily. Up to 7 rolling backups are retained. Database restore must be done from the desktop application."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .task { if canManageSettings { loadData() } }
         .alert("Restore Not Available", isPresented: $showRestoreAlert) {

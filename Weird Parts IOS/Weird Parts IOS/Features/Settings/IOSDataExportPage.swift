@@ -65,10 +65,13 @@ struct IOSDataExportPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Data Export Help", sections: [
-                ("What This Page Does", "Exports the local database or specific tables as CSV or JSON files. You can also export the full SQLite database file."),
-                ("How to Use It", "Select a format (CSV or JSON), check the tables you want to export, then tap Export. Use 'Export Full Database' for a complete SQLite backup. Exported files are saved to the app's Documents folder."),
-            ])
+            Group {
+                PageHelpSheet(title: "Data Export Help", sections: [
+                    ("What This Page Does", "Exports the local database or specific tables as CSV or JSON files. You can also export the full SQLite database file."),
+                    ("How to Use It", "Select a format (CSV or JSON), check the tables you want to export, then tap Export. Use 'Export Full Database' for a complete SQLite backup. Exported files are saved to the app's Documents folder."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .task { if canExport { loadData() } }
         .interactiveDismissDisabled(isDirty || isExporting)

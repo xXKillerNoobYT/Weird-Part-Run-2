@@ -79,12 +79,15 @@ struct IOSDispatchPreferencesPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Dispatch Help", sections: [
-                ("About Dispatch Preferences", "Configure how the dispatch system suggests assignments and manages the job pipeline."),
-                ("AI Dispatch", "AI suggestions use worker skills, team history, travel distance, and job requirements to recommend optimal assignments."),
-                ("Flex Pool", "The flex pool allows unassigned workers to self-assign to available jobs. Manager approval can gate the process."),
-                ("Pipeline Targets", "Targets are the minimum number of jobs you want in each pipeline stage. The system warns when you're below target."),
-            ])
+            Group {
+                PageHelpSheet(title: "Dispatch Help", sections: [
+                    ("About Dispatch Preferences", "Configure how the dispatch system suggests assignments and manages the job pipeline."),
+                    ("AI Dispatch", "AI suggestions use worker skills, team history, travel distance, and job requirements to recommend optimal assignments."),
+                    ("Flex Pool", "The flex pool allows unassigned workers to self-assign to available jobs. Manager approval can gate the process."),
+                    ("Pipeline Targets", "Targets are the minimum number of jobs you want in each pipeline stage. The system warns when you're below target."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .task { loadSettings() }
         .interactiveDismissDisabled(isDirty)

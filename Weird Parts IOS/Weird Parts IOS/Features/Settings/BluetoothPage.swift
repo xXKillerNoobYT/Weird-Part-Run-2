@@ -113,10 +113,13 @@ struct BluetoothPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Bluetooth Help", sections: [
-                ("What This Page Does", "Controls Bluetooth and Wi-Fi Direct peer-to-peer sync using Apple Multipeer Connectivity. Enables data exchange between nearby devices without a shop server."),
-                ("How to Use It", "Enable Bluetooth Sync to start, then toggle Discoverable to let other devices find you. Nearby WiredPart devices appear automatically. Tap Sync to exchange data with a discovered peer."),
-            ])
+            Group {
+                PageHelpSheet(title: "Bluetooth Help", sections: [
+                    ("What This Page Does", "Controls Bluetooth and Wi-Fi Direct peer-to-peer sync using Apple Multipeer Connectivity. Enables data exchange between nearby devices without a shop server."),
+                    ("How to Use It", "Enable Bluetooth Sync to start, then toggle Discoverable to let other devices find you. Nearby WiredPart devices appear automatically. Tap Sync to exchange data with a discovered peer."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
         .onAppear {
             bluetoothEnabled = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")

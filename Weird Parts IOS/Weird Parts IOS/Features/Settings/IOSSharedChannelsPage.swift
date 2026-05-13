@@ -42,10 +42,13 @@ struct IOSSharedChannelsPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Shared Channels Help", sections: [
-                ("What This Page Does", "Manages chat channels that sync messages across all paired devices in the network. Shared channels let your team communicate across devices."),
-                ("How to Use It", "Shared channels will be available once multi-device sync is enabled. You will be able to create, rename, and archive channels from this page."),
-            ])
+            Group {
+                PageHelpSheet(title: "Shared Channels Help", sections: [
+                    ("What This Page Does", "Manages chat channels that sync messages across all paired devices in the network. Shared channels let your team communicate across devices."),
+                    ("How to Use It", "Shared channels will be available once multi-device sync is enabled. You will be able to create, rename, and archive channels from this page."),
+                ])
+            }
+            .presentationDetents([.medium, .large])
         }
     }
 
