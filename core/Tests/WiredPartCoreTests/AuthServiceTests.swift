@@ -11,14 +11,24 @@ struct AuthServiceTests {
         try AppDatabase.openInMemoryDatabase()
     }
 
-    // MARK: - PIN Hashing
+    // MARK: - PIN Hashing (PBKDF2)
 
-    @Test("hashPin produces consistent SHA-256 hex")
+    @Test("hashPin produces PBKDF2 prefixed output")
+    func testHashPinPBKDF2Format() throws {
+        let hash = AuthService.hashPin("1234", salt: "test-salt")
+        #expect(hash.hasPrefix("pbkdf2$"))
+        let parts = hash.split(separator: "$")
+        #expect(parts.count == 3)
+        #expect(parts[0] == "pbkdf2")
+        #expect(parts[1] == "600000")
+        #expect(parts[2].count == 64) // 32 bytes = 64 hex chars
+    }
+
+    @Test("hashPin produces consistent output")
     func testHashPinConsistent() throws {
         let hash1 = AuthService.hashPin("1234", salt: "test-salt")
         let hash2 = AuthService.hashPin("1234", salt: "test-salt")
         #expect(hash1 == hash2)
-        #expect(hash1.count == 64) // SHA-256 = 32 bytes = 64 hex chars
     }
 
     @Test("hashPin produces different hashes for different PINs")
@@ -28,7 +38,7 @@ struct AuthServiceTests {
         #expect(hash1 != hash2)
     }
 
-    @Test("verifyPinLocally returns true for correct PIN")
+    @Test("verifyPinLocally returns true for correct PBKDF2 PIN")
     func testVerifyPinCorrect() throws {
         let pin = "9876"
         let hash = AuthService.hashPin(pin, salt: "test-salt")
@@ -44,6 +54,16 @@ struct AuthServiceTests {
     @Test("verifyPinLocally returns false for bcrypt hash")
     func testVerifyPinBcrypt() throws {
         #expect(!AuthService.verifyPinLocally(pin: "1234", storedHash: "$2b$12$someBcryptHash", salt: "test-salt"))
+    }
+
+    @Test("verifyPinLocally verifies legacy iterated SHA-256 hashes")
+    func testVerifyPinLegacyIteratedSHA256() throws {
+        // Simulate a hash created by the old iteratedSHA256Pin function
+        let pin = "4567"
+        let salt = "old-salt"
+        let legacyHash = AuthService.iteratedSHA256Pin(pin, salt: salt)
+        #expect(AuthService.verifyPinLocally(pin: pin, storedHash: legacyHash, salt: salt))
+        #expect(!AuthService.verifyPinLocally(pin: "0000", storedHash: legacyHash, salt: salt))
     }
 
     // MARK: - Token Generation & Parsing
@@ -65,7 +85,7 @@ struct AuthServiceTests {
         let payload = AuthService.parseLocalToken(token)
         #expect(payload != nil)
         #expect(payload?.sub == 42)
-        #expect(payload?.type == "local")
+        #expect(payload?.type == "local_access")
         #expect(payload?.exp ?? 0 > payload?.iat ?? 0)
     }
 
@@ -78,7 +98,7 @@ struct AuthServiceTests {
     func testParseTokenRejectsUnsigned() throws {
         // Simulate a pre-PE-008a unsigned token: plain base64 payload with no signature.
         // These should now be rejected since the shim was removed 2026-04-08.
-        let payload = AuthService.TokenPayload(sub: 42, iat: 1000, exp: 9999999999999, type: "local")
+        let payload = AuthService.TokenPayload(sub: 42, jti: UUID().uuidString, iat: 1000, exp: 9999999999999, type: "local_access")
         let data = try JSONEncoder().encode(payload)
         let unsignedToken = data.base64EncodedString()  // no "." separator — legacy format
         #expect(AuthService.parseLocalToken(unsignedToken) == nil)
@@ -169,6 +189,7 @@ struct AuthServiceTests {
         #expect(result.success)
         #expect(result.user?.displayName == "Admin")
         #expect(result.token != nil)
+        #expect(result.refreshToken != nil)
     }
 
     @Test("authenticateByPin rejects wrong PIN")
@@ -375,6 +396,21 @@ struct AuthServiceTests {
         }
     }
 
+    @Test("revoked local session token is denied by getLocalUserProfile")
+    func testRevokedTokenDenied() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
+        let token = try #require(seed.token)
+
+        _ = try auth.getLocalUserProfile(token: token) // precondition: token valid
+        try auth.revokeLocalSession(token: token)
+
+        #expect(throws: AuthService.AuthError.self) {
+            _ = try auth.getLocalUserProfile(token: token)
+        }
+    }
+
     // MARK: - Legacy PIN Hash Tracking (PE-008c)
 
     @Test("getLegacyHashedUserCount returns 0 when all users have pin_salt")
@@ -400,6 +436,25 @@ struct AuthServiceTests {
         #expect(try auth.getLegacyHashedUserCount() == 1)
     }
 
+    @Test("getLegacyHashedUserCount returns 1 for user with iterated SHA-256 hash")
+    func testLegacyCountIteratedSHA256User() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
+
+        // Insert a user with iterated SHA-256 (has salt but no pbkdf2$ prefix)
+        let oldHash = AuthService.iteratedSHA256Pin("5555", salt: "some-salt")
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "INSERT INTO users (display_name, pin_hash, pin_salt, is_active) VALUES ('OldSalted', ?, 'some-salt', 1)",
+                arguments: [oldHash]
+            )
+        }
+
+        // Should count as legacy (not yet PBKDF2)
+        #expect(try auth.getLegacyHashedUserCount() == 1)
+    }
+
     @Test("getLegacyHashedUserCount ignores placeholder hashes and inactive users")
     func testLegacyCountIgnoresPlaceholdersAndInactive() throws {
         let db = try freshDB()
@@ -417,7 +472,7 @@ struct AuthServiceTests {
         #expect(try auth.getLegacyHashedUserCount() == 0)
     }
 
-    @Test("getLegacyHashedUserCount drops to 0 after legacy user logs in")
+    @Test("getLegacyHashedUserCount drops to 0 after legacy user logs in (upgrades to PBKDF2)")
     func testLegacyCountDecrementOnLogin() throws {
         let db = try freshDB()
         let auth = AuthService(db: db)
@@ -438,10 +493,50 @@ struct AuthServiceTests {
 
         #expect(try auth.getLegacyHashedUserCount() == 1)
 
-        // Login triggers automatic re-hash with a per-user salt
+        // Login triggers automatic re-hash to PBKDF2
         let result = try auth.authenticateByPin(userId: legacyUserId, pin: "9999")
         #expect(result.success)
         #expect(try auth.getLegacyHashedUserCount() == 0)
+
+        // Verify the stored hash is now PBKDF2 format
+        let updatedHash = try db.writer.read { dbConn -> String? in
+            try String.fetchOne(dbConn, sql: "SELECT pin_hash FROM users WHERE id = ?", arguments: [legacyUserId])
+        }
+        #expect(updatedHash?.hasPrefix("pbkdf2$") == true)
+    }
+
+    @Test("Iterated SHA-256 user upgrades to PBKDF2 on login")
+    func testIteratedSHA256UpgradesToPBKDF2OnLogin() throws {
+        AuthService.resetAllLoginAttempts()
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "0000")
+
+        // Insert a user with iterated SHA-256 hash (has salt, but not PBKDF2)
+        let salt = AuthService.generateSalt()
+        let oldHash = AuthService.iteratedSHA256Pin("7777", salt: salt)
+        var userId: Int64 = 0
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "INSERT INTO users (display_name, pin_hash, pin_salt, is_active) VALUES ('OldWorker', ?, ?, 1)",
+                arguments: [oldHash, salt]
+            )
+            userId = dbConn.lastInsertedRowID
+        }
+
+        // Login should succeed with old hash and transparently upgrade
+        let result = try auth.authenticateByPin(userId: userId, pin: "7777")
+        #expect(result.success)
+
+        // Verify upgrade to PBKDF2
+        let updatedHash = try db.writer.read { dbConn -> String? in
+            try String.fetchOne(dbConn, sql: "SELECT pin_hash FROM users WHERE id = ?", arguments: [userId])
+        }
+        #expect(updatedHash?.hasPrefix("pbkdf2$") == true)
+
+        // Re-login should still work with the new PBKDF2 hash
+        let result2 = try auth.authenticateByPin(userId: userId, pin: "7777")
+        #expect(result2.success)
     }
 
     // MARK: - Active Users
