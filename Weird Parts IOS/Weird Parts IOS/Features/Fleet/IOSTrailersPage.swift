@@ -92,11 +92,7 @@ struct IOSTrailersPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredTrailers.isEmpty {
-            ContentUnavailableView {
-                Label("No Trailers", systemImage: "shippingbox")
-            } description: {
-                Text("No trailers found.")
-            }
+            trailersEmptyState
         } else {
             List(filteredTrailers, id: \.id) { trailer in
                 NavigationLink(destination: IOSTrailerDetailPage(trailerId: trailer.id)) {
@@ -107,9 +103,38 @@ struct IOSTrailersPage: View {
         }
     }
 
+    @ViewBuilder
+    private var trailersEmptyState: some View {
+        if isSearching {
+            ContentUnavailableView {
+                Label("No Trailers", systemImage: "magnifyingglass")
+            } description: {
+                Text("No trailers match your search.")
+            } actions: {
+                Button("Clear Search") {
+                    searchText = ""
+                }
+            }
+        } else {
+            ContentUnavailableView {
+                Label("No Trailers", systemImage: "shippingbox")
+            } description: {
+                Text("No trailers found.")
+            }
+        }
+    }
+
+    private var isSearching: Bool {
+        !trimmedSearchText.isEmpty
+    }
+
+    private var trimmedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private var filteredTrailers: [FleetService.TrailerListItem] {
-        guard !searchText.isEmpty else { return trailers }
-        let query = searchText.lowercased()
+        guard isSearching else { return trailers }
+        let query = trimmedSearchText.lowercased()
         return trailers.filter {
             $0.trailerNumber.lowercased().contains(query) ||
             $0.trailerType.lowercased().contains(query) ||
