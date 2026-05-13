@@ -1,0 +1,35 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "8D1472B2-D136-4ECF-9B2A-F16D62C21984",
+        "deviceName" : "WEI-899 iPad 9th gen 768pt",
+        "exportedFileName" : "8772E30D-4523-48CD-A24F-4414AF24219D.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "WEI-996 iPad web gated_0_876C7088-DD7A-4786-819E-BFE84D0D9E40.png",
+        "timestamp" : 1778643277.57
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "8D1472B2-D136-4ECF-9B2A-F16D62C21984",
+        "deviceName" : "WEI-899 iPad 9th gen 768pt",
+        "exportedFileName" : "78AACDC9-AAA8-4A30-A2F5-3EEB07EA2161.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "WEI-996 iPad supplier websites_0_8516D32A-5647-4840-9FAE-5C8DB253AD22.png",
+        "timestamp" : 1778643263.95
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "8D1472B2-D136-4ECF-9B2A-F16D62C21984",
+        "deviceName" : "WEI-899 iPad 9th gen 768pt",
+        "exportedFileName" : "93DF3CDC-C29D-4DC2-9CAB-EA520BC1F9B1.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "WEI-996 iPad local catalog_0_FF947297-394D-4DC4-BA61-EA8CA0621905.png",
+        "timestamp" : 1778643249.814
+      }
+    ],
+    "testIdentifier" : "WEI996NewPartsOrderSourcingVerifierUITests/testNewPartsOrderSourcingModesAreUsable()",
+    "testIdentifierURL" : "test://com.apple.xcode/Weird%20Parts/Weird%20PartsUITests/WEI996NewPartsOrderSourcingVerifierUITests/testNewPartsOrderSourcingModesAreUsable"
+  }
+]
