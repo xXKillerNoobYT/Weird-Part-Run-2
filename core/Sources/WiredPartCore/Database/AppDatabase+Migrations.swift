@@ -119,6 +119,9 @@ extension AppDatabase {
         registerMigration080ToolMovementsIndex(&migrator)
         registerMigration081AuthTokenSessions(&migrator)
         registerMigration082StructuredEstimationReviews(&migrator)
+        registerMigration083WarehouseWalkingPaths(&migrator)
+        registerMigration084WarehouseOnboardingCompletedSteps(&migrator)
+        registerMigration085AuditSessionEvents(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5039,6 +5042,78 @@ extension AppDatabase {
                 t.column("notes", .text)
                 t.column("created_at", .text).defaults(sql: "(datetime('now'))")
             }
+        }
+    }
+
+    private static func registerMigration083WarehouseWalkingPaths(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("083_warehouse_walking_paths") { db in
+            try db.create(table: "warehouse_walking_paths") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("floor_plan_id", .integer).notNull()
+                    .references("warehouse_floor_plans")
+                t.column("name", .text).notNull().defaults(to: "Default")
+                t.column("is_default", .integer).notNull().defaults(to: 1)
+                t.column("created_by", .integer).notNull()
+                    .references("users")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("deleted_at", .text)
+                t.column("is_active", .integer).notNull().defaults(to: 1)
+            }
+
+            try db.create(table: "warehouse_walking_path_stops") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("path_id", .integer).notNull()
+                    .references("warehouse_walking_paths")
+                t.column("area_id", .integer).notNull()
+                    .references("warehouse_storage_areas")
+                t.column("sort_order", .integer).notNull()
+                t.column("note", .text)
+                t.column("deleted_at", .text)
+                t.column("is_active", .integer).notNull().defaults(to: 1)
+            }
+
+            try db.execute(sql: """
+                CREATE UNIQUE INDEX idx_walking_path_stops_unique_active_area
+                ON warehouse_walking_path_stops(path_id, area_id)
+                WHERE deleted_at IS NULL
+                """)
+            try db.execute(sql: """
+                CREATE INDEX idx_walking_path_stops_path_order
+                ON warehouse_walking_path_stops(path_id, sort_order)
+                WHERE deleted_at IS NULL
+                """)
+        }
+    }
+
+    private static func registerMigration084WarehouseOnboardingCompletedSteps(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("084_warehouse_onboarding_completed_steps") { db in
+            try db.alter(table: "warehouse_onboarding_progress") { t in
+                t.add(column: "completed_steps", .text)
+            }
+        }
+    }
+
+    private static func registerMigration085AuditSessionEvents(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("085_audit_session_events") { db in
+            try db.create(table: "audit_session_events") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("session_id", .integer).notNull()
+                    .references("audit_sessions_v2", onDelete: .cascade)
+                t.column("event_type", .text).notNull()
+                t.column("area_id", .integer)
+                    .references("warehouse_storage_areas")
+                t.column("walking_path_stop_index", .integer)
+                t.column("notes", .text)
+                t.column("recorded_by", .integer)
+                    .references("users")
+                t.column("recorded_at", .text).defaults(sql: "(datetime('now'))")
+            }
+
+            try db.execute(sql: """
+                CREATE INDEX idx_audit_session_events_session
+                ON audit_session_events(session_id, recorded_at)
+                """)
         }
     }
 

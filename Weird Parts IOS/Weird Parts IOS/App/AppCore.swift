@@ -12,6 +12,7 @@ import os.log
 @MainActor
 final class AppCore: ObservableObject {
     private static let uiTestingLaunchFlag = "-UITesting"
+    private static let uiTestingPreserveDatabaseFlag = "-UITestingPreserveDatabase"
 
     // MARK: - Published State
 
@@ -76,6 +77,10 @@ final class AppCore: ObservableObject {
         ProcessInfo.processInfo.arguments.contains(Self.uiTestingLaunchFlag)
     }
 
+    private var shouldPreserveUITestDatabase: Bool {
+        ProcessInfo.processInfo.arguments.contains(Self.uiTestingPreserveDatabaseFlag)
+    }
+
     private func bootstrap() async {
         do {
             let uiTestingMode = isUITestingMode
@@ -84,7 +89,7 @@ final class AppCore: ObservableObject {
             // priority inversion (user-interactive main thread waiting on
             // GRDB's default-QoS pool semaphore).
             let path = try Self.databasePath(isUITesting: uiTestingMode)
-            if uiTestingMode {
+            if uiTestingMode && !shouldPreserveUITestDatabase {
                 try Self.resetUITestDatabase(atPath: path)
             }
 

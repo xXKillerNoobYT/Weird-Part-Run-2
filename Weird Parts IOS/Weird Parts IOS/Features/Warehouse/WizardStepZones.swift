@@ -1,88 +1,48 @@
 import SwiftUI
 import WiredPartCore
 
-/// Wizard Step 2: Define Zones — label zones on the warehouse grid.
-///
-/// Zone types: staging, storage, receiving, returns, office, tool_storage, custom.
-/// Uses a simplified grid-tap UI where the user taps cells to mark them as a zone.
+/// Wizard Step 2: Define Zones on the saved floor-plan grid.
 struct WizardStepZones: View {
     @EnvironmentObject private var appCore: AppCore
     let floorPlanId: Int64
     @Binding var stepError: String?
 
+    @State private var floorPlan: WarehouseFloorPlan?
     @State private var zones: [WarehouseZone] = []
-    @State private var showAddZone = false
+    @State private var selectedZoneId: Int64?
+    @State private var selectedRows = 3
+    @State private var selectedCols = 5
+    @State private var gridDimensions: (rows: Int, cols: Int)?
+    @State private var zoneBeingEdited: WarehouseZone?
     @State private var deleteTarget: WarehouseZone?
+    @State private var isLoading = true
+    @State private var zoom: CGFloat = 1.0
+
+    private let zoneTypes: [(id: String, title: String, icon: String)] = [
+        ("storage", "Storage", "cabinet.fill"),
+        ("receiving", "Receiving", "arrow.down.circle.fill"),
+        ("staging", "Staging", "shippingbox.and.arrow.backward.fill"),
+        ("returns", "Returns", "arrow.uturn.backward.circle.fill"),
+        ("office", "Office", "building.2.fill"),
+        ("tool_storage", "Tool Storage", "wrench.and.screwdriver.fill"),
+        ("custom", "Custom", "square.dashed"),
+    ]
 
     var body: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 8) {
-                Text("Define the zones in your warehouse — areas like storage, receiving, staging, etc.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                Text("Each zone groups storage units by function.")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-            .padding()
-
-            Button {
-                showAddZone = true
-            } label: {
-                Label("Add Zone", systemImage: "plus.circle.fill")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .padding(.horizontal)
-
-            if zones.isEmpty {
-                ContentUnavailableView {
-                    Label("No Zones", systemImage: "rectangle.3.group")
-                } description: {
-                    Text("Add zones to organize your warehouse into functional areas.")
-                }
+        Group {
+            if isLoading {
+                ProgressView("Loading zones...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let dims = gridDimensions {
+                placementPhase(dims: dims)
             } else {
-                List {
-                    ForEach(zones, id: \.id) { zone in
-                        HStack(spacing: 12) {
-                            Circle()
-                                .fill(zoneColor(zone.zoneType))
-                                .frame(width: 12, height: 12)
-                                .accessibilityHidden(true)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(zone.label ?? zone.zoneType.replacingOccurrences(of: "_", with: " ").capitalized)
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                Text(zone.zoneType.replacingOccurrences(of: "_", with: " ").capitalized)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer()
-
-                            Image(systemName: zoneIcon(zone.zoneType))
-                                .foregroundStyle(zoneColor(zone.zoneType))
-                                .accessibilityHidden(true)
-                        }
-                        .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) {
-                                deleteTarget = zone
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
-                    }
-                }
-                .listStyle(.insetGrouped)
-                .scrollDismissesKeyboard(.interactively)
+                dimensionsPhase
             }
         }
-        .task { loadZones() }
-        .sheet(isPresented: $showAddZone) {
-            AddZoneSheet(floorPlanId: floorPlanId) {
-                loadZones()
+        .task { loadData() }
+        .sheet(item: $zoneBeingEdited) { zone in
+            AddZoneSheet(floorPlanId: floorPlanId, editingZone: zone) {
+                loadData()
             }
         }
         .confirmationDialog(
@@ -91,14 +51,7 @@ struct WizardStepZones: View {
             titleVisibility: .visible
         ) {
             Button("Delete", role: .destructive) {
-                if let zone = deleteTarget, let zoneId = zone.id {
-                    do {
-                        try appCore.warehouseService?.deleteZone(id: zoneId)
-                        loadZones()
-                    } catch {
-                        stepError = userFriendlyError(error, context: "delete zone")
-                    }
-                }
+                deleteSelectedZone()
             }
             Button("Cancel", role: .cancel) { deleteTarget = nil }
         } message: {
@@ -106,12 +59,344 @@ struct WizardStepZones: View {
         }
     }
 
-    private func loadZones() {
+    private var dimensionsPhase: some View {
+        VStack(spacing: 24) {
+            Spacer()
+
+            VStack(spacing: 8) {
+                Image(systemName: "square.grid.3x3")
+                    .font(.largeTitle)
+                    .foregroundStyle(.blue)
+                Text("Confirm Zone Grid")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                Text("Zones and storage units share the same floor-plan grid. Confirm dimensions before placing zones.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+            }
+
+            VStack(spacing: 16) {
+                Stepper("Rows: \(selectedRows)", value: $selectedRows, in: 1...20)
+                Stepper("Columns: \(selectedCols)", value: $selectedCols, in: 1...20)
+                Text("\(selectedRows * selectedCols) grid positions")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding()
+            .background(Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal)
+
+            Button {
+                confirmGrid(rows: selectedRows, cols: selectedCols)
+            } label: {
+                Text("Confirm Grid")
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+            }
+            .buttonStyle(.borderedProminent)
+            .padding(.horizontal)
+
+            Spacer()
+        }
+    }
+
+    private func placementPhase(dims: (rows: Int, cols: Int)) -> some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let layout = zoneLayout(for: width)
+
+            Group {
+                switch layout {
+                case .phone:
+                    phonePlacement(dims: dims)
+                case .tablet:
+                    tabletPlacement(dims: dims, inspector: false)
+                case .wideTablet:
+                    tabletPlacement(dims: dims, inspector: true)
+                case .desktop:
+                    desktopPlacement(dims: dims)
+                }
+            }
+        }
+    }
+
+    private func phonePlacement(dims: (rows: Int, cols: Int)) -> some View {
+        VStack(spacing: 0) {
+            palette
+            canvasScroll(dims: dims)
+            bottomInspector
+        }
+    }
+
+    private func tabletPlacement(dims: (rows: Int, cols: Int), inspector: Bool) -> some View {
+        HStack(spacing: 0) {
+            palette
+                .frame(width: 176)
+            canvasScroll(dims: dims)
+            if inspector {
+                inspectorPanel
+                    .frame(width: 260)
+            }
+        }
+    }
+
+    private func desktopPlacement(dims: (rows: Int, cols: Int)) -> some View {
+        HStack(spacing: 0) {
+            palette
+                .frame(width: 190)
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Zoom")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Slider(value: $zoom, in: 0.75...1.35)
+                        .frame(maxWidth: 260)
+                    Spacer()
+                    Button("Change Grid") { gridDimensions = nil }
+                        .font(.caption)
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                canvasScroll(dims: dims)
+            }
+            inspectorPanel
+                .frame(width: 280)
+        }
+    }
+
+    private var palette: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Zones")
+                    .font(.headline)
+                    .padding(.horizontal)
+                    .padding(.top)
+
+                ForEach(zoneTypes, id: \.id) { type in
+                    HStack(spacing: 8) {
+                        Image(systemName: type.icon)
+                            .frame(width: 24, height: 24)
+                            .foregroundStyle(zoneColor(type.id))
+                        Text(type.title)
+                            .font(.subheadline)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                        Spacer()
+                    }
+                    .frame(minHeight: 44)
+                    .padding(.horizontal, 10)
+                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+                    .padding(.horizontal)
+                    .draggable("new:\(type.id)")
+                    .accessibilityLabel("Drag \(type.title) zone")
+                }
+
+                if zones.isEmpty {
+                    ContentUnavailableView(
+                        "No Zones",
+                        systemImage: "rectangle.3.group",
+                        description: Text("Drag a zone type onto the grid.")
+                    )
+                    .padding(.top, 24)
+                }
+            }
+        }
+        .background(Color(.systemGroupedBackground))
+    }
+
+    private func canvasScroll(dims: (rows: Int, cols: Int)) -> some View {
+        ScrollView([.horizontal, .vertical]) {
+            ZoneGridCanvas(
+                rows: dims.rows,
+                cols: dims.cols,
+                zones: zones,
+                selectedZoneId: selectedZoneId,
+                zoom: zoom,
+                onCreateZone: createZone,
+                onMoveZone: moveZone,
+                onResizeZone: resizeZone,
+                onSelectZone: { selectedZoneId = $0?.id }
+            )
+            .padding()
+        }
+        .background(Color(.systemBackground))
+        .overlay {
+            if let error = stepError {
+                VStack {
+                    Spacer()
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.white)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color.red)
+                }
+            }
+        }
+    }
+
+    private var bottomInspector: some View {
+        inspectorPanel
+            .frame(maxHeight: 164)
+            .background(Color(.secondarySystemBackground))
+    }
+
+    private var inspectorPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let zone = selectedZone {
+                HStack {
+                    Image(systemName: zoneIcon(zone.zoneType))
+                        .foregroundStyle(zoneColor(zone.zoneType))
+                    Text(zoneTitle(zone))
+                        .font(.headline)
+                        .lineLimit(1)
+                    Spacer()
+                }
+                Text("\(zone.zoneTypeDisplay) at R\(zone.gridY + 1)C\(zone.gridX + 1), \(zone.gridWidth)x\(zone.gridHeight)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack {
+                    Button {
+                        resizeZone(zone, width: zone.gridWidth + 1, height: zone.gridHeight + 1)
+                    } label: {
+                        Label("Grow", systemImage: "arrow.down.right.and.arrow.up.left")
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        zoneBeingEdited = zone
+                    } label: {
+                        Label("Edit", systemImage: "pencil")
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button(role: .destructive) {
+                        deleteTarget = zone
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    .buttonStyle(.bordered)
+                }
+            } else {
+                ContentUnavailableView(
+                    "Select a Zone",
+                    systemImage: "cursorarrow.click.2",
+                    description: Text("Tap a placed zone to edit or delete it.")
+                )
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+    }
+
+    private var selectedZone: WarehouseZone? {
+        zones.first { $0.id == selectedZoneId }
+    }
+
+    private func loadData() {
         do {
+            floorPlan = try appCore.warehouseService?.getFloorPlan(id: floorPlanId)
             zones = try appCore.warehouseService?.listZones(floorPlanId: floorPlanId) ?? []
+            if let fp = floorPlan, let rows = fp.gridRows, let cols = fp.gridCols {
+                selectedRows = rows
+                selectedCols = cols
+                gridDimensions = (rows: rows, cols: cols)
+            }
+            isLoading = false
         } catch {
+            isLoading = false
             stepError = userFriendlyError(error, context: "load zones")
         }
+    }
+
+    private func confirmGrid(rows: Int, cols: Int) {
+        do {
+            try appCore.warehouseService?.updateFloorPlanGrid(floorPlanId: floorPlanId, rows: rows, cols: cols)
+            gridDimensions = (rows: rows, cols: cols)
+            loadData()
+        } catch {
+            stepError = userFriendlyError(error, context: "save grid dimensions")
+        }
+    }
+
+    private func createZone(type: String, col: Int, row: Int) {
+        do {
+            let zone = try appCore.warehouseService?.addZone(
+                floorPlanId: floorPlanId,
+                zoneType: type,
+                label: nil,
+                gridX: col,
+                gridY: row,
+                gridWidth: 1,
+                gridHeight: 1,
+                zoneOrder: zones.count
+            )
+            selectedZoneId = zone?.id
+            loadData()
+        } catch {
+            stepError = userFriendlyError(error, context: "place zone")
+        }
+    }
+
+    private func moveZone(_ zone: WarehouseZone, col: Int, row: Int) {
+        guard let zoneId = zone.id, let dims = gridDimensions else { return }
+        do {
+            try appCore.warehouseService?.updateZone(
+                id: zoneId,
+                gridX: min(col, max(dims.cols - zone.gridWidth, 0)),
+                gridY: min(row, max(dims.rows - zone.gridHeight, 0))
+            )
+            selectedZoneId = zoneId
+            loadData()
+        } catch {
+            stepError = userFriendlyError(error, context: "move zone")
+        }
+    }
+
+    private func resizeZone(_ zone: WarehouseZone, width: Int, height: Int) {
+        guard let zoneId = zone.id, let dims = gridDimensions else { return }
+        do {
+            try appCore.warehouseService?.updateZone(
+                id: zoneId,
+                gridWidth: min(width, max(dims.cols - zone.gridX, 1)),
+                gridHeight: min(height, max(dims.rows - zone.gridY, 1))
+            )
+            selectedZoneId = zoneId
+            loadData()
+        } catch {
+            stepError = userFriendlyError(error, context: "resize zone")
+        }
+    }
+
+    private func deleteSelectedZone() {
+        guard let zoneId = deleteTarget?.id else { return }
+        do {
+            try appCore.warehouseService?.deleteZone(id: zoneId)
+            deleteTarget = nil
+            selectedZoneId = nil
+            loadData()
+        } catch {
+            stepError = userFriendlyError(error, context: "delete zone")
+        }
+    }
+
+    private func zoneLayout(for width: CGFloat) -> ZonePlacementLayout {
+        if width >= 1180 { return .desktop }
+        if width >= 900 { return .wideTablet }
+        if width >= 700 { return .tablet }
+        return .phone
+    }
+
+    private func zoneTitle(_ zone: WarehouseZone) -> String {
+        let trimmed = zone.label?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed?.isEmpty == false ? trimmed! : zone.zoneTypeDisplay
     }
 
     private func zoneColor(_ type: String) -> Color {
@@ -139,6 +424,13 @@ struct WizardStepZones: View {
     }
 }
 
+private enum ZonePlacementLayout {
+    case phone
+    case tablet
+    case wideTablet
+    case desktop
+}
+
 // MARK: - Add Zone Sheet
 
 struct AddZoneSheet: View {
@@ -146,10 +438,11 @@ struct AddZoneSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let floorPlanId: Int64
+    var editingZone: WarehouseZone?
     var onSave: () -> Void
 
-    @State private var zoneType = "storage"
-    @State private var zoneName = ""
+    @State private var zoneType: String
+    @State private var zoneName: String
     @State private var saveError: String?
 
     private let zoneTypes: [(String, String, String)] = [
@@ -161,6 +454,14 @@ struct AddZoneSheet: View {
         ("tool_storage", "Tool Storage", "wrench.and.screwdriver.fill"),
         ("custom", "Custom", "square.dashed"),
     ]
+
+    init(floorPlanId: Int64, editingZone: WarehouseZone? = nil, onSave: @escaping () -> Void) {
+        self.floorPlanId = floorPlanId
+        self.editingZone = editingZone
+        self.onSave = onSave
+        _zoneType = State(initialValue: editingZone?.zoneType ?? "storage")
+        _zoneName = State(initialValue: editingZone?.label ?? "")
+    }
 
     var body: some View {
         NavigationStack {
@@ -187,14 +488,14 @@ struct AddZoneSheet: View {
                     }
                 }
             }
-            .navigationTitle("Add Zone")
+            .navigationTitle(editingZone == nil ? "Add Zone" : "Edit Zone")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") { saveZone() }
+                    Button(editingZone == nil ? "Add" : "Save") { saveZone() }
                 }
             }
         }
@@ -202,16 +503,27 @@ struct AddZoneSheet: View {
 
     private func saveZone() {
         do {
-            let label = zoneName.trimmingCharacters(in: .whitespaces).isEmpty ? nil : zoneName.trimmingCharacters(in: .whitespaces)
-            _ = try appCore.warehouseService?.addZone(
-                floorPlanId: floorPlanId,
-                zoneType: zoneType,
-                label: label
-            )
+            let trimmed = zoneName.trimmingCharacters(in: .whitespacesAndNewlines)
+            let label = trimmed.isEmpty ? nil : trimmed
+            if let zoneId = editingZone?.id {
+                try appCore.warehouseService?.updateZone(id: zoneId, zoneType: zoneType, label: label)
+            } else {
+                _ = try appCore.warehouseService?.addZone(
+                    floorPlanId: floorPlanId,
+                    zoneType: zoneType,
+                    label: label
+                )
+            }
             dismiss()
             onSave()
         } catch {
-            saveError = userFriendlyError(error, context: "add zone")
+            saveError = userFriendlyError(error, context: editingZone == nil ? "add zone" : "update zone")
         }
+    }
+}
+
+private extension WarehouseZone {
+    var zoneTypeDisplay: String {
+        zoneType.replacingOccurrences(of: "_", with: " ").capitalized
     }
 }

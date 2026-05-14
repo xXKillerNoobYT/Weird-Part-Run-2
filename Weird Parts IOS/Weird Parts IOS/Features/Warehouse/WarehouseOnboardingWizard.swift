@@ -38,7 +38,7 @@ func loadAllWizardAreas(floorPlanId: Int64, service: WarehouseService) throws ->
 
 // MARK: - Main Wizard
 
-/// 9-step guided warehouse setup wizard (progressive, resumable).
+/// 10-step guided warehouse setup wizard (progressive, resumable).
 ///
 /// Step 1: Define Warehouse Size — name + width × length
 /// Step 2: Define Zones — zone types for functional areas
@@ -47,8 +47,9 @@ func loadAllWizardAreas(floorPlanId: Int64, service: WarehouseService) throws ->
 /// Step 5: Define Shelves — levels within each unit
 /// Step 6: Define Areas — sections within each shelf
 /// Step 7: Bin Numbers — numbered bins for bin-type areas
-/// Step 8: Part Assignment — assign catalog parts to bins/areas
-/// Step 9: Count Verification — confirm physical counts
+/// Step 8: Walking Path — define audit walking order
+/// Step 9: Part Assignment — assign catalog parts to bins/areas
+/// Step 10: Count Verification — confirm physical counts and targets
 struct WarehouseOnboardingWizard: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
@@ -65,11 +66,18 @@ struct WarehouseOnboardingWizard: View {
     @State private var widthFeet = 40
     @State private var lengthFeet = 60
 
-    private let totalSteps = 9
+    private let totalSteps = 10
     private let stepLabels = [
-        "Define Size", "Define Zones", "Storage Units",
-        "Place Units", "Shelves", "Areas",
-        "Bin Numbers", "Assign Parts", "Verify Counts"
+        "Phase 1 · Define Size",
+        "Phase 1 · Define Zones",
+        "Phase 2 · Storage Units",
+        "Phase 2 · Place Units",
+        "Phase 3 · Shelves",
+        "Phase 3 · Areas",
+        "Phase 3 · Bin Numbers",
+        "Phase 4 · Walking Path",
+        "Phase 5 · Assign Parts",
+        "Phase 5/6 · Verify Counts & Targets"
     ]
 
     var body: some View {
@@ -112,15 +120,17 @@ struct WarehouseOnboardingWizard: View {
                             stepError: $loadError
                         ).tag(7)
 
+                        walkingPathStep.tag(8)
+
                         WarehouseWizardStep4(
                             floorPlanId: fpId,
                             stepError: $loadError
-                        ).tag(8)
+                        ).tag(9)
 
                         WarehouseWizardStep5(
                             floorPlanId: fpId,
                             stepError: $loadError
-                        ).tag(9)
+                        ).tag(10)
                     } else {
                         ForEach(2...totalSteps, id: \.self) { step in
                             incompleteStepView.tag(step)
@@ -153,6 +163,18 @@ struct WarehouseOnboardingWizard: View {
             Label("Complete Step 1 First", systemImage: "1.circle")
         } description: {
             Text("Create a floor plan before setting up storage units.")
+        }
+    }
+
+    @ViewBuilder
+    private var walkingPathStep: some View {
+        if let floorPlanId {
+            WizardStepWalkingPath(
+                floorPlanId: floorPlanId,
+                stepError: $loadError
+            )
+        } else {
+            incompleteStepView
         }
     }
 
@@ -282,10 +304,11 @@ struct WarehouseOnboardingWizard: View {
                 .disabled(isSaving)
             }
 
-            // Skip for Now (steps 2-8 only)
+            // Skip for Now (steps 2-9 only)
             if currentStep > 1 && currentStep < totalSteps {
                 Button {
                     completedWizardSteps.insert(currentStep)
+                    saveProgressToDb()
                     withAnimation { currentStep += 1 }
                 } label: {
                     Text("Skip")
@@ -313,15 +336,17 @@ struct WarehouseOnboardingWizard: View {
                 currentStep = min(existing.currentStep, totalSteps)
                 floorPlanId = existing.floorPlanId
 
-                // Restore completed steps
+                // Restore legacy completed steps
                 if existing.step1Complete { completedWizardSteps.insert(1) }
                 if existing.step2Complete { completedWizardSteps.insert(2) }
                 if existing.step3Complete { completedWizardSteps.insert(3) }
 
-                // Restore extended step data from JSON
-                if let stepData = existing.step4Progress,
-                   let data = stepData.data(using: .utf8),
-                   let steps = try? JSONDecoder().decode(Set<Int>.self, from: data) {
+                // Restore completed steps from canonical JSON, falling back to
+                // the legacy step4_progress payload for in-progress sessions.
+                let completedStepsJSON = existing.completedSteps ?? existing.step4Progress
+                if let completedStepsJSON,
+                   let data = completedStepsJSON.data(using: .utf8),
+                   let steps = try? JSONDecoder().decode([Int].self, from: data) {
                     completedWizardSteps.formUnion(steps)
                 }
             }
@@ -348,10 +373,15 @@ struct WarehouseOnboardingWizard: View {
 
                 if progress == nil {
                     progress = try service.startOnboarding(floorPlanId: plan.id)
-                } else if let id = progress?.id {
+                }
+
+                if let id = progress?.id {
                     try service.updateOnboardingStep(
-                        id: id, currentStep: 2,
-                        step1Complete: true, floorPlanId: plan.id
+                        id: id,
+                        currentStep: 2,
+                        step1Complete: true,
+                        completedSteps: completedStepsJSON([1]),
+                        floorPlanId: plan.id
                     )
                 }
                 completedWizardSteps.insert(1)
@@ -367,21 +397,17 @@ struct WarehouseOnboardingWizard: View {
         withAnimation { currentStep = min(currentStep + 1, totalSteps) }
     }
 
-    private func saveProgressToDb() {
+    private func saveProgressToDb(currentStepForResume: Int? = nil) {
         guard let service = appCore.warehouseService, let id = progress?.id else { return }
         do {
-            // Encode extended completed steps as JSON for steps 4+
-            let extendedSteps = completedWizardSteps.filter { $0 >= 4 }
-            let stepDataJson = try? String(data: JSONEncoder().encode(extendedSteps), encoding: .utf8)
-
-            let nextStep = min(currentStep + 1, totalSteps)
+            let savedStep = currentStepForResume ?? min(currentStep + 1, totalSteps)
             try service.updateOnboardingStep(
                 id: id,
-                currentStep: nextStep,
+                currentStep: savedStep,
                 step1Complete: completedWizardSteps.contains(1),
                 step2Complete: completedWizardSteps.contains(2),
                 step3Complete: completedWizardSteps.contains(3),
-                step4Progress: stepDataJson
+                completedSteps: completedStepsJSON(completedWizardSteps)
             )
         } catch {
             loadError = userFriendlyError(error, context: "save progress")
@@ -390,17 +416,7 @@ struct WarehouseOnboardingWizard: View {
 
     private func saveAndExit() {
         isSaving = true
-        saveProgressToDb()
-        // Also persist current step for resume (non-fatal if this fails — main
-        // progress is already saved by saveProgressToDb; resume position may
-        // be off by one step at worst).
-        if let service = appCore.warehouseService, let id = progress?.id {
-            do {
-                try service.updateOnboardingStep(id: id, currentStep: currentStep)
-            } catch {
-                // Non-fatal: intentionally ignored; main progress already saved above
-            }
-        }
+        saveProgressToDb(currentStepForResume: currentStep)
         isSaving = false
         // Only dismiss if save succeeded (loadError is set by saveProgressToDb on failure)
         if loadError == nil {
@@ -423,6 +439,12 @@ struct WarehouseOnboardingWizard: View {
         }
         isSaving = false
         dismiss()
+    }
+
+    private func completedStepsJSON(_ steps: Set<Int>) -> String {
+        let boundedSteps = steps.filter { (1...totalSteps).contains($0) }.sorted()
+        let data = (try? JSONEncoder().encode(boundedSteps)) ?? Data("[]".utf8)
+        return String(data: data, encoding: .utf8) ?? "[]"
     }
 }
 

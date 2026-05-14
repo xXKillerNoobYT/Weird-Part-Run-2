@@ -324,6 +324,35 @@ struct WarehouseFloorPlanTests {
         #expect(after != nil || initial == nil)
     }
 
+    @Test("getOnboardingProgress migrates legacy step4 progress into completedSteps")
+    func testOnboardingProgressMigratesLegacyCompletedSteps() throws {
+        let env = try freshEnv()
+        let legacyJSON = "[4,5,11]"
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO warehouse_onboarding_progress
+                    (current_step, step1_complete, step2_complete, step3_complete, step4_progress)
+                VALUES
+                    (6, 0, 0, 0, ?)
+                """, arguments: [legacyJSON])
+        }
+
+        let progress = try env.warehouse.getOnboardingProgress()
+        let data = try #require(progress?.completedSteps?.data(using: .utf8))
+        let completedSteps = try JSONDecoder().decode([Int].self, from: data)
+        let persistedCompletedStepsJSON = try env.db.writer.read { db in
+            try String.fetchOne(
+                db,
+                sql: "SELECT completed_steps FROM warehouse_onboarding_progress WHERE id = ?",
+                arguments: [progress?.id]
+            )
+        }
+
+        #expect(completedSteps == [4, 5])
+        #expect(persistedCompletedStepsJSON == "[4,5]")
+    }
+
     // MARK: - Flow Onboarding (startFlowOnboarding / updateFlowProgress)
 
     @Test("startFlowOnboarding creates a progress record with correct flow metadata")
