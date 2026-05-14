@@ -15,4 +15,12 @@ struct Weird_Parts_IOSTests {
         // Write your test here and use APIs like `#expect(...)` to check expected conditions.
     }
 
+    @MainActor
+    @Test func qaResolvedStatusBucketIncludesServiceResolvedStatus() async throws {
+        #expect(QAThreadStatusBuckets.isResolved("resolved"))
+        #expect(QAThreadStatusBuckets.isResolved("answered"))
+        #expect(QAThreadStatusBuckets.isResolved("closed"))
+        #expect(!QAThreadStatusBuckets.isResolved("open"))
+        #expect(!QAThreadStatusBuckets.isResolved("escalated"))
+    }
 }
