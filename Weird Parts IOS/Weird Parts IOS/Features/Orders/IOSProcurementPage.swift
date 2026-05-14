@@ -55,6 +55,50 @@ struct IOSProcurementPage: View {
         var id: String { "help" }
     }
 
+    private var generateErrorPresented: Binding<Bool> {
+        Binding(
+            get: { generateError != nil },
+            set: { isPresented in
+                if !isPresented {
+                    generateError = nil
+                }
+            }
+        )
+    }
+
+    private var generateSuccessPresented: Binding<Bool> {
+        Binding(
+            get: { generateSuccess != nil },
+            set: { isPresented in
+                if !isPresented {
+                    generateSuccess = nil
+                }
+            }
+        )
+    }
+
+    private var pullActionErrorPresented: Binding<Bool> {
+        Binding(
+            get: { pullActionError != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pullActionError = nil
+                }
+            }
+        )
+    }
+
+    private var pullActionSuccessPresented: Binding<Bool> {
+        Binding(
+            get: { pullActionSuccess != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pullActionSuccess = nil
+                }
+            }
+        )
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             OnboardingBanner(pageId: "orders-procurement")
@@ -107,18 +151,12 @@ struct IOSProcurementPage: View {
         .onDisappear {
             NotificationCenter.default.post(name: .procurementPageInactive, object: nil)
         }
-        .alert("Error", isPresented: Binding(
-            get: { generateError != nil },
-            set: { if !$0 { generateError = nil } }
-        )) {
+        .alert("Error", isPresented: generateErrorPresented) {
             Button("OK") { generateError = nil }
         } message: {
             Text(generateError ?? "")
         }
-        .alert("POs Generated", isPresented: Binding(
-            get: { generateSuccess != nil },
-            set: { if !$0 { generateSuccess = nil } }
-        )) {
+        .alert("POs Generated", isPresented: generateSuccessPresented) {
             Button("OK") {
                 generateSuccess = nil
                 loadData() // Refresh to remove generated items
@@ -126,18 +164,12 @@ struct IOSProcurementPage: View {
         } message: {
             Text(generateSuccess ?? "")
         }
-        .alert("Pull Error", isPresented: Binding(
-            get: { pullActionError != nil },
-            set: { if !$0 { pullActionError = nil } }
-        )) {
+        .alert("Pull Error", isPresented: pullActionErrorPresented) {
             Button("OK") { pullActionError = nil }
         } message: {
             Text(pullActionError ?? "")
         }
-        .alert("Pull Complete", isPresented: Binding(
-            get: { pullActionSuccess != nil },
-            set: { if !$0 { pullActionSuccess = nil } }
-        )) {
+        .alert("Pull Complete", isPresented: pullActionSuccessPresented) {
             Button("OK") {
                 pullActionSuccess = nil
                 loadData() // Refresh stock levels
