@@ -32,6 +32,7 @@ public final class SchedulingService: Sendable {
         case requiredFieldEmpty
         case jobNotFound(Int64)
         case userNotFound(Int64)
+        case dispatchNotFound(Int64)
     }
 
     // =========================================================================
@@ -970,6 +971,74 @@ public final class SchedulingService: Sendable {
                 arguments: [jobId, userId, date, startTime, endTime, notes, timeSlot]
             )
             return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Reschedule an existing dispatch assignment to a new job/date/time slot.
+    ///
+    /// Used by the Dispatch Board drag-and-drop path. The assignment keeps its
+    /// original user and notes, while the destination job/day/slot changes.
+    public func rescheduleDispatchAssignment(
+        id: Int64,
+        jobId: Int64,
+        date: String,
+        timeSlot: String = "full"
+    ) throws {
+        guard !date.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw SchedulingError.requiredFieldEmpty
+        }
+
+        try db.writer.write { dbConn in
+            guard let row = try Row.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT id, user_id
+                    FROM job_dispatch
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [id]
+            ) else {
+                throw SchedulingError.dispatchNotFound(id)
+            }
+
+            let userId: Int64 = row["user_id"] ?? 0
+
+            let jobExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [jobId]) ?? 0) > 0
+            guard jobExists else { throw SchedulingError.jobNotFound(jobId) }
+
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [userId]) ?? 0) > 0
+            guard userExists else { throw SchedulingError.userNotFound(userId) }
+
+            let existingCount = try Int.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT COUNT(*) FROM job_dispatch
+                    WHERE user_id = ?
+                      AND dispatch_date = ?
+                      AND id != ?
+                      AND deleted_at IS NULL
+                    """,
+                arguments: [userId, date, id]
+            ) ?? 0
+            if existingCount > 0 {
+                throw SchedulingError.doubleBooking(userId: userId, date: date)
+            }
+
+            try dbConn.execute(
+                sql: """
+                    UPDATE job_dispatch
+                    SET job_id = ?,
+                        dispatch_date = ?,
+                        time_slot = ?,
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                arguments: [jobId, date, timeSlot, id]
+            )
         }
     }
 

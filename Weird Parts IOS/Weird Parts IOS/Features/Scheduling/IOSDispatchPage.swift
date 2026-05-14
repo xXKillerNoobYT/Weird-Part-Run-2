@@ -16,6 +16,18 @@ struct DraggableWorker: Codable, Transferable {
     }
 }
 
+/// Lightweight Codable wrapper representing an existing dispatch assignment
+/// being moved to a different Gantt cell.
+struct DraggableDispatchAssignment: Codable, Transferable {
+    let id: Int64
+    let employeeName: String
+    let timeSlot: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .json)
+    }
+}
+
 /// Gantt-style dispatch board for iOS.
 ///
 /// Shows job rows with daily columns across the week. Colored bars show who's
@@ -49,8 +61,9 @@ struct IOSDispatchPage: View {
     @State private var actionError: String?
     @State private var activeSheet: ActiveSheet?
 
-    // Drag-and-drop: tracks which job row is currently targeted
+    // Drag-and-drop: tracks which job row/cell is currently targeted
     @State private var dropTargetJobId: Int64?
+    @State private var dropTargetCellKey: String?
 
     private enum ActiveSheet: Identifiable {
         case help
@@ -127,7 +140,7 @@ struct IOSDispatchPage: View {
                 PageHelpSheet(title: "Dispatch Board Help", sections: [
                     ("What This Page Does", "The Dispatch Board is a Gantt-style weekly view showing which workers are assigned to which jobs each day. Colored bars indicate time slots: blue for AM, green for PM, and orange for full day."),
                     ("How to Use It", "Navigate between weeks using the left/right arrows. Tap an empty cell on a job row to assign a worker to that job and day. Tap a worker in the Unassigned section to start an assignment for them. Use the + button to create a new assignment from scratch."),
-                    ("Drag & Drop", "Press and hold an unassigned worker chip, then drag it onto a job row. The row highlights blue when targeted. Dropping creates a full-day assignment for today (or the week start if today is not in the displayed week). Time-off conflicts are checked automatically."),
+                    ("Drag & Drop", "Press and hold an unassigned worker chip or an existing assignment chip, then drag it onto a job/date cell. The cell highlights blue when targeted. Dropping an unassigned worker creates a full-day assignment. Dropping an existing assignment reschedules it to that job and date while keeping its time slot."),
                     ("Time-Off Conflicts", "If you assign someone who has approved time off that day, you will see a conflict warning. You can choose to assign them anyway or cancel."),
                     ("Tips", "Red 'Unassigned Workers' at the bottom means people have no work scheduled that week. Aim to keep this section empty by assigning everyone to jobs.")
                 ])
@@ -323,6 +336,8 @@ struct IOSDispatchPage: View {
     private func dayCellForJob(row: SchedulingService.DispatchJobRow, day: Date) -> some View {
         let dayStr = dateString(day)
         let workers = assignments.filter { $0.jobId == row.id && $0.date == dayStr }
+        let cellKey = "\(row.id)-\(dayStr)"
+        let isDropTarget = dropTargetCellKey == cellKey
 
         return VStack(spacing: 1) {
             if workers.isEmpty {
@@ -355,10 +370,40 @@ struct IOSDispatchPage: View {
                             RoundedRectangle(cornerRadius: 3)
                                 .fill(slotColor(worker.timeSlot))
                         )
+                        .draggable(
+                            DraggableDispatchAssignment(
+                                id: worker.id,
+                                employeeName: worker.employeeName,
+                                timeSlot: worker.timeSlot
+                            )
+                        )
+                        .accessibilityLabel("Move \(worker.employeeName)")
                 }
             }
         }
         .frame(maxWidth: .infinity, minHeight: 24)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(isDropTarget ? Color.blue.opacity(0.12) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(isDropTarget ? Color.blue : Color.clear, lineWidth: 1)
+        )
+        .dropDestination(for: DraggableWorker.self) { workers, _ in
+            guard let worker = workers.first else { return false }
+            createAssignment(jobId: row.id, userId: worker.id, date: dayStr, timeSlot: "full")
+            return true
+        } isTargeted: { targeted in
+            dropTargetCellKey = targeted ? cellKey : (dropTargetCellKey == cellKey ? nil : dropTargetCellKey)
+        }
+        .dropDestination(for: DraggableDispatchAssignment.self) { movedAssignments, _ in
+            guard let assignment = movedAssignments.first else { return false }
+            rescheduleAssignment(assignment, toJobId: row.id, date: dayStr)
+            return true
+        } isTargeted: { targeted in
+            dropTargetCellKey = targeted ? cellKey : (dropTargetCellKey == cellKey ? nil : dropTargetCellKey)
+        }
     }
 
     private func slotColor(_ slot: String) -> Color {
@@ -481,6 +526,25 @@ struct IOSDispatchPage: View {
             loadData()
         } catch {
             actionError = userFriendlyError(error, context: "complete action")
+        }
+    }
+
+    private func rescheduleAssignment(_ assignment: DraggableDispatchAssignment, toJobId jobId: Int64, date: String) {
+        guard let service = appCore.schedulingService else {
+            actionError = "Service not available"
+            return
+        }
+        actionError = nil
+        do {
+            try service.rescheduleDispatchAssignment(
+                id: assignment.id,
+                jobId: jobId,
+                date: date,
+                timeSlot: assignment.timeSlot
+            )
+            loadData()
+        } catch {
+            actionError = userFriendlyError(error, context: "reschedule assignment")
         }
     }
 

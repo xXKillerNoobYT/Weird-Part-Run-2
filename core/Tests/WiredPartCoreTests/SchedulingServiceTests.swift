@@ -2375,6 +2375,71 @@ struct SchedulingServiceTests {
         #expect(assignments[0].status == "scheduled")
     }
 
+    @Test("rescheduleDispatchAssignment moves job date and keeps board-visible row")
+    func testRescheduleDispatchAssignment() throws {
+        let env = try E2ETestHelpers.setUp()
+        let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-RS-01", name: "Original Job")
+        let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-RS-02", name: "Moved Job")
+
+        let entryId = try env.scheduling.createScheduleEntry(
+            userId: env.adminUserId,
+            jobId: firstJobId,
+            date: "2026-10-13",
+            timeSlot: "am"
+        )
+
+        try env.scheduling.rescheduleDispatchAssignment(
+            id: entryId,
+            jobId: secondJobId,
+            date: "2026-10-15",
+            timeSlot: "pm"
+        )
+
+        let assignments = try env.scheduling.getWeeklyDispatchAssignments(
+            weekStart: "2026-10-12",
+            weekEnd: "2026-10-18"
+        )
+        #expect(assignments.count == 1)
+        #expect(assignments[0].id == entryId)
+        #expect(assignments[0].jobId == secondJobId)
+        #expect(assignments[0].date == "2026-10-15")
+        #expect(assignments[0].timeSlot == "pm")
+    }
+
+    @Test("rescheduleDispatchAssignment rejects double-booking same worker date")
+    func testRescheduleDispatchAssignmentRejectsDoubleBooking() throws {
+        let env = try E2ETestHelpers.setUp()
+        let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-RS-03", name: "First Job")
+        let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-RS-04", name: "Second Job")
+
+        let firstEntryId = try env.scheduling.createScheduleEntry(
+            userId: env.adminUserId,
+            jobId: firstJobId,
+            date: "2026-10-13",
+            timeSlot: "am"
+        )
+        _ = try env.scheduling.createScheduleEntry(
+            userId: env.adminUserId,
+            jobId: secondJobId,
+            date: "2026-10-15",
+            timeSlot: "pm"
+        )
+
+        var threw = false
+        do {
+            try env.scheduling.rescheduleDispatchAssignment(
+                id: firstEntryId,
+                jobId: secondJobId,
+                date: "2026-10-15",
+                timeSlot: "am"
+            )
+        } catch SchedulingService.SchedulingError.doubleBooking(let userId, let date) {
+            threw = userId == env.adminUserId && date == "2026-10-15"
+        } catch {}
+
+        #expect(threw, "rescheduleDispatchAssignment must preserve one dispatch per worker per date")
+    }
+
     // MARK: - Soft-Deleted Dispatch Not Returned
 
     @Test("getMySchedule excludes soft-deleted dispatches")
