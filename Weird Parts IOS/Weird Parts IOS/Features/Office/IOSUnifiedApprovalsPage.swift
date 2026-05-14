@@ -174,7 +174,9 @@ struct IOSUnifiedApprovalsPage: View {
                 title: "No Pending Approvals",
                 message: searchText.isEmpty
                     ? "All items have been reviewed."
-                    : "No approvals match your search."
+                    : "No approvals match your search.",
+                helpLabel: "Learn how approvals work",
+                helpAction: { activeSheet = .help }
             )
         } else {
             List {

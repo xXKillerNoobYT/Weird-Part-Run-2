@@ -163,10 +163,15 @@ struct IOSQuestionsPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredThreads.isEmpty {
-            ContentUnavailableView {
-                Label("No Questions", systemImage: "questionmark.circle")
-            } description: {
-                Text("No Q&A threads match your criteria.")
+            EmptyStateView(
+                icon: "questionmark.circle",
+                title: "No Questions",
+                message: emptyQuestionsMessage,
+                actionLabel: "Ask Question",
+                helpLabel: "Learn how Q&A works",
+                helpAction: { activeSheet = .help }
+            ) {
+                activeSheet = .askQuestion
             }
         } else {
             List(filteredThreads, id: \.id) { thread in
@@ -180,6 +185,13 @@ struct IOSQuestionsPage: View {
             }
             .listStyle(.insetGrouped)
         }
+    }
+
+    private var emptyQuestionsMessage: String {
+        if searchText.isEmpty && statusFilter == .all {
+            return "Ask the first job question so it can move through the escalation chain."
+        }
+        return "No Q&A threads match your current search or filter."
     }
 
     private var filteredThreads: [ChatService.QAThreadRow] {

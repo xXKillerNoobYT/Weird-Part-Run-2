@@ -232,7 +232,9 @@ struct IOSMessageThreadView: View {
             EmptyStateView(
                 icon: "bubble.left.and.bubble.right",
                 title: "No Messages",
-                message: "Start the conversation by sending a message below."
+                message: "Start the conversation by sending a message below.",
+                helpLabel: "Learn how threads work",
+                helpAction: { activeSheet = .help }
             )
         } else {
             ScrollViewReader { proxy in

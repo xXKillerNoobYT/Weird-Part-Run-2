@@ -161,8 +161,13 @@ struct IOSRFIListPage: View {
             EmptyStateView(
                 icon: "doc.questionmark",
                 title: "No RFIs",
-                message: statusFilter == .all ? "No formal RFIs have been created yet." : "No RFIs match this filter."
-            )
+                message: emptyRFIsMessage,
+                actionLabel: statusFilter == .all && searchText.isEmpty ? "Create RFI" : nil,
+                helpLabel: "Learn how RFIs work",
+                helpAction: { activeSheet = .help }
+            ) {
+                activeSheet = .createRFI
+            }
         } else {
             List(filteredRFIs) { rfi in
                 NavigationLink {
@@ -175,6 +180,13 @@ struct IOSRFIListPage: View {
             }
             .listStyle(.insetGrouped)
         }
+    }
+
+    private var emptyRFIsMessage: String {
+        if statusFilter == .all && searchText.isEmpty {
+            return "Create the first formal request for job clarification or outside-party decisions."
+        }
+        return "No RFIs match your current search or filter."
     }
 
     private var filteredRFIs: [ChatService.RFIRecord] {

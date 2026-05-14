@@ -65,7 +65,9 @@ struct IOSSpendingDashboardPage: View {
                     EmptyStateView(
                         icon: "chart.bar",
                         title: "No Spending Data",
-                        message: "Spending charts will appear once orders have cost data."
+                        message: "Spending charts will appear once orders have cost data.",
+                        helpLabel: "Learn how spending works",
+                        helpAction: { activeSheet = .help }
                     )
                     .padding(.vertical, 16)
                 }

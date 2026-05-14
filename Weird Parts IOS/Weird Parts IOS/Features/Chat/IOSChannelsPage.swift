@@ -266,10 +266,13 @@ struct IOSChannelsPage: View {
             EmptyStateView(
                 icon: "bubble.left.and.bubble.right",
                 title: "No Channels",
-                message: typeFilter == .all
-                    ? "You haven't joined any channels yet."
-                    : "No channels match this filter."
-            )
+                message: emptyChannelsMessage,
+                actionLabel: typeFilter == .all && searchText.isEmpty ? "New Channel" : nil,
+                helpLabel: "Learn how channels work",
+                helpAction: { activeSheet = .help }
+            ) {
+                activeSheet = .createChannel
+            }
         } else {
             List {
                 Section {
@@ -292,6 +295,13 @@ struct IOSChannelsPage: View {
             }
             .listStyle(.insetGrouped)
         }
+    }
+
+    private var emptyChannelsMessage: String {
+        if typeFilter == .all && searchText.isEmpty {
+            return "Create a channel or direct message to start team conversations."
+        }
+        return "No conversations match your current search, date range, or filter."
     }
 
     // MARK: - Inbox Row
