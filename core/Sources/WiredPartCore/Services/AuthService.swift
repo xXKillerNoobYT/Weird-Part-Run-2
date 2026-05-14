@@ -11,7 +11,7 @@ import os.log
 ///   1. `seedFirstAdmin()` — the very first device in a new company
 ///   2. Sync from another device — all subsequent devices
 ///
-/// PIN verification uses SHA-256 hashes stored locally. Session tokens
+/// PIN verification uses versioned memory-hard hashes stored locally. Session tokens
 /// are base64-encoded JSON payloads (24-hour expiry).
 ///
 /// Ported from: `src/local/services/auth-service.ts`
@@ -80,6 +80,9 @@ public final class AuthService: Sendable {
     /// Protected by attemptLock — safe for concurrent access.
     nonisolated(unsafe) private static var loginAttempts: [Int64: LoginAttemptState] = [:]
     private static let attemptLock = NSLock()
+
+    private static let pinHashPrefix = "$wp-scrypt$"
+    nonisolated(unsafe) static var pinKDFParameters = ScryptKDF.Parameters(logN: 12, r: 8, p: 1, dkLen: 32)
 
     /// Lockout durations: 3 failures → 5s, 5 → 30s, 8 → 2min, 10+ → 5min
     private static func lockoutDuration(forFailures count: Int) -> TimeInterval? {
@@ -169,8 +172,8 @@ public final class AuthService: Sendable {
             return AuthResult(success: false, user: nil, token: nil, message: "User record missing ID")
         }
 
-        // Migration path: re-hash legacy PINs with a per-user salt on successful login
-        if user.pinSalt == nil {
+        // Migration path: re-hash legacy SHA PINs with scrypt on successful login.
+        if !Self.isCurrentPinHash(pinHash) {
             let newSalt = Self.generateSalt()
             let newHash = Self.hashPin(pin, salt: newSalt)
             let now = Self.currentTimestamp()
@@ -685,16 +688,20 @@ public final class AuthService: Sendable {
     // MARK: - Internal Helpers
 
     /// Verify a PIN against a stored hash.
-    /// Supports both legacy (fixed salt) and new (per-user salt + key stretching) formats.
+    /// Supports current scrypt hashes plus legacy fixed-salt and per-user salted SHA-256 hashes.
     static func verifyPinLocally(pin: String, storedHash: String, salt: String?) -> Bool {
         // If it's a bcrypt hash, we can't verify offline
         if storedHash.hasPrefix("$2b$") || storedHash.hasPrefix("$2a$") {
             return false
         }
 
-        if let salt {
-            // New per-user salted hash with key stretching
-            let computed = hashPin(pin, salt: salt)
+        if storedHash.hasPrefix(pinHashPrefix) {
+            guard let parsed = parseScryptHash(storedHash) else { return false }
+            let computed = scryptDigest(pin: pin, salt: parsed.salt, parameters: parsed.parameters)
+            return constantTimeEqual(computed, parsed.digest)
+        } else if let salt {
+            // Legacy per-user salted SHA-256 hash (pre-DIS-012).
+            let computed = legacySaltedHashPin(pin, salt: salt)
             return computed == storedHash
         } else {
             // Legacy fixed-salt hash (pre-migration 023)
@@ -703,8 +710,15 @@ public final class AuthService: Sendable {
         }
     }
 
-    /// Hash a PIN with a per-user salt using iterated SHA-256 for key stretching.
+    /// Hash a PIN with a per-user salt using scrypt.
     static func hashPin(_ pin: String, salt: String) -> String {
+        let parameters = pinKDFParameters
+        let digest = scryptDigest(pin: pin, salt: salt, parameters: parameters)
+        return "\(pinHashPrefix)v=1$ln=\(parameters.logN),r=\(parameters.r),p=\(parameters.p),dk=\(parameters.dkLen)$\(salt)$\(digest)"
+    }
+
+    /// Legacy per-user salted hash retained only for backward-compatible verification.
+    static func legacySaltedHashPin(_ pin: String, salt: String) -> String {
         let input = Data((pin + ":" + salt).utf8)
         var hash = SHA256.hash(data: input)
         for _ in 0..<10_000 {
@@ -725,6 +739,71 @@ public final class AuthService: Sendable {
     static func generateSalt() -> String {
         let bytes = (0..<16).map { _ in UInt8.random(in: 0...255) }
         return Data(bytes).base64EncodedString()
+    }
+
+    private static func isCurrentPinHash(_ storedHash: String) -> Bool {
+        storedHash.hasPrefix(pinHashPrefix)
+    }
+
+    private static func scryptDigest(pin: String, salt: String, parameters: ScryptKDF.Parameters) -> String {
+        do {
+            let digest = try ScryptKDF.derive(
+                password: Data(pin.utf8),
+                salt: Data(salt.utf8),
+                parameters: parameters
+            )
+            return digest.map { String(format: "%02x", $0) }.joined()
+        } catch {
+            return ""
+        }
+    }
+
+    private static func parseScryptHash(_ hash: String) -> (parameters: ScryptKDF.Parameters, salt: String, digest: String)? {
+        let parts = hash.split(separator: "$", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count == 6,
+              parts[0].isEmpty,
+              parts[1] == "wp-scrypt",
+              parts[2] == "v=1" else {
+            return nil
+        }
+
+        var pairs: [String: Int] = [:]
+        for pair in parts[3].split(separator: ",") {
+            let pieces = pair.split(separator: "=", maxSplits: 1).map(String.init)
+            guard pieces.count == 2,
+                  pairs[pieces[0]] == nil,
+                  let value = Int(pieces[1]) else {
+                return nil
+            }
+            pairs[pieces[0]] = value
+        }
+
+        guard let logN = pairs["ln"],
+              let r = pairs["r"],
+              let p = pairs["p"],
+              let dkLen = pairs["dk"],
+              (2...16).contains(logN),
+              (1...8).contains(r),
+              (1...2).contains(p),
+              (16...64).contains(dkLen),
+              !parts[4].isEmpty,
+              parts[5].range(of: #"^[0-9a-f]{32,128}$"#, options: .regularExpression) != nil else {
+            return nil
+        }
+
+        return (ScryptKDF.Parameters(logN: logN, r: r, p: p, dkLen: dkLen), parts[4], parts[5])
+    }
+
+    private static func constantTimeEqual(_ lhs: String, _ rhs: String) -> Bool {
+        let lhsBytes = Array(lhs.utf8)
+        let rhsBytes = Array(rhs.utf8)
+        var difference = lhsBytes.count ^ rhsBytes.count
+        for i in 0..<max(lhsBytes.count, rhsBytes.count) {
+            let left = i < lhsBytes.count ? lhsBytes[i] : 0
+            let right = i < rhsBytes.count ? rhsBytes[i] : 0
+            difference |= Int(left ^ right)
+        }
+        return difference == 0
     }
 
     /// Device-specific signing key. Persisted in the Keychain so tokens survive app

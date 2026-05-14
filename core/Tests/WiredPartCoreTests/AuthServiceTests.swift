@@ -6,19 +6,24 @@ import CryptoKit
 
 @Suite("AuthService Tests", .serialized)
 struct AuthServiceTests {
+    init() {
+        AuthService.pinKDFParameters = ScryptKDF.Parameters(logN: 2, r: 8, p: 1, dkLen: 32)
+    }
 
     private func freshDB() throws -> AppDatabase {
-        try AppDatabase.openInMemoryDatabase()
+        AuthService.pinKDFParameters = ScryptKDF.Parameters(logN: 2, r: 8, p: 1, dkLen: 32)
+        return try AppDatabase.openInMemoryDatabase()
     }
 
     // MARK: - PIN Hashing
 
-    @Test("hashPin produces consistent SHA-256 hex")
+    @Test("hashPin produces consistent scrypt format")
     func testHashPinConsistent() throws {
         let hash1 = AuthService.hashPin("1234", salt: "test-salt")
         let hash2 = AuthService.hashPin("1234", salt: "test-salt")
         #expect(hash1 == hash2)
-        #expect(hash1.count == 64) // SHA-256 = 32 bytes = 64 hex chars
+        #expect(hash1.hasPrefix("$wp-scrypt$v=1$"))
+        #expect(hash1.contains("ln=2,r=8,p=1,dk=32"))
     }
 
     @Test("hashPin produces different hashes for different PINs")
@@ -26,6 +31,17 @@ struct AuthServiceTests {
         let hash1 = AuthService.hashPin("1234", salt: "test-salt")
         let hash2 = AuthService.hashPin("5678", salt: "test-salt")
         #expect(hash1 != hash2)
+    }
+
+    @Test("scrypt KDF matches RFC 7914 test vector")
+    func testScryptRFCVector() throws {
+        let derived = try ScryptKDF.derive(
+            password: Data(),
+            salt: Data(),
+            parameters: ScryptKDF.Parameters(logN: 4, r: 1, p: 1, dkLen: 64)
+        )
+        let hex = derived.map { String(format: "%02x", $0) }.joined()
+        #expect(hex == "77d6576238657b203b19ca42c18a0497f16b4844e3074ae8dfdffa3fede21442fcd0069ded0948f8326a753a0fc81f17e8d3e0fb2e0d3628cf35e20c38d18906")
     }
 
     @Test("verifyPinLocally returns true for correct PIN")
@@ -41,9 +57,24 @@ struct AuthServiceTests {
         #expect(!AuthService.verifyPinLocally(pin: "0000", storedHash: hash, salt: "test-salt"))
     }
 
+    @Test("verifyPinLocally accepts legacy salted SHA-256 hashes")
+    func testVerifyPinLegacySaltedSHA() throws {
+        let hash = AuthService.legacySaltedHashPin("1234", salt: "legacy-salt")
+        #expect(AuthService.verifyPinLocally(pin: "1234", storedHash: hash, salt: "legacy-salt"))
+        #expect(!AuthService.verifyPinLocally(pin: "0000", storedHash: hash, salt: "legacy-salt"))
+    }
+
     @Test("verifyPinLocally returns false for bcrypt hash")
     func testVerifyPinBcrypt() throws {
         #expect(!AuthService.verifyPinLocally(pin: "1234", storedHash: "$2b$12$someBcryptHash", salt: "test-salt"))
+    }
+
+    @Test("verifyPinLocally rejects malformed scrypt hashes")
+    func testVerifyPinMalformedScrypt() throws {
+        let duplicateParams = "$wp-scrypt$v=1$ln=2,ln=30,r=8,p=1,dk=32$test-salt$abc123"
+        let oversizedParams = "$wp-scrypt$v=1$ln=30,r=8,p=1,dk=32$test-salt$" + String(repeating: "a", count: 64)
+        #expect(!AuthService.verifyPinLocally(pin: "1234", storedHash: duplicateParams, salt: "test-salt"))
+        #expect(!AuthService.verifyPinLocally(pin: "1234", storedHash: oversizedParams, salt: "test-salt"))
     }
 
     // MARK: - Token Generation & Parsing
@@ -169,6 +200,20 @@ struct AuthServiceTests {
         #expect(result.success)
         #expect(result.user?.displayName == "Admin")
         #expect(result.token != nil)
+    }
+
+    @Test("seedFirstAdmin stores a memory-hard PIN hash")
+    func testSeedStoresScryptHash() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
+        let userId = seed.user!.id!
+
+        let storedHash = try db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT pin_hash FROM users WHERE id = ?", arguments: [userId])
+        }
+
+        #expect(storedHash?.hasPrefix("$wp-scrypt$v=1$") == true)
     }
 
     @Test("authenticateByPin rejects wrong PIN")
@@ -442,6 +487,33 @@ struct AuthServiceTests {
         let result = try auth.authenticateByPin(userId: legacyUserId, pin: "9999")
         #expect(result.success)
         #expect(try auth.getLegacyHashedUserCount() == 0)
+    }
+
+    @Test("authenticateByPin migrates legacy salted SHA-256 hash to scrypt")
+    func testLegacySaltedHashMigratesOnLogin() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "5555")
+
+        let salt = "legacy-salt"
+        let oldHash = AuthService.legacySaltedHashPin("2468", salt: salt)
+        var userId: Int64 = 0
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "INSERT INTO users (display_name, pin_hash, pin_salt, is_active) VALUES ('Salted Legacy', ?, ?, 1)",
+                arguments: [oldHash, salt]
+            )
+            userId = dbConn.lastInsertedRowID
+        }
+
+        let result = try auth.authenticateByPin(userId: userId, pin: "2468")
+        #expect(result.success)
+
+        let storedHash = try db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT pin_hash FROM users WHERE id = ?", arguments: [userId])
+        }
+        #expect(storedHash?.hasPrefix("$wp-scrypt$v=1$") == true)
+        #expect(storedHash != oldHash)
     }
 
     // MARK: - Active Users
