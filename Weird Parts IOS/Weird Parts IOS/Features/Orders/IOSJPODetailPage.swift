@@ -153,6 +153,9 @@ struct IOSJPODetailPage: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .jpoDetailPageInactive, object: nil)
+        }
     }
 
     // MARK: - Sheet Content
@@ -986,11 +989,32 @@ struct IOSJPODetailPage: View {
         isLoading = jpo == nil
         loadError = nil
         do {
-            jpo = try service.getJPODetail(id: jpoId)
+            let detail = try service.getJPODetail(id: jpoId)
+            jpo = detail
+            postAIContext(detail)
         } catch {
             loadError = userFriendlyError(error, context: "load JPO details")
         }
         isLoading = false
+    }
+
+    private func postAIContext(_ detail: OrdersService.JPODetail) {
+        let statusCounts = Dictionary(grouping: detail.lines, by: \.lineStatus)
+            .map { "\($0.key): \($0.value.count)" }
+            .sorted()
+            .joined(separator: ", ")
+        let context = [
+            "JPO detail page is open for JPO #\(detail.id).",
+            "Job: \(detail.jobName). Status: \(detail.status). Priority: \(detail.priority). Delivery: \(detail.deliveryOption ?? "unset").",
+            "Line items: \(detail.lines.count). Line status counts: \(statusCounts.isEmpty ? "none" : statusCounts).",
+            "Delivery locked: \(detail.deliveryLocked ? "yes" : "no").",
+            "This context is read-only; explain approval state, line status, holds, delivery preference, and next review steps without changing the JPO."
+        ].joined(separator: " ")
+        NotificationCenter.default.post(
+            name: .jpoDetailPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 }
 

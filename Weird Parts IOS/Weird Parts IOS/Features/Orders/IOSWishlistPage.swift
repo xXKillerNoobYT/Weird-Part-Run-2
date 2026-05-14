@@ -91,6 +91,9 @@ struct IOSWishlistPage: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .ordersWishlistPageInactive, object: nil)
+        }
     }
 
     // MARK: - Content View
@@ -539,6 +542,7 @@ struct IOSWishlistPage: View {
                 await MainActor.run {
                     sections = result
                     isLoading = false
+                    postAIContext()
                 }
             } catch {
                 await MainActor.run {
@@ -547,6 +551,21 @@ struct IOSWishlistPage: View {
                 }
             }
         }
+    }
+
+    private func postAIContext() {
+        let context = [
+            "Orders wishlist page is open.",
+            "User-added items: \(sections.userAdded.count), forecast demand: \(sections.forecastDemand.count), system auto-added: \(sections.autoAdded.count).",
+            "Filtered visible items: \(filteredUserAdded.count + filteredForecast.count + filteredAutoAdded.count).",
+            "Search text is \(searchText.isEmpty ? "empty" : "active").",
+            "This context is read-only; explain wishlist sections, approval state, confidence scores, dismissal requirements, and procurement handoff without changing items."
+        ].joined(separator: " ")
+        NotificationCenter.default.post(
+            name: .ordersWishlistPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 
     // MARK: - Helpers

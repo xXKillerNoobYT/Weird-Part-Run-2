@@ -46,6 +46,12 @@ struct IOSAIAssistantPanel: View {
     @State private var clockContext: String?
     @State private var jposContext: String?
     @State private var purchaseOrdersContext: String?
+    @State private var jpoCreationContext: String?
+    @State private var jpoDetailContext: String?
+    @State private var orderStagingContext: String?
+    @State private var partsOrderManagementContext: String?
+    @State private var ordersWishlistContext: String?
+    @State private var unifiedOrderContext: String?
     @State private var inventoryGridContext: String?
     @State private var dispatchContext: String?
     @State private var scheduleCalendarContext: String?
@@ -234,6 +240,12 @@ struct IOSAIAssistantPanel: View {
             clockContext: $clockContext,
             jposContext: $jposContext,
             purchaseOrdersContext: $purchaseOrdersContext,
+            jpoCreationContext: $jpoCreationContext,
+            jpoDetailContext: $jpoDetailContext,
+            orderStagingContext: $orderStagingContext,
+            partsOrderManagementContext: $partsOrderManagementContext,
+            ordersWishlistContext: $ordersWishlistContext,
+            unifiedOrderContext: $unifiedOrderContext,
             inventoryGridContext: $inventoryGridContext,
             dispatchContext: $dispatchContext,
             scheduleCalendarContext: $scheduleCalendarContext,
@@ -516,6 +528,24 @@ struct IOSAIAssistantPanel: View {
             }
             if let ctx = purchaseOrdersContext {
                 navContext += "\n\nPurchase Orders Context: \(ctx)"
+            }
+            if let ctx = jpoCreationContext {
+                navContext += "\n\nJPO Creation Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = jpoDetailContext {
+                navContext += "\n\nJPO Detail Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = orderStagingContext {
+                navContext += "\n\nOrder Staging Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = partsOrderManagementContext {
+                navContext += "\n\nParts Order Management Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = ordersWishlistContext {
+                navContext += "\n\nOrders Wishlist Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = unifiedOrderContext {
+                navContext += "\n\nUnified Order Context (READ-ONLY): \(ctx)"
             }
             if let ctx = inventoryGridContext {
                 navContext += "\n\nInventory Grid Context: \(ctx)"
@@ -884,6 +914,12 @@ private struct FeaturePageContextObservers: ViewModifier {
     @Binding var clockContext: String?
     @Binding var jposContext: String?
     @Binding var purchaseOrdersContext: String?
+    @Binding var jpoCreationContext: String?
+    @Binding var jpoDetailContext: String?
+    @Binding var orderStagingContext: String?
+    @Binding var partsOrderManagementContext: String?
+    @Binding var ordersWishlistContext: String?
+    @Binding var unifiedOrderContext: String?
     @Binding var inventoryGridContext: String?
     @Binding var dispatchContext: String?
     @Binding var scheduleCalendarContext: String?
@@ -903,6 +939,14 @@ private struct FeaturePageContextObservers: ViewModifier {
                 purchaseOrdersContext: $purchaseOrdersContext,
                 inventoryGridContext: $inventoryGridContext,
                 dispatchContext: $dispatchContext
+            ))
+            .modifier(FeaturePageContextObserversGroupC(
+                jpoCreationContext: $jpoCreationContext,
+                jpoDetailContext: $jpoDetailContext,
+                orderStagingContext: $orderStagingContext,
+                partsOrderManagementContext: $partsOrderManagementContext,
+                ordersWishlistContext: $ordersWishlistContext,
+                unifiedOrderContext: $unifiedOrderContext
             ))
             .modifier(FeaturePageContextObserversGroupB(
                 scheduleCalendarContext: $scheduleCalendarContext,
@@ -968,6 +1012,56 @@ private struct FeaturePageContextObserversGroupA: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .dispatchPageInactive)) { _ in
                 dispatchContext = nil
+            }
+    }
+}
+
+/// Third group of feature page observers for the WEI-1194 orders coverage slice.
+private struct FeaturePageContextObserversGroupC: ViewModifier {
+    @Binding var jpoCreationContext: String?
+    @Binding var jpoDetailContext: String?
+    @Binding var orderStagingContext: String?
+    @Binding var partsOrderManagementContext: String?
+    @Binding var ordersWishlistContext: String?
+    @Binding var unifiedOrderContext: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .jpoCreationPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { jpoCreationContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .jpoCreationPageInactive)) { _ in
+                jpoCreationContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .jpoDetailPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { jpoDetailContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .jpoDetailPageInactive)) { _ in
+                jpoDetailContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .orderStagingPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { orderStagingContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .orderStagingPageInactive)) { _ in
+                orderStagingContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .partsOrderManagementPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { partsOrderManagementContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .partsOrderManagementPageInactive)) { _ in
+                partsOrderManagementContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .ordersWishlistPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { ordersWishlistContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .ordersWishlistPageInactive)) { _ in
+                ordersWishlistContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .unifiedOrderPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { unifiedOrderContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .unifiedOrderPageInactive)) { _ in
+                unifiedOrderContext = nil
             }
     }
 }
@@ -1082,6 +1176,26 @@ private struct ActivePageIdTrackerOrdersWarehouse: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .jposPageInactive)) { _ in if activePageId == "orders-jpos" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .purchaseOrdersPageActive)) { _ in activePageId = "orders-pos" }
             .onReceive(NotificationCenter.default.publisher(for: .purchaseOrdersPageInactive)) { _ in if activePageId == "orders-pos" { activePageId = nil } }
+            .modifier(ActivePageIdTrackerOrdersExtra(activePageId: $activePageId))
+    }
+}
+
+private struct ActivePageIdTrackerOrdersExtra: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .jpoCreationPageActive)) { _ in activePageId = "orders-jpo-create" }
+            .onReceive(NotificationCenter.default.publisher(for: .jpoCreationPageInactive)) { _ in if activePageId == "orders-jpo-create" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .jpoDetailPageActive)) { _ in activePageId = "orders-jpo-detail" }
+            .onReceive(NotificationCenter.default.publisher(for: .jpoDetailPageInactive)) { _ in if activePageId == "orders-jpo-detail" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .orderStagingPageActive)) { _ in activePageId = "orders-staging" }
+            .onReceive(NotificationCenter.default.publisher(for: .orderStagingPageInactive)) { _ in if activePageId == "orders-staging" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .partsOrderManagementPageActive)) { _ in activePageId = "orders-parts" }
+            .onReceive(NotificationCenter.default.publisher(for: .partsOrderManagementPageInactive)) { _ in if activePageId == "orders-parts" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .ordersWishlistPageActive)) { _ in activePageId = "orders-wishlist" }
+            .onReceive(NotificationCenter.default.publisher(for: .ordersWishlistPageInactive)) { _ in if activePageId == "orders-wishlist" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .unifiedOrderPageActive)) { _ in activePageId = "orders-unified" }
+            .onReceive(NotificationCenter.default.publisher(for: .unifiedOrderPageInactive)) { _ in if activePageId == "orders-unified" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .inventoryGridPageActive)) { _ in activePageId = "warehouse-inventory" }
             .onReceive(NotificationCenter.default.publisher(for: .inventoryGridPageInactive)) { _ in if activePageId == "warehouse-inventory" { activePageId = nil } }
     }

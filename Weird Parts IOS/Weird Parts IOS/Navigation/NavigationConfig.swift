@@ -271,6 +271,42 @@ extension Notification.Name {
     /// Posted when the Purchase Orders page disappears.
     static let purchaseOrdersPageInactive = Notification.Name("WiredPart.purchaseOrdersPageInactive")
 
+    /// Posted when the JPO creation page appears, with read-only draft context for AI.
+    static let jpoCreationPageActive = Notification.Name("WiredPart.jpoCreationPageActive")
+
+    /// Posted when the JPO creation page disappears.
+    static let jpoCreationPageInactive = Notification.Name("WiredPart.jpoCreationPageInactive")
+
+    /// Posted when a JPO detail page appears, with read-only status context for AI.
+    static let jpoDetailPageActive = Notification.Name("WiredPart.jpoDetailPageActive")
+
+    /// Posted when a JPO detail page disappears.
+    static let jpoDetailPageInactive = Notification.Name("WiredPart.jpoDetailPageInactive")
+
+    /// Posted when the order staging page appears, with read-only job stage context for AI.
+    static let orderStagingPageActive = Notification.Name("WiredPart.orderStagingPageActive")
+
+    /// Posted when the order staging page disappears.
+    static let orderStagingPageInactive = Notification.Name("WiredPart.orderStagingPageInactive")
+
+    /// Posted when the parts order management page appears, with read-only supplier/PO context for AI.
+    static let partsOrderManagementPageActive = Notification.Name("WiredPart.partsOrderManagementPageActive")
+
+    /// Posted when the parts order management page disappears.
+    static let partsOrderManagementPageInactive = Notification.Name("WiredPart.partsOrderManagementPageInactive")
+
+    /// Posted when the orders wishlist page appears, with read-only wishlist context for AI.
+    static let ordersWishlistPageActive = Notification.Name("WiredPart.ordersWishlistPageActive")
+
+    /// Posted when the orders wishlist page disappears.
+    static let ordersWishlistPageInactive = Notification.Name("WiredPart.ordersWishlistPageInactive")
+
+    /// Posted when the retired unified order page appears, with read-only replacement context for AI.
+    static let unifiedOrderPageActive = Notification.Name("WiredPart.unifiedOrderPageActive")
+
+    /// Posted when the retired unified order page disappears.
+    static let unifiedOrderPageInactive = Notification.Name("WiredPart.unifiedOrderPageInactive")
+
     // MARK: - Warehouse
 
     /// Posted when the Inventory Grid page appears, with inventory context for AI.

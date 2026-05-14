@@ -60,6 +60,9 @@ struct IOSOrderStagingPage: View {
         }
         .refreshable { loadData() }
         .task { await loadInitialData() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .orderStagingPageInactive, object: nil)
+        }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .help:
@@ -418,10 +421,28 @@ struct IOSOrderStagingPage: View {
         do {
             stages = try service.getJobStages()
             parts = try service.getJobStageParts(jobId: jobId)
+            postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load order staging")
         }
         isLoading = false
+    }
+
+    private func postAIContext() {
+        let selectedJob = jobs.first(where: { $0.id == selectedJobId })?.jobName ?? "none"
+        let heldCount = parts.filter(\.isHeld).count
+        let context = [
+            "Job Stage Planner page is open.",
+            "Selected job: \(selectedJob). Active jobs loaded: \(jobs.count).",
+            "Stages: \(stages.count), parts loaded: \(parts.count), filtered parts: \(filteredParts.count), held future-stage parts: \(heldCount).",
+            "Current stage filter: \(stageFilter.map(String.init) ?? "all"). Search text is \(searchText.isEmpty ? "empty" : "active").",
+            "This context is read-only; explain stage grouping, held parts, early release concepts, and stage settings without changing stage state."
+        ].joined(separator: " ")
+        NotificationCenter.default.post(
+            name: .orderStagingPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 }
 

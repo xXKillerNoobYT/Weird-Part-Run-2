@@ -85,6 +85,24 @@ struct HelpContentRegistry {
         "WiredPart.suppliersPageActive": "parts-suppliers",
         "WiredPart.companionsPageActive": "parts-companions",
         "WiredPart.forecastingPageActive": "parts-forecasting",
+        "WiredPart.dashboardPageActive": "dashboard-home",
+        "WiredPart.jobsListPageActive": "jobs-list",
+        "WiredPart.clockPageActive": "dashboard-clock",
+        "WiredPart.jposPageActive": "orders-jpos",
+        "WiredPart.purchaseOrdersPageActive": "orders-pos",
+        "WiredPart.jpoCreationPageActive": "orders-jpo-create",
+        "WiredPart.jpoDetailPageActive": "orders-jpo-detail",
+        "WiredPart.orderStagingPageActive": "orders-staging",
+        "WiredPart.partsOrderManagementPageActive": "orders-parts",
+        "WiredPart.ordersWishlistPageActive": "orders-wishlist",
+        "WiredPart.unifiedOrderPageActive": "orders-unified",
+        "WiredPart.inventoryGridPageActive": "warehouse-inventory",
+        "WiredPart.dispatchPageActive": "scheduling-dispatch",
+        "WiredPart.scheduleCalendarPageActive": "scheduling-calendar",
+        "WiredPart.employeesPageActive": "people-employees",
+        "WiredPart.vehiclesPageActive": "fleet-vehicles",
+        "WiredPart.toolRegistryPageActive": "tools-registry",
+        "WiredPart.notebooksListPageActive": "notebooks-all",
     ]
 
     // MARK: - All Entries (extracted from PageHelpSheet usages)
@@ -247,6 +265,65 @@ struct HelpContentRegistry {
                 ("Swipe Actions", "Swipe left on a draft PO to delete it, or swipe left on an active PO to cancel it. Cancellations require a reason. The system generates an AI summary of the PO to help you confirm."),
                 ("KPI Bar", "The summary bar shows how many POs are awaiting delivery and the total dollar amount of pending orders. This helps you track outstanding spending."),
                 ("Tips", "Pull down to refresh. Status counts in the filter chips update in real time. Tap into a PO to receive shipments, update ETAs, contact the supplier, or report issues."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "orders-jpo-create",
+            title: "New Parts Order Help",
+            sections: [
+                ("What This Page Does", "Create a Job Purchase Order (JPO) to request parts for a job. Search for parts, add them to the cart, set quantities, and submit for office approval."),
+                ("How to Use It", "Choose the job, priority, and delivery preference. Search or scan parts, add them to the cart, review companion suggestions, add notes, and submit."),
+                ("Tips", "Stock colors show whether the shop can transfer parts immediately or whether procurement must order them. The cart total is based on last-known pricing."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "orders-jpo-detail",
+            title: "JPO Detail Help",
+            sections: [
+                ("What This Page Does", "Shows one Job Purchase Order with job, requester, priority, delivery preference, status, and line items."),
+                ("Status Flow", "Review pending requests, approve or reject lines, inspect holds, and track whether each line is pending, ordered, transferred, or complete."),
+                ("Tips", "Use the line summary to understand which parts need approval, supplier ordering, transfer, or follow-up questions."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "orders-staging",
+            title: "Job Stage Planner Help",
+            sections: [
+                ("What This Page Does", "Shows all parts across all JPOs for a selected job, grouped by construction stage."),
+                ("Held Parts", "Parts assigned to future stages stay held until that stage becomes active, unless a user requests early release."),
+                ("Tips", "Use the stage cards to filter the list and see how much work is waiting in each phase."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "orders-parts",
+            title: "Parts Management Help",
+            sections: [
+                ("What This Page Does", "Shows all parts ordered from a selected supplier across purchase orders."),
+                ("Filters", "Use supplier, PO status, part status, and search filters to narrow the outstanding parts list."),
+                ("Tips", "Select rows to prepare supplier-centric follow-up such as moving parts, changing quantities, or holding lines for another supplier."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "orders-wishlist",
+            title: "Wishlist Help",
+            sections: [
+                ("What This Page Does", "Tracks parts that should be procured manually or from forecast and system-generated demand."),
+                ("Sections", "User Added, Forecast Demand, and System Auto-Added each have different review and approval expectations."),
+                ("Tips", "Dismissed items require a reason, and approved items can move into procurement."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "orders-unified",
+            title: "Unified Order Help",
+            sections: [
+                ("What This Page Does", "This retired page redirects users conceptually to the current JPO creation workflow."),
+                ("Replacement", "Use Job Orders -> Create JPO for new parts requests."),
             ]
         ),
 

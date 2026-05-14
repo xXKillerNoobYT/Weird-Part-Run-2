@@ -121,6 +121,9 @@ struct IOSPartsOrderManagementPage: View {
             }
             loadData()
         }
+        .onDisappear {
+            NotificationCenter.default.post(name: .partsOrderManagementPageInactive, object: nil)
+        }
     }
 
     // MARK: - Supplier Picker
@@ -438,9 +441,30 @@ struct IOSPartsOrderManagementPage: View {
         loadError = nil
         do {
             allRows = try service.getPartsForSupplier(supplierId: suppId)
+            postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load parts orders")
         }
         isLoading = false
+    }
+
+    private func postAIContext() {
+        let supplierName = suppliers.first(where: { $0.id == selectedSupplierId })?.name ?? "none"
+        let selectedQuantity = allRows
+            .filter { selectedPartIds.contains($0.id) }
+            .reduce(0) { $0 + $1.quantityOrdered }
+        let context = [
+            "Parts order management page is open.",
+            "Selected supplier: \(supplierName). Suppliers with active POs: \(suppliers.count).",
+            "Rows loaded: \(allRows.count), filtered rows: \(filteredRows.count), selected rows: \(selectedPartIds.count), selected quantity: \(selectedQuantity).",
+            "PO filters draft/active/partial/received/cancelled: \(showDraft)/\(showActive)/\(showPartial)/\(showReceived)/\(showCancelled).",
+            "Part filters waiting/backorder/received: \(showWaiting)/\(showBackorder)/\(showReceivedParts). Search text is \(searchText.isEmpty ? "empty" : "active").",
+            "This context is read-only; explain supplier-centric PO parts, filters, outstanding quantities, and selection options without moving or editing parts."
+        ].joined(separator: " ")
+        NotificationCenter.default.post(
+            name: .partsOrderManagementPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 }
