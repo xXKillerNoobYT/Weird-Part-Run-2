@@ -78,6 +78,7 @@ struct WarehouseDashboardPage: View {
                 cartManager.isCartSheetPresented = false
             }
         }
+        .onChange(of: selectedFilter) { postAIContext() }
         .task {
             loadData()
             appCore.onboardingManager?.markCompleted("wh-dashboard-view")
@@ -85,6 +86,9 @@ struct WarehouseDashboardPage: View {
             if let service = appCore.warehouseService {
                 setupTier = (try? service.getSetupProgress()) ?? .none
             }
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .warehouseDashboardPageInactive, object: nil)
         }
     }
 
@@ -621,10 +625,32 @@ struct WarehouseDashboardPage: View {
             dashKPIs = try service.getDashboardKPIs()
             auditSummary = try service.getAuditSummary()
             recentMovements = try service.listMovements(limit: 10)
+            postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load warehouse dashboard")
         }
         isLoading = false
+    }
+
+    private func postAIContext() {
+        let kpis = dashKPIs?.kpis
+        let movementCounts = Dictionary(grouping: recentMovements, by: \.movementType)
+            .map { "\($0.key): \($0.value.count)" }
+            .sorted()
+            .joined(separator: ", ")
+        let context = """
+        Warehouse Dashboard page. Read-only context.
+        Stock total: \(kpis?.totalStock ?? 0), health: \(kpis?.stockHealthPercent ?? 0)%, shortfalls: \(kpis?.shortfallCount ?? 0), movements today: \(kpis?.todayMovements ?? 0).
+        Active receiving sessions: \(dashKPIs?.activeReceivingSessions ?? 0), pending staging: \(dashKPIs?.pendingStagingCount ?? 0), pending returns: \(dashKPIs?.pendingReturns ?? 0).
+        Audit counted/total: \(auditSummary?.countedParts ?? 0)/\(auditSummary?.totalParts ?? 0), discrepancies: \(auditSummary?.discrepancies ?? 0), selected filter: \(selectedFilter?.rawValue ?? "none").
+        Recent movement rows loaded: \(recentMovements.count), visible after filter: \(filteredMovements.count), movement types: \(movementCounts.isEmpty ? "none" : movementCounts).
+        Available read-only guidance: explain KPI cards, selected activity filter, quick action locations, and warehouse sub-page links. Do not create movements or launch scanners directly.
+        """
+        NotificationCenter.default.post(
+            name: .warehouseDashboardPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 
     // MARK: - Helpers

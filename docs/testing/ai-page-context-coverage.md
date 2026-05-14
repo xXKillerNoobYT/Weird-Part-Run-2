@@ -1,7 +1,7 @@
 # AI Page Context Coverage Inventory
 
 Issue: WEI-1112 / WEI-1194 / GitHub #86 T1-19
-Updated: 2026-05-13
+Updated: 2026-05-14
 
 ## Success Condition
 
@@ -9,9 +9,9 @@ Complete the 87-page page-context coverage set by adding read-only page-active/p
 
 ## Current Coverage
 
-Implemented page-context notifications observed by `IOSAIAssistantPanel`: 24 page contexts.
+Implemented page-context notifications observed by `IOSAIAssistantPanel`: 30 page contexts.
 
-Help registry mappings with matching help entries: 23 page contexts.
+Help registry mappings with matching help entries: 29 page contexts.
 
 Known gap: `settingsPageActive` is observed by the AI panel and active-page tracker, but `HelpContentRegistry` does not yet contain a `settings-app-config` entry. That should be handled in the settings slice rather than mapped to a missing help entry.
 
@@ -29,13 +29,19 @@ Known gap: `settingsPageActive` is observed by the AI panel and active-page trac
 | Jobs | Clock In/Out | `clockPageActive` | `dashboard-clock` |
 | Orders | JPOs | `jposPageActive` | `orders-jpos` |
 | Orders | Purchase Orders | `purchaseOrdersPageActive` | `orders-pos` |
+| Orders | PO Detail | `poDetailPageActive` | `orders-po-detail` |
+| Orders | Receive Shipment | `receiveShipmentPageActive` | `orders-receiving` |
+| Orders | Procurement | `procurementPageActive` | `orders-procurement` |
+| Orders | Returns | `returnsPageActive` | `orders-returns` |
 | Orders | JPO Creation | `jpoCreationPageActive` | `orders-jpo-create` |
 | Orders | JPO Detail | `jpoDetailPageActive` | `orders-jpo-detail` |
 | Orders | Order Staging | `orderStagingPageActive` | `orders-staging` |
 | Orders | Parts Order Management | `partsOrderManagementPageActive` | `orders-parts` |
 | Orders | Wishlist | `ordersWishlistPageActive` | `orders-wishlist` |
 | Orders | Unified Order (retired) | `unifiedOrderPageActive` | `orders-unified` |
+| Warehouse | Warehouse Dashboard | `warehouseDashboardPageActive` | `warehouse-dashboard` |
 | Warehouse | Inventory Grid | `inventoryGridPageActive` | `warehouse-inventory` |
+| Warehouse | Warehouse Locations | `warehouseLocationsPageActive` | `warehouse-locations` |
 | Scheduling | Dispatch | `dispatchPageActive` | `scheduling-dispatch` |
 | Scheduling | Schedule Calendar | `scheduleCalendarPageActive` | `scheduling-calendar` |
 | People | Employees | `employeesPageActive` | `people-employees` |
@@ -57,19 +63,37 @@ Added the next orders page-context slice:
 
 All new payloads are read-only summaries. They report visible data, selected filters, lifecycle state, and replacement guidance only. They do not expose mutating commands, action IDs, or write intents.
 
+## Restored Orders/Warehouse Slice
+
+Added the next restored orders/warehouse coverage slice:
+
+- `IOSPODetailPage`: PO number, supplier, status, line/open/received counts, linked jobs, delivery/tracking, receipt sessions.
+- `IOSReceiveShipmentPage`: open PO list status counts when idle; active session item, discrepancy, routing, and unrouted counts when receiving.
+- `IOSProcurementPage`: demand row counts, source filter/counts, selected rows, supplier selections, PO preview groups, pull decisions.
+- `IOSReturnsPage`: total/visible returns, status filter/counts, visible credit total, examples.
+- `WarehouseDashboardPage`: stock health KPIs, receiving/staging/returns counts, audit summary, selected activity filter, movement type counts.
+- `WarehouseLocationsPage`: floor plans, selected plan, storage unit counts, configured/placed/movable counts, feature/unit type summaries.
+
+All payloads are read-only summaries of visible state and selected filters. They do not expose mutating commands, action IDs, or write intents.
+
 ## Next Highest-Traffic Remaining Slices
 
-1. Restore/complete prior orders/warehouse slice if absent in the shared branch: PO Detail, Receive Shipment, Procurement, Returns, Warehouse Dashboard, Warehouse Locations.
-2. Warehouse completion: Movements, Receiving, Staging, Audit, Returns, Warehouse Tools, Network, Settings, Organization Audit, Leaderboard.
-3. Jobs completion: Job Detail, Labor, Daily Reports, Questionnaire, Estimation Questionnaire, Estimation Review, Job Reports.
-4. People/Office/Reports: Contacts, customers, contractors, teams, office dashboard, approvals, spending, warehouse exec, all report pages.
-5. Settings: add missing help entries and page context for the high-use settings pages before mapping them to help content.
+1. Warehouse completion: Movements, Receiving, Staging, Audit, Returns, Warehouse Tools, Network, Settings, Organization Audit, Leaderboard.
+2. Jobs completion: Job Detail, Labor, Daily Reports, Questionnaire, Estimation Questionnaire, Estimation Review, Job Reports.
+3. People/Office/Reports: Contacts, customers, contractors, teams, office dashboard, approvals, spending, warehouse exec, all report pages.
+4. Settings: add missing help entries and page context for the high-use settings pages before mapping them to help content.
 
 ## Validation
 
 Validated in the shared workspace on 2026-05-13:
 
 - New WEI-1194 notification names are declared, posted by their pages, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
+- Help registry mapping check returned no missing mapped page IDs.
+- `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was warnings only.
+
+Validated restored orders/warehouse slice in the shared workspace on 2026-05-14:
+
+- Restored slice notification names are declared, posted by their pages, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
 - Help registry mapping check returned no missing mapped page IDs.
 - `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was warnings only.
 

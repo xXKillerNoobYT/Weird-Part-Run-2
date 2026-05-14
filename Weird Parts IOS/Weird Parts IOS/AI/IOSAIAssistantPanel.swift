@@ -46,13 +46,19 @@ struct IOSAIAssistantPanel: View {
     @State private var clockContext: String?
     @State private var jposContext: String?
     @State private var purchaseOrdersContext: String?
+    @State private var poDetailContext: String?
+    @State private var receiveShipmentContext: String?
+    @State private var procurementContext: String?
+    @State private var returnsContext: String?
     @State private var jpoCreationContext: String?
     @State private var jpoDetailContext: String?
     @State private var orderStagingContext: String?
     @State private var partsOrderManagementContext: String?
     @State private var ordersWishlistContext: String?
     @State private var unifiedOrderContext: String?
+    @State private var warehouseDashboardContext: String?
     @State private var inventoryGridContext: String?
+    @State private var warehouseLocationsContext: String?
     @State private var dispatchContext: String?
     @State private var scheduleCalendarContext: String?
     @State private var employeesContext: String?
@@ -240,13 +246,19 @@ struct IOSAIAssistantPanel: View {
             clockContext: $clockContext,
             jposContext: $jposContext,
             purchaseOrdersContext: $purchaseOrdersContext,
+            poDetailContext: $poDetailContext,
+            receiveShipmentContext: $receiveShipmentContext,
+            procurementContext: $procurementContext,
+            returnsContext: $returnsContext,
             jpoCreationContext: $jpoCreationContext,
             jpoDetailContext: $jpoDetailContext,
             orderStagingContext: $orderStagingContext,
             partsOrderManagementContext: $partsOrderManagementContext,
             ordersWishlistContext: $ordersWishlistContext,
             unifiedOrderContext: $unifiedOrderContext,
+            warehouseDashboardContext: $warehouseDashboardContext,
             inventoryGridContext: $inventoryGridContext,
+            warehouseLocationsContext: $warehouseLocationsContext,
             dispatchContext: $dispatchContext,
             scheduleCalendarContext: $scheduleCalendarContext,
             employeesContext: $employeesContext,
@@ -529,6 +541,18 @@ struct IOSAIAssistantPanel: View {
             if let ctx = purchaseOrdersContext {
                 navContext += "\n\nPurchase Orders Context: \(ctx)"
             }
+            if let ctx = poDetailContext {
+                navContext += "\n\nPO Detail Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = receiveShipmentContext {
+                navContext += "\n\nReceive Shipment Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = procurementContext {
+                navContext += "\n\nProcurement Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = returnsContext {
+                navContext += "\n\nReturns Context (READ-ONLY): \(ctx)"
+            }
             if let ctx = jpoCreationContext {
                 navContext += "\n\nJPO Creation Context (READ-ONLY): \(ctx)"
             }
@@ -547,8 +571,14 @@ struct IOSAIAssistantPanel: View {
             if let ctx = unifiedOrderContext {
                 navContext += "\n\nUnified Order Context (READ-ONLY): \(ctx)"
             }
+            if let ctx = warehouseDashboardContext {
+                navContext += "\n\nWarehouse Dashboard Context (READ-ONLY): \(ctx)"
+            }
             if let ctx = inventoryGridContext {
                 navContext += "\n\nInventory Grid Context: \(ctx)"
+            }
+            if let ctx = warehouseLocationsContext {
+                navContext += "\n\nWarehouse Locations Context (READ-ONLY): \(ctx)"
             }
             if let ctx = dispatchContext {
                 navContext += "\n\nDispatch Board Context: \(ctx)"
@@ -914,13 +944,19 @@ private struct FeaturePageContextObservers: ViewModifier {
     @Binding var clockContext: String?
     @Binding var jposContext: String?
     @Binding var purchaseOrdersContext: String?
+    @Binding var poDetailContext: String?
+    @Binding var receiveShipmentContext: String?
+    @Binding var procurementContext: String?
+    @Binding var returnsContext: String?
     @Binding var jpoCreationContext: String?
     @Binding var jpoDetailContext: String?
     @Binding var orderStagingContext: String?
     @Binding var partsOrderManagementContext: String?
     @Binding var ordersWishlistContext: String?
     @Binding var unifiedOrderContext: String?
+    @Binding var warehouseDashboardContext: String?
     @Binding var inventoryGridContext: String?
+    @Binding var warehouseLocationsContext: String?
     @Binding var dispatchContext: String?
     @Binding var scheduleCalendarContext: String?
     @Binding var employeesContext: String?
@@ -939,6 +975,14 @@ private struct FeaturePageContextObservers: ViewModifier {
                 purchaseOrdersContext: $purchaseOrdersContext,
                 inventoryGridContext: $inventoryGridContext,
                 dispatchContext: $dispatchContext
+            ))
+            .modifier(FeaturePageContextObserversGroupD(
+                poDetailContext: $poDetailContext,
+                receiveShipmentContext: $receiveShipmentContext,
+                procurementContext: $procurementContext,
+                returnsContext: $returnsContext,
+                warehouseDashboardContext: $warehouseDashboardContext,
+                warehouseLocationsContext: $warehouseLocationsContext
             ))
             .modifier(FeaturePageContextObserversGroupC(
                 jpoCreationContext: $jpoCreationContext,
@@ -1012,6 +1056,56 @@ private struct FeaturePageContextObserversGroupA: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .dispatchPageInactive)) { _ in
                 dispatchContext = nil
+            }
+    }
+}
+
+/// Fourth group of feature page observers for restored orders/warehouse coverage.
+private struct FeaturePageContextObserversGroupD: ViewModifier {
+    @Binding var poDetailContext: String?
+    @Binding var receiveShipmentContext: String?
+    @Binding var procurementContext: String?
+    @Binding var returnsContext: String?
+    @Binding var warehouseDashboardContext: String?
+    @Binding var warehouseLocationsContext: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .poDetailPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { poDetailContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .poDetailPageInactive)) { _ in
+                poDetailContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .receiveShipmentPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { receiveShipmentContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .receiveShipmentPageInactive)) { _ in
+                receiveShipmentContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .procurementPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { procurementContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .procurementPageInactive)) { _ in
+                procurementContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .returnsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { returnsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .returnsPageInactive)) { _ in
+                returnsContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseDashboardPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { warehouseDashboardContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseDashboardPageInactive)) { _ in
+                warehouseDashboardContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseLocationsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { warehouseLocationsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseLocationsPageInactive)) { _ in
+                warehouseLocationsContext = nil
             }
     }
 }
@@ -1176,7 +1270,27 @@ private struct ActivePageIdTrackerOrdersWarehouse: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .jposPageInactive)) { _ in if activePageId == "orders-jpos" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .purchaseOrdersPageActive)) { _ in activePageId = "orders-pos" }
             .onReceive(NotificationCenter.default.publisher(for: .purchaseOrdersPageInactive)) { _ in if activePageId == "orders-pos" { activePageId = nil } }
+            .modifier(ActivePageIdTrackerOrdersWarehouseRestored(activePageId: $activePageId))
             .modifier(ActivePageIdTrackerOrdersExtra(activePageId: $activePageId))
+    }
+}
+
+private struct ActivePageIdTrackerOrdersWarehouseRestored: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .poDetailPageActive)) { _ in activePageId = "orders-po-detail" }
+            .onReceive(NotificationCenter.default.publisher(for: .poDetailPageInactive)) { _ in if activePageId == "orders-po-detail" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .receiveShipmentPageActive)) { _ in activePageId = "orders-receiving" }
+            .onReceive(NotificationCenter.default.publisher(for: .receiveShipmentPageInactive)) { _ in if activePageId == "orders-receiving" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .procurementPageActive)) { _ in activePageId = "orders-procurement" }
+            .onReceive(NotificationCenter.default.publisher(for: .procurementPageInactive)) { _ in if activePageId == "orders-procurement" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .returnsPageActive)) { _ in activePageId = "orders-returns" }
+            .onReceive(NotificationCenter.default.publisher(for: .returnsPageInactive)) { _ in if activePageId == "orders-returns" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseDashboardPageActive)) { _ in activePageId = "warehouse-dashboard" }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseDashboardPageInactive)) { _ in if activePageId == "warehouse-dashboard" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseLocationsPageActive)) { _ in activePageId = "warehouse-locations" }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseLocationsPageInactive)) { _ in if activePageId == "warehouse-locations" { activePageId = nil } }
     }
 }
 

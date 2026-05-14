@@ -221,6 +221,9 @@ struct IOSReceiveShipmentPage: View {
             }
         }
         .task { loadData() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .receiveShipmentPageInactive, object: nil)
+        }
     }
 
     // MARK: - PO List
@@ -912,6 +915,7 @@ struct IOSReceiveShipmentPage: View {
                     receivedQtys[item.id] = item.receivedQty > 0 ? item.receivedQty : item.expectedQty
                 }
             }
+            postAIContext()
         } catch {
             actionError = userFriendlyError(error, context: "receive shipment")
         }
@@ -1061,10 +1065,49 @@ struct IOSReceiveShipmentPage: View {
             purchaseOrders.append(contentsOf: ordered)
             let partial = try service.listPurchaseOrders(status: "partial")
             purchaseOrders.append(contentsOf: partial)
+            postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load shipment data")
         }
         isLoading = false
+    }
+
+    private func postAIContext() {
+        let context: String
+        if let sessionId = activeSessionId {
+            let receivedUnits = sessionItems.reduce(0) { $0 + (receivedQtys[$1.id] ?? $1.expectedQty) }
+            let expectedUnits = sessionItems.reduce(0) { $0 + $1.expectedQty }
+            let discrepancyCount = discrepancyItems.count
+            let routedCount = routingResults.count
+            let routeSummary = Dictionary(grouping: routingResults.values, by: \.label)
+                .map { "\($0.key): \($0.value.count)" }
+                .sorted()
+                .joined(separator: ", ")
+            context = """
+            Receive Shipment page. Read-only context.
+            Active receiving session id: \(sessionId).
+            Session items: \(sessionItems.count), expected units: \(expectedUnits), entered received units: \(receivedUnits), discrepancies: \(discrepancyCount), routed items: \(routedCount).
+            Route summary: \(routeSummary.isEmpty ? "none yet" : routeSummary). Unrouted received items: \(unroutedItems.count).
+            Available read-only guidance: explain receiving progress, discrepancy/routing state, price verification choices, scanner usage, and where visible controls are located. Do not suggest completing or changing receiving directly.
+            """
+        } else {
+            let statusCounts = Dictionary(grouping: purchaseOrders, by: \.status)
+                .map { "\($0.key): \($0.value.count)" }
+                .sorted()
+                .joined(separator: ", ")
+            let visible = purchaseOrders.prefix(5).map { "\($0.poNumber) - \($0.supplierName)" }.joined(separator: ", ")
+            context = """
+            Receive Shipment page. Read-only context.
+            No active receiving session. Open purchase orders awaiting receipt: \(purchaseOrders.count). Status counts: \(statusCounts.isEmpty ? "none" : statusCounts).
+            Visible PO examples: \(visible.isEmpty ? "none" : visible).
+            Available read-only guidance: explain how the receiving list, QR scanner, PO detail links, and Receive buttons are organized. Do not start receiving directly.
+            """
+        }
+        NotificationCenter.default.post(
+            name: .receiveShipmentPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 }
 
