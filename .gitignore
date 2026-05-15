@@ -35,6 +35,9 @@ Thumbs.db
 # Claude
 .claude/
 
+# Paperclip runtime state
+.paperclip/
+
 # Secrets — never commit these
 .env
 .env.*
