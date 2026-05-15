@@ -86,6 +86,25 @@ struct BackgroundTaskServiceTests {
         #expect(running[0].id == t1)
     }
 
+    @Test("Office status rows expose known background tasks")
+    func testOfficeStatusRowsExposeKnownTasks() throws {
+        let svc = try freshService()
+
+        let forecast = try svc.startTask(name: "Forecast Recalculation", type: "forecast_recalculation")
+        try svc.completeTask(id: forecast, summary: "Forecasts refreshed", itemsProcessed: 3)
+        let companion = try svc.startTask(name: "Companion Auto-Discovery", type: "companion_discovery")
+        try svc.failTask(id: companion, error: "Model unavailable")
+        _ = try svc.startTask(name: "Peer Sync", type: "sync")
+
+        let rows = Dictionary(uniqueKeysWithValues: try svc.officeStatusRows().map { ($0.id, $0) })
+        #expect(rows["forecast_recalculation"]?.status == .completed)
+        #expect(rows["forecast_recalculation"]?.detail.contains("Forecasts refreshed") == true)
+        #expect(rows["companion_discovery"]?.status == .failed)
+        #expect(rows["companion_discovery"]?.detail.contains("Model unavailable") == true)
+        #expect(rows["sync"]?.status == .running)
+        #expect(rows["audit"]?.status == .neverRun)
+    }
+
     // MARK: - Summary
 
     @Test("24-hour summary aggregates correctly")

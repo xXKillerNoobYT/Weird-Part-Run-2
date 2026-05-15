@@ -1122,6 +1122,7 @@ struct PartsCatalogPage: View {
                     totalStock: stock,
                     partType: pwd.part.partType,
                     isActive: pwd.part.isActive ?? 1,
+                    autoAddToWishlistWhenLow: pwd.part.autoAddToWishlistWhenLow != 0,
                     isLowStock: minStock.map { stock < $0 } ?? false
                 )
             }
@@ -1235,6 +1236,7 @@ struct CatalogPartRow: Identifiable, Sendable {
     let totalStock: Int
     let partType: String
     let isActive: Int
+    let autoAddToWishlistWhenLow: Bool
     let isLowStock: Bool
 }
 
@@ -1399,6 +1401,7 @@ private struct PartFormSheet: View {
     @State private var partType = "standard"
     @State private var costPrice = ""
     @State private var markupPercent = ""
+    @State private var autoAddToWishlistWhenLow = false
     @State private var saveError: String?
     @State private var isSaving = false
 
@@ -1451,6 +1454,12 @@ private struct PartFormSheet: View {
                     }
                     .frame(minHeight: 44)
                 }
+
+                if appCore.hasPermission("edit_parts_catalog") {
+                    Section("Automation") {
+                        Toggle("Auto-add to wishlist when low", isOn: $autoAddToWishlistWhenLow)
+                    }
+                }
             }
             .navigationTitle(part == nil ? "New Part" : "Edit Part")
             .navigationBarTitleDisplayMode(.inline)
@@ -1488,6 +1497,7 @@ private struct PartFormSheet: View {
                     partType = p.partType
                     costPrice = String(format: "%.2f", p.companyCostPrice)
                     markupPercent = String(format: "%.1f", p.companyMarkupPercent)
+                    autoAddToWishlistWhenLow = p.autoAddToWishlistWhenLow
                 }
             }
             .alert("Save Failed", isPresented: Binding(
@@ -1512,6 +1522,7 @@ private struct PartFormSheet: View {
         }
 
         do {
+            let savedPartId: Int64
             if let p = part {
                 try service.updatePart(
                     id: p.id,
@@ -1523,8 +1534,9 @@ private struct PartFormSheet: View {
                     companyCostPrice: cost,
                     companyMarkupPercent: markup
                 )
+                savedPartId = p.id
             } else {
-                _ = try service.createPart(
+                savedPartId = try service.createPart(
                     categoryId: selectedCategoryId,
                     name: trimmedName,
                     partType: partType,
@@ -1532,6 +1544,13 @@ private struct PartFormSheet: View {
                     brandId: selectedBrandId,
                     companyCostPrice: cost,
                     companyMarkupPercent: markup
+                )
+            }
+            if appCore.hasPermission("edit_parts_catalog"), let userId = appCore.currentUser?.id {
+                try service.setAutoAddToWishlistWhenLow(
+                    partId: savedPartId,
+                    enabled: autoAddToWishlistWhenLow,
+                    byUserId: userId
                 )
             }
         } catch {
@@ -1576,6 +1595,10 @@ private struct PartDetailSheet: View {
                         LabeledContent("Brand", value: brand)
                     }
                     LabeledContent("Status", value: partRow.isActive == 1 ? "Active" : "Inactive")
+                    LabeledContent(
+                        "Auto Wishlist",
+                        value: partRow.autoAddToWishlistWhenLow ? "Enabled" : "Disabled"
+                    )
                 }
 
                 if appCore.hasPermission("show_dollar_values") {
