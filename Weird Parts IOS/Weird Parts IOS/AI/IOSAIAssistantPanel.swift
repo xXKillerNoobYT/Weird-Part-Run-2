@@ -82,9 +82,16 @@ struct IOSAIAssistantPanel: View {
     @State private var peopleDashboardContext: String?
     @State private var customersContext: String?
     @State private var contactsContext: String?
+    @State private var contractorsContext: String?
+    @State private var teamsContext: String?
+    @State private var hatsContext: String?
+    @State private var permissionsContext: String?
     @State private var officeDashboardContext: String?
     @State private var officeApprovalsContext: String?
     @State private var officeSpendingContext: String?
+    @State private var officeManageJobsContext: String?
+    @State private var officeEstimationSettingsContext: String?
+    @State private var officePipelineContext: String?
     @State private var reportsLaborContext: String?
     @State private var reportsSpendingContext: String?
     @State private var reportsProfitabilityContext: String?
@@ -318,9 +325,16 @@ struct IOSAIAssistantPanel: View {
             peopleDashboardContext: $peopleDashboardContext,
             customersContext: $customersContext,
             contactsContext: $contactsContext,
+            contractorsContext: $contractorsContext,
+            teamsContext: $teamsContext,
+            hatsContext: $hatsContext,
+            permissionsContext: $permissionsContext,
             officeDashboardContext: $officeDashboardContext,
             officeApprovalsContext: $officeApprovalsContext,
             officeSpendingContext: $officeSpendingContext,
+            officeManageJobsContext: $officeManageJobsContext,
+            officeEstimationSettingsContext: $officeEstimationSettingsContext,
+            officePipelineContext: $officePipelineContext,
             reportsLaborContext: $reportsLaborContext,
             reportsSpendingContext: $reportsSpendingContext,
             reportsProfitabilityContext: $reportsProfitabilityContext,
@@ -711,6 +725,18 @@ struct IOSAIAssistantPanel: View {
             if let ctx = contactsContext {
                 navContext += "\n\nContacts Context (READ-ONLY): \(ctx)"
             }
+            if let ctx = contractorsContext {
+                navContext += "\n\nContractors Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = teamsContext {
+                navContext += "\n\nTeams Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = hatsContext {
+                navContext += "\n\nHats Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = permissionsContext {
+                navContext += "\n\nPermissions Context (READ-ONLY): \(ctx)"
+            }
             if let ctx = officeDashboardContext {
                 navContext += "\n\nOffice Dashboard Context (READ-ONLY): \(ctx)"
             }
@@ -719,6 +745,15 @@ struct IOSAIAssistantPanel: View {
             }
             if let ctx = officeSpendingContext {
                 navContext += "\n\nOffice Spending Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = officeManageJobsContext {
+                navContext += "\n\nOffice Manage Jobs Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = officeEstimationSettingsContext {
+                navContext += "\n\nOffice Estimation Settings Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = officePipelineContext {
+                navContext += "\n\nOffice Pipeline Context (READ-ONLY): \(ctx)"
             }
             if let ctx = reportsLaborContext {
                 navContext += "\n\nReports Labor Context (READ-ONLY): \(ctx)"
@@ -1557,9 +1592,16 @@ private struct PeopleOfficeReportsContextObservers: ViewModifier {
     @Binding var peopleDashboardContext: String?
     @Binding var customersContext: String?
     @Binding var contactsContext: String?
+    @Binding var contractorsContext: String?
+    @Binding var teamsContext: String?
+    @Binding var hatsContext: String?
+    @Binding var permissionsContext: String?
     @Binding var officeDashboardContext: String?
     @Binding var officeApprovalsContext: String?
     @Binding var officeSpendingContext: String?
+    @Binding var officeManageJobsContext: String?
+    @Binding var officeEstimationSettingsContext: String?
+    @Binding var officePipelineContext: String?
     @Binding var reportsLaborContext: String?
     @Binding var reportsSpendingContext: String?
     @Binding var reportsProfitabilityContext: String?
@@ -1574,9 +1616,16 @@ private struct PeopleOfficeReportsContextObservers: ViewModifier {
                 peopleDashboardContext: $peopleDashboardContext,
                 customersContext: $customersContext,
                 contactsContext: $contactsContext,
+                contractorsContext: $contractorsContext,
+                teamsContext: $teamsContext,
+                hatsContext: $hatsContext,
+                permissionsContext: $permissionsContext,
                 officeDashboardContext: $officeDashboardContext,
                 officeApprovalsContext: $officeApprovalsContext,
-                officeSpendingContext: $officeSpendingContext
+                officeSpendingContext: $officeSpendingContext,
+                officeManageJobsContext: $officeManageJobsContext,
+                officeEstimationSettingsContext: $officeEstimationSettingsContext,
+                officePipelineContext: $officePipelineContext
             ))
             .modifier(ReportsContextObservers(
                 reportsLaborContext: $reportsLaborContext,
@@ -1594,9 +1643,47 @@ private struct PeopleOfficeContextObservers: ViewModifier {
     @Binding var peopleDashboardContext: String?
     @Binding var customersContext: String?
     @Binding var contactsContext: String?
+    @Binding var contractorsContext: String?
+    @Binding var teamsContext: String?
+    @Binding var hatsContext: String?
+    @Binding var permissionsContext: String?
     @Binding var officeDashboardContext: String?
     @Binding var officeApprovalsContext: String?
     @Binding var officeSpendingContext: String?
+    @Binding var officeManageJobsContext: String?
+    @Binding var officeEstimationSettingsContext: String?
+    @Binding var officePipelineContext: String?
+
+    func body(content: Content) -> some View {
+        content
+            .modifier(PeopleOfficeContextObserversPrimary(
+                peopleDashboardContext: $peopleDashboardContext,
+                customersContext: $customersContext,
+                contactsContext: $contactsContext,
+                contractorsContext: $contractorsContext,
+                teamsContext: $teamsContext
+            ))
+            .modifier(PeopleOfficeContextObserversSecondary(
+                hatsContext: $hatsContext,
+                permissionsContext: $permissionsContext,
+                officeDashboardContext: $officeDashboardContext,
+                officeApprovalsContext: $officeApprovalsContext,
+                officeSpendingContext: $officeSpendingContext
+            ))
+            .modifier(PeopleOfficeContextObserversOfficeTail(
+                officeManageJobsContext: $officeManageJobsContext,
+                officeEstimationSettingsContext: $officeEstimationSettingsContext,
+                officePipelineContext: $officePipelineContext
+            ))
+    }
+}
+
+private struct PeopleOfficeContextObserversPrimary: ViewModifier {
+    @Binding var peopleDashboardContext: String?
+    @Binding var customersContext: String?
+    @Binding var contactsContext: String?
+    @Binding var contractorsContext: String?
+    @Binding var teamsContext: String?
 
     func body(content: Content) -> some View {
         content
@@ -1618,6 +1705,42 @@ private struct PeopleOfficeContextObservers: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .contactsPageInactive)) { _ in
                 contactsContext = nil
             }
+            .onReceive(NotificationCenter.default.publisher(for: .contractorsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { contractorsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .contractorsPageInactive)) { _ in
+                contractorsContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .teamsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { teamsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .teamsPageInactive)) { _ in
+                teamsContext = nil
+            }
+    }
+}
+
+private struct PeopleOfficeContextObserversSecondary: ViewModifier {
+    @Binding var hatsContext: String?
+    @Binding var permissionsContext: String?
+    @Binding var officeDashboardContext: String?
+    @Binding var officeApprovalsContext: String?
+    @Binding var officeSpendingContext: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .hatsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { hatsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .hatsPageInactive)) { _ in
+                hatsContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .permissionsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { permissionsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .permissionsPageInactive)) { _ in
+                permissionsContext = nil
+            }
             .onReceive(NotificationCenter.default.publisher(for: .officeDashboardPageActive)) { notification in
                 if let ctx = notification.userInfo?["context"] as? String { officeDashboardContext = ctx }
             }
@@ -1635,6 +1758,34 @@ private struct PeopleOfficeContextObservers: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .officeSpendingPageInactive)) { _ in
                 officeSpendingContext = nil
+            }
+    }
+}
+
+private struct PeopleOfficeContextObserversOfficeTail: ViewModifier {
+    @Binding var officeManageJobsContext: String?
+    @Binding var officeEstimationSettingsContext: String?
+    @Binding var officePipelineContext: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .officeManageJobsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { officeManageJobsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .officeManageJobsPageInactive)) { _ in
+                officeManageJobsContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .officeEstimationSettingsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { officeEstimationSettingsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .officeEstimationSettingsPageInactive)) { _ in
+                officeEstimationSettingsContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .officePipelinePageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { officePipelineContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .officePipelinePageInactive)) { _ in
+                officePipelineContext = nil
             }
     }
 }
@@ -1941,6 +2092,22 @@ private struct ActivePageIdTrackerPeopleOfficeReports: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .contactsPageInactive)) { _ in if activePageId == "people-contacts" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .officeDashboardPageActive)) { _ in activePageId = "office-dashboard" }
             .onReceive(NotificationCenter.default.publisher(for: .officeDashboardPageInactive)) { _ in if activePageId == "office-dashboard" { activePageId = nil } }
+            .modifier(ActivePageIdTrackerPeopleTail(activePageId: $activePageId))
+    }
+}
+
+private struct ActivePageIdTrackerPeopleTail: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .contractorsPageActive)) { _ in activePageId = "people-contractors" }
+            .onReceive(NotificationCenter.default.publisher(for: .contractorsPageInactive)) { _ in if activePageId == "people-contractors" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .teamsPageActive)) { _ in activePageId = "people-teams" }
+            .onReceive(NotificationCenter.default.publisher(for: .teamsPageInactive)) { _ in if activePageId == "people-teams" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .hatsPageActive)) { _ in activePageId = "people-hats" }
+            .onReceive(NotificationCenter.default.publisher(for: .hatsPageInactive)) { _ in if activePageId == "people-hats" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .permissionsPageActive)) { _ in activePageId = "people-permissions" }
+            .onReceive(NotificationCenter.default.publisher(for: .permissionsPageInactive)) { _ in if activePageId == "people-permissions" { activePageId = nil } }
             .modifier(ActivePageIdTrackerOfficeReports(activePageId: $activePageId))
     }
 }
@@ -1953,6 +2120,12 @@ private struct ActivePageIdTrackerOfficeReports: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .officeApprovalsPageInactive)) { _ in if activePageId == "office-approvals" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .officeSpendingPageActive)) { _ in activePageId = "office-spending" }
             .onReceive(NotificationCenter.default.publisher(for: .officeSpendingPageInactive)) { _ in if activePageId == "office-spending" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .officeManageJobsPageActive)) { _ in activePageId = "office-manage-jobs" }
+            .onReceive(NotificationCenter.default.publisher(for: .officeManageJobsPageInactive)) { _ in if activePageId == "office-manage-jobs" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .officeEstimationSettingsPageActive)) { _ in activePageId = "office-estimation-settings" }
+            .onReceive(NotificationCenter.default.publisher(for: .officeEstimationSettingsPageInactive)) { _ in if activePageId == "office-estimation-settings" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .officePipelinePageActive)) { _ in activePageId = "office-pipeline" }
+            .onReceive(NotificationCenter.default.publisher(for: .officePipelinePageInactive)) { _ in if activePageId == "office-pipeline" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .reportsLaborPageActive)) { _ in activePageId = "reports-labor" }
             .onReceive(NotificationCenter.default.publisher(for: .reportsLaborPageInactive)) { _ in if activePageId == "reports-labor" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .reportsSpendingPageActive)) { _ in activePageId = "reports-spending" }

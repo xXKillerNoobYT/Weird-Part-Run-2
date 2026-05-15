@@ -126,9 +126,16 @@ struct HelpContentRegistry {
         "WiredPart.peopleDashboardPageActive": "people-dashboard",
         "WiredPart.customersPageActive": "people-customers",
         "WiredPart.contactsPageActive": "people-contacts",
+        "WiredPart.contractorsPageActive": "people-contractors",
+        "WiredPart.teamsPageActive": "people-teams",
+        "WiredPart.hatsPageActive": "people-hats",
+        "WiredPart.permissionsPageActive": "people-permissions",
         "WiredPart.officeDashboardPageActive": "office-dashboard",
         "WiredPart.officeApprovalsPageActive": "office-approvals",
         "WiredPart.officeSpendingPageActive": "office-spending",
+        "WiredPart.officeManageJobsPageActive": "office-manage-jobs",
+        "WiredPart.officeEstimationSettingsPageActive": "office-estimation-settings",
+        "WiredPart.officePipelinePageActive": "office-pipeline",
         "WiredPart.reportsLaborPageActive": "reports-labor",
         "WiredPart.reportsSpendingPageActive": "reports-spending",
         "WiredPart.reportsProfitabilityPageActive": "reports-profitability",
@@ -676,6 +683,50 @@ struct HelpContentRegistry {
         ),
 
         HelpEntry(
+            pageId: "people-contractors",
+            title: "Contractors Help",
+            sections: [
+                ("What This Page Does", "View and manage sub-contractors your company works with. Each row shows the contractor's name, company, phone, and email."),
+                ("How to Use It", "Use the search bar to filter by name, company, phone, or email. Tap a contractor to see their detail page. Tap the + button to add a contractor."),
+                ("Adding a Contractor", "A company name is required. You can also add a contact name, phone, email, and trade or specialty."),
+                ("Tips", "Pull down to refresh the list. Contractor detail pages include qualification tracking, performance ratings, job history, and notes."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "people-teams",
+            title: "Teams Help",
+            sections: [
+                ("What This Page Does", "View and manage teams. Teams group employees together for job assignments and scheduling. Each row shows the team name, description, leader, and member count."),
+                ("Smart Card Filters", "Tap the filter cards at the top to narrow the list: All shows every team, Active shows teams with at least one member, and My Teams shows teams you belong to."),
+                ("How to Use It", "Use the search bar to find teams by name, description, or leader. Tap a team to see its members, assigned jobs, and management options."),
+                ("Tips", "Pull down to refresh. The member count badge on each row shows how many employees are in that team."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "people-hats",
+            title: "Hats & Roles Help",
+            sections: [
+                ("What This Page Does", "Manage hats (roles) that can be assigned to employees. Hats define what an employee is responsible for and control permissions in the system."),
+                ("How to Use It", "Search by hat name or description. Tap a hat to see its members and permissions. Tap the + button to create a new hat."),
+                ("Assigning Hats", "Hats are assigned to employees from the Employee Detail page's Hats tab. Each hat grants a set of permissions configured on the Permissions page."),
+                ("Tips", "Pull down to refresh. The badge on each hat shows how many employees are assigned to it."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "people-permissions",
+            title: "Permissions Help",
+            sections: [
+                ("What This Page Does", "Configure which permissions each hat (role) grants. This is a matrix editor where you select a hat and then toggle individual permissions on or off."),
+                ("How to Use It", "Tap a hat in the selector at the top. The permission list below updates to show all available permissions grouped by category."),
+                ("Permission Groups", "Permissions are organized into categories such as Parts & Warehouse, Jobs & Labor, Orders, Fleet & Tools, People, Scheduling, Chat, and Reports & Admin."),
+                ("Tips", "Pull down to refresh. The first hat is auto-selected when the page loads. Plan your permission structure carefully: give each hat only the permissions it needs."),
+            ]
+        ),
+
+        HelpEntry(
             pageId: "people-employee-detail",
             title: "Employee Detail Help",
             sections: [
@@ -783,6 +834,37 @@ struct HelpContentRegistry {
                 ("Overview", "Aggregate spending data across all jobs. See total parts costs, labor costs, and budget utilization at a glance."),
                 ("Breakdown", "Cards show spending by category. Tap for detailed breakdowns by job, supplier, or time period."),
                 ("Permissions", "This page requires the show dollar values permission. Contact your admin if you cannot see cost data."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "office-manage-jobs",
+            title: "Manage Jobs Help",
+            sections: [
+                ("Overview", "Admin-level job management with status changes, bulk actions, and advanced filtering by assignee, date, and type."),
+                ("Filters", "Use the status cards and search bar to narrow the job list by status, job number, job name, or customer."),
+                ("Permissions", "This page requires the manage jobs permission. Standard users should use the regular Jobs page."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "office-estimation-settings",
+            title: "Estimation Questions Help",
+            sections: [
+                ("What This Page Does", "Manage the questions asked during job estimation. Questions are grouped by stage and used to build accurate job estimates based on real project data."),
+                ("How to Use It", "Tap + to add a new question. Swipe left on any question to edit or deactivate it. Swipe right on an inactive question to reactivate it."),
+                ("AI Analysis", "Tap Analyze Question Effectiveness to see which questions correlate with accurate estimates. This requires at least 15 completed jobs with end-of-job reviews."),
+                ("Question Weight", "Weight controls how much a question's answer impacts the final estimate. Higher weight means the answer has more influence."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "office-pipeline",
+            title: "Pipeline Help",
+            sections: [
+                ("What This Page Does", "Routes office users to the short-term pipeline, long-term pipeline, and dispatch board."),
+                ("How to Use It", "Open Short-Term Pipeline for jobs ready to schedule, Long-Term Pipeline for multi-year planning, or Dispatch Board to assign crews to jobs."),
+                ("Tips", "This page is a hub. Detailed counts and scheduling controls load after you open one of the destination pages."),
             ]
         ),
 

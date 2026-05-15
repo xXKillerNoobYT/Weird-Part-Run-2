@@ -37,9 +37,12 @@ struct IOSHatsPage: View {
             .task { appCore.onboardingManager?.markCompleted("hats-view") }
             .navigationTitle("Hats & Roles")
             .searchable(text: $searchText, prompt: "Search hats...")
-            .onChange(of: searchText) { /* local filter only */ }
+            .onChange(of: searchText) { _, _ in postAIContext() }
             .refreshable { loadData() }
             .task { loadData() }
+            .onDisappear {
+                NotificationCenter.default.post(name: .hatsPageInactive, object: nil)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .addHat } label: {
@@ -217,6 +220,16 @@ struct IOSHatsPage: View {
             loadError = userFriendlyError(error, context: "load roles")
         }
         isLoading = false
+        postAIContext()
+    }
+
+    private func postAIContext() {
+        let assignedHats = hats.filter { $0.userCount > 0 }.count
+        let totalAssignments = hats.reduce(0) { $0 + $1.userCount }
+        let context = """
+        Hats and roles page. Loaded hats: \(hats.count). Visible hats: \(filteredHats.count). Hats assigned to at least one employee: \(assignedHats). Total hat assignments shown: \(totalAssignments). Search: \(searchText.isEmpty ? "none" : searchText). Detail sheet open: \(activeSheet != nil). Available read-only actions: summarize role coverage, identify unassigned hats, explain how hats relate to permissions.
+        """
+        NotificationCenter.default.post(name: .hatsPageActive, object: nil, userInfo: ["context": context])
     }
 }
 
@@ -555,4 +568,3 @@ private struct AddEmployeeToHatSheet: View {
         }
     }
 }
-

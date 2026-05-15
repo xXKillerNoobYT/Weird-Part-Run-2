@@ -50,6 +50,9 @@ struct IOSContractorsPage: View {
         .onChange(of: searchText) { _, _ in loadData() }
         .task { loadData() }
         .refreshable { loadData() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .contractorsPageInactive, object: nil)
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .create } label: {
@@ -137,6 +140,17 @@ struct IOSContractorsPage: View {
             loadError = userFriendlyError(error, context: "load contractors")
         }
         isLoading = false
+        postAIContext()
+    }
+
+    private func postAIContext() {
+        let withPhone = contractors.filter { ($0.phone?.isEmpty == false) }.count
+        let withEmail = contractors.filter { ($0.email?.isEmpty == false) }.count
+        let withCompany = contractors.filter { ($0.company?.isEmpty == false) }.count
+        let context = """
+        Contractors page. Loaded contractors: \(contractors.count). Search: \(searchText.isEmpty ? "none" : searchText). With company: \(withCompany). With phone: \(withPhone). With email: \(withEmail). Available read-only actions: summarize contractor coverage, identify missing contact info, explain how to open contractor detail.
+        """
+        NotificationCenter.default.post(name: .contractorsPageActive, object: nil, userInfo: ["context": context])
     }
 }
 // MARK: - Add Contractor Sheet

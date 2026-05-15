@@ -16,7 +16,7 @@ struct IOSTeamsPage: View {
     @State private var loadError: String?
     @State private var filter: TeamFilter = .all
 
-    private enum TeamFilter {
+    private enum TeamFilter: Equatable {
         case all, active, mine
     }
 
@@ -31,8 +31,13 @@ struct IOSTeamsPage: View {
         teamList
             .navigationTitle("Teams")
             .searchable(text: $searchText, prompt: "Search teams...")
+            .onChange(of: searchText) { _, _ in postAIContext() }
+            .onChange(of: filter) { _, _ in postAIContext() }
             .refreshable { loadData() }
             .task { loadData() }
+            .onDisappear {
+                NotificationCenter.default.post(name: .teamsPageInactive, object: nil)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .addTeam } label: {
@@ -251,6 +256,21 @@ struct IOSTeamsPage: View {
             loadError = userFriendlyError(error, context: "load teams")
         }
         isLoading = false
+        postAIContext()
+    }
+
+    private func postAIContext() {
+        let totalMembers = teams.reduce(0) { $0 + $1.memberCount }
+        let withLeaders = teams.filter { $0.leaderName != nil }.count
+        let filterLabel: String = switch filter {
+        case .all: "all"
+        case .active: "active"
+        case .mine: "my teams"
+        }
+        let context = """
+        Teams page. Loaded teams: \(teams.count). Visible teams: \(filteredTeams.count). Active teams: \(activeTeams.count). Teams with leaders: \(withLeaders). Total listed members: \(totalMembers). Selected filter: \(filterLabel). Search: \(searchText.isEmpty ? "none" : searchText). Available read-only actions: summarize team coverage, explain visible filters, identify teams without listed members or leaders.
+        """
+        NotificationCenter.default.post(name: .teamsPageActive, object: nil, userInfo: ["context": context])
     }
 }
 

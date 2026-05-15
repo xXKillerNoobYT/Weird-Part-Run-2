@@ -496,6 +496,30 @@ extension Notification.Name {
     /// Posted when the Contacts page disappears.
     static let contactsPageInactive = Notification.Name("WiredPart.contactsPageInactive")
 
+    /// Posted when the Contractors page appears, with contractor list context for AI.
+    static let contractorsPageActive = Notification.Name("WiredPart.contractorsPageActive")
+
+    /// Posted when the Contractors page disappears.
+    static let contractorsPageInactive = Notification.Name("WiredPart.contractorsPageInactive")
+
+    /// Posted when the Teams page appears, with team list context for AI.
+    static let teamsPageActive = Notification.Name("WiredPart.teamsPageActive")
+
+    /// Posted when the Teams page disappears.
+    static let teamsPageInactive = Notification.Name("WiredPart.teamsPageInactive")
+
+    /// Posted when the Hats page appears, with role list context for AI.
+    static let hatsPageActive = Notification.Name("WiredPart.hatsPageActive")
+
+    /// Posted when the Hats page disappears.
+    static let hatsPageInactive = Notification.Name("WiredPart.hatsPageInactive")
+
+    /// Posted when the Permissions page appears, with permission matrix context for AI.
+    static let permissionsPageActive = Notification.Name("WiredPart.permissionsPageActive")
+
+    /// Posted when the Permissions page disappears.
+    static let permissionsPageInactive = Notification.Name("WiredPart.permissionsPageInactive")
+
     // MARK: - Office
 
     /// Posted when the Office Dashboard page appears, with command-center context for AI.
@@ -515,6 +539,24 @@ extension Notification.Name {
 
     /// Posted when the Office Spending dashboard disappears.
     static let officeSpendingPageInactive = Notification.Name("WiredPart.officeSpendingPageInactive")
+
+    /// Posted when the Office Manage Jobs page appears, with job management context for AI.
+    static let officeManageJobsPageActive = Notification.Name("WiredPart.officeManageJobsPageActive")
+
+    /// Posted when the Office Manage Jobs page disappears.
+    static let officeManageJobsPageInactive = Notification.Name("WiredPart.officeManageJobsPageInactive")
+
+    /// Posted when the Office Estimation Settings page appears, with question settings context for AI.
+    static let officeEstimationSettingsPageActive = Notification.Name("WiredPart.officeEstimationSettingsPageActive")
+
+    /// Posted when the Office Estimation Settings page disappears.
+    static let officeEstimationSettingsPageInactive = Notification.Name("WiredPart.officeEstimationSettingsPageInactive")
+
+    /// Posted when the Office Pipeline page appears, with pipeline entry-point context for AI.
+    static let officePipelinePageActive = Notification.Name("WiredPart.officePipelinePageActive")
+
+    /// Posted when the Office Pipeline page disappears.
+    static let officePipelinePageInactive = Notification.Name("WiredPart.officePipelinePageInactive")
 
     // MARK: - Reports
 

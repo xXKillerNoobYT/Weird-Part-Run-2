@@ -9,9 +9,9 @@ Complete the 87-page page-context coverage set by adding read-only page-active/p
 
 ## Current Coverage
 
-Implemented page-context notifications observed by `IOSAIAssistantPanel`: 60 page contexts.
+Implemented page-context notifications observed by `IOSAIAssistantPanel`: 67 page contexts.
 
-Help registry mappings with matching help entries: 60 page contexts.
+Help registry mappings with matching help entries: 67 page contexts.
 
 Known gap: none in the currently observed AI page-context set. Remaining work is additional unobserved functional pages, not broken mappings.
 
@@ -65,9 +65,16 @@ Known gap: none in the currently observed AI page-context set. Remaining work is
 | People | Employees | `employeesPageActive` | `people-employees` |
 | People | Customers | `customersPageActive` | `people-customers` |
 | People | Contacts | `contactsPageActive` | `people-contacts` |
+| People | Contractors | `contractorsPageActive` | `people-contractors` |
+| People | Teams | `teamsPageActive` | `people-teams` |
+| People | Hats & Roles | `hatsPageActive` | `people-hats` |
+| People | Permissions | `permissionsPageActive` | `people-permissions` |
 | Office | Office Dashboard | `officeDashboardPageActive` | `office-dashboard` |
 | Office | Unified Approvals | `officeApprovalsPageActive` | `office-approvals` |
 | Office | Spending Dashboard | `officeSpendingPageActive` | `office-spending` |
+| Office | Manage Jobs | `officeManageJobsPageActive` | `office-manage-jobs` |
+| Office | Estimation Questions | `officeEstimationSettingsPageActive` | `office-estimation-settings` |
+| Office | Pipeline Hub | `officePipelinePageActive` | `office-pipeline` |
 | Reports | Labor Overview | `reportsLaborPageActive` | `reports-labor` |
 | Reports | Spending | `reportsSpendingPageActive` | `reports-spending` |
 | Reports | Profitability | `reportsProfitabilityPageActive` | `reports-profitability` |
@@ -165,9 +172,23 @@ Closed the known settings mapping gap:
 
 The payload is a read-only summary of visible settings and validation state. It does not expose mutating commands, action IDs, or write intents.
 
+## People/Office Tail Slice
+
+Added the next People and Office tail page-context slice:
+
+- `IOSContractorsPage`: loaded contractor count, search state, and contact-info coverage counts.
+- `IOSTeamsPage`: loaded/visible team counts, selected smart-card filter, total members, and leader coverage.
+- `IOSHatsPage`: loaded/visible hat counts, assigned hat count, total assignments, search state, and detail-sheet state.
+- `IOSPermissionsPage`: loaded hats, selected hat, permission group/key counts, enabled permission count, and legacy PIN upgrade count.
+- `IOSManageJobsPage`: loaded/visible job counts, selected status filter, search state, status counts, and summary stats.
+- `IOSEstimationSettingsPage`: question counts by active state, stage, and answer type, effectiveness rows, and visible error state.
+- `OfficePipelineView`: read-only hub context for Short-Term Pipeline, Long-Term Pipeline, and Dispatch Board entry points.
+
+All payloads are read-only summaries of visible state, selected filters, lifecycle state, and available entry points. They do not expose mutating commands, action IDs, or write intents.
+
 ## Next Highest-Traffic Remaining Slices
 
-1. People/Office/Reports tail: contractors, teams, hats, permissions, office manage-jobs, warehouse exec, estimation settings, pipeline, teams, reports router, and specialized fleet/scheduling/warehouse report pages.
+1. People/Office/Reports tail remainder: office warehouse exec, office teams route alias, reports router, and specialized fleet/scheduling/warehouse report pages.
 
 ## Validation
 
@@ -207,6 +228,12 @@ Validated Settings gap closure slice in the clean WEI-1112 settings worktree on 
 - `settingsPageActive` is posted by `AppConfigPage`, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
 - Help registry mapping check returned no missing mapped page IDs.
 - First build exposed a recovered-branch compile issue in `IOSOfficeDashboardPage` background task status rows; the page now uses existing `BackgroundTaskService.TaskLogEntry` data instead of unavailable types.
+- `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was pre-existing warnings only.
+
+Validated People/Office tail slice in the clean WEI-1112 tail worktree on 2026-05-15:
+
+- Tail slice notification names are declared, posted by their pages, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
+- Help registry mapping check returned no missing mapped page IDs.
 - `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was pre-existing warnings only.
 
 Static validation:

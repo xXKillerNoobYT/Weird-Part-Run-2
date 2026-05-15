@@ -84,6 +84,7 @@ struct IOSManageJobsPage: View {
             }
         }
         .onChange(of: searchText) { loadData() }
+        .onChange(of: statusFilter) { _, _ in postAIContext() }
         .refreshable { loadData() }
         .task { loadData() }
         .onAppear {
@@ -101,6 +102,7 @@ struct IOSManageJobsPage: View {
         }
         .onDisappear {
             appCore.aiFilterRegistry.deregister(pageId: "manage-jobs")
+            NotificationCenter.default.post(name: .officeManageJobsPageInactive, object: nil)
         }
     }
 
@@ -259,6 +261,21 @@ struct IOSManageJobsPage: View {
             loadError = userFriendlyError(error, context: "load jobs")
         }
         isLoading = false
+        postAIContext()
+    }
+
+    private func postAIContext() {
+        let statusCounts = statusOptions.map { "\($0): \(countForStatus($0))" }.joined(separator: ", ")
+        let statsSummary: String
+        if let stats {
+            statsSummary = "stats active \(stats.active), completed \(stats.completed), total \(stats.total)"
+        } else {
+            statsSummary = "stats unavailable"
+        }
+        let context = """
+        Office Manage Jobs page. Loaded jobs: \(allJobs.count). Visible jobs: \(jobs.count). Selected status filter: \(statusFilter). Search: \(searchText.isEmpty ? "none" : searchText). \(statsSummary). Status counts: \(statusCounts). Available read-only actions: summarize job status mix, explain active filters, identify visible job counts.
+        """
+        NotificationCenter.default.post(name: .officeManageJobsPageActive, object: nil, userInfo: ["context": context])
     }
 }
 
