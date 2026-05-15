@@ -621,6 +621,53 @@ struct NotebooksServiceTests {
         #expect(reviewed == 1)
     }
 
+    @Test("Pending warranty classifications list oldest unreviewed rows and remove after review")
+    func testListPendingWarrantyClassifications() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Warranty Job Notes",
+            notebookType: "job",
+            jobId: jobId,
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId,
+            groupId: nil,
+            name: "Work"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "text",
+            title: "Inspect callback",
+            content: "Verify warranty classification",
+            createdBy: env.adminUserId
+        )
+
+        try env.notebooks.classifyTodoWork(
+            entryId: entryId,
+            classification: "warranty",
+            classifiedBy: env.adminUserId
+        )
+
+        let pending = try env.notebooks.listPendingWarrantyClassifications()
+        #expect(pending.count == 1)
+        #expect(pending[0].id == entryId)
+        #expect(pending[0].requestedClassification == "warranty")
+        #expect(pending[0].jobName == "Test Job")
+
+        try env.notebooks.reviewClassification(
+            entryId: entryId,
+            reviewedBy: env.adminUserId,
+            approved: true,
+            newClassification: nil
+        )
+
+        let afterReview = try env.notebooks.listPendingWarrantyClassifications()
+        #expect(afterReview.isEmpty)
+    }
+
     // MARK: - 19. Reclassify with Reason
 
     @Test("Reclassify todo resets review and logs reason")
