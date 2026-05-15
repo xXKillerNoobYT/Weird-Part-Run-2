@@ -122,6 +122,7 @@ extension AppDatabase {
         registerMigration083WarehouseWalkingPaths(&migrator)
         registerMigration084WarehouseOnboardingCompletedSteps(&migrator)
         registerMigration085AuditSessionEvents(&migrator)
+        registerMigration086MultiUserAuditLifecycle(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5113,6 +5114,27 @@ extension AppDatabase {
             try db.execute(sql: """
                 CREATE INDEX idx_audit_session_events_session
                 ON audit_session_events(session_id, recorded_at)
+            """)
+        }
+    }
+
+    private static func registerMigration086MultiUserAuditLifecycle(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("086_multi_user_audit_lifecycle") { db in
+            try db.alter(table: "multi_user_audit_assignments") { t in
+                t.add(column: "resolved_quantity", .integer)
+                t.add(column: "resolution_method", .text)
+                t.add(column: "resolved_by", .integer).references("users")
+                t.add(column: "resolved_at", .text)
+            }
+
+            try db.execute(sql: """
+                CREATE UNIQUE INDEX idx_mua_unique_user_part_session
+                ON multi_user_audit_assignments(
+                    part_id,
+                    COALESCE(audit_session_id, -1),
+                    assigned_user_id
+                )
+                WHERE status IN ('pending', 'counted', 'unresolved')
                 """)
         }
     }
