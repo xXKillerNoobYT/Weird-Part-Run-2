@@ -75,6 +75,10 @@ public final class NotebooksService: Sendable {
         public let photoPath: String?
         public let referenceType: String?
         public let referenceId: Int64?
+        public let taskStatus: String?
+        public let taskDueDate: String?
+        public let taskAssignedTo: Int64?
+        public let taskPartsNote: String?
         // Classification fields (45D)
         public let workClassification: String?
         public let classificationReviewed: Bool
@@ -89,6 +93,8 @@ public final class NotebooksService: Sendable {
             blockData: String? = nil, headingLevel: Int? = nil,
             checklistItems: String? = nil, photoPath: String? = nil,
             referenceType: String? = nil, referenceId: Int64? = nil,
+            taskStatus: String? = nil, taskDueDate: String? = nil,
+            taskAssignedTo: Int64? = nil, taskPartsNote: String? = nil,
             workClassification: String? = nil, classificationReviewed: Bool = false,
             warrantyTimerEnd: String? = nil, isQuestion: Bool = false
         ) {
@@ -107,6 +113,10 @@ public final class NotebooksService: Sendable {
             self.photoPath = photoPath
             self.referenceType = referenceType
             self.referenceId = referenceId
+            self.taskStatus = taskStatus
+            self.taskDueDate = taskDueDate
+            self.taskAssignedTo = taskAssignedTo
+            self.taskPartsNote = taskPartsNote
             self.workClassification = workClassification
             self.classificationReviewed = classificationReviewed
             self.warrantyTimerEnd = warrantyTimerEnd
@@ -243,6 +253,7 @@ public final class NotebooksService: Sendable {
                        COALESCE(ne.is_completed, 0) as is_completed, ne.created_at,
                        ne.block_type, ne.block_data, ne.heading_level, ne.checklist_items,
                        ne.photo_path, ne.reference_type, ne.reference_id,
+                       ne.task_status, ne.task_due_date, ne.task_assigned_to, ne.task_parts_note,
                        ne.work_classification, COALESCE(ne.classification_reviewed, 0) as classification_reviewed,
                        ne.warranty_timer_end, COALESCE(ne.is_question, 0) as is_question,
                        COALESCE(u.display_name, u.email, 'Unknown') AS created_by_name
@@ -270,6 +281,10 @@ public final class NotebooksService: Sendable {
                     photoPath: row["photo_path"] as String?,
                     referenceType: row["reference_type"] as String?,
                     referenceId: row["reference_id"] as Int64?,
+                    taskStatus: row["task_status"] as String?,
+                    taskDueDate: row["task_due_date"] as String?,
+                    taskAssignedTo: row["task_assigned_to"] as Int64?,
+                    taskPartsNote: row["task_parts_note"] as String?,
                     workClassification: row["work_classification"] as String?,
                     classificationReviewed: (row["classification_reviewed"] as Int?) == 1,
                     warrantyTimerEnd: row["warranty_timer_end"] as String?,
@@ -597,6 +612,7 @@ public final class NotebooksService: Sendable {
                            COALESCE(ne.is_completed, 0) as is_completed, ne.created_at,
                            ne.block_type, ne.block_data, ne.heading_level, ne.checklist_items,
                            ne.photo_path, ne.reference_type, ne.reference_id,
+                           ne.task_status, ne.task_due_date, ne.task_assigned_to, ne.task_parts_note,
                            ne.work_classification, COALESCE(ne.classification_reviewed, 0) as classification_reviewed,
                            ne.warranty_timer_end, COALESCE(ne.is_question, 0) as is_question,
                            COALESCE(u.display_name, u.email, 'Unknown') AS created_by_name
@@ -626,6 +642,10 @@ public final class NotebooksService: Sendable {
                         photoPath: row["photo_path"] as String?,
                         referenceType: row["reference_type"] as String?,
                         referenceId: row["reference_id"] as Int64?,
+                        taskStatus: row["task_status"] as String?,
+                        taskDueDate: row["task_due_date"] as String?,
+                        taskAssignedTo: row["task_assigned_to"] as Int64?,
+                        taskPartsNote: row["task_parts_note"] as String?,
                         workClassification: row["work_classification"] as String?,
                         classificationReviewed: (row["classification_reviewed"] as Int?) == 1,
                         warrantyTimerEnd: row["warranty_timer_end"] as String?,
@@ -810,6 +830,18 @@ public final class NotebooksService: Sendable {
         title: String? = nil,
         content: String? = nil,
         blockData: String? = nil,
+        headingLevel: Int? = nil,
+        checklistItems: String? = nil,
+        photoPath: String? = nil,
+        referenceType: String? = nil,
+        referenceId: Int64? = nil,
+        taskStatus: String? = nil,
+        taskDueDate: String? = nil,
+        taskAssignedTo: Int64? = nil,
+        taskPartsNote: String? = nil,
+        workClassification: String? = nil,
+        warrantyTimerEnd: String? = nil,
+        isQuestion: Bool = false,
         createdBy: Int64,
         sortOrder: Int? = nil
     ) throws -> Int64 {
@@ -827,24 +859,70 @@ public final class NotebooksService: Sendable {
             let notebookId = try Int64.fetchOne(dbConn, sql: """
                 SELECT notebook_id FROM notebook_sections WHERE id = ?
                 """, arguments: [sectionId])
+            let persistedTaskStatus = taskStatus ?? (blockType == "todo" ? "open" : nil)
 
             try dbConn.execute(sql: """
                 INSERT INTO notebook_entries
                 (section_id, notebook_id, title, content, entry_type, block_type, block_data,
+                 heading_level, checklist_items, photo_path, reference_type, reference_id,
+                 task_status, task_due_date, task_assigned_to, task_parts_note,
+                 work_classification, warranty_timer_end, is_question,
                  field_required, is_deleted, is_completed, sort_order, created_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'note', ?, ?, 0, 0, 0, ?, ?, datetime('now'), datetime('now'))
-                """, arguments: [sectionId, notebookId, title ?? "", content, blockType, blockData, order, createdBy])
+                VALUES (?, ?, ?, ?, 'note', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        0, 0, 0, ?, ?, datetime('now'), datetime('now'))
+                """, arguments: [
+                    sectionId, notebookId, title ?? "", content, blockType, blockData,
+                    headingLevel, checklistItems, photoPath, referenceType, referenceId,
+                    persistedTaskStatus, taskDueDate, taskAssignedTo, taskPartsNote,
+                    workClassification, warrantyTimerEnd, isQuestion ? 1 : 0,
+                    order, createdBy
+                ])
             return dbConn.lastInsertedRowID
         }
     }
 
-    /// Update a block entry's content and/or block data.
-    public func updateBlockEntry(entryId: Int64, content: String?, blockData: String?) throws {
+    /// Update a block entry's content and/or persisted block metadata.
+    public func updateBlockEntry(
+        entryId: Int64,
+        content: String?,
+        blockData: String?,
+        headingLevel: Int? = nil,
+        checklistItems: String? = nil,
+        photoPath: String? = nil,
+        referenceType: String? = nil,
+        referenceId: Int64? = nil,
+        taskStatus: String? = nil,
+        taskDueDate: String? = nil,
+        taskAssignedTo: Int64? = nil,
+        taskPartsNote: String? = nil,
+        workClassification: String? = nil,
+        warrantyTimerEnd: String? = nil,
+        isQuestion: Bool? = nil
+    ) throws {
         try db.writer.write { dbConn in
             try dbConn.execute(sql: """
-                UPDATE notebook_entries SET content = ?, block_data = ?, updated_at = datetime('now')
+                UPDATE notebook_entries SET
+                    content = ?,
+                    block_data = ?,
+                    heading_level = COALESCE(?, heading_level),
+                    checklist_items = COALESCE(?, checklist_items),
+                    photo_path = COALESCE(?, photo_path),
+                    reference_type = COALESCE(?, reference_type),
+                    reference_id = COALESCE(?, reference_id),
+                    task_status = COALESCE(?, task_status),
+                    task_due_date = COALESCE(?, task_due_date),
+                    task_assigned_to = COALESCE(?, task_assigned_to),
+                    task_parts_note = COALESCE(?, task_parts_note),
+                    work_classification = COALESCE(?, work_classification),
+                    warranty_timer_end = COALESCE(?, warranty_timer_end),
+                    is_question = COALESCE(?, is_question),
+                    updated_at = datetime('now')
                 WHERE id = ? AND deleted_at IS NULL
-                """, arguments: [content, blockData, entryId])
+                """, arguments: [
+                    content, blockData, headingLevel, checklistItems, photoPath, referenceType, referenceId,
+                    taskStatus, taskDueDate, taskAssignedTo, taskPartsNote, workClassification,
+                    warrantyTimerEnd, isQuestion.map { $0 ? 1 : 0 }, entryId
+                ])
         }
     }
 
@@ -925,6 +1003,7 @@ public final class NotebooksService: Sendable {
                            COALESCE(ne.is_completed, 0) as is_completed, ne.created_at,
                            ne.block_type, ne.block_data, ne.heading_level, ne.checklist_items,
                            ne.photo_path, ne.reference_type, ne.reference_id,
+                           ne.task_status, ne.task_due_date, ne.task_assigned_to, ne.task_parts_note,
                            ne.work_classification, COALESCE(ne.classification_reviewed, 0) as classification_reviewed,
                            ne.warranty_timer_end, COALESCE(ne.is_question, 0) as is_question,
                            COALESCE(u.display_name, u.email, 'Unknown') AS created_by_name
@@ -955,6 +1034,10 @@ public final class NotebooksService: Sendable {
                         photoPath: row["photo_path"] as String?,
                         referenceType: row["reference_type"] as String?,
                         referenceId: row["reference_id"] as Int64?,
+                        taskStatus: row["task_status"] as String?,
+                        taskDueDate: row["task_due_date"] as String?,
+                        taskAssignedTo: row["task_assigned_to"] as Int64?,
+                        taskPartsNote: row["task_parts_note"] as String?,
                         workClassification: row["work_classification"] as String?,
                         classificationReviewed: (row["classification_reviewed"] as Int?) == 1,
                         warrantyTimerEnd: row["warranty_timer_end"] as String?,

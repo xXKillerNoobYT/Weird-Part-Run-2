@@ -482,15 +482,61 @@ struct IOSNotebookDetailPage: View {
                 }
                 .padding(.vertical, 4)
 
+            case "quote":
+                HStack(alignment: .top, spacing: 10) {
+                    Rectangle()
+                        .fill(.secondary.opacity(0.45))
+                        .frame(width: 3)
+                    Text(entry.content)
+                        .font(.callout)
+                        .italic()
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+
+            case "code":
+                Text(entry.content)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.secondary.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+
             case "table":
-                HStack {
-                    Image(systemName: "tablecells")
-                        .foregroundStyle(.purple)
-                        .accessibilityHidden(true)
-                    Text(entry.title ?? "Table").font(.subheadline)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Image(systemName: "tablecells")
+                            .foregroundStyle(.purple)
+                            .accessibilityHidden(true)
+                        Text(entry.title ?? "Table").font(.subheadline).bold()
+                    }
+                    if !entry.content.isEmpty {
+                        Text(entry.content)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .padding(8)
                 .background(.purple.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            case "panel_schedule":
+                HStack {
+                    Image(systemName: "bolt.fill")
+                        .foregroundStyle(.yellow)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(entry.title ?? "Panel Schedule")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Text("Open the panel builder to edit breaker assignments")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(8)
+                .background(.yellow.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
 
             case "todo":
