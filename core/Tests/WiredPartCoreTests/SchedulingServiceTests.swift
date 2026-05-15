@@ -333,6 +333,36 @@ struct SchedulingServiceTests {
         #expect(otherDate.isEmpty)
     }
 
+    @Test("getCrewAssignmentHistory returns last 3 months of assignments")
+    func testCrewAssignmentHistoryThreeMonthWindow() throws {
+        let env = try E2ETestHelpers.setUp()
+        let oldJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-HIST-OLD", name: "Old History Job")
+        let recentJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-HIST-RECENT", name: "Recent History Job")
+
+        _ = try env.scheduling.createDispatch(
+            jobId: oldJobId,
+            userId: env.adminUserId,
+            date: "2026-02-10",
+            notes: "Outside window"
+        )
+        _ = try env.scheduling.createDispatch(
+            jobId: recentJobId,
+            userId: env.adminUserId,
+            date: "2026-03-01",
+            notes: "Inside window"
+        )
+
+        let history = try env.scheduling.getCrewAssignmentHistory(
+            userId: env.adminUserId,
+            endingDate: "2026-05-15"
+        )
+
+        #expect(history.count == 1)
+        #expect(history[0].jobId == recentJobId)
+        #expect(history[0].jobName == "Recent History Job")
+        #expect(history[0].dispatchDate == "2026-03-01")
+    }
+
     // MARK: - 9. Schedule Stats
 
     @Test("getSchedulingStats returns zeroes on fresh database")
@@ -1099,6 +1129,67 @@ struct SchedulingServiceTests {
         // Job should no longer appear in flex pool
         let remaining = try env.scheduling.fetchFlexPool(userId: env.adminUserId)
         #expect(remaining.isEmpty, "Claimed job should no longer appear in flex pool")
+    }
+
+    @Test("markJobFlexPool enforces manage_flex_pool when actor is supplied")
+    func testMarkJobFlexPoolPermissionGuard() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let unprivilegedUserId = try env.auth.createUser(displayName: "No Flex Manager", pin: "5678")
+
+        do {
+            try env.scheduling.markJobFlexPool(
+                jobId: jobId,
+                isFlexPool: true,
+                actingUserId: unprivilegedUserId
+            )
+            Issue.record("Expected markJobFlexPool to reject actor without manage_flex_pool")
+        } catch SchedulingService.SchedulingError.insufficientPermissions(let required) {
+            #expect(required == "manage_flex_pool")
+        }
+
+        try env.scheduling.markJobFlexPool(
+            jobId: jobId,
+            isFlexPool: true,
+            actingUserId: env.adminUserId
+        )
+        #expect(try env.scheduling.isJobInFlexPool(jobId: jobId))
+    }
+
+    @Test("claimFlexJob enforces self_assign_flex and flex-pool visibility")
+    func testClaimFlexJobPermissionAndVisibilityGuard() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let unprivilegedUserId = try env.auth.createUser(displayName: "No Flex Claim", pin: "6789")
+
+        try env.scheduling.markJobFlexPool(
+            jobId: jobId,
+            isFlexPool: true,
+            userFilter: [env.adminUserId],
+            actingUserId: env.adminUserId
+        )
+
+        do {
+            try env.scheduling.claimFlexJob(
+                jobId: jobId,
+                userId: unprivilegedUserId,
+                actingUserId: unprivilegedUserId
+            )
+            Issue.record("Expected claimFlexJob to reject actor without self_assign_flex")
+        } catch SchedulingService.SchedulingError.insufficientPermissions(let required) {
+            #expect(required == "self_assign_flex")
+        }
+
+        do {
+            try env.scheduling.claimFlexJob(
+                jobId: jobId,
+                userId: unprivilegedUserId,
+                actingUserId: env.adminUserId
+            )
+            Issue.record("Expected claimFlexJob to reject users outside the flex-pool filter")
+        } catch SchedulingService.SchedulingError.insufficientPermissions(let required) {
+            #expect(required == "flex_pool_visibility")
+        }
     }
 
     // MARK: - isJobInFlexPool

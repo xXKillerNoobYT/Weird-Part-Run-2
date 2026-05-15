@@ -33,6 +33,7 @@ public final class SchedulingService: Sendable {
         case jobNotFound(Int64)
         case userNotFound(Int64)
         case dispatchNotFound(Int64)
+        case insufficientPermissions(required: String)
     }
 
     // =========================================================================
@@ -86,6 +87,35 @@ public final class SchedulingService: Sendable {
             self.userName = userName
             self.jobName = jobName
             self.vehicleName = vehicleName
+            self.status = status
+            self.notes = notes
+        }
+    }
+
+    /// A prior assignment for dispatch crew-history context.
+    public struct CrewAssignmentHistoryRow: Sendable, Identifiable {
+        public let id: Int64
+        public let jobId: Int64
+        public let jobName: String
+        public let dispatchDate: String
+        public let timeSlot: String
+        public let status: String
+        public let notes: String?
+
+        public init(
+            id: Int64,
+            jobId: Int64,
+            jobName: String,
+            dispatchDate: String,
+            timeSlot: String,
+            status: String,
+            notes: String?
+        ) {
+            self.id = id
+            self.jobId = jobId
+            self.jobName = jobName
+            self.dispatchDate = dispatchDate
+            self.timeSlot = timeSlot
             self.status = status
             self.notes = notes
         }
@@ -920,6 +950,64 @@ public final class SchedulingService: Sendable {
             }
         } catch {
             if isTableNotFoundError(error) { return nil }
+            throw error
+        }
+    }
+
+    /// Return the worker's recent dispatch assignments for crew-history context.
+    ///
+    /// The default window is the last 3 months ending on `endingDate`, matching
+    /// the dispatch-board assignment context described in the Scheduling plan.
+    public func getCrewAssignmentHistory(
+        userId: Int64,
+        endingDate: String,
+        monthsBack: Int = 3
+    ) throws -> [CrewAssignmentHistoryRow] {
+        guard !endingDate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw SchedulingError.requiredFieldEmpty
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        let end = formatter.date(from: String(endingDate.prefix(10))) ?? Date()
+        let start = Calendar.current.date(byAdding: .month, value: -max(monthsBack, 0), to: end) ?? end
+        let startDate = formatter.string(from: start)
+        let endDate = formatter.string(from: end)
+
+        do {
+            return try db.writer.read { dbConn -> [CrewAssignmentHistoryRow] in
+                let sql = """
+                    SELECT jd.id,
+                           jd.job_id,
+                           COALESCE(j.job_name, 'Unassigned') AS job_name,
+                           jd.dispatch_date,
+                           COALESCE(jd.time_slot, 'full') AS time_slot,
+                           COALESCE(jd.status, 'scheduled') AS status,
+                           jd.notes
+                    FROM job_dispatch jd
+                    LEFT JOIN jobs j ON j.id = jd.job_id AND j.deleted_at IS NULL
+                    WHERE jd.user_id = ?
+                      AND jd.dispatch_date >= ?
+                      AND jd.dispatch_date <= ?
+                      AND jd.deleted_at IS NULL
+                    ORDER BY jd.dispatch_date DESC, jd.id DESC
+                    """
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [userId, startDate, endDate])
+                return rows.map { row in
+                    CrewAssignmentHistoryRow(
+                        id: row["id"] ?? 0,
+                        jobId: row["job_id"] ?? 0,
+                        jobName: row["job_name"] ?? "Unassigned",
+                        dispatchDate: row["dispatch_date"] ?? "",
+                        timeSlot: row["time_slot"] ?? "full",
+                        status: row["status"] ?? "scheduled",
+                        notes: row["notes"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
             throw error
         }
     }
@@ -2040,7 +2128,7 @@ public final class SchedulingService: Sendable {
     /// `dispatch_entries` row with status `pending_approval`. Otherwise,
     /// sets the user as lead and creates an `active` dispatch entry in a
     /// single transaction.
-    public func claimFlexJob(jobId: Int64, userId: Int64) throws {
+    public func claimFlexJob(jobId: Int64, userId: Int64, actingUserId: Int64? = nil) throws {
         let requiresApproval: Bool
         do {
             let val = try db.writer.read { dbConn in
@@ -2054,17 +2142,34 @@ public final class SchedulingService: Sendable {
         }
 
         try db.writer.write { dbConn in
+            if let actingUserId {
+                let requiredPermission = actingUserId == userId ? "self_assign_flex" : "manage_dispatch"
+                guard try userHasPermission(dbConn, userId: actingUserId, permissionKey: requiredPermission) else {
+                    throw SchedulingError.insufficientPermissions(required: requiredPermission)
+                }
+            }
+
             // Guard: job + user must exist and not be tombstoned — flex-pool
             // pickup from a stale UI should not create orphan dispatches against
             // deleted jobs or promote a tombstoned user to lead.
-            let jobExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL
-                """, arguments: [jobId]) ?? 0) > 0
-            guard jobExists else { throw SchedulingError.jobNotFound(jobId) }
+            guard let jobRow = try Row.fetchOne(dbConn, sql: """
+                SELECT id, is_flex_pool, flex_pool_team_filter, flex_pool_user_filter
+                FROM jobs
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [jobId]) else {
+                throw SchedulingError.jobNotFound(jobId)
+            }
+            guard (jobRow["is_flex_pool"] as Int? ?? 0) == 1 else {
+                throw SchedulingError.jobNotFound(jobId)
+            }
             let userExists = (try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [userId]) ?? 0) > 0
             guard userExists else { throw SchedulingError.userNotFound(userId) }
+
+            guard try isFlexPoolJobVisible(dbConn, jobRow: jobRow, userId: userId) else {
+                throw SchedulingError.insufficientPermissions(required: "flex_pool_visibility")
+            }
 
             let dispatchStatus = requiresApproval ? "pending_approval" : "scheduled"
 
@@ -2099,7 +2204,8 @@ public final class SchedulingService: Sendable {
         jobId: Int64,
         isFlexPool: Bool,
         teamFilter: [Int64]? = nil,
-        userFilter: [Int64]? = nil
+        userFilter: [Int64]? = nil,
+        actingUserId: Int64? = nil
     ) throws {
         let teamJSON: String? = teamFilter.flatMap {
             guard let data = try? JSONEncoder().encode($0) else { return nil }
@@ -2111,6 +2217,17 @@ public final class SchedulingService: Sendable {
         }
 
         try db.writer.write { dbConn in
+            if let actingUserId {
+                guard try userHasPermission(dbConn, userId: actingUserId, permissionKey: "manage_flex_pool") else {
+                    throw SchedulingError.insufficientPermissions(required: "manage_flex_pool")
+                }
+            }
+
+            let jobExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [jobId]) ?? 0) > 0
+            guard jobExists else { throw SchedulingError.jobNotFound(jobId) }
+
             try dbConn.execute(
                 sql: """
                     UPDATE jobs
@@ -2143,6 +2260,48 @@ public final class SchedulingService: Sendable {
     // =========================================================================
     // MARK: - Internal Helpers
     // =========================================================================
+
+    private func userHasPermission(_ dbConn: Database, userId: Int64, permissionKey: String) throws -> Bool {
+        let count = try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*)
+            FROM users u
+            JOIN user_hats uh ON uh.user_id = u.id
+            JOIN hat_permissions hp ON hp.hat_id = uh.hat_id
+            WHERE u.id = ?
+              AND u.deleted_at IS NULL
+              AND u.is_active = 1
+              AND uh.is_active = 1
+              AND uh.deleted_at IS NULL
+              AND hp.permission_key = ?
+            LIMIT 1
+            """, arguments: [userId, permissionKey]) ?? 0
+        return count > 0
+    }
+
+    private func isFlexPoolJobVisible(_ dbConn: Database, jobRow: Row, userId: Int64) throws -> Bool {
+        let userFilter: String? = jobRow["flex_pool_user_filter"]
+        let teamFilter: String? = jobRow["flex_pool_team_filter"]
+
+        if let userFilter,
+           let data = userFilter.data(using: .utf8),
+           let ids = try? JSONDecoder().decode([Int64].self, from: data),
+           !ids.contains(userId) {
+            return false
+        }
+
+        guard let teamFilter, !teamFilter.isEmpty,
+              let data = teamFilter.data(using: .utf8),
+              let allowedTeams = try? JSONDecoder().decode([Int64].self, from: data),
+              !allowedTeams.isEmpty else {
+            return true
+        }
+
+        let userTeamIds = try Int64.fetchAll(dbConn, sql: """
+            SELECT team_id FROM employee_team_members
+            WHERE user_id = ? AND deleted_at IS NULL
+            """, arguments: [userId])
+        return !Set(userTeamIds).isDisjoint(with: Set(allowedTeams))
+    }
 
     /// Execute a SELECT COUNT(*) query returning an Int.
     /// Returns 0 if the table does not exist.
