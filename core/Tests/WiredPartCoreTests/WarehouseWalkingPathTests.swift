@@ -96,6 +96,31 @@ struct WarehouseWalkingPathTests {
         #expect(loaded.stops.map(\.areaId) == [fixture.areas[0], fixture.areas[3]])
     }
 
+    @Test("reloading default walking path prunes deleted area stops before save")
+    func reloadingDefaultWalkingPathPrunesDeletedStopsBeforeSave() throws {
+        let env = try freshEnv()
+        let fixture = try makeAreaFixture(env)
+        let path = try env.warehouse.createWalkingPath(
+            floorPlanId: fixture.floorPlanId,
+            name: "Default",
+            userId: env.adminUserId
+        )
+        let pathId = try #require(path.id)
+
+        try env.warehouse.setWalkingPathStops(pathId: pathId, areaIds: [fixture.areas[0], fixture.areas[1], fixture.areas[2]])
+        try env.warehouse.deleteStorageArea(id: fixture.areas[1])
+
+        let reloaded = try #require(try env.warehouse.getDefaultWalkingPath(floorPlanId: fixture.floorPlanId))
+        #expect(reloaded.stops.map(\.areaId) == [fixture.areas[0], fixture.areas[2]])
+        #expect(reloaded.stops.map(\.sortOrder) == [0, 1])
+
+        try env.warehouse.setWalkingPathStops(pathId: pathId, areaIds: reloaded.stops.map(\.areaId) + [fixture.areas[3]])
+        let saved = try #require(try env.warehouse.getDefaultWalkingPath(floorPlanId: fixture.floorPlanId))
+
+        #expect(saved.stops.map(\.areaId) == [fixture.areas[0], fixture.areas[2], fixture.areas[3]])
+        #expect(saved.stops.map(\.sortOrder) == [0, 1, 2])
+    }
+
     @Test("moveWalkingPathStop reorders active stops")
     func moveWalkingPathStopReordersStops() throws {
         let env = try freshEnv()

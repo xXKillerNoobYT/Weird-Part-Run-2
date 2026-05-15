@@ -2468,6 +2468,53 @@ public final class WarehouseService: Sendable {
             .fetchAll(dbConn)
     }
 
+    @discardableResult
+    private func pruneOrphanedStops(floorPlanId: Int64, dbConn: Database) throws -> Int {
+        let orphanIds = try Int64.fetchAll(dbConn, sql: """
+            SELECT s.id
+            FROM warehouse_walking_path_stops s
+            JOIN warehouse_walking_paths p
+                ON p.id = s.path_id
+               AND p.floor_plan_id = ?
+               AND p.deleted_at IS NULL
+               AND p.is_active = 1
+            LEFT JOIN warehouse_storage_areas a
+                ON a.id = s.area_id
+            LEFT JOIN warehouse_storage_levels l
+                ON l.id = a.level_id
+            LEFT JOIN warehouse_storage_units u
+                ON u.id = l.unit_id
+            WHERE s.deleted_at IS NULL
+              AND s.is_active = 1
+              AND (
+                a.id IS NULL OR a.deleted_at IS NOT NULL OR
+                l.id IS NULL OR l.deleted_at IS NOT NULL OR
+                u.id IS NULL OR u.deleted_at IS NOT NULL OR
+                u.floor_plan_id != p.floor_plan_id
+              )
+            """, arguments: [floorPlanId])
+
+        for stopId in orphanIds {
+            try dbConn.execute(
+                sql: "UPDATE warehouse_walking_path_stops SET deleted_at = datetime('now'), is_active = 0 WHERE id = ?",
+                arguments: [stopId]
+            )
+        }
+
+        if !orphanIds.isEmpty {
+            let affectedPathIds = try Int64.fetchAll(dbConn, sql: """
+                SELECT DISTINCT path_id FROM warehouse_walking_path_stops
+                WHERE id IN (\(orphanIds.map { _ in "?" }.joined(separator: ",")))
+                """, arguments: StatementArguments(orphanIds))
+            for pathId in affectedPathIds {
+                try normalizeWalkingPathOrder(pathId: pathId, dbConn: dbConn)
+                try touchWalkingPath(pathId: pathId, dbConn: dbConn)
+            }
+        }
+
+        return orphanIds.count
+    }
+
     private func ensureWalkingPathExists(pathId: Int64, dbConn: Database) throws {
         let exists = (try Int.fetchOne(dbConn, sql: """
             SELECT COUNT(*) FROM warehouse_walking_paths
@@ -2765,7 +2812,7 @@ public final class WarehouseService: Sendable {
 
     /// Fetch the default active walking path for a floor plan with active stops in order.
     public func getDefaultWalkingPath(floorPlanId: Int64) throws -> WalkingPathWithStops? {
-        try db.writer.read { dbConn in
+        try db.writer.write { dbConn in
             guard let path = try WarehouseWalkingPath
                 .filter(
                     Column("floor_plan_id") == floorPlanId &&
@@ -2777,8 +2824,13 @@ public final class WarehouseService: Sendable {
                 .fetchOne(dbConn)
             else { return nil }
 
-            let stops = try activeWalkingPathStops(pathId: path.id ?? 0, dbConn: dbConn)
-            return WalkingPathWithStops(path: path, stops: stops)
+            let pathId = path.id ?? 0
+            let prunedCount = try pruneOrphanedStops(floorPlanId: floorPlanId, dbConn: dbConn)
+            let currentPath = prunedCount > 0
+                ? try WarehouseWalkingPath.fetchOne(dbConn, key: pathId) ?? path
+                : path
+            let stops = try activeWalkingPathStops(pathId: pathId, dbConn: dbConn)
+            return WalkingPathWithStops(path: currentPath, stops: stops)
         }
     }
 
@@ -2963,49 +3015,7 @@ public final class WarehouseService: Sendable {
     @discardableResult
     public func pruneOrphanedStops(floorPlanId: Int64) throws -> Int {
         try db.writer.write { dbConn in
-            let orphanIds = try Int64.fetchAll(dbConn, sql: """
-                SELECT s.id
-                FROM warehouse_walking_path_stops s
-                JOIN warehouse_walking_paths p
-                    ON p.id = s.path_id
-                   AND p.floor_plan_id = ?
-                   AND p.deleted_at IS NULL
-                   AND p.is_active = 1
-                LEFT JOIN warehouse_storage_areas a
-                    ON a.id = s.area_id
-                LEFT JOIN warehouse_storage_levels l
-                    ON l.id = a.level_id
-                LEFT JOIN warehouse_storage_units u
-                    ON u.id = l.unit_id
-                WHERE s.deleted_at IS NULL
-                  AND s.is_active = 1
-                  AND (
-                    a.id IS NULL OR a.deleted_at IS NOT NULL OR
-                    l.id IS NULL OR l.deleted_at IS NOT NULL OR
-                    u.id IS NULL OR u.deleted_at IS NOT NULL OR
-                    u.floor_plan_id != p.floor_plan_id
-                  )
-                """, arguments: [floorPlanId])
-
-            for stopId in orphanIds {
-                try dbConn.execute(
-                    sql: "UPDATE warehouse_walking_path_stops SET deleted_at = datetime('now'), is_active = 0 WHERE id = ?",
-                    arguments: [stopId]
-                )
-            }
-
-            if !orphanIds.isEmpty {
-                let affectedPathIds = try Int64.fetchAll(dbConn, sql: """
-                    SELECT DISTINCT path_id FROM warehouse_walking_path_stops
-                    WHERE id IN (\(orphanIds.map { _ in "?" }.joined(separator: ",")))
-                    """, arguments: StatementArguments(orphanIds))
-                for pathId in affectedPathIds {
-                    try normalizeWalkingPathOrder(pathId: pathId, dbConn: dbConn)
-                    try touchWalkingPath(pathId: pathId, dbConn: dbConn)
-                }
-            }
-
-            return orphanIds.count
+            try pruneOrphanedStops(floorPlanId: floorPlanId, dbConn: dbConn)
         }
     }
 
