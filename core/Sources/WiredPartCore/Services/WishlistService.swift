@@ -369,6 +369,21 @@ public final class WishlistService: Sendable {
                 )
             }
 
+            guard try partAutoAddsToWishlistWhenLow(dbConn, partId: partId) else {
+                return BelowMinimumRoutingResult(
+                    partId: partId,
+                    partName: partName,
+                    locationType: locationType,
+                    locationId: locationId,
+                    currentStock: currentStock,
+                    minStock: target.minStock,
+                    targetStock: target.targetStock,
+                    certaintyScore: certainty,
+                    action: "none",
+                    quantity: 0
+                )
+            }
+
             if let existing = try existingWishlistItem(dbConn, marker: marker) {
                 return BelowMinimumRoutingResult(
                     partId: partId,
@@ -417,12 +432,15 @@ public final class WishlistService: Sendable {
     public func routeAllBelowMinimumStock(actorUserId: Int64) throws -> [BelowMinimumRoutingResult] {
         let targets = try db.writer.read { dbConn in
             try Row.fetchAll(dbConn, sql: """
-                SELECT part_id, location_type, location_id
-                FROM location_stock_targets
-                WHERE deleted_at IS NULL
-                  AND min_stock > 0
-                  AND COALESCE(do_not_restock, 0) = 0
-                ORDER BY part_id, location_type, location_id
+                SELECT lst.part_id, lst.location_type, lst.location_id
+                FROM location_stock_targets lst
+                JOIN parts p ON p.id = lst.part_id
+                WHERE lst.deleted_at IS NULL
+                  AND p.deleted_at IS NULL
+                  AND COALESCE(p.auto_add_to_wishlist_when_low, 0) = 1
+                  AND lst.min_stock > 0
+                  AND COALESCE(lst.do_not_restock, 0) = 0
+                ORDER BY lst.part_id, lst.location_type, lst.location_id
                 """)
                 .map { row -> (partId: Int64, locationType: String, locationId: Int64) in
                     (
@@ -910,6 +928,21 @@ public final class WishlistService: Sendable {
             ORDER BY id DESC
             LIMIT 1
             """, arguments: ["%\(marker)%"])
+    }
+
+    private func partAutoAddsToWishlistWhenLow(_ dbConn: Database, partId: Int64) throws -> Bool {
+        guard let value = try Int.fetchOne(
+            dbConn,
+            sql: """
+                SELECT auto_add_to_wishlist_when_low
+                FROM parts
+                WHERE id = ? AND deleted_at IS NULL
+                """,
+            arguments: [partId]
+        ) else {
+            throw WishlistError.partNotFound(partId)
+        }
+        return value != 0
     }
 
     private func createApprovedBelowMinimumWishlist(

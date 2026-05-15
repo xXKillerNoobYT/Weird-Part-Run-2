@@ -557,6 +557,7 @@ struct WishlistServiceTests {
         let (env, wishlist) = try freshEnv()
         let catId = try E2ETestHelpers.seedCategory(env, name: "BelowMinWishlistCat")
         let partId = try E2ETestHelpers.seedPart(env, name: "Shop Breaker", categoryId: catId)
+        try env.parts.setAutoAddToWishlistWhenLow(partId: partId, enabled: true, byUserId: env.adminUserId)
 
         try env.parts.setLocationStockTarget(
             partId: partId,
@@ -609,6 +610,37 @@ struct WishlistServiceTests {
             try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM wishlist_items WHERE part_id = ?", arguments: [partId]) ?? 0
         }
         #expect(count == 1)
+    }
+
+    @Test("Below-MIN high-certainty shortage skips wishlist when part is not opted in")
+    func testBelowMinHighCertaintySkipsWishlistWithoutPartOptIn() throws {
+        let (env, wishlist) = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "BelowMinOptOutCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Opt Out Breaker", categoryId: catId)
+
+        try env.parts.setLocationStockTarget(
+            partId: partId,
+            locationType: "shop",
+            locationId: 1,
+            minStock: 4,
+            targetStock: 9,
+            maxStock: 16
+        )
+
+        let result = try wishlist.routeBelowMinimumStock(
+            partId: partId,
+            locationType: "shop",
+            locationId: 1,
+            actorUserId: env.adminUserId,
+            certaintyOverride: 0.9
+        )
+
+        #expect(result.action == "none")
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM wishlist_items WHERE part_id = ?", arguments: [partId]) ?? 0
+        }
+        #expect(count == 0)
+        #expect(try wishlist.routeAllBelowMinimumStock(actorUserId: env.adminUserId).isEmpty)
     }
 
     @Test("Below-MIN low-certainty shortage routes one physical audit before wishlist")

@@ -122,6 +122,7 @@ extension AppDatabase {
         registerMigration083WarehouseWalkingPaths(&migrator)
         registerMigration084WarehouseOnboardingCompletedSteps(&migrator)
         registerMigration085AuditSessionEvents(&migrator)
+        registerMigration086PartAutoWishlistOptIn(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -929,6 +930,7 @@ extension AppDatabase {
                 t.column("forecast_target_qty", .integer).defaults(to: 0)
                 t.column("forecast_suggested_order", .integer).defaults(to: 0)
                 t.column("forecast_days_until_low", .integer).defaults(to: 999)
+                t.column("auto_add_to_wishlist_when_low", .integer).notNull().defaults(to: 0)
                 t.column("is_deprecated", .integer).defaults(to: 0)
                 t.column("deprecation_reason", .text)
                 t.column("is_qr_tagged", .integer).defaults(to: 0)
@@ -5114,6 +5116,18 @@ extension AppDatabase {
                 CREATE INDEX idx_audit_session_events_session
                 ON audit_session_events(session_id, recorded_at)
                 """)
+        }
+    }
+
+    private static func registerMigration086PartAutoWishlistOptIn(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("086_part_auto_wishlist_opt_in") { db in
+            try addColumnIfMissing(
+                db,
+                table: "parts",
+                column: "auto_add_to_wishlist_when_low",
+                type: .integer,
+                defaultValue: 0
+            )
         }
     }
 
