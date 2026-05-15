@@ -19,6 +19,7 @@ struct IOSProcurementPage: View {
     @State private var splitByJPOPartId: Int64? = nil           // expanded part for per-JPO split
     @State private var perJPOSupplier: [String: Int64] = [:]    // [sourceId: supplierId] for split mode
     @State private var checkedParts: Set<Int64> = []            // parts included in generation
+    @State private var excludedPreviewLineKeys: Set<String> = []
     @State private var generateError: String?
     @State private var generateSuccess: String?
     @State private var isGenerating = false
@@ -524,44 +525,67 @@ struct IOSProcurementPage: View {
                         .foregroundStyle(.secondary)
                 }
 
-                // Grouped by supplier
+                // Grouped by supplier, then by job/source.
                 ForEach(poPreviewGroups, id: \.supplierId) { group in
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text(group.supplierName)
                             .font(.caption)
                             .fontWeight(.semibold)
-                        ForEach(group.parts, id: \.partId) { part in
-                            HStack {
-                                Text(part.partName)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                if let sourceName = part.sourceName {
-                                    Text(sourceName)
+                        ForEach(group.jobs, id: \.key) { job in
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack {
+                                    Text(job.jobName)
                                         .font(.caption2)
+                                        .fontWeight(.medium)
                                         .foregroundStyle(.secondary)
+                                    Spacer()
+                                    Button {
+                                        excludedPreviewLineKeys.formUnion(job.parts.map(\.key))
+                                    } label: {
+                                        Image(systemName: "minus.circle")
+                                    }
+                                    .buttonStyle(.plain)
+                                    .foregroundStyle(.secondary)
+                                    .accessibilityLabel("Remove \(job.jobName) from preview")
                                 }
-                                // Show pull badge if this part had stock pulled
-                                if let decision = pullDecisions[part.demandItemId], decision.pullQty > 0 {
-                                    Text("pulled \(decision.pullQty)")
-                                        .font(.system(.caption2, weight: .medium))
-                                        .padding(.horizontal, 4)
-                                        .padding(.vertical, 1)
-                                        .background(Capsule().fill(Color.green.opacity(0.15)))
-                                        .foregroundStyle(.green)
-                                }
-                                Spacer()
-                                Text("x\(part.quantity)")
-                                    .font(.caption)
-                                    .monospaced()
-                                if let cost = part.unitCost {
-                                    Text(String(format: "$%.2f", cost * Double(part.quantity)))
-                                        .font(.caption)
-                                        .monospaced()
+
+                                ForEach(job.parts, id: \.key) { part in
+                                    HStack {
+                                        Text(part.partName)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        if let decision = pullDecisions[part.demandItemId], decision.pullQty > 0 {
+                                            Text("pulled \(decision.pullQty)")
+                                                .font(.system(.caption2, weight: .medium))
+                                                .padding(.horizontal, 4)
+                                                .padding(.vertical, 1)
+                                                .background(Capsule().fill(Color.green.opacity(0.15)))
+                                                .foregroundStyle(.green)
+                                        }
+                                        Spacer()
+                                        Text("x\(part.quantity)")
+                                            .font(.caption)
+                                            .monospaced()
+                                        if let cost = part.unitCost {
+                                            Text(String(format: "$%.2f", cost * Double(part.quantity)))
+                                                .font(.caption)
+                                                .monospaced()
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Button {
+                                            excludedPreviewLineKeys.insert(part.key)
+                                        } label: {
+                                            Image(systemName: "xmark.circle")
+                                        }
+                                        .buttonStyle(.plain)
                                         .foregroundStyle(.secondary)
+                                        .accessibilityLabel("Remove \(part.partName) from preview")
+                                    }
                                 }
                             }
+                            .padding(.leading, 8)
                         }
-                        let totalCost = group.parts.compactMap { p in
+                        let totalCost = group.jobs.flatMap(\.parts).compactMap { p in
                             p.unitCost.map { $0 * Double(p.quantity) }
                         }.reduce(0, +)
                         if totalCost > 0 {
@@ -590,7 +614,7 @@ struct IOSProcurementPage: View {
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(isGenerating)
+                    .disabled(isGenerating || poPreviewGroups.isEmpty)
 
                     Button {
                         withAnimation { showSavedToast = true }
@@ -606,65 +630,20 @@ struct IOSProcurementPage: View {
         }
     }
 
-    private struct POPreviewGroup {
-        let supplierId: Int64
-        let supplierName: String
-        let parts: [POPreviewPart]
-    }
-
-    private struct POPreviewPart {
-        let partId: Int64
-        let demandItemId: Int64
-        let partName: String
-        let sourceName: String?
-        let quantity: Int
-        let unitCost: Double?
-        let jpoLineIds: [Int64]
-    }
-
-    private var poPreviewGroups: [POPreviewGroup] {
-        var groups: [Int64: (name: String, parts: [POPreviewPart])] = [:]
-        for item in cachedReadyToGenerate {
-            let orderQty = effectiveOrderQty(for: item)
-            let jpoSources = item.sources.filter { $0.sourceType == "jpo" }
-
-            if !jpoSources.isEmpty && usesPerJPOSuppliers(for: item) {
-                for source in jpoSources {
-                    guard let supplierId = supplierId(for: source, in: item) else { continue }
-                    let supplierName = item.suppliers.first(where: { $0.id == supplierId })?.name ?? source.lockedSupplierName ?? "Unknown"
-                    let unitCost = item.suppliers.first(where: { $0.id == supplierId })?.unitPrice
-                    let part = POPreviewPart(
-                        partId: item.partId,
-                        demandItemId: item.id,
-                        partName: item.partName,
-                        sourceName: source.sourceName,
-                        quantity: source.quantity,
-                        unitCost: unitCost,
-                        jpoLineIds: source.lineIds
-                    )
-                    groups[supplierId, default: (name: supplierName, parts: [])].parts.append(part)
-                }
-                continue
-            }
-
-            guard let supplierId = supplierId(for: nil, in: item) else { continue }
-            let supplierName = item.suppliers.first(where: { $0.id == supplierId })?.name ?? item.lockedSupplierName ?? "Unknown"
-            let unitCost = item.suppliers.first(where: { $0.id == supplierId })?.unitPrice
-            let allLineIds = item.sources.flatMap(\.lineIds)
-
-            let part = POPreviewPart(
-                partId: item.partId,
-                demandItemId: item.id,
-                partName: item.partName,
-                sourceName: nil,
-                quantity: orderQty,
-                unitCost: unitCost,
-                jpoLineIds: allLineIds
+    private var poPreviewGroups: [OrdersService.ProcurementPreviewGroup] {
+        let splitIds: Set<Int64> = splitByJPOPartId.map { Set([$0]) } ?? Set()
+        let orderQuantities = Dictionary(uniqueKeysWithValues: cachedReadyToGenerate.map { ($0.id, effectiveOrderQty(for: $0)) })
+        return OrdersService.buildProcurementPreviewGroups(
+            items: cachedReadyToGenerate,
+            selection: OrdersService.ProcurementPreviewSelection(
+                checkedPartIds: checkedParts,
+                selectedSuppliers: selectedSupplier,
+                perSourceSuppliers: perJPOSupplier,
+                splitPartIds: splitIds,
+                orderQuantities: orderQuantities,
+                excludedLineKeys: excludedPreviewLineKeys
             )
-            groups[supplierId, default: (name: supplierName, parts: [])].parts.append(part)
-        }
-        return groups.map { POPreviewGroup(supplierId: $0.key, supplierName: $0.value.name, parts: $0.value.parts) }
-            .sorted { $0.supplierName < $1.supplierName }
+        )
     }
 
     private func usesPerJPOSuppliers(for item: OrdersService.ProcurementItem) -> Bool {
@@ -696,7 +675,7 @@ struct IOSProcurementPage: View {
     }
 
     private var generatePOsConfirmationMessage: String {
-        let totalCost = poPreviewGroups.flatMap(\.parts).compactMap { p in
+        let totalCost = poPreviewGroups.flatMap(\.jobs).flatMap(\.parts).compactMap { p in
             p.unitCost.map { $0 * Double(p.quantity) }
         }.reduce(0, +)
         if totalCost > 0 {
@@ -729,7 +708,7 @@ struct IOSProcurementPage: View {
         defer { isGenerating = false }
 
         let generateItems = poPreviewGroups.flatMap { group in
-            group.parts.map { part in
+            group.jobs.flatMap(\.parts).map { part in
                 OrdersService.ProcurementGenerateItem(
                     partId: part.partId,
                     supplierId: group.supplierId,
@@ -749,6 +728,7 @@ struct IOSProcurementPage: View {
             for item in cachedReadyToGenerate {
                 checkedParts.remove(item.id)
             }
+            excludedPreviewLineKeys.removeAll()
         } catch {
             generateError = userFriendlyError(error, context: "generate document")
         }

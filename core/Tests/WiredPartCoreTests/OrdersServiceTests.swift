@@ -1008,6 +1008,129 @@ struct OrdersServiceTests {
         #expect(result.totalLineItems == 0)
     }
 
+    @Test("generatePOsFromProcurement creates one traceable PO line per selected JPO source")
+    func testGeneratePOsTraceEachJPOLine() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Shared Conduit", categoryId: catId)
+        let jobA = try E2ETestHelpers.seedJob(env, jobNumber: "J-TRACE-A", name: "Trace A")
+        let jobB = try E2ETestHelpers.seedJob(env, jobNumber: "J-TRACE-B", name: "Trace B")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Trace Supplier")
+        let lineA = try approvedJPOLine(env, jobId: jobA, partId: partId, quantity: 2)
+        let lineB = try approvedJPOLine(env, jobId: jobB, partId: partId, quantity: 3)
+
+        let result = try env.orders.generatePOsFromProcurement(items: [
+            OrdersService.ProcurementGenerateItem(
+                partId: partId,
+                supplierId: supplierId,
+                quantity: 5,
+                unitCost: 4.25,
+                jpoLineIds: [lineA, lineB]
+            )
+        ])
+
+        #expect(result.createdPOs.count == 1)
+        #expect(result.totalLineItems == 2)
+
+        try env.db.writer.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT jpo_line_id, qty_ordered
+                FROM po_line_items
+                WHERE po_id = ?
+                ORDER BY jpo_line_id
+            """, arguments: [result.createdPOs[0].poId])
+            #expect(rows.count == 2)
+            let linkedLineIds: [Int64] = rows.compactMap { row in row["jpo_line_id"] }
+            let quantities: [Int] = rows.map { row in row["qty_ordered"] }
+            #expect(Set(linkedLineIds) == Set([lineA, lineB]))
+            #expect(quantities.sorted() == [2, 3])
+
+            let linkedJPOs = try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM po_jpo_links WHERE po_id = ?
+                """, arguments: [result.createdPOs[0].poId])
+            #expect(linkedJPOs == 2)
+        }
+    }
+
+    @Test("generatePOsFromProcurement leaves unselected JPO lines approved")
+    func testGeneratePOsPartialLeavesUnselectedApproved() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Partial Strap", categoryId: catId)
+        let jobA = try E2ETestHelpers.seedJob(env, jobNumber: "J-PART-A", name: "Partial A")
+        let jobB = try E2ETestHelpers.seedJob(env, jobNumber: "J-PART-B", name: "Partial B")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Partial Supplier")
+        let selectedLine = try approvedJPOLine(env, jobId: jobA, partId: partId, quantity: 2)
+        let unselectedLine = try approvedJPOLine(env, jobId: jobB, partId: partId, quantity: 3)
+
+        _ = try env.orders.generatePOsFromProcurement(items: [
+            OrdersService.ProcurementGenerateItem(
+                partId: partId,
+                supplierId: supplierId,
+                quantity: 2,
+                jpoLineIds: [selectedLine]
+            )
+        ])
+
+        try env.db.writer.read { db in
+            let selectedStatus = try String.fetchOne(
+                db,
+                sql: "SELECT line_status FROM jpo_line_items WHERE id = ?",
+                arguments: [selectedLine]
+            )
+            let unselectedStatus = try String.fetchOne(
+                db,
+                sql: "SELECT line_status FROM jpo_line_items WHERE id = ?",
+                arguments: [unselectedLine]
+            )
+            #expect(selectedStatus == "in_procurement")
+            #expect(unselectedStatus == "approved")
+        }
+    }
+
+    @Test("procurement preview groups selected sources by supplier then job and supports exclusions")
+    func testProcurementPreviewGroupsBySupplierThenJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Preview Cable", categoryId: catId)
+        let jobA = try E2ETestHelpers.seedJob(env, jobNumber: "J-PREV-A", name: "Preview A")
+        let jobB = try E2ETestHelpers.seedJob(env, jobNumber: "J-PREV-B", name: "Preview B")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Preview Supplier")
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: supplierId, costPrice: 9.50)
+        let lineA = try approvedJPOLine(env, jobId: jobA, partId: partId, quantity: 2)
+        _ = try approvedJPOLine(env, jobId: jobB, partId: partId, quantity: 3)
+
+        let item = try #require(env.orders.getProcurementDemand().first { $0.partId == partId })
+        let groups = OrdersService.buildProcurementPreviewGroups(
+            items: [item],
+            selection: OrdersService.ProcurementPreviewSelection(
+                checkedPartIds: [item.id],
+                selectedSuppliers: [item.id: supplierId],
+                orderQuantities: [item.id: item.totalDemand]
+            )
+        )
+
+        #expect(groups.count == 1)
+        #expect(groups[0].supplierId == supplierId)
+        #expect(groups[0].jobs.count == 2)
+        #expect(groups[0].jobs.contains { $0.jobName.contains("Preview A") })
+        #expect(groups[0].jobs.contains { $0.jobName.contains("Preview B") })
+        #expect(Set(groups[0].jobs.flatMap(\.parts).flatMap(\.jpoLineIds)).contains(lineA))
+
+        let excludedKey = try #require(groups[0].jobs.first { $0.jobId == jobA }?.parts.first?.key)
+        let afterExclusion = OrdersService.buildProcurementPreviewGroups(
+            items: [item],
+            selection: OrdersService.ProcurementPreviewSelection(
+                checkedPartIds: [item.id],
+                selectedSuppliers: [item.id: supplierId],
+                orderQuantities: [item.id: item.totalDemand],
+                excludedLineKeys: [excludedKey]
+            )
+        )
+        #expect(afterExclusion[0].jobs.count == 1)
+        #expect(afterExclusion[0].jobs[0].jobName.contains("Preview B"))
+    }
+
     // MARK: - addJPOLineItem General Mode (PE-COLORS Plan Test 5)
 
     @Test("PE-COLORS Plan Test 5: addJPOLineItem persists brand_selection_mode='general'")

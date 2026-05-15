@@ -1513,6 +1513,179 @@ public final class OrdersService: Sendable {
         public let totalLineItems: Int
     }
 
+    /// Selection state used to build a procurement PO preview.
+    public struct ProcurementPreviewSelection: Sendable {
+        public let checkedPartIds: Set<Int64>
+        public let selectedSuppliers: [Int64: Int64]
+        public let perSourceSuppliers: [String: Int64]
+        public let splitPartIds: Set<Int64>
+        public let orderQuantities: [Int64: Int]
+        public let excludedLineKeys: Set<String>
+
+        public init(
+            checkedPartIds: Set<Int64>,
+            selectedSuppliers: [Int64: Int64],
+            perSourceSuppliers: [String: Int64] = [:],
+            splitPartIds: Set<Int64> = [],
+            orderQuantities: [Int64: Int] = [:],
+            excludedLineKeys: Set<String> = []
+        ) {
+            self.checkedPartIds = checkedPartIds
+            self.selectedSuppliers = selectedSuppliers
+            self.perSourceSuppliers = perSourceSuppliers
+            self.splitPartIds = splitPartIds
+            self.orderQuantities = orderQuantities
+            self.excludedLineKeys = excludedLineKeys
+        }
+    }
+
+    /// Supplier -> job/source preview tree for PO drafting.
+    public struct ProcurementPreviewGroup: Sendable, Equatable {
+        public let supplierId: Int64
+        public let supplierName: String
+        public let jobs: [ProcurementPreviewJobGroup]
+    }
+
+    public struct ProcurementPreviewJobGroup: Sendable, Equatable {
+        public let key: String
+        public let jobId: Int64?
+        public let jobName: String
+        public let parts: [ProcurementPreviewPart]
+    }
+
+    public struct ProcurementPreviewPart: Sendable, Equatable {
+        public let key: String
+        public let partId: Int64
+        public let demandItemId: Int64
+        public let partName: String
+        public let sourceName: String?
+        public let quantity: Int
+        public let unitCost: Double?
+        public let jpoLineIds: [Int64]
+    }
+
+    /// Build the supplier -> job/source preview tree used by the procurement UI and tests.
+    public static func buildProcurementPreviewGroups(
+        items: [ProcurementItem],
+        selection: ProcurementPreviewSelection
+    ) -> [ProcurementPreviewGroup] {
+        var groups: [Int64: (name: String, jobs: [String: (jobId: Int64?, name: String, parts: [ProcurementPreviewPart])])] = [:]
+
+        for item in items where selection.checkedPartIds.contains(item.id) {
+            let requestedQty = max(0, selection.orderQuantities[item.id] ?? item.totalDemand)
+            guard requestedQty > 0 else { continue }
+
+            let jpoSources = item.sources.filter { $0.sourceType == "jpo" }
+            if !jpoSources.isEmpty {
+                var remaining = requestedQty
+                for source in jpoSources where remaining > 0 {
+                    guard let supplierId = supplierId(for: source, item: item, selection: selection) else { continue }
+                    let quantity = min(source.quantity, remaining)
+                    guard quantity > 0 else { continue }
+                    remaining -= quantity
+
+                    let key = "\(item.id):\(source.id)"
+                    guard !selection.excludedLineKeys.contains(key) else { continue }
+
+                    appendPreviewPart(
+                        supplierId: supplierId,
+                        supplierName: supplierName(for: supplierId, source: source, item: item),
+                        jobKey: source.jobId.map { "job-\($0)" } ?? source.id,
+                        jobId: source.jobId,
+                        jobName: source.sourceName,
+                        part: ProcurementPreviewPart(
+                            key: key,
+                            partId: item.partId,
+                            demandItemId: item.id,
+                            partName: item.partName,
+                            sourceName: source.sourceName,
+                            quantity: quantity,
+                            unitCost: item.suppliers.first(where: { $0.id == supplierId })?.unitPrice,
+                            jpoLineIds: source.lineIds
+                        ),
+                        groups: &groups
+                    )
+                }
+                continue
+            }
+
+            guard let supplierId = supplierId(for: nil, item: item, selection: selection) else { continue }
+            let key = "\(item.id):general"
+            guard !selection.excludedLineKeys.contains(key) else { continue }
+            appendPreviewPart(
+                supplierId: supplierId,
+                supplierName: supplierName(for: supplierId, source: nil, item: item),
+                jobKey: "general",
+                jobId: nil,
+                jobName: item.sources.first?.sourceName ?? "General Procurement",
+                part: ProcurementPreviewPart(
+                    key: key,
+                    partId: item.partId,
+                    demandItemId: item.id,
+                    partName: item.partName,
+                    sourceName: item.sources.first?.sourceName,
+                    quantity: requestedQty,
+                    unitCost: item.suppliers.first(where: { $0.id == supplierId })?.unitPrice,
+                    jpoLineIds: []
+                ),
+                groups: &groups
+            )
+        }
+
+        return groups.map { supplierId, value in
+            let jobs = value.jobs.map { jobKey, jobValue in
+                ProcurementPreviewJobGroup(
+                    key: jobKey,
+                    jobId: jobValue.jobId,
+                    jobName: jobValue.name,
+                    parts: jobValue.parts.sorted { $0.partName < $1.partName }
+                )
+            }
+            .sorted { $0.jobName < $1.jobName }
+            return ProcurementPreviewGroup(supplierId: supplierId, supplierName: value.name, jobs: jobs)
+        }
+        .sorted { $0.supplierName < $1.supplierName }
+    }
+
+    private static func appendPreviewPart(
+        supplierId: Int64,
+        supplierName: String,
+        jobKey: String,
+        jobId: Int64?,
+        jobName: String,
+        part: ProcurementPreviewPart,
+        groups: inout [Int64: (name: String, jobs: [String: (jobId: Int64?, name: String, parts: [ProcurementPreviewPart])])]
+    ) {
+        var supplier = groups[supplierId] ?? (name: supplierName, jobs: [:])
+        var job = supplier.jobs[jobKey] ?? (jobId: jobId, name: jobName, parts: [])
+        job.parts.append(part)
+        supplier.jobs[jobKey] = job
+        groups[supplierId] = supplier
+    }
+
+    private static func supplierId(
+        for source: DemandSource?,
+        item: ProcurementItem,
+        selection: ProcurementPreviewSelection
+    ) -> Int64? {
+        if let source,
+           item.isGeneric || selection.splitPartIds.contains(item.id) || source.lockedSupplierId != nil {
+            return source.lockedSupplierId
+                ?? selection.perSourceSuppliers[source.id]
+                ?? item.lockedSupplierId
+                ?? selection.selectedSuppliers[item.id]
+                ?? item.suppliers.first?.id
+        }
+        return item.lockedSupplierId ?? selection.selectedSuppliers[item.id] ?? item.suppliers.first?.id
+    }
+
+    private static func supplierName(for supplierId: Int64, source: DemandSource?, item: ProcurementItem) -> String {
+        item.suppliers.first(where: { $0.id == supplierId })?.name
+            ?? source?.lockedSupplierName
+            ?? item.lockedSupplierName
+            ?? "Unknown"
+    }
+
     /// Generate draft POs from procurement selections, grouped by supplier.
     /// Each supplier gets one PO with all their selected parts as line items.
     /// JPO line items are linked and their status set to 'in_procurement'.
@@ -1590,28 +1763,50 @@ public final class OrdersService: Sendable {
                 )
                 let poId = dbConn.lastInsertedRowID
 
-                // Create line items for each part
+                // Create line items for each selected source. JPO-backed rows keep a
+                // single source line per PO line so job traceability is not ambiguous.
                 for item in supplierItems {
-                    try dbConn.execute(
-                        sql: """
-                            INSERT INTO po_line_items
-                            (po_id, part_id, qty_ordered, unit_cost, created_at)
-                            VALUES (?, ?, ?, ?, datetime('now'))
-                            """,
-                        arguments: [poId, item.partId, item.quantity, item.unitCost]
-                    )
-                    let poLineId = dbConn.lastInsertedRowID
-                    totalLines += 1
+                    guard item.quantity > 0 else { throw OrdersError.invalidQuantity(item.quantity) }
 
-                    // Link JPO line items to this PO line and update their status
-                    for jpoLineId in item.jpoLineIds {
+                    if item.jpoLineIds.isEmpty {
                         try dbConn.execute(
                             sql: """
-                                UPDATE po_line_items SET jpo_line_id = ?
-                                WHERE id = ? AND jpo_line_id IS NULL
+                                INSERT INTO po_line_items
+                                (po_id, part_id, qty_ordered, unit_cost, created_at)
+                                VALUES (?, ?, ?, ?, datetime('now'))
                                 """,
-                            arguments: [jpoLineId, poLineId]
+                            arguments: [poId, item.partId, item.quantity, item.unitCost]
                         )
+                        totalLines += 1
+                        continue
+                    }
+
+                    var remainingQty = item.quantity
+                    for jpoLineId in item.jpoLineIds where remainingQty > 0 {
+                        let lineRow = try Row.fetchOne(dbConn, sql: """
+                            SELECT part_id, qty_requested
+                            FROM jpo_line_items
+                            WHERE id = ? AND deleted_at IS NULL
+                            """, arguments: [jpoLineId])
+                        guard let lineRow else { throw OrdersError.invalidStatus("JPO line #\(jpoLineId) not found or has been deleted") }
+                        let sourcePartId: Int64 = lineRow["part_id"] ?? item.partId
+                        guard sourcePartId == item.partId else { throw OrdersError.partNotFound(item.partId) }
+                        let sourceQty: Int = lineRow["qty_requested"] ?? item.quantity
+                        let lineQty = item.jpoLineIds.count == 1 ? item.quantity : min(sourceQty, remainingQty)
+                        guard lineQty > 0 else { continue }
+                        remainingQty -= lineQty
+
+                        try dbConn.execute(
+                            sql: """
+                                INSERT INTO po_line_items
+                                (po_id, jpo_line_id, part_id, qty_ordered, unit_cost, created_at)
+                                VALUES (?, ?, ?, ?, ?, datetime('now'))
+                                """,
+                            arguments: [poId, jpoLineId, item.partId, lineQty, item.unitCost]
+                        )
+                        let poLineId = dbConn.lastInsertedRowID
+                        totalLines += 1
+
                         try dbConn.execute(
                             sql: """
                                 UPDATE jpo_line_items
@@ -1621,15 +1816,6 @@ public final class OrdersService: Sendable {
                                 WHERE id = ? AND deleted_at IS NULL
                                 """,
                             arguments: [poLineId, jpoLineId]
-                        )
-                    }
-
-                    // Also link JPO line IDs to the PO line for traceability
-                    // (first jpo_line_id goes on the po_line_items row)
-                    if let firstJPOLineId = item.jpoLineIds.first {
-                        try dbConn.execute(
-                            sql: "UPDATE po_line_items SET jpo_line_id = ? WHERE id = ?",
-                            arguments: [firstJPOLineId, poLineId]
                         )
                     }
                 }
