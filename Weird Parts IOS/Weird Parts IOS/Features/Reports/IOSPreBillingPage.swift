@@ -60,6 +60,10 @@ struct IOSPreBillingPage: View {
         .searchable(text: $searchText, prompt: "Search jobs...")
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .reportsPrebillingPageInactive, object: nil)
+        }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
     }
@@ -180,5 +184,18 @@ struct IOSPreBillingPage: View {
             loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let regularHours = rows.reduce(0) { $0 + $1.regularHours }
+        let overtimeHours = rows.reduce(0) { $0 + $1.overtimeHours }
+        NotificationCenter.default.post(
+            name: .reportsPrebillingPageActive,
+            object: nil,
+            userInfo: [
+                "context": "Pre-Billing Report: \(startDateString) to \(endDateString), \(rows.count) jobs, \(filteredRows.count) visible, \(String(format: "%.1f", regularHours)) regular hours, \(String(format: "%.1f", overtimeHours)) overtime."
+            ]
+        )
     }
 }

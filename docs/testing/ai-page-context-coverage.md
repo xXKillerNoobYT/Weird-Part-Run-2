@@ -1,7 +1,7 @@
 # AI Page Context Coverage Inventory
 
 Issue: WEI-1112 / WEI-1194 / GitHub #86 T1-19
-Updated: 2026-05-17
+Updated: 2026-05-15
 
 ## Success Condition
 
@@ -9,9 +9,9 @@ Complete the 87-page page-context coverage set by adding read-only page-active/p
 
 ## Current Coverage
 
-Implemented page-context notifications observed by `IOSAIAssistantPanel`: 55 page contexts.
+Implemented page-context notifications observed by `IOSAIAssistantPanel`: 60 page contexts.
 
-Help registry mappings with matching help entries: 46 page contexts; 8 fleet router-tab mappings were added for active page ID alignment and are pending dedicated help-entry extraction.
+Help registry mappings with matching help entries: 59 page contexts.
 
 Known gap: `settingsPageActive` is observed by the AI panel and active-page tracker, but `HelpContentRegistry` does not yet contain a `settings-app-config` entry. That should be handled in the settings slice rather than mapped to a missing help entry.
 
@@ -61,7 +61,20 @@ Known gap: `settingsPageActive` is observed by the AI panel and active-page trac
 | Warehouse | Warehouse Leaderboard | `warehouseLeaderboardPageActive` | `warehouse-leaderboard` |
 | Scheduling | Dispatch | `dispatchPageActive` | `scheduling-dispatch` |
 | Scheduling | Schedule Calendar | `scheduleCalendarPageActive` | `scheduling-calendar` |
+| People | People Dashboard | `peopleDashboardPageActive` | `people-dashboard` |
 | People | Employees | `employeesPageActive` | `people-employees` |
+| People | Customers | `customersPageActive` | `people-customers` |
+| People | Contacts | `contactsPageActive` | `people-contacts` |
+| Office | Office Dashboard | `officeDashboardPageActive` | `office-dashboard` |
+| Office | Unified Approvals | `officeApprovalsPageActive` | `office-approvals` |
+| Office | Spending Dashboard | `officeSpendingPageActive` | `office-spending` |
+| Reports | Labor Overview | `reportsLaborPageActive` | `reports-labor` |
+| Reports | Spending | `reportsSpendingPageActive` | `reports-spending` |
+| Reports | Profitability | `reportsProfitabilityPageActive` | `reports-profitability` |
+| Reports | Timesheets | `reportsTimesheetsPageActive` | `reports-timesheets` |
+| Reports | Pre-Billing | `reportsPrebillingPageActive` | `reports-prebilling` |
+| Reports | Bookkeeper Export | `reportsBookkeeperPageActive` | `reports-bookkeeper` |
+| Reports | Daily Reports Summary | `reportsDailySummaryPageActive` | `reports-daily-summary` |
 | Fleet | Vehicles | `vehiclesPageActive` | `fleet-vehicles` |
 | Fleet | Dashboard | `fleetDashboardPageActive` | `fleet-dashboard` |
 | Fleet | Trailers | `fleetTrailersPageActive` | `fleet-trailers` |
@@ -132,24 +145,30 @@ Added the jobs completion page-context slice:
 
 All payloads are read-only summaries of visible state, selected filters, lifecycle state, and available entry points. They do not expose mutating commands, action IDs, or write intents.
 
+## People/Office/Reports Slice
 
-## WEI-1112 Fleet Router-Tab Slice
+Added the next People, Office, and Reports page-context slice:
 
-Added the next fleet coverage slice at the router-tab level so high-traffic fleet pages expose read-only AI context without touching unrelated page internals:
+- `IOSPeopleDashboardPage`: working-now, off-today, certification, team assignment, and overdue customer counts.
+- `IOSCustomersPage`: loaded/visible customer counts and search state.
+- `IOSContactsPage`: active/inactive contact counts, selected type filter, sort, and search state.
+- `IOSOfficeDashboardPage`: smart card, attention item, schedule, financial snapshot, and background task row counts.
+- `IOSUnifiedApprovalsPage`: pending/visible approval counts, selected filter, and search state.
+- `IOSSpendingDashboardPage`: selected range, parts cost, labor hours, active job count, and total job count.
+- `IOSLaborOverviewPage`: selected range, total/overtime hours, active worker count, and visible row count.
+- `IOSSpendingPage`: selected range/period, total spend, PO count, and top supplier.
+- `IOSProfitabilityPage`: selected range, loaded/visible job counts, total profit, and search state.
+- `IOSTimesheetsPage`: selected dates, employee count, visible row count, total hours, and overtime.
+- `IOSPreBillingPage`: selected dates, job count, visible row count, regular hours, and overtime.
+- `IOSBookkeeperExportPage`: selected dates, labor/material row counts, material total, and search state.
+- `IOSDailyReportsSummaryPage`: selected date, job/visible row counts, worker count, and total hours.
 
-- `FleetRouter` now posts read-only page contexts for Fleet Dashboard, Trailers, Maintenance, Mileage, Fuel, Inspections, Tracking/Telematics, and My Truck.
-- `NavigationConfig.swift` declares active/inactive notification pairs for each newly covered fleet tab.
-- `IOSAIAssistantPanel` observes those notifications and appends the active tab context into `navigationContext` with explicit READ-ONLY labels.
-- `ActivePageIdTracker` maps the same notifications to Fleet tab IDs so the assistant can identify the current fleet page.
-- `HelpContentRegistry.notificationToPageId` maps the new notifications to their Fleet tab IDs; dedicated help-entry extraction remains for a later help-content slice.
-
-The payloads are intentionally concise and non-mutating: page name, workflow summary, visible/read-only interpretation, and available navigation/review entry points only.
+All payloads are read-only summaries of visible state, selected filters, lifecycle state, and report totals. They do not expose mutating commands, action IDs, or write intents.
 
 ## Next Highest-Traffic Remaining Slices
 
-1. People/Office/Reports: Contacts, customers, contractors, teams, office dashboard, approvals, spending, warehouse exec, all report pages.
-2. Remaining Fleet auxiliary routes: trailer locations and truck tools if promoted into visible `appModules` tabs.
-3. Settings: add missing help entries and page context for the high-use settings pages before mapping them to help content.
+1. People/Office/Reports tail: contractors, teams, hats, permissions, office manage-jobs, warehouse exec, estimation settings, pipeline, teams, reports router, and specialized fleet/scheduling/warehouse report pages.
+2. Settings: add missing help entries and page context for the high-use settings pages before mapping them to help content.
 
 ## Validation
 
@@ -178,10 +197,11 @@ Validated jobs completion slice in the shared workspace on 2026-05-14:
 - Help registry mapping check returned no missing mapped page IDs.
 - `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was warnings only.
 
-Validated fleet router-tab slice in an isolated worktree on 2026-05-17:
+Validated People/Office/Reports slice in the shared workspace on 2026-05-15:
 
-- Fleet notification names are declared, posted by `FleetRouter`, observed by `IOSAIAssistantPanel`, tracked for active page selection, and mapped in `HelpContentRegistry.notificationToPageId`.
-- Build command: `xcodebuild -workspace 'Wierd Parts.xcworkspace' -scheme 'WiredPart-iOS' -destination 'generic/platform=iOS' -derivedDataPath .paperclip/DerivedData-WEI1112-fleet CODE_SIGNING_ALLOWED=NO build`.
+- People/Office/Reports notification names are declared, posted by their pages, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
+- Help registry mapping check returned no missing mapped page IDs.
+- `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was pre-existing warnings only.
 
 Static validation:
 
