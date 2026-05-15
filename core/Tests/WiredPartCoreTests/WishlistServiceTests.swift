@@ -566,6 +566,16 @@ struct WishlistServiceTests {
             targetStock: 9,
             maxStock: 16
         )
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE location_stock_targets
+                    SET certainty_rating = 0.88
+                    WHERE part_id = ? AND location_type = 'shop' AND location_id = 1
+                    """,
+                arguments: [partId]
+            )
+        }
 
         let first = try wishlist.routeBelowMinimumStock(
             partId: partId,
@@ -589,6 +599,11 @@ struct WishlistServiceTests {
         #expect(second.action == "wishlist")
         #expect(second.reusedExistingAction)
         #expect(second.wishlistItem?.id == first.wishlistItem?.id)
+
+        let batchResults = try wishlist.routeAllBelowMinimumStock(actorUserId: env.adminUserId)
+        #expect(batchResults.count == 1)
+        #expect(batchResults[0].action == "wishlist")
+        #expect(batchResults[0].reusedExistingAction)
 
         let count = try env.db.writer.read { db in
             try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM wishlist_items WHERE part_id = ?", arguments: [partId]) ?? 0

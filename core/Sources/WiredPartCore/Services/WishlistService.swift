@@ -412,6 +412,42 @@ public final class WishlistService: Sendable {
         }
     }
 
+    /// Generate routing actions for every configured part/location target currently below MIN.
+    @discardableResult
+    public func routeAllBelowMinimumStock(actorUserId: Int64) throws -> [BelowMinimumRoutingResult] {
+        let targets = try db.writer.read { dbConn in
+            try Row.fetchAll(dbConn, sql: """
+                SELECT part_id, location_type, location_id
+                FROM location_stock_targets
+                WHERE deleted_at IS NULL
+                  AND min_stock > 0
+                  AND COALESCE(do_not_restock, 0) = 0
+                ORDER BY part_id, location_type, location_id
+                """)
+                .map { row -> (partId: Int64, locationType: String, locationId: Int64) in
+                    (
+                        partId: row["part_id"] ?? 0,
+                        locationType: row["location_type"] ?? "",
+                        locationId: row["location_id"] ?? 0
+                    )
+                }
+        }
+
+        var results: [BelowMinimumRoutingResult] = []
+        for target in targets {
+            let result = try routeBelowMinimumStock(
+                partId: target.partId,
+                locationType: target.locationType,
+                locationId: target.locationId,
+                actorUserId: actorUserId
+            )
+            if result.action != "none" {
+                results.append(result)
+            }
+        }
+        return results
+    }
+
     // =========================================================================
     // MARK: - Update
     // =========================================================================
