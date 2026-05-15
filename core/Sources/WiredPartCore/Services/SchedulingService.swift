@@ -93,6 +93,38 @@ public final class SchedulingService: Sendable {
         }
     }
 
+    /// A flex-pool dispatch assignment waiting on manager approval.
+    public struct ScheduleChangeApproval: Sendable, Identifiable {
+        public let id: Int64
+        public let jobId: Int64
+        public let userId: Int64
+        public let jobName: String
+        public let userName: String
+        public let dispatchDate: String
+        public let timeSlot: String
+        public let createdAt: String
+
+        public init(
+            id: Int64,
+            jobId: Int64,
+            userId: Int64,
+            jobName: String,
+            userName: String,
+            dispatchDate: String,
+            timeSlot: String,
+            createdAt: String
+        ) {
+            self.id = id
+            self.jobId = jobId
+            self.userId = userId
+            self.jobName = jobName
+            self.userName = userName
+            self.dispatchDate = dispatchDate
+            self.timeSlot = timeSlot
+            self.createdAt = createdAt
+        }
+    }
+
     /// A time-off request row for list views.
     public struct TimeOffRow: Sendable, Identifiable {
         public let id: Int64
@@ -2047,6 +2079,90 @@ public final class SchedulingService: Sendable {
                     """,
                 arguments: [jobId, userId, dispatchStatus]
             )
+        }
+    }
+
+    /// List flex-pool dispatch assignments awaiting manager approval.
+    public func listPendingScheduleChangeApprovals() throws -> [ScheduleChangeApproval] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT jd.id, jd.job_id, jd.user_id, jd.dispatch_date,
+                           COALESCE(jd.time_slot, 'full') AS time_slot,
+                           COALESCE(jd.created_at, '') AS created_at,
+                           COALESCE(j.job_name, 'Unknown Job') AS job_name,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS user_name
+                    FROM job_dispatch jd
+                    LEFT JOIN jobs j ON j.id = jd.job_id AND j.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = jd.user_id AND u.deleted_at IS NULL
+                    WHERE jd.status = 'pending_approval'
+                      AND jd.deleted_at IS NULL
+                    ORDER BY jd.created_at ASC, jd.id ASC
+                    """)
+                return rows.map { row in
+                    ScheduleChangeApproval(
+                        id: row["id"] ?? 0,
+                        jobId: row["job_id"] ?? 0,
+                        userId: row["user_id"] ?? 0,
+                        jobName: row["job_name"] ?? "Unknown Job",
+                        userName: row["user_name"] ?? "Unknown",
+                        dispatchDate: row["dispatch_date"] ?? "",
+                        timeSlot: row["time_slot"] ?? "full",
+                        createdAt: row["created_at"] ?? ""
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Approve a pending flex-pool dispatch and assign the worker to the job.
+    public func approveScheduleChange(dispatchId: Int64, approvedBy: Int64?) throws {
+        try db.writer.write { dbConn in
+            guard let row = try Row.fetchOne(dbConn, sql: """
+                SELECT id, job_id, user_id
+                FROM job_dispatch
+                WHERE id = ? AND status = 'pending_approval' AND deleted_at IS NULL
+                """, arguments: [dispatchId]) else {
+                throw SchedulingError.timeOffRequestNotFound(dispatchId)
+            }
+
+            let jobId: Int64 = row["job_id"] ?? 0
+            let userId: Int64 = row["user_id"] ?? 0
+
+            try dbConn.execute(sql: """
+                UPDATE jobs
+                SET is_flex_pool = 0,
+                    lead_user_id = ?,
+                    updated_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [userId, jobId])
+
+            try dbConn.execute(sql: """
+                UPDATE job_dispatch
+                SET status = 'scheduled',
+                    dispatched_by = ?,
+                    updated_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [approvedBy, dispatchId])
+        }
+    }
+
+    /// Reject a pending flex-pool dispatch approval without assigning the worker.
+    public func rejectScheduleChange(dispatchId: Int64, rejectedBy: Int64?) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE job_dispatch
+                SET status = 'rejected',
+                    dispatched_by = ?,
+                    updated_at = datetime('now')
+                WHERE id = ? AND status = 'pending_approval' AND deleted_at IS NULL
+                """, arguments: [rejectedBy, dispatchId])
+            if dbConn.changesCount == 0 {
+                throw SchedulingError.timeOffRequestNotFound(dispatchId)
+            }
         }
     }
 

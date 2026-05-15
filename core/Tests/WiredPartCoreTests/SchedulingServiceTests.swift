@@ -1481,6 +1481,43 @@ struct SchedulingServiceTests {
         #expect(status == "pending_approval")
     }
 
+    @Test("pending schedule approvals can be listed and approved")
+    func testPendingScheduleApprovalListAndApprove() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT OR REPLACE INTO settings (key, value) VALUES ('flex_pool_requires_approval', '1')
+                """)
+        }
+
+        try env.scheduling.markJobFlexPool(jobId: jobId, isFlexPool: true)
+        try env.scheduling.claimFlexJob(jobId: jobId, userId: env.adminUserId)
+
+        let pending = try env.scheduling.listPendingScheduleChangeApprovals()
+        #expect(pending.count == 1)
+        #expect(pending[0].jobName == "Test Job")
+        #expect(pending[0].userName == "TestAdmin")
+
+        try env.scheduling.approveScheduleChange(dispatchId: pending[0].id, approvedBy: env.adminUserId)
+
+        let approved = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT jd.status, j.lead_user_id, j.is_flex_pool
+                FROM job_dispatch jd
+                JOIN jobs j ON j.id = jd.job_id
+                WHERE jd.id = ?
+                """, arguments: [pending[0].id])
+        }
+        #expect(approved?["status"] as String? == "scheduled")
+        #expect(approved?["lead_user_id"] as Int64? == env.adminUserId)
+        #expect(approved?["is_flex_pool"] as Int? == 0)
+
+        let afterApproval = try env.scheduling.listPendingScheduleChangeApprovals()
+        #expect(afterApproval.isEmpty)
+    }
+
     // MARK: - createTimeOffRequest Invalid Date
 
     @Test("createTimeOffRequest with same start and end creates single entry")

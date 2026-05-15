@@ -167,6 +167,44 @@ public final class PeopleService: Sendable {
         }
     }
 
+    /// A recent clock/session row for the employee activity tab.
+    public struct EmployeeActivityItem: Sendable, Identifiable {
+        public let id: Int64
+        public let jobId: Int64
+        public let jobNumber: String
+        public let jobName: String
+        public let clockIn: String
+        public let clockOut: String?
+        public let status: String
+        public let regularHours: Double
+        public let overtimeHours: Double
+        public let workType: String?
+
+        public init(
+            id: Int64,
+            jobId: Int64,
+            jobNumber: String,
+            jobName: String,
+            clockIn: String,
+            clockOut: String?,
+            status: String,
+            regularHours: Double,
+            overtimeHours: Double,
+            workType: String?
+        ) {
+            self.id = id
+            self.jobId = jobId
+            self.jobNumber = jobNumber
+            self.jobName = jobName
+            self.clockIn = clockIn
+            self.clockOut = clockOut
+            self.status = status
+            self.regularHours = regularHours
+            self.overtimeHours = overtimeHours
+            self.workType = workType
+        }
+    }
+
     /// A customer row for list views.
     public struct CustomerListItem: Sendable, Identifiable {
         public let id: Int64
@@ -467,6 +505,53 @@ public final class PeopleService: Sendable {
         }
         guard let result else { throw PeopleError.employeeNotFound(id) }
         return result
+    }
+
+    /// Fetch recent job sessions worked by an employee for the Employee Detail activity tab.
+    public func getEmployeeRecentActivity(id: Int64, limit: Int = 20) throws -> [EmployeeActivityItem] {
+        do {
+            return try db.writer.read { dbConn -> [EmployeeActivityItem] in
+                let rows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT le.id,
+                               le.job_id,
+                               COALESCE(j.job_number, '') AS job_number,
+                               COALESCE(j.job_name, 'Unknown job') AS job_name,
+                               le.clock_in,
+                               le.clock_out,
+                               le.status,
+                               le.regular_hours,
+                               le.overtime_hours,
+                               le.work_type
+                        FROM labor_entries le
+                        LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
+                        WHERE le.user_id = ?
+                          AND le.deleted_at IS NULL
+                        ORDER BY le.clock_in DESC, le.id DESC
+                        LIMIT ?
+                        """,
+                    arguments: [id, max(1, limit)]
+                )
+                return rows.map { row in
+                    EmployeeActivityItem(
+                        id: row["id"] ?? 0,
+                        jobId: row["job_id"] ?? 0,
+                        jobNumber: row["job_number"] ?? "",
+                        jobName: row["job_name"] ?? "Unknown job",
+                        clockIn: row["clock_in"] ?? "",
+                        clockOut: row["clock_out"] as String?,
+                        status: row["status"] ?? "clocked_in",
+                        regularHours: row["regular_hours"] ?? 0.0,
+                        overtimeHours: row["overtime_hours"] ?? 0.0,
+                        workType: row["work_type"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
     }
 
     /// Fetch active certifications for a specific employee.
