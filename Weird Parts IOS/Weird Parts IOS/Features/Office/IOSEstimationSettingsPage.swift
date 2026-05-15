@@ -78,6 +78,10 @@ struct IOSEstimationSettingsPage: View {
         }
         .refreshable { await loadData() }
         .task { await loadData() }
+        .onChange(of: showEffectiveness) { _, _ in postAIContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .officeEstimationSettingsPageInactive, object: nil)
+        }
     }
 
     // MARK: - Settings List
@@ -258,6 +262,7 @@ struct IOSEstimationSettingsPage: View {
             loadError = userFriendlyError(error, context: "load estimation settings")
         }
         isLoading = false
+        postAIContext()
     }
 
     private func loadEffectiveness() async {
@@ -268,6 +273,7 @@ struct IOSEstimationSettingsPage: View {
         do {
             effectiveness = try svc.analyzeQuestionEffectiveness()
             showEffectiveness = true
+            postAIContext()
         } catch {
             actionError = userFriendlyError(error, context: "save settings")
         }
@@ -313,6 +319,22 @@ struct IOSEstimationSettingsPage: View {
         case "punch_list": return "Punch List"
         default: return stage.capitalized
         }
+    }
+
+    private func postAIContext() {
+        let activeQuestions = questions.filter { $0.isActive == 1 }.count
+        let inactiveQuestions = questions.count - activeQuestions
+        let stageCounts = stages.map { stage in
+            "\(stageLabel(stage)): \(groupedByStage[stage]?.count ?? 0)"
+        }.joined(separator: ", ")
+        let typeCounts = Dictionary(grouping: questions, by: { $0.answerType })
+            .map { "\($0.key): \($0.value.count)" }
+            .sorted()
+            .joined(separator: ", ")
+        let context = """
+        Office Estimation Settings page. Questions loaded: \(questions.count). Active questions: \(activeQuestions). Inactive questions: \(inactiveQuestions). Stage counts: \(stageCounts). Answer type counts: \(typeCounts.isEmpty ? "none" : typeCounts). Effectiveness rows loaded: \(effectiveness.count). Effectiveness visible: \(showEffectiveness). Error state: \(loadError ?? actionError ?? "none"). Available read-only actions: summarize question coverage, explain stage balance, identify inactive or low-data analysis state.
+        """
+        NotificationCenter.default.post(name: .officeEstimationSettingsPageActive, object: nil, userInfo: ["context": context])
     }
 }
 
