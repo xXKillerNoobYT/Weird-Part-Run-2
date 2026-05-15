@@ -2806,9 +2806,13 @@ public final class WarehouseService: Sendable {
                 .fetchOne(dbConn)
             else { return nil }
 
-            try pruneOrphanedStops(floorPlanId: floorPlanId, dbConn: dbConn)
-            let stops = try activeWalkingPathStops(pathId: path.id ?? 0, dbConn: dbConn)
-            return WalkingPathWithStops(path: path, stops: stops)
+            let pathId = path.id ?? 0
+            let prunedCount = try pruneOrphanedStops(floorPlanId: floorPlanId, dbConn: dbConn)
+            let currentPath = prunedCount > 0
+                ? try WarehouseWalkingPath.fetchOne(dbConn, key: pathId) ?? path
+                : path
+            let stops = try activeWalkingPathStops(pathId: pathId, dbConn: dbConn)
+            return WalkingPathWithStops(path: currentPath, stops: stops)
         }
     }
 
