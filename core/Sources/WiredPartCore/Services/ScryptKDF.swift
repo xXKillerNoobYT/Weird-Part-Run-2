@@ -82,11 +82,14 @@ enum ScryptKDF {
 
     private static func salsa208(_ input: [UInt8]) -> [UInt8] {
         precondition(input.count == 64)
-        let original = stride(from: 0, to: 64, by: 4).map {
-            UInt32(input[$0])
-            | (UInt32(input[$0 + 1]) << 8)
-            | (UInt32(input[$0 + 2]) << 16)
-            | (UInt32(input[$0 + 3]) << 24)
+        var original: [UInt32] = []
+        original.reserveCapacity(16)
+        for offset in stride(from: 0, to: 64, by: 4) {
+            let b0 = UInt32(input[offset])
+            let b1 = UInt32(input[offset + 1]) << 8
+            let b2 = UInt32(input[offset + 2]) << 16
+            let b3 = UInt32(input[offset + 3]) << 24
+            original.append(b0 | b1 | b2 | b3)
         }
         var x = original
 

@@ -43,8 +43,12 @@ struct IOSDispatchPage: View {
     @State private var assignments: [SchedulingService.DispatchAssignment] = []
     @State private var jobRows: [SchedulingService.DispatchJobRow] = []
     @State private var unassignedWorkers: [SchedulingService.UnassignedWorker] = []
+    @State private var aiSuggestions: [AIDispatchService.DispatchSuggestion] = []
     @State private var isLoading = true
+    @State private var isLoadingAI = false
     @State private var loadError: String?
+    @State private var aiSuggestionError: String?
+    @State private var showAISuggestions = true
 
     // Assignment flow
     @State private var selectedJobId: Int64?
@@ -94,6 +98,13 @@ struct IOSDispatchPage: View {
 
     private var weekStartStr: String { dateString(weekStart) }
     private var weekEndStr: String { dateString(weekDays.last ?? weekStart) }
+    private var suggestionDate: String {
+        let todayStr = dateString(Date())
+        if todayStr >= weekStartStr && todayStr <= weekEndStr {
+            return todayStr
+        }
+        return weekStartStr
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -214,6 +225,8 @@ struct IOSDispatchPage: View {
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    aiSuggestionsPanel
+
                     // Day headers
                     dayHeaderRow
 
@@ -221,7 +234,9 @@ struct IOSDispatchPage: View {
                         EmptyStateView(
                             icon: "wrench.and.screwdriver",
                             title: "No Active Jobs",
-                            message: "No jobs available for dispatch this week."
+                            message: "No jobs available for dispatch this week.",
+                            helpLabel: "Learn how dispatch works",
+                            helpAction: { activeSheet = .help }
                         )
                         .padding()
                     } else {
@@ -247,6 +262,166 @@ struct IOSDispatchPage: View {
                 }
             }
         }
+    }
+
+    // MARK: - AI Suggestions
+
+    private var aiSuggestionsPanel: some View {
+        DisclosureGroup(isExpanded: $showAISuggestions) {
+            VStack(alignment: .leading, spacing: 10) {
+                if let error = aiSuggestionError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if isLoadingAI {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("Generating dispatch suggestions...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(minHeight: 44, alignment: .leading)
+                } else if aiSuggestions.isEmpty {
+                    HStack(spacing: 10) {
+                        Image(systemName: "sparkles")
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        Text("Generate ranked crew options for \(suggestionDate). Suggestions are advisory until applied.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(minHeight: 44, alignment: .leading)
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(alignment: .top, spacing: 10) {
+                            ForEach(aiSuggestions) { suggestion in
+                                aiSuggestionCard(suggestion)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    Button {
+                        loadAISuggestions()
+                    } label: {
+                        Label(aiSuggestions.isEmpty ? "Generate" : "Refresh", systemImage: "sparkles")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isLoadingAI)
+
+                    if !aiSuggestions.isEmpty {
+                        Button(role: .destructive) {
+                            dismissAISuggestions()
+                        } label: {
+                            Label("Dismiss", systemImage: "xmark.circle")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isLoadingAI)
+                    }
+                }
+                .controlSize(.regular)
+            }
+            .padding(.top, 8)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(.purple)
+                    .accessibilityHidden(true)
+                Text("AI Dispatch Suggestions")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                if !aiSuggestions.isEmpty {
+                    Text("\(aiSuggestions.count)")
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.purple.opacity(0.14))
+                        .clipShape(Capsule())
+                }
+                Spacer()
+                Text(suggestionDate)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 8)
+        .padding(.bottom, 8)
+    }
+
+    private func aiSuggestionCard(_ suggestion: AIDispatchService.DispatchSuggestion) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Option \(suggestion.rank)")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                Spacer()
+                Text("\(suggestion.totalPoints) pts")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.green)
+            }
+
+            ForEach(suggestion.assignments.prefix(4)) { assignment in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(assignment.employeeName)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                    Text(assignment.jobName)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(assignment.timeSlot.uppercased())
+                        Text("\(assignment.matchScore) pts")
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if suggestion.assignments.count > 4 {
+                Text("+\(suggestion.assignments.count - 4) more")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let topReason = suggestion.reasoning.first {
+                Text(topReason.description)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Button {
+                applyAISuggestion(suggestion)
+            } label: {
+                Label("Apply", systemImage: "checkmark.circle.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.green)
+            .frame(minHeight: 44)
+        }
+        .padding(10)
+        .frame(width: 220, alignment: .topLeading)
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color(.separator).opacity(0.35), lineWidth: 1)
+        )
     }
 
     // MARK: - Day Header Row
@@ -546,6 +721,79 @@ struct IOSDispatchPage: View {
         } catch {
             actionError = userFriendlyError(error, context: "reschedule assignment")
         }
+    }
+
+    private func loadAISuggestions() {
+        guard let service = appCore.aiDispatchService else {
+            aiSuggestions = []
+            aiSuggestionError = "AI dispatch service not available."
+            return
+        }
+
+        isLoadingAI = true
+        aiSuggestionError = nil
+        do {
+            aiSuggestions = try service.generateSuggestions(date: suggestionDate)
+            if aiSuggestions.isEmpty {
+                aiSuggestionError = "No suggestions available for this date."
+            }
+        } catch {
+            aiSuggestions = []
+            aiSuggestionError = userFriendlyError(error, context: "generate AI suggestions")
+        }
+        isLoadingAI = false
+        showAISuggestions = true
+    }
+
+    private func applyAISuggestion(_ suggestion: AIDispatchService.DispatchSuggestion) {
+        guard let aiService = appCore.aiDispatchService else {
+            aiSuggestionError = "AI dispatch service not available."
+            return
+        }
+        guard let schedService = appCore.schedulingService else {
+            aiSuggestionError = "Scheduling service not available."
+            return
+        }
+
+        do {
+            try aiService.recordDispatcherChoice(
+                date: suggestionDate,
+                chosenRank: suggestion.rank,
+                wasModified: false
+            )
+
+            for assignment in suggestion.assignments {
+                _ = try schedService.createScheduleEntry(
+                    userId: assignment.employeeId,
+                    jobId: assignment.jobId,
+                    date: suggestionDate,
+                    notes: "AI dispatch (option \(suggestion.rank), score \(assignment.matchScore))",
+                    timeSlot: assignment.timeSlot
+                )
+            }
+
+            aiSuggestions = []
+            aiSuggestionError = nil
+            loadData()
+        } catch {
+            aiSuggestionError = userFriendlyError(error, context: "apply AI suggestion")
+        }
+    }
+
+    private func dismissAISuggestions() {
+        if let aiService = appCore.aiDispatchService {
+            do {
+                try aiService.recordDispatcherChoice(
+                    date: suggestionDate,
+                    chosenRank: 0,
+                    wasModified: false
+                )
+            } catch {
+                aiSuggestionError = userFriendlyError(error, context: "dismiss AI suggestions")
+            }
+        }
+
+        aiSuggestions = []
     }
 
     // MARK: - Data Loading
