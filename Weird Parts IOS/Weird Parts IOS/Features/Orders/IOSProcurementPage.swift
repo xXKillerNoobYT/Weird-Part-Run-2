@@ -148,6 +148,7 @@ struct IOSProcurementPage: View {
         }
         .onChange(of: checkedParts) { updateReadyToGenerate() }
         .onChange(of: selectedSupplier) { updateReadyToGenerate() }
+        .onChange(of: perJPOSupplier) { updateReadyToGenerate() }
         .onDisappear {
             NotificationCenter.default.post(name: .procurementPageInactive, object: nil)
         }
@@ -334,9 +335,16 @@ struct IOSProcurementPage: View {
     private func updateReadyToGenerate() {
         cachedReadyToGenerate = items.filter { item in
             checkedParts.contains(item.id) &&
-            selectedSupplier[item.id] != nil &&
+            hasSupplierSelection(for: item) &&
             effectiveOrderQty(for: item) > 0
         }
+    }
+
+    private func hasSupplierSelection(for item: OrdersService.ProcurementItem) -> Bool {
+        if item.lockedSupplierId != nil { return true }
+        if selectedSupplier[item.id] != nil { return true }
+        let jpoSources = item.sources.filter { $0.sourceType == "jpo" }
+        return !jpoSources.isEmpty && jpoSources.allSatisfy { supplierId(for: $0, in: item) != nil }
     }
 
     /// The effective order quantity for a part, accounting for any pull decision.
@@ -481,7 +489,7 @@ struct IOSProcurementPage: View {
                         .font(.caption2)
                         .foregroundStyle(.orange)
                         .accessibilityHidden(true)
-                    Text("Generic — supplier locked per job")
+                    Text(genericLockText(for: item))
                         .font(.caption2)
                         .foregroundStyle(.orange)
                 }
@@ -527,8 +535,13 @@ struct IOSProcurementPage: View {
                                 Text(part.partName)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+                                if let sourceName = part.sourceName {
+                                    Text(sourceName)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
                                 // Show pull badge if this part had stock pulled
-                                if let decision = pullDecisions[part.partId], decision.pullQty > 0 {
+                                if let decision = pullDecisions[part.demandItemId], decision.pullQty > 0 {
                                     Text("pulled \(decision.pullQty)")
                                         .font(.system(.caption2, weight: .medium))
                                         .padding(.horizontal, 4)
@@ -601,7 +614,9 @@ struct IOSProcurementPage: View {
 
     private struct POPreviewPart {
         let partId: Int64
+        let demandItemId: Int64
         let partName: String
+        let sourceName: String?
         let quantity: Int
         let unitCost: Double?
         let jpoLineIds: [Int64]
@@ -610,15 +625,38 @@ struct IOSProcurementPage: View {
     private var poPreviewGroups: [POPreviewGroup] {
         var groups: [Int64: (name: String, parts: [POPreviewPart])] = [:]
         for item in cachedReadyToGenerate {
-            guard let supplierId = selectedSupplier[item.id] else { continue }
-            let supplierName = item.suppliers.first(where: { $0.id == supplierId })?.name ?? "Unknown"
+            let orderQty = effectiveOrderQty(for: item)
+            let jpoSources = item.sources.filter { $0.sourceType == "jpo" }
+
+            if !jpoSources.isEmpty && usesPerJPOSuppliers(for: item) {
+                for source in jpoSources {
+                    guard let supplierId = supplierId(for: source, in: item) else { continue }
+                    let supplierName = item.suppliers.first(where: { $0.id == supplierId })?.name ?? source.lockedSupplierName ?? "Unknown"
+                    let unitCost = item.suppliers.first(where: { $0.id == supplierId })?.unitPrice
+                    let part = POPreviewPart(
+                        partId: item.partId,
+                        demandItemId: item.id,
+                        partName: item.partName,
+                        sourceName: source.sourceName,
+                        quantity: source.quantity,
+                        unitCost: unitCost,
+                        jpoLineIds: source.lineIds
+                    )
+                    groups[supplierId, default: (name: supplierName, parts: [])].parts.append(part)
+                }
+                continue
+            }
+
+            guard let supplierId = supplierId(for: nil, in: item) else { continue }
+            let supplierName = item.suppliers.first(where: { $0.id == supplierId })?.name ?? item.lockedSupplierName ?? "Unknown"
             let unitCost = item.suppliers.first(where: { $0.id == supplierId })?.unitPrice
             let allLineIds = item.sources.flatMap(\.lineIds)
-            let orderQty = effectiveOrderQty(for: item)
 
             let part = POPreviewPart(
-                partId: item.id,
+                partId: item.partId,
+                demandItemId: item.id,
                 partName: item.partName,
+                sourceName: nil,
                 quantity: orderQty,
                 unitCost: unitCost,
                 jpoLineIds: allLineIds
@@ -627,6 +665,27 @@ struct IOSProcurementPage: View {
         }
         return groups.map { POPreviewGroup(supplierId: $0.key, supplierName: $0.value.name, parts: $0.value.parts) }
             .sorted { $0.supplierName < $1.supplierName }
+    }
+
+    private func usesPerJPOSuppliers(for item: OrdersService.ProcurementItem) -> Bool {
+        item.isGeneric || splitByJPOPartId == item.id || item.sources.contains { $0.lockedSupplierId != nil }
+    }
+
+    private func supplierId(for source: OrdersService.DemandSource?, in item: OrdersService.ProcurementItem) -> Int64? {
+        if let source {
+            return source.lockedSupplierId ?? perJPOSupplier[source.id] ?? item.lockedSupplierId ?? selectedSupplier[item.id] ?? item.suppliers.first?.id
+        }
+        return item.lockedSupplierId ?? selectedSupplier[item.id] ?? item.suppliers.first?.id
+    }
+
+    private func genericLockText(for item: OrdersService.ProcurementItem) -> String {
+        guard let supplierName = item.lockedSupplierName else {
+            return "Generic - no prior supplier lock"
+        }
+        if let source = item.lockSourceName {
+            return "Generic - locked to \(supplierName) from \(source)"
+        }
+        return "Generic - locked to \(supplierName)"
     }
 
     // MARK: - Confirmation Dialog Content
@@ -836,6 +895,7 @@ struct IOSProcurementPage: View {
         case "cheapest": return ("Cheapest", .green)
         case "rated": return ("Top Rated", .purple)
         case "fastest": return ("Fastest", .orange)
+        case "locked": return ("Locked", .orange)
         default: return (tag.capitalized, .secondary)
         }
     }
@@ -845,6 +905,7 @@ struct IOSProcurementPage: View {
         case "cheapest": return "- Cheapest"
         case "rated": return "- Top Rated"
         case "fastest": return "- Fastest"
+        case "locked": return "- Locked"
         default: return ""
         }
     }
@@ -1064,7 +1125,7 @@ struct IOSProcurementPage: View {
         do {
             // Verify stock is still available before pulling
             let currentStock = try warehouseService.getStockQty(
-                partId: item.id,
+                partId: item.partId,
                 locationType: "warehouse",
                 locationId: 1
             )
@@ -1077,7 +1138,7 @@ struct IOSProcurementPage: View {
 
             // Create the warehouse -> pulled movement
             try warehouseService.createMovement(
-                partId: item.id,
+                partId: item.partId,
                 qty: actualPull,
                 fromLocationType: "warehouse",
                 fromLocationId: 1,
@@ -1165,6 +1226,9 @@ struct IOSProcurementPage: View {
             // Auto-select preferred suppliers
             for item in items {
                 if selectedSupplier[item.id] == nil,
+                   let lockedSupplierId = item.lockedSupplierId {
+                    selectedSupplier[item.id] = lockedSupplierId
+                } else if selectedSupplier[item.id] == nil,
                    let preferred = item.suppliers.first(where: { $0.isPreferred }) {
                     selectedSupplier[item.id] = preferred.id
                 }

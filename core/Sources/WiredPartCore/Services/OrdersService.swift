@@ -31,6 +31,7 @@ public final class OrdersService: Sendable {
         case supplierNotFound(Int64)
         case partNotFound(Int64)
         case userNotFound(Int64)
+        case genericSupplierLocked(partId: Int64, jobId: Int64, lockedSupplierId: Int64, attemptedSupplierId: Int64)
         case invalidQuantity(Int)
         case requiredFieldEmpty(String)
 
@@ -48,6 +49,8 @@ public final class OrdersService: Sendable {
             case .supplierNotFound(let id): "Supplier #\(id) not found or has been deleted"
             case .partNotFound(let id): "Part #\(id) not found or has been deleted"
             case .userNotFound(let id): "User #\(id) not found or has been deleted"
+            case .genericSupplierLocked(let partId, let jobId, let lockedSupplierId, let attemptedSupplierId):
+                "Generic part #\(partId) for job #\(jobId) is locked to supplier #\(lockedSupplierId), not supplier #\(attemptedSupplierId)"
             case .invalidQuantity(let qty): "Quantity must be greater than zero (got \(qty))"
             case .requiredFieldEmpty(let field): "\(field) is required and cannot be empty"
             }
@@ -124,14 +127,21 @@ public final class OrdersService: Sendable {
         public let sourceName: String
         public let quantity: Int
         public let lineIds: [Int64]  // JPO line IDs for this source
+        public let jobId: Int64?
+        public let lockedSupplierId: Int64?
+        public let lockedSupplierName: String?
 
-        public init(sourceType: String, sourceId: Int64?, sourceName: String, quantity: Int, lineIds: [Int64] = []) {
-            self.id = "\(sourceType)-\(sourceId ?? 0)-\(quantity)"
+        public init(sourceType: String, sourceId: Int64?, sourceName: String, quantity: Int, lineIds: [Int64] = [],
+                    jobId: Int64? = nil, lockedSupplierId: Int64? = nil, lockedSupplierName: String? = nil) {
+            self.id = "\(sourceType)-\(sourceId ?? 0)-\(quantity)-\(lineIds.map(String.init).joined(separator: "_"))"
             self.sourceType = sourceType
             self.sourceId = sourceId
             self.sourceName = sourceName
             self.quantity = quantity
             self.lineIds = lineIds
+            self.jobId = jobId
+            self.lockedSupplierId = lockedSupplierId
+            self.lockedSupplierName = lockedSupplierName
         }
     }
 
@@ -150,10 +160,14 @@ public final class OrdersService: Sendable {
     /// A single part's consolidated demand across all sources.
     public struct ProcurementItem: Sendable, Identifiable {
         public let id: Int64
+        public let partId: Int64
         public let partName: String
         public let partCode: String?
         public let brandName: String?
         public let isGeneric: Bool
+        public let lockedSupplierId: Int64?
+        public let lockedSupplierName: String?
+        public let lockSourceName: String?
         public let totalDemand: Int
         public let shopStock: Int
         public let minStock: Int
@@ -164,16 +178,21 @@ public final class OrdersService: Sendable {
         public let suppliers: [PartSupplierOption]
         public let urgency: String
 
-        public init(id: Int64, partName: String, partCode: String?, brandName: String?,
-                    isGeneric: Bool = false, totalDemand: Int, shopStock: Int,
+        public init(id: Int64, partId: Int64? = nil, partName: String, partCode: String?, brandName: String?,
+                    isGeneric: Bool = false, lockedSupplierId: Int64? = nil, lockedSupplierName: String? = nil,
+                    lockSourceName: String? = nil, totalDemand: Int, shopStock: Int,
                     minStock: Int, targetStock: Int, maxStock: Int, deltaToTarget: Int,
                     sources: [DemandSource], suppliers: [PartSupplierOption] = [],
                     urgency: String) {
             self.id = id
+            self.partId = partId ?? id
             self.partName = partName
             self.partCode = partCode
             self.brandName = brandName
             self.isGeneric = isGeneric
+            self.lockedSupplierId = lockedSupplierId
+            self.lockedSupplierName = lockedSupplierName
+            self.lockSourceName = lockSourceName
             self.totalDemand = totalDemand
             self.shopStock = shopStock
             self.minStock = minStock
@@ -1143,7 +1162,7 @@ public final class OrdersService: Sendable {
                            b.name AS brand_name,
                            CASE WHEN b.name IS NULL OR b.name = 'General' THEN 1 ELSE 0 END AS is_generic,
                            jl.qty_requested AS quantity, jl.id AS line_id,
-                           jpo.id AS jpo_id, j.job_name
+                           jpo.id AS jpo_id, jpo.job_id, j.job_name
                     FROM jpo_line_items jl
                     JOIN job_parts_orders jpo ON jpo.id = jl.jpo_id
                     LEFT JOIN jobs j ON j.id = jpo.job_id AND j.deleted_at IS NULL
@@ -1154,39 +1173,96 @@ public final class OrdersService: Sendable {
                       AND jpo.deleted_at IS NULL
                     """)
 
-                // Group by part_id, tracking JPO line IDs per source
-                var partDemand: [Int64: (partRow: Row, sources: [DemandSource], totalQty: Int)] = [:]
-                // Track line IDs per (partId, jpoId) for merging lines from same JPO
-                var lineIdTracker: [Int64: [Int64: [Int64]]] = [:]  // [partId: [jpoId: [lineIds]]]
+                let genericJobPartKeys = Set(jpoLines.compactMap { row -> String? in
+                    guard let partId: Int64 = row["part_id"],
+                          let jobId: Int64 = row["job_id"],
+                          (row["is_generic"] as Int? ?? 0) == 1 else { return nil }
+                    return "\(jobId):\(partId)"
+                })
+                let lockPlaceholders = genericJobPartKeys.isEmpty ? "NULL" : genericJobPartKeys.map { _ in "?" }.joined(separator: ",")
+                var genericLocks: [String: (supplierId: Int64, supplierName: String, sourceName: String)] = [:]
+                if !genericJobPartKeys.isEmpty {
+                    let lockRows = try Row.fetchAll(dbConn, sql: """
+                        SELECT jpo.job_id, jl.part_id, po.supplier_id, s.name AS supplier_name,
+                               'PO ' || po.po_number AS source_name
+                        FROM po_line_items pli
+                        JOIN purchase_orders po ON po.id = pli.po_id AND po.deleted_at IS NULL
+                        JOIN jpo_line_items jl ON jl.id = pli.jpo_line_id AND jl.deleted_at IS NULL
+                        JOIN job_parts_orders jpo ON jpo.id = jl.jpo_id AND jpo.deleted_at IS NULL
+                        JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL
+                        LEFT JOIN parts p ON p.id = jl.part_id AND p.deleted_at IS NULL
+                        LEFT JOIN brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
+                        WHERE (b.name IS NULL OR b.name = 'General')
+                          AND (jpo.job_id || ':' || jl.part_id) IN (\(lockPlaceholders))
+                        ORDER BY COALESCE(pli.created_at, po.created_at) DESC, pli.id DESC
+                        """, arguments: StatementArguments(Array(genericJobPartKeys)))
+                    for row in lockRows {
+                        guard let jobId: Int64 = row["job_id"],
+                              let partId: Int64 = row["part_id"],
+                              let supplierId: Int64 = row["supplier_id"] else { continue }
+                        let key = "\(jobId):\(partId)"
+                        guard genericLocks[key] == nil else { continue }
+                        genericLocks[key] = (
+                            supplierId: supplierId,
+                            supplierName: row["supplier_name"] ?? "Unknown",
+                            sourceName: row["source_name"] ?? "Prior PO"
+                        )
+                    }
+                }
+
+                // Group branded demand by part. Generic demand is grouped by part plus any
+                // existing job supplier lock so conflicting job locks cannot collapse together.
+                var partDemand: [String: (groupId: Int64, partId: Int64, partRow: Row, sources: [DemandSource], totalQty: Int, lockedSupplierId: Int64?, lockedSupplierName: String?, lockSourceName: String?)] = [:]
+                var groupIdsByKey: [String: Int64] = [:]
 
                 for row in jpoLines {
                     guard let partId: Int64 = row["part_id"] else { continue }
+                    let isGeneric = (row["is_generic"] as Int? ?? 0) == 1
                     let jpoId: Int64 = row["jpo_id"] ?? 0
+                    let jobId: Int64? = row["job_id"]
                     let jobName: String = row["job_name"] ?? ""
                     let qty: Int = row["quantity"] ?? 0
                     let lineId: Int64 = row["line_id"] ?? 0
-
-                    lineIdTracker[partId, default: [:]][jpoId, default: []].append(lineId)
+                    let lockKey = jobId.map { "\($0):\(partId)" }
+                    let lock = lockKey.flatMap { genericLocks[$0] }
+                    let demandKey = isGeneric ? "\(partId):\(lock?.supplierId ?? 0)" : "\(partId)"
+                    let groupId = groupIdsByKey[demandKey] ?? {
+                        let id = demandKey == "\(partId)" ? partId : -(partId * 1_000 + Int64(partDemand.count + 1))
+                        groupIdsByKey[demandKey] = id
+                        return id
+                    }()
 
                     let source = DemandSource(
                         sourceType: "jpo",
                         sourceId: jpoId,
                         sourceName: "JPO #\(jpoId) (\(jobName))",
                         quantity: qty,
-                        lineIds: [lineId]
+                        lineIds: [lineId],
+                        jobId: jobId,
+                        lockedSupplierId: lock?.supplierId,
+                        lockedSupplierName: lock?.supplierName
                     )
 
-                    if partDemand[partId] != nil {
-                        partDemand[partId]?.sources.append(source)
-                        partDemand[partId]?.totalQty += qty
+                    if partDemand[demandKey] != nil {
+                        partDemand[demandKey]?.sources.append(source)
+                        partDemand[demandKey]?.totalQty += qty
                     } else {
-                        partDemand[partId] = (partRow: row, sources: [source], totalQty: qty)
+                        partDemand[demandKey] = (
+                            groupId: groupId,
+                            partId: partId,
+                            partRow: row,
+                            sources: [source],
+                            totalQty: qty,
+                            lockedSupplierId: lock?.supplierId,
+                            lockedSupplierName: lock?.supplierName,
+                            lockSourceName: lock?.sourceName
+                        )
                     }
                 }
 
                 // Fix #177: Batch-fetch stock, part info, and suppliers for ALL parts at once
                 // instead of querying 3 times per part in the loop (was O(3N) queries).
-                let partIds = Array(partDemand.keys)
+                let partIds = Array(Set(partDemand.values.map(\.partId)))
                 let idPlaceholders = partIds.isEmpty ? "NULL" : partIds.map { _ in "?" }.joined(separator: ",")
                 let idArgs = StatementArguments(partIds)
 
@@ -1245,7 +1321,8 @@ public final class OrdersService: Sendable {
 
                 // Build final items from pre-fetched data — no queries in this loop
                 var items: [ProcurementItem] = []
-                for (partId, data) in partDemand {
+                for data in partDemand.values {
+                    let partId = data.partId
                     let shopStock = stockByPart[partId] ?? 0
                     let info = infoByPart[partId] ?? (min: 0, target: 0, max: 0)
                     let minStock = info.min
@@ -1279,6 +1356,21 @@ public final class OrdersService: Sendable {
                             isPreferred: preferred == 1,
                             tag: nil // assigned below
                         )
+                    }
+                    if let lockedSupplierId = data.lockedSupplierId {
+                        if !supplierOptions.contains(where: { $0.id == lockedSupplierId }) {
+                            supplierOptions.append(PartSupplierOption(
+                                id: lockedSupplierId,
+                                name: data.lockedSupplierName ?? "Locked Supplier",
+                                unitPrice: nil,
+                                reliabilityScore: nil,
+                                processingDays: nil,
+                                isToday2PM: false,
+                                isPreferred: true,
+                                tag: "locked"
+                            ))
+                        }
+                        supplierOptions = supplierOptions.filter { $0.id == lockedSupplierId }
                     }
 
                     // Assign tags: cheapest, rated, fastest
@@ -1335,11 +1427,15 @@ public final class OrdersService: Sendable {
                     let isGeneric = (data.partRow["is_generic"] as Int?) == 1
 
                     items.append(ProcurementItem(
-                        id: partId,
+                        id: data.groupId,
+                        partId: partId,
                         partName: data.partRow["part_name"] ?? "Unknown",
                         partCode: data.partRow["part_code"],
                         brandName: data.partRow["brand_name"],
                         isGeneric: isGeneric,
+                        lockedSupplierId: data.lockedSupplierId,
+                        lockedSupplierName: data.lockedSupplierName,
+                        lockSourceName: data.lockSourceName,
                         totalDemand: data.totalQty,
                         shopStock: shopStock,
                         minStock: minStock,
@@ -1364,7 +1460,7 @@ public final class OrdersService: Sendable {
                     """)
                 for row in overstockParts {
                     let partId: Int64 = row["id"] ?? 0
-                    if partDemand[partId] == nil {
+                    if !partDemand.values.contains(where: { $0.partId == partId }) {
                         let stock: Int = row["stock"] ?? 0
                         let maxS: Int = row["max_stock_level"] ?? 0
                         items.append(ProcurementItem(
@@ -1423,6 +1519,43 @@ public final class OrdersService: Sendable {
     @discardableResult
     public func generatePOsFromProcurement(items: [ProcurementGenerateItem]) throws -> ProcurementGenerateResult {
         try db.writer.write { dbConn in
+            for item in items {
+                for jpoLineId in item.jpoLineIds {
+                    let lockRow = try Row.fetchOne(dbConn, sql: """
+                        SELECT jl.part_id, jpo.job_id, po.supplier_id AS locked_supplier_id
+                        FROM jpo_line_items jl
+                        JOIN job_parts_orders jpo ON jpo.id = jl.jpo_id AND jpo.deleted_at IS NULL
+                        JOIN parts p ON p.id = jl.part_id AND p.deleted_at IS NULL
+                        LEFT JOIN brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
+                        JOIN jpo_line_items prior_jl ON prior_jl.part_id = jl.part_id
+                            AND prior_jl.id <> jl.id
+                            AND prior_jl.deleted_at IS NULL
+                        JOIN job_parts_orders prior_jpo ON prior_jpo.id = prior_jl.jpo_id
+                            AND prior_jpo.job_id = jpo.job_id
+                            AND prior_jpo.deleted_at IS NULL
+                        JOIN po_line_items pli ON pli.jpo_line_id = prior_jl.id AND pli.deleted_at IS NULL
+                        JOIN purchase_orders po ON po.id = pli.po_id AND po.deleted_at IS NULL
+                        WHERE jl.id = ?
+                          AND jl.deleted_at IS NULL
+                          AND (b.name IS NULL OR b.name = 'General')
+                        ORDER BY COALESCE(pli.created_at, po.created_at) DESC
+                        LIMIT 1
+                        """, arguments: [jpoLineId])
+                    if let row = lockRow,
+                       let partId: Int64 = row["part_id"],
+                       let jobId: Int64 = row["job_id"],
+                       let lockedSupplierId: Int64 = row["locked_supplier_id"],
+                       lockedSupplierId != item.supplierId {
+                        throw OrdersError.genericSupplierLocked(
+                            partId: partId,
+                            jobId: jobId,
+                            lockedSupplierId: lockedSupplierId,
+                            attemptedSupplierId: item.supplierId
+                        )
+                    }
+                }
+            }
+
             // Group items by supplier
             var bySupplier: [Int64: [ProcurementGenerateItem]] = [:]
             for item in items {
