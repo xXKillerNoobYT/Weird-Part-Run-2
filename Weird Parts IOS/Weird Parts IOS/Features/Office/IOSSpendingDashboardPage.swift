@@ -96,6 +96,10 @@ struct IOSSpendingDashboardPage: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .officeSpendingPageInactive, object: nil)
+        }
         .onChange(of: dateRange) { loadData() }
         .onChange(of: customStart) { loadData() }
         .onChange(of: customEnd) { loadData() }
@@ -133,6 +137,17 @@ struct IOSSpendingDashboardPage: View {
             loadError = userFriendlyError(error, context: "load spending data")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        NotificationCenter.default.post(
+            name: .officeSpendingPageActive,
+            object: nil,
+            userInfo: [
+                "context": "Office Spending Dashboard: range \(dateRange.rawValue), parts cost \(formatCurrency(totalPartsCost)), labor hours \(String(format: "%.1f", totalLaborHours)), active jobs \(activeJobCount), total jobs \(totalJobs)."
+            ]
+        )
     }
 
     private func formatCurrency(_ value: Double) -> String {

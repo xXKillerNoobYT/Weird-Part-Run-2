@@ -118,6 +118,10 @@ struct IOSOfficeDashboardPage: View {
             appCore.onboardingManager?.markCompleted("office-view")
             loadData()
         }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .officeDashboardPageInactive, object: nil)
+        }
     }
 
     // MARK: - AI Summary Section
@@ -531,6 +535,17 @@ struct IOSOfficeDashboardPage: View {
         }
 
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        NotificationCenter.default.post(
+            name: .officeDashboardPageActive,
+            object: nil,
+            userInfo: [
+                "context": "Office Dashboard: \(smartCards.count) smart cards, \(attentionItems.count) attention items, \(todaySchedule.count) schedule items, financial snapshot visible: \(financialSnapshot != nil), background rows: \(backgroundTaskStatuses.count)."
+            ]
+        )
     }
 
     private func scheduleDailyBriefingNotificationIfAllowed() {
