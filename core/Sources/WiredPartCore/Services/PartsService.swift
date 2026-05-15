@@ -1329,6 +1329,7 @@ public final class PartsService: Sendable {
             maxStockLevel: maxStockLevel,
             targetStockLevel: targetStockLevel,
             reorderPoint: reorderPoint,
+            autoAddToWishlistWhenLow: 0,
             notes: notes,
             imageUrl: imageUrl,
             shelfLocation: shelfLocation,
@@ -1454,6 +1455,59 @@ public final class PartsService: Sendable {
                 try? logPartFieldChanges(partId: id, userId: nil, userName: nil, changes: changes, context: "Catalog Edit")
             }
         }
+    }
+
+    public func getAutoAddToWishlistWhenLow(partId: Int64) throws -> Bool {
+        try db.writer.read { dbConn in
+            guard let value = try Int.fetchOne(
+                dbConn,
+                sql: "SELECT auto_add_to_wishlist_when_low FROM parts WHERE id = ? AND deleted_at IS NULL",
+                arguments: [partId]
+            ) else {
+                throw PartsError.partNotFound(partId)
+            }
+            return value != 0
+        }
+    }
+
+    public func setAutoAddToWishlistWhenLow(partId: Int64, enabled: Bool, byUserId: Int64) throws {
+        guard try auth.hasPermission(byUserId, permissionKey: "edit_parts_catalog") else {
+            throw PartsError.insufficientPermissions(required: "edit_parts_catalog")
+        }
+        let oldValue = try db.writer.read { dbConn -> String in
+            guard let value = try Int.fetchOne(
+                dbConn,
+                sql: "SELECT auto_add_to_wishlist_when_low FROM parts WHERE id = ? AND deleted_at IS NULL",
+                arguments: [partId]
+            ) else {
+                throw PartsError.partNotFound(partId)
+            }
+            return value == 0 ? "0" : "1"
+        }
+        let newValue = enabled ? "1" : "0"
+        let changed = try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE parts
+                    SET auto_add_to_wishlist_when_low = ?, updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [enabled ? 1 : 0, partId]
+            )
+            return dbConn.changesCount
+        }
+        guard changed > 0 else { throw PartsError.partNotFound(partId) }
+        guard oldValue != newValue else { return }
+        try? logPartChange(
+            partId: partId,
+            userId: byUserId,
+            userName: nil,
+            action: "updated",
+            fieldName: "auto_add_to_wishlist_when_low",
+            oldValue: oldValue,
+            newValue: newValue,
+            context: "Catalog"
+        )
     }
 
     /// Soft-delete a part.
