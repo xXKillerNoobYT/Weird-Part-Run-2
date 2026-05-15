@@ -32,6 +32,8 @@ public final class OrdersService: Sendable {
         case partNotFound(Int64)
         case userNotFound(Int64)
         case genericSupplierLocked(partId: Int64, jobId: Int64, lockedSupplierId: Int64, attemptedSupplierId: Int64)
+        case insufficientStock(partId: Int64, available: Int, requested: Int)
+        case overMaxPullRequired(partId: Int64, overage: Int)
         case invalidQuantity(Int)
         case requiredFieldEmpty(String)
 
@@ -51,6 +53,10 @@ public final class OrdersService: Sendable {
             case .userNotFound(let id): "User #\(id) not found or has been deleted"
             case .genericSupplierLocked(let partId, let jobId, let lockedSupplierId, let attemptedSupplierId):
                 "Generic part #\(partId) for job #\(jobId) is locked to supplier #\(lockedSupplierId), not supplier #\(attemptedSupplierId)"
+            case .insufficientStock(let partId, let available, let requested):
+                "Part #\(partId) has \(available) available on warehouse shelves, but \(requested) was requested"
+            case .overMaxPullRequired(let partId, let overage):
+                "Part #\(partId) is still over MAX by \(overage). Pull the overage to staging before generating POs."
             case .invalidQuantity(let qty): "Quantity must be greater than zero (got \(qty))"
             case .requiredFieldEmpty(let field): "\(field) is required and cannot be empty"
             }
@@ -127,11 +133,14 @@ public final class OrdersService: Sendable {
         public let sourceName: String
         public let quantity: Int
         public let lineIds: [Int64]  // JPO line IDs for this source
+        public let wishlistItemIds: [Int64]
+        public let forecastTargetIds: [Int64]
         public let jobId: Int64?
         public let lockedSupplierId: Int64?
         public let lockedSupplierName: String?
 
         public init(sourceType: String, sourceId: Int64?, sourceName: String, quantity: Int, lineIds: [Int64] = [],
+                    wishlistItemIds: [Int64] = [], forecastTargetIds: [Int64] = [],
                     jobId: Int64? = nil, lockedSupplierId: Int64? = nil, lockedSupplierName: String? = nil) {
             self.id = "\(sourceType)-\(sourceId ?? 0)-\(quantity)-\(lineIds.map(String.init).joined(separator: "_"))"
             self.sourceType = sourceType
@@ -139,6 +148,8 @@ public final class OrdersService: Sendable {
             self.sourceName = sourceName
             self.quantity = quantity
             self.lineIds = lineIds
+            self.wishlistItemIds = wishlistItemIds
+            self.forecastTargetIds = forecastTargetIds
             self.jobId = jobId
             self.lockedSupplierId = lockedSupplierId
             self.lockedSupplierName = lockedSupplierName
@@ -174,6 +185,7 @@ public final class OrdersService: Sendable {
         public let targetStock: Int
         public let maxStock: Int
         public let deltaToTarget: Int
+        public let stagedPullQty: Int
         public let sources: [DemandSource]
         public let suppliers: [PartSupplierOption]
         public let urgency: String
@@ -182,6 +194,7 @@ public final class OrdersService: Sendable {
                     isGeneric: Bool = false, lockedSupplierId: Int64? = nil, lockedSupplierName: String? = nil,
                     lockSourceName: String? = nil, totalDemand: Int, shopStock: Int,
                     minStock: Int, targetStock: Int, maxStock: Int, deltaToTarget: Int,
+                    stagedPullQty: Int = 0,
                     sources: [DemandSource], suppliers: [PartSupplierOption] = [],
                     urgency: String) {
             self.id = id
@@ -199,6 +212,7 @@ public final class OrdersService: Sendable {
             self.targetStock = targetStock
             self.maxStock = maxStock
             self.deltaToTarget = deltaToTarget
+            self.stagedPullQty = stagedPullQty
             self.sources = sources
             self.suppliers = suppliers
             self.urgency = urgency
@@ -1147,7 +1161,8 @@ public final class OrdersService: Sendable {
     // MARK: - 1d. Procurement Aggregation
 
     /// Get all consolidated procurement demand, grouped by part.
-    /// Aggregates approved JPO lines + overstock detection.
+    /// Aggregates approved JPO lines, approved/sent wishlist items,
+    /// high-certainty forecast restock demand, and overstock detection.
     public func getProcurementDemand() throws -> [ProcurementItem] {
         do {
             return try db.writer.read { dbConn in
@@ -1171,6 +1186,58 @@ public final class OrdersService: Sendable {
                     WHERE jl.line_status = 'approved'
                       AND jl.deleted_at IS NULL
                       AND jpo.deleted_at IS NULL
+                    """)
+                let wishlistRows = try Row.fetchAll(dbConn, sql: """
+                    SELECT wi.part_id, p.name AS part_name, p.code AS part_code,
+                           b.name AS brand_name,
+                           CASE WHEN b.name IS NULL OR b.name = 'General' THEN 1 ELSE 0 END AS is_generic,
+                           wi.qty_suggested AS quantity, wi.id AS wishlist_id,
+                           wi.part_name AS wishlist_part_name, wi.status, wi.source_type
+                    FROM wishlist_items wi
+                    JOIN parts p ON p.id = wi.part_id AND p.deleted_at IS NULL
+                    LEFT JOIN brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
+                    WHERE wi.part_id IS NOT NULL
+                      AND wi.status IN ('approved', 'sent_to_procurement')
+                      AND wi.source_type <> 'forecast'
+                      AND wi.qty_suggested > 0
+                    """)
+                let forecastWishlistRows = try Row.fetchAll(dbConn, sql: """
+                    SELECT wi.part_id, p.name AS part_name, p.code AS part_code,
+                           b.name AS brand_name,
+                           CASE WHEN b.name IS NULL OR b.name = 'General' THEN 1 ELSE 0 END AS is_generic,
+                           wi.qty_suggested AS quantity, wi.id AS wishlist_id,
+                           wi.certainty_score, wi.status
+                    FROM wishlist_items wi
+                    JOIN parts p ON p.id = wi.part_id AND p.deleted_at IS NULL
+                    LEFT JOIN brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
+                    WHERE wi.part_id IS NOT NULL
+                      AND wi.status IN ('approved', 'sent_to_procurement')
+                      AND wi.source_type = 'forecast'
+                      AND COALESCE(wi.certainty_score, 0) >= 0.8
+                      AND wi.qty_suggested > 0
+                    """)
+                let forecastTargetRows = try Row.fetchAll(dbConn, sql: """
+                    SELECT lst.part_id, p.name AS part_name, p.code AS part_code,
+                           b.name AS brand_name,
+                           CASE WHEN b.name IS NULL OR b.name = 'General' THEN 1 ELSE 0 END AS is_generic,
+                           lst.id AS forecast_target_id,
+                           lst.location_type, lst.location_id,
+                           lst.forecast_suggested_order AS quantity,
+                           lst.min_stock,
+                           COALESCE(SUM(s.qty), 0) AS location_stock
+                    FROM location_stock_targets lst
+                    JOIN parts p ON p.id = lst.part_id AND p.deleted_at IS NULL
+                    LEFT JOIN brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
+                    LEFT JOIN stock s ON s.part_id = lst.part_id
+                        AND s.location_type = lst.location_type
+                        AND s.location_id = lst.location_id
+                        AND s.deleted_at IS NULL
+                    WHERE lst.deleted_at IS NULL
+                      AND COALESCE(lst.do_not_restock, 0) = 0
+                      AND COALESCE(lst.certainty_rating, 0) >= 0.8
+                      AND COALESCE(lst.forecast_suggested_order, 0) > 0
+                    GROUP BY lst.id
+                    HAVING location_stock < lst.min_stock
                     """)
 
                 let genericJobPartKeys = Set(jpoLines.compactMap { row -> String? in
@@ -1215,6 +1282,38 @@ public final class OrdersService: Sendable {
                 var partDemand: [String: (groupId: Int64, partId: Int64, partRow: Row, sources: [DemandSource], totalQty: Int, lockedSupplierId: Int64?, lockedSupplierName: String?, lockSourceName: String?)] = [:]
                 var groupIdsByKey: [String: Int64] = [:]
 
+                func appendDemand(
+                    partId: Int64,
+                    partRow: Row,
+                    demandKey: String,
+                    source: DemandSource,
+                    lockedSupplierId: Int64? = nil,
+                    lockedSupplierName: String? = nil,
+                    lockSourceName: String? = nil
+                ) {
+                    let groupId = groupIdsByKey[demandKey] ?? {
+                        let id = demandKey == "\(partId)" ? partId : -(partId * 1_000 + Int64(partDemand.count + 1))
+                        groupIdsByKey[demandKey] = id
+                        return id
+                    }()
+
+                    if partDemand[demandKey] != nil {
+                        partDemand[demandKey]?.sources.append(source)
+                        partDemand[demandKey]?.totalQty += source.quantity
+                    } else {
+                        partDemand[demandKey] = (
+                            groupId: groupId,
+                            partId: partId,
+                            partRow: partRow,
+                            sources: [source],
+                            totalQty: source.quantity,
+                            lockedSupplierId: lockedSupplierId,
+                            lockedSupplierName: lockedSupplierName,
+                            lockSourceName: lockSourceName
+                        )
+                    }
+                }
+
                 for row in jpoLines {
                     guard let partId: Int64 = row["part_id"] else { continue }
                     let isGeneric = (row["is_generic"] as Int? ?? 0) == 1
@@ -1225,12 +1324,7 @@ public final class OrdersService: Sendable {
                     let lineId: Int64 = row["line_id"] ?? 0
                     let lockKey = jobId.map { "\($0):\(partId)" }
                     let lock = lockKey.flatMap { genericLocks[$0] }
-                    let demandKey = isGeneric ? "\(partId):\(lock?.supplierId ?? 0)" : "\(partId)"
-                    let groupId = groupIdsByKey[demandKey] ?? {
-                        let id = demandKey == "\(partId)" ? partId : -(partId * 1_000 + Int64(partDemand.count + 1))
-                        groupIdsByKey[demandKey] = id
-                        return id
-                    }()
+                    let demandKey = isGeneric && lock != nil ? "\(partId):\(lock?.supplierId ?? 0)" : "\(partId)"
 
                     let source = DemandSource(
                         sourceType: "jpo",
@@ -1243,21 +1337,68 @@ public final class OrdersService: Sendable {
                         lockedSupplierName: lock?.supplierName
                     )
 
-                    if partDemand[demandKey] != nil {
-                        partDemand[demandKey]?.sources.append(source)
-                        partDemand[demandKey]?.totalQty += qty
-                    } else {
-                        partDemand[demandKey] = (
-                            groupId: groupId,
-                            partId: partId,
-                            partRow: row,
-                            sources: [source],
-                            totalQty: qty,
-                            lockedSupplierId: lock?.supplierId,
-                            lockedSupplierName: lock?.supplierName,
-                            lockSourceName: lock?.sourceName
+                    appendDemand(
+                        partId: partId,
+                        partRow: row,
+                        demandKey: demandKey,
+                        source: source,
+                        lockedSupplierId: lock?.supplierId,
+                        lockedSupplierName: lock?.supplierName,
+                        lockSourceName: lock?.sourceName
+                    )
+                }
+
+                for row in wishlistRows {
+                    guard let partId: Int64 = row["part_id"] else { continue }
+                    let wishlistId: Int64 = row["wishlist_id"] ?? 0
+                    appendDemand(
+                        partId: partId,
+                        partRow: row,
+                        demandKey: "\(partId)",
+                        source: DemandSource(
+                            sourceType: "wishlist",
+                            sourceId: wishlistId,
+                            sourceName: "Wishlist #\(wishlistId)",
+                            quantity: row["quantity"] ?? 0,
+                            wishlistItemIds: [wishlistId]
                         )
-                    }
+                    )
+                }
+
+                for row in forecastWishlistRows {
+                    guard let partId: Int64 = row["part_id"] else { continue }
+                    let wishlistId: Int64 = row["wishlist_id"] ?? 0
+                    appendDemand(
+                        partId: partId,
+                        partRow: row,
+                        demandKey: "\(partId)",
+                        source: DemandSource(
+                            sourceType: "forecast",
+                            sourceId: wishlistId,
+                            sourceName: "Forecast Wishlist #\(wishlistId)",
+                            quantity: row["quantity"] ?? 0,
+                            wishlistItemIds: [wishlistId]
+                        )
+                    )
+                }
+
+                for row in forecastTargetRows {
+                    guard let partId: Int64 = row["part_id"] else { continue }
+                    let targetId: Int64 = row["forecast_target_id"] ?? 0
+                    let locationType: String = row["location_type"] ?? "location"
+                    let locationId: Int64 = row["location_id"] ?? 0
+                    appendDemand(
+                        partId: partId,
+                        partRow: row,
+                        demandKey: "\(partId)",
+                        source: DemandSource(
+                            sourceType: "forecast",
+                            sourceId: targetId,
+                            sourceName: "Forecast Restock \(locationType) #\(locationId) (Next PO Drafting)",
+                            quantity: row["quantity"] ?? 0,
+                            forecastTargetIds: [targetId]
+                        )
+                    )
                 }
 
                 // Fix #177: Batch-fetch stock, part info, and suppliers for ALL parts at once
@@ -1271,11 +1412,34 @@ public final class OrdersService: Sendable {
                 if !partIds.isEmpty {
                     let stockRows = try Row.fetchAll(dbConn, sql: """
                         SELECT part_id, COALESCE(SUM(qty), 0) AS total_qty FROM stock
-                        WHERE part_id IN (\(idPlaceholders)) AND deleted_at IS NULL
+                        WHERE part_id IN (\(idPlaceholders))
+                          AND location_type = 'warehouse'
+                          AND deleted_at IS NULL
                         GROUP BY part_id
                         """, arguments: idArgs)
                     for row in stockRows {
                         if let pid: Int64 = row["part_id"] { stockByPart[pid] = row["total_qty"] ?? 0 }
+                    }
+                }
+
+                // Procurement pulls are persisted as pulled-staging stock at a demand-specific
+                // location id. Rehydrating them here keeps pull decisions visible after reload.
+                var stagedPullsByDemand: [Int64: Int] = [:]
+                if !partIds.isEmpty {
+                    let stagedRows = try Row.fetchAll(dbConn, sql: """
+                        SELECT location_id, COALESCE(SUM(qty), 0) AS staged_qty
+                        FROM stock
+                        WHERE part_id IN (\(idPlaceholders))
+                          AND location_type = 'pulled'
+                          AND location_id IS NOT NULL
+                          AND qty > 0
+                          AND deleted_at IS NULL
+                        GROUP BY location_id
+                        """, arguments: idArgs)
+                    for row in stagedRows {
+                        if let demandId: Int64 = row["location_id"] {
+                            stagedPullsByDemand[demandId] = row["staged_qty"] ?? 0
+                        }
                     }
                 }
 
@@ -1442,6 +1606,7 @@ public final class OrdersService: Sendable {
                         targetStock: targetStock,
                         maxStock: maxStock,
                         deltaToTarget: delta,
+                        stagedPullQty: stagedPullsByDemand[Self.procurementStagingLocationId(for: data.groupId)] ?? 0,
                         sources: data.sources,
                         suppliers: supplierOptions,
                         urgency: urgency
@@ -1453,7 +1618,7 @@ public final class OrdersService: Sendable {
                     SELECT p.id, p.name, p.code, COALESCE(SUM(s.qty), 0) AS stock,
                            p.max_stock_level
                     FROM parts p
-                    LEFT JOIN stock s ON s.part_id = p.id AND s.deleted_at IS NULL
+                    LEFT JOIN stock s ON s.part_id = p.id AND s.location_type = 'warehouse' AND s.deleted_at IS NULL
                     WHERE p.deleted_at IS NULL AND p.max_stock_level > 0
                     GROUP BY p.id
                     HAVING stock > p.max_stock_level
@@ -1472,6 +1637,7 @@ public final class OrdersService: Sendable {
                             shopStock: stock,
                             minStock: 0, targetStock: 0, maxStock: maxS,
                             deltaToTarget: -(stock - maxS),
+                            stagedPullQty: stagedPullsByDemand[Self.procurementStagingLocationId(for: partId)] ?? 0,
                             sources: [DemandSource(sourceType: "overstock", sourceId: nil,
                                                    sourceName: "Overstock (above MAX)", quantity: stock - maxS)],
                             urgency: "overstock"
@@ -1497,13 +1663,25 @@ public final class OrdersService: Sendable {
         public let quantity: Int
         public let unitCost: Double?
         public let jpoLineIds: [Int64]
+        public let wishlistItemIds: [Int64]
+        public let forecastTargetIds: [Int64]
 
-        public init(partId: Int64, supplierId: Int64, quantity: Int, unitCost: Double? = nil, jpoLineIds: [Int64]) {
+        public init(
+            partId: Int64,
+            supplierId: Int64,
+            quantity: Int,
+            unitCost: Double? = nil,
+            jpoLineIds: [Int64],
+            wishlistItemIds: [Int64] = [],
+            forecastTargetIds: [Int64] = []
+        ) {
             self.partId = partId
             self.supplierId = supplierId
             self.quantity = quantity
             self.unitCost = unitCost
             self.jpoLineIds = jpoLineIds
+            self.wishlistItemIds = wishlistItemIds
+            self.forecastTargetIds = forecastTargetIds
         }
     }
 
@@ -1511,6 +1689,81 @@ public final class OrdersService: Sendable {
     public struct ProcurementGenerateResult: Sendable {
         public let createdPOs: [(poId: Int64, poNumber: String, supplierId: Int64)]
         public let totalLineItems: Int
+    }
+
+    /// Result of pulling shelf stock into procurement staging.
+    public struct ProcurementPullResult: Sendable, Equatable {
+        public let pulledQty: Int
+        public let remainingOrderQty: Int
+        public let movementIds: [Int64]
+    }
+
+    public struct ProcurementPullOption: Sendable, Equatable {
+        public enum Kind: String, Sendable {
+            case pullToTarget
+            case pullAll
+            case pullToMin
+            case orderAll
+        }
+
+        public let kind: Kind
+        public let pullQty: Int
+        public let orderQty: Int
+        public let isRecommended: Bool
+    }
+
+    public static func procurementPullOptions(
+        demandQty: Int,
+        shopStock: Int,
+        minStock: Int,
+        targetStock: Int,
+        stagedPullQty: Int = 0
+    ) -> [ProcurementPullOption] {
+        let remainingDemand = max(0, demandQty - stagedPullQty)
+        guard remainingDemand > 0, shopStock > 0 else {
+            return [
+                ProcurementPullOption(kind: .orderAll, pullQty: 0, orderQty: remainingDemand, isRecommended: true)
+            ]
+        }
+
+        var options: [ProcurementPullOption] = []
+        let pullToTarget = min(remainingDemand, max(0, shopStock - targetStock))
+        if pullToTarget > 0 {
+            options.append(ProcurementPullOption(
+                kind: .pullToTarget,
+                pullQty: pullToTarget,
+                orderQty: max(0, remainingDemand - pullToTarget),
+                isRecommended: true
+            ))
+        }
+
+        let pullAll = min(shopStock, remainingDemand)
+        if pullAll > 0 {
+            options.append(ProcurementPullOption(
+                kind: .pullAll,
+                pullQty: pullAll,
+                orderQty: max(0, remainingDemand - pullAll),
+                isRecommended: pullToTarget == 0
+            ))
+        }
+
+        let pullToMin = min(remainingDemand, max(0, shopStock - minStock))
+        if minStock > 0 && minStock != targetStock && pullToMin > 0 && pullToMin != pullToTarget {
+            options.append(ProcurementPullOption(
+                kind: .pullToMin,
+                pullQty: pullToMin,
+                orderQty: max(0, remainingDemand - pullToMin),
+                isRecommended: false
+            ))
+        }
+
+        options.append(ProcurementPullOption(
+            kind: .orderAll,
+            pullQty: 0,
+            orderQty: remainingDemand,
+            isRecommended: options.isEmpty
+        ))
+        return options
     }
 
     /// Selection state used to build a procurement PO preview.
@@ -1562,6 +1815,8 @@ public final class OrdersService: Sendable {
         public let quantity: Int
         public let unitCost: Double?
         public let jpoLineIds: [Int64]
+        public let wishlistItemIds: [Int64]
+        public let forecastTargetIds: [Int64]
     }
 
     /// Build the supplier -> job/source preview tree used by the procurement UI and tests.
@@ -1575,17 +1830,15 @@ public final class OrdersService: Sendable {
             let requestedQty = max(0, selection.orderQuantities[item.id] ?? item.totalDemand)
             guard requestedQty > 0 else { continue }
 
-            let jpoSources = item.sources.filter { $0.sourceType == "jpo" }
-            if !jpoSources.isEmpty {
+            if !item.sources.isEmpty {
                 var remaining = requestedQty
-                for source in jpoSources where remaining > 0 {
+                for source in item.sources where remaining > 0 {
+                    let key = "\(item.id):\(source.id)"
+                    guard !selection.excludedLineKeys.contains(key) else { continue }
                     guard let supplierId = supplierId(for: source, item: item, selection: selection) else { continue }
                     let quantity = min(source.quantity, remaining)
                     guard quantity > 0 else { continue }
                     remaining -= quantity
-
-                    let key = "\(item.id):\(source.id)"
-                    guard !selection.excludedLineKeys.contains(key) else { continue }
 
                     appendPreviewPart(
                         supplierId: supplierId,
@@ -1601,7 +1854,9 @@ public final class OrdersService: Sendable {
                             sourceName: source.sourceName,
                             quantity: quantity,
                             unitCost: item.suppliers.first(where: { $0.id == supplierId })?.unitPrice,
-                            jpoLineIds: source.lineIds
+                            jpoLineIds: source.lineIds,
+                            wishlistItemIds: source.wishlistItemIds,
+                            forecastTargetIds: source.forecastTargetIds
                         ),
                         groups: &groups
                     )
@@ -1626,7 +1881,9 @@ public final class OrdersService: Sendable {
                     sourceName: item.sources.first?.sourceName,
                     quantity: requestedQty,
                     unitCost: item.suppliers.first(where: { $0.id == supplierId })?.unitPrice,
-                    jpoLineIds: []
+                    jpoLineIds: [],
+                    wishlistItemIds: [],
+                    forecastTargetIds: []
                 ),
                 groups: &groups
             )
@@ -1686,12 +1943,212 @@ public final class OrdersService: Sendable {
             ?? "Unknown"
     }
 
+    private func procurementLineNotes(for item: ProcurementGenerateItem) -> String? {
+        var notes: [String] = []
+        if !item.wishlistItemIds.isEmpty {
+            notes.append("Procurement source wishlist_items: \(item.wishlistItemIds.map(String.init).joined(separator: ","))")
+        }
+        if !item.forecastTargetIds.isEmpty {
+            notes.append("Procurement source forecast targets: \(item.forecastTargetIds.map(String.init).joined(separator: ",")); Next PO Drafting state has no consumable forecast status yet")
+        }
+        return notes.isEmpty ? nil : notes.joined(separator: "\n")
+    }
+
+    private func markWishlistItemsDrafted(_ ids: [Int64], poLineId: Int64, db: Database) throws {
+        guard !ids.isEmpty else { return }
+        let placeholders = ids.map { _ in "?" }.joined(separator: ",")
+        var args: StatementArguments = [poLineId]
+        args += StatementArguments(ids)
+        try db.execute(
+            sql: """
+                UPDATE wishlist_items
+                SET status = 'drafted',
+                    notes = TRIM(COALESCE(notes || CHAR(10), '') || 'Drafted into PO line #' || ?),
+                    updated_at = datetime('now')
+                WHERE id IN (\(placeholders))
+                  AND status IN ('approved', 'sent_to_procurement')
+                """,
+            arguments: args
+        )
+    }
+
+    private static func procurementStagingLocationId(for demandItemId: Int64) -> Int64 {
+        abs(demandItemId)
+    }
+
+    /// Pulls shelf stock for a procurement demand into a demand-specific staging location.
+    /// Source warehouse rows are selected from actual available stock rather than assuming
+    /// location id 1, so multi-location warehouse setups keep stock accounting correct.
+    @discardableResult
+    public func pullStockForProcurement(
+        demandItemId: Int64,
+        partId: Int64,
+        requestedPullQty: Int,
+        totalDemand: Int,
+        jpoLineIds: [Int64],
+        performedBy: Int64
+    ) throws -> ProcurementPullResult {
+        guard requestedPullQty > 0 else { throw OrdersError.invalidQuantity(requestedPullQty) }
+        return try db.writer.write { dbConn in
+            let partExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [partId]) ?? 0) > 0
+            guard partExists else { throw OrdersError.partNotFound(partId) }
+
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [performedBy]) ?? 0) > 0
+            guard userExists else { throw OrdersError.userNotFound(performedBy) }
+
+            let sourceRows = try Row.fetchAll(dbConn, sql: """
+                SELECT id, location_id, qty
+                FROM stock
+                WHERE part_id = ?
+                  AND location_type = 'warehouse'
+                  AND qty > 0
+                  AND deleted_at IS NULL
+                ORDER BY qty DESC, location_id ASC
+                """, arguments: [partId])
+            let available = sourceRows.reduce(0) { total, row in total + ((row["qty"] as Int?) ?? 0) }
+            guard available > 0 else {
+                throw OrdersError.insufficientStock(partId: partId, available: 0, requested: requestedPullQty)
+            }
+
+            var remaining = min(requestedPullQty, available)
+            var pulled = 0
+            var movementIds: [Int64] = []
+            let stagingLocationId = Self.procurementStagingLocationId(for: demandItemId)
+            let referenceNumber = "procurement-demand:\(demandItemId)"
+            let existingStagedQty = try Int.fetchOne(dbConn, sql: """
+                SELECT COALESCE(SUM(qty), 0)
+                FROM stock
+                WHERE part_id = ?
+                  AND location_type = 'pulled'
+                  AND location_id = ?
+                  AND deleted_at IS NULL
+                """, arguments: [partId, stagingLocationId]) ?? 0
+
+            for row in sourceRows where remaining > 0 {
+                guard let fromLocationId: Int64 = row["location_id"] else { continue }
+                let rowQty: Int = row["qty"] ?? 0
+                let moveQty = min(rowQty, remaining)
+                guard moveQty > 0 else { continue }
+
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO stock_movements
+                        (part_id, qty, from_location_type, from_location_id,
+                         to_location_type, to_location_id, movement_type,
+                         reason, notes, performed_by, reference_number, created_at)
+                        VALUES (?, ?, 'warehouse', ?, 'pulled', ?, 'transfer',
+                                'Procurement pull', ?, ?, ?, datetime('now'))
+                        """,
+                    arguments: [
+                        partId,
+                        moveQty,
+                        fromLocationId,
+                        stagingLocationId,
+                        "Pulled \(moveQty) for procurement demand \(demandItemId)",
+                        performedBy,
+                        referenceNumber
+                    ]
+                )
+                movementIds.append(dbConn.lastInsertedRowID)
+
+                try dbConn.execute(
+                    sql: """
+                        UPDATE stock SET qty = qty - ?, updated_at = datetime('now')
+                        WHERE part_id = ? AND location_type = 'warehouse' AND location_id = ?
+                          AND deleted_at IS NULL
+                        """,
+                    arguments: [moveQty, partId, fromLocationId]
+                )
+
+                try dbConn.execute(
+                    sql: """
+                        UPDATE stock SET qty = qty + ?, updated_at = datetime('now')
+                        WHERE part_id = ? AND location_type = 'pulled' AND location_id = ?
+                          AND deleted_at IS NULL
+                        """,
+                    arguments: [moveQty, partId, stagingLocationId]
+                )
+                if dbConn.changesCount == 0 {
+                    try dbConn.execute(
+                        sql: """
+                            INSERT INTO stock (part_id, location_type, location_id, qty, updated_at)
+                            VALUES (?, 'pulled', ?, ?, datetime('now'))
+                            """,
+                        arguments: [partId, stagingLocationId, moveQty]
+                    )
+                }
+
+                if let stockId = try Int64.fetchOne(dbConn, sql: """
+                    SELECT id FROM stock
+                    WHERE part_id = ? AND location_type = 'pulled' AND location_id = ?
+                      AND deleted_at IS NULL
+                    LIMIT 1
+                    """, arguments: [partId, stagingLocationId]) {
+                    try dbConn.execute(
+                        sql: """
+                            INSERT OR REPLACE INTO pulled_staging_tags
+                            (stock_id, destination_type, destination_id, destination_label, tagged_by, tagged_at)
+                            VALUES (?, 'procurement', ?, ?, ?, datetime('now'))
+                            """,
+                        arguments: [stockId, demandItemId, "Procurement demand \(demandItemId)", performedBy]
+                    )
+                }
+
+                pulled += moveQty
+                remaining -= moveQty
+            }
+
+            let remainingOrderQty = max(0, totalDemand - existingStagedQty - pulled)
+            if remainingOrderQty == 0 && !jpoLineIds.isEmpty {
+                let placeholders = jpoLineIds.map { _ in "?" }.joined(separator: ",")
+                try dbConn.execute(
+                    sql: """
+                        UPDATE jpo_line_items
+                        SET line_status = 'staged',
+                            status_updated_at = datetime('now')
+                        WHERE id IN (\(placeholders))
+                          AND part_id = ?
+                          AND deleted_at IS NULL
+                        """,
+                    arguments: StatementArguments(jpoLineIds + [partId])
+                )
+            }
+
+            return ProcurementPullResult(
+                pulledQty: pulled,
+                remainingOrderQty: remainingOrderQty,
+                movementIds: movementIds
+            )
+        }
+    }
+
     /// Generate draft POs from procurement selections, grouped by supplier.
     /// Each supplier gets one PO with all their selected parts as line items.
     /// JPO line items are linked and their status set to 'in_procurement'.
     @discardableResult
     public func generatePOsFromProcurement(items: [ProcurementGenerateItem]) throws -> ProcurementGenerateResult {
         try db.writer.write { dbConn in
+            for partId in Set(items.map(\.partId)) {
+                let row = try Row.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(p.max_stock_level, 0) AS max_stock,
+                           COALESCE(SUM(CASE WHEN s.location_type = 'warehouse' THEN s.qty ELSE 0 END), 0) AS warehouse_stock
+                    FROM parts p
+                    LEFT JOIN stock s ON s.part_id = p.id AND s.deleted_at IS NULL
+                    WHERE p.id = ? AND p.deleted_at IS NULL
+                    GROUP BY p.id
+                    """, arguments: [partId])
+                guard let row else { throw OrdersError.partNotFound(partId) }
+                let maxStock: Int = row["max_stock"] ?? 0
+                let warehouseStock: Int = row["warehouse_stock"] ?? 0
+                if maxStock > 0 && warehouseStock > maxStock {
+                    throw OrdersError.overMaxPullRequired(partId: partId, overage: warehouseStock - maxStock)
+                }
+            }
+
             for item in items {
                 for jpoLineId in item.jpoLineIds {
                     let lockRow = try Row.fetchOne(dbConn, sql: """
@@ -1772,12 +2229,20 @@ public final class OrdersService: Sendable {
                         try dbConn.execute(
                             sql: """
                                 INSERT INTO po_line_items
-                                (po_id, part_id, qty_ordered, unit_cost, created_at)
-                                VALUES (?, ?, ?, ?, datetime('now'))
+                                (po_id, part_id, qty_ordered, unit_cost, notes, created_at)
+                                VALUES (?, ?, ?, ?, ?, datetime('now'))
                                 """,
-                            arguments: [poId, item.partId, item.quantity, item.unitCost]
+                            arguments: [
+                                poId,
+                                item.partId,
+                                item.quantity,
+                                item.unitCost,
+                                procurementLineNotes(for: item)
+                            ]
                         )
+                        let poLineId = dbConn.lastInsertedRowID
                         totalLines += 1
+                        try markWishlistItemsDrafted(item.wishlistItemIds, poLineId: poLineId, db: dbConn)
                         continue
                     }
 
@@ -1806,6 +2271,7 @@ public final class OrdersService: Sendable {
                         )
                         let poLineId = dbConn.lastInsertedRowID
                         totalLines += 1
+                        try markWishlistItemsDrafted(item.wishlistItemIds, poLineId: poLineId, db: dbConn)
 
                         try dbConn.execute(
                             sql: """

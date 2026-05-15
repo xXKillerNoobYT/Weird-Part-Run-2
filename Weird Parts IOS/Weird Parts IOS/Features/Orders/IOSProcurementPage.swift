@@ -337,8 +337,13 @@ struct IOSProcurementPage: View {
         cachedReadyToGenerate = items.filter { item in
             checkedParts.contains(item.id) &&
             hasSupplierSelection(for: item) &&
+            hasSatisfiedOverMaxPull(for: item) &&
             effectiveOrderQty(for: item) > 0
         }
+    }
+
+    private func hasSatisfiedOverMaxPull(for item: OrdersService.ProcurementItem) -> Bool {
+        item.maxStock <= 0 || item.shopStock <= item.maxStock
     }
 
     private func hasSupplierSelection(for item: OrdersService.ProcurementItem) -> Bool {
@@ -353,7 +358,7 @@ struct IOSProcurementPage: View {
         if let decision = pullDecisions[item.id] {
             return decision.orderQty
         }
-        return item.totalDemand
+        return max(0, item.totalDemand - item.stagedPullQty)
     }
 
     private func procurementRow(_ item: OrdersService.ProcurementItem) -> some View {
@@ -395,13 +400,14 @@ struct IOSProcurementPage: View {
                 Spacer()
                 if item.totalDemand > 0 {
                     let orderQty = effectiveOrderQty(for: item)
-                    if let decision = pullDecisions[item.id], decision.pullQty > 0 {
+                    let pulledQty = (pullDecisions[item.id]?.pullQty ?? 0) + item.stagedPullQty
+                    if pulledQty > 0 {
                         VStack(alignment: .trailing, spacing: 1) {
                             Text("Order: \(orderQty)")
                                 .font(.subheadline)
                                 .fontWeight(.bold)
                                 .foregroundStyle(orderQty > 0 ? Color.primary : Color.green)
-                            Text("(\(decision.pullQty) pulled)")
+                            Text("(\(pulledQty) staged)")
                                 .font(.caption2)
                                 .foregroundStyle(.green)
                         }
@@ -451,6 +457,16 @@ struct IOSProcurementPage: View {
                     Text("OVER MAX — mandatory pull of at least \(item.shopStock - item.maxStock)")
                         .font(.caption)
                         .foregroundStyle(.red)
+                }
+            }
+            if item.stagedPullQty > 0 {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .accessibilityHidden(true)
+                    Text("\(item.stagedPullQty) already in pulled staging")
+                        .font(.caption)
+                        .foregroundStyle(.green)
                 }
             }
 
@@ -714,7 +730,9 @@ struct IOSProcurementPage: View {
                     supplierId: group.supplierId,
                     quantity: part.quantity,
                     unitCost: part.unitCost,
-                    jpoLineIds: part.jpoLineIds
+                    jpoLineIds: part.jpoLineIds,
+                    wishlistItemIds: part.wishlistItemIds,
+                    forecastTargetIds: part.forecastTargetIds
                 )
             }
         }
@@ -730,7 +748,12 @@ struct IOSProcurementPage: View {
             }
             excludedPreviewLineKeys.removeAll()
         } catch {
-            generateError = userFriendlyError(error, context: "generate document")
+            if let ordersError = error as? OrdersService.OrdersError,
+               let message = ordersError.errorDescription {
+                generateError = message
+            } else {
+                generateError = userFriendlyError(error, context: "generate document")
+            }
         }
     }
 
@@ -896,6 +919,7 @@ struct IOSProcurementPage: View {
     private func pullOptionsView(_ item: OrdersService.ProcurementItem) -> some View {
         if item.shopStock > 0 && item.totalDemand > 0 {
             let currentlyPulling = isPulling.contains(item.id)
+            let remainingDemand = max(0, item.totalDemand - item.stagedPullQty)
 
             VStack(spacing: 4) {
                 if let decision = pullDecisions[item.id] {
@@ -905,8 +929,9 @@ struct IOSProcurementPage: View {
                             .foregroundStyle(.green)
                             .font(.caption)
                         VStack(alignment: .leading, spacing: 1) {
-                            if decision.pullQty > 0 {
-                                Text("Pulling \(decision.pullQty) from shelf")
+                            let totalPulled = decision.pullQty + item.stagedPullQty
+                            if totalPulled > 0 {
+                                Text("\(totalPulled) in pulled staging")
                                     .font(.caption)
                                     .foregroundStyle(.green)
                             }
@@ -934,10 +959,10 @@ struct IOSProcurementPage: View {
                     .padding(.horizontal, 8)
                     .background(Color.green.opacity(0.08))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
-                } else {
+                } else if remainingDemand > 0 {
                     // Option 1: Pull to Target + order remaining (RECOMMENDED)
-                    let pullToTarget = max(0, item.shopStock - item.targetStock)
-                    let orderAfterPull = max(0, item.totalDemand - pullToTarget)
+                    let pullToTarget = min(remainingDemand, max(0, item.shopStock - item.targetStock))
+                    let orderAfterPull = max(0, remainingDemand - pullToTarget)
                     if pullToTarget > 0 {
                         pullButton(
                             item: item,
@@ -950,12 +975,13 @@ struct IOSProcurementPage: View {
                     }
 
                     // Option 2: Pull all + order remaining
-                    let orderAfterAll = max(0, item.totalDemand - item.shopStock)
-                    if item.shopStock >= item.totalDemand {
+                    let pullAll = min(item.shopStock, remainingDemand)
+                    let orderAfterAll = max(0, remainingDemand - item.shopStock)
+                    if item.shopStock >= remainingDemand {
                         pullButton(
                             item: item,
-                            label: "Pull \(item.totalDemand) from shelf (no order needed)",
-                            pullQty: item.totalDemand,
+                            label: "Pull \(remainingDemand) from shelf (no order needed)",
+                            pullQty: remainingDemand,
                             orderQty: 0,
                             style: pullToTarget == 0 ? .recommended : .normal,
                             isLoading: currentlyPulling
@@ -963,8 +989,8 @@ struct IOSProcurementPage: View {
                     } else {
                         pullButton(
                             item: item,
-                            label: "Pull all \(item.shopStock) + order \(orderAfterAll)",
-                            pullQty: item.shopStock,
+                            label: "Pull all \(pullAll) + order \(orderAfterAll)",
+                            pullQty: pullAll,
                             orderQty: orderAfterAll,
                             style: .normal,
                             isLoading: currentlyPulling
@@ -973,8 +999,8 @@ struct IOSProcurementPage: View {
 
                     // Option 3: Pull to MIN + order remaining (only if different from target)
                     if item.minStock > 0 && item.minStock != item.targetStock {
-                        let pullToMin = max(0, item.shopStock - item.minStock)
-                        let orderAfterMin = max(0, item.totalDemand - pullToMin)
+                        let pullToMin = min(remainingDemand, max(0, item.shopStock - item.minStock))
+                        let orderAfterMin = max(0, remainingDemand - pullToMin)
                         if pullToMin > 0 && pullToMin != pullToTarget {
                             pullButton(
                                 item: item,
@@ -990,9 +1016,9 @@ struct IOSProcurementPage: View {
                     // Option 4: Order all (no pull)
                     pullButton(
                         item: item,
-                        label: "Order all \(item.totalDemand)",
+                        label: "Order all \(remainingDemand)",
                         pullQty: 0,
-                        orderQty: item.totalDemand,
+                        orderQty: remainingDemand,
                         style: .subdued,
                         isLoading: false
                     )
@@ -1011,6 +1037,17 @@ struct IOSProcurementPage: View {
                             .foregroundStyle(.red)
                     }
                     .padding(.vertical, 4)
+                }
+                if item.stagedPullQty > 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .font(.caption2)
+                            .accessibilityHidden(true)
+                        Text("\(item.stagedPullQty) already in pulled staging")
+                            .font(.caption2)
+                            .foregroundStyle(.green)
+                    }
                 }
             }
         }
@@ -1076,6 +1113,10 @@ struct IOSProcurementPage: View {
 
     /// Stores the pending pull intent and shows the confirmation dialog.
     private func requestPullAction(item: OrdersService.ProcurementItem, pullQty: Int, orderQty: Int) {
+        if item.maxStock > 0 && item.shopStock > item.maxStock && pullQty < item.shopStock - item.maxStock {
+            pullActionError = "This part is over MAX. Pull at least \(item.shopStock - item.maxStock) before ordering."
+            return
+        }
         // If no pull needed (order-all), just record the decision — no confirmation required
         if pullQty == 0 {
             pullDecisions[item.id] = (pullQty: 0, orderQty: orderQty)
@@ -1090,8 +1131,8 @@ struct IOSProcurementPage: View {
 
     /// Executes a pull from warehouse shelf to pulled-staging and records the decision.
     private func executePullAction(item: OrdersService.ProcurementItem, pullQty: Int, orderQty: Int) {
-        guard let warehouseService = appCore.warehouseService else {
-            pullActionError = "Warehouse service not available"
+        guard let service = appCore.ordersService else {
+            pullActionError = "Orders service not available"
             return
         }
         guard let userId = appCore.currentUser?.id else {
@@ -1103,35 +1144,22 @@ struct IOSProcurementPage: View {
         defer { isPulling.remove(item.id) }
 
         do {
-            // Verify stock is still available before pulling
-            let currentStock = try warehouseService.getStockQty(
+            let result = try service.pullStockForProcurement(
+                demandItemId: item.id,
                 partId: item.partId,
-                locationType: "warehouse",
-                locationId: 1
+                requestedPullQty: pullQty,
+                totalDemand: item.totalDemand,
+                jpoLineIds: item.sources.flatMap(\.lineIds),
+                performedBy: userId
             )
-
-            let actualPull = min(pullQty, currentStock)
+            let actualPull = result.pulledQty
             if actualPull <= 0 {
                 pullActionError = "No stock available on shelf for \(item.partName)"
                 return
             }
 
-            // Create the warehouse -> pulled movement
-            try warehouseService.createMovement(
-                partId: item.partId,
-                qty: actualPull,
-                fromLocationType: "warehouse",
-                fromLocationId: 1,
-                toLocationType: "pulled",
-                toLocationId: 1,
-                movementType: "transfer",
-                reason: "Procurement pull",
-                notes: "Pulled \(actualPull) for procurement demand of \(item.totalDemand)",
-                performedBy: userId
-            )
-
             // Calculate adjusted order quantity
-            let adjustedOrder = max(0, item.totalDemand - actualPull)
+            let adjustedOrder = result.remainingOrderQty
 
             // Record the decision
             pullDecisions[item.id] = (pullQty: actualPull, orderQty: adjustedOrder)
