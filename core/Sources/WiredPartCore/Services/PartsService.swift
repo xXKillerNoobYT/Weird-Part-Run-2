@@ -1264,7 +1264,6 @@ public final class PartsService: Sendable {
         maxStockLevel: Int? = nil,
         targetStockLevel: Int? = nil,
         reorderPoint: Int? = nil,
-        autoAddToWishlistWhenLow: Bool = false,
         notes: String? = nil,
         imageUrl: String? = nil,
         shelfLocation: String? = nil,
@@ -1330,7 +1329,7 @@ public final class PartsService: Sendable {
             maxStockLevel: maxStockLevel,
             targetStockLevel: targetStockLevel,
             reorderPoint: reorderPoint,
-            autoAddToWishlistWhenLow: autoAddToWishlistWhenLow ? 1 : 0,
+            autoAddToWishlistWhenLow: 0,
             notes: notes,
             imageUrl: imageUrl,
             shelfLocation: shelfLocation,
@@ -1371,7 +1370,6 @@ public final class PartsService: Sendable {
         maxStockLevel: Int? = nil,
         targetStockLevel: Int? = nil,
         reorderPoint: Int? = nil,
-        autoAddToWishlistWhenLow: Bool? = nil,
         isDeprecated: Int? = nil,
         deprecationReason: String? = nil,
         notes: String? = nil,
@@ -1406,10 +1404,6 @@ public final class PartsService: Sendable {
             if let maxStockLevel { setClauses.append("max_stock_level = ?"); args.append(maxStockLevel) }
             if let targetStockLevel { setClauses.append("target_stock_level = ?"); args.append(targetStockLevel) }
             if let reorderPoint { setClauses.append("reorder_point = ?"); args.append(reorderPoint) }
-            if let autoAddToWishlistWhenLow {
-                setClauses.append("auto_add_to_wishlist_when_low = ?")
-                args.append(autoAddToWishlistWhenLow ? 1 : 0)
-            }
             if let isDeprecated { setClauses.append("is_deprecated = ?"); args.append(isDeprecated) }
             if let deprecationReason { setClauses.append("deprecation_reason = ?"); args.append(deprecationReason) }
             if let notes { setClauses.append("notes = ?"); args.append(notes) }
@@ -1453,7 +1447,6 @@ public final class PartsService: Sendable {
             track("max_stock", "max_stock_level", maxStockLevel.map { "\($0)" })
             track("target_stock", "target_stock_level", targetStockLevel.map { "\($0)" })
             track("reorder_point", "reorder_point", reorderPoint.map { "\($0)" })
-            track("auto_add_to_wishlist_when_low", "auto_add_to_wishlist_when_low", autoAddToWishlistWhenLow.map { $0 ? "1" : "0" })
             track("notes", "notes", notes)
             track("shelf_location", "shelf_location", shelfLocation)
             track("bin_location", "bin_location", binLocation)
@@ -1481,6 +1474,17 @@ public final class PartsService: Sendable {
         guard try auth.hasPermission(byUserId, permissionKey: "edit_parts_catalog") else {
             throw PartsError.insufficientPermissions(required: "edit_parts_catalog")
         }
+        let oldValue = try db.writer.read { dbConn -> String in
+            guard let value = try Int.fetchOne(
+                dbConn,
+                sql: "SELECT auto_add_to_wishlist_when_low FROM parts WHERE id = ? AND deleted_at IS NULL",
+                arguments: [partId]
+            ) else {
+                throw PartsError.partNotFound(partId)
+            }
+            return value == 0 ? "0" : "1"
+        }
+        let newValue = enabled ? "1" : "0"
         let changed = try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
@@ -1493,14 +1497,15 @@ public final class PartsService: Sendable {
             return dbConn.changesCount
         }
         guard changed > 0 else { throw PartsError.partNotFound(partId) }
+        guard oldValue != newValue else { return }
         try? logPartChange(
             partId: partId,
             userId: byUserId,
             userName: nil,
             action: "updated",
             fieldName: "auto_add_to_wishlist_when_low",
-            oldValue: nil,
-            newValue: enabled ? "1" : "0",
+            oldValue: oldValue,
+            newValue: newValue,
             context: "Catalog"
         )
     }

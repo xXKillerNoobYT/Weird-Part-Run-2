@@ -930,7 +930,6 @@ extension AppDatabase {
                 t.column("forecast_target_qty", .integer).defaults(to: 0)
                 t.column("forecast_suggested_order", .integer).defaults(to: 0)
                 t.column("forecast_days_until_low", .integer).defaults(to: 999)
-                t.column("auto_add_to_wishlist_when_low", .integer).notNull().defaults(to: 0)
                 t.column("is_deprecated", .integer).defaults(to: 0)
                 t.column("deprecation_reason", .text)
                 t.column("is_qr_tagged", .integer).defaults(to: 0)

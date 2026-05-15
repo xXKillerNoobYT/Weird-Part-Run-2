@@ -283,23 +283,6 @@ public final class WishlistService: Sendable {
             if locationType == "truck" || locationType == "trailer" {
                 let shopStock = try currentShopStock(dbConn, partId: partId)
                 if shopStock > 0 {
-                    if let existingMovementId = try existingShopTransferId(dbConn, marker: marker) {
-                        return BelowMinimumRoutingResult(
-                            partId: partId,
-                            partName: partName,
-                            locationType: locationType,
-                            locationId: locationId,
-                            currentStock: currentStock,
-                            minStock: target.minStock,
-                            targetStock: target.targetStock,
-                            certaintyScore: certainty,
-                            action: "shop_transfer",
-                            quantity: min(qtyNeeded, shopStock),
-                            movementId: existingMovementId,
-                            reusedExistingAction: true
-                        )
-                    }
-
                     let movementQty = min(qtyNeeded, shopStock)
                     let movementId = try createShopTransfer(
                         dbConn,
@@ -437,6 +420,7 @@ public final class WishlistService: Sendable {
                 JOIN parts p ON p.id = lst.part_id
                 WHERE lst.deleted_at IS NULL
                   AND p.deleted_at IS NULL
+                  AND COALESCE(p.is_active, 1) = 1
                   AND COALESCE(p.auto_add_to_wishlist_when_low, 0) = 1
                   AND lst.min_stock > 0
                   AND COALESCE(lst.do_not_restock, 0) = 0
@@ -731,7 +715,7 @@ public final class WishlistService: Sendable {
     private func fetchPartName(_ dbConn: Database, partId: Int64) throws -> String {
         guard let name = try String.fetchOne(
             dbConn,
-            sql: "SELECT name FROM parts WHERE id = ? AND deleted_at IS NULL",
+            sql: "SELECT name FROM parts WHERE id = ? AND deleted_at IS NULL AND COALESCE(is_active, 1) = 1",
             arguments: [partId]
         ) else {
             throw WishlistError.partNotFound(partId)
@@ -760,7 +744,7 @@ public final class WishlistService: Sendable {
         if let row = try Row.fetchOne(dbConn, sql: """
             SELECT min_stock_level, target_stock_level
             FROM parts
-            WHERE id = ? AND deleted_at IS NULL
+            WHERE id = ? AND deleted_at IS NULL AND COALESCE(is_active, 1) = 1
             """, arguments: [partId]) {
             return BelowMinimumTarget(
                 minStock: row["min_stock_level"] ?? 0,
@@ -778,48 +762,21 @@ public final class WishlistService: Sendable {
         locationType: String,
         locationId: Int64
     ) throws -> Int {
-        switch locationType {
-        case "truck":
-            return try Int.fetchOne(dbConn, sql: """
-                SELECT COALESCE(SUM(quantity), 0)
-                FROM vehicle_stock
-                WHERE part_id = ? AND vehicle_id = ? AND stock_type = 'truck_stock' AND deleted_at IS NULL
-                """, arguments: [partId, locationId]) ?? 0
-        case "trailer":
-            return try Int.fetchOne(dbConn, sql: """
-                SELECT COALESCE(SUM(quantity), 0)
-                FROM trailer_stock
-                WHERE part_id = ? AND trailer_id = ? AND deleted_at IS NULL
-                """, arguments: [partId, locationId]) ?? 0
-        default:
-            return try Int.fetchOne(dbConn, sql: """
-                SELECT COALESCE(SUM(qty), 0)
-                FROM stock
-                WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL
-                """, arguments: [partId, locationType, locationId]) ?? 0
-        }
+        try Int.fetchOne(dbConn, sql: """
+            SELECT COALESCE(SUM(qty), 0)
+            FROM stock
+            WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL
+            """, arguments: [partId, locationType, locationId]) ?? 0
     }
 
     private func currentShopStock(_ dbConn: Database, partId: Int64) throws -> Int {
         try Int.fetchOne(dbConn, sql: """
-            SELECT COALESCE(MAX(qty), 0)
+            SELECT COALESCE(SUM(qty), 0)
             FROM stock
             WHERE part_id = ?
               AND location_type IN ('shop', 'warehouse')
               AND deleted_at IS NULL
             """, arguments: [partId]) ?? 0
-    }
-
-    private func existingShopTransferId(_ dbConn: Database, marker: String) throws -> Int64? {
-        try Int64.fetchOne(dbConn, sql: """
-            SELECT id
-            FROM stock_movements
-            WHERE movement_type = 'restock_from_shop'
-              AND notes LIKE ?
-              AND deleted_at IS NULL
-            ORDER BY id DESC
-            LIMIT 1
-            """, arguments: ["%\(marker)%"])
     }
 
     private func createShopTransfer(
@@ -831,22 +788,31 @@ public final class WishlistService: Sendable {
         performedBy: Int64,
         marker: String
     ) throws -> Int64 {
-        let source = try shopSourceLocation(dbConn, partId: partId, quantity: quantity)
-        try dbConn.execute(sql: """
-            INSERT INTO stock_movements
-            (part_id, qty, from_location_type, from_location_id, to_location_type, to_location_id,
-             movement_type, reason, notes, performed_by, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'restock_from_shop', 'Below MIN restock from shop', ?, ?, datetime('now'))
-            """, arguments: [
-                partId, quantity, source.locationType, source.locationId,
-                toLocationType, toLocationId, "\(marker) Generated below-MIN shop restock.", performedBy
-            ])
-        let movementId = dbConn.lastInsertedRowID
+        let sources = try shopSourceLocations(dbConn, partId: partId)
+        var remaining = quantity
+        var firstMovementId: Int64?
 
-        try dbConn.execute(sql: """
-            UPDATE stock SET qty = qty - ?, updated_at = datetime('now')
-            WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL
-            """, arguments: [quantity, partId, source.locationType, source.locationId])
+        for source in sources where remaining > 0 {
+            let transferQty = min(remaining, source.qty)
+            try dbConn.execute(sql: """
+                INSERT INTO stock_movements
+                (part_id, qty, from_location_type, from_location_id, to_location_type, to_location_id,
+                 movement_type, reason, notes, performed_by, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'restock_from_shop', 'Below MIN restock from shop', ?, ?, datetime('now'))
+                """, arguments: [
+                    partId, transferQty, source.locationType, source.locationId,
+                    toLocationType, toLocationId, "\(marker) Generated below-MIN shop restock.", performedBy
+                ])
+            if firstMovementId == nil {
+                firstMovementId = dbConn.lastInsertedRowID
+            }
+
+            try dbConn.execute(sql: """
+                UPDATE stock SET qty = qty - ?, updated_at = datetime('now')
+                WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL
+                """, arguments: [transferQty, partId, source.locationType, source.locationId])
+            remaining -= transferQty
+        }
 
         try dbConn.execute(sql: """
             UPDATE stock SET qty = qty + ?, updated_at = datetime('now')
@@ -887,35 +853,26 @@ public final class WishlistService: Sendable {
             }
         }
 
-        return movementId
+        return firstMovementId ?? 0
     }
 
-    private func shopSourceLocation(_ dbConn: Database, partId: Int64, quantity: Int) throws -> (locationType: String, locationId: Int64) {
-        if let row = try Row.fetchOne(dbConn, sql: """
-            SELECT location_type, location_id
-            FROM stock
-            WHERE part_id = ?
-              AND location_type IN ('shop', 'warehouse')
-              AND qty >= ?
-              AND deleted_at IS NULL
-            ORDER BY CASE location_type WHEN 'shop' THEN 0 ELSE 1 END, location_id
-            LIMIT 1
-            """, arguments: [partId, quantity]) {
-            return (row["location_type"] ?? "warehouse", row["location_id"] ?? 1)
-        }
-
-        let row = try Row.fetchOne(dbConn, sql: """
-            SELECT location_type, location_id
+    private func shopSourceLocations(_ dbConn: Database, partId: Int64) throws -> [(locationType: String, locationId: Int64, qty: Int)] {
+        let rows = try Row.fetchAll(dbConn, sql: """
+            SELECT location_type, location_id, qty
             FROM stock
             WHERE part_id = ?
               AND location_type IN ('shop', 'warehouse')
               AND qty > 0
               AND deleted_at IS NULL
-            ORDER BY qty DESC
-            LIMIT 1
+            ORDER BY CASE location_type WHEN 'shop' THEN 0 ELSE 1 END, location_id
             """, arguments: [partId])
-        guard let row else { return ("warehouse", 1) }
-        return (row["location_type"] ?? "warehouse", row["location_id"] ?? 1)
+        return rows.map { row in
+            (
+                locationType: row["location_type"] ?? "warehouse",
+                locationId: row["location_id"] ?? 1,
+                qty: row["qty"] ?? 0
+            )
+        }
     }
 
     private func existingWishlistItem(_ dbConn: Database, marker: String) throws -> WishlistItem? {
@@ -936,7 +893,7 @@ public final class WishlistService: Sendable {
             sql: """
                 SELECT auto_add_to_wishlist_when_low
                 FROM parts
-                WHERE id = ? AND deleted_at IS NULL
+                WHERE id = ? AND deleted_at IS NULL AND COALESCE(is_active, 1) = 1
                 """,
             arguments: [partId]
         ) else {

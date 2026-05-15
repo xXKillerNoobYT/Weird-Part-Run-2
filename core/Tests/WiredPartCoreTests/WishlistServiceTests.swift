@@ -501,7 +501,9 @@ struct WishlistServiceTests {
             targetStock: 10,
             maxStock: 20
         )
-        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 20, locationType: "shop", locationId: 1)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 4, locationType: "shop", locationId: 1)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 16, locationType: "warehouse", locationId: 2)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 2, locationType: "truck", locationId: vehicleId)
         try env.fleet.addVehicleStockItem(
             actorId: env.adminUserId,
             vehicleId: vehicleId,
@@ -528,19 +530,29 @@ struct WishlistServiceTests {
                 SELECT qty FROM stock
                 WHERE part_id = ? AND location_type = 'shop' AND location_id = 1
                 """, arguments: [partId]) ?? 0
+            let warehouseQty = try Int.fetchOne(db, sql: """
+                SELECT qty FROM stock
+                WHERE part_id = ? AND location_type = 'warehouse' AND location_id = 2
+                """, arguments: [partId]) ?? 0
+            let truckStockQty = try Int.fetchOne(db, sql: """
+                SELECT qty FROM stock
+                WHERE part_id = ? AND location_type = 'truck' AND location_id = ?
+                """, arguments: [partId, vehicleId]) ?? 0
             let truckQty = try Int.fetchOne(db, sql: """
                 SELECT quantity FROM vehicle_stock
                 WHERE part_id = ? AND vehicle_id = ? AND stock_type = 'truck_stock'
                 """, arguments: [partId, vehicleId]) ?? 0
             let wishlistCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM wishlist_items WHERE part_id = ?", arguments: [partId]) ?? 0
             let movementCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM stock_movements WHERE part_id = ? AND movement_type = 'restock_from_shop'", arguments: [partId]) ?? 0
-            return (shopQty, truckQty, wishlistCount, movementCount)
+            return (shopQty, warehouseQty, truckStockQty, truckQty, wishlistCount, movementCount)
         }
 
-        #expect(counts.0 == 12)
-        #expect(counts.1 == 10)
-        #expect(counts.2 == 0)
-        #expect(counts.3 == 1)
+        #expect(counts.0 == 0)
+        #expect(counts.1 == 12)
+        #expect(counts.2 == 10)
+        #expect(counts.3 == 10)
+        #expect(counts.4 == 0)
+        #expect(counts.5 == 2)
 
         let second = try wishlist.routeBelowMinimumStock(
             partId: partId,
@@ -640,6 +652,36 @@ struct WishlistServiceTests {
             try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM wishlist_items WHERE part_id = ?", arguments: [partId]) ?? 0
         }
         #expect(count == 0)
+        #expect(try wishlist.routeAllBelowMinimumStock(actorUserId: env.adminUserId).isEmpty)
+    }
+
+    @Test("Below-MIN routing ignores inactive parts")
+    func testBelowMinRoutingIgnoresInactiveParts() throws {
+        let (env, wishlist) = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "InactiveBelowMinCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Inactive Breaker", categoryId: catId)
+        try env.parts.setAutoAddToWishlistWhenLow(partId: partId, enabled: true, byUserId: env.adminUserId)
+        try env.parts.setLocationStockTarget(
+            partId: partId,
+            locationType: "shop",
+            locationId: 1,
+            minStock: 4,
+            targetStock: 9,
+            maxStock: 16
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET is_active = 0 WHERE id = ?", arguments: [partId])
+        }
+
+        #expect(throws: WishlistService.WishlistError.partNotFound(partId)) {
+            try wishlist.routeBelowMinimumStock(
+                partId: partId,
+                locationType: "shop",
+                locationId: 1,
+                actorUserId: env.adminUserId,
+                certaintyOverride: 0.9
+            )
+        }
         #expect(try wishlist.routeAllBelowMinimumStock(actorUserId: env.adminUserId).isEmpty)
     }
 

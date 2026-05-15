@@ -77,6 +77,22 @@ struct PartsServiceExtTests {
         #expect(try env.parts.getPart(id: partId).part.autoAddToWishlistWhenLow == 1)
     }
 
+    @Test("auto-add-to-wishlist toggle audit records old and new values")
+    func testAutoAddToWishlistWhenLowToggleAuditValues() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "AutoWishlistAuditCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Auto Wishlist Audit", categoryId: catId)
+
+        try env.parts.setAutoAddToWishlistWhenLow(partId: partId, enabled: true, byUserId: env.adminUserId)
+        try env.parts.setAutoAddToWishlistWhenLow(partId: partId, enabled: false, byUserId: env.adminUserId)
+
+        let entries = try env.parts.getPartChangeLog(partId: partId)
+            .filter { $0.fieldName == "auto_add_to_wishlist_when_low" }
+        #expect(entries.count == 2)
+        #expect(entries.contains { $0.oldValue == "0" && $0.newValue == "1" })
+        #expect(entries.contains { $0.oldValue == "1" && $0.newValue == "0" })
+    }
+
     @Test("auto-add-to-wishlist toggle rejects users without edit_parts_catalog")
     func testAutoAddToWishlistWhenLowRequiresCatalogEditPermission() throws {
         let env = try E2ETestHelpers.setUp()
