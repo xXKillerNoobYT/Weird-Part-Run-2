@@ -264,6 +264,14 @@ A dedicated tool for building electrical panel schedules. This is a first-class 
 - **Auto-numbering:** odd on left, even on right (standard panel layout)
 - **Color coding:** by circuit type (lighting, receptacle, motor, etc.)
 
+### Implementation Update — 2026-05-15
+
+- Panel schedule validation now lives in `PanelScheduleModels.swift` so SwiftUI and tests share the same rules.
+- Double breakers reserve the matching space below on the same side (`1+3`, `2+4`) and are rejected if they overlap another circuit or run past the panel.
+- Panel type space constraints are enforced for MDP, Sub Panel, Load Center, Small Panel, and Disconnect.
+- Circuit classification persists in panel JSON and drives builder color coding for lighting, receptacle, motor, spare, blank, and special circuits.
+- Builder supports drag/drop plus a tap-based move mode and VoiceOver accessibility actions as non-drag alternatives.
+
 ### Print Layout
 
 - **Custom paper sizes:** Letter, Legal, A4, Card Stock (various sizes)

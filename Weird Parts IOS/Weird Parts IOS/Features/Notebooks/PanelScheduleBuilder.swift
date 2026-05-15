@@ -7,6 +7,8 @@ struct PanelScheduleBuilder: View {
     let onSave: (PanelSchedule) -> Void
 
     @State private var selectedCircuit: CircuitEntry?
+    @State private var movingCircuitId: String?
+    @State private var validationMessage: String?
 
     private enum ActiveSheet: Identifiable {
         case circuitEditor
@@ -41,6 +43,14 @@ struct PanelScheduleBuilder: View {
             case .panelSettings:
                 PanelSettingsSheet(schedule: $schedule)
             }
+        }
+        .alert("Panel schedule issue", isPresented: Binding(
+            get: { validationMessage != nil },
+            set: { if !$0 { validationMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { validationMessage = nil }
+        } message: {
+            Text(validationMessage ?? "")
         }
     }
 
@@ -79,6 +89,16 @@ struct PanelScheduleBuilder: View {
 
     private var panelGrid: some View {
         VStack(spacing: 1) {
+            if let movingCircuit = movingCircuitDescription {
+                Text("Move \(movingCircuit): tap a destination space or drag it onto the grid.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(.blue.opacity(0.08))
+            }
+
             // Column headers
             HStack(spacing: 0) {
                 Text("#").font(.caption2).bold().frame(width: 22)
@@ -118,10 +138,12 @@ struct PanelScheduleBuilder: View {
 
     private func circuitCell(spaceNumber: Int, circuit: CircuitEntry?, isLeft: Bool) -> some View {
         Button {
-            selectedCircuit = circuit ?? CircuitEntry(
-                spaceNumber: spaceNumber
-            )
-            activeSheet = .circuitEditor
+            if movingCircuitId != nil {
+                moveSelectedCircuit(to: spaceNumber)
+            } else {
+                selectedCircuit = circuit ?? CircuitEntry(spaceNumber: spaceNumber)
+                activeSheet = .circuitEditor
+            }
         } label: {
             HStack(spacing: 2) {
                 if isLeft {
@@ -133,9 +155,21 @@ struct PanelScheduleBuilder: View {
                         .frame(width: 26, alignment: .center)
                     Text((circuit?.circuitDescription).flatMap { $0.isEmpty ? nil : $0 } ?? "SPARE")
                         .font(.caption).lineLimit(1)
+                    if let secondary = circuit?.secondaryCircuitDescription, !secondary.isEmpty {
+                        Text("+ \(secondary)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                     Spacer()
                 } else {
                     Spacer()
+                    if let secondary = circuit?.secondaryCircuitDescription, !secondary.isEmpty {
+                        Text("+ \(secondary)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                     Text((circuit?.circuitDescription).flatMap { $0.isEmpty ? nil : $0 } ?? "SPARE")
                         .font(.caption).lineLimit(1)
                     Text(circuit?.breakerAmps.map { "\($0)" } ?? "—")
@@ -150,12 +184,55 @@ struct PanelScheduleBuilder: View {
             .padding(.vertical, 6)
             .frame(height: 36)
             .background(circuitBackground(circuit))
+            .overlay {
+                if movingCircuitId != nil {
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(.blue.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                }
+            }
         }
         .buttonStyle(.plain)
+        .draggable(circuit?.id ?? "")
+        .dropDestination(for: String.self) { ids, _ in
+            guard let id = ids.first, !id.isEmpty else { return false }
+            moveCircuit(id: id, to: spaceNumber)
+            return true
+        }
+        .contextMenu {
+            if let circuit {
+                Button {
+                    movingCircuitId = circuit.id
+                } label: {
+                    Label("Move Circuit", systemImage: "arrow.left.arrow.right")
+                }
+                Button {
+                    selectedCircuit = circuit
+                    activeSheet = .circuitEditor
+                } label: {
+                    Label("Edit Circuit", systemImage: "pencil")
+                }
+            }
+        }
+        .accessibilityLabel(accessibilityLabel(spaceNumber: spaceNumber, circuit: circuit))
+        .accessibilityAction(named: Text(circuit == nil ? "Place selected circuit here" : "Move circuit")) {
+            if let circuit {
+                movingCircuitId = circuit.id
+            } else if movingCircuitId != nil {
+                moveSelectedCircuit(to: spaceNumber)
+            }
+        }
     }
 
     private func circuitBackground(_ circuit: CircuitEntry?) -> Color {
         guard let circuit, !circuit.isSpare else { return .yellow.opacity(0.05) }
+        switch circuit.classification {
+        case .lighting: return .cyan.opacity(0.12)
+        case .receptacle: return .orange.opacity(0.12)
+        case .motor: return .red.opacity(0.12)
+        case .spare: return .yellow.opacity(0.1)
+        case .blank: return .gray.opacity(0.1)
+        case .special: break
+        }
         switch circuit.breakerType {
         case .double: return .blue.opacity(0.1)
         case .tandem: return .purple.opacity(0.1)
@@ -182,16 +259,33 @@ struct PanelScheduleBuilder: View {
 
             // Legend
             HStack(spacing: 8) {
-                legendDot(.blue, "240V")
+                legendDot(.cyan, "Light")
+                legendDot(.orange, "Recept")
+                legendDot(.red, "Motor")
+                legendDot(.blue, "Double")
                 legendDot(.purple, "Tandem")
-                legendDot(.green, "GFI/AFI")
-                legendDot(.yellow, "Spare")
             }
+            .lineLimit(1)
 
             Spacer()
 
+            if movingCircuitId != nil {
+                Button {
+                    movingCircuitId = nil
+                } label: {
+                    Label("Cancel Move", systemImage: "xmark.circle")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+            }
+
             Button {
-                onSave(schedule)
+                do {
+                    try schedule.validated()
+                    onSave(schedule)
+                } catch {
+                    validationMessage = error.localizedDescription
+                }
             } label: {
                 Label("Save", systemImage: "checkmark.circle")
                     .font(.caption)
@@ -212,11 +306,41 @@ struct PanelScheduleBuilder: View {
     // MARK: - Circuit Management
 
     private func updateCircuit(_ circuit: CircuitEntry) {
-        if let index = schedule.circuits.firstIndex(where: { $0.spaceNumber == circuit.spaceNumber }) {
-            schedule.circuits[index] = circuit
-        } else {
-            schedule.circuits.append(circuit)
+        do {
+            try schedule.upsertCircuit(circuit)
+        } catch {
+            validationMessage = error.localizedDescription
         }
+    }
+
+    private var movingCircuitDescription: String? {
+        guard let movingCircuitId,
+              let circuit = schedule.circuits.first(where: { $0.id == movingCircuitId }) else {
+            return nil
+        }
+        return circuit.circuitDescription.isEmpty ? "circuit \(circuit.spaceNumber)" : circuit.circuitDescription
+    }
+
+    private func moveSelectedCircuit(to spaceNumber: Int) {
+        guard let movingCircuitId else { return }
+        moveCircuit(id: movingCircuitId, to: spaceNumber)
+    }
+
+    private func moveCircuit(id: String, to spaceNumber: Int) {
+        do {
+            try schedule.moveCircuit(id: id, to: spaceNumber)
+            movingCircuitId = nil
+        } catch {
+            validationMessage = error.localizedDescription
+        }
+    }
+
+    private func accessibilityLabel(spaceNumber: Int, circuit: CircuitEntry?) -> String {
+        guard let circuit else {
+            return "Empty panel space \(spaceNumber)"
+        }
+        let description = circuit.circuitDescription.isEmpty ? "Spare" : circuit.circuitDescription
+        return "Panel space \(spaceNumber), \(description), \(circuit.classification.rawValue)"
     }
 }
 
@@ -244,6 +368,11 @@ struct CircuitEditorSheet: View {
                             Text(type.rawValue).tag(type)
                         }
                     }
+                    Picker("Classification", selection: $circuit.classification) {
+                        ForEach(CircuitClassification.allCases, id: \.self) { classification in
+                            Text(classification.rawValue).tag(classification)
+                        }
+                    }
                 }
                 Section("Circuit") {
                     TextField("Description (e.g. Kitchen Outlets)", text: $circuit.circuitDescription)
@@ -258,6 +387,10 @@ struct CircuitEditorSheet: View {
                     TextField("Fed From (e.g. MDP)", text: Binding(
                         get: { circuit.isFedFrom ?? "" },
                         set: { circuit.isFedFrom = $0.isEmpty ? nil : $0 }
+                    ))
+                    TextField("Second Circuit (tandem/dual only)", text: Binding(
+                        get: { circuit.secondaryCircuitDescription ?? "" },
+                        set: { circuit.secondaryCircuitDescription = $0.isEmpty ? nil : $0 }
                     ))
                     Toggle("Spare", isOn: $circuit.isSpare)
                 }
@@ -286,8 +419,11 @@ private struct PanelSettingsSheet: View {
     @Binding var schedule: PanelSchedule
     @Environment(\.dismiss) private var dismiss
 
-    private let spaceOptions = [2, 4, 8, 12, 16, 20, 24, 30, 42]
+    private let allSpaceOptions = [2, 4, 8, 12, 16, 20, 24, 30, 40, 42]
     private let ampOptions = [100, 125, 150, 200, 225, 400, 600]
+    private var allowedSpaceOptions: [Int] {
+        allSpaceOptions.filter { schedule.panelType.allowedSpaces.contains($0) }
+    }
 
     var body: some View {
         NavigationStack {
@@ -299,6 +435,12 @@ private struct PanelSettingsSheet: View {
                             Text(type.rawValue).tag(type)
                         }
                     }
+                    .onChange(of: schedule.panelType) { _, newType in
+                        if !newType.allowedSpaces.contains(schedule.totalSpaces),
+                           let fallback = allSpaceOptions.first(where: { newType.allowedSpaces.contains($0) }) {
+                            schedule.totalSpaces = fallback
+                        }
+                    }
                     TextField("Location", text: Binding(
                         get: { schedule.location ?? "" },
                         set: { schedule.location = $0.isEmpty ? nil : $0 }
@@ -306,7 +448,7 @@ private struct PanelSettingsSheet: View {
                 }
                 Section("Electrical") {
                     Picker("Total Spaces", selection: $schedule.totalSpaces) {
-                        ForEach(spaceOptions, id: \.self) { size in
+                        ForEach(allowedSpaceOptions, id: \.self) { size in
                             Text("\(size) spaces").tag(size)
                         }
                     }
