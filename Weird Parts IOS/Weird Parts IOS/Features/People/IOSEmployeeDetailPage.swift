@@ -7,8 +7,10 @@ struct IOSEmployeeDetailPage: View {
     let employeeId: Int64
 
     @State private var employee: PeopleService.EmployeeDetail?
+    @State private var activity: [PeopleService.EmployeeActivityItem] = []
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var activityError: String?
     @State private var selectedTab = "profile"
 
     // Hat management
@@ -26,7 +28,7 @@ struct IOSEmployeeDetailPage: View {
     }
     @State private var activeSheet: ActiveSheet?
 
-    private let tabs = ["profile", "hats", "skills", "teams", "certifications"]
+    private let tabs = ["profile", "hats", "skills", "teams", "certifications", "activity"]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -123,6 +125,7 @@ struct IOSEmployeeDetailPage: View {
                         ("Skills Tab", "Shows employee skills, proficiency, and years of experience. If you have manage_people permission, you can add or remove skills."),
                         ("Teams Tab", "Shows which teams this employee belongs to, their role within each team, and when they joined."),
                         ("Certifications Tab", "Shows employee certifications, issuing details, certificate numbers, and expiry status. Managers can add or remove certifications."),
+                        ("Activity Tab", "Shows recent job sessions worked by this employee, including the job, clock times, status, and recorded hours."),
                         ("Tips", "Pull down to refresh all data. Only managers and admins can toggle hat assignments or change skills. The Edit button updates contact info only — use the Hats tab for role changes.")
                     ]
                 )
@@ -187,6 +190,8 @@ struct IOSEmployeeDetailPage: View {
             teamsTab(emp)
         case "certifications":
             certificationsTab(emp)
+        case "activity":
+            activityTab()
         default:
             Text("Unknown tab")
         }
@@ -471,6 +476,90 @@ struct IOSEmployeeDetailPage: View {
         .listStyle(.insetGrouped)
     }
 
+    // MARK: - Activity
+
+    private func activityTab() -> some View {
+        List {
+            if let activityError {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Activity unavailable", systemImage: "exclamationmark.triangle")
+                            .fontWeight(.medium)
+                            .foregroundStyle(.orange)
+                        Text(activityError)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Button {
+                            loadData()
+                        } label: {
+                            Label("Retry", systemImage: "arrow.clockwise")
+                        }
+                    }
+                }
+            } else if activity.isEmpty {
+                Section {
+                    ContentUnavailableView(
+                        "No recent activity",
+                        systemImage: "clock.badge.questionmark",
+                        description: Text("Recent job sessions will appear here after this employee clocks in.")
+                    )
+                }
+            } else {
+                Section("Recent Sessions (\(activity.count))") {
+                    ForEach(activity) { item in
+                        activityRow(item)
+                    }
+                }
+            }
+        }
+        .refreshable { loadData() }
+        .scrollDismissesKeyboard(.interactively)
+        .listStyle(.insetGrouped)
+    }
+
+    private func activityRow(_ item: PeopleService.EmployeeActivityItem) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: item.clockOut == nil ? "clock.badge" : "checkmark.circle")
+                .foregroundStyle(item.clockOut == nil ? .orange : Color.accentColor)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(item.jobName)
+                    .fontWeight(.medium)
+                if !item.jobNumber.isEmpty {
+                    Text(item.jobNumber)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                HStack(spacing: 8) {
+                    Text(activityStatusLabel(item))
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(activityStatusColor(item).opacity(0.18)))
+                        .foregroundStyle(activityStatusColor(item))
+                    if let workType = item.workType, !workType.isEmpty {
+                        Text(workType.replacingOccurrences(of: "_", with: " ").capitalized)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Text(activityTimeRange(item))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if item.regularHours > 0 || item.overtimeHours > 0 {
+                    Text(activityHoursLabel(item))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            Spacer()
+        }
+        .accessibilityElement(children: .combine)
+    }
+
     private func certificationRow(_ cert: Certification) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "doc.badge.gearshape")
@@ -582,6 +671,40 @@ struct IOSEmployeeDetailPage: View {
         return "\(formatted) \(years == 1 ? "year" : "years")"
     }
 
+    private func activityStatusLabel(_ item: PeopleService.EmployeeActivityItem) -> String {
+        if item.clockOut == nil { return "Clocked In" }
+        return item.status.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    private func activityStatusColor(_ item: PeopleService.EmployeeActivityItem) -> Color {
+        item.clockOut == nil ? .orange : .green
+    }
+
+    private func activityTimeRange(_ item: PeopleService.EmployeeActivityItem) -> String {
+        let start = "\(Formatters.formatSQLiteDate(item.clockIn)) \(activityTime(item.clockIn))"
+        guard let clockOut = item.clockOut, !clockOut.isEmpty else {
+            return "Started \(start)"
+        }
+        return "\(start) - \(activityTime(clockOut))"
+    }
+
+    private func activityTime(_ value: String) -> String {
+        if value.count >= 16 {
+            let startIdx = value.index(value.startIndex, offsetBy: 11)
+            let endIdx = value.index(value.startIndex, offsetBy: 16)
+            return String(value[startIdx..<endIdx])
+        }
+        return value
+    }
+
+    private func activityHoursLabel(_ item: PeopleService.EmployeeActivityItem) -> String {
+        let total = item.regularHours + item.overtimeHours
+        if item.overtimeHours > 0 {
+            return String(format: "%.2f hours (%.2f OT)", total, item.overtimeHours)
+        }
+        return String(format: "%.2f hours", total)
+    }
+
     private func toggleHat(hatId: Int64, assign: Bool) {
         guard let service = appCore.peopleService else {
             loadError = "Service not available"
@@ -644,6 +767,13 @@ struct IOSEmployeeDetailPage: View {
         loadError = nil
         do {
             employee = try service.getEmployeeDetail(id: employeeId)
+            do {
+                activity = try service.getEmployeeRecentActivity(id: employeeId)
+                activityError = nil
+            } catch {
+                activity = []
+                activityError = userFriendlyError(error, context: "load employee activity")
+            }
             allHats = try service.getAllHatsWithAssignment(employeeId: employeeId)
             canManageHats = appCore.hasPermission("manage_people")
 
