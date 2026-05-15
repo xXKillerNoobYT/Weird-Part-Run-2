@@ -471,4 +471,238 @@ struct WishlistServiceTests {
         #expect(approved?.status == "approved")
         #expect(approved?.approvedBy == "System (Auto)")
     }
+
+    // MARK: - Below-MIN Routing
+
+    @Test("Below-MIN truck stock pulls from shop before creating wishlist demand")
+    func testBelowMinTruckRoutesShopTransferFirst() throws {
+        let (env, wishlist) = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "BelowMinTruckCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Truck Fuse", categoryId: catId)
+        let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
+            vehicleNumber: "TRK-MIN-1",
+            vehicleName: "Minimum Truck",
+            vehicleType: "truck",
+            make: nil,
+            model: nil,
+            year: nil,
+            color: nil,
+            vin: nil,
+            licensePlate: nil,
+            notes: nil
+        )
+
+        try env.parts.setLocationStockTarget(
+            partId: partId,
+            locationType: "truck",
+            locationId: vehicleId,
+            minStock: 5,
+            targetStock: 10,
+            maxStock: 20
+        )
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 20, locationType: "shop", locationId: 1)
+        try env.fleet.addVehicleStockItem(
+            actorId: env.adminUserId,
+            vehicleId: vehicleId,
+            partName: "Truck Fuse",
+            quantity: 2,
+            stockType: "truck_stock",
+            partId: partId
+        )
+
+        let result = try wishlist.routeBelowMinimumStock(
+            partId: partId,
+            locationType: "truck",
+            locationId: vehicleId,
+            actorUserId: env.adminUserId,
+            certaintyOverride: 0.95
+        )
+
+        #expect(result.action == "shop_transfer")
+        #expect(result.quantity == 8)
+        #expect(result.movementId != nil)
+
+        let counts = try env.db.writer.read { db in
+            let shopQty = try Int.fetchOne(db, sql: """
+                SELECT qty FROM stock
+                WHERE part_id = ? AND location_type = 'shop' AND location_id = 1
+                """, arguments: [partId]) ?? 0
+            let truckQty = try Int.fetchOne(db, sql: """
+                SELECT quantity FROM vehicle_stock
+                WHERE part_id = ? AND vehicle_id = ? AND stock_type = 'truck_stock'
+                """, arguments: [partId, vehicleId]) ?? 0
+            let wishlistCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM wishlist_items WHERE part_id = ?", arguments: [partId]) ?? 0
+            let movementCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM stock_movements WHERE part_id = ? AND movement_type = 'restock_from_shop'", arguments: [partId]) ?? 0
+            return (shopQty, truckQty, wishlistCount, movementCount)
+        }
+
+        #expect(counts.0 == 12)
+        #expect(counts.1 == 10)
+        #expect(counts.2 == 0)
+        #expect(counts.3 == 1)
+
+        let second = try wishlist.routeBelowMinimumStock(
+            partId: partId,
+            locationType: "truck",
+            locationId: vehicleId,
+            actorUserId: env.adminUserId,
+            certaintyOverride: 0.95
+        )
+        #expect(second.action == "none")
+    }
+
+    @Test("Below-MIN high-certainty shortage creates one approved wishlist item with location context")
+    func testBelowMinHighCertaintyCreatesDedupedWishlist() throws {
+        let (env, wishlist) = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "BelowMinWishlistCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Shop Breaker", categoryId: catId)
+
+        try env.parts.setLocationStockTarget(
+            partId: partId,
+            locationType: "shop",
+            locationId: 1,
+            minStock: 4,
+            targetStock: 9,
+            maxStock: 16
+        )
+
+        let first = try wishlist.routeBelowMinimumStock(
+            partId: partId,
+            locationType: "shop",
+            locationId: 1,
+            actorUserId: env.adminUserId,
+            certaintyOverride: 0.88
+        )
+        let second = try wishlist.routeBelowMinimumStock(
+            partId: partId,
+            locationType: "shop",
+            locationId: 1,
+            actorUserId: env.adminUserId,
+            certaintyOverride: 0.88
+        )
+
+        #expect(first.action == "wishlist")
+        #expect(first.wishlistItem?.status == "approved")
+        #expect(first.wishlistItem?.qtySuggested == 9)
+        #expect(first.wishlistItem?.reason == "Below MIN at shop #1")
+        #expect(second.action == "wishlist")
+        #expect(second.reusedExistingAction)
+        #expect(second.wishlistItem?.id == first.wishlistItem?.id)
+
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM wishlist_items WHERE part_id = ?", arguments: [partId]) ?? 0
+        }
+        #expect(count == 1)
+    }
+
+    @Test("Below-MIN low-certainty shortage routes one physical audit before wishlist")
+    func testBelowMinLowCertaintyRoutesDedupedAudit() throws {
+        let (env, wishlist) = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "BelowMinAuditCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Audit Coupling", categoryId: catId)
+
+        try env.parts.setLocationStockTarget(
+            partId: partId,
+            locationType: "warehouse",
+            locationId: 3,
+            minStock: 3,
+            targetStock: 7,
+            maxStock: 12
+        )
+
+        let first = try wishlist.routeBelowMinimumStock(
+            partId: partId,
+            locationType: "warehouse",
+            locationId: 3,
+            actorUserId: env.adminUserId,
+            certaintyOverride: 0.42
+        )
+        let second = try wishlist.routeBelowMinimumStock(
+            partId: partId,
+            locationType: "warehouse",
+            locationId: 3,
+            actorUserId: env.adminUserId,
+            certaintyOverride: 0.42
+        )
+
+        #expect(first.action == "physical_audit")
+        #expect(first.auditSessionId != nil)
+        #expect(second.action == "physical_audit")
+        #expect(second.reusedExistingAction)
+        #expect(second.auditSessionId == first.auditSessionId)
+
+        let counts = try env.db.writer.read { db in
+            let audits = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM audit_sessions_v2 WHERE session_type = 'physical_count'") ?? 0
+            let wishlistItems = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM wishlist_items WHERE part_id = ?", arguments: [partId]) ?? 0
+            return (audits, wishlistItems)
+        }
+        #expect(counts.0 == 1)
+        #expect(counts.1 == 0)
+    }
+
+    @Test("Below-MIN truck audit is restricted to assigned truck user without manager override")
+    func testBelowMinTruckAuditRequiresAssignedTruckUser() throws {
+        let (env, wishlist) = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "TruckAuditPermissionCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Truck Audit Clamp", categoryId: catId)
+        let userId = try env.auth.createUser(displayName: "Truck Auditor", pin: "2468")
+        let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
+            vehicleNumber: "TRK-AUD-1",
+            vehicleName: "Audit Truck",
+            vehicleType: "truck",
+            make: nil,
+            model: nil,
+            year: nil,
+            color: nil,
+            vin: nil,
+            licensePlate: nil,
+            notes: nil
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "INSERT INTO hats (name, level) VALUES ('Audit Only', 5)")
+            let hatId = db.lastInsertedRowID
+            try db.execute(sql: "INSERT INTO hat_permissions (hat_id, permission_key) VALUES (?, 'perform_audit')", arguments: [hatId])
+            try db.execute(sql: "INSERT INTO user_hats (user_id, hat_id, is_active) VALUES (?, ?, 1)", arguments: [userId, hatId])
+        }
+
+        try env.parts.setLocationStockTarget(
+            partId: partId,
+            locationType: "truck",
+            locationId: vehicleId,
+            minStock: 2,
+            targetStock: 5,
+            maxStock: 8
+        )
+
+        #expect(throws: WishlistService.WishlistError.restrictedToAssignedTruckUser(locationId: vehicleId)) {
+            try wishlist.routeBelowMinimumStock(
+                partId: partId,
+                locationType: "truck",
+                locationId: vehicleId,
+                actorUserId: userId,
+                certaintyOverride: 0.25
+            )
+        }
+
+        try env.fleet.assignDriver(
+            actorId: env.adminUserId,
+            vehicleId: vehicleId,
+            userId: userId,
+            assignmentType: "primary",
+            isTakeHome: false
+        )
+
+        let result = try wishlist.routeBelowMinimumStock(
+            partId: partId,
+            locationType: "truck",
+            locationId: vehicleId,
+            actorUserId: userId,
+            certaintyOverride: 0.25
+        )
+        #expect(result.action == "physical_audit")
+        #expect(result.auditSessionId != nil)
+    }
 }
