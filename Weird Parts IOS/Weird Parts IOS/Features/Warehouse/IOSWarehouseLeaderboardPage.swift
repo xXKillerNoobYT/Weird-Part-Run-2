@@ -67,7 +67,10 @@ struct IOSWarehouseLeaderboardPage: View {
         }
         .searchable(text: $searchText, prompt: "Search users...")
         .refreshable { loadData() }
-        .task { loadData() }
+        .task {
+            loadData()
+            appCore.onboardingManager?.markCompleted("wh-leaderboard-view")
+        }
         .onDisappear {
             NotificationCenter.default.post(name: .warehouseLeaderboardPageInactive, object: nil)
         }
@@ -87,9 +90,9 @@ struct IOSWarehouseLeaderboardPage: View {
             PageHelpSheet(
                 title: "Leaderboard Help",
                 sections: [
-                    ("Ratings", "Each user earns a warehouse rating based on accuracy, effort, placement, speed, and proactive fixes."),
-                    ("Scores", "Scores range from 0-10. Accurate counts raise your score; misplacements lower it."),
-                    ("Managers", "Managers can see detailed breakdowns and training suggestions for each user.")
+                    ("Ratings", "Each user earns a warehouse rating based on count accuracy, effort, placement, speed mode, wizard compliance, and proactive fixes."),
+                    ("Scores", "Scores range from 0-10. Accurate count audits and clean quick verification improve scores; unresolved misplacements and missed process steps lower them."),
+                    ("Managers", "Managers can see detailed score breakdowns and training guidance. Non-manager users only see names, rankings, and summary scores.")
                 ]
             )
         }

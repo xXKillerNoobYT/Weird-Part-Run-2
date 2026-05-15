@@ -70,8 +70,23 @@ public final class WarehouseService: Sendable {
         public let activeReceiving: Int
         public let auditDue: Int
         public let lowConfidenceAreas: Int
+        public let activeAuditSessions: Int
+        public let organizationIssues: Int
         public let stagedReady: Int
         public let lowStockWarnings: Int
+    }
+
+    /// Weighted warehouse audit score for dashboard and manager review.
+    public struct WarehouseOverallScore: Sendable {
+        public let score: Double
+        public let partConfidenceScore: Double
+        public let organizationScore: Double
+        public let userRatingScore: Double
+        public let shelfUtilizationScore: Double
+        public let misplacementScore: Double
+        public let labelAccuracyScore: Double
+        public let responseTimeScore: Double
+        public let stockHealthScore: Double
     }
 
     /// A single recent activity entry for the dashboard feed.
@@ -180,12 +195,27 @@ public final class WarehouseService: Sendable {
                 """,
             arguments: StatementArguments([auditThreshold])
         )
+        let activeAuditSessions = try safeCount(
+            sql: "SELECT COUNT(*) FROM audit_sessions_v2 WHERE status = 'active' AND deleted_at IS NULL"
+        )
+        let organizationIssues = try safeCount(
+            sql: """
+                SELECT COUNT(*) FROM organization_ratings
+                WHERE labels_accurate = 0
+                   OR parts_in_home = 0
+                   OR no_duplicates = 0
+                   OR not_overcrowded = 0
+                   OR bins_assigned = 0
+                """
+        )
 
         return DashboardSmartCardSummary(
             movesToday: kpis.todayMovements,
             activeReceiving: activeReceiving,
             auditDue: auditDue,
             lowConfidenceAreas: lowConfidenceAreas,
+            activeAuditSessions: activeAuditSessions,
+            organizationIssues: organizationIssues,
             stagedReady: stagedReady,
             lowStockWarnings: kpis.shortfallCount
         )
@@ -2651,6 +2681,94 @@ public final class WarehouseService: Sendable {
         }
     }
 
+    private static func clampedPercent(_ value: Double) -> Double {
+        min(100, max(0, value))
+    }
+
+    private static func percentAverage(_ dbConn: Database, sql: String) throws -> Double {
+        clampedPercent(try Double.fetchOne(dbConn, sql: sql) ?? 100)
+    }
+
+    private static func ratingAverage(_ dbConn: Database, sql: String) throws -> Double {
+        clampedPercent((try Double.fetchOne(dbConn, sql: sql) ?? 10) * 10)
+    }
+
+    private static func shelfUtilizationScore(_ dbConn: Database) throws -> Double {
+        let rows = try Row.fetchAll(dbConn, sql: """
+            SELECT p.target_stock_level AS target, COALESCE(SUM(s.qty), 0) AS qty
+            FROM parts p
+            LEFT JOIN stock s ON s.part_id = p.id AND s.deleted_at IS NULL
+            WHERE p.deleted_at IS NULL AND p.is_active = 1 AND p.target_stock_level > 0
+            GROUP BY p.id, p.target_stock_level
+            """)
+        guard !rows.isEmpty else { return 100 }
+        let scores = rows.map { row -> Double in
+            let target = max(1, row["target"] as Int)
+            let qty = max(0, row["qty"] as Int)
+            let ratio = Double(qty) / Double(target)
+            if ratio <= 1 {
+                return ratio * 100
+            }
+            return max(0, 100 - ((ratio - 1) * 100))
+        }
+        return clampedPercent(scores.reduce(0, +) / Double(scores.count))
+    }
+
+    private static func misplacementScore(_ dbConn: Database) throws -> Double {
+        let total = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM misplaced_parts_log") ?? 0
+        guard total > 0 else { return 100 }
+        let unresolved = try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM misplaced_parts_log
+            WHERE resolved_at IS NULL AND lower(resolution) NOT IN ('resolved', 'moved', 'accepted')
+            """) ?? 0
+        return clampedPercent(100 - (Double(unresolved) / Double(total) * 100))
+    }
+
+    private static func labelAccuracyScore(_ dbConn: Database) throws -> Double {
+        let total = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM organization_ratings") ?? 0
+        guard total > 0 else { return 100 }
+        let accurate = try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM organization_ratings
+            WHERE labels_accurate = 1 AND bins_assigned = 1
+            """) ?? 0
+        return clampedPercent(Double(accurate) / Double(total) * 100)
+    }
+
+    private static func auditResponseTimeScore(_ dbConn: Database) throws -> Double {
+        let active = try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM audit_sessions_v2
+            WHERE status = 'active' AND deleted_at IS NULL
+            """) ?? 0
+        let stale = try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM audit_sessions_v2
+            WHERE status = 'active'
+              AND deleted_at IS NULL
+              AND datetime(started_at) < datetime('now', '-1 day')
+            """) ?? 0
+        guard active > 0 else { return 100 }
+        return clampedPercent(100 - (Double(stale) / Double(active) * 100))
+    }
+
+    private static func stockHealthScore(_ dbConn: Database) throws -> Double {
+        let total = try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM parts
+            WHERE deleted_at IS NULL AND is_active = 1 AND min_stock_level > 0
+            """) ?? 0
+        guard total > 0 else { return 100 }
+        let shortfalls = try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM parts p
+            WHERE p.deleted_at IS NULL
+              AND p.is_active = 1
+              AND p.min_stock_level > 0
+              AND (
+                SELECT COALESCE(SUM(s.qty), 0)
+                FROM stock s
+                WHERE s.part_id = p.id AND s.deleted_at IS NULL
+              ) < p.min_stock_level
+            """) ?? 0
+        return clampedPercent(Double(total - shortfalls) / Double(total) * 100)
+    }
+
     private func activeWalkingPathStops(pathId: Int64, dbConn: Database) throws -> [WarehouseWalkingPathStop] {
         try WarehouseWalkingPathStop
             .filter(
@@ -4725,13 +4843,53 @@ public final class WarehouseService: Sendable {
         }
     }
 
-    /// Get the composite warehouse score (0-10) across all areas.
+    /// Get the composite warehouse score (0-100) across audit confidence, organization, users, shelves, movement, and stock health.
     public func getWarehouseOverallScore() throws -> Double {
+        try getWarehouseOverallScoreBreakdown().score
+    }
+
+    /// Get the weighted warehouse score components used by the dashboard.
+    public func getWarehouseOverallScoreBreakdown() throws -> WarehouseOverallScore {
         try db.writer.read { dbConn in
-            let avg = try Double.fetchOne(dbConn, sql: """
-                SELECT AVG(overall_rating) FROM organization_ratings
-                """) ?? 5.0
-            return avg
+            let partConfidence = try Self.percentAverage(
+                dbConn,
+                sql: "SELECT AVG(confidence_percent) FROM part_confidence"
+            )
+            let organization = try Self.ratingAverage(
+                dbConn,
+                sql: "SELECT AVG(overall_rating) FROM organization_ratings"
+            )
+            let userRatings = try Self.ratingAverage(
+                dbConn,
+                sql: "SELECT AVG(overall_rating) FROM user_warehouse_ratings"
+            )
+            let shelfUtilization = try Self.shelfUtilizationScore(dbConn)
+            let misplacements = try Self.misplacementScore(dbConn)
+            let labelAccuracy = try Self.labelAccuracyScore(dbConn)
+            let responseTime = try Self.auditResponseTimeScore(dbConn)
+            let stockHealth = try Self.stockHealthScore(dbConn)
+
+            let weighted =
+                partConfidence * 0.25 +
+                organization * 0.15 +
+                userRatings * 0.15 +
+                shelfUtilization * 0.10 +
+                misplacements * 0.10 +
+                labelAccuracy * 0.10 +
+                responseTime * 0.05 +
+                stockHealth * 0.10
+
+            return WarehouseOverallScore(
+                score: Self.clampedPercent(weighted),
+                partConfidenceScore: partConfidence,
+                organizationScore: organization,
+                userRatingScore: userRatings,
+                shelfUtilizationScore: shelfUtilization,
+                misplacementScore: misplacements,
+                labelAccuracyScore: labelAccuracy,
+                responseTimeScore: responseTime,
+                stockHealthScore: stockHealth
+            )
         }
     }
 

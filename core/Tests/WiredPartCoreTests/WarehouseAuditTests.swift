@@ -376,6 +376,99 @@ struct WarehouseAuditTests {
         #expect(score >= 0.0 && score <= 100.0)
     }
 
+    @Test("Overall warehouse score composes audit confidence, users, shelves, labels, response time, and stock health")
+    func testOverallScoreComposition() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let areaId = try seedStorageArea(env)
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE parts SET min_stock_level = 10, target_stock_level = 20 WHERE id = ?",
+                arguments: [partId]
+            )
+        }
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 15, locationType: "warehouse", locationId: areaId)
+        try env.warehouse.setPartConfidence(partId: partId, areaId: areaId, percent: 80)
+        try env.warehouse.recordOrgCheck(
+            areaId: areaId,
+            checkedBy: env.adminUserId,
+            labelsAccurate: true,
+            partsInHome: true,
+            noDuplicates: true,
+            notOvercrowded: true,
+            binsAssigned: true,
+            similarPartsNearby: true
+        )
+        _ = try env.warehouse.getUserWarehouseRating(userId: env.adminUserId)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE user_warehouse_ratings SET overall_rating = 7.0 WHERE user_id = ?",
+                arguments: [env.adminUserId]
+            )
+        }
+
+        let score = try env.warehouse.getWarehouseOverallScoreBreakdown()
+
+        #expect(score.partConfidenceScore == 80)
+        #expect(score.organizationScore == 100)
+        #expect(score.userRatingScore == 70)
+        #expect(score.shelfUtilizationScore == 75)
+        #expect(score.labelAccuracyScore == 100)
+        #expect(score.stockHealthScore == 100)
+        #expect(score.score == 88)
+    }
+
+    @Test("Overall warehouse score treats missing stock thresholds as neutral")
+    func testOverallScoreStockHealthNeutralWithoutThresholds() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let areaId = try seedStorageArea(env)
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "INSERT INTO stock (part_id, location_type, location_id, qty) VALUES (?, 'warehouse', ?, 0)",
+                arguments: [partId, areaId]
+            )
+        }
+        try env.warehouse.setPartConfidence(partId: partId, areaId: areaId, percent: 50)
+
+        let score = try env.warehouse.getWarehouseOverallScoreBreakdown()
+
+        #expect(score.stockHealthScore == 100)
+        #expect(score.shelfUtilizationScore == 100)
+        #expect(score.score >= 0 && score.score <= 100)
+    }
+
+    @Test("Dashboard audit smart cards expose audit due, confidence risk, active audit sessions, and organization issues")
+    func testDashboardAuditSmartCards() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let areaId = try seedStorageArea(env)
+
+        try env.warehouse.setPartConfidence(partId: partId, areaId: areaId, percent: 55)
+        _ = try env.warehouse.startAuditSession(startedBy: env.adminUserId, targetAreaId: areaId)
+        try env.warehouse.recordOrgCheck(
+            areaId: areaId,
+            checkedBy: env.adminUserId,
+            labelsAccurate: false,
+            partsInHome: true,
+            noDuplicates: true,
+            notOvercrowded: true,
+            binsAssigned: false
+        )
+
+        let cards = try env.warehouse.getDashboardSmartCardSummary()
+
+        #expect(cards.auditDue == 1)
+        #expect(cards.lowConfidenceAreas == 1)
+        #expect(cards.activeAuditSessions == 1)
+        #expect(cards.organizationIssues == 1)
+    }
+
     // MARK: - Audit Accuracy
 
     @Test("Audit accuracy starts at reasonable default")

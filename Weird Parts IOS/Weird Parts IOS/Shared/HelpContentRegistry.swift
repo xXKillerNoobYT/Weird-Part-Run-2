@@ -454,9 +454,10 @@ struct HelpContentRegistry {
             pageId: "warehouse-dashboard",
             title: "Warehouse Dashboard Help",
             sections: [
-                ("Overview", "Monitor warehouse operations at a glance. Smart cards show today's movements, active receiving sessions, audits due, and staging status."),
+                ("Overview", "Monitor warehouse operations at a glance. Smart cards show today's movements, audits due, confidence risk, active audit sessions, and organization issues."),
+                ("Warehouse Score", "The overall score combines part confidence, organization ratings, user ratings, shelf utilization, misplacements, label accuracy, audit response time, and stock health."),
                 ("Filters", "Tap a smart card to filter the activity feed to that category. Tap again to clear the filter."),
-                ("Quick Actions", "Use the quick action buttons to start a new movement or scan QR codes for bin lookups."),
+                ("Quick Actions", "Use quick actions to start a movement, scan QR codes, open setup, or jump to audit pages for count audit, speed mode, organization audit, ratings, and quick verification."),
             ]
         ),
 
@@ -516,8 +517,10 @@ struct HelpContentRegistry {
             title: "Warehouse Audit Help",
             sections: [
                 ("Confidence System", "Each part has a confidence score that decays over time. Auditing confirms shelf accuracy and restores confidence."),
-                ("Count Flow", "System counts stay hidden while you count. After submitting, the page shows variance and next steps."),
-                ("Misplaced Parts", "Use the misplaced part flow when a part is found in the wrong spot so it can be corrected."),
+                ("Count Flow", "System counts stay hidden while you count. After submitting, the page shows variance, stock-health impact, and next steps."),
+                ("Speed Mode", "Use speed mode for familiar areas when the priority is fast verification. Speed mode still feeds user ratings and audit response time."),
+                ("Quick Verification", "After movements or confidence decay, quick verification confirms the current shelf quantity and restores confidence without a full audit session."),
+                ("Misplaced Parts", "Use the misplaced part flow when a part is found in the wrong spot so it can be corrected and counted in organization scoring."),
             ]
         ),
 
@@ -565,9 +568,9 @@ struct HelpContentRegistry {
             pageId: "warehouse-organization",
             title: "Organization Audit Help",
             sections: [
-                ("Organization Ratings", "Each area gets a rating based on labels, part placement, duplicate storage, overcrowding, and bin assignment."),
+                ("Organization Ratings", "Each area gets a rating based on label accuracy, part placement, duplicate storage, overcrowding, and bin assignment."),
                 ("Consolidation", "When the same part is spread across too many areas, the page suggests consolidation and tracks votes."),
-                ("Org Checklist", "Tap an area to run a checklist for labels, part placement, duplicate cleanup, space, and bin assignment."),
+                ("Org Checklist", "Tap an area to run a checklist for labels, part placement, duplicate cleanup, space, and bin assignment. Failed checklist items appear as organization issues on the dashboard."),
             ]
         ),
 
@@ -575,9 +578,9 @@ struct HelpContentRegistry {
             pageId: "warehouse-leaderboard",
             title: "Leaderboard Help",
             sections: [
-                ("Ratings", "Warehouse ratings summarize user accuracy, effort, placement, speed, and proactive fixes."),
-                ("Scores", "Scores range from 0 to 10. Accurate counts and clean placement raise scores; misplacements lower them."),
-                ("Managers", "Managers can open user details for score breakdowns and training suggestions."),
+                ("Ratings", "Warehouse ratings summarize user count accuracy, effort, placement, speed mode, wizard compliance, and proactive fixes."),
+                ("Scores", "Scores range from 0 to 10. Accurate count audits and clean quick verification improve scores; unresolved misplacements and missed process steps lower them."),
+                ("Managers", "Managers can open user details for score breakdowns and training suggestions. Non-manager users only see names, rankings, and summary scores."),
             ]
         ),
 
