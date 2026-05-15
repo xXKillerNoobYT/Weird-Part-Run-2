@@ -50,6 +50,9 @@ struct AppModule: Identifiable, Hashable, Sendable {
 
 // MARK: - Module Definitions
 
+let officeAccessPermission = "manage_jobs"
+let financialValuesPermission = "show_dollar_values"
+
 /// Complete ordered list of all application modules.
 ///
 /// Ordered by usage frequency: daily use → work tools → management.
