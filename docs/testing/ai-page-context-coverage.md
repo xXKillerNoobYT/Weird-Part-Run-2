@@ -9,9 +9,9 @@ Complete the 87-page page-context coverage set by adding read-only page-active/p
 
 ## Current Coverage
 
-Implemented page-context notifications observed by `IOSAIAssistantPanel`: 40 page contexts.
+Implemented page-context notifications observed by `IOSAIAssistantPanel`: 47 page contexts.
 
-Help registry mappings with matching help entries: 39 page contexts.
+Help registry mappings with matching help entries: 46 page contexts.
 
 Known gap: `settingsPageActive` is observed by the AI panel and active-page tracker, but `HelpContentRegistry` does not yet contain a `settings-app-config` entry. That should be handled in the settings slice rather than mapped to a missing help entry.
 
@@ -27,6 +27,13 @@ Known gap: `settingsPageActive` is observed by the AI panel and active-page trac
 | Dashboard | Dashboard Home | `dashboardPageActive` | `dashboard-home` |
 | Jobs | Jobs List | `jobsListPageActive` | `jobs-list` |
 | Jobs | Clock In/Out | `clockPageActive` | `dashboard-clock` |
+| Jobs | Job Detail | `jobDetailPageActive` | `jobs-detail` |
+| Jobs | Labor | `laborPageActive` | `jobs-labor` |
+| Jobs | Daily Reports | `dailyReportsPageActive` | `jobs-daily-reports` |
+| Jobs | Clock-Out Questionnaire | `questionnairePageActive` | `jobs-questionnaire` |
+| Jobs | Estimation Questionnaire | `estimationQuestionnairePageActive` | `jobs-estimation-questionnaire` |
+| Jobs | Estimation Review | `estimationReviewPageActive` | `jobs-estimation-review` |
+| Jobs | Job Reports | `jobReportsPageActive` | `jobs-reports` |
 | Orders | JPOs | `jposPageActive` | `orders-jpos` |
 | Orders | Purchase Orders | `purchaseOrdersPageActive` | `orders-pos` |
 | Orders | PO Detail | `poDetailPageActive` | `orders-po-detail` |
@@ -103,11 +110,24 @@ Added the warehouse completion page-context slice:
 
 All payloads are read-only summaries of visible state, selected filters, lifecycle state, and available entry points. They do not expose mutating commands, action IDs, or write intents.
 
+## Jobs Completion Slice
+
+Added the jobs completion page-context slice:
+
+- `IOSJobDetailPage`: job identity, status, priority, customer, lead, dates, team count, labor summary, budget/parts cost.
+- `LaborPage`: active and recent labor counts, visible hours, date range, search state, clock-in option counts.
+- `IOSDailyReportsPage`: selected date, loaded/visible report counts, total workers/hours, status counts.
+- `IOSQuestionnairePage`: labor entry id, loaded/required/answered question counts, answer types, break verification, companion polls.
+- `IOSEstimationQuestionnairePage`: job/stage, question and answer counts, unknown answers, group counts, estimate confidence/hours, historical average, suggestions.
+- `IOSEstimationReviewPage`: job id, review counts/types, latest estimate stage/hours/confidence, average variance, active sheet.
+- `JobReportsPage`: loaded/visible report counts, date range, search state, status counts.
+
+All payloads are read-only summaries of visible state, selected filters, lifecycle state, and available entry points. They do not expose mutating commands, action IDs, or write intents.
+
 ## Next Highest-Traffic Remaining Slices
 
-1. Jobs completion: Job Detail, Labor, Daily Reports, Questionnaire, Estimation Questionnaire, Estimation Review, Job Reports.
-2. People/Office/Reports: Contacts, customers, contractors, teams, office dashboard, approvals, spending, warehouse exec, all report pages.
-3. Settings: add missing help entries and page context for the high-use settings pages before mapping them to help content.
+1. People/Office/Reports: Contacts, customers, contractors, teams, office dashboard, approvals, spending, warehouse exec, all report pages.
+2. Settings: add missing help entries and page context for the high-use settings pages before mapping them to help content.
 
 ## Validation
 
@@ -128,6 +148,12 @@ Validated WEI-1235 warehouse completion slice in the shared workspace on 2026-05
 - Warehouse completion notification names are declared, posted by their pages, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
 - Help registry mapping check returned no missing mapped page IDs.
 - First build caught Swift type-checker complexity in the expanded active-page tracker; the tracker was split into smaller modifiers.
+- `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was warnings only.
+
+Validated jobs completion slice in the shared workspace on 2026-05-14:
+
+- Jobs completion notification names are declared, posted by their pages, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
+- Help registry mapping check returned no missing mapped page IDs.
 - `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was warnings only.
 
 Static validation:

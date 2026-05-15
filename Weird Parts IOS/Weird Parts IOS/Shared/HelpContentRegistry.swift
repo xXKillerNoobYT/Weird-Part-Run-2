@@ -88,6 +88,13 @@ struct HelpContentRegistry {
         "WiredPart.dashboardPageActive": "dashboard-home",
         "WiredPart.jobsListPageActive": "jobs-list",
         "WiredPart.clockPageActive": "dashboard-clock",
+        "WiredPart.jobDetailPageActive": "jobs-detail",
+        "WiredPart.laborPageActive": "jobs-labor",
+        "WiredPart.dailyReportsPageActive": "jobs-daily-reports",
+        "WiredPart.questionnairePageActive": "jobs-questionnaire",
+        "WiredPart.estimationQuestionnairePageActive": "jobs-estimation-questionnaire",
+        "WiredPart.estimationReviewPageActive": "jobs-estimation-review",
+        "WiredPart.jobReportsPageActive": "jobs-reports",
         "WiredPart.jposPageActive": "orders-jpos",
         "WiredPart.purchaseOrdersPageActive": "orders-pos",
         "WiredPart.poDetailPageActive": "orders-po-detail",
@@ -183,6 +190,56 @@ struct HelpContentRegistry {
                 ("Overview", "Track all labor entries across jobs. Active clock-ins appear at the top with clock-out buttons. Recent history is shown below."),
                 ("Clock In", "Tap the play button in the toolbar to start a new clock-in for any employee and job."),
                 ("Search", "Use the search bar to filter entries by employee name or job name. Pull down to refresh."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "jobs-daily-reports",
+            title: "Daily Reports Help",
+            sections: [
+                ("Overview", "View per-job activity summaries for any date. See worker count, total hours logged, and report status for each job."),
+                ("Navigation", "Use the left/right arrows to move between dates. Tap Today to jump back to the current date."),
+                ("Data", "Pull down to refresh. Reports are generated automatically based on clock entries and job activity."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "jobs-questionnaire",
+            title: "Clock-Out Questions Help",
+            sections: [
+                ("Overview", "Answer required clock-out questions before completing a labor entry. Required items are marked with an asterisk."),
+                ("Break Verification", "Record whether breaks were taken. Missed breaks are reported to the office for compliance review."),
+                ("Companion Polls", "Optional companion rule votes may appear at the bottom when there are active parts polls."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "jobs-estimation-questionnaire",
+            title: "Estimation Questionnaire Help",
+            sections: [
+                ("Purpose", "Answer stage-specific questions to generate a time-and-labor estimate for the job."),
+                ("Unknown Answers", "Use the question mark option for details that are not known yet. Unknown fields are excluded from calculation but tracked."),
+                ("Calculating", "Calculate Estimate shows days, hours, and confidence based on answered questions and historical jobs."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "jobs-estimation-review",
+            title: "Estimation Reviews Help",
+            sections: [
+                ("Purpose", "Compare estimates against actual job progress so future bids improve."),
+                ("Weekly Review", "Submit a progress check with notes about surprises, scope changes, or scheduling issues."),
+                ("End-of-Job Review", "Capture final actuals and lessons learned when the job closes."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "jobs-reports",
+            title: "Job Reports Help",
+            sections: [
+                ("Overview", "Browse daily reports across all jobs. Each report shows the job name, date, status, and reviewer."),
+                ("Search", "Use the search bar to filter reports by job name, date, or status."),
+                ("Details", "Reports are generated automatically from daily job activity and clock entries."),
             ]
         ),
 

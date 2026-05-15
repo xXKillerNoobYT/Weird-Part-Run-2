@@ -115,6 +115,9 @@ struct IOSEstimationReviewPage: View {
             }
         }
         .task { await loadData() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .estimationReviewPageInactive, object: nil)
+        }
     }
 
     // MARK: - Review Row
@@ -191,10 +194,33 @@ struct IOSEstimationReviewPage: View {
             latestEstimate = try svc.getLatestResult(jobId: jobId, stage: "bid")
                 ?? svc.getLatestResult(jobId: jobId, stage: "pre_start")
                 ?? svc.getLatestResult(jobId: jobId, stage: "during")
+            postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load estimation review")
         }
         isLoading = false
+    }
+
+    private func postAIContext() {
+        let reviewTypes = Dictionary(grouping: reviews, by: \.reviewType)
+            .map { "\($0.key): \($0.value.count)" }
+            .sorted()
+            .joined(separator: ", ")
+        let averageVariance = reviews.compactMap(\.variancePercent).isEmpty
+            ? nil
+            : reviews.compactMap(\.variancePercent).reduce(0, +) / Double(reviews.compactMap(\.variancePercent).count)
+        let context = """
+        Estimation Reviews page. Read-only context.
+        Job id: \(jobId), reviews loaded: \(reviews.count), review types: \(reviewTypes.isEmpty ? "none" : reviewTypes).
+        Latest estimate stage: \(latestEstimate?.stage ?? "none"), estimated hours: \(String(format: "%.0f", latestEstimate?.estimatedHours ?? 0)), confidence: \(String(format: "%.0f", latestEstimate?.confidencePercent ?? 0))%.
+        Average variance across reviews: \(averageVariance.map { String(format: "%+.0f%%", $0) } ?? "not available"), active sheet: \(activeSheet?.id ?? "none").
+        Available read-only guidance: explain estimate vs actual review history, variance, weekly/end-of-job review entry points, and visible sections. Do not submit reviews directly.
+        """
+        NotificationCenter.default.post(
+            name: .estimationReviewPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 }
 

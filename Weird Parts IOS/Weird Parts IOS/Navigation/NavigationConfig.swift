@@ -257,6 +257,48 @@ extension Notification.Name {
     /// Posted when the Clock In/Out page disappears.
     static let clockPageInactive = Notification.Name("WiredPart.clockPageInactive")
 
+    /// Posted when a Job Detail page appears, with read-only job summary context for AI.
+    static let jobDetailPageActive = Notification.Name("WiredPart.jobDetailPageActive")
+
+    /// Posted when a Job Detail page disappears.
+    static let jobDetailPageInactive = Notification.Name("WiredPart.jobDetailPageInactive")
+
+    /// Posted when the Labor page appears, with read-only labor list context for AI.
+    static let laborPageActive = Notification.Name("WiredPart.laborPageActive")
+
+    /// Posted when the Labor page disappears.
+    static let laborPageInactive = Notification.Name("WiredPart.laborPageInactive")
+
+    /// Posted when the Daily Reports page appears, with read-only daily report context for AI.
+    static let dailyReportsPageActive = Notification.Name("WiredPart.dailyReportsPageActive")
+
+    /// Posted when the Daily Reports page disappears.
+    static let dailyReportsPageInactive = Notification.Name("WiredPart.dailyReportsPageInactive")
+
+    /// Posted when the Clock-Out Questionnaire appears, with read-only question state context for AI.
+    static let questionnairePageActive = Notification.Name("WiredPart.questionnairePageActive")
+
+    /// Posted when the Clock-Out Questionnaire disappears.
+    static let questionnairePageInactive = Notification.Name("WiredPart.questionnairePageInactive")
+
+    /// Posted when the Estimation Questionnaire appears, with read-only estimate question context for AI.
+    static let estimationQuestionnairePageActive = Notification.Name("WiredPart.estimationQuestionnairePageActive")
+
+    /// Posted when the Estimation Questionnaire disappears.
+    static let estimationQuestionnairePageInactive = Notification.Name("WiredPart.estimationQuestionnairePageInactive")
+
+    /// Posted when the Estimation Review page appears, with read-only review context for AI.
+    static let estimationReviewPageActive = Notification.Name("WiredPart.estimationReviewPageActive")
+
+    /// Posted when the Estimation Review page disappears.
+    static let estimationReviewPageInactive = Notification.Name("WiredPart.estimationReviewPageInactive")
+
+    /// Posted when the Job Reports page appears, with read-only report list context for AI.
+    static let jobReportsPageActive = Notification.Name("WiredPart.jobReportsPageActive")
+
+    /// Posted when the Job Reports page disappears.
+    static let jobReportsPageInactive = Notification.Name("WiredPart.jobReportsPageInactive")
+
     // MARK: - Orders
 
     /// Posted when the JPOs page appears, with JPO count and filter context for AI.

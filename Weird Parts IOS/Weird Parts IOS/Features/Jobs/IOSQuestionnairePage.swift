@@ -60,6 +60,9 @@ struct IOSQuestionnairePage: View {
                     }
                 }
                 .task { loadQuestions() }
+                .onDisappear {
+                    NotificationCenter.default.post(name: .questionnairePageInactive, object: nil)
+                }
         }
     }
 
@@ -415,5 +418,26 @@ struct IOSQuestionnairePage: View {
         }
 
         isLoading = false
+        postAIContext()
+    }
+
+    private func postAIContext() {
+        let requiredCount = questions.filter { $0.isRequired }.count
+        let answeredCount = answers.values.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count
+        let answerTypes = Dictionary(grouping: questions, by: \.answerType)
+            .map { "\($0.key): \($0.value.count)" }
+            .sorted()
+            .joined(separator: ", ")
+        let context = """
+        Clock-Out Questionnaire page. Read-only context.
+        Labor entry id: \(laborEntryId), questions loaded: \(questions.count), required questions: \(requiredCount), answered fields: \(answeredCount), unanswered required: \(hasUnansweredRequired).
+        Answer types: \(answerTypes.isEmpty ? "none" : answerTypes), companion polls: \(companionPolls.count), break verification: \(breakVerification.rawValue), missed break selections: \(missedBreaks.count), submitting: \(isSubmitting).
+        Available read-only guidance: explain required questions, answer types, break verification, companion poll section, and submit/skip availability. Do not submit or change answers directly.
+        """
+        NotificationCenter.default.post(
+            name: .questionnairePageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 }

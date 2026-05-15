@@ -72,6 +72,9 @@ struct IOSJobDetailPage: View {
             .refreshable { loadData() }
             .task { loadData() }
             .task { appCore.onboardingManager?.markCompleted("jobs-tap-detail") }
+            .onDisappear {
+                NotificationCenter.default.post(name: .jobDetailPageInactive, object: nil)
+            }
     }
 
     // MARK: - Content
@@ -326,9 +329,30 @@ struct IOSJobDetailPage: View {
             job = try service.getJob(id: jobId)
             teamMembers = try service.getTeamMembers(jobId: jobId)
             laborSummary = try service.getLaborSummary(jobId: jobId)
+            if let job {
+                postAIContext(job)
+            }
         } catch {
             loadError = userFriendlyError(error, context: "load job details")
         }
         isLoading = false
+    }
+
+    private func postAIContext(_ job: JobsService.JobDetail) {
+        let labor = laborSummary
+        let context = """
+        Job Detail page. Read-only context.
+        Job: \(job.jobNumber) - \(job.jobName) (id \(job.id)), status: \(job.status), priority: \(job.priority), type: \(job.jobType).
+        Customer: \(job.customerName ?? "not set"), lead: \(job.leadUserName ?? "not set"), team members loaded: \(teamMembers.count).
+        Dates: start \(job.startDate ?? "not set"), due \(job.dueDate ?? "not set"), completed \(job.completedDate ?? "not set").
+        Labor summary: regular \(String(format: "%.1f", labor?.totalRegularHours ?? 0)) hrs, overtime \(String(format: "%.1f", labor?.totalOvertimeHours ?? 0)) hrs, workers \(labor?.uniqueWorkers ?? 0), entries \(labor?.totalEntries ?? 0).
+        Budget: estimated hours \(String(format: "%.0f", job.estimatedHours ?? 0)), parts cost \(Formatters.formatCurrency(job.partsCost)), budget limit \(job.budgetLimit.map(Formatters.formatCurrency) ?? "not set").
+        Available read-only guidance: explain job status, team/labor summary, dates, budget fields, weekly review entry point, and visible sections. Do not edit the job directly.
+        """
+        NotificationCenter.default.post(
+            name: .jobDetailPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 }

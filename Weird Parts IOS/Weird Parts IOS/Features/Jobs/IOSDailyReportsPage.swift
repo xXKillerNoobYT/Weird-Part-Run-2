@@ -47,6 +47,9 @@ struct IOSDailyReportsPage: View {
         .searchable(text: $searchText, prompt: "Search jobs...")
         .refreshable { loadData() }
         .task { loadData() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .dailyReportsPageInactive, object: nil)
+        }
     }
 
     // MARK: - Date Picker
@@ -266,9 +269,29 @@ struct IOSDailyReportsPage: View {
         let dateStr = isoDate(selectedDate)
         do {
             reports = try service.getDailyReportSummary(date: dateStr)
+            postAIContext(dateString: dateStr)
         } catch {
             loadError = userFriendlyError(error, context: "load daily reports")
         }
         isLoading = false
+    }
+
+    private func postAIContext(dateString: String) {
+        let statusCounts = Dictionary(grouping: reports, by: \.status)
+            .map { "\($0.key): \($0.value.count)" }
+            .sorted()
+            .joined(separator: ", ")
+        let context = """
+        Daily Reports page. Read-only context.
+        Selected date: \(dateString), search active: \(!searchText.isEmpty).
+        Reports loaded: \(reports.count), visible reports: \(filteredReports.count), total workers: \(totalWorkers), total hours: \(String(format: "%.1f", totalHours)).
+        Status counts: \(statusCounts.isEmpty ? "none" : statusCounts).
+        Available read-only guidance: explain date navigation, report summaries, status badges, search state, and where help/refresh controls are located. Do not create or edit reports directly.
+        """
+        NotificationCenter.default.post(
+            name: .dailyReportsPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 }

@@ -150,6 +150,9 @@ struct IOSEstimationQuestionnairePage: View {
             await loadData()
         }
         .task { await loadData() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .estimationQuestionnairePageInactive, object: nil)
+        }
     }
 
     // MARK: - Question Row
@@ -274,6 +277,7 @@ struct IOSEstimationQuestionnairePage: View {
 
             // Load AI suggestions
             suggestions = try svc.getJobSpecificSuggestions(jobId: jobId)
+            postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load questionnaire")
         }
@@ -311,6 +315,7 @@ struct IOSEstimationQuestionnairePage: View {
 
             // Refresh historical averages
             historicalAvg = try svc.getHistoricalAverage()
+            postAIContext()
         } catch {
             actionError = userFriendlyError(error, context: "save settings")
         }
@@ -329,5 +334,26 @@ struct IOSEstimationQuestionnairePage: View {
         case "punch_list": return "Punch List"
         default: return stage.capitalized
         }
+    }
+
+    private func postAIContext() {
+        let groupCounts = Dictionary(grouping: questions, by: \.questionGroup)
+            .map { "\($0.key): \($0.value.count)" }
+            .sorted()
+            .joined(separator: ", ")
+        let answeredCount = responseValues.values.filter { !$0.isEmpty }.count
+        let confidence = estimateResult?.confidencePercent.map { "\(Int($0))%" } ?? "not calculated"
+        let context = """
+        Estimation Questionnaire page. Read-only context.
+        Job id: \(jobId), stage: \(stageLabel), questions loaded: \(questions.count), answered values: \(answeredCount), unknown answers: \(unknowns.count).
+        Question groups: \(groupCounts.isEmpty ? "none" : groupCounts), estimate confidence: \(confidence), estimated hours: \(String(format: "%.0f", estimateResult?.estimatedHours ?? 0)), suggestions: \(suggestions.count), saving: \(isSaving).
+        Historical average jobs: \(historicalAvg?.jobCount ?? 0), average days: \(String(format: "%.1f", historicalAvg?.avgDays ?? 0)).
+        Available read-only guidance: explain question groups, unknown answer behavior, estimate result, confidence, and AI insights. Do not calculate or save responses directly.
+        """
+        NotificationCenter.default.post(
+            name: .estimationQuestionnairePageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 }

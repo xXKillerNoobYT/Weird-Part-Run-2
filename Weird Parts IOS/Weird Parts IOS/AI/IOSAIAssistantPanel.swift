@@ -44,6 +44,13 @@ struct IOSAIAssistantPanel: View {
     @State private var dashboardContext: String?
     @State private var jobsListContext: String?
     @State private var clockContext: String?
+    @State private var jobDetailContext: String?
+    @State private var laborContext: String?
+    @State private var dailyReportsContext: String?
+    @State private var questionnaireContext: String?
+    @State private var estimationQuestionnaireContext: String?
+    @State private var estimationReviewContext: String?
+    @State private var jobReportsContext: String?
     @State private var jposContext: String?
     @State private var purchaseOrdersContext: String?
     @State private var poDetailContext: String?
@@ -254,6 +261,13 @@ struct IOSAIAssistantPanel: View {
             dashboardContext: $dashboardContext,
             jobsListContext: $jobsListContext,
             clockContext: $clockContext,
+            jobDetailContext: $jobDetailContext,
+            laborContext: $laborContext,
+            dailyReportsContext: $dailyReportsContext,
+            questionnaireContext: $questionnaireContext,
+            estimationQuestionnaireContext: $estimationQuestionnaireContext,
+            estimationReviewContext: $estimationReviewContext,
+            jobReportsContext: $jobReportsContext,
             jposContext: $jposContext,
             purchaseOrdersContext: $purchaseOrdersContext,
             poDetailContext: $poDetailContext,
@@ -554,6 +568,27 @@ struct IOSAIAssistantPanel: View {
             }
             if let ctx = clockContext {
                 navContext += "\n\nClock In/Out Context: \(ctx)"
+            }
+            if let ctx = jobDetailContext {
+                navContext += "\n\nJob Detail Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = laborContext {
+                navContext += "\n\nLabor Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = dailyReportsContext {
+                navContext += "\n\nDaily Reports Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = questionnaireContext {
+                navContext += "\n\nQuestionnaire Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = estimationQuestionnaireContext {
+                navContext += "\n\nEstimation Questionnaire Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = estimationReviewContext {
+                navContext += "\n\nEstimation Review Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = jobReportsContext {
+                navContext += "\n\nJob Reports Context (READ-ONLY): \(ctx)"
             }
             if let ctx = jposContext {
                 navContext += "\n\nJob Purchase Orders Context: \(ctx)"
@@ -992,6 +1027,13 @@ private struct FeaturePageContextObservers: ViewModifier {
     @Binding var dashboardContext: String?
     @Binding var jobsListContext: String?
     @Binding var clockContext: String?
+    @Binding var jobDetailContext: String?
+    @Binding var laborContext: String?
+    @Binding var dailyReportsContext: String?
+    @Binding var questionnaireContext: String?
+    @Binding var estimationQuestionnaireContext: String?
+    @Binding var estimationReviewContext: String?
+    @Binding var jobReportsContext: String?
     @Binding var jposContext: String?
     @Binding var purchaseOrdersContext: String?
     @Binding var poDetailContext: String?
@@ -1035,6 +1077,15 @@ private struct FeaturePageContextObservers: ViewModifier {
                 purchaseOrdersContext: $purchaseOrdersContext,
                 inventoryGridContext: $inventoryGridContext,
                 dispatchContext: $dispatchContext
+            ))
+            .modifier(FeaturePageContextObserversJobs(
+                jobDetailContext: $jobDetailContext,
+                laborContext: $laborContext,
+                dailyReportsContext: $dailyReportsContext,
+                questionnaireContext: $questionnaireContext,
+                estimationQuestionnaireContext: $estimationQuestionnaireContext,
+                estimationReviewContext: $estimationReviewContext,
+                jobReportsContext: $jobReportsContext
             ))
             .modifier(FeaturePageContextObserversGroupD(
                 poDetailContext: $poDetailContext,
@@ -1128,6 +1179,63 @@ private struct FeaturePageContextObserversGroupA: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .dispatchPageInactive)) { _ in
                 dispatchContext = nil
+            }
+    }
+}
+
+/// Jobs completion page observers.
+private struct FeaturePageContextObserversJobs: ViewModifier {
+    @Binding var jobDetailContext: String?
+    @Binding var laborContext: String?
+    @Binding var dailyReportsContext: String?
+    @Binding var questionnaireContext: String?
+    @Binding var estimationQuestionnaireContext: String?
+    @Binding var estimationReviewContext: String?
+    @Binding var jobReportsContext: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .jobDetailPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { jobDetailContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .jobDetailPageInactive)) { _ in
+                jobDetailContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .laborPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { laborContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .laborPageInactive)) { _ in
+                laborContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .dailyReportsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { dailyReportsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .dailyReportsPageInactive)) { _ in
+                dailyReportsContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .questionnairePageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { questionnaireContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .questionnairePageInactive)) { _ in
+                questionnaireContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .estimationQuestionnairePageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { estimationQuestionnaireContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .estimationQuestionnairePageInactive)) { _ in
+                estimationQuestionnaireContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .estimationReviewPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { estimationReviewContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .estimationReviewPageInactive)) { _ in
+                estimationReviewContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .jobReportsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { jobReportsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .jobReportsPageInactive)) { _ in
+                jobReportsContext = nil
             }
     }
 }
@@ -1425,6 +1533,28 @@ private struct ActivePageIdTrackerDashJobs: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .jobsListPageInactive)) { _ in if activePageId == "jobs-list" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .clockPageActive)) { _ in activePageId = "dashboard-clock" }
             .onReceive(NotificationCenter.default.publisher(for: .clockPageInactive)) { _ in if activePageId == "dashboard-clock" { activePageId = nil } }
+            .modifier(ActivePageIdTrackerJobsExtra(activePageId: $activePageId))
+    }
+}
+
+private struct ActivePageIdTrackerJobsExtra: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .jobDetailPageActive)) { _ in activePageId = "jobs-detail" }
+            .onReceive(NotificationCenter.default.publisher(for: .jobDetailPageInactive)) { _ in if activePageId == "jobs-detail" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .laborPageActive)) { _ in activePageId = "jobs-labor" }
+            .onReceive(NotificationCenter.default.publisher(for: .laborPageInactive)) { _ in if activePageId == "jobs-labor" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .dailyReportsPageActive)) { _ in activePageId = "jobs-daily-reports" }
+            .onReceive(NotificationCenter.default.publisher(for: .dailyReportsPageInactive)) { _ in if activePageId == "jobs-daily-reports" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .questionnairePageActive)) { _ in activePageId = "jobs-questionnaire" }
+            .onReceive(NotificationCenter.default.publisher(for: .questionnairePageInactive)) { _ in if activePageId == "jobs-questionnaire" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .estimationQuestionnairePageActive)) { _ in activePageId = "jobs-estimation-questionnaire" }
+            .onReceive(NotificationCenter.default.publisher(for: .estimationQuestionnairePageInactive)) { _ in if activePageId == "jobs-estimation-questionnaire" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .estimationReviewPageActive)) { _ in activePageId = "jobs-estimation-review" }
+            .onReceive(NotificationCenter.default.publisher(for: .estimationReviewPageInactive)) { _ in if activePageId == "jobs-estimation-review" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .jobReportsPageActive)) { _ in activePageId = "jobs-reports" }
+            .onReceive(NotificationCenter.default.publisher(for: .jobReportsPageInactive)) { _ in if activePageId == "jobs-reports" { activePageId = nil } }
     }
 }
 
