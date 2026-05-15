@@ -247,8 +247,18 @@ struct IOSJPOCreationPage: View {
                 .allowsHitTesting(false)
             }
         }
-        .task { await loadJobContext() }
-        .onChange(of: cartItems.count) { loadSuggestions() }
+        .task {
+            await loadJobContext()
+            postAIContext()
+        }
+        .onChange(of: cartItems.count) {
+            loadSuggestions()
+            postAIContext()
+        }
+        .onChange(of: selectedJobId) { postAIContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .jpoCreationPageInactive, object: nil)
+        }
     }
 
     // MARK: - Job Header
@@ -971,6 +981,22 @@ struct IOSJPOCreationPage: View {
         } catch {
             submitError = userFriendlyError(error, context: "submit data")
         }
+    }
+
+    private func postAIContext() {
+        let context = [
+            "New Parts Order / JPO creation page is open.",
+            "Selected job: \(selectedJobName.isEmpty ? "none" : selectedJobName).",
+            "Priority: \(priority), delivery preference: \(deliveryOption).",
+            "Cart items: \(cartItems.count), total quantity: \(cartItems.reduce(0) { $0 + $1.quantity }).",
+            "Search text is \(searchText.isEmpty ? "empty" : "active"); recent searches: \(recentSearches.count).",
+            "This context is read-only; explain draft readiness, cart contents, stock colors, suggestions, and submit requirements without creating a JPO."
+        ].joined(separator: " ")
+        NotificationCenter.default.post(
+            name: .jpoCreationPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 
     // MARK: - Suggestions Loading

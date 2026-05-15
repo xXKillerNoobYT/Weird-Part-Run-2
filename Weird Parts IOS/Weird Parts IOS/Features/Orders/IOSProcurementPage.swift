@@ -55,6 +55,50 @@ struct IOSProcurementPage: View {
         var id: String { "help" }
     }
 
+    private var generateErrorPresented: Binding<Bool> {
+        Binding(
+            get: { generateError != nil },
+            set: { isPresented in
+                if !isPresented {
+                    generateError = nil
+                }
+            }
+        )
+    }
+
+    private var generateSuccessPresented: Binding<Bool> {
+        Binding(
+            get: { generateSuccess != nil },
+            set: { isPresented in
+                if !isPresented {
+                    generateSuccess = nil
+                }
+            }
+        )
+    }
+
+    private var pullActionErrorPresented: Binding<Bool> {
+        Binding(
+            get: { pullActionError != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pullActionError = nil
+                }
+            }
+        )
+    }
+
+    private var pullActionSuccessPresented: Binding<Bool> {
+        Binding(
+            get: { pullActionSuccess != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pullActionSuccess = nil
+                }
+            }
+        )
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             OnboardingBanner(pageId: "orders-procurement")
@@ -104,18 +148,15 @@ struct IOSProcurementPage: View {
         }
         .onChange(of: checkedParts) { updateReadyToGenerate() }
         .onChange(of: selectedSupplier) { updateReadyToGenerate() }
-        .alert("Error", isPresented: Binding(
-            get: { generateError != nil },
-            set: { if !$0 { generateError = nil } }
-        )) {
+        .onDisappear {
+            NotificationCenter.default.post(name: .procurementPageInactive, object: nil)
+        }
+        .alert("Error", isPresented: generateErrorPresented) {
             Button("OK") { generateError = nil }
         } message: {
             Text(generateError ?? "")
         }
-        .alert("POs Generated", isPresented: Binding(
-            get: { generateSuccess != nil },
-            set: { if !$0 { generateSuccess = nil } }
-        )) {
+        .alert("POs Generated", isPresented: generateSuccessPresented) {
             Button("OK") {
                 generateSuccess = nil
                 loadData() // Refresh to remove generated items
@@ -123,18 +164,12 @@ struct IOSProcurementPage: View {
         } message: {
             Text(generateSuccess ?? "")
         }
-        .alert("Pull Error", isPresented: Binding(
-            get: { pullActionError != nil },
-            set: { if !$0 { pullActionError = nil } }
-        )) {
+        .alert("Pull Error", isPresented: pullActionErrorPresented) {
             Button("OK") { pullActionError = nil }
         } message: {
             Text(pullActionError ?? "")
         }
-        .alert("Pull Complete", isPresented: Binding(
-            get: { pullActionSuccess != nil },
-            set: { if !$0 { pullActionSuccess = nil } }
-        )) {
+        .alert("Pull Complete", isPresented: pullActionSuccessPresented) {
             Button("OK") {
                 pullActionSuccess = nil
                 loadData() // Refresh stock levels
@@ -1152,9 +1187,35 @@ struct IOSProcurementPage: View {
             }
             sourceCounts = counts
             updateReadyToGenerate()
+            postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load procurement data")
         }
         isLoading = false
+    }
+
+    private func postAIContext() {
+        let sourceText = sourceCounts
+            .map { "\($0.key): \($0.value)" }
+            .sorted()
+            .joined(separator: ", ")
+        let readyQuantity = cachedReadyToGenerate.reduce(0) { $0 + effectiveOrderQty(for: $1) }
+        let selectedSupplierCount = selectedSupplier.count
+        let visibleExamples = filteredItems.prefix(5).map { item in
+            "\(item.partName) need \(item.totalDemand), stock \(item.shopStock)"
+        }.joined(separator: "; ")
+        let context = """
+        Procurement page. Read-only context.
+        Total demand rows: \(items.count), visible rows: \(filteredItems.count), selected rows: \(checkedParts.count), rows with supplier selected: \(selectedSupplierCount).
+        Active source filter: \(sourceFilter ?? "all"), search active: \(!searchText.isEmpty), source counts: \(sourceText.isEmpty ? "none" : sourceText).
+        Ready-to-generate preview groups: \(poPreviewGroups.count), ready order quantity: \(readyQuantity), pull decisions: \(pullDecisions.count).
+        Visible examples: \(visibleExamples.isEmpty ? "none" : visibleExamples).
+        Available read-only guidance: explain demand sources, supplier tags, pull-vs-order choices, current filters, and PO preview state. Do not generate POs or change selections directly.
+        """
+        NotificationCenter.default.post(
+            name: .procurementPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 }

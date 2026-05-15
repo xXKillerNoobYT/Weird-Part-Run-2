@@ -174,6 +174,9 @@ struct IOSPODetailPage: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .poDetailPageInactive, object: nil)
+        }
     }
 
     // MARK: - Sheet Content
@@ -2216,10 +2219,37 @@ struct IOSPODetailPage: View {
 
             // Load receipt history entries from receiving_sessions (62P)
             receiptHistoryEntries = (try? service.getReceiptHistoryEntries(poId: poId)) ?? []
+            postAIContext(detail)
         } catch {
             loadError = userFriendlyError(error, context: "load PO details")
         }
         isLoading = false
+    }
+
+    private func postAIContext(_ detail: OrdersService.PODetail) {
+        let totalOrdered = detail.lines.reduce(0) { $0 + $1.quantityOrdered }
+        let totalReceived = detail.lines.reduce(0) { $0 + $1.quantityReceived }
+        let openLineCount = detail.lines.filter { $0.quantityReceived < $0.quantityOrdered }.count
+        let statusCounts = Dictionary(grouping: detail.lines, by: \.lineStatus)
+            .map { "\($0.key): \($0.value.count)" }
+            .sorted()
+            .joined(separator: ", ")
+        let linkedJobs = Set(detail.lines.compactMap(\.jobName)).sorted().prefix(5).joined(separator: ", ")
+        let receiptSessions = receiptHistoryEntries.isEmpty ? receiptBatches.count : receiptHistoryEntries.count
+
+        let context = """
+        PO Detail page. Read-only context.
+        PO: \(detail.poNumber) (id \(detail.id)), supplier: \(detail.supplierName), status: \(detail.status).
+        Lines: \(detail.lines.count), open lines: \(openLineCount), ordered units: \(totalOrdered), received units: \(totalReceived), statuses: \(statusCounts.isEmpty ? "none" : statusCounts).
+        Linked JPO count: \(detail.linkedJPOIds.count), linked jobs shown: \(linkedJobs.isEmpty ? "none" : linkedJobs).
+        Expected delivery: \(detail.expectedDelivery ?? "not set"), tracking: \(detail.trackingNumber ?? "not set"), receipt sessions: \(receiptSessions).
+        Available read-only guidance: explain PO status, outstanding quantities, delivery/receipt state, supplier/contact sections, and where visible controls are located. Do not suggest mutating the PO directly.
+        """
+        NotificationCenter.default.post(
+            name: .poDetailPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 
     /// Parse timestamped notes from a newline-delimited string.

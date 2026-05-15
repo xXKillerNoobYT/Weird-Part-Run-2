@@ -83,6 +83,24 @@ struct IOSWarehouseNetworkPage: View {
                 ]
             )
         }
+        .onAppear { postAIContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .warehouseNetworkPageInactive, object: nil)
+        }
+    }
+
+    private func postAIContext() {
+        let context = """
+        Warehouse Network page. Read-only context.
+        This device status: Online, local database active. Connected device discovery is a planned placeholder.
+        Planned features shown: LAN HTTP Sync, Multipeer Connectivity, Encrypted Sync, Conflict Resolution.
+        Available read-only guidance: explain current local status and planned network sync capabilities. Do not attempt pairing, discovery, or sync actions directly.
+        """
+        NotificationCenter.default.post(
+            name: .warehouseNetworkPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 
     private func featureRow(icon: String, label: String, description: String) -> some View {

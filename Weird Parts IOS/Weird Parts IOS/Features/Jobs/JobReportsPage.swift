@@ -66,6 +66,9 @@ struct JobReportsPage: View {
             .onChange(of: dateRange) { loadReports() }
             .onChange(of: customStart) { loadReports() }
             .onChange(of: customEnd) { loadReports() }
+            .onDisappear {
+                NotificationCenter.default.post(name: .jobReportsPageInactive, object: nil)
+            }
     }
 
     // MARK: - Content
@@ -145,9 +148,29 @@ struct JobReportsPage: View {
         loadError = nil
         do {
             reports = try service.listReports()
+            postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load job reports")
         }
         isLoading = false
+    }
+
+    private func postAIContext() {
+        let statusCounts = Dictionary(grouping: reports, by: \.status)
+            .map { "\($0.key): \($0.value.count)" }
+            .sorted()
+            .joined(separator: ", ")
+        let context = """
+        Job Reports page. Read-only context.
+        Date range: \(dateRange.rawValue), search active: \(!searchText.isEmpty).
+        Reports loaded: \(reports.count), visible reports: \(filteredReports.count), status counts: \(statusCounts.isEmpty ? "none" : statusCounts).
+        Custom date range active: \(dateRange == .custom), start: \(customStart), end: \(customEnd).
+        Available read-only guidance: explain report rows, status badges, date range filters, search state, and help/refresh controls. Do not create or update reports directly.
+        """
+        NotificationCenter.default.post(
+            name: .jobReportsPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 }

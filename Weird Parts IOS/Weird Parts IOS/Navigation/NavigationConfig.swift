@@ -257,6 +257,48 @@ extension Notification.Name {
     /// Posted when the Clock In/Out page disappears.
     static let clockPageInactive = Notification.Name("WiredPart.clockPageInactive")
 
+    /// Posted when a Job Detail page appears, with read-only job summary context for AI.
+    static let jobDetailPageActive = Notification.Name("WiredPart.jobDetailPageActive")
+
+    /// Posted when a Job Detail page disappears.
+    static let jobDetailPageInactive = Notification.Name("WiredPart.jobDetailPageInactive")
+
+    /// Posted when the Labor page appears, with read-only labor list context for AI.
+    static let laborPageActive = Notification.Name("WiredPart.laborPageActive")
+
+    /// Posted when the Labor page disappears.
+    static let laborPageInactive = Notification.Name("WiredPart.laborPageInactive")
+
+    /// Posted when the Daily Reports page appears, with read-only daily report context for AI.
+    static let dailyReportsPageActive = Notification.Name("WiredPart.dailyReportsPageActive")
+
+    /// Posted when the Daily Reports page disappears.
+    static let dailyReportsPageInactive = Notification.Name("WiredPart.dailyReportsPageInactive")
+
+    /// Posted when the Clock-Out Questionnaire appears, with read-only question state context for AI.
+    static let questionnairePageActive = Notification.Name("WiredPart.questionnairePageActive")
+
+    /// Posted when the Clock-Out Questionnaire disappears.
+    static let questionnairePageInactive = Notification.Name("WiredPart.questionnairePageInactive")
+
+    /// Posted when the Estimation Questionnaire appears, with read-only estimate question context for AI.
+    static let estimationQuestionnairePageActive = Notification.Name("WiredPart.estimationQuestionnairePageActive")
+
+    /// Posted when the Estimation Questionnaire disappears.
+    static let estimationQuestionnairePageInactive = Notification.Name("WiredPart.estimationQuestionnairePageInactive")
+
+    /// Posted when the Estimation Review page appears, with read-only review context for AI.
+    static let estimationReviewPageActive = Notification.Name("WiredPart.estimationReviewPageActive")
+
+    /// Posted when the Estimation Review page disappears.
+    static let estimationReviewPageInactive = Notification.Name("WiredPart.estimationReviewPageInactive")
+
+    /// Posted when the Job Reports page appears, with read-only report list context for AI.
+    static let jobReportsPageActive = Notification.Name("WiredPart.jobReportsPageActive")
+
+    /// Posted when the Job Reports page disappears.
+    static let jobReportsPageInactive = Notification.Name("WiredPart.jobReportsPageInactive")
+
     // MARK: - Orders
 
     /// Posted when the JPOs page appears, with JPO count and filter context for AI.
@@ -271,13 +313,145 @@ extension Notification.Name {
     /// Posted when the Purchase Orders page disappears.
     static let purchaseOrdersPageInactive = Notification.Name("WiredPart.purchaseOrdersPageInactive")
 
+    /// Posted when a PO detail page appears, with read-only PO status context for AI.
+    static let poDetailPageActive = Notification.Name("WiredPart.poDetailPageActive")
+
+    /// Posted when a PO detail page disappears.
+    static let poDetailPageInactive = Notification.Name("WiredPart.poDetailPageInactive")
+
+    /// Posted when the receive shipment page appears, with read-only receiving context for AI.
+    static let receiveShipmentPageActive = Notification.Name("WiredPart.receiveShipmentPageActive")
+
+    /// Posted when the receive shipment page disappears.
+    static let receiveShipmentPageInactive = Notification.Name("WiredPart.receiveShipmentPageInactive")
+
+    /// Posted when the procurement page appears, with read-only demand/supplier context for AI.
+    static let procurementPageActive = Notification.Name("WiredPart.procurementPageActive")
+
+    /// Posted when the procurement page disappears.
+    static let procurementPageInactive = Notification.Name("WiredPart.procurementPageInactive")
+
+    /// Posted when the returns page appears, with read-only return list context for AI.
+    static let returnsPageActive = Notification.Name("WiredPart.returnsPageActive")
+
+    /// Posted when the returns page disappears.
+    static let returnsPageInactive = Notification.Name("WiredPart.returnsPageInactive")
+
+    /// Posted when the JPO creation page appears, with read-only draft context for AI.
+    static let jpoCreationPageActive = Notification.Name("WiredPart.jpoCreationPageActive")
+
+    /// Posted when the JPO creation page disappears.
+    static let jpoCreationPageInactive = Notification.Name("WiredPart.jpoCreationPageInactive")
+
+    /// Posted when a JPO detail page appears, with read-only status context for AI.
+    static let jpoDetailPageActive = Notification.Name("WiredPart.jpoDetailPageActive")
+
+    /// Posted when a JPO detail page disappears.
+    static let jpoDetailPageInactive = Notification.Name("WiredPart.jpoDetailPageInactive")
+
+    /// Posted when the order staging page appears, with read-only job stage context for AI.
+    static let orderStagingPageActive = Notification.Name("WiredPart.orderStagingPageActive")
+
+    /// Posted when the order staging page disappears.
+    static let orderStagingPageInactive = Notification.Name("WiredPart.orderStagingPageInactive")
+
+    /// Posted when the parts order management page appears, with read-only supplier/PO context for AI.
+    static let partsOrderManagementPageActive = Notification.Name("WiredPart.partsOrderManagementPageActive")
+
+    /// Posted when the parts order management page disappears.
+    static let partsOrderManagementPageInactive = Notification.Name("WiredPart.partsOrderManagementPageInactive")
+
+    /// Posted when the orders wishlist page appears, with read-only wishlist context for AI.
+    static let ordersWishlistPageActive = Notification.Name("WiredPart.ordersWishlistPageActive")
+
+    /// Posted when the orders wishlist page disappears.
+    static let ordersWishlistPageInactive = Notification.Name("WiredPart.ordersWishlistPageInactive")
+
+    /// Posted when the retired unified order page appears, with read-only replacement context for AI.
+    static let unifiedOrderPageActive = Notification.Name("WiredPart.unifiedOrderPageActive")
+
+    /// Posted when the retired unified order page disappears.
+    static let unifiedOrderPageInactive = Notification.Name("WiredPart.unifiedOrderPageInactive")
+
     // MARK: - Warehouse
+
+    /// Posted when the warehouse dashboard appears, with read-only KPI/activity context for AI.
+    static let warehouseDashboardPageActive = Notification.Name("WiredPart.warehouseDashboardPageActive")
+
+    /// Posted when the warehouse dashboard disappears.
+    static let warehouseDashboardPageInactive = Notification.Name("WiredPart.warehouseDashboardPageInactive")
 
     /// Posted when the Inventory Grid page appears, with inventory context for AI.
     static let inventoryGridPageActive = Notification.Name("WiredPart.inventoryGridPageActive")
 
     /// Posted when the Inventory Grid page disappears.
     static let inventoryGridPageInactive = Notification.Name("WiredPart.inventoryGridPageInactive")
+
+    /// Posted when the warehouse locations page appears, with read-only floor plan context for AI.
+    static let warehouseLocationsPageActive = Notification.Name("WiredPart.warehouseLocationsPageActive")
+
+    /// Posted when the warehouse locations page disappears.
+    static let warehouseLocationsPageInactive = Notification.Name("WiredPart.warehouseLocationsPageInactive")
+
+    /// Posted when the warehouse movements page appears, with read-only movement/filter context for AI.
+    static let warehouseMovementsPageActive = Notification.Name("WiredPart.warehouseMovementsPageActive")
+
+    /// Posted when the warehouse movements page disappears.
+    static let warehouseMovementsPageInactive = Notification.Name("WiredPart.warehouseMovementsPageInactive")
+
+    /// Posted when the warehouse receiving sessions page appears, with read-only session context for AI.
+    static let warehouseReceivingPageActive = Notification.Name("WiredPart.warehouseReceivingPageActive")
+
+    /// Posted when the warehouse receiving sessions page disappears.
+    static let warehouseReceivingPageInactive = Notification.Name("WiredPart.warehouseReceivingPageInactive")
+
+    /// Posted when the warehouse staging page appears, with read-only staged item/box context for AI.
+    static let warehouseStagingPageActive = Notification.Name("WiredPart.warehouseStagingPageActive")
+
+    /// Posted when the warehouse staging page disappears.
+    static let warehouseStagingPageInactive = Notification.Name("WiredPart.warehouseStagingPageInactive")
+
+    /// Posted when the warehouse audit page appears, with read-only audit queue context for AI.
+    static let warehouseAuditPageActive = Notification.Name("WiredPart.warehouseAuditPageActive")
+
+    /// Posted when the warehouse audit page disappears.
+    static let warehouseAuditPageInactive = Notification.Name("WiredPart.warehouseAuditPageInactive")
+
+    /// Posted when the warehouse returns page appears, with read-only return status context for AI.
+    static let warehouseReturnsPageActive = Notification.Name("WiredPart.warehouseReturnsPageActive")
+
+    /// Posted when the warehouse returns page disappears.
+    static let warehouseReturnsPageInactive = Notification.Name("WiredPart.warehouseReturnsPageInactive")
+
+    /// Posted when the warehouse tools page appears, with read-only tool status context for AI.
+    static let warehouseToolsPageActive = Notification.Name("WiredPart.warehouseToolsPageActive")
+
+    /// Posted when the warehouse tools page disappears.
+    static let warehouseToolsPageInactive = Notification.Name("WiredPart.warehouseToolsPageInactive")
+
+    /// Posted when the warehouse network page appears, with read-only device/network context for AI.
+    static let warehouseNetworkPageActive = Notification.Name("WiredPart.warehouseNetworkPageActive")
+
+    /// Posted when the warehouse network page disappears.
+    static let warehouseNetworkPageInactive = Notification.Name("WiredPart.warehouseNetworkPageInactive")
+
+    /// Posted when the warehouse settings page appears, with read-only settings context for AI.
+    static let warehouseSettingsPageActive = Notification.Name("WiredPart.warehouseSettingsPageActive")
+
+    /// Posted when the warehouse settings page disappears.
+    static let warehouseSettingsPageInactive = Notification.Name("WiredPart.warehouseSettingsPageInactive")
+
+    /// Posted when the organization audit page appears, with read-only organization context for AI.
+    static let warehouseOrganizationAuditPageActive = Notification.Name("WiredPart.warehouseOrganizationAuditPageActive")
+
+    /// Posted when the organization audit page disappears.
+    static let warehouseOrganizationAuditPageInactive = Notification.Name("WiredPart.warehouseOrganizationAuditPageInactive")
+
+    /// Posted when the warehouse leaderboard page appears, with read-only rating context for AI.
+    static let warehouseLeaderboardPageActive = Notification.Name("WiredPart.warehouseLeaderboardPageActive")
+
+    /// Posted when the warehouse leaderboard page disappears.
+    static let warehouseLeaderboardPageInactive = Notification.Name("WiredPart.warehouseLeaderboardPageInactive")
 
     // MARK: - Scheduling
 

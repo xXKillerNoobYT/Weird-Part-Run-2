@@ -119,11 +119,15 @@ struct WarehouseLocationsPage: View {
             Text("This will permanently remove the storage unit and all its location data.")
         }
         .searchable(text: $searchText, prompt: "Search locations...")
+        .onChange(of: searchText) { postAIContext() }
         .refreshable { loadData() }
         .background(DS.Background.page)
         .task {
             loadData()
             appCore.onboardingManager?.markCompleted("wh-locations-view")
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .warehouseLocationsPageInactive, object: nil)
         }
     }
 
@@ -535,9 +539,37 @@ struct WarehouseLocationsPage: View {
         do {
             storageUnits = try service.listStorageUnits(floorPlanId: planId)
             floorFeatures = try service.listFloorFeatures(floorPlanId: planId)
+            postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load locations")
         }
+    }
+
+    private func postAIContext() {
+        let placedUnits = storageUnits.filter { $0.gridX != nil && $0.gridY != nil }.count
+        let movableUnits = storageUnits.filter { $0.isMovable }.count
+        let configuredUnits = storageUnits.filter { $0.isConfigured }.count
+        let unitTypes = Dictionary(grouping: storageUnits, by: \.unitType)
+            .map { "\($0.key): \($0.value.count)" }
+            .sorted()
+            .joined(separator: ", ")
+        let featureTypes = Dictionary(grouping: floorFeatures, by: \.featureType)
+            .map { "\($0.key): \($0.value.count)" }
+            .sorted()
+            .joined(separator: ", ")
+        let selectedPlanName = selectedPlan?.name ?? "none"
+        let context = """
+        Warehouse Locations page. Read-only context.
+        Floor plans: \(floorPlans.count), selected plan: \(selectedPlanName), search active: \(!searchText.isEmpty).
+        Storage units loaded: \(storageUnits.count), placed on grid: \(placedUnits), configured: \(configuredUnits), movable: \(movableUnits).
+        Floor features loaded: \(floorFeatures.count). Unit types: \(unitTypes.isEmpty ? "none" : unitTypes). Feature types: \(featureTypes.isEmpty ? "none" : featureTypes).
+        Available read-only guidance: explain floor plan selector, grid placement, movable storage, unit detail drill-down, stickers, and visible add/help controls. Do not create, move, edit, or delete locations directly.
+        """
+        NotificationCenter.default.post(
+            name: .warehouseLocationsPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 
     // MARK: - Helpers

@@ -74,6 +74,9 @@ struct IOSReceivingPage: View {
             sheetContent(for: sheet)
         }
         .task { loadData() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .warehouseReceivingPageInactive, object: nil)
+        }
     }
 
     // MARK: - Sheet Content
@@ -343,9 +346,28 @@ struct IOSReceivingPage: View {
         loadError = nil
         do {
             sessions = try service.getActiveSessions()
+            postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load receiving data")
         }
         isLoading = false
+    }
+
+    private func postAIContext() {
+        let statusCounts = Dictionary(grouping: sessions, by: \.status)
+            .map { "\($0.key): \($0.value.count)" }
+            .sorted()
+            .joined(separator: ", ")
+        let context = """
+        Warehouse Receiving page. Read-only context.
+        Loaded sessions: \(sessions.count), visible after filters: \(filteredSessions.count), selected filter: \(selectedFilter?.rawValue ?? "none"), search active: \(!searchText.isEmpty).
+        Session statuses: \(statusCounts.isEmpty ? "none" : statusCounts).
+        Available read-only guidance: explain active/completed/cancelled session filters, search, continuing active sessions, and start receiving entry point. Do not start or continue a session directly.
+        """
+        NotificationCenter.default.post(
+            name: .warehouseReceivingPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 }

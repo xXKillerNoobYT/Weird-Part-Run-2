@@ -182,6 +182,9 @@ struct IOSStagingPage: View {
             loadData()
             appCore.onboardingManager?.markCompleted("wh-staging-view")
         }
+        .onDisappear {
+            NotificationCenter.default.post(name: .warehouseStagingPageInactive, object: nil)
+        }
     }
 
     // MARK: - Items Tab Toolbar
@@ -847,9 +850,33 @@ struct IOSStagingPage: View {
             if let jobsService = appCore.jobsService {
                 jobs = try jobsService.listJobs(status: "active", limit: 200)
             }
+            postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load staging area")
         }
         isLoading = false
+    }
+
+    private func postAIContext() {
+        let destinationTypes = Dictionary(grouping: stagedItems, by: { $0.destinationType ?? "other" })
+            .map { "\($0.key.isEmpty ? "other" : $0.key): \($0.value.count)" }
+            .sorted()
+            .joined(separator: ", ")
+        let boxStatuses = Dictionary(grouping: stagingBoxes, by: { $0.isFull ? "full" : "open" })
+            .map { "\($0.key): \($0.value.count)" }
+            .sorted()
+            .joined(separator: ", ")
+        let context = """
+        Warehouse Staging page. Read-only context.
+        Active tab: \(activeTab.rawValue), staged items: \(stagedItems.count), visible items: \(filteredItems.count), staging boxes: \(stagingBoxes.count), visible boxes: \(filteredBoxes.count).
+        Selected destination filter: \(selectedFilter?.rawValue ?? "none"), search active: \(!searchText.isEmpty), selection mode: \(isSelecting), selected items: \(selectedItems.count).
+        Destination types: \(destinationTypes.isEmpty ? "none" : destinationTypes). Box statuses: \(boxStatuses.isEmpty ? "none" : boxStatuses).
+        Available read-only guidance: explain staged item filters, box tab, batch selection, create box entry point, and loaded-item workflow. Do not clear items, create boxes, or change selection directly.
+        """
+        NotificationCenter.default.post(
+            name: .warehouseStagingPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 }

@@ -72,6 +72,8 @@ struct DatabaseTests {
             // Scheduling & estimation (046-047)
             "estimation_questions", // 047
             "estimation_question_accuracy_reviews", // 082
+            "warehouse_walking_paths", // 083
+            "warehouse_walking_path_stops", // 083
             // Tools detail (048-050)
             "tool_checkouts",    // 048
             // Vehicle & trailer (051-053)
@@ -94,9 +96,9 @@ struct DatabaseTests {
         }
     }
 
-    @Test("Schema version is 82")
+    @Test("Schema version is 83")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 82)
+        #expect(AppDatabase.schemaVersion == 83)
     }
 
     @Test("Migration 082 adds structured estimation review columns")

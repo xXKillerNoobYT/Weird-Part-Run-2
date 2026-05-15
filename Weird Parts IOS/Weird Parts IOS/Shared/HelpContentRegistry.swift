@@ -85,6 +85,47 @@ struct HelpContentRegistry {
         "WiredPart.suppliersPageActive": "parts-suppliers",
         "WiredPart.companionsPageActive": "parts-companions",
         "WiredPart.forecastingPageActive": "parts-forecasting",
+        "WiredPart.dashboardPageActive": "dashboard-home",
+        "WiredPart.jobsListPageActive": "jobs-list",
+        "WiredPart.clockPageActive": "dashboard-clock",
+        "WiredPart.jobDetailPageActive": "jobs-detail",
+        "WiredPart.laborPageActive": "jobs-labor",
+        "WiredPart.dailyReportsPageActive": "jobs-daily-reports",
+        "WiredPart.questionnairePageActive": "jobs-questionnaire",
+        "WiredPart.estimationQuestionnairePageActive": "jobs-estimation-questionnaire",
+        "WiredPart.estimationReviewPageActive": "jobs-estimation-review",
+        "WiredPart.jobReportsPageActive": "jobs-reports",
+        "WiredPart.jposPageActive": "orders-jpos",
+        "WiredPart.purchaseOrdersPageActive": "orders-pos",
+        "WiredPart.poDetailPageActive": "orders-po-detail",
+        "WiredPart.receiveShipmentPageActive": "orders-receiving",
+        "WiredPart.procurementPageActive": "orders-procurement",
+        "WiredPart.returnsPageActive": "orders-returns",
+        "WiredPart.jpoCreationPageActive": "orders-jpo-create",
+        "WiredPart.jpoDetailPageActive": "orders-jpo-detail",
+        "WiredPart.orderStagingPageActive": "orders-staging",
+        "WiredPart.partsOrderManagementPageActive": "orders-parts",
+        "WiredPart.ordersWishlistPageActive": "orders-wishlist",
+        "WiredPart.unifiedOrderPageActive": "orders-unified",
+        "WiredPart.warehouseDashboardPageActive": "warehouse-dashboard",
+        "WiredPart.inventoryGridPageActive": "warehouse-inventory",
+        "WiredPart.warehouseLocationsPageActive": "warehouse-locations",
+        "WiredPart.warehouseMovementsPageActive": "warehouse-movements",
+        "WiredPart.warehouseReceivingPageActive": "warehouse-receiving",
+        "WiredPart.warehouseStagingPageActive": "warehouse-staging",
+        "WiredPart.warehouseAuditPageActive": "warehouse-audit",
+        "WiredPart.warehouseReturnsPageActive": "warehouse-returns",
+        "WiredPart.warehouseToolsPageActive": "warehouse-tools",
+        "WiredPart.warehouseNetworkPageActive": "warehouse-network",
+        "WiredPart.warehouseSettingsPageActive": "warehouse-settings",
+        "WiredPart.warehouseOrganizationAuditPageActive": "warehouse-organization",
+        "WiredPart.warehouseLeaderboardPageActive": "warehouse-leaderboard",
+        "WiredPart.dispatchPageActive": "scheduling-dispatch",
+        "WiredPart.scheduleCalendarPageActive": "scheduling-calendar",
+        "WiredPart.employeesPageActive": "people-employees",
+        "WiredPart.vehiclesPageActive": "fleet-vehicles",
+        "WiredPart.toolRegistryPageActive": "tools-registry",
+        "WiredPart.notebooksListPageActive": "notebooks-all",
     ]
 
     // MARK: - All Entries (extracted from PageHelpSheet usages)
@@ -149,6 +190,56 @@ struct HelpContentRegistry {
                 ("Overview", "Track all labor entries across jobs. Active clock-ins appear at the top with clock-out buttons. Recent history is shown below."),
                 ("Clock In", "Tap the play button in the toolbar to start a new clock-in for any employee and job."),
                 ("Search", "Use the search bar to filter entries by employee name or job name. Pull down to refresh."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "jobs-daily-reports",
+            title: "Daily Reports Help",
+            sections: [
+                ("Overview", "View per-job activity summaries for any date. See worker count, total hours logged, and report status for each job."),
+                ("Navigation", "Use the left/right arrows to move between dates. Tap Today to jump back to the current date."),
+                ("Data", "Pull down to refresh. Reports are generated automatically based on clock entries and job activity."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "jobs-questionnaire",
+            title: "Clock-Out Questions Help",
+            sections: [
+                ("Overview", "Answer required clock-out questions before completing a labor entry. Required items are marked with an asterisk."),
+                ("Break Verification", "Record whether breaks were taken. Missed breaks are reported to the office for compliance review."),
+                ("Companion Polls", "Optional companion rule votes may appear at the bottom when there are active parts polls."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "jobs-estimation-questionnaire",
+            title: "Estimation Questionnaire Help",
+            sections: [
+                ("Purpose", "Answer stage-specific questions to generate a time-and-labor estimate for the job."),
+                ("Unknown Answers", "Use the question mark option for details that are not known yet. Unknown fields are excluded from calculation but tracked."),
+                ("Calculating", "Calculate Estimate shows days, hours, and confidence based on answered questions and historical jobs."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "jobs-estimation-review",
+            title: "Estimation Reviews Help",
+            sections: [
+                ("Purpose", "Compare estimates against actual job progress so future bids improve."),
+                ("Weekly Review", "Submit a progress check with notes about surprises, scope changes, or scheduling issues."),
+                ("End-of-Job Review", "Capture final actuals and lessons learned when the job closes."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "jobs-reports",
+            title: "Job Reports Help",
+            sections: [
+                ("Overview", "Browse daily reports across all jobs. Each report shows the job name, date, status, and reviewer."),
+                ("Search", "Use the search bar to filter reports by job name, date, or status."),
+                ("Details", "Reports are generated automatically from daily job activity and clock entries."),
             ]
         ),
 
@@ -251,6 +342,65 @@ struct HelpContentRegistry {
         ),
 
         HelpEntry(
+            pageId: "orders-jpo-create",
+            title: "New Parts Order Help",
+            sections: [
+                ("What This Page Does", "Create a Job Purchase Order (JPO) to request parts for a job. Search for parts, add them to the cart, set quantities, and submit for office approval."),
+                ("How to Use It", "Choose the job, priority, and delivery preference. Search or scan parts, add them to the cart, review companion suggestions, add notes, and submit."),
+                ("Tips", "Stock colors show whether the shop can transfer parts immediately or whether procurement must order them. The cart total is based on last-known pricing."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "orders-jpo-detail",
+            title: "JPO Detail Help",
+            sections: [
+                ("What This Page Does", "Shows one Job Purchase Order with job, requester, priority, delivery preference, status, and line items."),
+                ("Status Flow", "Review pending requests, approve or reject lines, inspect holds, and track whether each line is pending, ordered, transferred, or complete."),
+                ("Tips", "Use the line summary to understand which parts need approval, supplier ordering, transfer, or follow-up questions."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "orders-staging",
+            title: "Job Stage Planner Help",
+            sections: [
+                ("What This Page Does", "Shows all parts across all JPOs for a selected job, grouped by construction stage."),
+                ("Held Parts", "Parts assigned to future stages stay held until that stage becomes active, unless a user requests early release."),
+                ("Tips", "Use the stage cards to filter the list and see how much work is waiting in each phase."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "orders-parts",
+            title: "Parts Management Help",
+            sections: [
+                ("What This Page Does", "Shows all parts ordered from a selected supplier across purchase orders."),
+                ("Filters", "Use supplier, PO status, part status, and search filters to narrow the outstanding parts list."),
+                ("Tips", "Select rows to prepare supplier-centric follow-up such as moving parts, changing quantities, or holding lines for another supplier."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "orders-wishlist",
+            title: "Wishlist Help",
+            sections: [
+                ("What This Page Does", "Tracks parts that should be procured manually or from forecast and system-generated demand."),
+                ("Sections", "User Added, Forecast Demand, and System Auto-Added each have different review and approval expectations."),
+                ("Tips", "Dismissed items require a reason, and approved items can move into procurement."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "orders-unified",
+            title: "Unified Order Help",
+            sections: [
+                ("What This Page Does", "This retired page redirects users conceptually to the current JPO creation workflow."),
+                ("Replacement", "Use Job Orders -> Create JPO for new parts requests."),
+            ]
+        ),
+
+        HelpEntry(
             pageId: "orders-po-detail",
             title: "PO Detail Help",
             sections: [
@@ -348,6 +498,86 @@ struct HelpContentRegistry {
                 ("Overview", "Track all stock movements: transfers between locations, receiving from suppliers, returns, and adjustments."),
                 ("Creating Movements", "Tap + to start a new guided movement. The wizard walks you through selecting parts, quantities, and locations."),
                 ("Filtering", "Use the smart card chips to filter by movement type. Search by part name. Tap any movement for details."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "warehouse-receiving",
+            title: "Receiving Help",
+            sections: [
+                ("Overview", "Track incoming shipments from suppliers. Each receiving session records what was ordered versus what actually arrived."),
+                ("Starting a Session", "Tap + to start receiving against a purchase order. Scan or manually enter received quantities."),
+                ("Status Filters", "Use the smart cards to filter by active, completed, or cancelled sessions. Pull down to refresh."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "warehouse-audit",
+            title: "Warehouse Audit Help",
+            sections: [
+                ("Confidence System", "Each part has a confidence score that decays over time. Auditing confirms shelf accuracy and restores confidence."),
+                ("Count Flow", "System counts stay hidden while you count. After submitting, the page shows variance and next steps."),
+                ("Misplaced Parts", "Use the misplaced part flow when a part is found in the wrong spot so it can be corrected."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "warehouse-returns",
+            title: "Warehouse Returns Help",
+            sections: [
+                ("Overview", "Manage supplier return requests through pending, approved, shipped, and completed states."),
+                ("Creating Returns", "Tap + to create a return with supplier, parts, and reason details."),
+                ("Status Tracking", "Use status filters and search to focus on returns that need follow-up."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "warehouse-tools",
+            title: "Warehouse Tools Help",
+            sections: [
+                ("Overview", "View tools assigned to the warehouse and see whether they are available, checked out, or in maintenance."),
+                ("Actions", "Swipe a row to check out, return, or mark a tool for maintenance when those actions are available."),
+                ("Search", "Use search to find tools by name or serial number. Pull down to refresh the list."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "warehouse-network",
+            title: "Network Help",
+            sections: [
+                ("Overview", "View this device's local warehouse network status and planned connected-device support."),
+                ("Sync", "When network sync is available, this page will show real-time connectivity and sync status for local devices."),
+                ("Planned", "Planned capabilities include LAN HTTP sync, peer-to-peer pairing, encrypted sync, and conflict resolution."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "warehouse-settings",
+            title: "Warehouse Settings Help",
+            sections: [
+                ("Locations", "Configure default receiving and staging locations used when new shipments arrive or parts are pulled."),
+                ("Thresholds", "Set low stock and critical stock thresholds and choose whether alerts are enabled."),
+                ("Policies", "Control movement notes, approvals, auto-confirm thresholds, audit frequency, and discrepancy photo requirements."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "warehouse-organization",
+            title: "Organization Audit Help",
+            sections: [
+                ("Organization Ratings", "Each area gets a rating based on labels, part placement, duplicate storage, overcrowding, and bin assignment."),
+                ("Consolidation", "When the same part is spread across too many areas, the page suggests consolidation and tracks votes."),
+                ("Org Checklist", "Tap an area to run a checklist for labels, part placement, duplicate cleanup, space, and bin assignment."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "warehouse-leaderboard",
+            title: "Leaderboard Help",
+            sections: [
+                ("Ratings", "Warehouse ratings summarize user accuracy, effort, placement, speed, and proactive fixes."),
+                ("Scores", "Scores range from 0 to 10. Accurate counts and clean placement raise scores; misplacements lower them."),
+                ("Managers", "Managers can open user details for score breakdowns and training suggestions."),
             ]
         ),
 

@@ -63,8 +63,12 @@ struct IOSReturnsPage: View {
             }
         }
         .onChange(of: searchText) { loadData() }
+        .onChange(of: statusFilter) { postAIContext() }
         .refreshable { loadData() }
         .task { loadData() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .returnsPageInactive, object: nil)
+        }
     }
 
     // MARK: - Smart Card Filters
@@ -234,9 +238,33 @@ struct IOSReturnsPage: View {
         do {
             // Load all returns for client-side filtering (enables smart card counts)
             allReturns = try service.listReturns(status: nil)
+            postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load returns")
         }
         isLoading = false
+    }
+
+    private func postAIContext() {
+        let statusCounts = Dictionary(grouping: allReturns, by: \.status)
+            .map { "\($0.key): \($0.value.count)" }
+            .sorted()
+            .joined(separator: ", ")
+        let creditTotal = filteredReturns.compactMap(\.creditAmount).reduce(0, +)
+        let visibleExamples = filteredReturns.prefix(5).map { ret in
+            "RET #\(ret.id) \(ret.returnType) \(ret.status)"
+        }.joined(separator: ", ")
+        let context = """
+        Returns page. Read-only context.
+        Total returns: \(allReturns.count), visible returns: \(filteredReturns.count), active status filter: \(statusFilter ?? "all"), search active: \(!searchText.isEmpty).
+        Status counts: \(statusCounts.isEmpty ? "none" : statusCounts), visible credit total: \(Formatters.formatCurrency(creditTotal)).
+        Visible examples: \(visibleExamples.isEmpty ? "none" : visibleExamples).
+        Available read-only guidance: explain return statuses, current filters, visible credit totals, and where create/help controls are located. Do not create or update returns directly.
+        """
+        NotificationCenter.default.post(
+            name: .returnsPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 }

@@ -38,6 +38,10 @@ struct WiredPartIOSApp: App {
         appCore.hasPermission("manage_people") && appCore.hasPermission("manage_jobs")
     }
 
+    private var shouldOpenWarehouseSetupForUITest: Bool {
+        ProcessInfo.processInfo.arguments.contains("-UITestingWarehouseSetupWizard")
+    }
+
     /// Resolved color scheme from the user's theme setting.
     private var resolvedColorScheme: ColorScheme? {
         switch appCore.theme.themeMode {
@@ -73,6 +77,9 @@ struct WiredPartIOSApp: App {
                             .environmentObject(appCore)
                     } else if !hasCompletedOnboarding {
                         OnboardingWalkthroughView()
+                            .environmentObject(appCore)
+                    } else if shouldOpenWarehouseSetupForUITest {
+                        WarehouseOnboardingWizard()
                             .environmentObject(appCore)
                     } else {
                         IOSMainView()

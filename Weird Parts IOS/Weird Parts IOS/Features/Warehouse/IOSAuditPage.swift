@@ -39,6 +39,14 @@ struct IOSAuditPage: View {
     @State private var speedModeActive = false
     @State private var speedQueue: [CountingItem] = []
 
+    // Walking-path audit
+    @State private var floorPlanId: Int64?
+    @State private var walkingPathAreaIds: [Int64] = []
+    @State private var walkingPathSourceHint: String?
+    @State private var prunedStopsBanner: String?
+    @State private var walkingPathActive = false
+    @State private var currentPathStopIndex = 0
+
     private enum ActiveSheet: Identifiable {
         case auditSetup
         case misplacedPart
@@ -114,6 +122,8 @@ struct IOSAuditPage: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = loadError {
                 ErrorStateView(message: error) { loadData() }
+            } else if walkingPathActive {
+                walkingPathStopView
             } else if let counting = countingPart {
                 countFlowView(counting)
             } else {
@@ -152,6 +162,9 @@ struct IOSAuditPage: View {
         .task {
             loadData()
             appCore.onboardingManager?.markCompleted("wh-audit-view")
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .warehouseAuditPageInactive, object: nil)
         }
     }
 
@@ -263,6 +276,35 @@ struct IOSAuditPage: View {
                         .font(.caption)
                         .buttonStyle(.bordered)
                         .tint(.red)
+                    }
+                }
+            }
+
+            if !walkingPathAreaIds.isEmpty || walkingPathSourceHint != nil || prunedStopsBanner != nil {
+                Section("Walking Path") {
+                    if let prunedStopsBanner {
+                        Label(prunedStopsBanner, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                    if let walkingPathSourceHint {
+                        Label(walkingPathSourceHint, systemImage: "figure.walk")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if walkingPathAreaIds.isEmpty {
+                        Text("No audit stops available yet.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Button {
+                            startWalkingPathAudit()
+                        } label: {
+                            Label("Walk \(walkingPathAreaIds.count) Stops", systemImage: "arrow.forward.circle")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
                 }
             }
@@ -626,6 +668,95 @@ struct IOSAuditPage: View {
         .padding()
     }
 
+    private var walkingPathStopView: some View {
+        let areaId = currentWalkingPathAreaId
+        let stopItems = areaId.map(itemsForArea) ?? []
+        return VStack(spacing: 0) {
+            List {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Stop \(min(currentPathStopIndex + 1, walkingPathAreaIds.count)) of \(walkingPathAreaIds.count)")
+                            .font(.headline)
+                        Text(areaId.map(locationCode(for:)) ?? "Unknown area")
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                        Text(stopLabel(for: areaId))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                if stopItems.isEmpty {
+                    Section {
+                        ContentUnavailableView {
+                            Label("No parts here", systemImage: "tray")
+                        } description: {
+                            Text("Confirm empty or report count.")
+                        }
+
+                        Button {
+                            recordWalkingPathEvent(type: "empty_confirmed", notes: "Confirmed empty walking-path stop")
+                            advanceWalkingPathStop()
+                        } label: {
+                            Label("Confirm Empty", systemImage: "checkmark.circle")
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        Button {
+                            recordWalkingPathEvent(type: "count_reported", notes: "Reported count issue at empty walking-path stop")
+                            activeSheet = .misplacedPart
+                        } label: {
+                            Label("Report Count", systemImage: "flag")
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.orange)
+                    }
+                } else {
+                    Section("Parts") {
+                        ForEach(stopItems, id: \.partId) { item in
+                            auditQueueRow(item)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    startCounting(item)
+                                }
+                        }
+                    }
+
+                    Section {
+                        Button {
+                            recordWalkingPathEvent(type: "stop_completed", notes: "Completed walking-path stop")
+                            advanceWalkingPathStop()
+                        } label: {
+                            Label("Next Stop", systemImage: "arrow.right.circle")
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        Button {
+                            recordWalkingPathEvent(type: "deviation_reported", notes: "Reported issue during walking-path stop")
+                            activeSheet = .misplacedPart
+                        } label: {
+                            Label("Report Issue", systemImage: "flag")
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.orange)
+                    }
+                }
+            }
+
+            HStack {
+                Button("Exit Walkthrough") {
+                    walkingPathActive = false
+                    currentPathStopIndex = 0
+                }
+                .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding()
+            .background(Color(.secondarySystemBackground))
+        }
+    }
+
     // MARK: - Queue Row
 
     private func auditQueueRow(_ item: CountingItem) -> some View {
@@ -761,6 +892,17 @@ struct IOSAuditPage: View {
         }
     }
 
+    private var currentWalkingPathAreaId: Int64? {
+        guard walkingPathAreaIds.indices.contains(currentPathStopIndex) else { return nil }
+        return walkingPathAreaIds[currentPathStopIndex]
+    }
+
+    private func itemsForArea(_ areaId: Int64) -> [CountingItem] {
+        buildQueue()
+            .filter { $0.areaId == areaId }
+            .sorted { $0.partName < $1.partName }
+    }
+
     // MARK: - Actions
 
     private func startNewSession() {
@@ -775,6 +917,16 @@ struct IOSAuditPage: View {
         } catch {
             actionError = userFriendlyError(error, context: "complete action")
         }
+    }
+
+    private func startWalkingPathAudit() {
+        if activeSession == nil {
+            startNewSession()
+        }
+        guard activeSession != nil else { return }
+        currentPathStopIndex = 0
+        walkingPathActive = true
+        recordWalkingPathEvent(type: "walking_path_started", notes: walkingPathSourceHint)
     }
 
     private func endActiveSession() {
@@ -873,6 +1025,34 @@ struct IOSAuditPage: View {
         }
     }
 
+    private func advanceWalkingPathStop() {
+        if currentPathStopIndex + 1 < walkingPathAreaIds.count {
+            currentPathStopIndex += 1
+        } else {
+            recordWalkingPathEvent(type: "walking_path_completed", notes: "Completed walking-path audit")
+            walkingPathActive = false
+            currentPathStopIndex = 0
+            loadData()
+        }
+    }
+
+    private func recordWalkingPathEvent(type: String, notes: String? = nil) {
+        guard let service = appCore.warehouseService,
+              let sessionId = activeSession?.id else { return }
+        do {
+            try service.recordAuditSessionEvent(
+                sessionId: sessionId,
+                eventType: type,
+                areaId: currentWalkingPathAreaId,
+                walkingPathStopIndex: currentPathStopIndex,
+                notes: notes,
+                recordedBy: appCore.currentUser?.id
+            )
+        } catch {
+            auditLog.error("recordAuditSessionEvent failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     // MARK: - Helpers
 
     private func scoreColor(_ score: Double) -> Color {
@@ -950,6 +1130,15 @@ struct IOSAuditPage: View {
         locationCodeCache[areaId] ?? "—"
     }
 
+    private func stopLabel(for areaId: Int64?) -> String {
+        guard let areaId else { return "Unit · Shelf · Area" }
+        let parts = locationCode(for: areaId).split(separator: "-").map(String.init)
+        if parts.count >= 4 {
+            return "\(parts[1]) · \(parts[2]) · \(parts[3])"
+        }
+        return "Unit · Shelf · Area"
+    }
+
     // MARK: - Data Loading
 
     private func loadData() {
@@ -982,10 +1171,28 @@ struct IOSAuditPage: View {
             // Build lookup caches from confidence records
             loadNameCaches(service: service)
 
+            loadWalkingPath(service: service)
+            postAIContext()
+
         } catch {
             loadError = userFriendlyError(error, context: "load audit data")
         }
         isLoading = false
+    }
+
+    private func postAIContext() {
+        let context = """
+        Warehouse Audit page. Read-only context.
+        Confidence records loaded: \(confidenceRecords.count), recent sessions: \(recentSessions.count), active counts: \(activeCounts.count), warehouse score: \(String(format: "%.1f", warehouseScore)).
+        Selected filter: \(filter.rawValue), visible search active: \(!searchText.isEmpty), active session: \(activeSession != nil), counting part: \(countingPart?.partName ?? "none"), speed mode: \(speedModeActive), walking path active: \(walkingPathActive).
+        Filter counts: Audit Now \(countFor(.auditNow)), Soon \(countFor(.soon)), Good \(countFor(.good)), No Location \(countFor(.noLocation)).
+        Available read-only guidance: explain confidence scores, filter cards, audit sessions, speed mode, walking path, and misplaced-part entry point. Do not start audits, submit counts, or log misplaced parts directly.
+        """
+        NotificationCenter.default.post(
+            name: .warehouseAuditPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 
     private func loadNameCaches(service: WarehouseService) {
@@ -1000,6 +1207,39 @@ struct IOSAuditPage: View {
                     locationCodeCache[conf.areaId] = code
                 }
             }
+        }
+    }
+
+    private func loadWalkingPath(service: WarehouseService) {
+        do {
+            guard let floorPlanId = try service.getOnboardingProgress()?.floorPlanId else {
+                walkingPathAreaIds = []
+                walkingPathSourceHint = nil
+                prunedStopsBanner = nil
+                self.floorPlanId = nil
+                return
+            }
+
+            self.floorPlanId = floorPlanId
+            let pruned = try service.pruneOrphanedStops(floorPlanId: floorPlanId)
+            prunedStopsBanner = pruned > 0
+                ? "\(pruned) saved walking-path stop was no longer available and was removed."
+                : nil
+
+            if let path = try service.getDefaultWalkingPath(floorPlanId: floorPlanId),
+               !path.stops.isEmpty {
+                walkingPathAreaIds = path.stops.map(\.areaId)
+                walkingPathSourceHint = nil
+            } else {
+                walkingPathAreaIds = try service.suggestWalkingPath(floorPlanId: floorPlanId)
+                walkingPathSourceHint = walkingPathAreaIds.isEmpty ? nil : "No walking path saved. Using suggested order for this audit."
+            }
+
+            for areaId in walkingPathAreaIds where locationCodeCache[areaId] == nil {
+                locationCodeCache[areaId] = try? service.generateFullLocationCode(areaId: areaId)
+            }
+        } catch {
+            auditLog.error("loadWalkingPath failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 }

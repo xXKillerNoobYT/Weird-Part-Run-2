@@ -114,6 +114,35 @@ public final class NotebooksService: Sendable {
         }
     }
 
+    /// A warranty work classification waiting for manager review.
+    public struct PendingWarrantyClassification: Sendable, Identifiable {
+        public let id: Int64
+        public let entryTitle: String
+        public let entryContent: String
+        public let requestedClassification: String
+        public let requestedByName: String
+        public let jobName: String
+        public let createdAt: String
+
+        public init(
+            id: Int64,
+            entryTitle: String,
+            entryContent: String,
+            requestedClassification: String,
+            requestedByName: String,
+            jobName: String,
+            createdAt: String
+        ) {
+            self.id = id
+            self.entryTitle = entryTitle
+            self.entryContent = entryContent
+            self.requestedClassification = requestedClassification
+            self.requestedByName = requestedByName
+            self.jobName = jobName
+            self.createdAt = createdAt
+        }
+    }
+
     /// Full notebook detail with all entries.
     public struct NotebookDetail: Sendable {
         public let id: Int64
@@ -516,6 +545,47 @@ public final class NotebooksService: Sendable {
                     VALUES (?, ?, ?, ?, 'Manager review', datetime('now'))
                     """, arguments: [entryId, current, newClass, reviewedBy])
             }
+        }
+    }
+
+    /// List all pending warranty classification reviews across job notebooks.
+    public func listPendingWarrantyClassifications() throws -> [PendingWarrantyClassification] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT ne.id,
+                           COALESCE(ne.title, '') AS title,
+                           COALESCE(ne.content, '') AS content,
+                           COALESCE(ne.work_classification, '') AS work_classification,
+                           COALESCE(ne.updated_at, ne.created_at, '') AS created_at,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS requested_by_name,
+                           COALESCE(j.job_name, n.title, 'Unknown Job') AS job_name
+                    FROM notebook_entries ne
+                    INNER JOIN notebook_sections ns ON ns.id = ne.section_id
+                    INNER JOIN notebooks n ON n.id = ns.notebook_id
+                    LEFT JOIN jobs j ON j.id = n.job_id AND j.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = ne.created_by AND u.deleted_at IS NULL
+                    WHERE ne.deleted_at IS NULL
+                      AND n.deleted_at IS NULL
+                      AND ne.work_classification IS NOT NULL
+                      AND COALESCE(ne.classification_reviewed, 0) = 0
+                    ORDER BY COALESCE(ne.updated_at, ne.created_at) ASC, ne.id ASC
+                    """)
+                return rows.map { row in
+                    PendingWarrantyClassification(
+                        id: row["id"] ?? 0,
+                        entryTitle: row["title"] ?? "",
+                        entryContent: row["content"] ?? "",
+                        requestedClassification: row["work_classification"] ?? "",
+                        requestedByName: row["requested_by_name"] ?? "Unknown",
+                        jobName: row["job_name"] ?? "Unknown Job",
+                        createdAt: row["created_at"] ?? ""
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 

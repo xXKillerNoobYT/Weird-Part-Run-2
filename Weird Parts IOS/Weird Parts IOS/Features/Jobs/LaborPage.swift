@@ -109,6 +109,9 @@ struct LaborPage: View {
             .onChange(of: dateRange) { loadData() }
             .onChange(of: customStart) { loadData() }
             .onChange(of: customEnd) { loadData() }
+            .onDisappear {
+                NotificationCenter.default.post(name: .laborPageInactive, object: nil)
+            }
     }
 
     // MARK: - Content
@@ -332,9 +335,28 @@ struct LaborPage: View {
             let allEntries = try service.listLaborEntries(limit: 200)
             activeEntries = allEntries.filter { $0.clockOut == nil }
             recentEntries = Array(allEntries.prefix(50))
+            postAIContext()
         } catch {
             errorMessage = userFriendlyError(error, context: "load labor data")
         }
         isLoading = false
+    }
+
+    private func postAIContext() {
+        let totalRecentHours = filteredRecentEntries.reduce(0) { $0 + $1.regularHours + $1.overtimeHours }
+        let activeJobs = Set(filteredActiveEntries.map(\.jobName)).sorted().prefix(5).joined(separator: ", ")
+        let context = """
+        Labor page. Read-only context.
+        Date range: \(dateRange.rawValue), search active: \(!searchText.isEmpty).
+        Active entries: \(activeEntries.count), visible active entries: \(filteredActiveEntries.count), recent entries loaded: \(recentEntries.count), visible recent entries: \(filteredRecentEntries.count).
+        Visible recent hours: \(String(format: "%.1f", totalRecentHours)), active jobs shown: \(activeJobs.isEmpty ? "none" : activeJobs).
+        Clock-in options loaded: users \(users.count), active jobs \(jobOptions.count), clock-in sheet open: \(activeSheet?.id == "clockIn").
+        Available read-only guidance: explain active vs recent labor sections, date range filters, search state, and where clock-in/help controls are located. Do not clock anyone in or out directly.
+        """
+        NotificationCenter.default.post(
+            name: .laborPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 }

@@ -101,6 +101,9 @@ struct WarehouseMovementsPage: View {
             loadData()
             appCore.onboardingManager?.markCompleted("wh-movements-view")
         }
+        .onDisappear {
+            NotificationCenter.default.post(name: .warehouseMovementsPageInactive, object: nil)
+        }
         .onChange(of: dateRange) { loadData() }
         .onChange(of: customStart) { loadData() }
         .onChange(of: customEnd) { loadData() }
@@ -299,10 +302,29 @@ struct WarehouseMovementsPage: View {
         loadError = nil
         do {
             movements = try service.listMovements(limit: 200)
+            postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load movements")
         }
         isLoading = false
+    }
+
+    private func postAIContext() {
+        let movementTypes = Dictionary(grouping: movements, by: \.movementType)
+            .map { "\($0.key): \($0.value.count)" }
+            .sorted()
+            .joined(separator: ", ")
+        let context = """
+        Warehouse Movements page. Read-only context.
+        Loaded movements: \(movements.count), visible after filters: \(filteredMovements.count), selected filter: \(selectedFilter?.rawValue ?? "none"), search active: \(!searchText.isEmpty).
+        Date range: \(dateRange.rawValue), movement types: \(movementTypes.isEmpty ? "none" : movementTypes).
+        Available read-only guidance: explain movement history, date range, filter chips, search, detail rows, QR scan entry, and new movement entry point. Do not create movements, launch scanners, or change filters directly.
+        """
+        NotificationCenter.default.post(
+            name: .warehouseMovementsPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 
     // MARK: - Helpers

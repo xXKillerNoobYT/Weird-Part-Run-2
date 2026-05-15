@@ -525,6 +525,41 @@ struct WarehouseServiceExtTests {
         #expect(afterDelete.isEmpty)
     }
 
+    @Test("addZone places at grid coordinates")
+    func addZone_placesAtGridCoordinates() throws {
+        let env = try E2ETestHelpers.setUp()
+        let floorPlan = try env.warehouse.createFloorPlan(name: "Zone Placement Plan", widthInches: 480, lengthInches: 360)
+
+        let zone = try env.warehouse.addZone(
+            floorPlanId: floorPlan.id!,
+            zoneType: "storage",
+            label: "Main Storage",
+            gridX: 1,
+            gridY: 1,
+            gridWidth: 2,
+            gridHeight: 3
+        )
+
+        #expect(zone.gridX == 1)
+        #expect(zone.gridY == 1)
+        #expect(zone.gridWidth == 2)
+        #expect(zone.gridHeight == 3)
+    }
+
+    @Test("updateZone prevents negative grid")
+    func updateZone_preventsNegativeGrid() throws {
+        let env = try E2ETestHelpers.setUp()
+        let floorPlan = try env.warehouse.createFloorPlan(name: "Zone Validation Plan", widthInches: 480, lengthInches: 360)
+        let zone = try env.warehouse.addZone(floorPlanId: floorPlan.id!, zoneType: "storage", label: "Storage")
+
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            try env.warehouse.updateZone(id: zone.id!, gridX: -1)
+        }
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            try env.warehouse.updateZone(id: zone.id!, gridY: -1)
+        }
+    }
+
     // MARK: - getPartName / getPartCode
 
     @Test("getPartName returns part name for existing part")

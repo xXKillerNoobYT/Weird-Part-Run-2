@@ -1,23 +1,20 @@
 import SwiftUI
 import WiredPartCore
 
-/// Unified approval dashboard for managers — the single source of truth for ALL
-/// pending approvals across the app.
+/// Unified approval dashboard for managers.
 ///
-/// Aggregates: JPO approvals, scheduled part deletions, time-off requests,
-/// and tool edit verifications. Supports smart card filters, search, approve/reject
-/// actions with reason requirement for rejections, and pull-to-refresh.
-///
-/// Accessible from both Office > Approvals and Orders > Approvals tabs.
+/// Aggregates JPO approvals, scheduled deletions, time-off requests, tool edit
+/// verifications, warranty classifications, and flex/schedule approvals into one
+/// oldest-first queue.
 struct IOSUnifiedApprovalsPage: View {
     @EnvironmentObject private var appCore: AppCore
-
-    // MARK: - State
 
     @State private var pendingJPOs: [OrdersService.JPOListItem] = []
     @State private var pendingDeletions: [PartsService.ScheduledDeletion] = []
     @State private var pendingTimeOff: [SchedulingService.TimeOffRow] = []
     @State private var pendingToolEdits: [ToolsService.PendingToolEdit] = []
+    @State private var pendingWarranty: [NotebooksService.PendingWarrantyClassification] = []
+    @State private var pendingScheduleChanges: [SchedulingService.ScheduleChangeApproval] = []
 
     @State private var isLoading = true
     @State private var searchText = ""
@@ -25,14 +22,16 @@ struct IOSUnifiedApprovalsPage: View {
     @State private var actionError: String?
     @State private var processingId: String?
 
-    // Reject reason
     @State private var rejectReason = ""
     @State private var showRejectAlert = false
     @State private var rejectingJPOId: Int64?
 
-    // Smart card filter
     @State private var activeFilter: ApprovalType?
     @State private var activeSheet: ActiveSheet?
+
+    init(initialFilter: String? = nil) {
+        _activeFilter = State(initialValue: ApprovalType(deepLinkFilter: initialFilter))
+    }
 
     private enum ActiveSheet: Identifiable {
         case help
@@ -40,10 +39,133 @@ struct IOSUnifiedApprovalsPage: View {
     }
 
     private enum ApprovalType: String, CaseIterable {
-        case jpo = "JPO Approvals"
-        case deletion = "Deletions"
-        case timeOff = "Time-Off"
-        case toolEdit = "Tool Edits"
+        case jpo
+        case deletion
+        case timeOff
+        case toolEdit
+        case warranty
+        case schedule
+
+        init?(deepLinkFilter: String?) {
+            guard let deepLinkFilter else { return nil }
+            switch deepLinkFilter.lowercased() {
+            case "jpo", "jpos", "orders": self = .jpo
+            case "deletion", "deletions": self = .deletion
+            case "time-off", "timeoff", "pto": self = .timeOff
+            case "tool", "tool-edit", "tool-edits": self = .toolEdit
+            case "warranty", "classification": self = .warranty
+            case "schedule", "schedule-change", "dispatch", "flex": self = .schedule
+            default: return nil
+            }
+        }
+
+        var label: String {
+            switch self {
+            case .jpo: return "JPOs"
+            case .deletion: return "Deletions"
+            case .timeOff: return "Time-Off"
+            case .toolEdit: return "Tool Edits"
+            case .warranty: return "Warranty"
+            case .schedule: return "Schedule"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .jpo: return "doc.text"
+            case .deletion: return "trash"
+            case .timeOff: return "calendar.badge.clock"
+            case .toolEdit: return "wrench.and.screwdriver"
+            case .warranty: return "shield.checkered"
+            case .schedule: return "person.badge.clock"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .jpo: return .blue
+            case .deletion: return .orange
+            case .timeOff: return .purple
+            case .toolEdit: return .teal
+            case .warranty: return .indigo
+            case .schedule: return .pink
+            }
+        }
+    }
+
+    private enum ApprovalQueueItem: Identifiable {
+        case jpo(OrdersService.JPOListItem)
+        case deletion(PartsService.ScheduledDeletion)
+        case timeOff(SchedulingService.TimeOffRow)
+        case toolEdit(ToolsService.PendingToolEdit)
+        case warranty(NotebooksService.PendingWarrantyClassification)
+        case schedule(SchedulingService.ScheduleChangeApproval)
+
+        var id: String {
+            switch self {
+            case .jpo(let item): return "jpo-\(item.id)"
+            case .deletion(let item): return "deletion-\(item.id)"
+            case .timeOff(let item): return "timeoff-\(item.id)"
+            case .toolEdit(let item): return "tool-\(item.id)"
+            case .warranty(let item): return "warranty-\(item.id)"
+            case .schedule(let item): return "schedule-\(item.id)"
+            }
+        }
+
+        var type: ApprovalType {
+            switch self {
+            case .jpo: return .jpo
+            case .deletion: return .deletion
+            case .timeOff: return .timeOff
+            case .toolEdit: return .toolEdit
+            case .warranty: return .warranty
+            case .schedule: return .schedule
+            }
+        }
+
+        var createdAt: String {
+            switch self {
+            case .jpo(let item): return item.createdAt ?? ""
+            case .deletion(let item): return item.createdAt
+            case .timeOff(let item): return item.startDate
+            case .toolEdit(let item): return item.changedAt
+            case .warranty(let item): return item.createdAt
+            case .schedule(let item): return item.createdAt
+            }
+        }
+
+        func matches(_ query: String) -> Bool {
+            guard !query.isEmpty else { return true }
+            let q = query.lowercased()
+            switch self {
+            case .jpo(let item):
+                return item.jobName.lowercased().contains(q)
+                    || item.requestedByName.lowercased().contains(q)
+            case .deletion(let item):
+                return item.entityName.lowercased().contains(q)
+                    || item.entityType.lowercased().contains(q)
+                    || (item.reason?.lowercased().contains(q) ?? false)
+            case .timeOff(let item):
+                return item.userName.lowercased().contains(q)
+                    || item.startDate.lowercased().contains(q)
+                    || item.endDate.lowercased().contains(q)
+                    || (item.reason?.lowercased().contains(q) ?? false)
+            case .toolEdit(let item):
+                return item.toolName.lowercased().contains(q)
+                    || item.changedByName.lowercased().contains(q)
+                    || item.fieldName.lowercased().contains(q)
+            case .warranty(let item):
+                return item.entryTitle.lowercased().contains(q)
+                    || item.entryContent.lowercased().contains(q)
+                    || item.jobName.lowercased().contains(q)
+                    || item.requestedByName.lowercased().contains(q)
+                    || item.requestedClassification.lowercased().contains(q)
+            case .schedule(let item):
+                return item.jobName.lowercased().contains(q)
+                    || item.userName.lowercased().contains(q)
+                    || item.dispatchDate.lowercased().contains(q)
+            }
+        }
     }
 
     var body: some View {
@@ -54,7 +176,6 @@ struct IOSUnifiedApprovalsPage: View {
         }
         .navigationTitle("Approvals")
         .searchable(text: $searchText, prompt: "Search pending approvals...")
-        .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -68,13 +189,16 @@ struct IOSUnifiedApprovalsPage: View {
             PageHelpSheet(
                 title: "Approvals Help",
                 sections: [
-                    ("What This Page Does", "Shows all items waiting for manager approval in one place. This includes JPO requests from field workers, scheduled part deletions, time-off requests, and tool edit verifications."),
-                    ("How to Use It", "Use the filter cards at the top to narrow by type (JPOs, Deletions, Time-Off, Tool Edits). Search by name or requester. For each item, tap Approve or Reject. Rejections require a reason that gets sent back to the requester."),
-                    ("Tips", "Pull down to refresh the list. Items disappear from this page once approved or rejected. If you reject a JPO, the field worker gets notified with your reason so they can revise and resubmit.")
+                    ("What This Page Does", "Shows every item waiting for manager approval in one oldest-first queue: JPOs, scheduled deletions, time-off, tool edit verifications, warranty classifications, and schedule changes."),
+                    ("How to Use It", "Use the filter cards to narrow by approval type without clearing search. Each row exposes the approval actions for that item."),
+                    ("Tips", "Pull down to refresh. Items disappear from this page once approved or rejected.")
                 ]
             )
         }
-        .task { loadData(); appCore.onboardingManager?.markCompleted("approvals-view") }
+        .task {
+            loadData()
+            appCore.onboardingManager?.markCompleted("approvals-view")
+        }
         .alert("Error", isPresented: Binding(
             get: { actionError != nil },
             set: { if !$0 { actionError = nil } }
@@ -101,37 +225,52 @@ struct IOSUnifiedApprovalsPage: View {
         }
     }
 
-    // MARK: - Counts
+    private var allItems: [ApprovalQueueItem] {
+        pendingJPOs.map(ApprovalQueueItem.jpo)
+            + pendingDeletions.map(ApprovalQueueItem.deletion)
+            + pendingTimeOff.map(ApprovalQueueItem.timeOff)
+            + pendingToolEdits.map(ApprovalQueueItem.toolEdit)
+            + pendingWarranty.map(ApprovalQueueItem.warranty)
+            + pendingScheduleChanges.map(ApprovalQueueItem.schedule)
+    }
 
-    private var jpoCount: Int { pendingJPOs.count }
-    private var deletionCount: Int { pendingDeletions.count }
-    private var timeOffCount: Int { pendingTimeOff.count }
-    private var toolEditCount: Int { pendingToolEdits.count }
-    private var totalCount: Int { jpoCount + deletionCount + timeOffCount + toolEditCount }
+    private var filteredItems: [ApprovalQueueItem] {
+        allItems
+            .filter { activeFilter == nil || $0.type == activeFilter }
+            .filter { $0.matches(searchText) }
+            .sorted {
+                if $0.createdAt == $1.createdAt { return $0.id < $1.id }
+                return $0.createdAt < $1.createdAt
+            }
+    }
 
-    // MARK: - Smart Card Filters
+    private var totalCount: Int { allItems.count }
+
+    private func count(for type: ApprovalType) -> Int {
+        switch type {
+        case .jpo: return pendingJPOs.count
+        case .deletion: return pendingDeletions.count
+        case .timeOff: return pendingTimeOff.count
+        case .toolEdit: return pendingToolEdits.count
+        case .warranty: return pendingWarranty.count
+        case .schedule: return pendingScheduleChanges.count
+        }
+    }
 
     private var smartCardFilters: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                filterCard(label: "All", count: totalCount, type: nil,
-                           icon: "tray.full", color: .accentColor)
-                filterCard(label: "JPOs", count: jpoCount, type: .jpo,
-                           icon: "doc.text", color: .blue)
-                filterCard(label: "Deletions", count: deletionCount, type: .deletion,
-                           icon: "trash", color: .orange)
-                filterCard(label: "Time-Off", count: timeOffCount, type: .timeOff,
-                           icon: "calendar.badge.clock", color: .purple)
-                filterCard(label: "Tool Edits", count: toolEditCount, type: .toolEdit,
-                           icon: "wrench.and.screwdriver", color: .teal)
+                filterCard(label: "All", count: totalCount, type: nil, icon: "tray.full", color: .accentColor)
+                ForEach(ApprovalType.allCases, id: \.self) { type in
+                    filterCard(label: type.label, count: count(for: type), type: type, icon: type.icon, color: type.color)
+                }
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
         }
     }
 
-    private func filterCard(label: String, count: Int, type: ApprovalType?,
-                            icon: String, color: Color) -> some View {
+    private func filterCard(label: String, count: Int, type: ApprovalType?, icon: String, color: Color) -> some View {
         let isActive = activeFilter == type
         return Button {
             withAnimation(.easeInOut(duration: 0.2)) {
@@ -151,15 +290,13 @@ struct IOSUnifiedApprovalsPage: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: 8)
                     .fill(isActive ? color : color.opacity(0.1))
             )
             .foregroundStyle(isActive ? .white : color)
         }
         .buttonStyle(.plain)
     }
-
-    // MARK: - Approval List
 
     @ViewBuilder
     private var approvalList: some View {
@@ -172,168 +309,63 @@ struct IOSUnifiedApprovalsPage: View {
             EmptyStateView(
                 icon: "checkmark.seal",
                 title: "No Pending Approvals",
-                message: searchText.isEmpty
-                    ? "All items have been reviewed."
-                    : "No approvals match your search."
+                message: searchText.isEmpty ? "All items have been reviewed." : "No approvals match your search."
             )
         } else {
-            List {
-                // JPOs section
-                if showJPOs && !filteredJPOs.isEmpty {
-                    Section {
-                        ForEach(filteredJPOs, id: \.id) { jpo in
-                            jpoRow(jpo)
-                        }
-                    } header: {
-                        Label("JPO Approvals (\(filteredJPOs.count))", systemImage: "doc.text")
-                    }
-                }
-
-                // Deletions section
-                if showDeletions && !filteredDeletions.isEmpty {
-                    Section {
-                        ForEach(filteredDeletions, id: \.id) { deletion in
-                            deletionRow(deletion)
-                        }
-                    } header: {
-                        Label("Scheduled Deletions (\(filteredDeletions.count))", systemImage: "trash")
-                    }
-                }
-
-                // Time-Off section
-                if showTimeOff && !filteredTimeOff.isEmpty {
-                    Section {
-                        ForEach(filteredTimeOff, id: \.id) { request in
-                            timeOffRow(request)
-                        }
-                    } header: {
-                        Label("Time-Off Requests (\(filteredTimeOff.count))", systemImage: "calendar.badge.clock")
-                    }
-                }
-
-                // Tool Edits section
-                if showToolEdits && !filteredToolEdits.isEmpty {
-                    Section {
-                        ForEach(filteredToolEdits, id: \.id) { edit in
-                            toolEditRow(edit)
-                        }
-                    } header: {
-                        Label("Tool Edit Verifications (\(filteredToolEdits.count))", systemImage: "wrench.and.screwdriver")
-                    }
-                }
+            List(filteredItems) { item in
+                approvalRow(item)
             }
             .listStyle(.insetGrouped)
         }
     }
 
-    // MARK: - Filter Logic
-
-    private var showJPOs: Bool { activeFilter == nil || activeFilter == .jpo }
-    private var showDeletions: Bool { activeFilter == nil || activeFilter == .deletion }
-    private var showTimeOff: Bool { activeFilter == nil || activeFilter == .timeOff }
-    private var showToolEdits: Bool { activeFilter == nil || activeFilter == .toolEdit }
-
-    /// Combined count of visible items (for empty state check)
-    private var filteredItems: [AnyHashable] {
-        var items: [AnyHashable] = []
-        if showJPOs { items.append(contentsOf: filteredJPOs.map { $0.id }) }
-        if showDeletions { items.append(contentsOf: filteredDeletions.map { $0.id }) }
-        if showTimeOff { items.append(contentsOf: filteredTimeOff.map { $0.id }) }
-        if showToolEdits { items.append(contentsOf: filteredToolEdits.map { $0.id }) }
-        return items
-    }
-
-    private var filteredJPOs: [OrdersService.JPOListItem] {
-        guard !searchText.isEmpty else { return pendingJPOs }
-        let query = searchText.lowercased()
-        return pendingJPOs.filter {
-            $0.jobName.lowercased().contains(query) ||
-            $0.requestedByName.lowercased().contains(query)
+    @ViewBuilder
+    private func approvalRow(_ item: ApprovalQueueItem) -> some View {
+        switch item {
+        case .jpo(let jpo): jpoRow(jpo)
+        case .deletion(let deletion): deletionRow(deletion)
+        case .timeOff(let request): timeOffRow(request)
+        case .toolEdit(let edit): toolEditRow(edit)
+        case .warranty(let warranty): warrantyRow(warranty)
+        case .schedule(let schedule): scheduleRow(schedule)
         }
     }
 
-    private var filteredDeletions: [PartsService.ScheduledDeletion] {
-        guard !searchText.isEmpty else { return pendingDeletions }
-        let query = searchText.lowercased()
-        return pendingDeletions.filter {
-            $0.entityName.lowercased().contains(query) ||
-            $0.entityType.lowercased().contains(query)
+    private func rowHeader(type: ApprovalType, title: String, subtitle: String, status: String = "pending") -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: type.icon)
+                .foregroundStyle(type.color)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(type.label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(title)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer()
+            statusBadge(status, color: type.color)
+            ActionDot(isOverdue: false)
         }
     }
-
-    private var filteredTimeOff: [SchedulingService.TimeOffRow] {
-        guard !searchText.isEmpty else { return pendingTimeOff }
-        let query = searchText.lowercased()
-        return pendingTimeOff.filter {
-            $0.userName.lowercased().contains(query) ||
-            ($0.reason?.lowercased().contains(query) ?? false)
-        }
-    }
-
-    private var filteredToolEdits: [ToolsService.PendingToolEdit] {
-        guard !searchText.isEmpty else { return pendingToolEdits }
-        let query = searchText.lowercased()
-        return pendingToolEdits.filter {
-            $0.toolName.lowercased().contains(query) ||
-            $0.changedByName.lowercased().contains(query) ||
-            $0.fieldName.lowercased().contains(query)
-        }
-    }
-
-    // MARK: - JPO Row
 
     private func jpoRow(_ jpo: OrdersService.JPOListItem) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            rowHeader(
+                type: .jpo,
+                title: jpo.jobName,
+                subtitle: "JPO #\(jpo.id) by \(jpo.requestedByName) - \(jpo.lineCount) lines"
+            )
             HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text("JPO #\(jpo.id)")
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                        priorityBadge(jpo.priority)
-                    }
-                    Text(jpo.jobName)
-                        .fontWeight(.medium)
-                        .lineLimit(1)
-                    Text("Requested by \(jpo.requestedByName)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                VStack(alignment: .trailing, spacing: 4) {
-                    statusBadge("pending", color: .orange)
-                    Label("\(jpo.lineCount) lines", systemImage: "list.bullet")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                ActionDot(isOverdue: jpo.priority == "urgent")
-            }
-
-            // Action buttons
-            HStack(spacing: 12) {
-                Button {
+                actionButton("Approve", icon: "checkmark.circle.fill", color: .green, processingKey: "jpo-\(jpo.id)") {
                     approveJPO(jpo.id)
-                } label: {
-                    Label("Approve", systemImage: "checkmark.circle.fill")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.green)
-                .actionRing(.green)
-                .disabled(processingId != nil)
-                .overlay {
-                    if processingId == "jpo-\(jpo.id)" {
-                        ProgressView()
-                    }
-                }
-                .accessibilityLabel("Approve — action required")
-
                 Button {
                     rejectingJPOId = jpo.id
                     showRejectAlert = true
@@ -353,214 +385,133 @@ struct IOSUnifiedApprovalsPage: View {
         .padding(.vertical, 4)
     }
 
-    // MARK: - Deletion Row
-
     private func deletionRow(_ deletion: PartsService.ScheduledDeletion) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(deletion.entityType.capitalized)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(deletion.entityName)
-                        .fontWeight(.medium)
-                        .lineLimit(1)
-                    if let reason = deletion.reason {
-                        Text(reason)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                }
-
-                Spacer()
-
-                VStack(alignment: .trailing, spacing: 4) {
-                    statusBadge("pending", color: .orange)
-                    Text("Stock: \(deletion.stockAtSchedule)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                ActionDot(isOverdue: false)
+            rowHeader(
+                type: .deletion,
+                title: deletion.entityName,
+                subtitle: "\(deletion.entityType.capitalized) - stock \(deletion.stockAtSchedule)"
+            )
+            if let reason = deletion.reason, !reason.isEmpty {
+                Text(reason)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-
             HStack(spacing: 12) {
-                Button {
+                actionButton("Approve", icon: "checkmark.circle.fill", color: .green, processingKey: "del-\(deletion.id)") {
                     approveDeletion(deletion.id)
-                } label: {
-                    Label("Approve", systemImage: "checkmark.circle.fill")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.green)
-                .actionRing(.green)
-                .disabled(processingId != nil)
-                .overlay {
-                    if processingId == "del-\(deletion.id)" {
-                        ProgressView()
-                    }
-                }
-
-                Button {
+                actionButton("Reject", icon: "xmark.circle.fill", color: .red, processingKey: "del-\(deletion.id)") {
                     cancelDeletion(deletion.id)
-                } label: {
-                    Label("Cancel", systemImage: "xmark.circle.fill")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .actionRing(.red)
-                .disabled(processingId != nil)
             }
         }
         .padding(.vertical, 4)
     }
-
-    // MARK: - Time-Off Row
 
     private func timeOffRow(_ request: SchedulingService.TimeOffRow) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(request.userName)
-                        .fontWeight(.medium)
-                    Text(request.startDate == request.endDate
-                         ? request.startDate
-                         : "\(request.startDate) – \(request.endDate)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if let reason = request.reason, !reason.isEmpty {
-                        Text(reason)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                }
-
-                Spacer()
-
-                statusBadge("pending", color: .purple)
-
-                ActionDot(isOverdue: false)
+            rowHeader(
+                type: .timeOff,
+                title: request.userName,
+                subtitle: request.startDate == request.endDate ? request.startDate : "\(request.startDate) to \(request.endDate)"
+            )
+            if let reason = request.reason, !reason.isEmpty {
+                Text(reason)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-
             HStack(spacing: 12) {
-                Button {
+                actionButton("Approve", icon: "checkmark.circle.fill", color: .green, processingKey: "pto-\(request.id)") {
                     approveTimeOff(request.id)
-                } label: {
-                    Label("Approve", systemImage: "checkmark.circle.fill")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.green)
-                .actionRing(.green)
-                .disabled(processingId != nil)
-                .overlay {
-                    if processingId == "pto-\(request.id)" {
-                        ProgressView()
-                    }
-                }
-
-                Button {
+                actionButton("Deny", icon: "xmark.circle.fill", color: .red, processingKey: "pto-\(request.id)") {
                     denyTimeOff(request.id)
-                } label: {
-                    Label("Deny", systemImage: "xmark.circle.fill")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .actionRing(.red)
-                .disabled(processingId != nil)
             }
         }
         .padding(.vertical, 4)
     }
-
-    // MARK: - Tool Edit Row
 
     private func toolEditRow(_ edit: ToolsService.PendingToolEdit) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            rowHeader(
+                type: .toolEdit,
+                title: edit.toolName,
+                subtitle: "\(edit.fieldName) by \(edit.changedByName)"
+            )
+            Text((edit.oldValue ?? "Empty") + " -> " + (edit.newValue ?? "Empty"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
             HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(edit.toolName)
-                        .fontWeight(.medium)
-                        .lineLimit(1)
-                    Text("Field: \(edit.fieldName)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if let oldVal = edit.oldValue {
-                        Text("\(oldVal) → \(edit.newValue ?? "")")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("New value: \(edit.newValue ?? "")")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Text("By \(edit.changedByName)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                statusBadge("pending", color: .teal)
-
-                ActionDot(isOverdue: false)
-            }
-
-            HStack(spacing: 12) {
-                Button {
+                actionButton("Approve", icon: "checkmark.circle.fill", color: .green, processingKey: "tool-\(edit.id)") {
                     approveToolEditAction(edit.id)
-                } label: {
-                    Label("Approve", systemImage: "checkmark.circle.fill")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.green)
-                .actionRing(.green)
-                .disabled(processingId != nil)
-                .overlay {
-                    if processingId == "tool-\(edit.id)" {
-                        ProgressView()
-                    }
-                }
-
-                Button {
+                actionButton("Reject", icon: "xmark.circle.fill", color: .red, processingKey: "tool-\(edit.id)") {
                     rejectToolEditAction(edit.id)
-                } label: {
-                    Label("Reject", systemImage: "xmark.circle.fill")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .actionRing(.red)
-                .disabled(processingId != nil)
             }
         }
         .padding(.vertical, 4)
     }
 
-    // MARK: - Badges
+    private func warrantyRow(_ item: NotebooksService.PendingWarrantyClassification) -> some View {
+        let alternate = item.requestedClassification == "warranty" ? "regular" : "warranty"
+        return VStack(alignment: .leading, spacing: 8) {
+            rowHeader(
+                type: .warranty,
+                title: item.entryTitle.isEmpty ? item.entryContent : item.entryTitle,
+                subtitle: "\(item.jobName) - \(item.requestedClassification.capitalized) by \(item.requestedByName)"
+            )
+            HStack(spacing: 12) {
+                actionButton("Approve", icon: "checkmark.circle.fill", color: .green, processingKey: "war-\(item.id)") {
+                    approveWarrantyClassification(item.id)
+                }
+                actionButton("Reclassify", icon: "arrow.triangle.2.circlepath", color: .red, processingKey: "war-\(item.id)") {
+                    reclassifyWarranty(item.id, as: alternate)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func scheduleRow(_ item: SchedulingService.ScheduleChangeApproval) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            rowHeader(
+                type: .schedule,
+                title: item.jobName,
+                subtitle: "\(item.userName) requested \(item.dispatchDate) (\(item.timeSlot))"
+            )
+            HStack(spacing: 12) {
+                actionButton("Approve", icon: "checkmark.circle.fill", color: .green, processingKey: "sch-\(item.id)") {
+                    approveScheduleChange(item.id)
+                }
+                actionButton("Reject", icon: "xmark.circle.fill", color: .red, processingKey: "sch-\(item.id)") {
+                    rejectScheduleChange(item.id)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func actionButton(_ title: String, icon: String, color: Color, processingKey: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(color)
+        .actionRing(color)
+        .disabled(processingId != nil)
+        .overlay {
+            if processingId == processingKey {
+                ProgressView()
+            }
+        }
+    }
 
     private func statusBadge(_ status: String, color: Color) -> some View {
         Text(status.capitalized)
@@ -570,19 +521,6 @@ struct IOSUnifiedApprovalsPage: View {
             .background(Capsule().fill(color.opacity(0.15)))
             .foregroundStyle(color)
     }
-
-    // TODO: When approval items gain a dueDate field, replace fallback with TimelinePriorityColor.color(priority:dueDateString:)
-    private func priorityBadge(_ priority: String) -> some View {
-        let color = TimelinePriorityColor.fallbackColor(priority: priority)
-        return Text(priority.capitalized)
-            .font(.system(.caption2, weight: .semibold))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Capsule().fill(color.opacity(0.15)))
-            .foregroundStyle(color)
-    }
-
-    // MARK: - JPO Actions
 
     private func approveJPO(_ id: Int64) {
         guard let service = appCore.ordersService else {
@@ -614,8 +552,6 @@ struct IOSUnifiedApprovalsPage: View {
         processingId = nil
     }
 
-    // MARK: - Deletion Actions
-
     private func approveDeletion(_ id: Int64) {
         guard let service = appCore.partsService else {
             actionError = "Parts service not available"
@@ -646,8 +582,6 @@ struct IOSUnifiedApprovalsPage: View {
         processingId = nil
     }
 
-    // MARK: - Time-Off Actions
-
     private func approveTimeOff(_ id: Int64) {
         guard let service = appCore.schedulingService else {
             actionError = "Scheduling service not available"
@@ -677,8 +611,6 @@ struct IOSUnifiedApprovalsPage: View {
         }
         processingId = nil
     }
-
-    // MARK: - Tool Edit Actions
 
     private func approveToolEditAction(_ editId: Int64) {
         guard let service = appCore.toolsService else {
@@ -718,13 +650,78 @@ struct IOSUnifiedApprovalsPage: View {
         processingId = nil
     }
 
-    // MARK: - Data Loading
+    private func approveWarrantyClassification(_ entryId: Int64) {
+        guard let service = appCore.notebooksService else {
+            actionError = "Notebooks service not available"
+            return
+        }
+        guard let userId = appCore.currentUser?.id else {
+            actionError = "Not logged in"
+            return
+        }
+        processingId = "war-\(entryId)"
+        do {
+            try service.reviewClassification(entryId: entryId, reviewedBy: userId, approved: true, newClassification: nil)
+            pendingWarranty.removeAll { $0.id == entryId }
+        } catch {
+            actionError = userFriendlyError(error, context: "process approval")
+        }
+        processingId = nil
+    }
+
+    private func reclassifyWarranty(_ entryId: Int64, as newClassification: String) {
+        guard let service = appCore.notebooksService else {
+            actionError = "Notebooks service not available"
+            return
+        }
+        guard let userId = appCore.currentUser?.id else {
+            actionError = "Not logged in"
+            return
+        }
+        processingId = "war-\(entryId)"
+        do {
+            try service.reviewClassification(entryId: entryId, reviewedBy: userId, approved: false, newClassification: newClassification)
+            pendingWarranty.removeAll { $0.id == entryId }
+        } catch {
+            actionError = userFriendlyError(error, context: "process approval")
+        }
+        processingId = nil
+    }
+
+    private func approveScheduleChange(_ dispatchId: Int64) {
+        guard let service = appCore.schedulingService else {
+            actionError = "Scheduling service not available"
+            return
+        }
+        processingId = "sch-\(dispatchId)"
+        do {
+            try service.approveScheduleChange(dispatchId: dispatchId, approvedBy: appCore.currentUser?.id)
+            pendingScheduleChanges.removeAll { $0.id == dispatchId }
+        } catch {
+            actionError = userFriendlyError(error, context: "process approval")
+        }
+        processingId = nil
+    }
+
+    private func rejectScheduleChange(_ dispatchId: Int64) {
+        guard let service = appCore.schedulingService else {
+            actionError = "Scheduling service not available"
+            return
+        }
+        processingId = "sch-\(dispatchId)"
+        do {
+            try service.rejectScheduleChange(dispatchId: dispatchId, rejectedBy: appCore.currentUser?.id)
+            pendingScheduleChanges.removeAll { $0.id == dispatchId }
+        } catch {
+            actionError = userFriendlyError(error, context: "process approval")
+        }
+        processingId = nil
+    }
 
     private func loadData() {
-        isLoading = pendingJPOs.isEmpty && pendingDeletions.isEmpty && pendingTimeOff.isEmpty && pendingToolEdits.isEmpty
+        isLoading = allItems.isEmpty
         loadError = nil
 
-        // Load JPOs with status "pending"
         if let ordersService = appCore.ordersService {
             do {
                 pendingJPOs = try ordersService.listJPOs(status: "pending")
@@ -733,7 +730,6 @@ struct IOSUnifiedApprovalsPage: View {
             }
         }
 
-        // Load scheduled deletions awaiting approval
         if let partsService = appCore.partsService {
             do {
                 pendingDeletions = try partsService.listScheduledDeletions(status: "pending_approval")
@@ -742,16 +738,15 @@ struct IOSUnifiedApprovalsPage: View {
             }
         }
 
-        // Load time-off requests pending manager review
         if let schedulingService = appCore.schedulingService {
             do {
                 pendingTimeOff = try schedulingService.listTimeOffRequests(status: "pending")
+                pendingScheduleChanges = try schedulingService.listPendingScheduleChangeApprovals()
             } catch {
                 if loadError == nil { loadError = userFriendlyError(error, context: "load approvals") }
             }
         }
 
-        // Load pending tool edit verifications
         if let toolsService = appCore.toolsService {
             do {
                 pendingToolEdits = try toolsService.listPendingToolEdits()
@@ -760,9 +755,13 @@ struct IOSUnifiedApprovalsPage: View {
             }
         }
 
-        // TODO: Warranty approvals — currently handled inline on notebook detail pages
-        // via the classification review workflow. No separate pending queue exists yet.
-        // When a WarrantyService.listPendingClassifications() method is added, integrate here.
+        if let notebooksService = appCore.notebooksService {
+            do {
+                pendingWarranty = try notebooksService.listPendingWarrantyClassifications()
+            } catch {
+                if loadError == nil { loadError = userFriendlyError(error, context: "load approvals") }
+            }
+        }
 
         isLoading = false
     }

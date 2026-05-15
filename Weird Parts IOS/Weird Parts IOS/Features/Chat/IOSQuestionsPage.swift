@@ -96,11 +96,11 @@ struct IOSQuestionsPage: View {
     private func countFor(_ filter: QAFilter) -> Int {
         switch filter {
         case .all: return threads.count
-        case .open: return threads.filter { $0.status == "open" || $0.status == "escalated" }.count
+        case .open: return threads.filter { QAThreadStatusBuckets.isOpen($0.status) }.count
         case .myQuestions:
             return threads.count // All shown for now — user-specific filtering added later
         case .needsMyReview: return threads.filter { $0.status == "open" }.count
-        case .resolved: return threads.filter { $0.status == "answered" || $0.status == "closed" }.count
+        case .resolved: return threads.filter { QAThreadStatusBuckets.isResolved($0.status) }.count
         }
     }
 
@@ -188,10 +188,10 @@ struct IOSQuestionsPage: View {
         // Apply smart card filter
         switch statusFilter {
         case .all: break
-        case .open: items = items.filter { $0.status == "open" || $0.status == "escalated" }
+        case .open: items = items.filter { QAThreadStatusBuckets.isOpen($0.status) }
         case .myQuestions: break // Show all for now
         case .needsMyReview: items = items.filter { $0.status == "open" }
-        case .resolved: items = items.filter { $0.status == "answered" || $0.status == "closed" }
+        case .resolved: items = items.filter { QAThreadStatusBuckets.isResolved($0.status) }
         }
 
         // Apply search
@@ -255,7 +255,7 @@ struct IOSQuestionsPage: View {
     private func statusBadge(_ status: String) -> some View {
         let color: Color = switch status {
         case "open": .orange
-        case "answered": .green
+        case "answered", "resolved": .green
         case "escalated": .red
         case "closed": .secondary
         default: .secondary
@@ -302,5 +302,15 @@ struct IOSQuestionsPage: View {
             loadError = userFriendlyError(error, context: "load questions")
         }
         isLoading = false
+    }
+}
+
+enum QAThreadStatusBuckets {
+    static func isOpen(_ status: String) -> Bool {
+        status == "open" || status == "escalated"
+    }
+
+    static func isResolved(_ status: String) -> Bool {
+        status == "answered" || status == "closed" || status == "resolved"
     }
 }

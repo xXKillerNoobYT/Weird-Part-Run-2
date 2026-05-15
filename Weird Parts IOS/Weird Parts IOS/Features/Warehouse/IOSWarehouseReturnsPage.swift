@@ -97,6 +97,9 @@ struct IOSWarehouseReturnsPage: View {
             Text(actionError ?? "")
         }
         .task { loadData() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .warehouseReturnsPageInactive, object: nil)
+        }
     }
 
     // MARK: - Smart Card Filters
@@ -343,11 +346,29 @@ struct IOSWarehouseReturnsPage: View {
         loadError = nil
         do {
             allReturns = try service.listReturns(status: nil)
+            postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load warehouse returns")
         }
         isLoading = false
     }
-}
 
+    private func postAIContext() {
+        let statusCounts = Dictionary(grouping: allReturns, by: \.status)
+            .map { "\($0.key): \($0.value.count)" }
+            .sorted()
+            .joined(separator: ", ")
+        let context = """
+        Warehouse Returns page. Read-only context.
+        Loaded returns: \(allReturns.count), visible after filters: \(filteredReturns.count), selected filter: \(selectedFilter?.rawValue ?? "none"), search active: \(!searchText.isEmpty).
+        Return statuses: \(statusCounts.isEmpty ? "none" : statusCounts).
+        Available read-only guidance: explain return status filters, search, visible rows, create return entry point, and per-row actions. Do not create, approve, reject, ship, or complete returns directly.
+        """
+        NotificationCenter.default.post(
+            name: .warehouseReturnsPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
+    }
+}
 

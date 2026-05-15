@@ -74,6 +74,9 @@ struct IOSWarehouseToolsPage: View {
             Text(actionError ?? "")
         }
         .task { loadData() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .warehouseToolsPageInactive, object: nil)
+        }
     }
 
     // MARK: - Smart Card Filters
@@ -304,9 +307,28 @@ struct IOSWarehouseToolsPage: View {
         loadError = nil
         do {
             tools = try service.listTools()
+            postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load warehouse tools")
         }
         isLoading = false
+    }
+
+    private func postAIContext() {
+        let statusCounts = Dictionary(grouping: tools, by: \.status)
+            .map { "\($0.key): \($0.value.count)" }
+            .sorted()
+            .joined(separator: ", ")
+        let context = """
+        Warehouse Tools page. Read-only context.
+        Loaded tools: \(tools.count), visible after filters: \(filteredTools.count), selected filter: \(selectedFilter?.rawValue ?? "none"), search active: \(!searchText.isEmpty).
+        Tool statuses: \(statusCounts.isEmpty ? "none" : statusCounts).
+        Available read-only guidance: explain status filters, search, visible rows, and swipe actions for checkout, return, or maintenance. Do not check out, return, or mark maintenance directly.
+        """
+        NotificationCenter.default.post(
+            name: .warehouseToolsPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 }

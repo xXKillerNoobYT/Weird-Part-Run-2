@@ -94,6 +94,9 @@ struct IOSWarehouseSettingsPage: View {
         } message: {
             if let msg = errorMessage { Text(msg) }
         }
+        .onDisappear {
+            NotificationCenter.default.post(name: .warehouseSettingsPageInactive, object: nil)
+        }
     }
 
     private var settingsForm: some View {
@@ -228,9 +231,26 @@ struct IOSWarehouseSettingsPage: View {
             if let v = s["small_move_threshold"], let n = Int(v) { smallMoveThreshold = n }
             if let v = s["audit_frequency_days"], let n = Int(v) { auditFrequencyDays = n }
             if let v = s["require_photo_on_discrepancy"] { requirePhotoOnDiscrepancy = v == "1" }
+            postAIContext()
         } catch {
             errorMessage = userFriendlyError(error, context: "load")
         }
         isLoadingSettings = false
+    }
+
+    private func postAIContext() {
+        let context = """
+        Warehouse Settings page. Read-only context.
+        Default receiving location: \(defaultReceivingLocation), default staging location: \(defaultStagingLocation).
+        Low stock alerts: \(enableLowStockAlerts), low threshold: \(lowStockThreshold), critical threshold: \(criticalStockThreshold).
+        Movement notes required: \(requireMovementNotes), approval required: \(requireMovementApproval), auto-confirm small moves: \(autoConfirmSmallMoves), small move threshold: \(smallMoveThreshold).
+        Audit frequency days: \(auditFrequencyDays), require photo on discrepancy: \(requirePhotoOnDiscrepancy), saving: \(isSaving).
+        Available read-only guidance: explain settings sections, setup wizard entry points, and save behavior. Do not change or save settings directly.
+        """
+        NotificationCenter.default.post(
+            name: .warehouseSettingsPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 }

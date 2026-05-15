@@ -2439,6 +2439,83 @@ public final class WarehouseService: Sendable {
         }
     }
 
+    private func activeWalkingPathStops(pathId: Int64, dbConn: Database) throws -> [WarehouseWalkingPathStop] {
+        try WarehouseWalkingPathStop
+            .filter(
+                Column("path_id") == pathId &&
+                Column("deleted_at") == nil &&
+                Column("is_active") == true
+            )
+            .order(Column("sort_order").asc, Column("id").asc)
+            .fetchAll(dbConn)
+    }
+
+    private func ensureWalkingPathExists(pathId: Int64, dbConn: Database) throws {
+        let exists = (try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM warehouse_walking_paths
+            WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+            """, arguments: [pathId]) ?? 0) > 0
+        guard exists else { throw WarehouseError.invalidDimension }
+    }
+
+    private func walkingPathFloorPlanId(pathId: Int64, dbConn: Database) throws -> Int64 {
+        guard let floorPlanId = try Int64.fetchOne(dbConn, sql: """
+            SELECT floor_plan_id FROM warehouse_walking_paths
+            WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+            """, arguments: [pathId])
+        else { throw WarehouseError.invalidDimension }
+        return floorPlanId
+    }
+
+    private func ensureAreasExist(_ areaIds: [Int64], floorPlanId: Int64, dbConn: Database) throws {
+        for areaId in areaIds {
+            let exists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*)
+                FROM warehouse_storage_areas a
+                JOIN warehouse_storage_levels l
+                    ON l.id = a.level_id AND l.deleted_at IS NULL
+                JOIN warehouse_storage_units u
+                    ON u.id = l.unit_id AND u.deleted_at IS NULL
+                WHERE a.id = ? AND u.floor_plan_id = ? AND a.deleted_at IS NULL
+                """, arguments: [areaId, floorPlanId]) ?? 0) > 0
+            guard exists else { throw WarehouseError.areaNotFound(areaId) }
+        }
+    }
+
+    private func touchWalkingPath(pathId: Int64, dbConn: Database) throws {
+        try dbConn.execute(
+            sql: "UPDATE warehouse_walking_paths SET updated_at = datetime('now') WHERE id = ?",
+            arguments: [pathId]
+        )
+    }
+
+    private func normalizeWalkingPathOrder(pathId: Int64, dbConn: Database) throws {
+        let stops = try activeWalkingPathStops(pathId: pathId, dbConn: dbConn)
+        for (index, stop) in stops.enumerated() {
+            try dbConn.execute(
+                sql: "UPDATE warehouse_walking_path_stops SET sort_order = ? WHERE id = ?",
+                arguments: [index, stop.id]
+            )
+        }
+    }
+
+    private func uniqueAreaIds(_ areaIds: [Int64]) -> [Int64] {
+        var seen = Set<Int64>()
+        var unique: [Int64] = []
+        for areaId in areaIds where seen.insert(areaId).inserted {
+            unique.append(areaId)
+        }
+        return unique
+    }
+
+    private func currentSQLiteTimestamp() -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter.string(from: Date())
+    }
+
     /// Detect whether a GRDB/SQLite error indicates a missing table.
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
@@ -2509,7 +2586,7 @@ public final class WarehouseService: Sendable {
 
     /// Save user-defined grid dimensions to a floor plan (PE-040 — wizard dimensions form).
     public func updateFloorPlanGrid(floorPlanId: Int64, rows: Int, cols: Int) throws {
-        guard rows > 0, cols > 0 else {
+        guard (1...20).contains(rows), (1...20).contains(cols) else {
             throw WarehouseError.invalidDimension
         }
         try db.writer.write { dbConn in
@@ -2598,6 +2675,9 @@ public final class WarehouseService: Sendable {
         guard !zoneType.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw WarehouseError.requiredFieldEmpty
         }
+        guard gridX >= 0, gridY >= 0, gridWidth > 0, gridHeight > 0 else {
+            throw WarehouseError.invalidDimension
+        }
         return try db.writer.write { dbConn in
             var zone = WarehouseZone(
                 floorPlanId: floorPlanId,
@@ -2632,6 +2712,10 @@ public final class WarehouseService: Sendable {
         gridX: Int? = nil, gridY: Int? = nil, gridWidth: Int? = nil, gridHeight: Int? = nil,
         rotation: Int? = nil, zoneOrder: Int? = nil
     ) throws {
+        if let gridX, gridX < 0 { throw WarehouseError.invalidDimension }
+        if let gridY, gridY < 0 { throw WarehouseError.invalidDimension }
+        if let gridWidth, gridWidth <= 0 { throw WarehouseError.invalidDimension }
+        if let gridHeight, gridHeight <= 0 { throw WarehouseError.invalidDimension }
         try db.writer.write { dbConn in
             guard var zone = try WarehouseZone.fetchOne(dbConn, key: id) else { return }
             if let v = zoneType { zone.zoneType = v }
@@ -2654,6 +2738,283 @@ public final class WarehouseService: Sendable {
                 sql: "UPDATE warehouse_zones SET deleted_at = datetime('now') WHERE id = ?",
                 arguments: [id]
             )
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Walking Paths
+    // =========================================================================
+
+    /// Fetch the default active walking path for a floor plan with active stops in order.
+    public func getDefaultWalkingPath(floorPlanId: Int64) throws -> WalkingPathWithStops? {
+        try db.writer.read { dbConn in
+            guard let path = try WarehouseWalkingPath
+                .filter(
+                    Column("floor_plan_id") == floorPlanId &&
+                    Column("is_default") == true &&
+                    Column("is_active") == true &&
+                    Column("deleted_at") == nil
+                )
+                .order(Column("id").desc)
+                .fetchOne(dbConn)
+            else { return nil }
+
+            let stops = try activeWalkingPathStops(pathId: path.id ?? 0, dbConn: dbConn)
+            return WalkingPathWithStops(path: path, stops: stops)
+        }
+    }
+
+    /// Create a default walking path. Existing default paths for the floor plan are demoted.
+    public func createWalkingPath(floorPlanId: Int64, name: String, userId: Int64) throws -> WarehouseWalkingPath {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { throw WarehouseError.requiredFieldEmpty }
+
+        return try db.writer.write { dbConn in
+            let floorPlanExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM warehouse_floor_plans
+                WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [floorPlanId]) ?? 0) > 0
+            guard floorPlanExists else { throw WarehouseError.invalidDimension }
+
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [userId]) ?? 0) > 0
+            guard userExists else { throw WarehouseError.userNotFound(userId) }
+
+            try dbConn.execute(sql: """
+                UPDATE warehouse_walking_paths
+                SET is_default = 0, updated_at = datetime('now')
+                WHERE floor_plan_id = ? AND deleted_at IS NULL
+                """, arguments: [floorPlanId])
+
+            var path = WarehouseWalkingPath(
+                floorPlanId: floorPlanId,
+                name: trimmedName,
+                isDefault: true,
+                createdBy: userId,
+                createdAt: currentSQLiteTimestamp(),
+                updatedAt: currentSQLiteTimestamp(),
+                deletedAt: nil,
+                isActive: true
+            )
+            try path.insert(dbConn)
+            return path
+        }
+    }
+
+    /// Replace a path's stops while preserving stop IDs for areas already on the active path.
+    public func setWalkingPathStops(pathId: Int64, areaIds: [Int64]) throws {
+        let orderedAreaIds = uniqueAreaIds(areaIds)
+
+        try db.writer.write { dbConn in
+            try ensureWalkingPathExists(pathId: pathId, dbConn: dbConn)
+            let floorPlanId = try walkingPathFloorPlanId(pathId: pathId, dbConn: dbConn)
+            try ensureAreasExist(orderedAreaIds, floorPlanId: floorPlanId, dbConn: dbConn)
+
+            let activeStops = try activeWalkingPathStops(pathId: pathId, dbConn: dbConn)
+            let existingByArea = Dictionary(uniqueKeysWithValues: activeStops.map { ($0.areaId, $0) })
+            let requested = Set(orderedAreaIds)
+
+            for stop in activeStops where !requested.contains(stop.areaId) {
+                try dbConn.execute(
+                    sql: "UPDATE warehouse_walking_path_stops SET deleted_at = datetime('now'), is_active = 0 WHERE id = ?",
+                    arguments: [stop.id]
+                )
+            }
+
+            for (index, areaId) in orderedAreaIds.enumerated() {
+                if let stop = existingByArea[areaId], let stopId = stop.id {
+                    try dbConn.execute(
+                        sql: "UPDATE warehouse_walking_path_stops SET sort_order = ?, is_active = 1 WHERE id = ?",
+                        arguments: [index, stopId]
+                    )
+                } else {
+                    try dbConn.execute(sql: """
+                        INSERT INTO warehouse_walking_path_stops (path_id, area_id, sort_order, is_active)
+                        VALUES (?, ?, ?, 1)
+                        """, arguments: [pathId, areaId, index])
+                }
+            }
+
+            try touchWalkingPath(pathId: pathId, dbConn: dbConn)
+        }
+    }
+
+    /// Append an area to a path if it is not already an active stop.
+    public func appendWalkingPathStop(pathId: Int64, areaId: Int64) throws {
+        try db.writer.write { dbConn in
+            try ensureWalkingPathExists(pathId: pathId, dbConn: dbConn)
+            let floorPlanId = try walkingPathFloorPlanId(pathId: pathId, dbConn: dbConn)
+            try ensureAreasExist([areaId], floorPlanId: floorPlanId, dbConn: dbConn)
+
+            let existing = try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM warehouse_walking_path_stops
+                WHERE path_id = ? AND area_id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [pathId, areaId]) ?? 0
+            guard existing == 0 else { return }
+
+            let nextOrder = (try Int.fetchOne(dbConn, sql: """
+                SELECT COALESCE(MAX(sort_order), -1) + 1
+                FROM warehouse_walking_path_stops
+                WHERE path_id = ? AND deleted_at IS NULL
+                """, arguments: [pathId]) ?? 0)
+
+            try dbConn.execute(sql: """
+                INSERT INTO warehouse_walking_path_stops (path_id, area_id, sort_order, is_active)
+                VALUES (?, ?, ?, 1)
+                """, arguments: [pathId, areaId, nextOrder])
+            try touchWalkingPath(pathId: pathId, dbConn: dbConn)
+        }
+    }
+
+    /// Soft-delete a walking path stop.
+    public func removeWalkingPathStop(stopId: Int64) throws {
+        try db.writer.write { dbConn in
+            let pathId = try Int64.fetchOne(dbConn, sql: """
+                SELECT path_id FROM warehouse_walking_path_stops
+                WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [stopId])
+
+            try dbConn.execute(
+                sql: "UPDATE warehouse_walking_path_stops SET deleted_at = datetime('now'), is_active = 0 WHERE id = ?",
+                arguments: [stopId]
+            )
+
+            if let pathId {
+                try normalizeWalkingPathOrder(pathId: pathId, dbConn: dbConn)
+                try touchWalkingPath(pathId: pathId, dbConn: dbConn)
+            }
+        }
+    }
+
+    /// Move an active stop to a zero-based index and compact the remaining order.
+    public func moveWalkingPathStop(stopId: Int64, toIndex: Int) throws {
+        try db.writer.write { dbConn in
+            guard let target = try WarehouseWalkingPathStop
+                .filter(Column("id") == stopId && Column("deleted_at") == nil && Column("is_active") == true)
+                .fetchOne(dbConn)
+            else { return }
+
+            var stops = try activeWalkingPathStops(pathId: target.pathId, dbConn: dbConn)
+            guard let currentIndex = stops.firstIndex(where: { $0.id == stopId }) else { return }
+            let moved = stops.remove(at: currentIndex)
+            let clampedIndex = min(max(toIndex, 0), stops.count)
+            stops.insert(moved, at: clampedIndex)
+
+            for (index, stop) in stops.enumerated() {
+                try dbConn.execute(
+                    sql: "UPDATE warehouse_walking_path_stops SET sort_order = ? WHERE id = ?",
+                    arguments: [index, stop.id]
+                )
+            }
+            try touchWalkingPath(pathId: target.pathId, dbConn: dbConn)
+        }
+    }
+
+    /// Suggest a walking path using row-major floor placement, then unit, level, and area order.
+    public func suggestWalkingPath(floorPlanId: Int64) throws -> [Int64] {
+        try db.writer.read { dbConn in
+            try Int64.fetchAll(dbConn, sql: """
+                SELECT a.id
+                FROM warehouse_storage_areas a
+                JOIN warehouse_storage_levels l
+                    ON l.id = a.level_id AND l.deleted_at IS NULL
+                JOIN warehouse_storage_units u
+                    ON u.id = l.unit_id AND u.deleted_at IS NULL
+                LEFT JOIN warehouse_zones z
+                    ON z.id = u.zone_id AND z.deleted_at IS NULL
+                WHERE u.floor_plan_id = ?
+                  AND a.deleted_at IS NULL
+                ORDER BY
+                    COALESCE(z.grid_y, u.grid_y, 2147483647),
+                    COALESCE(z.grid_x, u.grid_x, 2147483647),
+                    COALESCE(u.grid_y, 2147483647),
+                    COALESCE(u.grid_x, 2147483647),
+                    COALESCE(u.row_number, ''),
+                    COALESCE(u.unit_number, ''),
+                    u.id,
+                    l.level_order,
+                    l.level_code,
+                    a.area_number,
+                    a.id
+                """, arguments: [floorPlanId])
+        }
+    }
+
+    /// Remove active stops whose area was soft-deleted, hard-deleted, or detached from this floor plan.
+    @discardableResult
+    public func pruneOrphanedStops(floorPlanId: Int64) throws -> Int {
+        try db.writer.write { dbConn in
+            let orphanIds = try Int64.fetchAll(dbConn, sql: """
+                SELECT s.id
+                FROM warehouse_walking_path_stops s
+                JOIN warehouse_walking_paths p
+                    ON p.id = s.path_id
+                   AND p.floor_plan_id = ?
+                   AND p.deleted_at IS NULL
+                   AND p.is_active = 1
+                LEFT JOIN warehouse_storage_areas a
+                    ON a.id = s.area_id
+                LEFT JOIN warehouse_storage_levels l
+                    ON l.id = a.level_id
+                LEFT JOIN warehouse_storage_units u
+                    ON u.id = l.unit_id
+                WHERE s.deleted_at IS NULL
+                  AND s.is_active = 1
+                  AND (
+                    a.id IS NULL OR a.deleted_at IS NOT NULL OR
+                    l.id IS NULL OR l.deleted_at IS NOT NULL OR
+                    u.id IS NULL OR u.deleted_at IS NOT NULL OR
+                    u.floor_plan_id != p.floor_plan_id
+                  )
+                """, arguments: [floorPlanId])
+
+            for stopId in orphanIds {
+                try dbConn.execute(
+                    sql: "UPDATE warehouse_walking_path_stops SET deleted_at = datetime('now'), is_active = 0 WHERE id = ?",
+                    arguments: [stopId]
+                )
+            }
+
+            if !orphanIds.isEmpty {
+                let affectedPathIds = try Int64.fetchAll(dbConn, sql: """
+                    SELECT DISTINCT path_id FROM warehouse_walking_path_stops
+                    WHERE id IN (\(orphanIds.map { _ in "?" }.joined(separator: ",")))
+                    """, arguments: StatementArguments(orphanIds))
+                for pathId in affectedPathIds {
+                    try normalizeWalkingPathOrder(pathId: pathId, dbConn: dbConn)
+                    try touchWalkingPath(pathId: pathId, dbConn: dbConn)
+                }
+            }
+
+            return orphanIds.count
+        }
+    }
+
+    /// Record audit walkthrough metadata, including walking-path deviations.
+    public func recordAuditSessionEvent(
+        sessionId: Int64,
+        eventType: String,
+        areaId: Int64? = nil,
+        walkingPathStopIndex: Int? = nil,
+        notes: String? = nil,
+        recordedBy: Int64? = nil
+    ) throws {
+        let trimmedType = eventType.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedType.isEmpty else { throw WarehouseError.requiredFieldEmpty }
+
+        try db.writer.write { dbConn in
+            let sessionExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM audit_sessions_v2
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [sessionId]) ?? 0) > 0
+            guard sessionExists else { throw WarehouseError.sessionNotFound(sessionId) }
+
+            try dbConn.execute(sql: """
+                INSERT INTO audit_session_events
+                    (session_id, event_type, area_id, walking_path_stop_index, notes, recorded_by)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [sessionId, trimmedType, areaId, walkingPathStopIndex, notes, recordedBy])
         }
     }
 
@@ -3376,11 +3737,19 @@ public final class WarehouseService: Sendable {
 
     /// Get current onboarding progress, or nil if none exists.
     public func getOnboardingProgress() throws -> WarehouseOnboardingProgress? {
-        try db.writer.read { dbConn in
-            try WarehouseOnboardingProgress
+        try db.writer.write { dbConn in
+            guard var progress = try WarehouseOnboardingProgress
                 .filter(Column("completed_at") == nil)
                 .order(Column("id").desc)
                 .fetchOne(dbConn)
+            else { return nil }
+
+            if progress.completedSteps == nil {
+                progress.completedSteps = try Self.legacyCompletedStepsJSON(for: progress)
+                try progress.update(dbConn)
+            }
+
+            return progress
         }
     }
 
@@ -3394,7 +3763,8 @@ public final class WarehouseService: Sendable {
                 step2Complete: false,
                 step3Complete: false,
                 flowType: "floor_plan",
-                totalSteps: 6
+                totalSteps: 10,
+                completedSteps: "[]"
             )
             try progress.insert(dbConn)
             return progress
@@ -3406,6 +3776,7 @@ public final class WarehouseService: Sendable {
         id: Int64, currentStep: Int,
         step1Complete: Bool? = nil, step2Complete: Bool? = nil, step3Complete: Bool? = nil,
         step4Progress: String? = nil, step5Progress: String? = nil, step6Progress: String? = nil,
+        completedSteps: String? = nil,
         floorPlanId: Int64? = nil
     ) throws {
         try db.writer.write { dbConn in
@@ -3417,9 +3788,46 @@ public final class WarehouseService: Sendable {
             if let s4 = step4Progress { progress.step4Progress = s4 }
             if let s5 = step5Progress { progress.step5Progress = s5 }
             if let s6 = step6Progress { progress.step6Progress = s6 }
+            if let completedSteps {
+                progress.completedSteps = try Self.normalizedCompletedStepsJSON(from: completedSteps)
+            }
             if let fp = floorPlanId { progress.floorPlanId = fp }
             try progress.update(dbConn)
         }
+    }
+
+    private static func legacyCompletedStepsJSON(for progress: WarehouseOnboardingProgress) throws -> String {
+        var steps = Set<Int>()
+        if progress.step1Complete { steps.insert(1) }
+        if progress.step2Complete { steps.insert(2) }
+        if progress.step3Complete { steps.insert(3) }
+
+        if let step4Progress = progress.step4Progress {
+            steps.formUnion(decodedCompletedSteps(from: step4Progress))
+        }
+
+        return try encodedCompletedSteps(steps)
+    }
+
+    private static func normalizedCompletedStepsJSON(from json: String) throws -> String {
+        try encodedCompletedSteps(decodedCompletedSteps(from: json))
+    }
+
+    private static func decodedCompletedSteps(from json: String) -> Set<Int> {
+        guard let data = json.data(using: .utf8) else { return [] }
+        if let array = try? JSONDecoder().decode([Int].self, from: data) {
+            return Set(array)
+        }
+        if let set = try? JSONDecoder().decode(Set<Int>.self, from: data) {
+            return set
+        }
+        return []
+    }
+
+    private static func encodedCompletedSteps(_ steps: Set<Int>) throws -> String {
+        let normalized = steps.filter { (1...10).contains($0) }.sorted()
+        let data = try JSONEncoder().encode(normalized)
+        return String(data: data, encoding: .utf8) ?? "[]"
     }
 
     /// Complete the onboarding process.
