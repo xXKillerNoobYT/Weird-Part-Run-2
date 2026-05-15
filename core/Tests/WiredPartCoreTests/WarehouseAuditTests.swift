@@ -21,6 +21,18 @@ struct WarehouseAuditTests {
         return area.id!
     }
 
+    private func seedStorageAreas(_ env: E2ETestHelpers.TestEnvironment, count: Int) throws -> (floorPlanId: Int64, areas: [Int64]) {
+        let plan = try env.warehouse.createFloorPlan(name: "WH-\(UUID().uuidString.prefix(6))", widthInches: 200, lengthInches: 200)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "S1", unitType: "shelf")
+        let level = try env.warehouse.addStorageLevel(unitId: unit.id!, levelCode: "L1")
+        var areas: [Int64] = []
+        for index in 1...count {
+            let area = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: index)
+            areas.append(area.id!)
+        }
+        return (plan.id!, areas)
+    }
+
     // MARK: - Part Confidence
 
     @Test("Set and get part confidence")
@@ -71,7 +83,166 @@ struct WarehouseAuditTests {
         let areaId = try seedStorageArea(env)
 
         let factor = try env.warehouse.calculateMovementDecayFactor(partId: partId, areaId: areaId)
-        #expect(factor >= 0.0 && factor <= 1.0)
+        #expect(factor >= 1.0 && factor <= 3.0)
+    }
+
+    @Test("First clean audit promotes unverified 50 percent confidence to 100")
+    func testFirstCleanAuditDoubleCountBoost() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let areaId = try seedStorageArea(env)
+        let session = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+
+        try env.warehouse.setPartConfidence(partId: partId, areaId: areaId, percent: 50)
+        _ = try env.warehouse.recordAuditCount(
+            sessionId: session.id!,
+            partId: partId,
+            areaId: areaId,
+            systemCount: 10,
+            userCount: 10,
+            countedBy: env.adminUserId,
+            unitCostDollars: 1
+        )
+
+        let confidence = try #require(try env.warehouse.getPartConfidence(partId: partId, areaId: areaId))
+        #expect(confidence.confidencePercent == 100)
+        #expect(confidence.totalAuditCount == 1)
+        #expect(confidence.cleanAuditStreak == 1)
+        #expect(confidence.reliabilityLevel >= 3)
+    }
+
+    @Test("Audit variance outside value neutral zone applies confidence penalty")
+    func testAuditVariancePenalty() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let areaId = try seedStorageArea(env)
+        let session = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+
+        try env.warehouse.setPartConfidence(partId: partId, areaId: areaId, percent: 90)
+        _ = try env.warehouse.recordAuditCount(
+            sessionId: session.id!,
+            partId: partId,
+            areaId: areaId,
+            systemCount: 10,
+            userCount: 8,
+            countedBy: env.adminUserId,
+            unitCostDollars: 10
+        )
+
+        let confidence = try #require(try env.warehouse.getPartConfidence(partId: partId, areaId: areaId))
+        #expect(confidence.confidencePercent == 75)
+        #expect(confidence.cleanAuditStreak == 0)
+        #expect(confidence.totalVarianceDollars == 20)
+    }
+
+    @Test("Audit variance within 5 percent dollar value neutral zone preserves confidence")
+    func testAuditVarianceNeutralDollarThreshold() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let areaId = try seedStorageArea(env)
+        let session = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+
+        try env.warehouse.setPartConfidence(partId: partId, areaId: areaId, percent: 90)
+        _ = try env.warehouse.recordAuditCount(
+            sessionId: session.id!,
+            partId: partId,
+            areaId: areaId,
+            systemCount: 100,
+            userCount: 99,
+            countedBy: env.adminUserId,
+            unitCostDollars: 1
+        )
+
+        let confidence = try #require(try env.warehouse.getPartConfidence(partId: partId, areaId: areaId))
+        #expect(confidence.confidencePercent == 90)
+        #expect(confidence.cleanAuditStreak == 1)
+    }
+
+    @Test("Daily decay keeps counted parts above minimum confidence floor")
+    func testDailyDecayMinimumCountedFloor() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let areaId = try seedStorageArea(env)
+        let session = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+
+        _ = try env.warehouse.recordAuditCount(
+            sessionId: session.id!,
+            partId: partId,
+            areaId: areaId,
+            systemCount: 1,
+            userCount: 1,
+            countedBy: env.adminUserId
+        )
+        try env.warehouse.setPartConfidence(partId: partId, areaId: areaId, percent: 0.02)
+        try env.warehouse.decayAllConfidence()
+
+        let confidence = try #require(try env.warehouse.getPartConfidence(partId: partId, areaId: areaId))
+        #expect(confidence.confidencePercent == 0.01)
+    }
+
+    @Test("Movement updates decay factor and quick verification resets it")
+    func testMovementDecayAndQuickVerificationReset() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let areaId = try seedStorageArea(env)
+
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 5, locationType: "warehouse", locationId: areaId)
+        try env.warehouse.setPartConfidence(partId: partId, areaId: areaId, percent: 80)
+
+        _ = try env.warehouse.createMovement(
+            partId: partId,
+            qty: 1,
+            fromLocationType: "warehouse",
+            fromLocationId: areaId,
+            toLocationType: "job",
+            toLocationId: 42,
+            movementType: "pull",
+            performedBy: env.adminUserId
+        )
+
+        let moved = try #require(try env.warehouse.getPartConfidence(partId: partId, areaId: areaId))
+        #expect(moved.movementDecayFactor > 1.0)
+        #expect(try env.warehouse.shouldPromptQuickVerification(partId: partId, areaId: areaId))
+
+        let verified = try env.warehouse.recordQuickVerificationCount(
+            partId: partId,
+            areaId: areaId,
+            countedQuantity: 4,
+            verifiedBy: env.adminUserId
+        )
+        #expect(verified.confidencePercent == 100)
+        #expect(verified.movementDecayFactor == 1.0)
+    }
+
+    @Test("Audit queue orders by lowest confidence and includes walking path metadata")
+    func testAuditQueueOrderingAndWalkingPathMetadata() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let p1 = try E2ETestHelpers.seedPart(env, name: "High Priority", categoryId: catId)
+        let p2 = try E2ETestHelpers.seedPart(env, name: "Later Priority", categoryId: catId)
+        let fixture = try seedStorageAreas(env, count: 2)
+        let path = try env.warehouse.createWalkingPath(
+            floorPlanId: fixture.floorPlanId,
+            name: "Default Audit Walk",
+            userId: env.adminUserId
+        )
+        try env.warehouse.setWalkingPathStops(pathId: path.id!, areaIds: [fixture.areas[1], fixture.areas[0]])
+        try env.warehouse.setPartConfidence(partId: p1, areaId: fixture.areas[0], percent: 30)
+        try env.warehouse.setPartConfidence(partId: p2, areaId: fixture.areas[1], percent: 60)
+
+        let queue = try env.warehouse.getAuditQueue(floorPlanId: fixture.floorPlanId)
+
+        #expect(queue.map(\.partId) == [p1, p2])
+        #expect(queue[0].needsAudit)
+        #expect(queue[0].auditTriggerPercent == 80)
+        #expect(queue[0].walkingPathId == path.id)
+        #expect(queue[0].walkingPathStopIndex == 1)
+        #expect(queue[1].walkingPathStopIndex == 0)
     }
 
     @Test("Get parts at reliability level")
@@ -189,6 +360,12 @@ struct WarehouseAuditTests {
 
         let rating = try env.warehouse.getOrganizationRating(areaId: areaId)
         #expect(rating.lastOrgCheckBy == env.adminUserId)
+        #expect(rating.labelsAccurate)
+        #expect(rating.partsInHome)
+        #expect(rating.noDuplicates)
+        #expect(rating.notOvercrowded)
+        #expect(!rating.binsAssigned)
+        #expect(rating.overallRating > 6.0)
     }
 
     @Test("Overall warehouse score")
@@ -352,6 +529,19 @@ struct WarehouseAuditTests {
         #expect(votes.isEmpty)
     }
 
+    @Test("Organization audit starts from monthly manager and system entry points")
+    func testOrganizationAuditEntryPoints() throws {
+        let env = try freshEnv()
+
+        let monthly = try env.warehouse.startOrganizationAudit(trigger: .monthly, startedBy: env.adminUserId)
+        let manager = try env.warehouse.startOrganizationAudit(trigger: .managerInitiated, startedBy: env.adminUserId)
+        let system = try env.warehouse.startOrganizationAudit(trigger: .systemSuggested, startedBy: env.adminUserId)
+
+        #expect(monthly.sessionType == "organization_monthly")
+        #expect(manager.sessionType == "organization_manager_initiated")
+        #expect(system.sessionType == "organization_system_suggested")
+    }
+
     // MARK: - Misplaced Parts
 
     @Test("Log and resolve misplaced part")
@@ -381,6 +571,58 @@ struct WarehouseAuditTests {
 
         let afterResolve = try env.warehouse.getPendingMisplacedParts()
         #expect(afterResolve.count == 0)
+    }
+
+    @Test("Misplaced part logging rejects placeholder part and area ids")
+    func testMisplacedPartRejectsPlaceholderIds() throws {
+        let env = try freshEnv()
+        #expect(throws: WarehouseService.WarehouseError.partNotFound(0)) {
+            try env.warehouse.logMisplacedPart(
+                partId: 0,
+                foundAtAreaId: 0,
+                homeAreaId: nil,
+                qtyFound: 1,
+                foundBy: env.adminUserId
+            )
+        }
+    }
+
+    @Test("Resolving misplaced part as moved to home updates stock")
+    func testMisplacedPartMoveToHomeResolutionUpdatesStock() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let fixture = try seedStorageAreas(env, count: 2)
+        let foundAreaId = fixture.areas[0]
+        let homeAreaId = fixture.areas[1]
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 3, locationType: "warehouse", locationId: foundAreaId)
+
+        let log = try env.warehouse.logMisplacedPart(
+            partId: partId,
+            foundAtAreaId: foundAreaId,
+            homeAreaId: homeAreaId,
+            qtyFound: 2,
+            foundBy: env.adminUserId
+        )
+
+        try env.warehouse.resolveMisplacedPart(
+            logId: log.id!,
+            resolution: "moved_to_home",
+            resolvedBy: env.adminUserId
+        )
+
+        let rows = try env.db.writer.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT location_id, qty FROM stock
+                WHERE part_id = ? AND location_type = 'warehouse' AND deleted_at IS NULL
+                ORDER BY location_id
+                """, arguments: [partId])
+        }
+        let foundQty = rows.first { ($0["location_id"] as Int64?) == foundAreaId }?["qty"] as Int?
+        let homeQty = rows.first { ($0["location_id"] as Int64?) == homeAreaId }?["qty"] as Int?
+        #expect(foundQty == 1)
+        #expect(homeQty == 2)
+        #expect(try env.warehouse.getPendingMisplacedParts().isEmpty)
     }
 
     // MARK: - Reports
@@ -674,31 +916,35 @@ struct WarehouseAuditTests {
 
     // MARK: - Consolidation Vote Lifecycle
 
-    /// Helper: seed a part with 2 home area assignments so suggestConsolidation returns a vote.
-    private func seedConsolidationVote(_ env: E2ETestHelpers.TestEnvironment) throws -> (partId: Int64, voteId: Int64, area1: Int64, area2: Int64) {
+    /// Helper: seed a part with 3 home area assignments so suggestConsolidation returns a vote.
+    private func seedConsolidationVote(_ env: E2ETestHelpers.TestEnvironment) throws -> (partId: Int64, voteId: Int64, area1: Int64, area2: Int64, area3: Int64) {
         let catId = try E2ETestHelpers.seedCategory(env)
         let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
 
         let plan = try env.warehouse.createFloorPlan(name: "CV-Plan", widthInches: 200, lengthInches: 200)
         let unit1 = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "U1", unitType: "shelf")
         let unit2 = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "U2", unitType: "shelf")
+        let unit3 = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "U3", unitType: "shelf")
         let level1 = try env.warehouse.addStorageLevel(unitId: unit1.id!, levelCode: "L1")
         let level2 = try env.warehouse.addStorageLevel(unitId: unit2.id!, levelCode: "L1")
+        let level3 = try env.warehouse.addStorageLevel(unitId: unit3.id!, levelCode: "L1")
         let area1 = try env.warehouse.addStorageArea(levelId: level1.id!, areaNumber: 1)
         let area2 = try env.warehouse.addStorageArea(levelId: level2.id!, areaNumber: 1)
+        let area3 = try env.warehouse.addStorageArea(levelId: level3.id!, areaNumber: 1)
 
         _ = try env.warehouse.assignPartToArea(partId: partId, areaId: area1.id!, isHome: true)
         _ = try env.warehouse.assignPartToArea(partId: partId, areaId: area2.id!, isHome: true)
+        _ = try env.warehouse.assignPartToArea(partId: partId, areaId: area3.id!, isHome: true)
 
         let vote = try env.warehouse.suggestConsolidation(partId: partId)
         #expect(vote != nil)
-        return (partId: partId, voteId: vote!.id!, area1: area1.id!, area2: area2.id!)
+        return (partId: partId, voteId: vote!.id!, area1: area1.id!, area2: area2.id!, area3: area3.id!)
     }
 
     @Test("castConsolidationVote inserts a vote entry for the user")
     func testCastConsolidationVote() throws {
         let env = try freshEnv()
-        let (_, voteId, area1, _) = try seedConsolidationVote(env)
+        let (_, voteId, area1, _, _) = try seedConsolidationVote(env)
 
         try env.warehouse.castConsolidationVote(voteId: voteId, userId: env.adminUserId, chosenAreaId: area1)
 
@@ -713,7 +959,7 @@ struct WarehouseAuditTests {
     @Test("managerOverrideConsolidation then applyConsolidation transitions status correctly")
     func testManagerOverrideAndApplyConsolidation() throws {
         let env = try freshEnv()
-        let (_, voteId, _, area2) = try seedConsolidationVote(env)
+        let (partId, voteId, area1, area2, area3) = try seedConsolidationVote(env)
 
         try env.warehouse.managerOverrideConsolidation(voteId: voteId, chosenAreaId: area2)
 
@@ -730,12 +976,17 @@ struct WarehouseAuditTests {
             try Row.fetchOne(db, sql: "SELECT status FROM consolidation_votes WHERE id = ?", arguments: [voteId])
         }
         #expect((afterApply?["status"] as String?) == "applied")
+
+        let remainingHomes = try env.warehouse.getPartAssignments(partId: partId).filter(\.isHome).map(\.areaId)
+        #expect(remainingHomes == [area2])
+        #expect(!remainingHomes.contains(area1))
+        #expect(!remainingHomes.contains(area3))
     }
 
     @Test("dismissConsolidation sets status to dismissed with reason")
     func testDismissConsolidation() throws {
         let env = try freshEnv()
-        let (_, voteId, _, _) = try seedConsolidationVote(env)
+        let (_, voteId, _, _, _) = try seedConsolidationVote(env)
 
         try env.warehouse.dismissConsolidation(voteId: voteId, reason: "Not worth moving")
 
@@ -744,6 +995,60 @@ struct WarehouseAuditTests {
         }
         #expect((row?["status"] as String?) == "dismissed")
         #expect((row?["dismiss_reason"] as String?) == "Not worth moving")
+    }
+
+    @Test("suggestConsolidation requires three non-exempt home areas")
+    func testConsolidationRequiresThreeNonExemptAreas() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let fixture = try seedStorageAreas(env, count: 2)
+
+        _ = try env.warehouse.assignPartToArea(partId: partId, areaId: fixture.areas[0], isHome: true)
+        _ = try env.warehouse.assignPartToArea(partId: partId, areaId: fixture.areas[1], isHome: true)
+
+        #expect(try env.warehouse.suggestConsolidation(partId: partId) == nil)
+    }
+
+    @Test("generateConsolidationSuggestions ignores exempt duplicate areas")
+    func testConsolidationIgnoresExemptAreas() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let plan = try env.warehouse.createFloorPlan(name: "Exempt CV", widthInches: 200, lengthInches: 200)
+        let shelf1 = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "Shelf 1", unitType: "shelf")
+        let shelf2 = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "Shelf 2", unitType: "shelf")
+        let staging = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "Stage", unitType: "staging")
+        let shelfLevel1 = try env.warehouse.addStorageLevel(unitId: shelf1.id!, levelCode: "L1")
+        let shelfLevel2 = try env.warehouse.addStorageLevel(unitId: shelf2.id!, levelCode: "L1")
+        let stagingLevel = try env.warehouse.addStorageLevel(unitId: staging.id!, levelCode: "L1")
+        let area1 = try env.warehouse.addStorageArea(levelId: shelfLevel1.id!, areaNumber: 1)
+        let area2 = try env.warehouse.addStorageArea(levelId: shelfLevel2.id!, areaNumber: 1)
+        let stagingArea = try env.warehouse.addStorageArea(levelId: stagingLevel.id!, areaNumber: 1)
+
+        _ = try env.warehouse.assignPartToArea(partId: partId, areaId: area1.id!, isHome: true)
+        _ = try env.warehouse.assignPartToArea(partId: partId, areaId: area2.id!, isHome: true)
+        _ = try env.warehouse.assignPartToArea(partId: partId, areaId: stagingArea.id!, isHome: true)
+
+        #expect(try env.warehouse.generateConsolidationSuggestions().isEmpty)
+    }
+
+    @Test("dismissConsolidation escalates after three ignores")
+    func testDismissConsolidationEscalatesAfterThreeIgnores() throws {
+        let env = try freshEnv()
+        let (partId, voteId, _, _, _) = try seedConsolidationVote(env)
+
+        try env.warehouse.dismissConsolidation(voteId: voteId, reason: "Later")
+        _ = try env.warehouse.suggestConsolidation(partId: partId)
+        try env.warehouse.dismissConsolidation(voteId: voteId, reason: "Still later")
+        _ = try env.warehouse.suggestConsolidation(partId: partId)
+        try env.warehouse.dismissConsolidation(voteId: voteId, reason: "Needs manager")
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT status, ignore_count FROM consolidation_votes WHERE id = ?", arguments: [voteId])
+        }
+        #expect((row?["status"] as String?) == "escalated")
+        #expect((row?["ignore_count"] as Int?) == 3)
     }
 
     // MARK: - Multi-User Audit Query Methods
@@ -808,6 +1113,167 @@ struct WarehouseAuditTests {
 
         #expect(forSession1.count == 1) // 1 part grouped
         #expect(forSession2.isEmpty)
+    }
+
+    @Test("flagForMultiUserAudit is idempotent for the same part session and users")
+    func testFlagForMultiUserAuditPreventsDuplicateAssignments() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let session = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+        _ = try env.auth.createUser(displayName: "Counter D", pin: "1111")
+        _ = try env.auth.createUser(displayName: "Counter E", pin: "2222")
+
+        let first = try env.warehouse.flagForMultiUserAudit(
+            partId: partId,
+            expectedQty: 10,
+            sessionId: session.id!,
+            requiredCounts: 3
+        )
+        let second = try env.warehouse.flagForMultiUserAudit(
+            partId: partId,
+            expectedQty: 10,
+            sessionId: session.id!,
+            requiredCounts: 3
+        )
+
+        #expect(first.count == 3)
+        #expect(second.count == 3)
+        #expect(Set(second.map(\.assignedUserId)).count == 3)
+    }
+
+    @Test("submitMultiUserCount rejects duplicate submission from the same assignment")
+    func testSubmitMultiUserCountRejectsDuplicateSubmission() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let session = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+        _ = try env.auth.createUser(displayName: "Counter F", pin: "3333")
+        let assignments = try env.warehouse.flagForMultiUserAudit(
+            partId: partId,
+            expectedQty: 10,
+            sessionId: session.id!,
+            requiredCounts: 2
+        )
+
+        let first = try #require(assignments.first)
+        try env.warehouse.submitMultiUserCount(
+            assignmentId: first.id!,
+            quantity: 10,
+            userId: first.assignedUserId
+        )
+        #expect(throws: WarehouseService.WarehouseError.sessionAlreadyCompleted) {
+            try env.warehouse.submitMultiUserCount(
+                assignmentId: first.id!,
+                quantity: 11,
+                userId: first.assignedUserId
+            )
+        }
+    }
+
+    @Test("multi-user audit resolves by three-user majority and updates confidence and ratings")
+    func testMultiUserAuditMajorityResolutionUpdatesConfidenceAndRatings() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let areaId = try seedStorageArea(env)
+        let session = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+        _ = try env.auth.createUser(displayName: "Counter G", pin: "4444")
+        _ = try env.auth.createUser(displayName: "Counter H", pin: "5555")
+        try env.warehouse.setPartConfidence(partId: partId, areaId: areaId, percent: 40)
+
+        let assignments = try env.warehouse.flagForMultiUserAudit(
+            partId: partId,
+            expectedQty: 10,
+            sessionId: session.id!,
+            requiredCounts: 3
+        )
+        try env.warehouse.submitMultiUserCount(assignmentId: assignments[0].id!, quantity: 9, userId: assignments[0].assignedUserId)
+        try env.warehouse.submitMultiUserCount(assignmentId: assignments[1].id!, quantity: 9, userId: assignments[1].assignedUserId)
+        try env.warehouse.submitMultiUserCount(assignmentId: assignments[2].id!, quantity: 11, userId: assignments[2].assignedUserId)
+
+        let finalQty = try env.warehouse.resolveMultiUserAudit(
+            partId: partId,
+            sessionId: session.id!,
+            resolvedBy: env.adminUserId
+        )
+
+        #expect(finalQty == 9)
+        let summary = try #require(try env.warehouse.getMultiUserAuditAssignments(sessionId: session.id!).first)
+        #expect(summary.resolutionStatus == "resolved")
+        #expect(summary.assignments.allSatisfy { $0.status == "resolved" && $0.resolutionMethod == "majority" })
+        let confidence = try #require(try env.warehouse.getPartConfidence(partId: partId, areaId: areaId))
+        #expect(confidence.confidencePercent == 75)
+        #expect(confidence.systemCount == 9)
+        let ratings = try env.db.writer.read { db in
+            try Row.fetchAll(db, sql: "SELECT user_id, total_audits, total_accurate FROM user_warehouse_ratings")
+        }
+        #expect(ratings.count == 3)
+        #expect(ratings.filter { ($0["total_accurate"] as Int? ?? 0) == 1 }.count == 2)
+    }
+
+    @Test("multi-user audit tie moves to unresolved state")
+    func testMultiUserAuditTieMarksUnresolved() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let session = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+        _ = try env.auth.createUser(displayName: "Counter I", pin: "6666")
+        let assignments = try env.warehouse.flagForMultiUserAudit(
+            partId: partId,
+            expectedQty: 10,
+            sessionId: session.id!,
+            requiredCounts: 2
+        )
+        try env.warehouse.submitMultiUserCount(assignmentId: assignments[0].id!, quantity: 8, userId: assignments[0].assignedUserId)
+        try env.warehouse.submitMultiUserCount(assignmentId: assignments[1].id!, quantity: 12, userId: assignments[1].assignedUserId)
+
+        let finalQty = try env.warehouse.resolveMultiUserAudit(
+            partId: partId,
+            sessionId: session.id!,
+            resolvedBy: env.adminUserId
+        )
+
+        #expect(finalQty == nil)
+        let summary = try #require(try env.warehouse.getMultiUserAuditAssignments(sessionId: session.id!).first)
+        #expect(summary.resolutionStatus == "unresolved")
+        #expect(summary.assignments.allSatisfy { $0.status == "unresolved" && $0.resolutionMethod == "unresolved_tie" })
+    }
+
+    @Test("manager override resolves unresolved multi-user audit")
+    func testMultiUserAuditManagerOverrideResolvesTie() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let areaId = try seedStorageArea(env)
+        let session = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+        _ = try env.auth.createUser(displayName: "Counter J", pin: "7777")
+        try env.warehouse.setPartConfidence(partId: partId, areaId: areaId, percent: 50)
+        let assignments = try env.warehouse.flagForMultiUserAudit(
+            partId: partId,
+            expectedQty: 10,
+            sessionId: session.id!,
+            requiredCounts: 2
+        )
+        try env.warehouse.submitMultiUserCount(assignmentId: assignments[0].id!, quantity: 8, userId: assignments[0].assignedUserId)
+        try env.warehouse.submitMultiUserCount(assignmentId: assignments[1].id!, quantity: 12, userId: assignments[1].assignedUserId)
+        _ = try env.warehouse.resolveMultiUserAudit(partId: partId, sessionId: session.id!, resolvedBy: env.adminUserId)
+
+        let overrideQty = try env.warehouse.resolveMultiUserAudit(
+            partId: partId,
+            sessionId: session.id!,
+            resolvedBy: env.adminUserId,
+            managerOverrideQuantity: 11,
+            resolutionNote: "Manager counted sealed carton."
+        )
+
+        #expect(overrideQty == 11)
+        let summary = try #require(try env.warehouse.getMultiUserAuditAssignments(sessionId: session.id!).first)
+        #expect(summary.resolutionStatus == "overridden")
+        #expect(summary.assignments.allSatisfy { $0.status == "overridden" && $0.resolvedQuantity == 11 })
+        let confidence = try #require(try env.warehouse.getPartConfidence(partId: partId, areaId: areaId))
+        #expect(confidence.confidencePercent == 70)
+        #expect(confidence.systemCount == 11)
     }
 
     // MARK: - Low Confidence Verification

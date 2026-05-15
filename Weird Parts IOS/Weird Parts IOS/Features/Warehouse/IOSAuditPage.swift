@@ -49,7 +49,7 @@ struct IOSAuditPage: View {
 
     private enum ActiveSheet: Identifiable {
         case auditSetup
-        case misplacedPart
+        case misplacedPart(partId: Int64?, areaId: Int64?)
         case countDetail(CountResult)
         case sessionSummary(AuditSessionV2)
         case help
@@ -57,7 +57,7 @@ struct IOSAuditPage: View {
         var id: String {
             switch self {
             case .auditSetup: "setup"
-            case .misplacedPart: "misplaced"
+            case .misplacedPart(let partId, let areaId): "misplaced-\(partId ?? 0)-\(areaId ?? 0)"
             case .countDetail: "countDetail"
             case .sessionSummary(let s): "summary-\(s.id ?? 0)"
             case .help: "help"
@@ -178,8 +178,12 @@ struct IOSAuditPage: View {
                 loadData()
             })
             .environmentObject(appCore)
-        case .misplacedPart:
-            MisplacedPartSheet { loadData() }
+        case .misplacedPart(let partId, let areaId):
+            MisplacedPartSheet(
+                candidates: buildQueue(),
+                initialPartId: partId,
+                initialAreaId: areaId
+            ) { loadData() }
                 .environmentObject(appCore)
         case .countDetail(let result):
             CountResultSheet(result: result) {
@@ -371,7 +375,7 @@ struct IOSAuditPage: View {
             if activeSession != nil {
                 Section {
                     Button {
-                        activeSheet = .misplacedPart
+                        activeSheet = .misplacedPart(partId: nil, areaId: nil)
                     } label: {
                         Label("+ Found Misplaced Part", systemImage: "exclamationmark.triangle")
                             .font(.subheadline)
@@ -653,7 +657,7 @@ struct IOSAuditPage: View {
                     .buttonStyle(.bordered)
 
                     Button {
-                        activeSheet = .misplacedPart
+                        activeSheet = .misplacedPart(partId: item.partId, areaId: item.areaId)
                     } label: {
                         Label("Report Issue", systemImage: "flag")
                             .font(.subheadline)
@@ -705,7 +709,7 @@ struct IOSAuditPage: View {
 
                         Button {
                             recordWalkingPathEvent(type: "count_reported", notes: "Reported count issue at empty walking-path stop")
-                            activeSheet = .misplacedPart
+                            activeSheet = .misplacedPart(partId: nil, areaId: areaId)
                         } label: {
                             Label("Report Count", systemImage: "flag")
                         }
@@ -734,7 +738,7 @@ struct IOSAuditPage: View {
 
                         Button {
                             recordWalkingPathEvent(type: "deviation_reported", notes: "Reported issue during walking-path stop")
-                            activeSheet = .misplacedPart
+                            activeSheet = .misplacedPart(partId: nil, areaId: areaId)
                         } label: {
                             Label("Report Issue", systemImage: "flag")
                         }
@@ -1202,6 +1206,11 @@ struct IOSAuditPage: View {
                     partNameCache[conf.partId] = name
                 }
             }
+            if partCodeCache[conf.partId] == nil {
+                if let code = try? service.getPartCode(partId: conf.partId) {
+                    partCodeCache[conf.partId] = code
+                }
+            }
             if locationCodeCache[conf.areaId] == nil {
                 if let code = try? service.generateFullLocationCode(areaId: conf.areaId) {
                     locationCodeCache[conf.areaId] = code
@@ -1250,11 +1259,16 @@ private struct MisplacedPartSheet: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
 
+    let candidates: [IOSAuditPage.CountingItem]
+    let initialPartId: Int64?
+    let initialAreaId: Int64?
     let onSave: () -> Void
 
-    @State private var partName = ""
+    @State private var selectedPartId: Int64?
+    @State private var foundAtAreaId: Int64?
+    @State private var homeAreaId: Int64?
     @State private var qtyFound = 1
-    @State private var resolution: String = "carted"
+    @State private var resolution: String = "sort_later"
     @State private var isSaving = false
     @State private var errorMessage: String?
 
@@ -1262,14 +1276,32 @@ private struct MisplacedPartSheet: View {
         NavigationStack {
             Form {
                 Section("Misplaced Part") {
-                    TextField("Part name or scan", text: $partName)
+                    Picker("Part", selection: $selectedPartId) {
+                        Text("Select Part").tag(Int64?.none)
+                        ForEach(candidates, id: \.partId) { item in
+                            Text(item.partCode.map { "\(item.partName) (\($0))" } ?? item.partName)
+                                .tag(Int64?.some(item.partId))
+                        }
+                    }
+                    Picker("Found At", selection: $foundAtAreaId) {
+                        Text("Select Area").tag(Int64?.none)
+                        ForEach(uniqueAreas, id: \.id) { area in
+                            Text(area.label).tag(Int64?.some(area.id))
+                        }
+                    }
+                    Picker("Correct Location", selection: $homeAreaId) {
+                        Text("Sort Later").tag(Int64?.none)
+                        ForEach(uniqueAreas, id: \.id) { area in
+                            Text(area.label).tag(Int64?.some(area.id))
+                        }
+                    }
                     Stepper("Quantity: \(qtyFound)", value: $qtyFound, in: 1...999)
                 }
 
                 Section("What to do?") {
                     Picker("Resolution", selection: $resolution) {
-                        Text("Cart (sort later)").tag("carted")
-                        Text("Leave here").tag("left_here")
+                        Text("Add to cart / sort later").tag("sort_later")
+                        Text("Quick fix here").tag("quick_fix")
                         Text("Move to home").tag("moved_to_home")
                     }
                     .pickerStyle(.inline)
@@ -1293,30 +1325,60 @@ private struct MisplacedPartSheet: View {
                     } else {
                         Button("Save") { saveMisplaced() }
                             .fontWeight(.semibold)
-                            .disabled(partName.isEmpty)
+                            .disabled(selectedPartId == nil || foundAtAreaId == nil)
                     }
                 }
             }
+            .onAppear(perform: configureInitialSelection)
+        }
+    }
+
+    private var uniqueAreas: [(id: Int64, label: String)] {
+        var seen: Set<Int64> = []
+        return candidates.compactMap { item in
+            guard !seen.contains(item.areaId) else { return nil }
+            seen.insert(item.areaId)
+            return (item.areaId, item.locationCode)
+        }
+    }
+
+    private func configureInitialSelection() {
+        if selectedPartId == nil {
+            selectedPartId = initialPartId ?? candidates.first?.partId
+        }
+        if foundAtAreaId == nil {
+            foundAtAreaId = initialAreaId ?? candidates.first(where: { $0.partId == selectedPartId })?.areaId
+        }
+        if homeAreaId == nil, resolution != "sort_later" {
+            homeAreaId = candidates.first(where: { $0.partId == selectedPartId })?.areaId
         }
     }
 
     private func saveMisplaced() {
         guard let service = appCore.warehouseService,
-              let userId = appCore.currentUser?.id else {
+              let userId = appCore.currentUser?.id,
+              let partId = selectedPartId,
+              let foundAtAreaId else {
             errorMessage = "Service unavailable"
             return
         }
         isSaving = true
         errorMessage = nil
         do {
-            // Log with placeholder IDs — in production would resolve from search
-            try service.logMisplacedPart(
-                partId: 0,
-                foundAtAreaId: 0,
-                homeAreaId: nil,
+            let log = try service.logMisplacedPart(
+                partId: partId,
+                foundAtAreaId: foundAtAreaId,
+                homeAreaId: homeAreaId,
                 qtyFound: qtyFound,
                 foundBy: userId
             )
+            if resolution != "sort_later" {
+                try service.resolveMisplacedPart(
+                    logId: log.id!,
+                    resolution: resolution,
+                    resolvedBy: userId
+                )
+            }
             try service.updateUserRating(userId: userId, action: "misplacement_find")
             dismiss()
             onSave()

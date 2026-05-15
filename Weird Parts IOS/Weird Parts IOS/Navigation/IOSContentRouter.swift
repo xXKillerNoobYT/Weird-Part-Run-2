@@ -239,23 +239,23 @@ struct IOSContentRouter: View {
 
         // Office sub-routes
         case "/office/dashboard":
-            OfficeRouter(tabId: "office-dashboard")
+            officeRoute(tabId: "office-dashboard", permission: officeAccessPermission)
         case "/office/approvals":
-            OfficeRouter(tabId: "office-approvals")
+            officeRoute(tabId: "office-approvals", permission: officeAccessPermission)
         case "/office/manage-jobs":
-            OfficeRouter(tabId: "office-manage-jobs")
+            officeRoute(tabId: "office-manage-jobs", permission: "manage_jobs")
         case "/office/warehouse-exec":
-            OfficeRouter(tabId: "office-warehouse-exec")
+            officeRoute(tabId: "office-warehouse-exec", permission: "manage_warehouse")
         case "/office/estimation-settings":
-            OfficeRouter(tabId: "office-estimation-settings")
+            officeRoute(tabId: "office-estimation-settings", permission: "manage_jobs")
         case "/office/pipeline":
-            OfficeRouter(tabId: "office-pipeline")
+            officeRoute(tabId: "office-pipeline", permission: "manage_jobs")
         case "/office/spending":
-            OfficeRouter(tabId: "office-spending")
+            officeRoute(tabId: "office-spending", permission: financialValuesPermission)
         case "/office/teams":
-            OfficeRouter(tabId: "office-teams")
+            officeRoute(tabId: "office-teams", permission: officeAccessPermission)
         case "/office/reports":
-            OfficeRouter(tabId: "office-reports")
+            officeRoute(tabId: "office-reports", permission: "view_reports")
 
         // Chat sub-routes
         case "/chat/channels", "/chat/messages":
@@ -346,6 +346,19 @@ struct IOSContentRouter: View {
         // Everything else — placeholder for future native views
         default:
             PlaceholderView(path: path)
+        }
+    }
+
+    @ViewBuilder
+    private func officeRoute(tabId: String, permission: String) -> some View {
+        if appCore.hasPermission(permission) {
+            OfficeRouter(tabId: tabId)
+        } else {
+            ContentUnavailableView(
+                "Office access required",
+                systemImage: "lock.shield",
+                description: Text("You do not have permission to open this Office page.")
+            )
         }
     }
 }

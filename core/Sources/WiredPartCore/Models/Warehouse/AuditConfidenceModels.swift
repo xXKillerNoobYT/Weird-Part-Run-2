@@ -305,6 +305,10 @@ public struct MultiUserAuditAssignment: Codable, FetchableRecord, MutablePersist
     public var status: String  // "pending", "counted", "resolved"
     public var auditSessionId: Int64?
     public var expectedQuantity: Int?
+    public var resolvedQuantity: Int?
+    public var resolutionMethod: String?
+    public var resolvedBy: Int64?
+    public var resolvedAt: String?
     public var notes: String?
     public var createdAt: String?
 
@@ -322,6 +326,10 @@ public struct MultiUserAuditAssignment: Codable, FetchableRecord, MutablePersist
         case status
         case auditSessionId = "audit_session_id"
         case expectedQuantity = "expected_quantity"
+        case resolvedQuantity = "resolved_quantity"
+        case resolutionMethod = "resolution_method"
+        case resolvedBy = "resolved_by"
+        case resolvedAt = "resolved_at"
         case notes
         case createdAt = "created_at"
     }
