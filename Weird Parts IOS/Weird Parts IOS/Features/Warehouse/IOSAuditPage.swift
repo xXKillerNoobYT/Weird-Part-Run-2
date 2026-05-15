@@ -163,6 +163,9 @@ struct IOSAuditPage: View {
             loadData()
             appCore.onboardingManager?.markCompleted("wh-audit-view")
         }
+        .onDisappear {
+            NotificationCenter.default.post(name: .warehouseAuditPageInactive, object: nil)
+        }
     }
 
     // MARK: - Sheet Content
@@ -1169,11 +1172,27 @@ struct IOSAuditPage: View {
             loadNameCaches(service: service)
 
             loadWalkingPath(service: service)
+            postAIContext()
 
         } catch {
             loadError = userFriendlyError(error, context: "load audit data")
         }
         isLoading = false
+    }
+
+    private func postAIContext() {
+        let context = """
+        Warehouse Audit page. Read-only context.
+        Confidence records loaded: \(confidenceRecords.count), recent sessions: \(recentSessions.count), active counts: \(activeCounts.count), warehouse score: \(String(format: "%.1f", warehouseScore)).
+        Selected filter: \(filter.rawValue), visible search active: \(!searchText.isEmpty), active session: \(activeSession != nil), counting part: \(countingPart?.partName ?? "none"), speed mode: \(speedModeActive), walking path active: \(walkingPathActive).
+        Filter counts: Audit Now \(countFor(.auditNow)), Soon \(countFor(.soon)), Good \(countFor(.good)), No Location \(countFor(.noLocation)).
+        Available read-only guidance: explain confidence scores, filter cards, audit sessions, speed mode, walking path, and misplaced-part entry point. Do not start audits, submit counts, or log misplaced parts directly.
+        """
+        NotificationCenter.default.post(
+            name: .warehouseAuditPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 
     private func loadNameCaches(service: WarehouseService) {

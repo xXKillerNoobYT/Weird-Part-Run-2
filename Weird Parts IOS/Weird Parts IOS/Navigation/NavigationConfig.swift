@@ -351,6 +351,66 @@ extension Notification.Name {
     /// Posted when the warehouse locations page disappears.
     static let warehouseLocationsPageInactive = Notification.Name("WiredPart.warehouseLocationsPageInactive")
 
+    /// Posted when the warehouse movements page appears, with read-only movement/filter context for AI.
+    static let warehouseMovementsPageActive = Notification.Name("WiredPart.warehouseMovementsPageActive")
+
+    /// Posted when the warehouse movements page disappears.
+    static let warehouseMovementsPageInactive = Notification.Name("WiredPart.warehouseMovementsPageInactive")
+
+    /// Posted when the warehouse receiving sessions page appears, with read-only session context for AI.
+    static let warehouseReceivingPageActive = Notification.Name("WiredPart.warehouseReceivingPageActive")
+
+    /// Posted when the warehouse receiving sessions page disappears.
+    static let warehouseReceivingPageInactive = Notification.Name("WiredPart.warehouseReceivingPageInactive")
+
+    /// Posted when the warehouse staging page appears, with read-only staged item/box context for AI.
+    static let warehouseStagingPageActive = Notification.Name("WiredPart.warehouseStagingPageActive")
+
+    /// Posted when the warehouse staging page disappears.
+    static let warehouseStagingPageInactive = Notification.Name("WiredPart.warehouseStagingPageInactive")
+
+    /// Posted when the warehouse audit page appears, with read-only audit queue context for AI.
+    static let warehouseAuditPageActive = Notification.Name("WiredPart.warehouseAuditPageActive")
+
+    /// Posted when the warehouse audit page disappears.
+    static let warehouseAuditPageInactive = Notification.Name("WiredPart.warehouseAuditPageInactive")
+
+    /// Posted when the warehouse returns page appears, with read-only return status context for AI.
+    static let warehouseReturnsPageActive = Notification.Name("WiredPart.warehouseReturnsPageActive")
+
+    /// Posted when the warehouse returns page disappears.
+    static let warehouseReturnsPageInactive = Notification.Name("WiredPart.warehouseReturnsPageInactive")
+
+    /// Posted when the warehouse tools page appears, with read-only tool status context for AI.
+    static let warehouseToolsPageActive = Notification.Name("WiredPart.warehouseToolsPageActive")
+
+    /// Posted when the warehouse tools page disappears.
+    static let warehouseToolsPageInactive = Notification.Name("WiredPart.warehouseToolsPageInactive")
+
+    /// Posted when the warehouse network page appears, with read-only device/network context for AI.
+    static let warehouseNetworkPageActive = Notification.Name("WiredPart.warehouseNetworkPageActive")
+
+    /// Posted when the warehouse network page disappears.
+    static let warehouseNetworkPageInactive = Notification.Name("WiredPart.warehouseNetworkPageInactive")
+
+    /// Posted when the warehouse settings page appears, with read-only settings context for AI.
+    static let warehouseSettingsPageActive = Notification.Name("WiredPart.warehouseSettingsPageActive")
+
+    /// Posted when the warehouse settings page disappears.
+    static let warehouseSettingsPageInactive = Notification.Name("WiredPart.warehouseSettingsPageInactive")
+
+    /// Posted when the organization audit page appears, with read-only organization context for AI.
+    static let warehouseOrganizationAuditPageActive = Notification.Name("WiredPart.warehouseOrganizationAuditPageActive")
+
+    /// Posted when the organization audit page disappears.
+    static let warehouseOrganizationAuditPageInactive = Notification.Name("WiredPart.warehouseOrganizationAuditPageInactive")
+
+    /// Posted when the warehouse leaderboard page appears, with read-only rating context for AI.
+    static let warehouseLeaderboardPageActive = Notification.Name("WiredPart.warehouseLeaderboardPageActive")
+
+    /// Posted when the warehouse leaderboard page disappears.
+    static let warehouseLeaderboardPageInactive = Notification.Name("WiredPart.warehouseLeaderboardPageInactive")
+
     // MARK: - Scheduling
 
     /// Posted when the Dispatch page appears, with assignment context for AI.

@@ -68,6 +68,9 @@ struct IOSWarehouseLeaderboardPage: View {
         .searchable(text: $searchText, prompt: "Search users...")
         .refreshable { loadData() }
         .task { loadData() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .warehouseLeaderboardPageInactive, object: nil)
+        }
     }
 
     // MARK: - Sheet Content
@@ -267,10 +270,26 @@ struct IOSWarehouseLeaderboardPage: View {
                     userNames[rating.userId] = try? fetchUserName(userId: rating.userId)
                 }
             }
+            postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load leaderboard")
         }
         isLoading = false
+    }
+
+    private func postAIContext() {
+        let topUser = leaderboard.first.map { userNames[$0.userId] ?? "User #\($0.userId)" } ?? "none"
+        let context = """
+        Warehouse Leaderboard page. Read-only context.
+        Loaded ratings: \(leaderboard.count), visible after search: \(filteredLeaderboard.count), search active: \(!searchText.isEmpty), manager detail access: \(isManager).
+        Top visible user: \(topUser).
+        Available read-only guidance: explain rankings, scoring categories, consensus info, and manager-only detail access. Do not open user detail sheets or change scores directly.
+        """
+        NotificationCenter.default.post(
+            name: .warehouseLeaderboardPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 
     private func fetchUserName(userId: Int64) throws -> String? {

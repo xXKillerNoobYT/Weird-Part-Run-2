@@ -86,6 +86,9 @@ struct IOSOrganizationAuditPage: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .warehouseOrganizationAuditPageInactive, object: nil)
+        }
     }
 
     // MARK: - Sheet Content
@@ -398,10 +401,25 @@ struct IOSOrganizationAuditPage: View {
             orgRatings = try loadAllOrgRatings(service: service)
             consolidationVotes = try service.getActiveConsolidationVotes()
             warehouseScore = try service.getWarehouseOverallScore()
+            postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load organization audit")
         }
         isLoading = false
+    }
+
+    private func postAIContext() {
+        let context = """
+        Warehouse Organization Audit page. Read-only context.
+        Active tab: \(tab.rawValue), organization ratings: \(orgRatings.count), visible ratings: \(filteredRatings.count), consolidation votes: \(consolidationVotes.count).
+        Warehouse organization score: \(String(format: "%.1f", warehouseScore)), search active: \(!searchText.isEmpty).
+        Available read-only guidance: explain ratings, consolidation voting, checklist entry point, score meaning, and manager override entry point. Do not submit checklists, votes, or overrides directly.
+        """
+        NotificationCenter.default.post(
+            name: .warehouseOrganizationAuditPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 
     private func loadAllOrgRatings(service: WarehouseService) throws -> [OrganizationRating] {

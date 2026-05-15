@@ -9,9 +9,9 @@ Complete the 87-page page-context coverage set by adding read-only page-active/p
 
 ## Current Coverage
 
-Implemented page-context notifications observed by `IOSAIAssistantPanel`: 30 page contexts.
+Implemented page-context notifications observed by `IOSAIAssistantPanel`: 40 page contexts.
 
-Help registry mappings with matching help entries: 29 page contexts.
+Help registry mappings with matching help entries: 39 page contexts.
 
 Known gap: `settingsPageActive` is observed by the AI panel and active-page tracker, but `HelpContentRegistry` does not yet contain a `settings-app-config` entry. That should be handled in the settings slice rather than mapped to a missing help entry.
 
@@ -42,6 +42,16 @@ Known gap: `settingsPageActive` is observed by the AI panel and active-page trac
 | Warehouse | Warehouse Dashboard | `warehouseDashboardPageActive` | `warehouse-dashboard` |
 | Warehouse | Inventory Grid | `inventoryGridPageActive` | `warehouse-inventory` |
 | Warehouse | Warehouse Locations | `warehouseLocationsPageActive` | `warehouse-locations` |
+| Warehouse | Warehouse Movements | `warehouseMovementsPageActive` | `warehouse-movements` |
+| Warehouse | Warehouse Receiving | `warehouseReceivingPageActive` | `warehouse-receiving` |
+| Warehouse | Warehouse Staging | `warehouseStagingPageActive` | `warehouse-staging` |
+| Warehouse | Warehouse Audit | `warehouseAuditPageActive` | `warehouse-audit` |
+| Warehouse | Warehouse Returns | `warehouseReturnsPageActive` | `warehouse-returns` |
+| Warehouse | Warehouse Tools | `warehouseToolsPageActive` | `warehouse-tools` |
+| Warehouse | Warehouse Network | `warehouseNetworkPageActive` | `warehouse-network` |
+| Warehouse | Warehouse Settings | `warehouseSettingsPageActive` | `warehouse-settings` |
+| Warehouse | Organization Audit | `warehouseOrganizationAuditPageActive` | `warehouse-organization` |
+| Warehouse | Warehouse Leaderboard | `warehouseLeaderboardPageActive` | `warehouse-leaderboard` |
 | Scheduling | Dispatch | `dispatchPageActive` | `scheduling-dispatch` |
 | Scheduling | Schedule Calendar | `scheduleCalendarPageActive` | `scheduling-calendar` |
 | People | Employees | `employeesPageActive` | `people-employees` |
@@ -76,12 +86,28 @@ Added the next restored orders/warehouse coverage slice:
 
 All payloads are read-only summaries of visible state and selected filters. They do not expose mutating commands, action IDs, or write intents.
 
+## WEI-1235 Warehouse Completion Slice
+
+Added the warehouse completion page-context slice:
+
+- `WarehouseMovementsPage`: loaded/visible movement counts, date range, selected movement filter, search state, movement type counts.
+- `IOSReceivingPage`: loaded/visible receiving session counts, selected status filter, search state, session status counts.
+- `IOSStagingPage`: active tab, staged item/box counts, selected destination filter, search state, selection mode, destination/box status counts.
+- `IOSAuditPage`: confidence records, recent sessions, active counts, warehouse score, selected audit filter, active count/speed/walking-path state.
+- `IOSWarehouseReturnsPage`: loaded/visible return counts, selected status filter, search state, return status counts.
+- `IOSWarehouseToolsPage`: loaded/visible tool counts, selected status filter, search state, tool status counts.
+- `IOSWarehouseNetworkPage`: local device status and planned network feature context.
+- `IOSWarehouseSettingsPage`: visible warehouse settings values and saving state.
+- `IOSOrganizationAuditPage`: active tab, org rating/consolidation counts, warehouse organization score, search state.
+- `IOSWarehouseLeaderboardPage`: loaded/visible user rating counts, search state, manager detail access, top visible user.
+
+All payloads are read-only summaries of visible state, selected filters, lifecycle state, and available entry points. They do not expose mutating commands, action IDs, or write intents.
+
 ## Next Highest-Traffic Remaining Slices
 
-1. Warehouse completion: Movements, Receiving, Staging, Audit, Returns, Warehouse Tools, Network, Settings, Organization Audit, Leaderboard.
-2. Jobs completion: Job Detail, Labor, Daily Reports, Questionnaire, Estimation Questionnaire, Estimation Review, Job Reports.
-3. People/Office/Reports: Contacts, customers, contractors, teams, office dashboard, approvals, spending, warehouse exec, all report pages.
-4. Settings: add missing help entries and page context for the high-use settings pages before mapping them to help content.
+1. Jobs completion: Job Detail, Labor, Daily Reports, Questionnaire, Estimation Questionnaire, Estimation Review, Job Reports.
+2. People/Office/Reports: Contacts, customers, contractors, teams, office dashboard, approvals, spending, warehouse exec, all report pages.
+3. Settings: add missing help entries and page context for the high-use settings pages before mapping them to help content.
 
 ## Validation
 
@@ -95,6 +121,13 @@ Validated restored orders/warehouse slice in the shared workspace on 2026-05-14:
 
 - Restored slice notification names are declared, posted by their pages, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
 - Help registry mapping check returned no missing mapped page IDs.
+- `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was warnings only.
+
+Validated WEI-1235 warehouse completion slice in the shared workspace on 2026-05-14:
+
+- Warehouse completion notification names are declared, posted by their pages, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
+- Help registry mapping check returned no missing mapped page IDs.
+- First build caught Swift type-checker complexity in the expanded active-page tracker; the tracker was split into smaller modifiers.
 - `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was warnings only.
 
 Static validation:

@@ -103,6 +103,16 @@ struct HelpContentRegistry {
         "WiredPart.warehouseDashboardPageActive": "warehouse-dashboard",
         "WiredPart.inventoryGridPageActive": "warehouse-inventory",
         "WiredPart.warehouseLocationsPageActive": "warehouse-locations",
+        "WiredPart.warehouseMovementsPageActive": "warehouse-movements",
+        "WiredPart.warehouseReceivingPageActive": "warehouse-receiving",
+        "WiredPart.warehouseStagingPageActive": "warehouse-staging",
+        "WiredPart.warehouseAuditPageActive": "warehouse-audit",
+        "WiredPart.warehouseReturnsPageActive": "warehouse-returns",
+        "WiredPart.warehouseToolsPageActive": "warehouse-tools",
+        "WiredPart.warehouseNetworkPageActive": "warehouse-network",
+        "WiredPart.warehouseSettingsPageActive": "warehouse-settings",
+        "WiredPart.warehouseOrganizationAuditPageActive": "warehouse-organization",
+        "WiredPart.warehouseLeaderboardPageActive": "warehouse-leaderboard",
         "WiredPart.dispatchPageActive": "scheduling-dispatch",
         "WiredPart.scheduleCalendarPageActive": "scheduling-calendar",
         "WiredPart.employeesPageActive": "people-employees",
@@ -431,6 +441,86 @@ struct HelpContentRegistry {
                 ("Overview", "Track all stock movements: transfers between locations, receiving from suppliers, returns, and adjustments."),
                 ("Creating Movements", "Tap + to start a new guided movement. The wizard walks you through selecting parts, quantities, and locations."),
                 ("Filtering", "Use the smart card chips to filter by movement type. Search by part name. Tap any movement for details."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "warehouse-receiving",
+            title: "Receiving Help",
+            sections: [
+                ("Overview", "Track incoming shipments from suppliers. Each receiving session records what was ordered versus what actually arrived."),
+                ("Starting a Session", "Tap + to start receiving against a purchase order. Scan or manually enter received quantities."),
+                ("Status Filters", "Use the smart cards to filter by active, completed, or cancelled sessions. Pull down to refresh."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "warehouse-audit",
+            title: "Warehouse Audit Help",
+            sections: [
+                ("Confidence System", "Each part has a confidence score that decays over time. Auditing confirms shelf accuracy and restores confidence."),
+                ("Count Flow", "System counts stay hidden while you count. After submitting, the page shows variance and next steps."),
+                ("Misplaced Parts", "Use the misplaced part flow when a part is found in the wrong spot so it can be corrected."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "warehouse-returns",
+            title: "Warehouse Returns Help",
+            sections: [
+                ("Overview", "Manage supplier return requests through pending, approved, shipped, and completed states."),
+                ("Creating Returns", "Tap + to create a return with supplier, parts, and reason details."),
+                ("Status Tracking", "Use status filters and search to focus on returns that need follow-up."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "warehouse-tools",
+            title: "Warehouse Tools Help",
+            sections: [
+                ("Overview", "View tools assigned to the warehouse and see whether they are available, checked out, or in maintenance."),
+                ("Actions", "Swipe a row to check out, return, or mark a tool for maintenance when those actions are available."),
+                ("Search", "Use search to find tools by name or serial number. Pull down to refresh the list."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "warehouse-network",
+            title: "Network Help",
+            sections: [
+                ("Overview", "View this device's local warehouse network status and planned connected-device support."),
+                ("Sync", "When network sync is available, this page will show real-time connectivity and sync status for local devices."),
+                ("Planned", "Planned capabilities include LAN HTTP sync, peer-to-peer pairing, encrypted sync, and conflict resolution."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "warehouse-settings",
+            title: "Warehouse Settings Help",
+            sections: [
+                ("Locations", "Configure default receiving and staging locations used when new shipments arrive or parts are pulled."),
+                ("Thresholds", "Set low stock and critical stock thresholds and choose whether alerts are enabled."),
+                ("Policies", "Control movement notes, approvals, auto-confirm thresholds, audit frequency, and discrepancy photo requirements."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "warehouse-organization",
+            title: "Organization Audit Help",
+            sections: [
+                ("Organization Ratings", "Each area gets a rating based on labels, part placement, duplicate storage, overcrowding, and bin assignment."),
+                ("Consolidation", "When the same part is spread across too many areas, the page suggests consolidation and tracks votes."),
+                ("Org Checklist", "Tap an area to run a checklist for labels, part placement, duplicate cleanup, space, and bin assignment."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "warehouse-leaderboard",
+            title: "Leaderboard Help",
+            sections: [
+                ("Ratings", "Warehouse ratings summarize user accuracy, effort, placement, speed, and proactive fixes."),
+                ("Scores", "Scores range from 0 to 10. Accurate counts and clean placement raise scores; misplacements lower them."),
+                ("Managers", "Managers can open user details for score breakdowns and training suggestions."),
             ]
         ),
 

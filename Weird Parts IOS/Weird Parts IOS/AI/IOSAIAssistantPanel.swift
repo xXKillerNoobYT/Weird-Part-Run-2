@@ -59,6 +59,16 @@ struct IOSAIAssistantPanel: View {
     @State private var warehouseDashboardContext: String?
     @State private var inventoryGridContext: String?
     @State private var warehouseLocationsContext: String?
+    @State private var warehouseMovementsContext: String?
+    @State private var warehouseReceivingContext: String?
+    @State private var warehouseStagingContext: String?
+    @State private var warehouseAuditContext: String?
+    @State private var warehouseReturnsContext: String?
+    @State private var warehouseToolsContext: String?
+    @State private var warehouseNetworkContext: String?
+    @State private var warehouseSettingsContext: String?
+    @State private var warehouseOrganizationAuditContext: String?
+    @State private var warehouseLeaderboardContext: String?
     @State private var dispatchContext: String?
     @State private var scheduleCalendarContext: String?
     @State private var employeesContext: String?
@@ -259,6 +269,16 @@ struct IOSAIAssistantPanel: View {
             warehouseDashboardContext: $warehouseDashboardContext,
             inventoryGridContext: $inventoryGridContext,
             warehouseLocationsContext: $warehouseLocationsContext,
+            warehouseMovementsContext: $warehouseMovementsContext,
+            warehouseReceivingContext: $warehouseReceivingContext,
+            warehouseStagingContext: $warehouseStagingContext,
+            warehouseAuditContext: $warehouseAuditContext,
+            warehouseReturnsContext: $warehouseReturnsContext,
+            warehouseToolsContext: $warehouseToolsContext,
+            warehouseNetworkContext: $warehouseNetworkContext,
+            warehouseSettingsContext: $warehouseSettingsContext,
+            warehouseOrganizationAuditContext: $warehouseOrganizationAuditContext,
+            warehouseLeaderboardContext: $warehouseLeaderboardContext,
             dispatchContext: $dispatchContext,
             scheduleCalendarContext: $scheduleCalendarContext,
             employeesContext: $employeesContext,
@@ -579,6 +599,36 @@ struct IOSAIAssistantPanel: View {
             }
             if let ctx = warehouseLocationsContext {
                 navContext += "\n\nWarehouse Locations Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = warehouseMovementsContext {
+                navContext += "\n\nWarehouse Movements Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = warehouseReceivingContext {
+                navContext += "\n\nWarehouse Receiving Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = warehouseStagingContext {
+                navContext += "\n\nWarehouse Staging Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = warehouseAuditContext {
+                navContext += "\n\nWarehouse Audit Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = warehouseReturnsContext {
+                navContext += "\n\nWarehouse Returns Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = warehouseToolsContext {
+                navContext += "\n\nWarehouse Tools Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = warehouseNetworkContext {
+                navContext += "\n\nWarehouse Network Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = warehouseSettingsContext {
+                navContext += "\n\nWarehouse Settings Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = warehouseOrganizationAuditContext {
+                navContext += "\n\nWarehouse Organization Audit Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = warehouseLeaderboardContext {
+                navContext += "\n\nWarehouse Leaderboard Context (READ-ONLY): \(ctx)"
             }
             if let ctx = dispatchContext {
                 navContext += "\n\nDispatch Board Context: \(ctx)"
@@ -957,6 +1007,16 @@ private struct FeaturePageContextObservers: ViewModifier {
     @Binding var warehouseDashboardContext: String?
     @Binding var inventoryGridContext: String?
     @Binding var warehouseLocationsContext: String?
+    @Binding var warehouseMovementsContext: String?
+    @Binding var warehouseReceivingContext: String?
+    @Binding var warehouseStagingContext: String?
+    @Binding var warehouseAuditContext: String?
+    @Binding var warehouseReturnsContext: String?
+    @Binding var warehouseToolsContext: String?
+    @Binding var warehouseNetworkContext: String?
+    @Binding var warehouseSettingsContext: String?
+    @Binding var warehouseOrganizationAuditContext: String?
+    @Binding var warehouseLeaderboardContext: String?
     @Binding var dispatchContext: String?
     @Binding var scheduleCalendarContext: String?
     @Binding var employeesContext: String?
@@ -983,6 +1043,18 @@ private struct FeaturePageContextObservers: ViewModifier {
                 returnsContext: $returnsContext,
                 warehouseDashboardContext: $warehouseDashboardContext,
                 warehouseLocationsContext: $warehouseLocationsContext
+            ))
+            .modifier(FeaturePageContextObserversGroupE(
+                warehouseMovementsContext: $warehouseMovementsContext,
+                warehouseReceivingContext: $warehouseReceivingContext,
+                warehouseStagingContext: $warehouseStagingContext,
+                warehouseAuditContext: $warehouseAuditContext,
+                warehouseReturnsContext: $warehouseReturnsContext,
+                warehouseToolsContext: $warehouseToolsContext,
+                warehouseNetworkContext: $warehouseNetworkContext,
+                warehouseSettingsContext: $warehouseSettingsContext,
+                warehouseOrganizationAuditContext: $warehouseOrganizationAuditContext,
+                warehouseLeaderboardContext: $warehouseLeaderboardContext
             ))
             .modifier(FeaturePageContextObserversGroupC(
                 jpoCreationContext: $jpoCreationContext,
@@ -1106,6 +1178,101 @@ private struct FeaturePageContextObserversGroupD: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .warehouseLocationsPageInactive)) { _ in
                 warehouseLocationsContext = nil
+            }
+    }
+}
+
+/// Fifth group of feature page observers for warehouse completion coverage.
+private struct FeaturePageContextObserversGroupE: ViewModifier {
+    @Binding var warehouseMovementsContext: String?
+    @Binding var warehouseReceivingContext: String?
+    @Binding var warehouseStagingContext: String?
+    @Binding var warehouseAuditContext: String?
+    @Binding var warehouseReturnsContext: String?
+    @Binding var warehouseToolsContext: String?
+    @Binding var warehouseNetworkContext: String?
+    @Binding var warehouseSettingsContext: String?
+    @Binding var warehouseOrganizationAuditContext: String?
+    @Binding var warehouseLeaderboardContext: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseMovementsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { warehouseMovementsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseMovementsPageInactive)) { _ in
+                warehouseMovementsContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseReceivingPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { warehouseReceivingContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseReceivingPageInactive)) { _ in
+                warehouseReceivingContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseStagingPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { warehouseStagingContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseStagingPageInactive)) { _ in
+                warehouseStagingContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseAuditPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { warehouseAuditContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseAuditPageInactive)) { _ in
+                warehouseAuditContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseReturnsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { warehouseReturnsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseReturnsPageInactive)) { _ in
+                warehouseReturnsContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseToolsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { warehouseToolsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseToolsPageInactive)) { _ in
+                warehouseToolsContext = nil
+            }
+            .modifier(FeaturePageContextObserversGroupF(
+                warehouseNetworkContext: $warehouseNetworkContext,
+                warehouseSettingsContext: $warehouseSettingsContext,
+                warehouseOrganizationAuditContext: $warehouseOrganizationAuditContext,
+                warehouseLeaderboardContext: $warehouseLeaderboardContext
+            ))
+    }
+}
+
+private struct FeaturePageContextObserversGroupF: ViewModifier {
+    @Binding var warehouseNetworkContext: String?
+    @Binding var warehouseSettingsContext: String?
+    @Binding var warehouseOrganizationAuditContext: String?
+    @Binding var warehouseLeaderboardContext: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseNetworkPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { warehouseNetworkContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseNetworkPageInactive)) { _ in
+                warehouseNetworkContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseSettingsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { warehouseSettingsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseSettingsPageInactive)) { _ in
+                warehouseSettingsContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseOrganizationAuditPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { warehouseOrganizationAuditContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseOrganizationAuditPageInactive)) { _ in
+                warehouseOrganizationAuditContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseLeaderboardPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { warehouseLeaderboardContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseLeaderboardPageInactive)) { _ in
+                warehouseLeaderboardContext = nil
             }
     }
 }
@@ -1291,6 +1458,30 @@ private struct ActivePageIdTrackerOrdersWarehouseRestored: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .warehouseDashboardPageInactive)) { _ in if activePageId == "warehouse-dashboard" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .warehouseLocationsPageActive)) { _ in activePageId = "warehouse-locations" }
             .onReceive(NotificationCenter.default.publisher(for: .warehouseLocationsPageInactive)) { _ in if activePageId == "warehouse-locations" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseMovementsPageActive)) { _ in activePageId = "warehouse-movements" }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseMovementsPageInactive)) { _ in if activePageId == "warehouse-movements" { activePageId = nil } }
+            .modifier(ActivePageIdTrackerWarehouseRestoredTail(activePageId: $activePageId))
+    }
+}
+
+private struct ActivePageIdTrackerWarehouseRestoredTail: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseReceivingPageActive)) { _ in activePageId = "warehouse-receiving" }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseReceivingPageInactive)) { _ in if activePageId == "warehouse-receiving" { activePageId = nil } }
+            .modifier(ActivePageIdTrackerWarehouseRestoredTailB(activePageId: $activePageId))
+    }
+}
+
+private struct ActivePageIdTrackerWarehouseRestoredTailB: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseStagingPageActive)) { _ in activePageId = "warehouse-staging" }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseStagingPageInactive)) { _ in if activePageId == "warehouse-staging" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseAuditPageActive)) { _ in activePageId = "warehouse-audit" }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseAuditPageInactive)) { _ in if activePageId == "warehouse-audit" { activePageId = nil } }
     }
 }
 
@@ -1306,12 +1497,48 @@ private struct ActivePageIdTrackerOrdersExtra: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .orderStagingPageInactive)) { _ in if activePageId == "orders-staging" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .partsOrderManagementPageActive)) { _ in activePageId = "orders-parts" }
             .onReceive(NotificationCenter.default.publisher(for: .partsOrderManagementPageInactive)) { _ in if activePageId == "orders-parts" { activePageId = nil } }
+            .modifier(ActivePageIdTrackerOrdersExtraWarehouse(activePageId: $activePageId))
+    }
+}
+
+private struct ActivePageIdTrackerOrdersExtraWarehouse: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
             .onReceive(NotificationCenter.default.publisher(for: .ordersWishlistPageActive)) { _ in activePageId = "orders-wishlist" }
             .onReceive(NotificationCenter.default.publisher(for: .ordersWishlistPageInactive)) { _ in if activePageId == "orders-wishlist" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .unifiedOrderPageActive)) { _ in activePageId = "orders-unified" }
             .onReceive(NotificationCenter.default.publisher(for: .unifiedOrderPageInactive)) { _ in if activePageId == "orders-unified" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .inventoryGridPageActive)) { _ in activePageId = "warehouse-inventory" }
             .onReceive(NotificationCenter.default.publisher(for: .inventoryGridPageInactive)) { _ in if activePageId == "warehouse-inventory" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseReturnsPageActive)) { _ in activePageId = "warehouse-returns" }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseReturnsPageInactive)) { _ in if activePageId == "warehouse-returns" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseToolsPageActive)) { _ in activePageId = "warehouse-tools" }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseToolsPageInactive)) { _ in if activePageId == "warehouse-tools" { activePageId = nil } }
+            .modifier(ActivePageIdTrackerOrdersExtraTail(activePageId: $activePageId))
+    }
+}
+
+private struct ActivePageIdTrackerOrdersExtraTail: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseNetworkPageActive)) { _ in activePageId = "warehouse-network" }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseNetworkPageInactive)) { _ in if activePageId == "warehouse-network" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseSettingsPageActive)) { _ in activePageId = "warehouse-settings" }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseSettingsPageInactive)) { _ in if activePageId == "warehouse-settings" { activePageId = nil } }
+            .modifier(ActivePageIdTrackerOrdersExtraTailB(activePageId: $activePageId))
+    }
+}
+
+private struct ActivePageIdTrackerOrdersExtraTailB: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseOrganizationAuditPageActive)) { _ in activePageId = "warehouse-organization" }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseOrganizationAuditPageInactive)) { _ in if activePageId == "warehouse-organization" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseLeaderboardPageActive)) { _ in activePageId = "warehouse-leaderboard" }
+            .onReceive(NotificationCenter.default.publisher(for: .warehouseLeaderboardPageInactive)) { _ in if activePageId == "warehouse-leaderboard" { activePageId = nil } }
     }
 }
 
