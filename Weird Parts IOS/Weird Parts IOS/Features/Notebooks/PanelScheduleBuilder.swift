@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import WiredPartCore
 
 /// Interactive panel schedule builder for documenting circuit breaker assignments.
@@ -9,14 +10,21 @@ struct PanelScheduleBuilder: View {
     @State private var selectedCircuit: CircuitEntry?
     @State private var movingCircuitId: String?
     @State private var validationMessage: String?
+    @State private var exportOptions = PanelScheduleExportOptions()
+    @State private var exportURL: URL?
+    @State private var exportMessage: String?
 
     private enum ActiveSheet: Identifiable {
         case circuitEditor
         case panelSettings
+        case headerSettings
+        case share(URL)
         var id: String {
             switch self {
             case .circuitEditor: return "circuitEditor"
             case .panelSettings: return "panelSettings"
+            case .headerSettings: return "headerSettings"
+            case .share: return "share"
             }
         }
     }
@@ -42,6 +50,10 @@ struct PanelScheduleBuilder: View {
                 }
             case .panelSettings:
                 PanelSettingsSheet(schedule: $schedule)
+            case .headerSettings:
+                PanelScheduleHeaderSheet(options: $exportOptions)
+            case .share(let url):
+                PanelScheduleShareSheet(items: [url])
             }
         }
         .alert("Panel schedule issue", isPresented: Binding(
@@ -51,6 +63,14 @@ struct PanelScheduleBuilder: View {
             Button("OK", role: .cancel) { validationMessage = nil }
         } message: {
             Text(validationMessage ?? "")
+        }
+        .alert("Panel schedule export", isPresented: Binding(
+            get: { exportMessage != nil },
+            set: { if !$0 { exportMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { exportMessage = nil }
+        } message: {
+            Text(exportMessage ?? "")
         }
     }
 
@@ -279,6 +299,30 @@ struct PanelScheduleBuilder: View {
                 .buttonStyle(.bordered)
             }
 
+            Menu {
+                Button {
+                    activeSheet = .headerSettings
+                } label: {
+                    Label("Custom Header", systemImage: "text.badge.plus")
+                }
+
+                Button {
+                    exportPanelScheduleForShare()
+                } label: {
+                    Label("Export PDF", systemImage: "doc.fill")
+                }
+
+                Button {
+                    printPanelSchedule()
+                } label: {
+                    Label("Print PDF", systemImage: "printer")
+                }
+            } label: {
+                Label("Export", systemImage: "square.and.arrow.up")
+                    .font(.caption)
+            }
+            .buttonStyle(.bordered)
+
             Button {
                 do {
                     try schedule.validated()
@@ -341,6 +385,37 @@ struct PanelScheduleBuilder: View {
         }
         let description = circuit.circuitDescription.isEmpty ? "Spare" : circuit.circuitDescription
         return "Panel space \(spaceNumber), \(description), \(circuit.classification.rawValue)"
+    }
+
+    private func exportPanelScheduleForShare() {
+        do {
+            let url = try PanelSchedulePDFExporter(schedule: schedule, options: exportOptions).writeToTemporaryFile()
+            exportURL = url
+            activeSheet = .share(url)
+        } catch {
+            exportMessage = userFriendlyError(error, context: "export panel schedule")
+        }
+    }
+
+    private func printPanelSchedule() {
+        do {
+            let url = try PanelSchedulePDFExporter(schedule: schedule, options: exportOptions).writeToTemporaryFile()
+            exportURL = url
+
+            let printController = UIPrintInteractionController.shared
+            let printInfo = UIPrintInfo(dictionary: nil)
+            printInfo.jobName = "\(schedule.panelName) Panel Schedule"
+            printInfo.outputType = .general
+            printController.printInfo = printInfo
+            printController.printingItem = url
+            printController.present(animated: true) { _, _, error in
+                if let error {
+                    exportMessage = userFriendlyError(error, context: "print panel schedule")
+                }
+            }
+        } catch {
+            exportMessage = userFriendlyError(error, context: "print panel schedule")
+        }
     }
 }
 

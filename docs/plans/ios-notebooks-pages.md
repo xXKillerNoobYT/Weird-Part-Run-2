@@ -290,6 +290,16 @@ A dedicated tool for building electrical panel schedules. This is a first-class 
 - Share sheet for email/AirDrop
 - Save to job notebook automatically
 
+### Implementation Note — 2026-05-15
+
+GitHub #80 delivered the first bounded iOS export/share path in `PanelScheduleBuilder.swift`:
+
+- The builder's Export menu now opens a custom header sheet for paper size, company name, address, phone, license number, prepared by, and footer note.
+- PDF generation writes only to the app temporary `PanelSchedules/` directory with a sanitized filename, then validates the file exists and has non-zero size before share/print.
+- Export uses the native share sheet for email/AirDrop/Files handoff.
+- Print uses `UIPrintInteractionController` with the same generated PDF path.
+- Header drag-drop designer, reusable header templates, logo placement, and automatic save-back-to-notebook remain future enhancements beyond this bounded delivery.
+
 ---
 
 ## 7. Templates
