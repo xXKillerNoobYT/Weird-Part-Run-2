@@ -50,6 +50,9 @@ struct AppModule: Identifiable, Hashable, Sendable {
 
 // MARK: - Module Definitions
 
+let officeAccessPermission = "approve_orders"
+let financialValuesPermission = "show_dollar_values"
+
 /// Complete ordered list of all application modules.
 ///
 /// Ordered by usage frequency: daily use → work tools → management.
@@ -174,16 +177,16 @@ let appModules: [AppModule] = [
     ], permission: "view_people"),
     // 12. Office — dashboard, approvals, pipeline, teams, reports
     AppModule(id: "office", label: "Office", icon: "briefcase.fill", tabs: [
-        AppTab(id: "office-dashboard", label: "Dashboard", icon: "gauge.with.dots.needle.50percent", path: "/office/dashboard", permission: "manage_jobs"),
-        AppTab(id: "office-approvals", label: "Approvals", icon: "checkmark.seal.fill", path: "/office/approvals", permission: "manage_jobs"),
+        AppTab(id: "office-dashboard", label: "Dashboard", icon: "gauge.with.dots.needle.50percent", path: "/office/dashboard", permission: officeAccessPermission),
+        AppTab(id: "office-approvals", label: "Approvals", icon: "checkmark.seal.fill", path: "/office/approvals", permission: officeAccessPermission),
         AppTab(id: "office-manage-jobs", label: "Manage Jobs", icon: "hammer.fill", path: "/office/manage-jobs", permission: "manage_jobs"),
         AppTab(id: "office-warehouse-exec", label: "Warehouse", icon: "building.fill", path: "/office/warehouse-exec", permission: "manage_warehouse"),
         AppTab(id: "office-estimation-settings", label: "Estimation", icon: "chart.bar.doc.horizontal", path: "/office/estimation-settings", permission: "manage_jobs"),
         AppTab(id: "office-pipeline", label: "Pipeline", icon: "chart.bar.xaxis", path: "/office/pipeline", permission: "manage_jobs"),
-        AppTab(id: "office-spending", label: "Spending", icon: "dollarsign.circle.fill", path: "/office/spending", permission: "show_dollar_values"),
+        AppTab(id: "office-spending", label: "Spending", icon: "dollarsign.circle.fill", path: "/office/spending", permission: financialValuesPermission),
         AppTab(id: "office-teams", label: "Teams", icon: "person.3.fill", path: "/office/teams"),
         AppTab(id: "office-reports", label: "Reports", icon: "chart.pie.fill", path: "/office/reports", permission: "view_reports"),
-    ], permission: "manage_jobs"),
+    ], permission: officeAccessPermission),
     // 13. Settings — app config, security
     AppModule(id: "settings", label: "Settings", icon: "gearshape.fill", tabs: [
         AppTab(id: "settings-themes", label: "Themes", icon: "paintpalette.fill", path: "/settings/themes"),

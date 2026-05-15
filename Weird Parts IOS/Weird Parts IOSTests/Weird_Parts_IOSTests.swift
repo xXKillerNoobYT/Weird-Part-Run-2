@@ -23,4 +23,23 @@ struct Weird_Parts_IOSTests {
         #expect(!QAThreadStatusBuckets.isResolved("open"))
         #expect(!QAThreadStatusBuckets.isResolved("escalated"))
     }
+
+    @MainActor
+    @Test func officeNavigationUsesOfficeOnlyGateAndFinancialRedactionGate() throws {
+        let leadPermissions = ["view_jobs", "manage_jobs", "view_orders"]
+        let officePermissions = ["approve_orders", "show_dollar_values", "manage_jobs"]
+
+        let officeModule = try #require(allModulesById["office"])
+        #expect(!visibleModules(permissions: leadPermissions).contains(where: { $0.id == "office" }))
+        #expect(visibleModules(permissions: officePermissions).contains(where: { $0.id == "office" }))
+
+        let leadOfficeTabs = visibleTabs(for: officeModule, permissions: leadPermissions).map(\.id)
+        let officeTabs = visibleTabs(for: officeModule, permissions: officePermissions).map(\.id)
+        #expect(!leadOfficeTabs.contains("office-dashboard"))
+        #expect(!leadOfficeTabs.contains("office-approvals"))
+        #expect(officeTabs.contains("office-dashboard"))
+        #expect(officeTabs.contains("office-approvals"))
+        #expect(officeTabs.contains("office-spending"))
+        #expect(financialValuesPermission == "show_dollar_values")
+    }
 }
