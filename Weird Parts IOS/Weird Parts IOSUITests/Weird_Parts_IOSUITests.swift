@@ -465,6 +465,17 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                       "Done toolbar button should be tappable at AX5")
     }
 
+    @MainActor
+    func testWEI1304UITestingLaunchReachesLoginOrShell() throws {
+        let databaseError = app.staticTexts
+            .matching(NSPredicate(format: "label CONTAINS[c] 'Failed to load database'"))
+            .firstMatch
+        XCTAssertFalse(databaseError.waitForExistence(timeout: 2),
+                       "Clean -UITesting launch should not stop on the database load error")
+        XCTAssertTrue(waitForLoginOrShell(timeout: 30),
+                      "Clean -UITesting launch should reach login, onboarding, or the app shell")
+    }
+
     private func logInAsUITestOwnerIfNeeded() {
         if app.buttons["tab_dashboard"].waitForExistence(timeout: 5) && app.buttons["tab_dashboard"].isHittable ||
             app.buttons["Dashboard"].exists && app.buttons["Dashboard"].isHittable ||
@@ -539,6 +550,26 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                       app.staticTexts["Confirm Zone Grid"].exists ||
                       app.buttons["Create & Continue"].exists,
                       "Login should reach the dashboard or warehouse shell before opening the wizard")
+    }
+
+    private func waitForLoginOrShell(timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if app.otherElements["loginView"].exists ||
+                app.staticTexts["UITest Owner"].exists ||
+                app.buttons["tab_dashboard"].exists ||
+                app.buttons["Dashboard"].exists ||
+                app.buttons["tab_warehouse"].exists ||
+                app.buttons["Warehouse"].exists ||
+                app.buttons["Configure Your Warehouse"].exists ||
+                app.staticTexts["Warehouse Setup"].exists ||
+                app.staticTexts["Confirm Zone Grid"].exists ||
+                app.buttons["Create & Continue"].exists {
+                return true
+            }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        return false
     }
 
     private func openWarehouseSetupWizard() {

@@ -112,7 +112,16 @@ final class AppCore: ObservableObject {
                     //
                     // Migration path: if the DB file is still plaintext (pre-SQLCipher binary),
                     // `migratePlaintextDBIfNeeded` converts it in-place before opening.
-                    let keyHex = try Self.deviceBootstrapKeyHex()
+                    let keyHex: String
+                    #if DEBUG
+                    if uiTestingMode {
+                        keyHex = Self.uiTestingBootstrapKeyHex
+                    } else {
+                        keyHex = try Self.deviceBootstrapKeyHex()
+                    }
+                    #else
+                    keyHex = try Self.deviceBootstrapKeyHex()
+                    #endif
                     try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
                     database = try AppDatabase.openEncryptedDatabase(atPath: path, keyHex: keyHex)
                     // Remove the .unencrypted.bak file after it has been retained for 7 days.
@@ -296,7 +305,15 @@ final class AppCore: ObservableObject {
                 }
             }
         } catch {
+            #if DEBUG
+            if isUITestingMode {
+                loadError = "Couldn't start app. \(error.localizedDescription)"
+            } else {
+                loadError = userFriendlyError(error, context: "start app")
+            }
+            #else
             loadError = userFriendlyError(error, context: "start app")
+            #endif
         }
     }
 
@@ -488,6 +505,14 @@ final class AppCore: ObservableObject {
     // Cmd+R, making data persistence impossible during development.
 
     // MARK: - SQLCipher Device Bootstrap Key
+
+    /// Test-only SQLCipher key for the resettable `wiredpart-uitesting.sqlite` database.
+    ///
+    /// UI tests run under simulator/XCTest launch contexts where Keychain access can
+    /// fail with errSecMissingEntitlement (-34018). Production and normal debug app
+    /// launches still use the device-bound Keychain key below.
+    nonisolated private static let uiTestingBootstrapKeyHex =
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
     /// Return the device-bound SQLCipher bootstrap key (hex-encoded 64 chars).
     ///
