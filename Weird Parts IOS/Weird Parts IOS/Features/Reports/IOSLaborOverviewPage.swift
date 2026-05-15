@@ -61,6 +61,10 @@ struct IOSLaborOverviewPage: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .reportsLaborPageInactive, object: nil)
+        }
         .onChange(of: dateRange) { loadData() }
         .onChange(of: customStart) { loadData() }
         .onChange(of: customEnd) { loadData() }
@@ -175,5 +179,16 @@ struct IOSLaborOverviewPage: View {
             loadError = userFriendlyError(error, context: "load labor data")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        NotificationCenter.default.post(
+            name: .reportsLaborPageActive,
+            object: nil,
+            userInfo: [
+                "context": "Labor Overview Report: range \(dateRange.rawValue), \(String(format: "%.1f", totalHours)) total hours, \(String(format: "%.1f", totalOvertime)) overtime, \(uniqueWorkers) active workers, \(filteredTimesheetRows.count) visible rows."
+            ]
+        )
     }
 }
