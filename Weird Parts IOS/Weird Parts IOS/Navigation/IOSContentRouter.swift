@@ -143,6 +143,8 @@ struct IOSContentRouter: View {
             WarehouseRouter(tabId: "warehouse-inventory")
         case "/warehouse/tools":
             WarehouseRouter(tabId: "warehouse-tools")
+        case "/warehouse/organization":
+            WarehouseRouter(tabId: "warehouse-organization")
         case "/warehouse/leaderboard":
             WarehouseRouter(tabId: "warehouse-leaderboard")
         case "/warehouse/network":

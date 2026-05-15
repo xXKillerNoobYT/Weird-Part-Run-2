@@ -108,6 +108,7 @@ let appModules: [AppModule] = [
         AppTab(id: "warehouse-audit", label: "Audit", icon: "checkmark.shield.fill", path: "/warehouse/audit", permission: "perform_audit"),
         AppTab(id: "warehouse-returns", label: "Returns", icon: "arrow.uturn.left", path: "/warehouse/returns"),
         AppTab(id: "warehouse-tools", label: "Tools", icon: "wrench.and.screwdriver.fill", path: "/warehouse/tools"),
+        AppTab(id: "warehouse-organization", label: "Org Audit", icon: "tag.fill", path: "/warehouse/organization", permission: "manage_warehouse"),
         AppTab(id: "warehouse-leaderboard", label: "Leaderboard", icon: "trophy.fill", path: "/warehouse/leaderboard", permission: "manage_warehouse"),
         AppTab(id: "warehouse-network", label: "Network", icon: "antenna.radiowaves.left.and.right", path: "/warehouse/network", permission: "manage_devices"),
         AppTab(id: "warehouse-settings", label: "Settings", icon: "gearshape.fill", path: "/warehouse/settings", permission: "manage_warehouse"),

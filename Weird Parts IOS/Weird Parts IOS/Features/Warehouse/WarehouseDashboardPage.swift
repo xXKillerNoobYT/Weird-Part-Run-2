@@ -3,8 +3,8 @@ import WiredPartCore
 
 /// Warehouse dashboard showing KPI smart cards, recent activity, and quick actions.
 ///
-/// Smart cards act as toggle filters for the activity feed:
-/// Movements Today, Receiving Active, Audit Due, Staging Ready.
+/// Smart cards act as toggle filters for service-backed dashboard categories:
+/// Moves Today, Receiving Active, Audit Due, and Staged Ready.
 /// Quick actions open movement wizard and QR scanner as sheets.
 struct WarehouseDashboardPage: View {
     @EnvironmentObject private var appCore: AppCore
@@ -16,17 +16,19 @@ struct WarehouseDashboardPage: View {
     @State private var auditCards: WarehouseService.DashboardSmartCardSummary?
     @State private var warehouseScore: WarehouseService.WarehouseOverallScore?
     @State private var recentMovements: [WarehouseService.MovementRow] = []
+    @State private var activeReceivingSessions: [WarehouseService.ReceivingSessionInfo] = []
+    @State private var auditQueue: [WarehouseService.AuditQueueItem] = []
+    @State private var stagedItems: [WarehouseService.StagedItem] = []
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var selectedFilter: DashboardFilter?
     @State private var activeSheet: ActiveSheet?
 
     private enum DashboardFilter: String, CaseIterable {
-        case movements = "Movements Today"
+        case movesToday = "Moves Today"
+        case receivingActive = "Receiving Active"
         case auditDue = "Audit Due"
-        case confidenceRisk = "Confidence Risk"
-        case activeAudits = "Active Audits"
-        case orgIssues = "Org Issues"
+        case stagedReady = "Staged Ready"
     }
 
     @State private var setupTier: WarehouseService.WarehouseSetupTier = .complete
@@ -126,8 +128,8 @@ struct WarehouseDashboardPage: View {
                 sections: [
                     ("Overview", "Monitor warehouse operations at a glance. Smart cards show today's movements, audits due, confidence risk, active audit sessions, and organization issues."),
                     ("Warehouse Score", "The overall score combines part confidence, organization ratings, user ratings, shelf utilization, misplacements, label accuracy, audit response time, and stock health."),
-                    ("Filters", "Tap a smart card to filter the activity feed to that category. Tap again to clear the filter."),
-                    ("Quick Actions", "Use quick actions to start a movement, scan QR codes, open setup, or jump to audit pages for count audit, speed mode, organization audit, ratings, and quick verification.")
+                    ("Filters", "Tap a smart card to switch the work queue between today's movements, active receiving, audit queue, and staged parts. Tap again to clear the filter."),
+                    ("Quick Actions", "Use quick actions to start a movement, scan QR codes, continue receiving, or open the audit queue.")
                 ]
             )
         }
@@ -251,6 +253,105 @@ struct WarehouseDashboardPage: View {
         }
     }
 
+    // MARK: - Alerts
+
+    @ViewBuilder
+    private var alertsWarningsBanner: some View {
+        let auditDue = auditCards?.auditDue ?? auditQueue.count
+        let lowConfidenceAreas = auditCards?.lowConfidenceAreas ?? 0
+        let lowStockWarnings = auditCards?.lowStockWarnings ?? dashKPIs?.kpis.shortfallCount ?? 0
+        let activeReceiving = auditCards?.activeReceiving ?? activeReceivingSessions.count
+
+        if auditDue > 0 || lowConfidenceAreas > 0 || lowStockWarnings > 0 || activeReceiving > 0 {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .accessibilityHidden(true)
+                    Text("Alerts & Warnings")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    Spacer()
+                }
+
+                VStack(spacing: 8) {
+                    if auditDue > 0 {
+                        alertRow(
+                            title: "\(auditDue) parts need audit",
+                            subtitle: "Low confidence items are queued for verification.",
+                            icon: "checkmark.shield.fill",
+                            color: .orange,
+                            tabId: "warehouse-audit"
+                        )
+                    }
+                    if lowConfidenceAreas > 0 {
+                        alertRow(
+                            title: "\(lowConfidenceAreas) low-confidence areas",
+                            subtitle: "Review the audit queue before relying on these locations.",
+                            icon: "exclamationmark.shield.fill",
+                            color: .red,
+                            tabId: "warehouse-audit"
+                        )
+                    }
+                    if lowStockWarnings > 0 {
+                        alertRow(
+                            title: "\(lowStockWarnings) stock shortfalls",
+                            subtitle: "Open inventory to review parts below minimum level.",
+                            icon: "shippingbox.fill",
+                            color: .red,
+                            tabId: "warehouse-inventory"
+                        )
+                    }
+                    if activeReceiving > 0 {
+                        alertRow(
+                            title: "\(activeReceiving) receiving sessions active",
+                            subtitle: "Continue sorting and close sessions when complete.",
+                            icon: "arrow.down.circle.fill",
+                            color: .blue,
+                            tabId: "warehouse-receiving"
+                        )
+                    }
+                }
+            }
+            .padding(12)
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    private func alertRow(title: String, subtitle: String, icon: String, color: Color, tabId: String) -> some View {
+        Button {
+            navigateToWarehouseTab(tabId)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.body)
+                    .foregroundStyle(color)
+                    .frame(width: 28)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityHint(subtitle)
+    }
+
     // MARK: - Dashboard Content
 
     @ViewBuilder
@@ -259,6 +360,9 @@ struct WarehouseDashboardPage: View {
             VStack(spacing: 20) {
                 // Setup banner (dismissable)
                 setupBanner
+
+                // Service-backed alerts and warnings
+                alertsWarningsBanner
 
                 // Smart Card Filters
                 smartCardFilters
@@ -284,18 +388,23 @@ struct WarehouseDashboardPage: View {
     private var smartCardFilters: some View {
         let kpis = dashKPIs?.kpis
         let movementsCount = auditCards?.movesToday ?? kpis?.todayMovements ?? 0
-        let auditDueCount = auditCards?.auditDue ?? auditSummary.map { $0.totalParts - $0.countedParts } ?? 0
-        let confidenceRiskCount = auditCards?.lowConfidenceAreas ?? 0
-        let activeAuditsCount = auditCards?.activeAuditSessions ?? 0
-        let orgIssueCount = auditCards?.organizationIssues ?? 0
+        let activeReceivingCount = auditCards?.activeReceiving ?? activeReceivingSessions.count
+        let auditDueCount = auditCards?.auditDue ?? auditQueue.count
+        let stagedReadyCount = auditCards?.stagedReady ?? stagedItems.count
 
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 smartCard(
-                    filter: .movements,
+                    filter: .movesToday,
                     count: movementsCount,
                     icon: "arrow.left.arrow.right",
                     color: .purple
+                )
+                smartCard(
+                    filter: .receivingActive,
+                    count: activeReceivingCount,
+                    icon: "arrow.down.circle.fill",
+                    color: activeReceivingCount > 0 ? .blue : .green
                 )
                 smartCard(
                     filter: .auditDue,
@@ -304,22 +413,10 @@ struct WarehouseDashboardPage: View {
                     color: auditDueCount > 0 ? .orange : .green
                 )
                 smartCard(
-                    filter: .confidenceRisk,
-                    count: confidenceRiskCount,
-                    icon: "exclamationmark.shield.fill",
-                    color: confidenceRiskCount > 0 ? .red : .green
-                )
-                smartCard(
-                    filter: .activeAudits,
-                    count: activeAuditsCount,
-                    icon: "checklist.checked",
-                    color: activeAuditsCount > 0 ? .blue : .green
-                )
-                smartCard(
-                    filter: .orgIssues,
-                    count: orgIssueCount,
-                    icon: "tag.slash.fill",
-                    color: orgIssueCount > 0 ? .orange : .green
+                    filter: .stagedReady,
+                    count: stagedReadyCount,
+                    icon: "tray.2.fill",
+                    color: stagedReadyCount > 0 ? .teal : .green
                 )
             }
         }
@@ -358,6 +455,7 @@ struct WarehouseDashboardPage: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(filter.rawValue): \(count)")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - KPI Row
@@ -424,7 +522,10 @@ struct WarehouseDashboardPage: View {
                 .font(.headline)
                 .padding(.horizontal, 4)
 
-            HStack(spacing: 12) {
+            LazyVGrid(columns: [
+                GridItem(.flexible(), spacing: 12),
+                GridItem(.flexible(), spacing: 12),
+            ], spacing: 12) {
                 Button { activeSheet = .newMovement } label: {
                     quickActionButton(
                         title: "New Movement",
@@ -445,15 +546,25 @@ struct WarehouseDashboardPage: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("whAction_scanQR")
 
-                Button { activeSheet = .onboardingWizard } label: {
+                Button { navigateToWarehouseTab("warehouse-receiving") } label: {
                     quickActionButton(
-                        title: "Setup Wizard",
-                        icon: "wand.and.stars",
+                        title: "Receiving",
+                        icon: "arrow.down.circle.fill",
                         color: .green
                     )
                 }
                 .buttonStyle(.plain)
-                .accessibilityIdentifier("whAction_setupWizard")
+                .accessibilityIdentifier("whAction_receiving")
+
+                Button { navigateToWarehouseTab("warehouse-audit") } label: {
+                    quickActionButton(
+                        title: "Audit Queue",
+                        icon: "checkmark.shield.fill",
+                        color: .purple
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("whAction_auditQueue")
             }
         }
     }
@@ -487,23 +598,25 @@ struct WarehouseDashboardPage: View {
                 GridItem(.flexible(), spacing: 10),
                 GridItem(.flexible(), spacing: 10),
             ], spacing: 10) {
-                subPageLink(title: "Audit", icon: "clipboard", color: .orange, moduleId: "warehouse-audit")
-                subPageLink(title: "Leaderboard", icon: "trophy.fill", color: .yellow, moduleId: "warehouse-leaderboard")
-                subPageLink(title: "Org Audit", icon: "tag", color: .red, moduleId: "warehouse-organization")
-                subPageLink(title: "Staging", icon: "shippingbox.and.arrow.backward", color: .blue, moduleId: "warehouse-staging")
-                subPageLink(title: "Receiving", icon: "arrow.down.circle", color: .green, moduleId: "warehouse-receiving")
-                subPageLink(title: "Inventory", icon: "square.grid.3x3", color: .purple, moduleId: "warehouse-inventory")
+                subPageLink(title: "Receiving", icon: "shippingbox.fill", color: .green, tabId: "warehouse-receiving")
+                subPageLink(title: "Staging", icon: "tray.2.fill", color: .teal, tabId: "warehouse-staging")
+                subPageLink(title: "Movements", icon: "arrow.left.arrow.right", color: .blue, tabId: "warehouse-movements")
+                subPageLink(title: "Inventory", icon: "square.grid.3x3.fill", color: .purple, tabId: "warehouse-inventory")
+                subPageLink(title: "Locations", icon: "map.fill", color: .mint, tabId: "warehouse-locations")
+                subPageLink(title: "Audit", icon: "checkmark.shield.fill", color: .orange, tabId: "warehouse-audit")
+                subPageLink(title: "Returns", icon: "arrow.uturn.left", color: .indigo, tabId: "warehouse-returns")
+                subPageLink(title: "Tools", icon: "wrench.and.screwdriver.fill", color: .brown, tabId: "warehouse-tools")
+                subPageLink(title: "Leaderboard", icon: "trophy.fill", color: .yellow, tabId: "warehouse-leaderboard")
+                subPageLink(title: "Network", icon: "antenna.radiowaves.left.and.right", color: .cyan, tabId: "warehouse-network")
+                subPageLink(title: "Settings", icon: "gearshape.fill", color: .gray, tabId: "warehouse-settings")
+                subPageLink(title: "Org Audit", icon: "tag.fill", color: .red, tabId: "warehouse-organization")
             }
         }
     }
 
-    private func subPageLink(title: String, icon: String, color: Color, moduleId: String) -> some View {
+    private func subPageLink(title: String, icon: String, color: Color, tabId: String) -> some View {
         Button {
-            NotificationCenter.default.post(
-                name: .navigateToModule,
-                object: nil,
-                userInfo: ["moduleId": moduleId]
-            )
+            navigateToWarehouseTab(tabId)
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: icon)
@@ -537,51 +650,113 @@ struct WarehouseDashboardPage: View {
                 .font(.headline)
                 .padding(.horizontal, 4)
 
-            let filtered = filteredMovements
-
-            if filtered.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "tray")
-                        .font(.largeTitle)
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    Text(selectedFilter == nil ? "No recent movements" : "No matching activity")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
-                .background(Color(.secondarySystemGroupedBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(filtered.enumerated()), id: \.element.id) { index, movement in
-                        movementActivityRow(movement)
-
-                        if index < filtered.count - 1 {
-                            Divider()
-                                .padding(.leading, 44)
-                        }
-                    }
-                }
-                .background(Color(.secondarySystemGroupedBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+            switch selectedFilter {
+            case .movesToday, .none:
+                movementQueue
+            case .receivingActive:
+                receivingQueue
+            case .auditDue:
+                auditDueQueue
+            case .stagedReady:
+                stagedReadyQueue
             }
         }
     }
 
-    private var filteredMovements: [WarehouseService.MovementRow] {
-        guard let filter = selectedFilter else { return recentMovements }
-        switch filter {
-        case .movements:
-            return recentMovements // Already today's movements from KPIs
-        case .auditDue:
-            return recentMovements.filter { $0.movementType == "adjustment" }
-        case .confidenceRisk, .activeAudits:
-            return recentMovements.filter { $0.movementType == "adjustment" || $0.movementType == "audit" }
-        case .orgIssues:
-            return recentMovements.filter { $0.movementType == "transfer" }
+    @ViewBuilder
+    private var movementQueue: some View {
+        let rows = selectedFilter == nil ? recentMovements : todaysMovements
+
+        if rows.isEmpty {
+            emptyQueue(
+                icon: "arrow.left.arrow.right",
+                title: selectedFilter == nil ? "No recent movements" : "No movements today",
+                subtitle: selectedFilter == nil ? "Warehouse activity will appear here as parts move." : "Today's completed movements will appear here."
+            )
+        } else {
+            VStack(spacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, movement in
+                    movementActivityRow(movement)
+
+                    if index < rows.count - 1 {
+                        Divider()
+                            .padding(.leading, 44)
+                    }
+                }
+            }
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
         }
+    }
+
+    @ViewBuilder
+    private var receivingQueue: some View {
+        if activeReceivingSessions.isEmpty {
+            emptyQueue(
+                icon: "arrow.down.circle",
+                title: "No active receiving",
+                subtitle: "Open purchase-order receiving sessions will appear here."
+            )
+        } else {
+            VStack(spacing: 0) {
+                ForEach(Array(activeReceivingSessions.enumerated()), id: \.element.id) { index, session in
+                    receivingRow(session)
+                    if index < activeReceivingSessions.count - 1 {
+                        Divider().padding(.leading, 44)
+                    }
+                }
+            }
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    @ViewBuilder
+    private var auditDueQueue: some View {
+        if auditQueue.isEmpty {
+            emptyQueue(
+                icon: "checkmark.shield",
+                title: "No audits due",
+                subtitle: "Low-confidence parts will appear here when they need verification."
+            )
+        } else {
+            VStack(spacing: 0) {
+                ForEach(Array(auditQueue.enumerated()), id: \.element.partId) { index, item in
+                    auditQueueRow(item)
+                    if index < auditQueue.count - 1 {
+                        Divider().padding(.leading, 44)
+                    }
+                }
+            }
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    @ViewBuilder
+    private var stagedReadyQueue: some View {
+        if stagedItems.isEmpty {
+            emptyQueue(
+                icon: "tray.2",
+                title: "No staged parts ready",
+                subtitle: "Pulled parts tagged for jobs, trucks, or other destinations will appear here."
+            )
+        } else {
+            VStack(spacing: 0) {
+                ForEach(Array(stagedItems.enumerated()), id: \.element.id) { index, item in
+                    stagedItemRow(item)
+                    if index < stagedItems.count - 1 {
+                        Divider().padding(.leading, 44)
+                    }
+                }
+            }
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    private var todaysMovements: [WarehouseService.MovementRow] {
+        recentMovements.filter { isToday($0.createdAt) }
     }
 
     @ViewBuilder
@@ -629,6 +804,149 @@ struct WarehouseDashboardPage: View {
         .padding(.vertical, 10)
     }
 
+    private func receivingRow(_ session: WarehouseService.ReceivingSessionInfo) -> some View {
+        Button {
+            navigateToWarehouseTab("warehouse-receiving")
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.body)
+                    .foregroundStyle(.green)
+                    .frame(width: 32, height: 32)
+                    .background(Color.green.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("PO #\(session.poId)")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Text("\(session.itemCount) items • \(session.mode.replacingOccurrences(of: "_", with: " ").capitalized)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(session.startedByName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(formatDate(session.createdAt))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func auditQueueRow(_ item: WarehouseService.AuditQueueItem) -> some View {
+        Button {
+            navigateToWarehouseTab("warehouse-audit")
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "checkmark.shield.fill")
+                    .font(.body)
+                    .foregroundStyle(scoreColor(item.confidencePercent))
+                    .frame(width: 32, height: 32)
+                    .background(scoreColor(item.confidencePercent).opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.partName)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                    Text(item.locationCode ?? item.partCode ?? "Unassigned location")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text("\(Int(item.confidencePercent.rounded()))%")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    Text("confidence")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func stagedItemRow(_ item: WarehouseService.StagedItem) -> some View {
+        Button {
+            navigateToWarehouseTab("warehouse-staging")
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "tray.2.fill")
+                    .font(.body)
+                    .foregroundStyle(.teal)
+                    .frame(width: 32, height: 32)
+                    .background(Color.teal.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.partName)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                    Text(item.destinationLabel ?? item.destinationType?.capitalized ?? "Ready for destination")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text("\(item.qty)")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    Text(formatDate(item.taggedAt))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func emptyQueue(icon: String, title: String, subtitle: String) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.largeTitle)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.subheadline)
+                .fontWeight(.medium)
+            Text(subtitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+        .padding(.horizontal, 16)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
     // MARK: - Data Loading
 
     private func loadData() {
@@ -647,6 +965,9 @@ struct WarehouseDashboardPage: View {
             auditCards = try service.getDashboardSmartCardSummary()
             warehouseScore = try service.getWarehouseOverallScoreBreakdown()
             recentMovements = try service.listMovements(limit: 10)
+            activeReceivingSessions = try service.getActiveSessions()
+            auditQueue = try service.getAuditQueue(limit: 10)
+            stagedItems = try service.getStagedItems()
             postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load warehouse dashboard")
@@ -666,7 +987,7 @@ struct WarehouseDashboardPage: View {
         Active receiving sessions: \(dashKPIs?.activeReceivingSessions ?? 0), pending staging: \(dashKPIs?.pendingStagingCount ?? 0), pending returns: \(dashKPIs?.pendingReturns ?? 0).
         Audit counted/total: \(auditSummary?.countedParts ?? 0)/\(auditSummary?.totalParts ?? 0), discrepancies: \(auditSummary?.discrepancies ?? 0), selected filter: \(selectedFilter?.rawValue ?? "none").
         Warehouse audit score: \(Int((warehouseScore?.score ?? 100).rounded()))%, confidence risk areas: \(auditCards?.lowConfidenceAreas ?? 0), active audits: \(auditCards?.activeAuditSessions ?? 0), organization issues: \(auditCards?.organizationIssues ?? 0).
-        Recent movement rows loaded: \(recentMovements.count), visible after filter: \(filteredMovements.count), movement types: \(movementCounts.isEmpty ? "none" : movementCounts).
+        Dashboard queues loaded: \(todaysMovements.count) moves today, \(activeReceivingSessions.count) receiving active, \(auditQueue.count) audit due, \(stagedItems.count) staged ready. Movement types: \(movementCounts.isEmpty ? "none" : movementCounts).
         Available read-only guidance: explain KPI cards, audit score components, selected activity filter, quick action locations, and warehouse sub-page links. Do not create movements or launch scanners directly.
         """
         NotificationCenter.default.post(
@@ -724,4 +1045,28 @@ struct WarehouseDashboardPage: View {
         }
         return dateStr
     }
+
+    private func isToday(_ dateStr: String?) -> Bool {
+        guard let dateStr, dateStr.count >= 10 else { return false }
+        let today = DateFormatter.dashboardDayFormatter.string(from: Date())
+        return String(dateStr.prefix(10)) == today
+    }
+
+    private func navigateToWarehouseTab(_ tabId: String) {
+        NotificationCenter.default.post(
+            name: .navigateToModule,
+            object: nil,
+            userInfo: ["moduleId": "warehouse", "tabId": tabId]
+        )
+    }
+}
+
+private extension DateFormatter {
+    static let dashboardDayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
 }
