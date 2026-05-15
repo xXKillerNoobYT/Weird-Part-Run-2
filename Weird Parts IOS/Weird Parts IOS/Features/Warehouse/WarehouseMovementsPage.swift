@@ -15,6 +15,7 @@ struct WarehouseMovementsPage: View {
     @State private var selectedFilter: MovementFilter?
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
+    @State private var showCompletedHistory = false
 
     // Date filter
     @State private var dateRange: ReportDateRange = .thisWeek
@@ -25,17 +26,43 @@ struct WarehouseMovementsPage: View {
     private var effectiveEnd: Date { dateRange.dateInterval?.end ?? customEnd }
 
     private enum MovementFilter: String, CaseIterable {
-        case transfers = "Transfers"
-        case receives = "Receives"
-        case returns = "Returns"
-        case adjustments = "Adjustments"
+        case all = "All"
+        case transfers = "Transfer"
+        case receives = "Received"
+        case consumed = "Consumed"
+        case returns = "Return"
+        case adjustments = "Adjustment"
 
-        var movementType: String {
+        var movementTypes: [String] {
             switch self {
-            case .transfers: "transfer"
-            case .receives: "receive"
-            case .returns: "return_to_supplier"
-            case .adjustments: "adjustment"
+            case .all: []
+            case .transfers: ["transfer"]
+            case .receives: ["receive"]
+            case .consumed: ["consume"]
+            case .returns: ["return_to_supplier"]
+            case .adjustments: ["adjustment"]
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .all: "tray.full"
+            case .transfers: "arrow.left.arrow.right"
+            case .receives: "arrow.down.circle"
+            case .consumed: "flame"
+            case .returns: "arrow.uturn.left"
+            case .adjustments: "plus.forwardslash.minus"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .all: .indigo
+            case .transfers: .blue
+            case .receives: .green
+            case .consumed: .orange
+            case .returns: .purple
+            case .adjustments: .gray
             }
         }
     }
@@ -43,6 +70,7 @@ struct WarehouseMovementsPage: View {
     private enum ActiveSheet: Identifiable {
         case movementDetail(WarehouseService.MovementRow)
         case newMovement
+        case quickLog
         case qrScanner
         case help
 
@@ -50,6 +78,7 @@ struct WarehouseMovementsPage: View {
             switch self {
             case .movementDetail(let m): "detail-\(m.id)"
             case .newMovement: "newMovement"
+            case .quickLog: "quickLog"
             case .qrScanner: "qrScanner"
             case .help: "help"
             }
@@ -85,6 +114,10 @@ struct WarehouseMovementsPage: View {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("New movement")
+                Button { activeSheet = .quickLog } label: {
+                    Image(systemName: "square.and.pencil")
+                }
+                .accessibilityLabel("Quick log movement")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
@@ -119,6 +152,9 @@ struct WarehouseMovementsPage: View {
         case .newMovement:
             IOSMovementWizard(onComplete: { loadData() })
                 .environmentObject(appCore)
+        case .quickLog:
+            QuickLogMovementSheet(onComplete: { loadData() })
+                .environmentObject(appCore)
         case .qrScanner:
             QRScanSheet(expectedType: .part) { result in
                 activeSheet = nil
@@ -130,7 +166,8 @@ struct WarehouseMovementsPage: View {
                 sections: [
                     ("Overview", "Track all stock movements: transfers between locations, receiving from suppliers, returns, and adjustments."),
                     ("Creating Movements", "Tap + to start a new guided movement. The wizard walks you through selecting parts, quantities, and locations."),
-                    ("Filtering", "Use the smart card chips to filter by movement type. Search by part name. Tap any movement for details.")
+                    ("Quick Log", "Use the pencil action to record an already-completed movement with the date it happened."),
+                    ("Filtering", "Use the smart cards to filter by movement type. Active movements and completed seven-day history are grouped separately.")
                 ]
             )
         }
@@ -139,17 +176,11 @@ struct WarehouseMovementsPage: View {
     // MARK: - Smart Card Filters
 
     private var smartCardFilters: some View {
-        let transferCount = movements.filter { $0.movementType == "transfer" }.count
-        let receiveCount = movements.filter { $0.movementType == "receive" }.count
-        let returnCount = movements.filter { $0.movementType == "return_to_supplier" }.count
-        let adjustCount = movements.filter { $0.movementType == "adjustment" }.count
-
-        return ScrollView(.horizontal, showsIndicators: false) {
+        ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                filterCard(.transfers, count: transferCount, icon: "arrow.left.arrow.right", color: .blue)
-                filterCard(.receives, count: receiveCount, icon: "arrow.down.circle", color: .green)
-                filterCard(.returns, count: returnCount, icon: "arrow.uturn.left", color: .purple)
-                filterCard(.adjustments, count: adjustCount, icon: "plus.forwardslash.minus", color: .gray)
+                ForEach(MovementFilter.allCases, id: \.self) { filter in
+                    filterCard(filter, count: count(for: filter))
+                }
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
@@ -157,14 +188,14 @@ struct WarehouseMovementsPage: View {
         .background(Color(.secondarySystemGroupedBackground))
     }
 
-    private func filterCard(_ filter: MovementFilter, count: Int, icon: String, color: Color) -> some View {
-        let isSelected = selectedFilter == filter
+    private func filterCard(_ filter: MovementFilter, count: Int) -> some View {
+        let isSelected = selectedFilter == filter || (filter == .all && selectedFilter == nil)
 
         return Button {
-            selectedFilter = isSelected ? nil : filter
+            selectedFilter = filter == .all || isSelected ? nil : filter
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: icon)
+                Image(systemName: filter.icon)
                     .font(.caption)
                 Text("\(filter.rawValue) (\(count))")
                     .font(.caption)
@@ -173,12 +204,12 @@ struct WarehouseMovementsPage: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(
-                Capsule().fill(isSelected ? color.opacity(0.15) : Color.secondary.opacity(0.08))
+                Capsule().fill(isSelected ? filter.color.opacity(0.15) : Color.secondary.opacity(0.08))
             )
             .overlay(
-                Capsule().stroke(isSelected ? color : Color.clear, lineWidth: 1.5)
+                Capsule().stroke(isSelected ? filter.color : Color.clear, lineWidth: 1.5)
             )
-            .foregroundStyle(isSelected ? color : .primary)
+            .foregroundStyle(isSelected ? filter.color : .primary)
         }
         .buttonStyle(.plain)
     }
@@ -188,13 +219,31 @@ struct WarehouseMovementsPage: View {
     private var filteredMovements: [WarehouseService.MovementRow] {
         var result = movements
         if let filter = selectedFilter {
-            result = result.filter { $0.movementType == filter.movementType }
+            let requestedTypes = Set(filter.movementTypes)
+            result = result.filter { requestedTypes.contains(normalizedMovementType($0.movementType)) }
         }
         if !searchText.isEmpty {
             let query = searchText.lowercased()
             result = result.filter { $0.partName.lowercased().contains(query) }
         }
         return result
+    }
+
+    private var activeMovements: [WarehouseService.MovementRow] {
+        filteredMovements.filter { normalizedMovementType($0.movementType) == "receiving_staged" }
+    }
+
+    private var completedHistory: [WarehouseService.MovementRow] {
+        let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+        return filteredMovements.filter { movement in
+            normalizedMovementType(movement.movementType) != "receiving_staged" && movementDate(movement) >= sevenDaysAgo
+        }
+    }
+
+    private func count(for filter: MovementFilter) -> Int {
+        guard filter != .all else { return movements.count }
+        let requestedTypes = Set(filter.movementTypes)
+        return movements.filter { requestedTypes.contains(normalizedMovementType($0.movementType)) }.count
     }
 
     // MARK: - Movements List
@@ -208,17 +257,45 @@ struct WarehouseMovementsPage: View {
                     .foregroundStyle(.secondary)
             }
 
-            ForEach(filteredMovements, id: \.id) { movement in
-                Button {
-                    activeSheet = .movementDetail(movement)
-                } label: {
-                    movementRow(movement)
+            if !activeMovements.isEmpty {
+                Section("Active") {
+                    ForEach(activeMovements, id: \.id) { movement in
+                        movementButton(movement)
+                    }
                 }
-                .buttonStyle(.plain)
+            }
+
+            Section {
+                DisclosureGroup(isExpanded: $showCompletedHistory) {
+                    if completedHistory.isEmpty {
+                        Text("No completed movements in the last 7 days.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.vertical, 4)
+                    } else {
+                        ForEach(completedHistory, id: \.id) { movement in
+                            movementButton(movement)
+                        }
+                    }
+                } label: {
+                    Text("Completed History (7 days)")
+                    Text("\(completedHistory.count)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .listStyle(.insetGrouped)
         .scrollDismissesKeyboard(.interactively)
+    }
+
+    private func movementButton(_ movement: WarehouseService.MovementRow) -> some View {
+        Button {
+            activeSheet = .movementDetail(movement)
+        } label: {
+            movementRow(movement)
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -284,9 +361,9 @@ struct WarehouseMovementsPage: View {
             message: searchText.isEmpty && selectedFilter == nil
                 ? "Stock movements will appear here as parts are transferred."
                 : "No movements match your criteria.",
-            actionLabel: "New Movement"
+            actionLabel: "Quick Log"
         ) {
-            activeSheet = .newMovement
+            activeSheet = .quickLog
         }
     }
 
@@ -301,7 +378,13 @@ struct WarehouseMovementsPage: View {
         isLoading = movements.isEmpty
         loadError = nil
         do {
-            movements = try service.listMovements(limit: 200)
+            movements = try service.listMovements(
+                search: searchText.isEmpty ? nil : searchText,
+                startDate: effectiveStart,
+                endDate: effectiveEnd,
+                sortDirection: .ascending,
+                limit: 200
+            )
             postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load movements")
@@ -329,8 +412,21 @@ struct WarehouseMovementsPage: View {
 
     // MARK: - Helpers
 
+    private func normalizedMovementType(_ type: String) -> String {
+        WarehouseService.normalizeMovementType(type)
+    }
+
+    private func movementDate(_ movement: WarehouseService.MovementRow) -> Date {
+        guard let createdAt = movement.createdAt else { return .distantPast }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter.date(from: createdAt) ?? .distantPast
+    }
+
     private func movementIcon(_ type: String) -> String {
-        switch type {
+        switch normalizedMovementType(type) {
         case "transfer": "arrow.left.arrow.right"
         case "receive": "arrow.down.circle"
         case "consume": "flame"
@@ -341,7 +437,7 @@ struct WarehouseMovementsPage: View {
     }
 
     private func movementColor(_ type: String) -> Color {
-        switch type {
+        switch normalizedMovementType(type) {
         case "transfer": .blue
         case "receive": .green
         case "consume": .orange
@@ -352,7 +448,7 @@ struct WarehouseMovementsPage: View {
     }
 
     private func movementLabel(_ type: String) -> String {
-        switch type {
+        switch normalizedMovementType(type) {
         case "transfer": "Transfer"
         case "receive": "Received"
         case "consume": "Consumed"
@@ -377,6 +473,11 @@ private struct MovementDetailSheet: View {
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    Label(detailSummary, systemImage: movementIcon(movement.movementType))
+                        .foregroundStyle(movementColor(movement.movementType))
+                }
+
                 Section("Part") {
                     LabeledContent("Name", value: movement.partName)
                     LabeledContent("Quantity", value: "\(movement.qty)")
@@ -389,6 +490,12 @@ private struct MovementDetailSheet: View {
                     }
                     if let to = movement.toLocationType {
                         LabeledContent("To", value: "\(to.capitalized) #\(movement.toLocationId ?? 0)")
+                    }
+                }
+
+                Section(typeSpecificTitle) {
+                    ForEach(typeSpecificRows, id: \.label) { row in
+                        LabeledContent(row.label, value: row.value)
                     }
                 }
 
@@ -417,8 +524,101 @@ private struct MovementDetailSheet: View {
         }
     }
 
+    private var detailSummary: String {
+        switch normalizedMovementType(movement.movementType) {
+        case "transfer":
+            "Stock moved between warehouse locations."
+        case "receive":
+            "Stock received into inventory."
+        case "consume":
+            "Stock consumed or pulled for work."
+        case "return_to_supplier":
+            "Stock returned out of inventory."
+        case "adjustment":
+            "Manual quantity adjustment recorded."
+        default:
+            "Warehouse movement entry."
+        }
+    }
+
+    private var typeSpecificTitle: String {
+        switch normalizedMovementType(movement.movementType) {
+        case "receive": "Receiving Details"
+        case "consume": "Consumption Details"
+        case "return_to_supplier": "Return Details"
+        case "adjustment": "Adjustment Details"
+        default: "Transfer Details"
+        }
+    }
+
+    private var typeSpecificRows: [(label: String, value: String)] {
+        let source = locationLabel(type: movement.fromLocationType, id: movement.fromLocationId)
+        let destination = locationLabel(type: movement.toLocationType, id: movement.toLocationId)
+        switch normalizedMovementType(movement.movementType) {
+        case "receive":
+            return [
+                ("Received Into", destination),
+                ("Scan Confirmed", movement.scanConfirmed ? "Yes" : "No")
+            ]
+        case "consume":
+            return [
+                ("Consumed From", source),
+                ("Job or Use", movement.reason?.isEmpty == false ? movement.reason! : "Not specified")
+            ]
+        case "return_to_supplier":
+            return [
+                ("Returned From", source),
+                ("Supplier Route", destination)
+            ]
+        case "adjustment":
+            return [
+                ("Adjusted Location", destination == "Not specified" ? source : destination),
+                ("Audit Verified", movement.verifiedBy == nil ? "No" : "Yes")
+            ]
+        default:
+            return [
+                ("Source", source),
+                ("Destination", destination)
+            ]
+        }
+    }
+
+    private func normalizedMovementType(_ type: String) -> String {
+        WarehouseService.normalizeMovementType(type)
+    }
+
+    private func locationLabel(type: String?, id: Int64?) -> String {
+        guard let type, !type.isEmpty else { return "Not specified" }
+        if let id {
+            return "\(type.capitalized) #\(id)"
+        }
+        return type.capitalized
+    }
+
+    private func movementIcon(_ type: String) -> String {
+        switch normalizedMovementType(type) {
+        case "transfer": "arrow.left.arrow.right"
+        case "receive": "arrow.down.circle"
+        case "consume": "flame"
+        case "return_to_supplier": "arrow.uturn.left"
+        case "adjustment": "plus.forwardslash.minus"
+        default: "arrow.left.arrow.right"
+        }
+    }
+
+    private func movementColor(_ type: String) -> Color {
+        switch normalizedMovementType(type) {
+        case "transfer": .blue
+        case "receive": .green
+        case "consume": .orange
+        case "return_to_supplier": .purple
+        case "adjustment": .gray
+        default: .blue
+        }
+    }
+
     private func movementLabel(_ type: String) -> String {
-        switch type {
+        switch normalizedMovementType(type) {
         case "transfer": "Transfer"
         case "receive": "Received"
         case "consume": "Consumed"
@@ -426,5 +626,202 @@ private struct MovementDetailSheet: View {
         case "adjustment": "Adjustment"
         default: type.capitalized
         }
+    }
+}
+
+// MARK: - Quick Log
+
+private struct QuickLogMovementSheet: View {
+    @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
+
+    let onComplete: () -> Void
+
+    @State private var partSearch = ""
+    @State private var parts: [QuickLogPartItem] = []
+    @State private var selectedPartId: Int64 = 0
+    @State private var selectedType: QuickLogMovementType = .transfer
+    @State private var quantity = 1
+    @State private var occurredAt = Date()
+    @State private var fromLocationType = ""
+    @State private var fromLocationId = ""
+    @State private var toLocationType = ""
+    @State private var toLocationId = ""
+    @State private var reason = ""
+    @State private var notes = ""
+    @State private var saveError: String?
+    @State private var isSaving = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if let saveError {
+                    Section {
+                        Label(saveError, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                    }
+                }
+
+                Section("Part") {
+                    TextField("Search parts", text: $partSearch)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    Picker("Part", selection: $selectedPartId) {
+                        Text("Select...").tag(Int64(0))
+                        ForEach(parts) { part in
+                            Text(part.displayName).tag(part.id)
+                        }
+                    }
+                }
+
+                Section("Movement") {
+                    Picker("Type", selection: $selectedType) {
+                        ForEach(QuickLogMovementType.allCases, id: \.self) { type in
+                            Label(type.label, systemImage: type.icon).tag(type)
+                        }
+                    }
+                    Stepper("Quantity: \(quantity)", value: $quantity, in: 1...999)
+                    DatePicker("Occurred", selection: $occurredAt, displayedComponents: [.date, .hourAndMinute])
+                }
+
+                Section("Optional Location") {
+                    TextField("From type", text: $fromLocationType)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    TextField("From ID", text: $fromLocationId)
+                        .keyboardType(.numberPad)
+                    TextField("To type", text: $toLocationType)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    TextField("To ID", text: $toLocationId)
+                        .keyboardType(.numberPad)
+                }
+
+                Section("Notes") {
+                    TextField("Reason", text: $reason)
+                    TextField("Notes", text: $notes, axis: .vertical)
+                        .lineLimit(2...4)
+                }
+            }
+            .navigationTitle("Quick Log")
+            .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(isSaving ? "Saving..." : "Save") { save() }
+                        .disabled(selectedPartId == 0 || isSaving)
+                }
+            }
+            .task { loadParts() }
+            .onChange(of: partSearch) { loadParts() }
+        }
+    }
+
+    private func loadParts() {
+        guard let service = appCore.partsService else {
+            saveError = "Parts service not available"
+            return
+        }
+
+        do {
+            let rows = try service.listParts(search: partSearch.isEmpty ? nil : partSearch, limit: 30)
+            parts = rows.compactMap { row in
+                guard let id = row.part.id else { return nil }
+                return QuickLogPartItem(id: id, name: row.part.name, code: row.part.code)
+            }
+            if !parts.contains(where: { $0.id == selectedPartId }) {
+                selectedPartId = 0
+            }
+        } catch {
+            saveError = userFriendlyError(error, context: "load parts")
+        }
+    }
+
+    private func save() {
+        guard let service = appCore.warehouseService else {
+            saveError = "Warehouse service not available"
+            return
+        }
+        guard let userId = appCore.currentUser?.id else {
+            saveError = "User not available"
+            return
+        }
+
+        do {
+            isSaving = true
+            saveError = nil
+            try service.createQuickLogMovement(
+                partId: selectedPartId,
+                qty: quantity,
+                movementType: selectedType.rawValue,
+                occurredAt: occurredAt,
+                fromLocationType: optionalText(fromLocationType),
+                fromLocationId: optionalId(fromLocationId),
+                toLocationType: optionalText(toLocationType),
+                toLocationId: optionalId(toLocationId),
+                reason: optionalText(reason),
+                notes: optionalText(notes),
+                performedBy: userId
+            )
+            isSaving = false
+            onComplete()
+            dismiss()
+        } catch {
+            isSaving = false
+            saveError = userFriendlyError(error, context: "quick log movement")
+        }
+    }
+
+    private func optionalText(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func optionalId(_ value: String) -> Int64? {
+        guard let text = optionalText(value) else { return nil }
+        return Int64(text)
+    }
+}
+
+private enum QuickLogMovementType: String, CaseIterable {
+    case transfer
+    case receive
+    case consume
+    case returnToSupplier = "return_to_supplier"
+    case adjustment
+
+    var label: String {
+        switch self {
+        case .transfer: "Transfer"
+        case .receive: "Received"
+        case .consume: "Consumed"
+        case .returnToSupplier: "Return"
+        case .adjustment: "Adjustment"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .transfer: "arrow.left.arrow.right"
+        case .receive: "arrow.down.circle"
+        case .consume: "flame"
+        case .returnToSupplier: "arrow.uturn.left"
+        case .adjustment: "plus.forwardslash.minus"
+        }
+    }
+}
+
+private struct QuickLogPartItem: Identifiable {
+    let id: Int64
+    let name: String
+    let code: String?
+
+    var displayName: String {
+        guard let code, !code.isEmpty else { return name }
+        return "\(name) (\(code))"
     }
 }
