@@ -657,6 +657,15 @@ public final class WarehouseService: Sendable {
                 }
             }
 
+            try Self.noteConfidenceMovement(
+                partId: partId,
+                fromLocationType: fromLocationType,
+                fromLocationId: fromLocationId,
+                toLocationType: toLocationType,
+                toLocationId: toLocationId,
+                dbConn: dbConn
+            )
+
             return movementId
         }
     }
@@ -776,6 +785,15 @@ public final class WarehouseService: Sendable {
                             """, arguments: [m.partId, toType, toId, m.qty])
                     }
                 }
+
+                try Self.noteConfidenceMovement(
+                    partId: m.partId,
+                    fromLocationType: m.fromLocationType,
+                    fromLocationId: m.fromLocationId,
+                    toLocationType: m.toLocationType,
+                    toLocationId: m.toLocationId,
+                    dbConn: dbConn
+                )
             }
             return ids
         }
@@ -3844,6 +3862,38 @@ public final class WarehouseService: Sendable {
     // MARK: - Audit Confidence System
     // =========================================================================
 
+    public static let auditTriggerConfidencePercent = 80.0
+    public static let quickVerificationTriggerConfidencePercent = 85.0
+    private static let minimumCountedConfidencePercent = 0.01
+    private static let baseDailyConfidenceDecayPercent = 0.066
+    private static let neutralVarianceValuePercent = 5.0
+    private static let firstAuditConfidenceBoostPercent = 55.0
+    private static let cleanAuditConfidenceBoostPercent = 25.0
+    private static let varianceConfidencePenaltyPercent = 15.0
+    private static let misplacementConfidencePenaltyPercent = 10.0
+    private static let maxMovementDecayFactor = 3.0
+
+    public struct AuditQueueItem: Sendable, Identifiable {
+        public let id: Int64?
+        public let partId: Int64
+        public let areaId: Int64
+        public let partName: String
+        public let partCode: String?
+        public let confidencePercent: Double
+        public let reliabilityLevel: Int
+        public let lastAuditDate: String?
+        public let systemCount: Int
+        public let movementDecayFactor: Double
+        public let cleanAuditStreak: Int
+        public let misplacementCount: Int
+        public let totalAuditCount: Int
+        public let needsAudit: Bool
+        public let auditTriggerPercent: Double
+        public let walkingPathId: Int64?
+        public let walkingPathStopIndex: Int?
+        public let locationCode: String?
+    }
+
     // MARK: Confidence CRUD
 
     /// Get the confidence record for a part at a specific area.
@@ -3861,20 +3911,22 @@ public final class WarehouseService: Sendable {
             if var existing = try PartConfidence
                 .filter(Column("part_id") == partId && Column("area_id") == areaId)
                 .fetchOne(dbConn) {
-                existing.confidencePercent = min(100, max(0, percent))
+                existing.confidencePercent = Self.clampedConfidence(percent, counted: existing.totalAuditCount > 0 || existing.systemCount > 0)
+                existing.reliabilityLevel = Self.computeReliabilityLevel(existing)
                 existing.updatedAt = Self.nowString()
                 try existing.update(dbConn)
             } else {
                 var record = PartConfidence(
                     id: nil, partId: partId, areaId: areaId,
-                    confidencePercent: min(100, max(0, percent)),
+                    confidencePercent: Self.clampedConfidence(percent, counted: percent > 0),
                     reliabilityLevel: 0,
                     lastAuditDate: nil, lastAuditBy: nil, lastAuditCount: nil,
-                    systemCount: 0, decayRate: 0.066, movementDecayFactor: 1.0,
+                    systemCount: 0, decayRate: Self.baseDailyConfidenceDecayPercent, movementDecayFactor: 1.0,
                     cleanAuditStreak: 0, misplacementCount: 0, lastMisplacementDate: nil,
                     totalAuditCount: 0, totalVarianceDollars: 0.0,
                     createdAt: nil, updatedAt: nil
                 )
+                record.reliabilityLevel = Self.computeReliabilityLevel(record)
                 try record.insert(dbConn)
             }
         }
@@ -3883,13 +3935,19 @@ public final class WarehouseService: Sendable {
     /// Apply daily decay to all confidence scores. Called by a scheduled job.
     public func decayAllConfidence() throws {
         try db.writer.write { dbConn in
-            // confidence_percent -= decay_rate * movement_decay_factor, clamped to 0
-            try dbConn.execute(sql: """
-                UPDATE part_confidence
-                SET confidence_percent = MAX(0, confidence_percent - (decay_rate * movement_decay_factor)),
-                    updated_at = datetime('now')
-                WHERE confidence_percent > 0
-                """)
+            let rows = try PartConfidence
+                .filter(Column("confidence_percent") > 0)
+                .fetchAll(dbConn)
+
+            for var conf in rows {
+                let dailyDecay = try Self.auditDailyDecayPercent(for: conf, dbConn: dbConn)
+                let counted = conf.totalAuditCount > 0 || conf.systemCount > 0 || conf.lastAuditDate != nil
+                conf.decayRate = dailyDecay
+                conf.confidencePercent = Self.clampedConfidence(conf.confidencePercent - dailyDecay, counted: counted)
+                conf.reliabilityLevel = Self.computeReliabilityLevel(conf)
+                conf.updatedAt = Self.nowString()
+                try conf.update(dbConn)
+            }
         }
     }
 
@@ -3942,32 +4000,55 @@ public final class WarehouseService: Sendable {
                 .filter(Column("part_id") == partId && Column("area_id") == areaId)
                 .fetchOne(dbConn) {
                 let isClean = (variance == 0)
-                conf.confidencePercent = isClean ? min(100, conf.confidencePercent + 25) : max(0, conf.confidencePercent - 15)
+                let priorAuditCount = conf.totalAuditCount
+                let valueVariancePercent = Self.valueVariancePercent(
+                    varianceDollars: varianceDollars,
+                    systemCount: systemCount,
+                    unitCostDollars: unitCostDollars
+                )
+                let isNeutralVariance = variance != 0 && valueVariancePercent <= Self.neutralVarianceValuePercent
+                if isClean {
+                    let boost = priorAuditCount == 0 ? Self.firstAuditConfidenceBoostPercent : Self.cleanAuditConfidenceBoostPercent
+                    conf.confidencePercent = Self.clampedConfidence(conf.confidencePercent + boost, counted: true)
+                } else if isNeutralVariance {
+                    conf.confidencePercent = Self.clampedConfidence(conf.confidencePercent, counted: true)
+                } else {
+                    conf.confidencePercent = Self.clampedConfidence(conf.confidencePercent - Self.varianceConfidencePenaltyPercent, counted: true)
+                }
                 conf.lastAuditDate = Self.nowString()
                 conf.lastAuditBy = countedBy
                 conf.lastAuditCount = userCount
                 conf.systemCount = userCount // Reconcile to user count
                 conf.totalAuditCount += 1
                 conf.totalVarianceDollars += varianceDollars
-                conf.cleanAuditStreak = isClean ? conf.cleanAuditStreak + 1 : 0
+                conf.cleanAuditStreak = (isClean || isNeutralVariance) ? conf.cleanAuditStreak + 1 : 0
                 conf.movementDecayFactor = 1.0 // Reset after audit
+                conf.decayRate = try Self.auditDailyDecayPercent(for: conf, dbConn: dbConn)
                 conf.reliabilityLevel = Self.computeReliabilityLevel(conf)
                 conf.updatedAt = Self.nowString()
                 try conf.update(dbConn)
             } else {
                 let isClean = (variance == 0)
+                let valueVariancePercent = Self.valueVariancePercent(
+                    varianceDollars: varianceDollars,
+                    systemCount: systemCount,
+                    unitCostDollars: unitCostDollars
+                )
+                let isNeutralVariance = variance != 0 && valueVariancePercent <= Self.neutralVarianceValuePercent
                 var conf = PartConfidence(
                     id: nil, partId: partId, areaId: areaId,
-                    confidencePercent: isClean ? 75 : 50,
-                    reliabilityLevel: isClean ? 3 : 1,
+                    confidencePercent: (isClean || isNeutralVariance) ? 100 : 50,
+                    reliabilityLevel: 0,
                     lastAuditDate: Self.nowString(), lastAuditBy: countedBy,
                     lastAuditCount: userCount, systemCount: userCount,
-                    decayRate: 0.066, movementDecayFactor: 1.0,
-                    cleanAuditStreak: isClean ? 1 : 0, misplacementCount: 0,
+                    decayRate: Self.baseDailyConfidenceDecayPercent, movementDecayFactor: 1.0,
+                    cleanAuditStreak: (isClean || isNeutralVariance) ? 1 : 0, misplacementCount: 0,
                     lastMisplacementDate: nil, totalAuditCount: 1,
                     totalVarianceDollars: varianceDollars,
                     createdAt: nil, updatedAt: nil
                 )
+                conf.decayRate = try Self.auditDailyDecayPercent(for: conf, dbConn: dbConn)
+                conf.reliabilityLevel = Self.computeReliabilityLevel(conf)
                 try conf.insert(dbConn)
             }
 
@@ -3988,11 +4069,14 @@ public final class WarehouseService: Sendable {
             let moveCount = try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM stock_movements
                 WHERE part_id = ? AND created_at > ?
-                  AND (from_location_type = 'area' OR to_location_type = 'area')
-                """, arguments: [partId, sinceDate]) ?? 0
+                  AND (
+                    (from_location_id = ? AND from_location_type IN ('area', 'warehouse')) OR
+                    (to_location_id = ? AND to_location_type IN ('area', 'warehouse'))
+                  )
+                """, arguments: [partId, sinceDate, areaId, areaId]) ?? 0
 
             // 1.0 base + 0.2 per movement, capped at 3.0
-            return min(3.0, 1.0 + Double(moveCount) * 0.2)
+            return min(Self.maxMovementDecayFactor, 1.0 + Double(moveCount) * 0.2)
         }
     }
 
@@ -4042,6 +4126,134 @@ public final class WarehouseService: Sendable {
         } catch {
             if isTableNotFoundError(error) { return [] }
             throw error
+        }
+    }
+
+    /// Return audit candidates ordered by lowest confidence, with walking-path metadata when available.
+    public func getAuditQueue(
+        threshold: Double = WarehouseService.auditTriggerConfidencePercent,
+        floorPlanId: Int64? = nil,
+        limit: Int = 100
+    ) throws -> [AuditQueueItem] {
+        try db.writer.read { dbConn in
+            var sql = """
+                SELECT pc.id, pc.part_id, pc.area_id, pc.confidence_percent, pc.reliability_level,
+                       pc.last_audit_date, pc.system_count, pc.movement_decay_factor,
+                       pc.clean_audit_streak, pc.misplacement_count, pc.total_audit_count,
+                       p.name AS part_name, p.code AS part_code,
+                       wsa.full_location_code AS location_code,
+                       wwp.id AS walking_path_id,
+                       wps.sort_order AS walking_path_stop_index
+                FROM part_confidence pc
+                JOIN parts p ON p.id = pc.part_id AND p.deleted_at IS NULL
+                LEFT JOIN warehouse_storage_areas wsa ON wsa.id = pc.area_id AND wsa.deleted_at IS NULL
+                LEFT JOIN warehouse_storage_levels wsl ON wsl.id = wsa.level_id AND wsl.deleted_at IS NULL
+                LEFT JOIN warehouse_storage_units wsu ON wsu.id = wsl.unit_id AND wsu.deleted_at IS NULL
+                LEFT JOIN warehouse_walking_paths wwp
+                    ON wwp.floor_plan_id = wsu.floor_plan_id
+                   AND wwp.is_default = 1
+                   AND wwp.is_active = 1
+                   AND wwp.deleted_at IS NULL
+                LEFT JOIN warehouse_walking_path_stops wps
+                    ON wps.path_id = wwp.id
+                   AND wps.area_id = pc.area_id
+                   AND wps.is_active = 1
+                   AND wps.deleted_at IS NULL
+                WHERE pc.confidence_percent < ?
+                """
+            var args: [DatabaseValueConvertible?] = [threshold]
+
+            if let floorPlanId {
+                sql += " AND wsu.floor_plan_id = ?"
+                args.append(floorPlanId)
+            }
+
+            sql += """
+                ORDER BY pc.confidence_percent ASC,
+                         CASE WHEN wps.sort_order IS NULL THEN 1 ELSE 0 END ASC,
+                         wps.sort_order ASC,
+                         p.name ASC
+                LIMIT ?
+                """
+            args.append(limit)
+
+            let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
+            return rows.map { row in
+                AuditQueueItem(
+                    id: row["id"] as Int64?,
+                    partId: row["part_id"] as Int64,
+                    areaId: row["area_id"] as Int64,
+                    partName: (row["part_name"] as String?) ?? "Unknown Part",
+                    partCode: row["part_code"] as String?,
+                    confidencePercent: row["confidence_percent"] as Double,
+                    reliabilityLevel: row["reliability_level"] as Int,
+                    lastAuditDate: row["last_audit_date"] as String?,
+                    systemCount: row["system_count"] as Int,
+                    movementDecayFactor: row["movement_decay_factor"] as Double,
+                    cleanAuditStreak: row["clean_audit_streak"] as Int,
+                    misplacementCount: row["misplacement_count"] as Int,
+                    totalAuditCount: row["total_audit_count"] as Int,
+                    needsAudit: (row["confidence_percent"] as Double) < threshold,
+                    auditTriggerPercent: threshold,
+                    walkingPathId: row["walking_path_id"] as Int64?,
+                    walkingPathStopIndex: row["walking_path_stop_index"] as Int?,
+                    locationCode: row["location_code"] as String?
+                )
+            }
+        }
+    }
+
+    public func shouldPromptQuickVerification(partId: Int64, areaId: Int64) throws -> Bool {
+        guard let confidence = try getPartConfidence(partId: partId, areaId: areaId) else { return false }
+        return confidence.confidencePercent <= Self.quickVerificationTriggerConfidencePercent
+    }
+
+    @discardableResult
+    public func recordQuickVerificationCount(
+        partId: Int64,
+        areaId: Int64,
+        countedQuantity: Int,
+        verifiedBy: Int64
+    ) throws -> PartConfidence {
+        guard countedQuantity >= 0 else { throw WarehouseError.invalidQuantity }
+        return try db.writer.write { dbConn in
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [verifiedBy]) ?? 0) > 0
+            guard userExists else { throw WarehouseError.userNotFound(verifiedBy) }
+
+            if var conf = try PartConfidence
+                .filter(Column("part_id") == partId && Column("area_id") == areaId)
+                .fetchOne(dbConn) {
+                conf.confidencePercent = 100
+                conf.lastAuditDate = Self.nowString()
+                conf.lastAuditBy = verifiedBy
+                conf.lastAuditCount = countedQuantity
+                conf.systemCount = countedQuantity
+                conf.totalAuditCount += 1
+                conf.cleanAuditStreak += 1
+                conf.movementDecayFactor = 1.0
+                conf.decayRate = try Self.auditDailyDecayPercent(for: conf, dbConn: dbConn)
+                conf.reliabilityLevel = Self.computeReliabilityLevel(conf)
+                conf.updatedAt = Self.nowString()
+                try conf.update(dbConn)
+                return conf
+            }
+
+            var conf = PartConfidence(
+                id: nil, partId: partId, areaId: areaId,
+                confidencePercent: 100, reliabilityLevel: 0,
+                lastAuditDate: Self.nowString(), lastAuditBy: verifiedBy,
+                lastAuditCount: countedQuantity, systemCount: countedQuantity,
+                decayRate: Self.baseDailyConfidenceDecayPercent, movementDecayFactor: 1.0,
+                cleanAuditStreak: 1, misplacementCount: 0, lastMisplacementDate: nil,
+                totalAuditCount: 1, totalVarianceDollars: 0,
+                createdAt: nil, updatedAt: nil
+            )
+            conf.decayRate = try Self.auditDailyDecayPercent(for: conf, dbConn: dbConn)
+            conf.reliabilityLevel = Self.computeReliabilityLevel(conf)
+            try conf.insert(dbConn)
+            return conf
         }
     }
 
@@ -4432,7 +4644,8 @@ public final class WarehouseService: Sendable {
                 .fetchOne(dbConn) {
                 conf.misplacementCount += 1
                 conf.lastMisplacementDate = Self.nowString()
-                conf.confidencePercent = max(0, conf.confidencePercent - 10)
+                conf.confidencePercent = Self.clampedConfidence(conf.confidencePercent - Self.misplacementConfidencePenaltyPercent, counted: true)
+                conf.decayRate = try Self.auditDailyDecayPercent(for: conf, dbConn: dbConn)
                 conf.reliabilityLevel = Self.computeReliabilityLevel(conf)
                 conf.updatedAt = Self.nowString()
                 try conf.update(dbConn)
@@ -4442,8 +4655,12 @@ public final class WarehouseService: Sendable {
             try dbConn.execute(sql: """
                 UPDATE audit_sessions_v2
                 SET misplaced_found = misplaced_found + 1
-                WHERE status = 'active' AND started_by = ?
-                ORDER BY started_at DESC LIMIT 1
+                WHERE id = (
+                    SELECT id FROM audit_sessions_v2
+                    WHERE status = 'active' AND started_by = ?
+                    ORDER BY started_at DESC
+                    LIMIT 1
+                )
                 """, arguments: [foundBy])
 
             return log
@@ -5097,7 +5314,7 @@ public final class WarehouseService: Sendable {
             if var conf = try PartConfidence
                 .filter(Column("part_id") == partId)
                 .fetchOne(dbConn) {
-                conf.confidencePercent = min(100, conf.confidencePercent + 35)
+                conf.confidencePercent = Self.clampedConfidence(conf.confidencePercent + 35, counted: true)
                 conf.lastAuditDate = Self.nowString()
                 conf.lastAuditBy = resolvedBy
                 conf.lastAuditCount = finalQty
@@ -5105,6 +5322,7 @@ public final class WarehouseService: Sendable {
                 conf.totalAuditCount += 1
                 conf.cleanAuditStreak = (finalQty == expectedQty) ? conf.cleanAuditStreak + 1 : 0
                 conf.movementDecayFactor = 1.0
+                conf.decayRate = try Self.auditDailyDecayPercent(for: conf, dbConn: dbConn)
                 conf.reliabilityLevel = Self.computeReliabilityLevel(conf)
                 conf.updatedAt = Self.nowString()
                 try conf.update(dbConn)
@@ -5164,6 +5382,108 @@ public final class WarehouseService: Sendable {
     }
 
     // MARK: - Helpers (Audit)
+
+    private static func clampedConfidence(_ percent: Double, counted: Bool) -> Double {
+        let lowerBound = counted ? minimumCountedConfidencePercent : 0
+        return min(100, max(lowerBound, percent))
+    }
+
+    private static func valueVariancePercent(
+        varianceDollars: Double,
+        systemCount: Int,
+        unitCostDollars: Double
+    ) -> Double {
+        let totalValue = Double(systemCount) * unitCostDollars
+        guard totalValue > 0 else { return varianceDollars == 0 ? 0 : 100 }
+        return (varianceDollars / totalValue) * 100.0
+    }
+
+    private static func auditDailyDecayPercent(for conf: PartConfidence, dbConn: Database) throws -> Double {
+        var decay = baseDailyConfidenceDecayPercent
+
+        if conf.cleanAuditStreak >= 2 { decay *= 0.75 }
+        if conf.misplacementCount == 0 { decay *= 0.80 } else { decay *= 1.50 }
+        if try areaOrganizationRequirementsMet(areaId: conf.areaId, dbConn: dbConn) { decay *= 0.90 }
+        if try areaRecommendedCriteriaMet(areaId: conf.areaId, dbConn: dbConn) { decay *= 0.85 }
+        if conf.totalVarianceDollars > 0 { decay *= 2.00 }
+        if conf.movementDecayFactor > 1.0 { decay *= min(1.20, conf.movementDecayFactor) }
+        if try activePartAreaCount(partId: conf.partId, dbConn: dbConn) > 1 { decay *= 1.30 }
+
+        return min(0.310, max(0.030, decay))
+    }
+
+    private static func areaOrganizationRequirementsMet(areaId: Int64, dbConn: Database) throws -> Bool {
+        guard let row = try Row.fetchOne(dbConn, sql: """
+            SELECT labels_accurate, parts_in_home, no_duplicates, bins_assigned
+            FROM organization_ratings
+            WHERE area_id = ?
+            """, arguments: [areaId]) else {
+            return false
+        }
+        return (row["labels_accurate"] as Int? ?? 0) == 1 &&
+            (row["parts_in_home"] as Int? ?? 0) == 1 &&
+            (row["no_duplicates"] as Int? ?? 0) == 1 &&
+            (row["bins_assigned"] as Int? ?? 0) == 1
+    }
+
+    private static func areaRecommendedCriteriaMet(areaId: Int64, dbConn: Database) throws -> Bool {
+        guard let row = try Row.fetchOne(dbConn, sql: """
+            SELECT not_overcrowded, similar_parts_nearby, clean_audit_count
+            FROM organization_ratings
+            WHERE area_id = ?
+            """, arguments: [areaId]) else {
+            return false
+        }
+        return (row["not_overcrowded"] as Int? ?? 0) == 1 &&
+            (row["similar_parts_nearby"] as Int? ?? 0) == 1 &&
+            (row["clean_audit_count"] as Int? ?? 0) >= 2
+    }
+
+    private static func activePartAreaCount(partId: Int64, dbConn: Database) throws -> Int {
+        try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM warehouse_part_assignments
+            WHERE part_id = ? AND deleted_at IS NULL
+            """, arguments: [partId]) ?? 0
+    }
+
+    private static func noteConfidenceMovement(
+        partId: Int64,
+        fromLocationType: String?,
+        fromLocationId: Int64?,
+        toLocationType: String?,
+        toLocationId: Int64?,
+        dbConn: Database
+    ) throws {
+        let candidateAreaIds = [
+            Self.confidenceAreaId(locationType: fromLocationType, locationId: fromLocationId),
+            Self.confidenceAreaId(locationType: toLocationType, locationId: toLocationId)
+        ].compactMap { $0 }
+
+        guard !candidateAreaIds.isEmpty else { return }
+        var seen = Set<Int64>()
+        for areaId in candidateAreaIds where seen.insert(areaId).inserted {
+            guard var conf = try PartConfidence
+                .filter(Column("part_id") == partId && Column("area_id") == areaId)
+                .fetchOne(dbConn) else {
+                continue
+            }
+            conf.movementDecayFactor = min(maxMovementDecayFactor, max(1.0, conf.movementDecayFactor + 0.2))
+            conf.decayRate = try auditDailyDecayPercent(for: conf, dbConn: dbConn)
+            conf.reliabilityLevel = computeReliabilityLevel(conf)
+            conf.updatedAt = nowString()
+            try conf.update(dbConn)
+        }
+    }
+
+    private static func confidenceAreaId(locationType: String?, locationId: Int64?) -> Int64? {
+        guard let locationId else { return nil }
+        switch locationType {
+        case "area", "warehouse":
+            return locationId
+        default:
+            return nil
+        }
+    }
 
     private static func nowString() -> String { CoreFormatters.nowISO() }
 }
