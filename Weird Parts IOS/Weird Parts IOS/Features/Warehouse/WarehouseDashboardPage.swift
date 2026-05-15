@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import WiredPartCore
 
 /// Warehouse dashboard showing KPI smart cards, recent activity, and quick actions.
@@ -8,6 +9,8 @@ import WiredPartCore
 /// Quick actions open movement wizard and QR scanner as sheets.
 struct WarehouseDashboardPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     // MARK: - State
 
@@ -45,6 +48,17 @@ struct WarehouseDashboardPage: View {
         case help
 
         var id: String { String(describing: self) }
+    }
+
+    private struct WarehouseQuickAction: Identifiable {
+        let title: String
+        let icon: String
+        let color: Color
+        let identifier: String
+        let moduleId: String?
+        let sheet: ActiveSheet?
+
+        var id: String { identifier }
     }
 
     var body: some View {
@@ -522,50 +536,91 @@ struct WarehouseDashboardPage: View {
                 .font(.headline)
                 .padding(.horizontal, 4)
 
-            LazyVGrid(columns: [
-                GridItem(.flexible(), spacing: 12),
-                GridItem(.flexible(), spacing: 12),
-            ], spacing: 12) {
-                Button { activeSheet = .newMovement } label: {
-                    quickActionButton(
-                        title: "New Movement",
-                        icon: "arrow.left.arrow.right.circle.fill",
-                        color: .blue
-                    )
+            if usesCompactQuickActionGrid {
+                LazyVGrid(columns: [
+                    GridItem(.flexible(), spacing: 12),
+                    GridItem(.flexible(), spacing: 12),
+                ], spacing: 12) {
+                    ForEach(quickActions) { action in
+                        quickActionTile(action)
+                    }
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("whAction_newMovement")
-
-                Button { activeSheet = .qrScanner } label: {
-                    quickActionButton(
-                        title: "Scan QR",
-                        icon: "qrcode.viewfinder",
-                        color: .orange
-                    )
+                .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+            } else {
+                HStack(spacing: 12) {
+                    ForEach(quickActions) { action in
+                        quickActionTile(action)
+                    }
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("whAction_scanQR")
-
-                Button { navigateToWarehouseTab("warehouse-receiving") } label: {
-                    quickActionButton(
-                        title: "Receiving",
-                        icon: "arrow.down.circle.fill",
-                        color: .green
-                    )
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("whAction_receiving")
-
-                Button { navigateToWarehouseTab("warehouse-audit") } label: {
-                    quickActionButton(
-                        title: "Audit Queue",
-                        icon: "checkmark.shield.fill",
-                        color: .purple
-                    )
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("whAction_auditQueue")
+                .dynamicTypeSize(...DynamicTypeSize.xxLarge)
             }
+        }
+    }
+
+    private var usesCompactQuickActionGrid: Bool {
+        horizontalSizeClass == .compact &&
+            (dynamicTypeSize >= .accessibility1 || UIScreen.main.bounds.width < 360)
+    }
+
+    private var quickActions: [WarehouseQuickAction] {
+        [
+            WarehouseQuickAction(
+                title: "New Movement",
+                icon: "arrow.left.arrow.right.circle.fill",
+                color: .blue,
+                identifier: "whAction_newMovement",
+                moduleId: nil,
+                sheet: .newMovement
+            ),
+            WarehouseQuickAction(
+                title: "Scan QR",
+                icon: "qrcode.viewfinder",
+                color: .orange,
+                identifier: "whAction_scanQR",
+                moduleId: nil,
+                sheet: .qrScanner
+            ),
+            WarehouseQuickAction(
+                title: "Receiving",
+                icon: "arrow.down.circle",
+                color: .green,
+                identifier: "whAction_receiving",
+                moduleId: "warehouse-receiving",
+                sheet: nil
+            ),
+            WarehouseQuickAction(
+                title: "Audit Queue",
+                icon: "clipboard.fill",
+                color: .orange,
+                identifier: "whAction_auditQueue",
+                moduleId: "warehouse-audit",
+                sheet: nil
+            ),
+        ]
+    }
+
+    private func quickActionTile(_ action: WarehouseQuickAction) -> some View {
+        Button { performQuickAction(action) } label: {
+            quickActionButton(
+                title: action.title,
+                icon: action.icon,
+                color: action.color
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(action.title)
+        .accessibilityIdentifier(action.identifier)
+    }
+
+    private func performQuickAction(_ action: WarehouseQuickAction) {
+        if let sheet = action.sheet {
+            activeSheet = sheet
+        } else if let moduleId = action.moduleId {
+            NotificationCenter.default.post(
+                name: .navigateToModule,
+                object: nil,
+                userInfo: ["moduleId": moduleId]
+            )
         }
     }
 
@@ -579,6 +634,8 @@ struct WarehouseDashboardPage: View {
                 .font(.caption)
                 .fontWeight(.medium)
                 .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
@@ -639,6 +696,8 @@ struct WarehouseDashboardPage: View {
             .clipShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+        .accessibilityLabel(title)
     }
 
     // MARK: - Recent Activity

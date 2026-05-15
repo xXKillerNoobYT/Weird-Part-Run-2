@@ -539,6 +539,46 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                       "Done toolbar button should be tappable at AX5")
     }
 
+    @MainActor
+    func testWEI1304UITestingLaunchReachesLoginOrShell() throws {
+        let databaseError = app.staticTexts
+            .matching(NSPredicate(format: "label CONTAINS[c] 'Failed to load database'"))
+            .firstMatch
+        XCTAssertFalse(databaseError.waitForExistence(timeout: 2),
+                       "Clean -UITesting launch should not stop on the database load error")
+        XCTAssertTrue(waitForLoginOrShell(timeout: 30),
+                      "Clean -UITesting launch should reach login, onboarding, or the app shell")
+    }
+
+    @MainActor
+    func testWEI1306WarehouseDashboardQuickActionsDiscoverable() throws {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments += ["-UITesting"]
+        app.launch()
+
+        logInAsUITestOwnerIfNeeded()
+        openWarehouseDashboard()
+
+        let newMovement = app.buttons["whAction_newMovement"]
+        let scanQR = app.buttons["whAction_scanQR"]
+        let receiving = app.buttons["whAction_receiving"]
+        let auditQueue = app.buttons["whAction_auditQueue"]
+
+        XCTAssertTrue(newMovement.waitForExistence(timeout: 8), "Warehouse Dashboard should expose New Movement quick action")
+        XCTAssertTrue(scanQR.waitForExistence(timeout: 5), "Warehouse Dashboard should expose Scan QR quick action")
+        XCTAssertTrue(receiving.waitForExistence(timeout: 5), "Warehouse Dashboard should expose Receiving quick action")
+        XCTAssertTrue(auditQueue.waitForExistence(timeout: 5), "Warehouse Dashboard should expose Audit Queue quick action")
+
+        captureWEI1306("01-warehouse-dashboard-quick-actions")
+
+        XCTAssertEqual(newMovement.label, "New Movement")
+        XCTAssertEqual(scanQR.label, "Scan QR")
+        XCTAssertEqual(receiving.label, "Receiving")
+        XCTAssertEqual(auditQueue.label, "Audit Queue")
+        XCTAssertGreaterThanOrEqual(auditQueue.frame.height, 44, "Audit Queue quick action should meet the minimum tap target height")
+        XCTAssertFalse(app.buttons["whAction_setupWizard"].exists, "Setup Wizard should not occupy one of the four operational quick-action slots")
+    }
     private func logInAsUITestOwnerIfNeeded() {
         if app.buttons["tab_dashboard"].waitForExistence(timeout: 5) && app.buttons["tab_dashboard"].isHittable ||
             app.buttons["Dashboard"].exists && app.buttons["Dashboard"].isHittable ||
@@ -672,6 +712,56 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         captureWEI1185("00-wizard-route-not-found")
         XCTAssertTrue(configure.waitForExistence(timeout: 10), "Dashboard should expose Configure Your Warehouse")
         configure.tap()
+    }
+
+    private func openWarehouseDashboard() {
+        if app.buttons["whAction_newMovement"].waitForExistence(timeout: 2) ||
+            app.staticTexts["Quick Actions"].waitForExistence(timeout: 2) {
+            return
+        }
+
+        let warehouseTab = app.buttons["tab_warehouse"]
+        if warehouseTab.waitForExistence(timeout: 8) {
+            warehouseTab.tap()
+        } else if app.buttons["Warehouse"].waitForExistence(timeout: 3) {
+            app.buttons["Warehouse"].tap()
+        } else if app.tabBars.buttons["More"].waitForExistence(timeout: 3) {
+            app.tabBars.buttons["More"].tap()
+            let warehouse = app.buttons["Warehouse"]
+            XCTAssertTrue(warehouse.waitForExistence(timeout: 8), "Warehouse module should be reachable")
+            warehouse.tap()
+        } else {
+            XCTFail("Warehouse module tab should be reachable")
+        }
+
+        if !app.buttons["whAction_newMovement"].waitForExistence(timeout: 8) {
+            let dashboard = app.buttons["Dashboard"]
+            if dashboard.waitForExistence(timeout: 5) && dashboard.isHittable {
+                dashboard.tap()
+            }
+        }
+
+        XCTAssertTrue(
+            app.buttons["whAction_newMovement"].waitForExistence(timeout: 10),
+            "Warehouse Dashboard should open and expose quick actions"
+        )
+    }
+
+    private func captureWEI1306(_ name: String) {
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let source = URL(fileURLWithPath: #filePath)
+        let repoRoot = source
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let dir = repoRoot.appendingPathComponent("docs/testing/artifacts/wei-1306", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? screenshot.pngRepresentation.write(to: dir.appendingPathComponent("\(name).png"), options: .atomic)
     }
 
     private func captureWEI1185(_ name: String) {
