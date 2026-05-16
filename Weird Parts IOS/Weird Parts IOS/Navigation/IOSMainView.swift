@@ -17,7 +17,19 @@ struct IOSMainView: View {
     @State private var showLogoutConfirm = false
     @State private var showAIAssistant = false
     @State private var aiDisplayMode: AIDisplayMode = .sheet
-    @State private var showConflictReview = false
+    @State private var activeRootSheet: RootSheet?
+
+    enum RootSheet: Identifiable {
+        case conflictReview
+        case aiAssistant
+
+        var id: String {
+            switch self {
+            case .conflictReview: return "conflictReview"
+            case .aiAssistant: return "aiAssistant"
+            }
+        }
+    }
 
     // Full sidebar state
     @State private var expandedModuleId: String? = "dashboard"
@@ -67,7 +79,7 @@ struct IOSMainView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SyncConflictBanner { showConflictReview = true }
+            SyncConflictBanner { activeRootSheet = .conflictReview }
                 .environmentObject(appCore)
 
             Group {
@@ -79,11 +91,19 @@ struct IOSMainView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .sheet(isPresented: $showConflictReview) {
-            SyncConflictReviewPage()
-                .environmentObject(appCore)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
+        .sheet(item: $activeRootSheet) { sheet in
+            switch sheet {
+            case .conflictReview:
+                SyncConflictReviewPage()
+                    .environmentObject(appCore)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            case .aiAssistant:
+                IOSAIAssistantPanel(displayMode: $aiDisplayMode, isVisible: $showAIAssistant)
+                    .environmentObject(appCore)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
         }
         .confirmationDialog("Log out?", isPresented: $showLogoutConfirm, titleVisibility: .visible) {
             Button("Log Out", role: .destructive) {
@@ -157,12 +177,6 @@ struct IOSMainView: View {
             if !showAIAssistant || aiDisplayMode == .sheet {
                 aiFloatingButton(bottomPadding: 90)
             }
-        }
-        .sheet(isPresented: aiDisplayMode == .sheet ? $showAIAssistant : .constant(false)) {
-            IOSAIAssistantPanel(displayMode: $aiDisplayMode, isVisible: $showAIAssistant)
-                .environmentObject(appCore)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
         }
         .overlay(alignment: .bottomTrailing) {
             if showAIAssistant && aiDisplayMode == .overlay {
@@ -446,6 +460,8 @@ struct IOSMainView: View {
             withAnimation(.easeInOut(duration: 0.25)) {
                 if tabPrefs.navigationStyle == .fullSidebar && aiDisplayMode == .sheet {
                     activeSidebarSheet = .aiAssistant
+                } else if aiDisplayMode == .sheet {
+                    activeRootSheet = .aiAssistant
                 }
                 showAIAssistant = true
             }
