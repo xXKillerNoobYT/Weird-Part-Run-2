@@ -82,7 +82,7 @@ struct IOSVerificationSubmitSheet: View {
         } catch WarehouseService.WarehouseError.sessionNotFound {
             errorMessage = "This verification assignment is no longer available."
         } catch WarehouseService.WarehouseError.sessionAlreadyCompleted {
-            errorMessage = "This verification assignment was already submitted."
+            errorMessage = "You've already submitted a count for this part. Each counter can submit once."
         } catch WarehouseService.WarehouseError.invalidQuantity {
             errorMessage = "Count must be 0 or greater."
         } catch {
