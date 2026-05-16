@@ -633,6 +633,66 @@ extension Notification.Name {
     /// Posted when the Report Builder disappears.
     static let reportsBuilderPageInactive = Notification.Name("WiredPart.reportsBuilderPageInactive")
 
+    /// Posted when the Fleet Fuel Costs report appears, with read-only fuel trend context for AI.
+    static let reportsFleetFuelCostsPageActive = Notification.Name("WiredPart.reportsFleetFuelCostsPageActive")
+
+    /// Posted when the Fleet Fuel Costs report disappears.
+    static let reportsFleetFuelCostsPageInactive = Notification.Name("WiredPart.reportsFleetFuelCostsPageInactive")
+
+    /// Posted when the Fleet Maintenance Trends report appears, with read-only maintenance context for AI.
+    static let reportsFleetMaintenanceTrendsPageActive = Notification.Name("WiredPart.reportsFleetMaintenanceTrendsPageActive")
+
+    /// Posted when the Fleet Maintenance Trends report disappears.
+    static let reportsFleetMaintenanceTrendsPageInactive = Notification.Name("WiredPart.reportsFleetMaintenanceTrendsPageInactive")
+
+    /// Posted when the Fleet Mileage Summary report appears, with read-only mileage context for AI.
+    static let reportsFleetMileageSummaryPageActive = Notification.Name("WiredPart.reportsFleetMileageSummaryPageActive")
+
+    /// Posted when the Fleet Mileage Summary report disappears.
+    static let reportsFleetMileageSummaryPageInactive = Notification.Name("WiredPart.reportsFleetMileageSummaryPageInactive")
+
+    /// Posted when the Fleet Utilization report appears, with read-only utilization context for AI.
+    static let reportsFleetUtilizationPageActive = Notification.Name("WiredPart.reportsFleetUtilizationPageActive")
+
+    /// Posted when the Fleet Utilization report disappears.
+    static let reportsFleetUtilizationPageInactive = Notification.Name("WiredPart.reportsFleetUtilizationPageInactive")
+
+    /// Posted when the Scheduling Dispatch Efficiency report appears, with read-only dispatch context for AI.
+    static let reportsSchedulingDispatchEfficiencyPageActive = Notification.Name("WiredPart.reportsSchedulingDispatchEfficiencyPageActive")
+
+    /// Posted when the Scheduling Dispatch Efficiency report disappears.
+    static let reportsSchedulingDispatchEfficiencyPageInactive = Notification.Name("WiredPart.reportsSchedulingDispatchEfficiencyPageInactive")
+
+    /// Posted when the Scheduling Crew Utilization report appears, with read-only crew context for AI.
+    static let reportsSchedulingCrewUtilizationPageActive = Notification.Name("WiredPart.reportsSchedulingCrewUtilizationPageActive")
+
+    /// Posted when the Scheduling Crew Utilization report disappears.
+    static let reportsSchedulingCrewUtilizationPageInactive = Notification.Name("WiredPart.reportsSchedulingCrewUtilizationPageInactive")
+
+    /// Posted when the Scheduling Pipeline Summary report appears, with read-only pipeline status context for AI.
+    static let reportsSchedulingPipelineSummaryPageActive = Notification.Name("WiredPart.reportsSchedulingPipelineSummaryPageActive")
+
+    /// Posted when the Scheduling Pipeline Summary report disappears.
+    static let reportsSchedulingPipelineSummaryPageInactive = Notification.Name("WiredPart.reportsSchedulingPipelineSummaryPageInactive")
+
+    /// Posted when the Warehouse Inventory Value report appears, with read-only inventory value context for AI.
+    static let reportsWarehouseInventoryValuePageActive = Notification.Name("WiredPart.reportsWarehouseInventoryValuePageActive")
+
+    /// Posted when the Warehouse Inventory Value report disappears.
+    static let reportsWarehouseInventoryValuePageInactive = Notification.Name("WiredPart.reportsWarehouseInventoryValuePageInactive")
+
+    /// Posted when the Warehouse Backorder Status report appears, with read-only backorder context for AI.
+    static let reportsWarehouseBackorderStatusPageActive = Notification.Name("WiredPart.reportsWarehouseBackorderStatusPageActive")
+
+    /// Posted when the Warehouse Backorder Status report disappears.
+    static let reportsWarehouseBackorderStatusPageInactive = Notification.Name("WiredPart.reportsWarehouseBackorderStatusPageInactive")
+
+    /// Posted when the Warehouse Turnover report appears, with read-only movement context for AI.
+    static let reportsWarehouseTurnoverPageActive = Notification.Name("WiredPart.reportsWarehouseTurnoverPageActive")
+
+    /// Posted when the Warehouse Turnover report disappears.
+    static let reportsWarehouseTurnoverPageInactive = Notification.Name("WiredPart.reportsWarehouseTurnoverPageInactive")
+
     // MARK: - Fleet
 
     /// Posted when the Vehicles page appears, with vehicle count context for AI.

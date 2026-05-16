@@ -103,6 +103,10 @@ struct WarehouseTurnoverReport: View {
         .task { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .reportsWarehouseTurnoverPageInactive, object: nil)
+        }
     }
 
     private var totalMovements: Int { turnoverData.reduce(0) { $0 + $1.movementCount } }
@@ -124,5 +128,13 @@ struct WarehouseTurnoverReport: View {
             loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let context = """
+        Warehouse Turnover report page. Parts with movement: \(turnoverData.count). Date range: \(startDate.formatted(date: .abbreviated, time: .omitted)) to \(endDate.formatted(date: .abbreviated, time: .omitted)). Total movements: \(totalMovements). Total qty moved: \(totalQtyMoved). Error state: \(loadError ?? "none"). Available read-only actions: summarize movement intensity, identify high-turnover items, explain stock-risk from turnover patterns.
+        """
+        NotificationCenter.default.post(name: .reportsWarehouseTurnoverPageActive, object: nil, userInfo: ["context": context])
     }
 }

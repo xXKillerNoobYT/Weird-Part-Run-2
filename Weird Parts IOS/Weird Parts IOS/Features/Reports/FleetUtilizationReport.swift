@@ -103,6 +103,10 @@ struct FleetUtilizationReport: View {
         .task { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .reportsFleetUtilizationPageInactive, object: nil)
+        }
     }
 
     private var avgUtilization: Double {
@@ -127,5 +131,13 @@ struct FleetUtilizationReport: View {
             loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let context = """
+        Fleet Utilization report page. Vehicles in report: \(utilizationData.count). Active vehicles: \(activeCount). Date range: \(startDate.formatted(date: .abbreviated, time: .omitted)) to \(endDate.formatted(date: .abbreviated, time: .omitted)). Avg utilization: \(String(format: "%.2f", avgUtilization)). Error state: \(loadError ?? "none"). Available read-only actions: summarize fleet utilization health, identify underused vehicles, explain utilization thresholds.
+        """
+        NotificationCenter.default.post(name: .reportsFleetUtilizationPageActive, object: nil, userInfo: ["context": context])
     }
 }

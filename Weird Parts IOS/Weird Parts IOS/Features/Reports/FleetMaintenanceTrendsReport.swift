@@ -103,6 +103,10 @@ struct FleetMaintenanceTrendsReport: View {
         .task { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .reportsFleetMaintenanceTrendsPageInactive, object: nil)
+        }
     }
 
     private var totalCost: Double { trendData.reduce(0) { $0 + $1.cost } }
@@ -129,5 +133,13 @@ struct FleetMaintenanceTrendsReport: View {
             loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let context = """
+        Fleet Maintenance Trends report page. Records: \(trendData.count). Date range: \(startDate.formatted(date: .abbreviated, time: .omitted)) to \(endDate.formatted(date: .abbreviated, time: .omitted)). Total maintenance cost: \(String(format: "%.2f", totalCost)). Avg cost per record: \(String(format: "%.2f", avgCost)). Error state: \(loadError ?? "none"). Available read-only actions: summarize maintenance spend concentration, explain average maintenance cost, identify high-cost periods.
+        """
+        NotificationCenter.default.post(name: .reportsFleetMaintenanceTrendsPageActive, object: nil, userInfo: ["context": context])
     }
 }

@@ -98,6 +98,10 @@ struct FleetFuelCostReport: View {
         .task { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .reportsFleetFuelCostsPageInactive, object: nil)
+        }
     }
 
     private var totalFuelCost: Double { fuelData.reduce(0) { $0 + $1.totalCost } }
@@ -120,5 +124,13 @@ struct FleetFuelCostReport: View {
             loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let context = """
+        Fleet Fuel Costs report page. Rows: \(fuelData.count). Date range: \(startDate.formatted(date: .abbreviated, time: .omitted)) to \(endDate.formatted(date: .abbreviated, time: .omitted)). Total fuel cost: \(String(format: "%.2f", totalFuelCost)). Total gallons: \(String(format: "%.1f", totalGallons)). Avg cost per gallon: \(String(format: "%.2f", avgCostPerGallon)). Error state: \(loadError ?? "none"). Available read-only actions: summarize fuel spend trends, compare vehicle fuel burden, explain date-filtered totals.
+        """
+        NotificationCenter.default.post(name: .reportsFleetFuelCostsPageActive, object: nil, userInfo: ["context": context])
     }
 }

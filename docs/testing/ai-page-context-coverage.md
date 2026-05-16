@@ -1,7 +1,7 @@
 # AI Page Context Coverage Inventory
 
 Issue: WEI-1112 / WEI-1194 / GitHub #86 T1-19
-Updated: 2026-05-15
+Updated: 2026-05-16
 
 ## Success Condition
 
@@ -9,9 +9,9 @@ Complete the 87-page page-context coverage set by adding read-only page-active/p
 
 ## Current Coverage
 
-Implemented page-context notifications observed by `IOSAIAssistantPanel`: 72 page contexts.
+Implemented page-context notifications observed by `IOSAIAssistantPanel`: 82 page contexts.
 
-Help registry mappings with matching help entries: 72 page contexts.
+Help registry mappings with matching help entries: 82 page contexts.
 
 Known gap: `settingsPageActive` is observed by the AI panel and active-page tracker, but `HelpContentRegistry` does not yet contain a `settings-app-config` entry. That should be handled in the settings slice rather than mapped to a missing help entry.
 
@@ -87,6 +87,16 @@ Known gap: `settingsPageActive` is observed by the AI panel and active-page trac
 | Reports | Daily Reports Summary | `reportsDailySummaryPageActive` | `reports-daily-summary` |
 | Reports | Reports Hub | `reportsHubPageActive` | `reports-hub` |
 | Reports | Report Builder | `reportsBuilderPageActive` | `reports-builder` |
+| Reports | Fleet Fuel Costs | `reportsFleetFuelCostsPageActive` | `reports-fleet-fuel-costs` |
+| Reports | Fleet Maintenance Trends | `reportsFleetMaintenanceTrendsPageActive` | `reports-fleet-maintenance-trends` |
+| Reports | Fleet Mileage Summary | `reportsFleetMileageSummaryPageActive` | `reports-fleet-mileage-summary` |
+| Reports | Fleet Utilization | `reportsFleetUtilizationPageActive` | `reports-fleet-utilization` |
+| Reports | Scheduling Dispatch Efficiency | `reportsSchedulingDispatchEfficiencyPageActive` | `reports-scheduling-dispatch-efficiency` |
+| Reports | Scheduling Crew Utilization | `reportsSchedulingCrewUtilizationPageActive` | `reports-scheduling-crew-utilization` |
+| Reports | Scheduling Pipeline Summary | `reportsSchedulingPipelineSummaryPageActive` | `reports-scheduling-pipeline-summary` |
+| Reports | Warehouse Inventory Value | `reportsWarehouseInventoryValuePageActive` | `reports-warehouse-inventory-value` |
+| Reports | Warehouse Backorder Status | `reportsWarehouseBackorderStatusPageActive` | `reports-warehouse-backorder-status` |
+| Reports | Warehouse Turnover | `reportsWarehouseTurnoverPageActive` | `reports-warehouse-turnover` |
 | Fleet | Vehicles | `vehiclesPageActive` | `fleet-vehicles` |
 | Tools | Tool Registry | `toolRegistryPageActive` | `tools-registry` |
 | Notebooks | Notebooks List | `notebooksListPageActive` | `notebooks-all` |
@@ -203,9 +213,19 @@ Added the next Office/Reports route-context slice:
 
 All payloads are read-only summaries of visible state, route scope, selected filters, lifecycle state, and available entry points. They do not expose mutating commands, action IDs, or write intents.
 
+## Specialized Reports Slice
+
+Added specialized Fleet/Scheduling/Warehouse report detail page contexts:
+
+- Fleet: Fuel Costs, Maintenance Trends, Mileage Summary, Vehicle Utilization.
+- Scheduling: Dispatch Efficiency, Crew Utilization, Pipeline Summary.
+- Warehouse: Inventory Value, Backorder Status, Inventory Turnover.
+
+All payloads are read-only summaries of date ranges, visible rows, aggregate totals, and error state. They do not expose mutating commands, action IDs, or write intents.
+
 ## Next Highest-Traffic Remaining Slices
 
-1. Specialized report pages: fleet, scheduling, and warehouse report detail pages still not observed by AI page-context notifications.
+1. Remaining functional pages not yet observed by AI page-context notifications (target: 87 total, currently 82).
 2. Settings: add missing help entries and page context for high-use settings subpages before mapping them to help content.
 
 ## Validation
@@ -258,6 +278,13 @@ Validated Office/Reports route slice in the clean WEI-1112 tail worktree on 2026
 
 - Route slice notification names are declared, posted by Office/Reports route pages, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
 - Help registry mapping check returned no missing mapped page IDs.
+- `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was pre-existing warnings only.
+
+Validated specialized report slice in the clean WEI-1112 tail worktree on 2026-05-16:
+
+- Specialized report notification names are declared, posted by Fleet/Scheduling/Warehouse report pages, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
+- Help registry mapping check returned no missing mapped page IDs.
+- First build attempt surfaced Swift type-checker complexity in `IOSAIAssistantPanel`; observer and active-page trackers were split into smaller modifiers.
 - `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was pre-existing warnings only.
 
 Static validation:
