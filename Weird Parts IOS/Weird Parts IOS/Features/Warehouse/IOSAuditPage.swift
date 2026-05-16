@@ -28,6 +28,7 @@ struct IOSAuditPage: View {
     @State private var recentSessions: [AuditSessionV2] = []
     @State private var warehouseScore: Double = 5.0
     @State private var activeCounts: [AuditCount] = []
+    @State private var selectedItemForVerification: CountingItem?
 
     // Count flow
     @State private var activeSession: AuditSessionV2?
@@ -149,6 +150,13 @@ struct IOSAuditPage: View {
         }
         .sheet(item: $activeSheet) { sheet in
             sheetContent(for: sheet)
+        }
+        .sheet(item: $selectedItemForVerification) { item in
+            QueueSendForVerificationSheet(item: item, sessionId: activeSession?.id) {
+                selectedItemForVerification = nil
+                loadData()
+            }
+            .environmentObject(appCore)
         }
         .alert("Error", isPresented: Binding(
             get: { actionError != nil },
@@ -341,6 +349,21 @@ struct IOSAuditPage: View {
                                 .contentShape(Rectangle())
                                 .onTapGesture {
                                     startCounting(item)
+                                }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button {
+                                        selectedItemForVerification = item
+                                    } label: {
+                                        Label("Verify", systemImage: "person.2.badge.gearshape")
+                                    }
+                                    .tint(.orange)
+                                }
+                                .contextMenu {
+                                    Button {
+                                        selectedItemForVerification = item
+                                    } label: {
+                                        Label("Verify", systemImage: "person.2.badge.gearshape")
+                                    }
                                 }
                         }
 
@@ -723,6 +746,21 @@ struct IOSAuditPage: View {
                                 .contentShape(Rectangle())
                                 .onTapGesture {
                                     startCounting(item)
+                                }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button {
+                                        selectedItemForVerification = item
+                                    } label: {
+                                        Label("Verify", systemImage: "person.2.badge.gearshape")
+                                    }
+                                    .tint(.orange)
+                                }
+                                .contextMenu {
+                                    Button {
+                                        selectedItemForVerification = item
+                                    } label: {
+                                        Label("Verify", systemImage: "person.2.badge.gearshape")
+                                    }
                                 }
                         }
                     }
@@ -1250,6 +1288,93 @@ struct IOSAuditPage: View {
         } catch {
             auditLog.error("loadWalkingPath failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+}
+
+private struct QueueSendForVerificationSheet: View {
+    @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
+
+    let item: IOSAuditPage.CountingItem
+    let sessionId: Int64?
+    let onSent: () -> Void
+
+    @State private var requiredCounts = 2
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Part") {
+                    LabeledContent("Part", value: item.partName)
+                    if let code = item.partCode, !code.isEmpty {
+                        LabeledContent("Code", value: code)
+                    }
+                    LabeledContent("Location", value: item.locationCode)
+                    LabeledContent("Expected", value: "\(item.systemCount)")
+                }
+
+                Section("Verification") {
+                    Stepper("Required counters: \(requiredCounts)", value: $requiredCounts, in: 2...3)
+                    Text("Counters are assigned automatically from eligible active users.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("Send for Verification")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Send") { submit() }
+                            .fontWeight(.semibold)
+                    }
+                }
+            }
+            .interactiveDismissDisabled(isSaving)
+        }
+    }
+
+    private func submit() {
+        guard let service = appCore.warehouseService,
+              let userId = appCore.currentUser?.id else {
+            errorMessage = "Service or user unavailable."
+            return
+        }
+
+        isSaving = true
+        errorMessage = nil
+        do {
+            _ = try service.flagForMultiUserAudit(
+                partId: item.partId,
+                expectedQty: item.systemCount,
+                sessionId: sessionId,
+                flaggedBy: userId,
+                requiredCounts: requiredCounts
+            )
+            onSent()
+            dismiss()
+        } catch WarehouseService.WarehouseError.invalidQuantity {
+            errorMessage = "Expected quantity must be 0 or greater."
+        } catch {
+            errorMessage = userFriendlyError(error, context: "send for multi-user verification")
+        }
+        isSaving = false
     }
 }
 
