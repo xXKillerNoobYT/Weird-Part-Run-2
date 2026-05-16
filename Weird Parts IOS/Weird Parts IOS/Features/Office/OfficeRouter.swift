@@ -39,7 +39,7 @@ struct OfficeRouter: View {
 
         // Teams
         case "office-teams":
-            IOSTeamsPage()
+            OfficeTeamsRouteView()
 
         // Spending Dashboard (aggregate cost view)
         case "office-spending":
@@ -175,5 +175,33 @@ private struct OfficeReportsLinkView: View {
         }
         .listStyle(.insetGrouped)
         .navigationTitle("Reports")
+        .onAppear {
+            postAIContext()
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .officeReportsHubPageInactive, object: nil)
+        }
+    }
+
+    private func postAIContext() {
+        let context = """
+        Office Reports hub page. Entry points: Build Custom Report and All Reports router. Purpose: route office users to report creation and categorized report views. Available read-only actions: explain which reports entry to open, summarize report hub options, clarify that detail report data loads after navigation.
+        """
+        NotificationCenter.default.post(name: .officeReportsHubPageActive, object: nil, userInfo: ["context": context])
+    }
+}
+
+private struct OfficeTeamsRouteView: View {
+    var body: some View {
+        IOSTeamsPage()
+            .onAppear {
+                let context = """
+                Office Teams route. Reuses the shared Teams page within Office navigation. Route alias page ID: office-teams. Available read-only actions: explain this alias to teams management, summarize visible team filters, direct users to team detail.
+                """
+                NotificationCenter.default.post(name: .officeTeamsRoutePageActive, object: nil, userInfo: ["context": context])
+            }
+            .onDisappear {
+                NotificationCenter.default.post(name: .officeTeamsRoutePageInactive, object: nil)
+            }
     }
 }

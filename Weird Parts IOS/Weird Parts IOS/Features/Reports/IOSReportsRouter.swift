@@ -58,6 +58,15 @@ struct IOSReportsRouter: View {
             categoryContent
         }
         .navigationTitle("Reports")
+        .onAppear {
+            postAIContext()
+        }
+        .onChange(of: selectedCategory) { _, _ in
+            postAIContext()
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .reportsHubPageInactive, object: nil)
+        }
     }
 
     // MARK: - Category Picker
@@ -105,6 +114,14 @@ struct IOSReportsRouter: View {
             cats.removeAll { $0 == .fleet }
         }
         return cats
+    }
+
+    private func postAIContext() {
+        let categories = visibleCategories.map(\.rawValue).joined(separator: ", ")
+        let context = """
+        Reports hub page. Selected category: \(selectedCategory.rawValue). Visible categories: \(categories). Report route tab id: \(tabId). Available read-only actions: explain report category differences, summarize accessible categories by permission, direct to the best category for labor, financial, fleet, warehouse, scheduling, custom, or shared reporting.
+        """
+        NotificationCenter.default.post(name: .reportsHubPageActive, object: nil, userInfo: ["context": context])
     }
 
     // MARK: - Category Content

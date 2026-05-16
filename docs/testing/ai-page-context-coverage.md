@@ -9,9 +9,9 @@ Complete the 87-page page-context coverage set by adding read-only page-active/p
 
 ## Current Coverage
 
-Implemented page-context notifications observed by `IOSAIAssistantPanel`: 67 page contexts.
+Implemented page-context notifications observed by `IOSAIAssistantPanel`: 72 page contexts.
 
-Help registry mappings with matching help entries: 67 page contexts.
+Help registry mappings with matching help entries: 72 page contexts.
 
 Known gap: none in the currently observed AI page-context set. Remaining work is additional unobserved functional pages, not broken mappings.
 
@@ -75,6 +75,9 @@ Known gap: none in the currently observed AI page-context set. Remaining work is
 | Office | Manage Jobs | `officeManageJobsPageActive` | `office-manage-jobs` |
 | Office | Estimation Questions | `officeEstimationSettingsPageActive` | `office-estimation-settings` |
 | Office | Pipeline Hub | `officePipelinePageActive` | `office-pipeline` |
+| Office | Warehouse Exec | `officeWarehouseExecPageActive` | `office-warehouse-exec` |
+| Office | Teams Route Alias | `officeTeamsRoutePageActive` | `office-teams` |
+| Office | Reports Hub Route | `officeReportsHubPageActive` | `office-reports` |
 | Reports | Labor Overview | `reportsLaborPageActive` | `reports-labor` |
 | Reports | Spending | `reportsSpendingPageActive` | `reports-spending` |
 | Reports | Profitability | `reportsProfitabilityPageActive` | `reports-profitability` |
@@ -82,6 +85,8 @@ Known gap: none in the currently observed AI page-context set. Remaining work is
 | Reports | Pre-Billing | `reportsPrebillingPageActive` | `reports-prebilling` |
 | Reports | Bookkeeper Export | `reportsBookkeeperPageActive` | `reports-bookkeeper` |
 | Reports | Daily Reports Summary | `reportsDailySummaryPageActive` | `reports-daily-summary` |
+| Reports | Reports Hub | `reportsHubPageActive` | `reports-hub` |
+| Reports | Report Builder | `reportsBuilderPageActive` | `reports-builder` |
 | Fleet | Vehicles | `vehiclesPageActive` | `fleet-vehicles` |
 | Tools | Tool Registry | `toolRegistryPageActive` | `tools-registry` |
 | Notebooks | Notebooks List | `notebooksListPageActive` | `notebooks-all` |
@@ -186,9 +191,21 @@ Added the next People and Office tail page-context slice:
 
 All payloads are read-only summaries of visible state, selected filters, lifecycle state, and available entry points. They do not expose mutating commands, action IDs, or write intents.
 
+## Office/Reports Route Slice
+
+Added the next Office/Reports route-context slice:
+
+- `IOSWarehouseExecPage`: low stock, movement, total stock, pending staging KPIs, and quick-action entry points.
+- `OfficeTeamsRouteView`: route-alias context for `office-teams` pointing to shared teams management.
+- `OfficeReportsLinkView`: reports hub entry context for custom builder vs categorized reports.
+- `IOSReportsRouter`: selected category and permission-filtered visible category context.
+- `ReportBuilderView`: selected type, step, columns, date range, generated row state, and save/error context.
+
+All payloads are read-only summaries of visible state, route scope, selected filters, lifecycle state, and available entry points. They do not expose mutating commands, action IDs, or write intents.
+
 ## Next Highest-Traffic Remaining Slices
 
-1. People/Office/Reports tail remainder: office warehouse exec, office teams route alias, reports router, and specialized fleet/scheduling/warehouse report pages.
+1. Specialized report pages: fleet, scheduling, and warehouse report detail pages still not observed by AI page-context notifications.
 
 ## Validation
 
@@ -233,6 +250,12 @@ Validated Settings gap closure slice in the clean WEI-1112 settings worktree on 
 Validated People/Office tail slice in the clean WEI-1112 tail worktree on 2026-05-15:
 
 - Tail slice notification names are declared, posted by their pages, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
+- Help registry mapping check returned no missing mapped page IDs.
+- `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was pre-existing warnings only.
+
+Validated Office/Reports route slice in the clean WEI-1112 tail worktree on 2026-05-15:
+
+- Route slice notification names are declared, posted by Office/Reports route pages, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
 - Help registry mapping check returned no missing mapped page IDs.
 - `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was pre-existing warnings only.
 

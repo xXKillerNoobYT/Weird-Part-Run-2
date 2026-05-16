@@ -172,6 +172,16 @@ struct ReportBuilderView: View {
         } message: {
             Text("'\(reportName)' has been saved and can be re-run from the Custom Reports list.")
         }
+        .onAppear {
+            postAIContext()
+        }
+        .onChange(of: selectedType) { _, _ in postAIContext() }
+        .onChange(of: step) { _, _ in postAIContext() }
+        .onChange(of: selectedColumns) { _, _ in postAIContext() }
+        .onChange(of: isGenerating) { _, _ in postAIContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .reportsBuilderPageInactive, object: nil)
+        }
     }
 
     // MARK: - Step Indicator
@@ -216,6 +226,13 @@ struct ReportBuilderView: View {
         case .filters: return "Filters"
         case .results: return "Results"
         }
+    }
+
+    private func postAIContext() {
+        let context = """
+        Report Builder page. Selected report type: \(selectedType.displayName). Current step: \(stepLabel(step)). Selected column count: \(selectedColumns.count). Generated row count: \(generatedRows.count). Date range: \(startDate.formatted(date: .abbreviated, time: .omitted)) to \(endDate.formatted(date: .abbreviated, time: .omitted)). Generating: \(isGenerating). Save name: \(reportName.isEmpty ? "none" : reportName). Error state: \(generateError ?? saveError ?? "none"). Available read-only actions: explain builder steps, summarize current filter/column choices, identify what is needed to generate or save the report.
+        """
+        NotificationCenter.default.post(name: .reportsBuilderPageActive, object: nil, userInfo: ["context": context])
     }
 
     // MARK: - Step 1: Type Selection

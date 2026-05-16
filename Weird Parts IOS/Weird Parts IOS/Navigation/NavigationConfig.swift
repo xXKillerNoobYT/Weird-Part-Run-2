@@ -558,6 +558,24 @@ extension Notification.Name {
     /// Posted when the Office Pipeline page disappears.
     static let officePipelinePageInactive = Notification.Name("WiredPart.officePipelinePageInactive")
 
+    /// Posted when the Office Warehouse Exec page appears, with warehouse command context for AI.
+    static let officeWarehouseExecPageActive = Notification.Name("WiredPart.officeWarehouseExecPageActive")
+
+    /// Posted when the Office Warehouse Exec page disappears.
+    static let officeWarehouseExecPageInactive = Notification.Name("WiredPart.officeWarehouseExecPageInactive")
+
+    /// Posted when the Office Teams route appears, with team management route context for AI.
+    static let officeTeamsRoutePageActive = Notification.Name("WiredPart.officeTeamsRoutePageActive")
+
+    /// Posted when the Office Teams route disappears.
+    static let officeTeamsRoutePageInactive = Notification.Name("WiredPart.officeTeamsRoutePageInactive")
+
+    /// Posted when the Office Reports hub appears, with report-entry route context for AI.
+    static let officeReportsHubPageActive = Notification.Name("WiredPart.officeReportsHubPageActive")
+
+    /// Posted when the Office Reports hub disappears.
+    static let officeReportsHubPageInactive = Notification.Name("WiredPart.officeReportsHubPageInactive")
+
     // MARK: - Reports
 
     /// Posted when the Labor Overview report appears, with read-only labor report context for AI.
@@ -601,6 +619,18 @@ extension Notification.Name {
 
     /// Posted when the Daily Reports Summary disappears.
     static let reportsDailySummaryPageInactive = Notification.Name("WiredPart.reportsDailySummaryPageInactive")
+
+    /// Posted when the Reports hub appears, with category-router context for AI.
+    static let reportsHubPageActive = Notification.Name("WiredPart.reportsHubPageActive")
+
+    /// Posted when the Reports hub disappears.
+    static let reportsHubPageInactive = Notification.Name("WiredPart.reportsHubPageInactive")
+
+    /// Posted when the Report Builder appears, with custom-report wizard context for AI.
+    static let reportsBuilderPageActive = Notification.Name("WiredPart.reportsBuilderPageActive")
+
+    /// Posted when the Report Builder disappears.
+    static let reportsBuilderPageInactive = Notification.Name("WiredPart.reportsBuilderPageInactive")
 
     // MARK: - Fleet
 
