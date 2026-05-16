@@ -59,6 +59,9 @@ struct IOSWarehouseExecPage: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .officeWarehouseExecPageInactive, object: nil)
+        }
     }
 
     // MARK: - Content
@@ -149,6 +152,14 @@ struct IOSWarehouseExecPage: View {
             loadError = userFriendlyError(error, context: "load warehouse data")
         }
         isLoading = false
+        postAIContext()
+    }
+
+    private func postAIContext() {
+        let context = """
+        Office Warehouse Exec page. Low stock count: \(shortfallCount). Today movements: \(todayMovements). Total stock units: \(totalStock). Pending staging count: \(pendingStagingCount). Error state: \(loadError ?? "none"). Quick actions available: New Movement, Start Receiving, Start Audit. Available read-only actions: summarize warehouse KPI health, explain quick-action entry points, identify urgent shortfall or staging risk.
+        """
+        NotificationCenter.default.post(name: .officeWarehouseExecPageActive, object: nil, userInfo: ["context": context])
     }
 }
 

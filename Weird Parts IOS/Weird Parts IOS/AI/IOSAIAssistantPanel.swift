@@ -92,6 +92,9 @@ struct IOSAIAssistantPanel: View {
     @State private var officeManageJobsContext: String?
     @State private var officeEstimationSettingsContext: String?
     @State private var officePipelineContext: String?
+    @State private var officeWarehouseExecContext: String?
+    @State private var officeTeamsRouteContext: String?
+    @State private var officeReportsHubContext: String?
     @State private var reportsLaborContext: String?
     @State private var reportsSpendingContext: String?
     @State private var reportsProfitabilityContext: String?
@@ -99,6 +102,8 @@ struct IOSAIAssistantPanel: View {
     @State private var reportsPrebillingContext: String?
     @State private var reportsBookkeeperContext: String?
     @State private var reportsDailySummaryContext: String?
+    @State private var reportsHubContext: String?
+    @State private var reportsBuilderContext: String?
     @State private var vehiclesContext: String?
     @State private var toolRegistryContext: String?
     @State private var notebooksListContext: String?
@@ -335,13 +340,18 @@ struct IOSAIAssistantPanel: View {
             officeManageJobsContext: $officeManageJobsContext,
             officeEstimationSettingsContext: $officeEstimationSettingsContext,
             officePipelineContext: $officePipelineContext,
+            officeWarehouseExecContext: $officeWarehouseExecContext,
+            officeTeamsRouteContext: $officeTeamsRouteContext,
+            officeReportsHubContext: $officeReportsHubContext,
             reportsLaborContext: $reportsLaborContext,
             reportsSpendingContext: $reportsSpendingContext,
             reportsProfitabilityContext: $reportsProfitabilityContext,
             reportsTimesheetsContext: $reportsTimesheetsContext,
             reportsPrebillingContext: $reportsPrebillingContext,
             reportsBookkeeperContext: $reportsBookkeeperContext,
-            reportsDailySummaryContext: $reportsDailySummaryContext
+            reportsDailySummaryContext: $reportsDailySummaryContext,
+            reportsHubContext: $reportsHubContext,
+            reportsBuilderContext: $reportsBuilderContext
         ))
         .modifier(ActivePageIdTracker(activePageId: $activePageId))
     }
@@ -755,6 +765,15 @@ struct IOSAIAssistantPanel: View {
             if let ctx = officePipelineContext {
                 navContext += "\n\nOffice Pipeline Context (READ-ONLY): \(ctx)"
             }
+            if let ctx = officeWarehouseExecContext {
+                navContext += "\n\nOffice Warehouse Exec Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = officeTeamsRouteContext {
+                navContext += "\n\nOffice Teams Route Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = officeReportsHubContext {
+                navContext += "\n\nOffice Reports Hub Context (READ-ONLY): \(ctx)"
+            }
             if let ctx = reportsLaborContext {
                 navContext += "\n\nReports Labor Context (READ-ONLY): \(ctx)"
             }
@@ -775,6 +794,12 @@ struct IOSAIAssistantPanel: View {
             }
             if let ctx = reportsDailySummaryContext {
                 navContext += "\n\nReports Daily Summary Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = reportsHubContext {
+                navContext += "\n\nReports Hub Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = reportsBuilderContext {
+                navContext += "\n\nReports Builder Context (READ-ONLY): \(ctx)"
             }
             if let ctx = vehiclesContext {
                 navContext += "\n\nVehicles Context: \(ctx)"
@@ -1602,6 +1627,9 @@ private struct PeopleOfficeReportsContextObservers: ViewModifier {
     @Binding var officeManageJobsContext: String?
     @Binding var officeEstimationSettingsContext: String?
     @Binding var officePipelineContext: String?
+    @Binding var officeWarehouseExecContext: String?
+    @Binding var officeTeamsRouteContext: String?
+    @Binding var officeReportsHubContext: String?
     @Binding var reportsLaborContext: String?
     @Binding var reportsSpendingContext: String?
     @Binding var reportsProfitabilityContext: String?
@@ -1609,6 +1637,8 @@ private struct PeopleOfficeReportsContextObservers: ViewModifier {
     @Binding var reportsPrebillingContext: String?
     @Binding var reportsBookkeeperContext: String?
     @Binding var reportsDailySummaryContext: String?
+    @Binding var reportsHubContext: String?
+    @Binding var reportsBuilderContext: String?
 
     func body(content: Content) -> some View {
         content
@@ -1625,7 +1655,10 @@ private struct PeopleOfficeReportsContextObservers: ViewModifier {
                 officeSpendingContext: $officeSpendingContext,
                 officeManageJobsContext: $officeManageJobsContext,
                 officeEstimationSettingsContext: $officeEstimationSettingsContext,
-                officePipelineContext: $officePipelineContext
+                officePipelineContext: $officePipelineContext,
+                officeWarehouseExecContext: $officeWarehouseExecContext,
+                officeTeamsRouteContext: $officeTeamsRouteContext,
+                officeReportsHubContext: $officeReportsHubContext
             ))
             .modifier(ReportsContextObservers(
                 reportsLaborContext: $reportsLaborContext,
@@ -1634,7 +1667,9 @@ private struct PeopleOfficeReportsContextObservers: ViewModifier {
                 reportsTimesheetsContext: $reportsTimesheetsContext,
                 reportsPrebillingContext: $reportsPrebillingContext,
                 reportsBookkeeperContext: $reportsBookkeeperContext,
-                reportsDailySummaryContext: $reportsDailySummaryContext
+                reportsDailySummaryContext: $reportsDailySummaryContext,
+                reportsHubContext: $reportsHubContext,
+                reportsBuilderContext: $reportsBuilderContext
             ))
     }
 }
@@ -1653,6 +1688,9 @@ private struct PeopleOfficeContextObservers: ViewModifier {
     @Binding var officeManageJobsContext: String?
     @Binding var officeEstimationSettingsContext: String?
     @Binding var officePipelineContext: String?
+    @Binding var officeWarehouseExecContext: String?
+    @Binding var officeTeamsRouteContext: String?
+    @Binding var officeReportsHubContext: String?
 
     func body(content: Content) -> some View {
         content
@@ -1673,7 +1711,10 @@ private struct PeopleOfficeContextObservers: ViewModifier {
             .modifier(PeopleOfficeContextObserversOfficeTail(
                 officeManageJobsContext: $officeManageJobsContext,
                 officeEstimationSettingsContext: $officeEstimationSettingsContext,
-                officePipelineContext: $officePipelineContext
+                officePipelineContext: $officePipelineContext,
+                officeWarehouseExecContext: $officeWarehouseExecContext,
+                officeTeamsRouteContext: $officeTeamsRouteContext,
+                officeReportsHubContext: $officeReportsHubContext
             ))
     }
 }
@@ -1766,6 +1807,9 @@ private struct PeopleOfficeContextObserversOfficeTail: ViewModifier {
     @Binding var officeManageJobsContext: String?
     @Binding var officeEstimationSettingsContext: String?
     @Binding var officePipelineContext: String?
+    @Binding var officeWarehouseExecContext: String?
+    @Binding var officeTeamsRouteContext: String?
+    @Binding var officeReportsHubContext: String?
 
     func body(content: Content) -> some View {
         content
@@ -1787,6 +1831,24 @@ private struct PeopleOfficeContextObserversOfficeTail: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .officePipelinePageInactive)) { _ in
                 officePipelineContext = nil
             }
+            .onReceive(NotificationCenter.default.publisher(for: .officeWarehouseExecPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { officeWarehouseExecContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .officeWarehouseExecPageInactive)) { _ in
+                officeWarehouseExecContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .officeTeamsRoutePageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { officeTeamsRouteContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .officeTeamsRoutePageInactive)) { _ in
+                officeTeamsRouteContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .officeReportsHubPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { officeReportsHubContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .officeReportsHubPageInactive)) { _ in
+                officeReportsHubContext = nil
+            }
     }
 }
 
@@ -1798,6 +1860,8 @@ private struct ReportsContextObservers: ViewModifier {
     @Binding var reportsPrebillingContext: String?
     @Binding var reportsBookkeeperContext: String?
     @Binding var reportsDailySummaryContext: String?
+    @Binding var reportsHubContext: String?
+    @Binding var reportsBuilderContext: String?
 
     func body(content: Content) -> some View {
         content
@@ -1828,7 +1892,9 @@ private struct ReportsContextObservers: ViewModifier {
             .modifier(ReportsContextObserversTail(
                 reportsPrebillingContext: $reportsPrebillingContext,
                 reportsBookkeeperContext: $reportsBookkeeperContext,
-                reportsDailySummaryContext: $reportsDailySummaryContext
+                reportsDailySummaryContext: $reportsDailySummaryContext,
+                reportsHubContext: $reportsHubContext,
+                reportsBuilderContext: $reportsBuilderContext
             ))
     }
 }
@@ -1837,6 +1903,8 @@ private struct ReportsContextObserversTail: ViewModifier {
     @Binding var reportsPrebillingContext: String?
     @Binding var reportsBookkeeperContext: String?
     @Binding var reportsDailySummaryContext: String?
+    @Binding var reportsHubContext: String?
+    @Binding var reportsBuilderContext: String?
 
     func body(content: Content) -> some View {
         content
@@ -1857,6 +1925,18 @@ private struct ReportsContextObserversTail: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .reportsDailySummaryPageInactive)) { _ in
                 reportsDailySummaryContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .reportsHubPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { reportsHubContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .reportsHubPageInactive)) { _ in
+                reportsHubContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .reportsBuilderPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { reportsBuilderContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .reportsBuilderPageInactive)) { _ in
+                reportsBuilderContext = nil
             }
     }
 }
@@ -2126,6 +2206,20 @@ private struct ActivePageIdTrackerOfficeReports: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .officeEstimationSettingsPageInactive)) { _ in if activePageId == "office-estimation-settings" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .officePipelinePageActive)) { _ in activePageId = "office-pipeline" }
             .onReceive(NotificationCenter.default.publisher(for: .officePipelinePageInactive)) { _ in if activePageId == "office-pipeline" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .officeWarehouseExecPageActive)) { _ in activePageId = "office-warehouse-exec" }
+            .onReceive(NotificationCenter.default.publisher(for: .officeWarehouseExecPageInactive)) { _ in if activePageId == "office-warehouse-exec" { activePageId = nil } }
+            .modifier(ActivePageIdTrackerOfficeRouteAliases(activePageId: $activePageId))
+    }
+}
+
+private struct ActivePageIdTrackerOfficeRouteAliases: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .officeTeamsRoutePageActive)) { _ in activePageId = "office-teams" }
+            .onReceive(NotificationCenter.default.publisher(for: .officeTeamsRoutePageInactive)) { _ in if activePageId == "office-teams" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .officeReportsHubPageActive)) { _ in activePageId = "office-reports" }
+            .onReceive(NotificationCenter.default.publisher(for: .officeReportsHubPageInactive)) { _ in if activePageId == "office-reports" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .reportsLaborPageActive)) { _ in activePageId = "reports-labor" }
             .onReceive(NotificationCenter.default.publisher(for: .reportsLaborPageInactive)) { _ in if activePageId == "reports-labor" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .reportsSpendingPageActive)) { _ in activePageId = "reports-spending" }
@@ -2148,6 +2242,10 @@ private struct ActivePageIdTrackerReportsTail: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .reportsBookkeeperPageInactive)) { _ in if activePageId == "reports-bookkeeper" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .reportsDailySummaryPageActive)) { _ in activePageId = "reports-daily-summary" }
             .onReceive(NotificationCenter.default.publisher(for: .reportsDailySummaryPageInactive)) { _ in if activePageId == "reports-daily-summary" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .reportsHubPageActive)) { _ in activePageId = "reports-hub" }
+            .onReceive(NotificationCenter.default.publisher(for: .reportsHubPageInactive)) { _ in if activePageId == "reports-hub" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .reportsBuilderPageActive)) { _ in activePageId = "reports-builder" }
+            .onReceive(NotificationCenter.default.publisher(for: .reportsBuilderPageInactive)) { _ in if activePageId == "reports-builder" { activePageId = nil } }
     }
 }
 

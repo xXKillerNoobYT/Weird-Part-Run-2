@@ -136,6 +136,9 @@ struct HelpContentRegistry {
         "WiredPart.officeManageJobsPageActive": "office-manage-jobs",
         "WiredPart.officeEstimationSettingsPageActive": "office-estimation-settings",
         "WiredPart.officePipelinePageActive": "office-pipeline",
+        "WiredPart.officeWarehouseExecPageActive": "office-warehouse-exec",
+        "WiredPart.officeTeamsRoutePageActive": "office-teams",
+        "WiredPart.officeReportsHubPageActive": "office-reports",
         "WiredPart.reportsLaborPageActive": "reports-labor",
         "WiredPart.reportsSpendingPageActive": "reports-spending",
         "WiredPart.reportsProfitabilityPageActive": "reports-profitability",
@@ -143,6 +146,8 @@ struct HelpContentRegistry {
         "WiredPart.reportsPrebillingPageActive": "reports-prebilling",
         "WiredPart.reportsBookkeeperPageActive": "reports-bookkeeper",
         "WiredPart.reportsDailySummaryPageActive": "reports-daily-summary",
+        "WiredPart.reportsHubPageActive": "reports-hub",
+        "WiredPart.reportsBuilderPageActive": "reports-builder",
         "WiredPart.vehiclesPageActive": "fleet-vehicles",
         "WiredPart.toolRegistryPageActive": "tools-registry",
         "WiredPart.notebooksListPageActive": "notebooks-all",
@@ -860,7 +865,57 @@ struct HelpContentRegistry {
             ]
         ),
 
+        HelpEntry(
+            pageId: "office-warehouse-exec",
+            title: "Warehouse Executive Help",
+            sections: [
+                ("Overview", "High-level warehouse operations dashboard for managers. See pending movements, low stock alerts, receiving sessions, and audit readiness."),
+                ("KPIs", "Cards summarize low stock count, today's movements, total stock units, and pending staging."),
+                ("Quick Actions", "Use New Movement, Start Receiving, and Start Audit to jump to execution workflows."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "office-teams",
+            title: "Office Teams Help",
+            sections: [
+                ("What This Page Does", "Office Teams is a route alias to the shared Teams management page."),
+                ("How to Use It", "Use smart-card filters and search to narrow teams, then open a team to view members and assignments."),
+                ("Tips", "This route uses the same team data and controls as People > Teams."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "office-reports",
+            title: "Office Reports Help",
+            sections: [
+                ("What This Page Does", "Office Reports is a hub that routes to Build Custom Report and the full Reports router."),
+                ("How to Use It", "Choose Build Custom Report for a guided wizard or All Reports for categorized report lists."),
+                ("Tips", "Use this page to choose the reporting path first; detailed report data loads on the destination pages."),
+            ]
+        ),
+
         // ── REPORTS ───────────────────────────────────────────────────────
+
+        HelpEntry(
+            pageId: "reports-hub",
+            title: "Reports Hub Help",
+            sections: [
+                ("What This Page Does", "The Reports Hub organizes reports by category: Labor, Financial, Fleet, Warehouse, Scheduling, Custom, and Shared."),
+                ("How to Use It", "Pick a category at the top, then open a report from the list below."),
+                ("Tips", "Category visibility follows your permissions, so some categories may be hidden."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "reports-builder",
+            title: "Report Builder Help",
+            sections: [
+                ("What This Page Does", "Build a custom report in four steps: Type, Fields, Filters, and Results."),
+                ("How to Use It", "Select a report type, choose columns, set dates, generate rows, then export or save."),
+                ("Tips", "Start broad with more columns, then trim fields once you validate the result set."),
+            ]
+        ),
 
         HelpEntry(
             pageId: "reports-labor",
