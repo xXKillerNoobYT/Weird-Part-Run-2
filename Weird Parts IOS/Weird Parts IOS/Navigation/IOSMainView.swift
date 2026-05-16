@@ -55,6 +55,8 @@ struct IOSMainView: View {
     // Tab-view layout still uses separate booleans since sheets are on different NavigationStacks
     @State private var showTabEditor = false
     @State private var showUserMenu = false
+    @State private var moreNavigationPath: [String] = []
+    @State private var pendingTabSelections: [String: String] = [:]
 
     /// Modules visible to the current user (permission-filtered, no settings on mobile).
     private var filteredModules: [AppModule] {
@@ -134,6 +136,9 @@ struct IOSMainView: View {
         .onReceive(NotificationCenter.default.publisher(for: .navigateToModule)) { notification in
             if let moduleId = notification.userInfo?["moduleId"] as? String {
                 let tabId = notification.userInfo?["tabId"] as? String
+                if let tabId {
+                    pendingTabSelections[moduleId] = tabId
+                }
                 if tabPrefs.navigationStyle == .fullSidebar {
                     // Navigate within full sidebar
                     expandedModuleId = moduleId
@@ -146,7 +151,12 @@ struct IOSMainView: View {
                         }
                     }
                 } else {
-                    selectedModuleId = moduleId
+                    if primaryModules.contains(where: { $0.id == moduleId }) {
+                        selectedModuleId = moduleId
+                    } else if overflowModules.contains(where: { $0.id == moduleId }) {
+                        selectedModuleId = "__more__"
+                        moreNavigationPath = [moduleId]
+                    }
                 }
             }
         }
@@ -159,7 +169,11 @@ struct IOSMainView: View {
         TabView(selection: $selectedModuleId) {
             ForEach(primaryModules) { module in
                 NavigationStack {
-                    ModuleHostView(module: module, showLogoutConfirm: $showLogoutConfirm)
+                    ModuleHostView(
+                        module: module,
+                        showLogoutConfirm: $showLogoutConfirm,
+                        initialTabId: pendingTabSelections[module.id]
+                    )
                         .environmentObject(appCore)
                         .environmentObject(tabPrefs)
                 }
@@ -489,7 +503,7 @@ struct IOSMainView: View {
 
     @ViewBuilder
     private var moreTab: some View {
-        NavigationStack {
+        NavigationStack(path: $moreNavigationPath) {
             List {
                 // Overflow modules
                 if !overflowModules.isEmpty {
@@ -528,7 +542,11 @@ struct IOSMainView: View {
             }
             .navigationDestination(for: String.self) { moduleId in
                 if let module = allModulesById[moduleId] {
-                    ModuleHostView(module: module, showLogoutConfirm: $showLogoutConfirm)
+                    ModuleHostView(
+                        module: module,
+                        showLogoutConfirm: $showLogoutConfirm,
+                        initialTabId: pendingTabSelections[module.id]
+                    )
                         .environmentObject(appCore)
                         .environmentObject(tabPrefs)
                 }
@@ -548,6 +566,7 @@ struct IOSMainView: View {
 struct ModuleHostView: View {
     let module: AppModule
     @Binding var showLogoutConfirm: Bool
+    let initialTabId: String?
     @EnvironmentObject private var appCore: AppCore
     @EnvironmentObject private var tabPrefs: TabBarPreferences
     @State private var selectedTabId: String = ""
@@ -561,6 +580,12 @@ struct ModuleHostView: View {
     /// Whether to use sidebar layout — requires sidebar preference AND more than 1 tab.
     private var useSidebar: Bool {
         tabPrefs.navigationStyle == .sidebar && visibleTabsList.count > 1
+    }
+
+    init(module: AppModule, showLogoutConfirm: Binding<Bool>, initialTabId: String? = nil) {
+        self.module = module
+        self._showLogoutConfirm = showLogoutConfirm
+        self.initialTabId = initialTabId
     }
 
     var body: some View {
@@ -590,9 +615,18 @@ struct ModuleHostView: View {
                 .presentationDragIndicator(.visible)
         }
         .onAppear {
-            if selectedTabId.isEmpty, let first = visibleTabsList.first {
+            if let initialTabId,
+               visibleTabsList.contains(where: { $0.id == initialTabId }) {
+                selectedTabId = initialTabId
+            } else if selectedTabId.isEmpty, let first = visibleTabsList.first {
                 selectedTabId = first.id
             }
+        }
+        .onChange(of: initialTabId) {
+            guard let initialTabId,
+                  visibleTabsList.contains(where: { $0.id == initialTabId })
+            else { return }
+            selectedTabId = initialTabId
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToModule)) { notification in
             guard notification.userInfo?["moduleId"] as? String == module.id,
