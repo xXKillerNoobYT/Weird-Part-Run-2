@@ -1439,6 +1439,10 @@ private struct QueueSendForVerificationSheet: View {
             )
             onSent()
             dismiss()
+        } catch WarehouseService.WarehouseError.noEligibleVerificationCounters {
+            errorMessage = "No eligible active users are available to assign verification counts."
+        } catch WarehouseService.WarehouseError.partAlreadyFlaggedForVerification {
+            errorMessage = "This part is already flagged for verification in the current audit session."
         } catch WarehouseService.WarehouseError.invalidQuantity {
             errorMessage = "Expected quantity must be 0 or greater."
         } catch {

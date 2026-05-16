@@ -854,4 +854,52 @@ struct WarehouseAuditTests {
         let withFilter = try env.warehouse.getLowConfidencePartsForVerification(threshold: 40.0, sessionId: sessionId)
         #expect(!withFilter.contains { $0.partId == partId })
     }
+
+    @Test("flagForMultiUserAudit throws noEligibleVerificationCounters when no users can be assigned")
+    func testFlagForMultiUserAuditNoEligibleCounters() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 3)
+
+        #expect(throws: WarehouseService.WarehouseError.noEligibleVerificationCounters) {
+            _ = try env.warehouse.flagForMultiUserAudit(
+                partId: partId,
+                expectedQty: 3,
+                sessionId: nil,
+                flaggedBy: env.adminUserId,
+                requiredCounts: 2
+            )
+        }
+    }
+
+    @Test("flagForMultiUserAudit throws partAlreadyFlaggedForVerification for duplicate session send")
+    func testFlagForMultiUserAuditAlreadyFlaggedInSession() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 6)
+        _ = try env.auth.createUser(displayName: "Counter D", pin: "2222")
+
+        let auditSession = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+        let sessionId = auditSession.id!
+
+        _ = try env.warehouse.flagForMultiUserAudit(
+            partId: partId,
+            expectedQty: 6,
+            sessionId: sessionId,
+            flaggedBy: nil,
+            requiredCounts: 2
+        )
+
+        #expect(throws: WarehouseService.WarehouseError.partAlreadyFlaggedForVerification(partId: partId, sessionId: sessionId)) {
+            _ = try env.warehouse.flagForMultiUserAudit(
+                partId: partId,
+                expectedQty: 6,
+                sessionId: sessionId,
+                flaggedBy: nil,
+                requiredCounts: 2
+            )
+        }
+    }
 }

@@ -35,6 +35,8 @@ public final class WarehouseService: Sendable {
         case areaNotFound(Int64)
         case unitNotFound(Int64)
         case levelNotFound(Int64)
+        case noEligibleVerificationCounters
+        case partAlreadyFlaggedForVerification(partId: Int64, sessionId: Int64?)
     }
 
     // =========================================================================
@@ -998,7 +1000,7 @@ public final class WarehouseService: Sendable {
         destinationLabel: String? = nil,
         taggedBy: Int64
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        return try db.writer.write { dbConn in
             // Guard: the tagging user must exist and not be tombstoned.
             // stockId points at the `stock` table which is soft-deletable but
             // staging tags historically track pulls from specific stock rows —
@@ -1023,7 +1025,7 @@ public final class WarehouseService: Sendable {
 
     /// Clear a staging tag (mark as deleted).
     public func clearStagingTag(id: Int64) throws {
-        try db.writer.write { dbConn in
+        return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: "UPDATE pulled_staging_tags SET deleted_at = datetime('now') WHERE id = ?",
                 arguments: [id]
@@ -4811,7 +4813,23 @@ public final class WarehouseService: Sendable {
         flaggedBy: Int64? = nil,
         requiredCounts: Int = 2
     ) throws -> [MultiUserAuditAssignment] {
-        try db.writer.write { dbConn in
+        guard expectedQty >= 0 else { throw WarehouseError.invalidQuantity }
+        return try db.writer.write { dbConn in
+            if let sessionId {
+                let existingCount = try Int.fetchOne(
+                    dbConn,
+                    sql: """
+                        SELECT COUNT(*)
+                        FROM multi_user_audit_assignments
+                        WHERE part_id = ? AND audit_session_id = ?
+                    """,
+                    arguments: [partId, sessionId]
+                ) ?? 0
+                if existingCount > 0 {
+                    throw WarehouseError.partAlreadyFlaggedForVerification(partId: partId, sessionId: sessionId)
+                }
+            }
+
             // Get part info
             let partRow = try Row.fetchOne(dbConn, sql: """
                 SELECT p.name, COALESCE(wpa.area_id, 0) AS area_id,
@@ -4869,6 +4887,10 @@ public final class WarehouseService: Sendable {
                 )
                 try assignment.insert(dbConn)
                 assignments.append(assignment)
+            }
+
+            if assignments.isEmpty {
+                throw WarehouseError.noEligibleVerificationCounters
             }
 
             return assignments
