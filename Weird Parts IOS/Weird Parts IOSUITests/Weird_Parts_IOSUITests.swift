@@ -490,14 +490,9 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
         let loginView = app.otherElements["loginView"]
         if loginView.waitForExistence(timeout: 30) || app.staticTexts["UITest Owner"].waitForExistence(timeout: 5) {
-            let userRows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'loginUserRow_'"))
-            if userRows.firstMatch.waitForExistence(timeout: 10) {
-                userRows.firstMatch.tap()
-            } else {
-                let ownerLabel = app.staticTexts["UITest Owner"]
-                XCTAssertTrue(ownerLabel.waitForExistence(timeout: 10), "UITest Owner should be seeded")
-                ownerLabel.tap()
-            }
+            let ownerLabel = app.staticTexts["UITest Owner"]
+            XCTAssertTrue(ownerLabel.waitForExistence(timeout: 10), "UITest Owner should be seeded")
+            ownerLabel.tap()
 
             let pinField = app.secureTextFields["loginPINField"]
             XCTAssertTrue(pinField.waitForExistence(timeout: 5), "PIN field should appear")

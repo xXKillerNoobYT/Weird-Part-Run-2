@@ -717,8 +717,33 @@ final class AppCore: ObservableObject {
             }
         )
         let ownerId = usersByName["UITest Owner"] ?? 1
-        let counterAId = try (usersByName["UITest Counter A"] ?? authService.createUser(displayName: "UITest Counter A", pin: "1234"))
-        let counterBId = try (usersByName["UITest Counter B"] ?? authService.createUser(displayName: "UITest Counter B", pin: "1234"))
+        // Use distinct PINs for non-owner fixture users so "UITest Owner" remains
+        // the deterministic login when QA follows the shared 1234 credentials.
+        let counterAId = try (usersByName["UITest Counter A"] ?? authService.createUser(displayName: "UITest Counter A", pin: "2234"))
+        let counterBId = try (usersByName["UITest Counter B"] ?? authService.createUser(displayName: "UITest Counter B", pin: "3234"))
+
+        // Defensive permission upsert for existing databases where prior fixture runs
+        // may have left the owner under-scoped.
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+                    SELECT uh.hat_id, ?
+                    FROM user_hats uh
+                    WHERE uh.user_id = ? AND uh.is_active = 1 AND uh.deleted_at IS NULL
+                    """,
+                arguments: ["view_warehouse", ownerId]
+            )
+            try dbConn.execute(
+                sql: """
+                    INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+                    SELECT uh.hat_id, ?
+                    FROM user_hats uh
+                    WHERE uh.user_id = ? AND uh.is_active = 1 AND uh.deleted_at IS NULL
+                    """,
+                arguments: ["perform_audit", ownerId]
+            )
+        }
 
         let existingCategoryId: Int64? = try db.writer.read { dbConn in
             try Int64.fetchOne(
