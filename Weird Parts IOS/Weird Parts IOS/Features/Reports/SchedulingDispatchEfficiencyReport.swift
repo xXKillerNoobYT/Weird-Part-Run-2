@@ -107,6 +107,10 @@ struct SchedulingDispatchEfficiencyReport: View {
         .task { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .reportsSchedulingDispatchEfficiencyPageInactive, object: nil)
+        }
     }
 
     private var avgEfficiency: Double {
@@ -132,5 +136,13 @@ struct SchedulingDispatchEfficiencyReport: View {
             loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let context = """
+        Scheduling Dispatch Efficiency report page. Rows: \(efficiencyData.count). Date range: \(startDate.formatted(date: .abbreviated, time: .omitted)) to \(endDate.formatted(date: .abbreviated, time: .omitted)). Avg completion efficiency: \(String(format: "%.2f", avgEfficiency)). Total scheduled: \(totalScheduled). Total completed: \(totalCompleted). Error state: \(loadError ?? "none"). Available read-only actions: summarize dispatch completion rates, highlight low-efficiency days, explain scheduled vs completed deltas.
+        """
+        NotificationCenter.default.post(name: .reportsSchedulingDispatchEfficiencyPageActive, object: nil, userInfo: ["context": context])
     }
 }

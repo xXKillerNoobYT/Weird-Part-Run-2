@@ -105,6 +105,10 @@ struct SchedulingCrewUtilizationReport: View {
         .task { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .reportsSchedulingCrewUtilizationPageInactive, object: nil)
+        }
     }
 
     private var avgUtilization: Double {
@@ -129,5 +133,13 @@ struct SchedulingCrewUtilizationReport: View {
             loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let context = """
+        Scheduling Crew Utilization report page. Employee rows: \(utilizationData.count). Date range: \(startDate.formatted(date: .abbreviated, time: .omitted)) to \(endDate.formatted(date: .abbreviated, time: .omitted)). Avg utilization: \(String(format: "%.2f", avgUtilization)). Total scheduled hours: \(String(format: "%.1f", totalHours)). Error state: \(loadError ?? "none"). Available read-only actions: summarize crew load balance, identify underbooked or overloaded utilization, explain scheduled-hours trends.
+        """
+        NotificationCenter.default.post(name: .reportsSchedulingCrewUtilizationPageActive, object: nil, userInfo: ["context": context])
     }
 }

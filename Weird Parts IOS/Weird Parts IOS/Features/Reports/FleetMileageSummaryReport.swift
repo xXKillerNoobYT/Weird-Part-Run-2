@@ -102,6 +102,10 @@ struct FleetMileageSummaryReport: View {
         .task { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .reportsFleetMileageSummaryPageInactive, object: nil)
+        }
     }
 
     private var totalMiles: Double { mileageData.reduce(0) { $0 + $1.totalMiles } }
@@ -124,5 +128,13 @@ struct FleetMileageSummaryReport: View {
             loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let context = """
+        Fleet Mileage Summary report page. Vehicles with logs: \(mileageData.count). Date range: \(startDate.formatted(date: .abbreviated, time: .omitted)) to \(endDate.formatted(date: .abbreviated, time: .omitted)). Total miles: \(String(format: "%.1f", totalMiles)). Total trips: \(totalTrips). Avg miles per trip: \(String(format: "%.1f", avgMilesPerTrip)). Error state: \(loadError ?? "none"). Available read-only actions: summarize mileage distribution, compare trip density by vehicle, explain utilization from miles/trips.
+        """
+        NotificationCenter.default.post(name: .reportsFleetMileageSummaryPageActive, object: nil, userInfo: ["context": context])
     }
 }

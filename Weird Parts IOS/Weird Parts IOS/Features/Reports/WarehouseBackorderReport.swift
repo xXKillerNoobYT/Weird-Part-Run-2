@@ -105,6 +105,10 @@ struct WarehouseBackorderReport: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .reportsWarehouseBackorderStatusPageInactive, object: nil)
+        }
     }
 
     private var totalBackordered: Int { backorderData.reduce(0) { $0 + $1.qtyBackordered } }
@@ -123,5 +127,13 @@ struct WarehouseBackorderReport: View {
             loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let context = """
+        Warehouse Backorder Status report page. Backorder rows: \(backorderData.count). Total outstanding qty: \(totalBackordered). Error state: \(loadError ?? "none"). Available read-only actions: summarize outstanding part risk, identify top pending items, explain ordered vs received status.
+        """
+        NotificationCenter.default.post(name: .reportsWarehouseBackorderStatusPageActive, object: nil, userInfo: ["context": context])
     }
 }

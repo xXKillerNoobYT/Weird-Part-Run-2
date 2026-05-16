@@ -95,6 +95,10 @@ struct WarehouseInventoryValueReport: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .reportsWarehouseInventoryValuePageInactive, object: nil)
+        }
     }
 
     private var totalOnHand: Double { valueData.reduce(0) { $0 + $1.onHandValue } }
@@ -114,5 +118,13 @@ struct WarehouseInventoryValueReport: View {
             loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let context = """
+        Warehouse Inventory Value report page. Category rows: \(valueData.count). On-hand value total: \(String(format: "%.2f", totalOnHand)). On-order value total: \(String(format: "%.2f", totalOnOrder)). Combined value: \(String(format: "%.2f", totalOnHand + totalOnOrder)). Error state: \(loadError ?? "none"). Available read-only actions: summarize inventory value concentration, explain on-hand vs on-order mix, identify high-value categories.
+        """
+        NotificationCenter.default.post(name: .reportsWarehouseInventoryValuePageActive, object: nil, userInfo: ["context": context])
     }
 }
