@@ -18,6 +18,7 @@ struct WarehouseDashboardPage: View {
     @State private var loadError: String?
     @State private var selectedFilter: DashboardFilter?
     @State private var activeSheet: ActiveSheet?
+    @State private var myVerificationCount = 0
 
     private enum DashboardFilter: String, CaseIterable {
         case movements = "Movements Today"
@@ -470,6 +471,12 @@ struct WarehouseDashboardPage: View {
                 GridItem(.flexible(), spacing: 10),
             ], spacing: 10) {
                 subPageLink(title: "Audit", icon: "clipboard", color: .orange, moduleId: "warehouse-audit")
+                subPageLink(
+                    title: myVerificationCount > 0 ? "My Verifications · \(myVerificationCount)" : "My Verifications",
+                    icon: "person.2.badge.gearshape",
+                    color: myVerificationCount > 0 ? .red : .blue,
+                    moduleId: "warehouse-audit"
+                )
                 subPageLink(title: "Staging", icon: "shippingbox.and.arrow.backward", color: .blue, moduleId: "warehouse-staging")
                 subPageLink(title: "Receiving", icon: "arrow.down.circle", color: .green, moduleId: "warehouse-receiving")
                 subPageLink(title: "Inventory", icon: "square.grid.3x3", color: .purple, moduleId: "warehouse-inventory")
@@ -625,6 +632,11 @@ struct WarehouseDashboardPage: View {
             dashKPIs = try service.getDashboardKPIs()
             auditSummary = try service.getAuditSummary()
             recentMovements = try service.listMovements(limit: 10)
+            if let userId = appCore.currentUser?.id {
+                myVerificationCount = try service.getMyMultiUserAuditAssignments(userId: userId).count
+            } else {
+                myVerificationCount = 0
+            }
             postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load warehouse dashboard")

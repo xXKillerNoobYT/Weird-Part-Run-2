@@ -54,6 +54,7 @@ struct IOSAuditPage: View {
         case misplacedPart
         case countDetail(CountResult)
         case sessionSummary(AuditSessionV2)
+        case myVerifications
         case help
 
         var id: String {
@@ -62,6 +63,7 @@ struct IOSAuditPage: View {
             case .misplacedPart: "misplaced"
             case .countDetail: "countDetail"
             case .sessionSummary(let s): "summary-\(s.id ?? 0)"
+            case .myVerifications: "myVerifications"
             case .help: "help"
             }
         }
@@ -137,6 +139,26 @@ struct IOSAuditPage: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
+                    activeSheet = .myVerifications
+                } label: {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: "bell")
+                        if !myMultiUserAssignments.isEmpty {
+                            Text("\(myMultiUserAssignments.count)")
+                                .font(.caption2)
+                                .fontWeight(.bold)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(Color.red))
+                                .foregroundStyle(.white)
+                                .offset(x: 10, y: -10)
+                        }
+                    }
+                }
+                .accessibilityLabel("My verifications")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
                     startNewSession()
                 } label: {
                     Label("Start Audit", systemImage: "plus")
@@ -203,6 +225,11 @@ struct IOSAuditPage: View {
         case .sessionSummary(let session):
             SessionSummarySheet(session: session)
                 .environmentObject(appCore)
+        case .myVerifications:
+            NavigationStack {
+                IOSMyVerificationsPage()
+                    .environmentObject(appCore)
+            }
         case .help:
             PageHelpSheet(
                 title: "Warehouse Audit Help",

@@ -21,6 +21,7 @@ struct IOSAuditSummaryView: View {
     @State private var actionError: String?
     @State private var showFinalizeConfirm = false
     @State private var selectedDiscrepancy: WarehouseService.AuditDiscrepancy?
+    @State private var selectedDiscrepancyForVerification: WarehouseService.AuditDiscrepancy?
     @State private var showResolveConfirm = false
     @State private var partToResolve: WarehouseService.MultiUserAuditPartSummary?
 
@@ -64,6 +65,13 @@ struct IOSAuditSummaryView: View {
         .sheet(item: $selectedDiscrepancy) { disc in
             AdjustDiscrepancySheet(discrepancy: disc) { loadData() }
                 .environmentObject(appCore)
+        }
+        .sheet(item: $selectedDiscrepancyForVerification) { disc in
+            SendForVerificationSheet(discrepancy: disc, sessionId: sessionId) {
+                selectedDiscrepancyForVerification = nil
+                loadData()
+            }
+            .environmentObject(appCore)
         }
         .task { loadData() }
     }
@@ -153,12 +161,25 @@ struct IOSAuditSummaryView: View {
             } else {
                 Section("Discrepancies (\(discrepancies.count))") {
                     ForEach(discrepancies, id: \.partId) { item in
-                        Button {
-                            selectedDiscrepancy = item
-                        } label: {
-                            discrepancyRow(item)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Button {
+                                selectedDiscrepancy = item
+                            } label: {
+                                discrepancyRow(item)
+                            }
+                            .buttonStyle(.plain)
+
+                            if !hasMultiUserAssignment(for: item.partId) {
+                                Button {
+                                    selectedDiscrepancyForVerification = item
+                                } label: {
+                                    Label("Send for verification", systemImage: "person.2.badge.gearshape")
+                                        .font(.caption)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -322,6 +343,10 @@ struct IOSAuditSummaryView: View {
         case "resolved": return .green
         default: return .secondary
         }
+    }
+
+    private func hasMultiUserAssignment(for partId: Int64) -> Bool {
+        multiUserSummaries.contains { $0.partId == partId && !$0.isResolved }
     }
 
     // MARK: - Actions
