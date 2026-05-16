@@ -5,6 +5,7 @@ import SwiftUI
 struct OnboardingBanner: View {
     let pageId: String
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         if let onboardingManager = appCore.onboardingManager {
@@ -36,9 +37,13 @@ struct OnboardingBanner: View {
                             Text(task.title)
                                 .font(.caption)
                                 .fontWeight(.medium)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                                .fixedSize(horizontal: false, vertical: true)
                             Text(task.description)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 3)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
@@ -55,6 +60,8 @@ struct OnboardingBanner: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .strikethrough()
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }

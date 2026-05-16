@@ -10,6 +10,7 @@ import WiredPartCore
 /// All data is fetched on appear, supports pull-to-refresh, and auto-refreshes every 60s.
 struct DashboardView: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     // KPI + alerts state
     @State private var stats = DashboardStats()
@@ -370,10 +371,13 @@ struct DashboardView: View {
                     .fontWeight(.medium)
                     .strikethrough(isComplete)
                     .foregroundStyle(isComplete ? .secondary : .primary)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer()
@@ -1037,7 +1041,6 @@ private struct VehicleAlert: Sendable {
     let vehicleNumber: String
     let alertMessage: String
 }
-
 
 
 
