@@ -478,6 +478,12 @@ extension Notification.Name {
     /// Posted when the Employees page disappears.
     static let employeesPageInactive = Notification.Name("WiredPart.employeesPageInactive")
 
+    /// Posted when an employee detail page appears, with read-only employee context for AI.
+    static let employeeDetailPageActive = Notification.Name("WiredPart.employeeDetailPageActive")
+
+    /// Posted when an employee detail page disappears.
+    static let employeeDetailPageInactive = Notification.Name("WiredPart.employeeDetailPageInactive")
+
     /// Posted when the People Dashboard page appears, with workforce summary context for AI.
     static let peopleDashboardPageActive = Notification.Name("WiredPart.peopleDashboardPageActive")
 
@@ -699,6 +705,32 @@ extension Notification.Name {
 
     /// Posted when the Vehicles page disappears.
     static let vehiclesPageInactive = Notification.Name("WiredPart.vehiclesPageInactive")
+
+    /// Posted when the Fleet Dashboard page appears, with read-only fleet KPI context for AI.
+    static let fleetDashboardPageActive = Notification.Name("WiredPart.fleetDashboardPageActive")
+
+    /// Posted when the Fleet Dashboard page disappears.
+    static let fleetDashboardPageInactive = Notification.Name("WiredPart.fleetDashboardPageInactive")
+
+    /// Posted when the Fleet Maintenance page appears, with read-only maintenance list context for AI.
+    static let fleetMaintenancePageActive = Notification.Name("WiredPart.fleetMaintenancePageActive")
+
+    /// Posted when the Fleet Maintenance page disappears.
+    static let fleetMaintenancePageInactive = Notification.Name("WiredPart.fleetMaintenancePageInactive")
+
+    // MARK: - Additional Parts
+
+    /// Posted when the Parts Brands page appears, with read-only brand coverage context for AI.
+    static let partsBrandsPageActive = Notification.Name("WiredPart.partsBrandsPageActive")
+
+    /// Posted when the Parts Brands page disappears.
+    static let partsBrandsPageInactive = Notification.Name("WiredPart.partsBrandsPageInactive")
+
+    /// Posted when the Parts Categories page appears, with read-only hierarchy context for AI.
+    static let partsCategoriesPageActive = Notification.Name("WiredPart.partsCategoriesPageActive")
+
+    /// Posted when the Parts Categories page disappears.
+    static let partsCategoriesPageInactive = Notification.Name("WiredPart.partsCategoriesPageInactive")
 
     // MARK: - Tools
 

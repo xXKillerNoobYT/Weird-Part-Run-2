@@ -46,6 +46,12 @@ struct IOSEmployeeDetailPage: View {
         .navigationTitle(employee?.displayName ?? "Employee")
         .refreshable { loadData() }
         .task { loadData() }
+        .onChange(of: selectedTab) { _, _ in
+            postPageContext()
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .employeeDetailPageInactive, object: nil)
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Edit") { activeSheet = .editContact }
@@ -761,6 +767,7 @@ struct IOSEmployeeDetailPage: View {
         guard let service = appCore.peopleService else {
             isLoading = false
             loadError = "People service unavailable"
+            postPageContext()
             return
         }
         isLoading = employee == nil
@@ -790,6 +797,19 @@ struct IOSEmployeeDetailPage: View {
             loadError = userFriendlyError(error, context: "load employee details")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let employeeName = employee?.displayName ?? "unknown"
+        let skillsCount = employee?.skills.count ?? 0
+        let teamsCount = employee?.teams.count ?? 0
+        let certificationsCount = employee?.certifications.count ?? 0
+        let assignedHats = allHats.filter(\.isAssigned).count
+        let context = """
+        Employee Detail page. Employee ID: \(employeeId). Employee name: \(employeeName). Selected tab: \(selectedTab). Skills: \(skillsCount). Teams: \(teamsCount). Certifications: \(certificationsCount). Assigned hats: \(assignedHats). Recent activity rows: \(activity.count). Manage hats permission: \(canManageHats ? "granted" : "not granted"). Load error: \(loadError ?? "none"). Activity error: \(activityError ?? "none"). Available read-only actions: summarize employee profile status, describe current tab details, identify missing profile completeness items.
+        """
+        NotificationCenter.default.post(name: .employeeDetailPageActive, object: nil, userInfo: ["context": context])
     }
 }
 

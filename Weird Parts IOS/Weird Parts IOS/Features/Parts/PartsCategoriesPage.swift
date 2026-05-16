@@ -74,6 +74,9 @@ struct PartsCategoriesPage: View {
             appCore.onboardingManager?.markCompleted("categories-browse")
         }
         .refreshable { await loadHierarchy() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .partsCategoriesPageInactive, object: nil)
+        }
         // Auto-refresh when any hierarchy data changes (safety net for notification-based updates)
         .onDataChange(.partsHierarchy) {
             await loadHierarchy()
@@ -154,13 +157,23 @@ struct PartsCategoriesPage: View {
                 isLoading = false
                 loadError = nil
                 dataVersion += 1
+                postPageContext()
             }
         } catch {
             await MainActor.run {
                 loadError = userFriendlyError(error, context: "load categories")
                 isLoading = false
+                postPageContext()
             }
         }
+    }
+
+    private func postPageContext() {
+        let selectedNode = selection.map { String(describing: $0) } ?? "none"
+        let context = """
+        Parts Categories page. Top-level categories: \(hierarchy.categories.count). Current selection: \(selectedNode). Expanded categories: \(expandedCategories.count). Expanded styles: \(expandedStyles.count). Expanded types: \(expandedTypes.count). Expanded brands: \(expandedBrands.count). Error state: \(loadError ?? "none"). Available read-only actions: summarize hierarchy coverage, explain current drill-down state, identify sparse branches in the category tree.
+        """
+        NotificationCenter.default.post(name: .partsCategoriesPageActive, object: nil, userInfo: ["context": context])
     }
 }
 
@@ -194,4 +207,3 @@ extension TreeSelection: Hashable {
 #Preview {
     PartsCategoriesPage()
 }
-

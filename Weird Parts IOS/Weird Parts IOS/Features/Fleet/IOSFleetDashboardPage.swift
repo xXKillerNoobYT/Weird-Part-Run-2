@@ -40,6 +40,9 @@ struct IOSFleetDashboardPage: View {
         .navigationTitle("Fleet Dashboard")
         .refreshable { loadData() }
         .background(DS.Background.page)
+        .onDisappear {
+            NotificationCenter.default.post(name: .fleetDashboardPageInactive, object: nil)
+        }
         .task {
             loadData()
             appCore.onboardingManager?.markCompleted("fleet-dashboard-view")
@@ -528,5 +531,17 @@ struct IOSFleetDashboardPage: View {
         }
 
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let totalVehicles = dashStats?.totalVehicles ?? 0
+        let activeVehicles = dashStats?.activeVehicles ?? 0
+        let maintenanceDue = dashStats?.maintenanceDue ?? 0
+        let overdueInspections = dashStats?.overdueInspections ?? 0
+        let context = """
+        Fleet Dashboard page. Total vehicles: \(totalVehicles). Active vehicles: \(activeVehicles). Maintenance due: \(maintenanceDue). Overdue inspections: \(overdueInspections). Vehicles listed: \(vehicles.count). Upcoming maintenance rows: \(upcomingMaintenance.count). Recent maintenance rows: \(recentMaintenance.count). Error state: \(loadError ?? "none"). Available read-only actions: summarize fleet health, identify inspection/maintenance risk, explain dashboard KPI trends.
+        """
+        NotificationCenter.default.post(name: .fleetDashboardPageActive, object: nil, userInfo: ["context": context])
     }
 }

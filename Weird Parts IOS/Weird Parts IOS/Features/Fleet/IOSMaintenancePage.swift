@@ -48,6 +48,9 @@ struct IOSMaintenancePage: View {
             .onChange(of: dateRange) { loadData() }
             .onChange(of: customStart) { loadData() }
             .onChange(of: customEnd) { loadData() }
+            .onDisappear {
+                NotificationCenter.default.post(name: .fleetMaintenancePageInactive, object: nil)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
@@ -168,5 +171,15 @@ struct IOSMaintenancePage: View {
             loadError = userFriendlyError(error, context: "load maintenance data")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let context = """
+        Fleet Maintenance page. Records loaded: \(records.count). Search: \(searchText.isEmpty ? "none" : searchText). Date range: \(formatter.string(from: effectiveStart)) to \(formatter.string(from: effectiveEnd)). Error state: \(loadError ?? "none"). Available read-only actions: summarize maintenance workload, identify high-cost or high-frequency records, explain date-filtered service history.
+        """
+        NotificationCenter.default.post(name: .fleetMaintenancePageActive, object: nil, userInfo: ["context": context])
     }
 }
