@@ -367,7 +367,7 @@ struct IOSAuditPage: View {
             if isMultiUserVerificationFixtureEnabled {
                 Section("QA Fixture") {
                     if let fixtureItem = fixtureVerificationItem {
-                        HStack {
+                        VStack(alignment: .leading, spacing: 10) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(fixtureItem.partName)
                                     .font(.subheadline)
@@ -376,9 +376,11 @@ struct IOSAuditPage: View {
                                     .font(.system(.caption, design: .monospaced))
                                     .foregroundStyle(.secondary)
                             }
-                            Spacer()
-                            Button("Verify") {
+                            Button {
                                 selectedItemForVerification = fixtureItem
+                            } label: {
+                                Label("Verify Fixture Part", systemImage: "person.2.badge.gearshape")
+                                    .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(.orange)
