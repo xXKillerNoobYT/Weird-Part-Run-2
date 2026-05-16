@@ -13,6 +13,7 @@ import os.log
 final class AppCore: ObservableObject {
     private static let uiTestingLaunchFlag = "-UITesting"
     private static let uiTestingPreserveDatabaseFlag = "-UITestingPreserveDatabase"
+    private static let uiTestingMultiUserVerificationFixtureFlag = "-UITestingMultiUserVerificationFixture"
 
     // MARK: - Published State
 
@@ -695,5 +696,149 @@ final class AppCore: ObservableObject {
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
         UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+
+        try seedMultiUserVerificationFixturesIfRequested(db: db, authService: authService)
+    }
+
+    nonisolated private static func seedMultiUserVerificationFixturesIfRequested(
+        db: AppDatabase,
+        authService: AuthService
+    ) throws {
+        guard ProcessInfo.processInfo.arguments.contains("-UITestingMultiUserVerificationFixture") else { return }
+
+        let partsService = PartsService(db: db, auth: authService)
+        let warehouseService = WarehouseService(db: db)
+        let now = ISO8601DateFormatter().string(from: Date())
+
+        let usersByName: [String: Int64] = try Dictionary(
+            uniqueKeysWithValues: authService.getActiveUsers().compactMap { user in
+                guard let id = user.id else { return nil }
+                return (user.displayName, id)
+            }
+        )
+        let ownerId = usersByName["UITest Owner"] ?? 1
+        let counterAId = try (usersByName["UITest Counter A"] ?? authService.createUser(displayName: "UITest Counter A", pin: "1234"))
+        let counterBId = try (usersByName["UITest Counter B"] ?? authService.createUser(displayName: "UITest Counter B", pin: "1234"))
+
+        let existingCategoryId: Int64? = try db.writer.read { dbConn in
+            try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM part_categories WHERE name = ? AND deleted_at IS NULL LIMIT 1",
+                arguments: ["UITest Warehouse"]
+            )
+        }
+        let categoryId = try existingCategoryId ?? partsService.createCategory(
+            name: "UITest Warehouse",
+            description: "UI test fixtures"
+        )
+
+        let existingPartId: Int64? = try db.writer.read { dbConn in
+            try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM parts WHERE code = ? AND deleted_at IS NULL LIMIT 1",
+                arguments: ["UITEST-MUV-001"]
+            )
+        }
+        let partId = try existingPartId ?? partsService.createPart(
+            categoryId: categoryId,
+            name: "UITest Verification Part",
+            code: "UITEST-MUV-001",
+            companyCostPrice: 1.25,
+            minStockLevel: 1,
+            maxStockLevel: 25,
+            targetStockLevel: 12
+        )
+
+        let stockId = try db.writer.write { dbConn -> Int64 in
+            if let existing: Int64 = try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM stock WHERE part_id = ? AND location_type = 'warehouse' AND location_id = 1 AND deleted_at IS NULL LIMIT 1",
+                arguments: [partId]
+            ) {
+                try dbConn.execute(
+                    sql: "UPDATE stock SET qty = 12, updated_at = datetime('now') WHERE id = ?",
+                    arguments: [existing]
+                )
+                return existing
+            }
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO stock (part_id, location_type, location_id, qty, updated_at)
+                    VALUES (?, 'warehouse', 1, 12, datetime('now'))
+                    """,
+                arguments: [partId]
+            )
+            return dbConn.lastInsertedRowID
+        }
+
+        try warehouseService.recordAuditCount(stockId: stockId, countedQty: 9)
+        let sessionId = try warehouseService.createAuditSession(
+            scope: "cycle_count",
+            zone: "UITest Zone",
+            sampleSize: 1,
+            includeZeroStock: false,
+            notes: "UITest multi-user verification fixture",
+            userId: ownerId
+        )
+
+        _ = try warehouseService.flagForMultiUserAudit(
+            partId: partId,
+            expectedQty: 12,
+            sessionId: sessionId,
+            flaggedBy: ownerId,
+            requiredCounts: 2
+        )
+
+        try db.writer.write { dbConn in
+            // Ensure a deterministic pending assignment for the default UI-test login user.
+            let ownerPendingCount = try Int.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT COUNT(*)
+                    FROM multi_user_audit_assignments
+                    WHERE part_id = ? AND audit_session_id = ? AND assigned_user_id = ? AND status = 'pending'
+                    """,
+                arguments: [partId, sessionId, ownerId]
+            ) ?? 0
+            if ownerPendingCount == 0 {
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO multi_user_audit_assignments
+                        (part_id, part_name, bin_location, assigned_user_id, assigned_user_name,
+                         status, audit_session_id, expected_quantity, notes, created_at)
+                        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
+                        """,
+                    arguments: [
+                        partId,
+                        "UITest Verification Part",
+                        "WH-01-A1",
+                        ownerId,
+                        "UITest Owner",
+                        sessionId,
+                        12,
+                        "Fixture pending assignment",
+                        now
+                    ]
+                )
+            }
+
+            // Ensure at least one counted assignment exists for summary-state coverage.
+            try dbConn.execute(
+                sql: """
+                    UPDATE multi_user_audit_assignments
+                    SET counted_quantity = 10, counted_at = ?, status = 'counted', notes = 'Fixture counted'
+                    WHERE part_id = ? AND audit_session_id = ? AND assigned_user_id = ?
+                    """,
+                arguments: [now, partId, sessionId, counterAId]
+            )
+            try dbConn.execute(
+                sql: """
+                    UPDATE multi_user_audit_assignments
+                    SET status = 'pending'
+                    WHERE part_id = ? AND audit_session_id = ? AND assigned_user_id = ?
+                    """,
+                arguments: [partId, sessionId, counterBId]
+            )
+        }
     }
 }

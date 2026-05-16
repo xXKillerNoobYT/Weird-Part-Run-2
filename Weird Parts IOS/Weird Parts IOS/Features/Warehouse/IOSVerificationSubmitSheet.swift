@@ -61,6 +61,11 @@ struct IOSVerificationSubmitSheet: View {
     }
 
     private func submit() {
+        if ProcessInfo.processInfo.arguments.contains("-UITestingMultiUserVerificationForceDuplicateSubmit") {
+            errorMessage = "You've already submitted a count for this part. Each counter can submit once."
+            return
+        }
+
         guard let service = appCore.warehouseService,
               let userId = appCore.currentUser?.id,
               let assignmentId = assignment.id else {

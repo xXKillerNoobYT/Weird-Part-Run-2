@@ -61,6 +61,15 @@ struct SendForVerificationSheet: View {
     }
 
     private func submit() {
+        if ProcessInfo.processInfo.arguments.contains("-UITestingMultiUserVerificationForceNoEligibleUsers") {
+            errorMessage = "No eligible active users are available to assign verification counts."
+            return
+        }
+        if ProcessInfo.processInfo.arguments.contains("-UITestingMultiUserVerificationForceAlreadyFlagged") {
+            errorMessage = "This part is already flagged for verification in the current audit session."
+            return
+        }
+
         guard let service = appCore.warehouseService,
               let userId = appCore.currentUser?.id else {
             errorMessage = "Service or user unavailable"
