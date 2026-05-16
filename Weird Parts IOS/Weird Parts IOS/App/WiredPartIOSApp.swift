@@ -42,6 +42,10 @@ struct WiredPartIOSApp: App {
         ProcessInfo.processInfo.arguments.contains("-UITestingWarehouseSetupWizard")
     }
 
+    private var shouldOpenOnboardingCelebrationForUITest: Bool {
+        ProcessInfo.processInfo.arguments.contains("-UITestingFirstLaunchCelebration")
+    }
+
     /// Resolved color scheme from the user's theme setting.
     private var resolvedColorScheme: ColorScheme? {
         switch appCore.theme.themeMode {
@@ -68,6 +72,9 @@ struct WiredPartIOSApp: App {
                             .environmentObject(appCore)
                     } else if appCore.currentUser == nil {
                         LoginView()
+                            .environmentObject(appCore)
+                    } else if shouldOpenOnboardingCelebrationForUITest {
+                        OnboardingCompleteView()
                             .environmentObject(appCore)
                     } else if isAdmin && !hasCompletedCompanySetup {
                         CompanySetupWizard()

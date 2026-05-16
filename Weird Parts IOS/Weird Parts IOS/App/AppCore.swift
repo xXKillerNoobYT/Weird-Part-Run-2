@@ -13,6 +13,8 @@ import os.log
 final class AppCore: ObservableObject {
     private static let uiTestingLaunchFlag = "-UITesting"
     private static let uiTestingPreserveDatabaseFlag = "-UITestingPreserveDatabase"
+    private static let uiTestingFirstLaunchChecklistCollapsedFlag = "-UITestingFirstLaunchChecklistCollapsed"
+    private static let uiTestingFirstLaunchCelebrationFlag = "-UITestingFirstLaunchCelebration"
 
     // MARK: - Published State
 
@@ -84,6 +86,9 @@ final class AppCore: ObservableObject {
     private func bootstrap() async {
         do {
             let uiTestingMode = isUITestingMode
+            if uiTestingMode {
+                Self.applyUITestingLaunchDefaults(arguments: ProcessInfo.processInfo.arguments)
+            }
             // Resolve the database path on the main actor (it accesses FileManager),
             // then perform all blocking database work off the main thread to avoid
             // priority inversion (user-interactive main thread waiting on
@@ -644,6 +649,28 @@ final class AppCore: ObservableObject {
 
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
-        UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
+        UserDefaults.standard.removeObject(forKey: "onboarding_checklist_dismissed")
+    }
+
+    nonisolated private static func applyUITestingLaunchDefaults(arguments: [String]) {
+        let defaults = UserDefaults.standard
+        let checklistCollapsed = arguments.contains("-UITestingFirstLaunchChecklistCollapsed")
+        let celebrationState = arguments.contains("-UITestingFirstLaunchCelebration")
+
+        if checklistCollapsed {
+            defaults.set(true, forKey: "hasCompletedOnboarding")
+            defaults.set(true, forKey: "hasCompletedCompanySetup")
+            defaults.set(true, forKey: "hasSeenWelcome")
+            defaults.set(true, forKey: "hasSeenModuleTour")
+            defaults.set(true, forKey: "onboarding_checklist_dismissed")
+        }
+
+        if celebrationState {
+            defaults.set(true, forKey: "hasCompletedCompanySetup")
+            defaults.set(true, forKey: "hasSeenWelcome")
+            defaults.set(false, forKey: "hasCompletedOnboarding")
+            defaults.removeObject(forKey: "onboarding_checklist_dismissed")
+        }
     }
 }
