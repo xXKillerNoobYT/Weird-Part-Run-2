@@ -31,7 +31,6 @@ struct IOSAuditPage: View {
     @State private var selectedItemForVerification: CountingItem?
     @State private var myMultiUserAssignments: [MultiUserAuditAssignment] = []
     @State private var selectedMultiUserAssignment: MultiUserAuditAssignment?
-    @State private var selectedItemForVerification: CountingItem?
 
     // Count flow
     @State private var activeSession: AuditSessionV2?
@@ -186,13 +185,6 @@ struct IOSAuditPage: View {
         .sheet(item: $selectedMultiUserAssignment) { assignment in
             MultiUserCountSheet(assignment: assignment) {
                 selectedMultiUserAssignment = nil
-                loadData()
-            }
-            .environmentObject(appCore)
-        }
-        .sheet(item: $selectedItemForVerification) { item in
-            QueueSendForVerificationSheet(item: item, sessionId: activeSession?.id) {
-                selectedItemForVerification = nil
                 loadData()
             }
             .environmentObject(appCore)
