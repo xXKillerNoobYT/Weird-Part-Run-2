@@ -157,10 +157,17 @@ struct IOSOrganizationThresholdsPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!canSave)
             }
         }
         // Fix #149: dismiss keyboard when scrolling threshold settings
         .scrollDismissesKeyboard(.interactively)
+    }
+
+    // MARK: - Validation
+
+    private var canSave: Bool {
+        baseDecayRate > 0 && movementDecayFactor > 0
     }
 
     // MARK: - Actions

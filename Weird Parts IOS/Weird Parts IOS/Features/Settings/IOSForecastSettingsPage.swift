@@ -185,6 +185,7 @@ struct IOSForecastSettingsPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!canSave)
             }
         }
         // Fix #149: dismiss keyboard when scrolling forecast settings
@@ -200,6 +201,13 @@ struct IOSForecastSettingsPage: View {
                 .multilineTextAlignment(.trailing)
                 .frame(width: 60)
         }
+    }
+
+    // MARK: - Validation
+
+    private var canSave: Bool {
+        commonMinMult > 0 && commonTargetMult > 0 && commonMaxMult > 0 &&
+        criticalMinMult > 0 && criticalTargetMult > 0 && criticalMaxMult > 0
     }
 
     // MARK: - Actions
