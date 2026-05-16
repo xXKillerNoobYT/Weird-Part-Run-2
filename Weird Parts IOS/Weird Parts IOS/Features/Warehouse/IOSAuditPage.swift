@@ -11,6 +11,8 @@ private let auditLog = Logger(subsystem: "com.wiredpart", category: "warehouse.a
 /// count flow with hidden system counts, speed mode, misplaced part handling.
 struct IOSAuditPage: View {
     @EnvironmentObject private var appCore: AppCore
+    private static let multiUserFixtureFlag = "-UITestingMultiUserVerificationFixture"
+    private static let multiUserFixturePartCode = "UITEST-MUV-001"
 
     // MARK: - State
 
@@ -406,6 +408,38 @@ struct IOSAuditPage: View {
                     }
                     .buttonStyle(.bordered)
                     .tint(.orange)
+                }
+            }
+
+            if isMultiUserVerificationFixtureEnabled {
+                Section("QA Fixture") {
+                    if let fixtureItem = fixtureVerificationItem {
+                        VStack(alignment: .leading, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(fixtureItem.partName)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                Text(fixtureItem.partCode ?? Self.multiUserFixturePartCode)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Button {
+                                selectedItemForVerification = fixtureItem
+                            } label: {
+                                Label("Verify Fixture Part", systemImage: "person.2.badge.gearshape")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.orange)
+                            .accessibilityIdentifier("qaFixtureVerifyButton")
+                        }
+                        .accessibilityIdentifier("qaFixturePartRow")
+                    } else {
+                        Text("Fixture part \(Self.multiUserFixturePartCode) is not available in this audit queue yet.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("qaFixturePartMissingMessage")
+                    }
                 }
             }
 
@@ -917,6 +951,17 @@ struct IOSAuditPage: View {
         case .soon: return all.filter { $0.confidence >= 80 && $0.confidence < 90 }.count
         case .good: return all.filter { $0.confidence >= 90 }.count
         case .noLocation: return all.filter { $0.locationCode.isEmpty || $0.locationCode == "—" }.count
+        }
+    }
+
+    private var isMultiUserVerificationFixtureEnabled: Bool {
+        ProcessInfo.processInfo.arguments.contains(Self.multiUserFixtureFlag)
+    }
+
+    private var fixtureVerificationItem: CountingItem? {
+        buildQueue().first {
+            $0.partCode == Self.multiUserFixturePartCode ||
+            $0.partName == "UITest Verification Part"
         }
     }
 
