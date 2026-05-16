@@ -1294,6 +1294,7 @@ struct WarehouseAuditTests {
         #expect(finalQty == 9)
         let summary = try #require(try env.warehouse.getMultiUserAuditAssignments(sessionId: session.id!).first)
         #expect(summary.resolutionStatus == "resolved")
+        #expect(summary.expectedQuantity == 10)
         #expect(summary.assignments.allSatisfy { $0.status == "resolved" && $0.resolutionMethod == "majority" })
         let confidence = try #require(try env.warehouse.getPartConfidence(partId: partId, areaId: areaId))
         #expect(confidence.confidencePercent == 75)
@@ -1330,6 +1331,7 @@ struct WarehouseAuditTests {
         #expect(finalQty == nil)
         let summary = try #require(try env.warehouse.getMultiUserAuditAssignments(sessionId: session.id!).first)
         #expect(summary.resolutionStatus == "unresolved")
+        #expect(summary.expectedQuantity == nil)
         #expect(summary.assignments.allSatisfy { $0.status == "unresolved" && $0.resolutionMethod == "unresolved_tie" })
     }
 

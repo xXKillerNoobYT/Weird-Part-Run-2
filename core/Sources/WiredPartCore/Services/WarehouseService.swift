@@ -5735,7 +5735,8 @@ public final class WarehouseService: Sendable {
                         partId: partId,
                         partName: first.partName,
                         binLocation: first.binLocation,
-                        expectedQuantity: first.expectedQuantity,
+                        // Keep system expected hidden until resolution to avoid biasing open counts.
+                        expectedQuantity: isResolved ? first.expectedQuantity : nil,
                         assignments: partAssignments,
                         consensusQuantity: consensus,
                         resolutionStatus: resolutionStatus,

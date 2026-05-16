@@ -240,7 +240,7 @@ struct IOSAuditSummaryView: View {
                     }
                 }
                 Spacer()
-                if let expected = partSummary.expectedQuantity {
+                if partSummary.isResolved, let expected = partSummary.expectedQuantity {
                     Text("Expected: \(expected)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
