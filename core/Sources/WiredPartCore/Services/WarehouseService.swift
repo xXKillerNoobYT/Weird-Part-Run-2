@@ -4442,8 +4442,13 @@ public final class WarehouseService: Sendable {
             try dbConn.execute(sql: """
                 UPDATE audit_sessions_v2
                 SET misplaced_found = misplaced_found + 1
-                WHERE status = 'active' AND started_by = ?
-                ORDER BY started_at DESC LIMIT 1
+                WHERE id = (
+                    SELECT id
+                    FROM audit_sessions_v2
+                    WHERE status = 'active' AND started_by = ?
+                    ORDER BY started_at DESC
+                    LIMIT 1
+                )
                 """, arguments: [foundBy])
 
             return log
