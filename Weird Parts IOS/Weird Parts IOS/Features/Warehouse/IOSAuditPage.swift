@@ -1068,7 +1068,7 @@ struct IOSAuditPage: View {
     }
 
     private func buildQueue() -> [CountingItem] {
-        confidenceRecords.map { conf in
+        var items = confidenceRecords.map { conf in
             CountingItem(
                 partId: conf.partId,
                 areaId: conf.areaId,
@@ -1079,6 +1079,53 @@ struct IOSAuditPage: View {
                 confidence: conf.confidencePercent
             )
         }
+        if isMultiUserVerificationFixtureEnabled,
+           let fixtureItem = fixtureQueueFallback(existingItems: items) {
+            items.append(fixtureItem)
+        }
+        return items
+    }
+
+    private func fixtureQueueFallback(existingItems: [CountingItem]) -> CountingItem? {
+        guard !existingItems.contains(where: { item in
+            item.partCode == Self.multiUserFixturePartCode || item.partName == "UITest Verification Part"
+        }) else {
+            return nil
+        }
+
+        if let assignment = myMultiUserAssignments.first(where: {
+            $0.partName == "UITest Verification Part" || partCode(for: $0.partId) == Self.multiUserFixturePartCode
+        }) {
+            let fallbackCode = partCode(for: assignment.partId) ?? Self.multiUserFixturePartCode
+            let fallbackLocation = assignment.binLocation.flatMap { $0.isEmpty ? nil : $0 } ?? "WH-01-A1"
+            return CountingItem(
+                partId: assignment.partId,
+                areaId: 0,
+                partName: assignment.partName,
+                partCode: fallbackCode,
+                locationCode: fallbackLocation,
+                systemCount: assignment.expectedQuantity ?? 0,
+                confidence: 0
+            )
+        }
+
+        guard let fixturePart = try? appCore.partsService?.listParts(search: Self.multiUserFixturePartCode, limit: 5).first(where: {
+            $0.part.code == Self.multiUserFixturePartCode
+        }),
+              let partId = fixturePart.part.id else {
+            return nil
+        }
+
+        let fallbackLocation = fixturePart.part.binLocation.flatMap { $0.isEmpty ? nil : $0 } ?? "WH-01-A1"
+        return CountingItem(
+            partId: partId,
+            areaId: 0,
+            partName: fixturePart.part.name,
+            partCode: fixturePart.part.code ?? Self.multiUserFixturePartCode,
+            locationCode: fallbackLocation,
+            systemCount: fixturePart.totalStock,
+            confidence: 0
+        )
     }
 
     private var currentWalkingPathAreaId: Int64? {
