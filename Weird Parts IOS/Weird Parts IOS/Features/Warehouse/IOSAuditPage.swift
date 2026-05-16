@@ -28,6 +28,8 @@ struct IOSAuditPage: View {
     @State private var recentSessions: [AuditSessionV2] = []
     @State private var warehouseScore: Double = 5.0
     @State private var activeCounts: [AuditCount] = []
+    @State private var myMultiUserAssignments: [MultiUserAuditAssignment] = []
+    @State private var selectedMultiUserAssignment: MultiUserAuditAssignment?
 
     // Count flow
     @State private var activeSession: AuditSessionV2?
@@ -149,6 +151,13 @@ struct IOSAuditPage: View {
         }
         .sheet(item: $activeSheet) { sheet in
             sheetContent(for: sheet)
+        }
+        .sheet(item: $selectedMultiUserAssignment) { assignment in
+            MultiUserCountSheet(assignment: assignment) {
+                selectedMultiUserAssignment = nil
+                loadData()
+            }
+            .environmentObject(appCore)
         }
         .alert("Error", isPresented: Binding(
             get: { actionError != nil },
@@ -276,6 +285,49 @@ struct IOSAuditPage: View {
                         .font(.caption)
                         .buttonStyle(.bordered)
                         .tint(.red)
+                    }
+                }
+            }
+
+            Section("My Verification Assignments") {
+                if myMultiUserAssignments.isEmpty {
+                    Text("No pending multi-user verification assignments.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(myMultiUserAssignments, id: \.id) { assignment in
+                        Button {
+                            selectedMultiUserAssignment = assignment
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "person.2.badge.gearshape")
+                                    .foregroundStyle(.blue)
+                                    .frame(width: 28)
+                                    .accessibilityHidden(true)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(assignment.partName)
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                    if let bin = assignment.binLocation, !bin.isEmpty {
+                                        Text(bin)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .monospaced()
+                                    }
+                                }
+                                Spacer()
+                                if let expected = assignment.expectedQuantity {
+                                    Text("Expected \(expected)")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -1167,6 +1219,11 @@ struct IOSAuditPage: View {
             // Check for active session
             let activeSessions = try service.listAuditSessions(status: "active", limit: 1)
             activeSession = activeSessions.first
+            if let userId = appCore.currentUser?.id {
+                myMultiUserAssignments = try service.getMyMultiUserAuditAssignments(userId: userId)
+            } else {
+                myMultiUserAssignments = []
+            }
 
             // Build lookup caches from confidence records
             loadNameCaches(service: service)
@@ -1183,7 +1240,7 @@ struct IOSAuditPage: View {
     private func postAIContext() {
         let context = """
         Warehouse Audit page. Read-only context.
-        Confidence records loaded: \(confidenceRecords.count), recent sessions: \(recentSessions.count), active counts: \(activeCounts.count), warehouse score: \(String(format: "%.1f", warehouseScore)).
+        Confidence records loaded: \(confidenceRecords.count), recent sessions: \(recentSessions.count), active counts: \(activeCounts.count), my multi-user assignments: \(myMultiUserAssignments.count), warehouse score: \(String(format: "%.1f", warehouseScore)).
         Selected filter: \(filter.rawValue), visible search active: \(!searchText.isEmpty), active session: \(activeSession != nil), counting part: \(countingPart?.partName ?? "none"), speed mode: \(speedModeActive), walking path active: \(walkingPathActive).
         Filter counts: Audit Now \(countFor(.auditNow)), Soon \(countFor(.soon)), Good \(countFor(.good)), No Location \(countFor(.noLocation)).
         Available read-only guidance: explain confidence scores, filter cards, audit sessions, speed mode, walking path, and misplaced-part entry point. Do not start audits, submit counts, or log misplaced parts directly.
@@ -1241,6 +1298,95 @@ struct IOSAuditPage: View {
         } catch {
             auditLog.error("loadWalkingPath failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+}
+
+private struct MultiUserCountSheet: View {
+    @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
+
+    let assignment: MultiUserAuditAssignment
+    let onSubmitted: () -> Void
+
+    @State private var countedQuantity = 0
+    @State private var notes = ""
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Assignment") {
+                    LabeledContent("Part", value: assignment.partName)
+                    if let bin = assignment.binLocation, !bin.isEmpty {
+                        LabeledContent("Location", value: bin)
+                    }
+                    if let expected = assignment.expectedQuantity {
+                        LabeledContent("System Expected", value: "\(expected)")
+                    }
+                }
+
+                Section("Your Count") {
+                    Stepper("Counted quantity: \(countedQuantity)", value: $countedQuantity, in: 0...9999)
+                    TextField("Optional notes", text: $notes, axis: .vertical)
+                        .lineLimit(2...4)
+                }
+
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("Submit Verification")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Submit") { submit() }
+                            .fontWeight(.semibold)
+                    }
+                }
+            }
+            .interactiveDismissDisabled(isSaving)
+            .onAppear {
+                countedQuantity = assignment.countedQuantity ?? max(assignment.expectedQuantity ?? 0, 0)
+                notes = assignment.notes ?? ""
+            }
+        }
+    }
+
+    private func submit() {
+        guard let service = appCore.warehouseService,
+              let userId = appCore.currentUser?.id,
+              let assignmentId = assignment.id else {
+            errorMessage = "Assignment unavailable. Reload and try again."
+            return
+        }
+
+        isSaving = true
+        errorMessage = nil
+        do {
+            try service.submitMultiUserCount(
+                assignmentId: assignmentId,
+                quantity: countedQuantity,
+                userId: userId,
+                notes: notes.isEmpty ? nil : notes
+            )
+            onSubmitted()
+            dismiss()
+        } catch {
+            errorMessage = userFriendlyError(error, context: "submit verification count")
+        }
+        isSaving = false
     }
 }
 
