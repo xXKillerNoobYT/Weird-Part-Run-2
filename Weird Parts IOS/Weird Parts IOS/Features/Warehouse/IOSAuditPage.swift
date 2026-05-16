@@ -1067,17 +1067,6 @@ struct IOSAuditPage: View {
         }
     }
 
-    private var isMultiUserVerificationFixtureEnabled: Bool {
-        ProcessInfo.processInfo.arguments.contains(Self.multiUserFixtureFlag)
-    }
-
-    private var fixtureVerificationItem: CountingItem? {
-        buildQueue().first {
-            $0.partCode == Self.multiUserFixturePartCode ||
-            $0.partName == "UITest Verification Part"
-        }
-    }
-
     private func buildQueue() -> [CountingItem] {
         confidenceRecords.map { conf in
             CountingItem(
