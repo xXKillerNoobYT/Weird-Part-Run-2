@@ -978,13 +978,15 @@ public final class JobsService: Sendable {
     ) throws -> Int64 {
         try db.writer.write { dbConn in
             // Verify the entry exists and is clocked in
-            guard let _ = try Row.fetchOne(
+            guard let entry = try Row.fetchOne(
                 dbConn,
-                sql: "SELECT id, clock_in FROM labor_entries WHERE id = ? AND status = 'clocked_in' AND deleted_at IS NULL",
+                sql: "SELECT id, user_id, clock_in FROM labor_entries WHERE id = ? AND status = 'clocked_in' AND deleted_at IS NULL",
                 arguments: [laborEntryId]
             ) else {
                 throw JobsError.laborEntryNotFound(laborEntryId)
             }
+            let userId: Int64 = entry["user_id"] ?? 0
+            let clockIn: String = entry["clock_in"] ?? ""
 
             // Calculate raw elapsed hours
             let rawHours = try Double.fetchOne(dbConn, sql: """
@@ -999,9 +1001,22 @@ public final class JobsService: Sendable {
                 """, arguments: [laborEntryId]) ?? 0
             let totalHours = max(0, rawHours - (breakMinutes / 60.0))
 
-            // Split into regular/overtime at 8-hour daily threshold
-            let regularHours = min(totalHours, 8.0)
-            let overtimeHours = max(0, totalHours - 8.0)
+            // Split into regular/overtime at the per-user, per-day threshold. Count earlier
+            // completed entries for the same worker/day so switching jobs does not restart
+            // the daily regular-hours allowance.
+            let priorWorkedHours = try Double.fetchOne(dbConn, sql: """
+                SELECT COALESCE(SUM(regular_hours + overtime_hours), 0)
+                FROM labor_entries
+                WHERE user_id = ?
+                  AND id != ?
+                  AND status = 'completed'
+                  AND deleted_at IS NULL
+                  AND date(clock_in) = date(?)
+                  AND clock_in < ?
+                """, arguments: [userId, laborEntryId, clockIn, clockIn]) ?? 0
+            let remainingRegularHours = max(0, 8.0 - priorWorkedHours)
+            let regularHours = min(totalHours, remainingRegularHours)
+            let overtimeHours = max(0, totalHours - regularHours)
 
             try dbConn.execute(
                 sql: """
