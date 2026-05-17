@@ -85,6 +85,7 @@ struct DatabaseTests {
             // Wishlist & background tasks (057-058)
             "wishlist_items",    // 057
             "background_task_log", // 058
+            "vehicle_location_logs", // 089
             // Audit assignments & permissions (059-060)
         ]
 
@@ -96,9 +97,33 @@ struct DatabaseTests {
         }
     }
 
-    @Test("Schema version is 88")
+    @Test("Schema version is 89")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 88)
+        #expect(AppDatabase.schemaVersion == 89)
+    }
+
+    @Test("Migration 089 creates vehicle location logs table and latest-location indexes")
+    func testMigration089VehicleLocationLogsIndexes() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+
+        let result = try db.writer.read { db -> (tableExists: Bool, columns: [String], indexes: [String]) in
+            let tableExists = try db.tableExists("vehicle_location_logs")
+            let columns = tableExists ? try db.columns(in: "vehicle_location_logs").map(\.name) : []
+            let indexes = try Row.fetchAll(db, sql: "PRAGMA index_list('vehicle_location_logs')")
+                .map { row in row["name"] as String }
+            return (tableExists, columns, indexes)
+        }
+
+        #expect(result.tableExists, "vehicle_location_logs should be managed by migrations")
+        #expect(result.columns.contains("vehicle_id"))
+        #expect(result.columns.contains("user_id"))
+        #expect(result.columns.contains("latitude"))
+        #expect(result.columns.contains("longitude"))
+        #expect(result.columns.contains("recorded_at"))
+        #expect(result.columns.contains("deleted_at"))
+        #expect(result.indexes.contains("idx_vll_vehicle"))
+        #expect(result.indexes.contains("idx_vll_latest_active"))
+        #expect(result.indexes.contains("idx_vll_recorded_at"))
     }
 
     @Test("Migration 088 adds fleet inspection dashboard lookup index")
