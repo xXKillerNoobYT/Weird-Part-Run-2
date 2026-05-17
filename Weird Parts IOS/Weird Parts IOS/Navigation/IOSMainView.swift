@@ -127,6 +127,21 @@ struct IOSMainView: View {
                 badgeManager.refresh()
             }
         }
+        .onChange(of: showAIAssistant) { _, isVisible in
+            syncAIAssistantPresentation(isVisible: isVisible, displayMode: aiDisplayMode)
+        }
+        .onChange(of: aiDisplayMode) { _, newMode in
+            syncAIAssistantPresentation(isVisible: showAIAssistant, displayMode: newMode)
+        }
+        .onChange(of: activeRootSheet) { _, newSheet in
+            guard tabPrefs.navigationStyle != .fullSidebar,
+                  aiDisplayMode == .sheet,
+                  showAIAssistant,
+                  !isAIAssistantRootSheet(newSheet)
+            else { return }
+
+            showAIAssistant = false
+        }
         // Safety: this .onReceive closure captures tabPrefs and appCore strongly, but that is fine.
         // IOSMainView is only shown when appCore.currentUser != nil (see WiredPartIOSApp.swift).
         // On logout, currentUser becomes nil and SwiftUI tears down this entire view, which
@@ -248,6 +263,53 @@ struct IOSMainView: View {
                     .padding(.bottom, DS.Space.xl)
             }
         }
+        .onChange(of: activeSidebarSheet) { _, newSheet in
+            guard tabPrefs.navigationStyle == .fullSidebar,
+                  aiDisplayMode == .sheet,
+                  showAIAssistant,
+                  !isAIAssistantSidebarSheet(newSheet)
+            else { return }
+
+            showAIAssistant = false
+        }
+    }
+
+    private func syncAIAssistantPresentation(isVisible: Bool, displayMode: AIDisplayMode) {
+        guard displayMode == .sheet else {
+            clearAIAssistantSheetHosts()
+            return
+        }
+
+        guard isVisible else {
+            clearAIAssistantSheetHosts()
+            return
+        }
+
+        if tabPrefs.navigationStyle == .fullSidebar {
+            activeSidebarSheet = .aiAssistant
+        } else {
+            activeRootSheet = .aiAssistant
+        }
+    }
+
+    private func clearAIAssistantSheetHosts() {
+        if isAIAssistantRootSheet(activeRootSheet) {
+            activeRootSheet = nil
+        }
+
+        if isAIAssistantSidebarSheet(activeSidebarSheet) {
+            activeSidebarSheet = nil
+        }
+    }
+
+    private func isAIAssistantRootSheet(_ sheet: RootSheet?) -> Bool {
+        guard case .aiAssistant = sheet else { return false }
+        return true
+    }
+
+    private func isAIAssistantSidebarSheet(_ sheet: SidebarSheet?) -> Bool {
+        guard case .aiAssistant = sheet else { return false }
+        return true
     }
 
     // MARK: - Full Sidebar View
