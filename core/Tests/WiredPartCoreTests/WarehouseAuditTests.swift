@@ -619,7 +619,7 @@ struct WarehouseAuditTests {
         #expect((row?["status"] as String?) == "completed")
     }
 
-    @Test("adjustAuditCount updates stock qty and records adjustment movement")
+    @Test("adjustAuditCount updates stock qty and records negative delta adjustment movement")
     func testAdjustAuditCount() throws {
         let env = try freshEnv()
         let catId = try E2ETestHelpers.seedCategory(env)
@@ -638,9 +638,42 @@ struct WarehouseAuditTests {
         let qty = try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1)
         #expect(qty == 7)
 
-        // Verify the adjustment movement was recorded
-        let movements = try env.warehouse.listMovements(movementType: "adjustment")
-        #expect(movements.contains { $0.partId == partId })
+        let movement = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT qty, notes FROM stock_movements
+                WHERE part_id = ? AND movement_type = 'adjustment'
+                ORDER BY id DESC LIMIT 1
+                """, arguments: [partId])
+        }
+        #expect((movement?["qty"] as Int?) == -3)
+        #expect((movement?["notes"] as String?) == "Audit count adjustment: 10 -> 7 (-3)")
+    }
+
+    @Test("adjustAuditCount records positive delta adjustment movement")
+    func testAdjustAuditCountRecordsPositiveDelta() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
+
+        try env.warehouse.adjustAuditCount(
+            partId: partId,
+            locationType: "warehouse",
+            locationId: 1,
+            newQty: 14,
+            reason: "Physical count",
+            performedBy: env.adminUserId
+        )
+
+        let movement = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT qty, notes FROM stock_movements
+                WHERE part_id = ? AND movement_type = 'adjustment'
+                ORDER BY id DESC LIMIT 1
+                """, arguments: [partId])
+        }
+        #expect((movement?["qty"] as Int?) == 4)
+        #expect((movement?["notes"] as String?) == "Audit count adjustment: 10 -> 14 (+4)")
     }
 
     @Test("recordAuditRecount updates last_counted timestamp for stock row")

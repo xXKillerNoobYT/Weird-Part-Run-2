@@ -647,7 +647,11 @@ struct WarehouseDashboardPage: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    if let from = movement.fromLocationType, let to = movement.toLocationType {
+                    if let auditSummary = auditSummaryText(for: movement) {
+                        Text(auditSummary)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    } else if let from = movement.fromLocationType, let to = movement.toLocationType {
                         Text("\(from.capitalized) → \(to.capitalized)")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
@@ -658,7 +662,7 @@ struct WarehouseDashboardPage: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 3) {
-                Text("\(movement.qty)")
+                Text(quantityLabel(for: movement))
                     .font(.subheadline)
                     .fontWeight(.semibold)
                 Text(formatDate(movement.createdAt))
@@ -747,6 +751,18 @@ struct WarehouseDashboardPage: View {
         case "adjustment": "Adjustment"
         default: type.capitalized
         }
+    }
+
+    private func auditSummaryText(for movement: WarehouseService.MovementRow) -> String? {
+        guard movement.movementType == "adjustment",
+              let notes = movement.notes,
+              notes.hasPrefix("Audit count adjustment:") else { return nil }
+        return notes.replacingOccurrences(of: "Audit count adjustment:", with: "Audit:")
+    }
+
+    private func quantityLabel(for movement: WarehouseService.MovementRow) -> String {
+        guard movement.movementType == "adjustment" else { return "\(movement.qty)" }
+        return movement.qty >= 0 ? "+\(movement.qty)" : "\(movement.qty)"
     }
 
     private func formatDate(_ dateStr: String?) -> String {
