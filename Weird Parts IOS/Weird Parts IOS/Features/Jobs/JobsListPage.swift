@@ -47,12 +47,11 @@ struct JobsListPage: View {
     private enum ActiveSheet: Identifiable {
         case help
         case createJob
-        case jobScanner
+
         var id: String {
             switch self {
             case .help: return "help"
             case .createJob: return "createJob"
-            case .jobScanner: return "jobScanner"
             }
         }
     }
