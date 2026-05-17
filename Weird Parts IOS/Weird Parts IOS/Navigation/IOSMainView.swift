@@ -18,6 +18,7 @@ struct IOSMainView: View {
     @State private var showAIAssistant = false
     @State private var aiDisplayMode: AIDisplayMode = .sheet
     @State private var showConflictReview = false
+    @State private var moduleNavigationRequests: [String: ModuleNavigationRequest] = [:]
 
     // Full sidebar state
     @State private var expandedModuleId: String? = "dashboard"
@@ -113,14 +114,23 @@ struct IOSMainView: View {
         // automatically cancels the Combine subscription. No manual deregistration needed.
         .onReceive(NotificationCenter.default.publisher(for: .navigateToModule)) { notification in
             if let moduleId = notification.userInfo?["moduleId"] as? String {
+                let requestedTabId = notification.userInfo?["tabId"] as? String
                 if tabPrefs.navigationStyle == .fullSidebar {
                     // Navigate within full sidebar
                     expandedModuleId = moduleId
-                    if let module = allModulesById[moduleId],
-                       let firstTab = visibleTabs(for: module, permissions: appCore.permissions).first {
-                        selectedTabPath = firstTab.path
+                    if let module = allModulesById[moduleId] {
+                        let tabs = visibleTabs(for: module, permissions: appCore.permissions)
+                        if let requestedTabId,
+                           let requestedTab = tabs.first(where: { $0.id == requestedTabId || $0.path == requestedTabId }) {
+                            selectedTabPath = requestedTab.path
+                        } else if let firstTab = tabs.first {
+                            selectedTabPath = firstTab.path
+                        }
                     }
                 } else {
+                    if let requestedTabId {
+                        moduleNavigationRequests[moduleId] = ModuleNavigationRequest(moduleId: moduleId, tabId: requestedTabId)
+                    }
                     selectedModuleId = moduleId
                 }
             }
@@ -134,7 +144,11 @@ struct IOSMainView: View {
         TabView(selection: $selectedModuleId) {
             ForEach(primaryModules) { module in
                 NavigationStack {
-                    ModuleHostView(module: module, showLogoutConfirm: $showLogoutConfirm)
+                    ModuleHostView(
+                        module: module,
+                        showLogoutConfirm: $showLogoutConfirm,
+                        navigationRequest: moduleNavigationRequests[module.id]
+                    )
                         .environmentObject(appCore)
                         .environmentObject(tabPrefs)
                 }
@@ -507,7 +521,11 @@ struct IOSMainView: View {
             }
             .navigationDestination(for: String.self) { moduleId in
                 if let module = allModulesById[moduleId] {
-                    ModuleHostView(module: module, showLogoutConfirm: $showLogoutConfirm)
+                    ModuleHostView(
+                        module: module,
+                        showLogoutConfirm: $showLogoutConfirm,
+                        navigationRequest: moduleNavigationRequests[module.id]
+                    )
                         .environmentObject(appCore)
                         .environmentObject(tabPrefs)
                 }
@@ -524,9 +542,16 @@ struct IOSMainView: View {
 /// **Important:** This view does NOT own a NavigationStack. The parent
 /// (primary tab or More tab) provides the navigation context. This avoids
 /// the double-nested NavigationStack bug that breaks "More" tab navigation.
+struct ModuleNavigationRequest: Equatable {
+    let moduleId: String
+    let tabId: String
+    private let token = UUID()
+}
+
 struct ModuleHostView: View {
     let module: AppModule
     @Binding var showLogoutConfirm: Bool
+    let navigationRequest: ModuleNavigationRequest?
     @EnvironmentObject private var appCore: AppCore
     @EnvironmentObject private var tabPrefs: TabBarPreferences
     @State private var selectedTabId: String = ""
@@ -569,9 +594,13 @@ struct ModuleHostView: View {
                 .presentationDragIndicator(.visible)
         }
         .onAppear {
+            applyNavigationRequest(navigationRequest)
             if selectedTabId.isEmpty, let first = visibleTabsList.first {
                 selectedTabId = first.id
             }
+        }
+        .onChange(of: navigationRequest) { _, request in
+            applyNavigationRequest(request)
         }
     }
 
@@ -579,6 +608,13 @@ struct ModuleHostView: View {
         visibleTabsList.first { $0.id == selectedTabId }?.path
             ?? visibleTabsList.first?.path
             ?? "/dashboard"
+    }
+
+    private func applyNavigationRequest(_ request: ModuleNavigationRequest?) {
+        guard request?.moduleId == module.id, let tabId = request?.tabId else { return }
+        if let requested = visibleTabsList.first(where: { $0.id == tabId || $0.path == tabId }) {
+            selectedTabId = requested.id
+        }
     }
 
     // MARK: - Top Tabs Layout (existing)
