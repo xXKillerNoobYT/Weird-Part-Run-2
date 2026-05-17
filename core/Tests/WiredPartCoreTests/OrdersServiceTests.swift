@@ -236,17 +236,27 @@ struct OrdersServiceTests {
         let env = try E2ETestHelpers.setUp()
         let jobId = try E2ETestHelpers.seedJob(env)
         let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let catId = try E2ETestHelpers.seedCategory(env, name: "GeneratePOCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Generate PO Part", categoryId: catId)
 
         let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
-        // Must follow valid transitions: draft → pending → approved (fixes #205 validation)
-        try env.orders.updateJPOStatus(id: jpoId, status: "pending")
-        try env.orders.updateJPOStatus(id: jpoId, status: "approved")
+        let lineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 4, notes: nil)
+        try env.orders.updateJPOLineStatus(lineId: lineId, status: "approved", updatedBy: env.adminUserId)
 
         let poId = try env.orders.generatePOFromJPO(jpoId: jpoId, supplierId: supplierId)
         #expect(poId > 0)
 
         let pos = try env.orders.listPurchaseOrders()
         #expect(pos.contains(where: { $0.id == poId }))
+
+        let poDetail = try env.orders.getPODetail(id: poId)
+        #expect(poDetail.lines.count == 1)
+        #expect(poDetail.lines.first?.jpoLineId == lineId)
+
+        let jpoDetail = try env.orders.getJPODetail(id: jpoId)
+        let generatedLine = try #require(jpoDetail.lines.first(where: { $0.id == lineId }))
+        #expect(generatedLine.lineStatus == "in_procurement")
+        #expect(generatedLine.poLineId == poDetail.lines.first?.id)
     }
 
     // MARK: - Update Return Status
