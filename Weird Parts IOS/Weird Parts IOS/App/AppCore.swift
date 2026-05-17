@@ -248,6 +248,33 @@ final class AppCore: ObservableObject {
                 _ = try? backgroundTaskService?.cleanupOldEntries()
             }
 
+            // Run scheduled Tools maintenance on launch so expired trades and
+            // confidence-score decay are handled even when users do not open a tool detail page.
+            Task.detached { [toolsService, backgroundTaskService] in
+                let taskId = try? backgroundTaskService?.startTask(
+                    name: "Tools Scheduled Maintenance",
+                    type: "tools_maintenance"
+                )
+                do {
+                    let result = try toolsService?.runScheduledMaintenance()
+                    if let taskId {
+                        let expiredTrades = result?.expiredTrades ?? 0
+                        let updatedScores = result?.updatedConfidenceScores ?? 0
+                        try? backgroundTaskService?.completeTask(
+                            id: taskId,
+                            summary: "Expired \(expiredTrades) trade(s); updated \(updatedScores) confidence score(s)"
+                        )
+                    }
+                } catch {
+                    if let taskId {
+                        try? backgroundTaskService?.failTask(
+                            id: taskId,
+                            error: error.localizedDescription
+                        )
+                    }
+                }
+            }
+
             // Run companion auto-discovery cycle in the background (logged)
             Task.detached { [partsService, backgroundTaskService] in
                 let taskId = try? backgroundTaskService?.startTask(
