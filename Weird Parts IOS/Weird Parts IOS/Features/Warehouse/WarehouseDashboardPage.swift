@@ -628,11 +628,7 @@ struct WarehouseDashboardPage: View {
         if let sheet = action.sheet {
             activeSheet = sheet
         } else if let moduleId = action.moduleId {
-            NotificationCenter.default.post(
-                name: .navigateToModule,
-                object: nil,
-                userInfo: ["moduleId": moduleId]
-            )
+            navigateToWarehouseTab(moduleId)
         }
     }
 
