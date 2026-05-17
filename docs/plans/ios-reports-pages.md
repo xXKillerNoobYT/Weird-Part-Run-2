@@ -123,7 +123,7 @@ PDF/CSV file written to temp dir → share-sheet
 ```
 
 **Period-locking interaction (Pre-Billing + Bookkeeper Export only):**
-`getPreBillingData` returns jobs+labor in the requested date range; the page filters out periods marked locked in `billing_periods` at the UI level (since `getPreBillingData` itself does NOT join `billing_periods` — see memory note 2026-04-19). Bookkeeper export queries DO join `billing_periods` directly.
+`getPreBillingData` returns jobs+labor in the requested date range, excluding labor entries covered by a non-deleted locked `billing_periods` row for the same job. The UI should treat service output as already pre-filtered for locked periods. Bookkeeper export queries also join `billing_periods` directly.
 
 **Saved-report lifecycle:**
 `saveReportConfig` (new) → `getSavedReports` (list) → `markReportRun` (timestamp) → `deleteSavedReport` (soft-delete via `deleted_at`).

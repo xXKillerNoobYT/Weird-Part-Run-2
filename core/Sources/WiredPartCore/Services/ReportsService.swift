@@ -378,6 +378,15 @@ public final class ReportsService: Sendable {
                     LEFT JOIN labor_entries le ON le.job_id = j.id
                         AND date(le.clock_in) >= ? AND date(le.clock_in) <= ?
                         AND le.deleted_at IS NULL
+                        AND NOT EXISTS (
+                            SELECT 1
+                            FROM billing_periods bp
+                            WHERE bp.job_id = le.job_id
+                              AND bp.locked_at IS NOT NULL
+                              AND bp.deleted_at IS NULL
+                              AND date(le.clock_in) >= date(bp.period_start)
+                              AND date(le.clock_in) <= date(bp.period_end)
+                        )
                     WHERE j.deleted_at IS NULL
                     GROUP BY j.id
                     HAVING regular_hours > 0 OR overtime_hours > 0
