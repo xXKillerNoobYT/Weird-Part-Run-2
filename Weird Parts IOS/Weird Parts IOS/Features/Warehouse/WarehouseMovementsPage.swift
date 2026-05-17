@@ -435,7 +435,8 @@ struct WarehouseMovementsPage: View {
     }
 
     private func quantityLabel(for movement: WarehouseService.MovementRow) -> String {
-        guard movement.movementType == "adjustment" else { return "×\(movement.qty)" }
+        guard movement.movementType == "adjustment",
+              auditSummaryText(for: movement) != nil else { return "×\(movement.qty)" }
         return movement.qty >= 0 ? "+\(movement.qty)" : "\(movement.qty)"
     }
 

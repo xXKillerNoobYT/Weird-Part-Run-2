@@ -676,6 +676,39 @@ struct WarehouseAuditTests {
         #expect((movement?["notes"] as String?) == "Audit count adjustment: 10 -> 14 (+4)")
     }
 
+    @Test("adjustAuditCount with unchanged quantity updates count timestamp and skips adjustment movement")
+    func testAdjustAuditCountSkipsZeroDeltaMovement() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
+
+        try env.warehouse.adjustAuditCount(
+            partId: partId,
+            locationType: "warehouse",
+            locationId: 1,
+            newQty: 10,
+            reason: "Physical count",
+            performedBy: env.adminUserId
+        )
+
+        let stockAndMovement = try env.db.writer.read { db in
+            let stock = try Row.fetchOne(db, sql: """
+                SELECT qty, last_counted FROM stock
+                WHERE part_id = ? AND location_type = 'warehouse' AND location_id = 1
+                """, arguments: [partId])
+            let movementCount = try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM stock_movements
+                WHERE part_id = ? AND movement_type = 'adjustment'
+                """, arguments: [partId]) ?? 0
+            return (stock, movementCount)
+        }
+
+        #expect((stockAndMovement.0?["qty"] as Int?) == 10)
+        #expect((stockAndMovement.0?["last_counted"] as String?) != nil)
+        #expect(stockAndMovement.1 == 0)
+    }
+
     @Test("recordAuditRecount updates last_counted timestamp for stock row")
     func testRecordAuditRecount() throws {
         let env = try freshEnv()

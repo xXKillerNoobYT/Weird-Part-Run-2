@@ -1696,16 +1696,18 @@ public final class WarehouseService: Sendable {
                 arguments: [partId, locationType, locationId]
             ) ?? 0
             let delta = newQty - currentQty
-            let signedDelta = delta >= 0 ? "+\(delta)" : "\(delta)"
 
             // Update the stock record
             try dbConn.execute(
                 sql: """
                     UPDATE stock SET qty = ?, last_counted = datetime('now'), updated_at = datetime('now')
                     WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL
-                    """,
+                """,
                 arguments: [newQty, partId, locationType, locationId]
             )
+
+            guard delta != 0 else { return }
+            let signedDelta = delta >= 0 ? "+\(delta)" : "\(delta)"
 
             // Record audit adjustments as the signed quantity delta, not the absolute new count.
             try dbConn.execute(
