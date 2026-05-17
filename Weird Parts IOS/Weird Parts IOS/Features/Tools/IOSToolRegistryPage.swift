@@ -76,6 +76,8 @@ struct IOSToolRegistryPage: View {
                     }
                 }
                 .environmentObject(appCore)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
             case .printLabels:
                 QRLabelPrintSheet(items: filteredTools.map { tool in
                     QRLabelContent(
@@ -87,6 +89,8 @@ struct IOSToolRegistryPage: View {
                         detail: tool.assignedToName
                     )
                 })
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
             case .help:
                 PageHelpSheet(
                     title: "All Tools Help",
@@ -99,6 +103,8 @@ struct IOSToolRegistryPage: View {
                         ("Tips", "Tools with a red 'Lost' badge need investigation. Orange 'Maintenance' tools are out of service. Green 'Available' tools are ready for checkout.")
                     ]
                 )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
         }
         .onChange(of: searchText) { Task { await loadData() } }

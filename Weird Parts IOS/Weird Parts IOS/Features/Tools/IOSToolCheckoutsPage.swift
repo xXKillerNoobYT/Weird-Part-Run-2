@@ -61,6 +61,8 @@ struct IOSToolCheckoutsPage: View {
                     }
                 }
                 .environmentObject(appCore)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
             case .help:
                 PageHelpSheet(
                     title: "Tool Checkouts Help",
@@ -73,6 +75,8 @@ struct IOSToolCheckoutsPage: View {
                         ("Tips", "Keep an eye on overdue tools. If a tool is overdue, contact the person who has it. Regular checkout tracking prevents lost tools and keeps the team accountable.")
                     ]
                 )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
         }
         .alert("Tool Scanned", isPresented: $showCheckoutConfirm) {
