@@ -2886,6 +2886,12 @@ public final class PartsService: Sendable {
 
     /// Update a company cost setting.
     public func updateCompanyCostSetting(key: String, value: String, updatedBy: Int64? = nil) throws {
+        if let updatedBy {
+            try db.writer.read { dbConn in
+                try ServicePermissionGate.requirePermission(dbConn, userId: updatedBy, permissionKey: "parts.manage_company_costs")
+            }
+        }
+
         try db.writer.write { dbConn in
             try dbConn.execute(sql: """
                 INSERT INTO company_cost_settings (setting_key, setting_value, updated_by, updated_at)
@@ -5892,6 +5898,12 @@ public final class PartsService: Sendable {
 
     /// Approve a scheduled deletion — performs the actual soft delete.
     public func approveScheduledDeletion(id: Int64, approvedBy: Int64?) throws {
+        if let approvedBy {
+            try db.writer.read { dbConn in
+                try ServicePermissionGate.requirePermission(dbConn, userId: approvedBy, permissionKey: "parts.approve_scheduled_deletion")
+            }
+        }
+
         try db.writer.write { db in
             let row = try Row.fetchOne(db, sql: "SELECT * FROM scheduled_deletions WHERE id = ?", arguments: [id])
             guard let row else { return }
