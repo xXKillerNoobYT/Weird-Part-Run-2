@@ -226,10 +226,12 @@ struct IOSFleetDashboardPage: View {
                 .background(Color(.secondarySystemGroupedBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             } else {
+                let todayString = Formatters.localDateFormatter.string(from: Date())
+
                 VStack(spacing: 0) {
                     ForEach(Array(vehicles.enumerated()), id: \.element.id) { index, vehicle in
                         NavigationLink(value: vehicle.id) {
-                            vehicleStatusRow(vehicle)
+                            vehicleStatusRow(vehicle, todayString: todayString)
                         }
                         .buttonStyle(.plain)
 
@@ -244,7 +246,7 @@ struct IOSFleetDashboardPage: View {
         }
     }
 
-    private func vehicleStatusRow(_ vehicle: FleetService.VehicleStatusItem) -> some View {
+    private func vehicleStatusRow(_ vehicle: FleetService.VehicleStatusItem, todayString: String) -> some View {
         HStack(spacing: 12) {
             Image(systemName: vehicleIcon(vehicle.vehicleType))
                 .font(.body)
@@ -499,12 +501,6 @@ struct IOSFleetDashboardPage: View {
         case "maintenance": return .orange
         default: return .secondary
         }
-    }
-
-    private var todayString: String {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
-        return fmt.string(from: Date())
     }
 
     // MARK: - Data Loading
