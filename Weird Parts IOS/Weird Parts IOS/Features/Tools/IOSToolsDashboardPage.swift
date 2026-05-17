@@ -47,6 +47,8 @@ struct IOSToolsDashboardPage: View {
                         ("Tips", "Pull down anywhere on the page to refresh the data. If you see a high number of tools in maintenance, check the Maintenance tab for details.")
                     ]
                 )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
             .refreshable { await loadData() }
             .task { await loadData() }

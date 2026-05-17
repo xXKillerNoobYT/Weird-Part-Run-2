@@ -48,6 +48,8 @@ struct IOSToolKitsPage: View {
                         ("Tips", "Before heading to a job site, check that your kit shows 'Complete'. If it says 'Incomplete', open the kit detail to see which tools are missing and track them down before you leave.")
                     ]
                 )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
             .refreshable { await loadData() }
             .task { await loadData() }
