@@ -122,6 +122,7 @@ struct BackgroundTaskServiceTests {
         #expect(summary.totalRuns == 3)
         #expect(summary.successCount == 2)
         #expect(summary.failureCount == 1)
+        #expect(summary.runningCount == 0)
     }
 
     // MARK: - Cleanup
@@ -142,10 +143,79 @@ struct BackgroundTaskServiceTests {
     func testCleanupStaleTasks() throws {
         let svc = try freshService()
 
-        _ = try svc.startTask(name: "stale", type: "sync")
+        let taskId = try svc.startTask(name: "stale", type: "sync")
 
         // With 0 minutes, all running tasks are considered stale
         let cleaned = try svc.cleanupStaleTasks(maxRunMinutes: 0)
         #expect(cleaned >= 1)
+
+        let running = try svc.runningTasks()
+        #expect(running.isEmpty)
+
+        let recent = try svc.recentTasks(limit: 1)
+        #expect(recent.first?.id == taskId)
+        #expect(recent.first?.status == "failed")
+        #expect(recent.first?.errorMessage == "Task timed out (stale cleanup)")
+    }
+
+    @Test("completeTask and failTask no-op when id does not exist")
+    func testCompleteAndFailUnknownTaskIdNoop() throws {
+        let svc = try freshService()
+
+        try svc.completeTask(id: 999_999, summary: "noop", itemsProcessed: 1)
+        try svc.failTask(id: 999_999, error: "noop")
+
+        let recent = try svc.recentTasks()
+        #expect(recent.isEmpty)
+    }
+
+    @Test("officeStatusRows returns unavailable rows when table is missing")
+    func testOfficeStatusRowsUnavailableWhenTableMissing() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let svc = BackgroundTaskService(db: db)
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: "DROP TABLE background_task_log")
+        }
+
+        let rows = try svc.officeStatusRows()
+        #expect(rows.count == 4)
+        #expect(rows.allSatisfy { $0.status == .unavailable })
+    }
+
+    @Test("TaskLogEntry durationString and statusIcon format expected values")
+    func testTaskLogEntryDisplayHelpers() {
+        let startedAt = Date()
+
+        var entry = BackgroundTaskService.TaskLogEntry(
+            id: 1,
+            taskName: "task",
+            taskType: "sync",
+            status: "running",
+            startedAt: startedAt,
+            completedAt: nil,
+            resultSummary: nil,
+            errorMessage: nil,
+            itemsProcessed: 0,
+            deviceId: nil
+        )
+        #expect(entry.durationString == nil)
+        #expect(entry.statusIcon == "arrow.triangle.2.circlepath")
+
+        entry.completedAt = startedAt.addingTimeInterval(0.250)
+        #expect(entry.durationString == "250ms")
+
+        entry.completedAt = startedAt.addingTimeInterval(2.5)
+        #expect(entry.durationString == "2.5s")
+
+        entry.completedAt = startedAt.addingTimeInterval(125)
+        #expect(entry.durationString == "2m 5s")
+
+        entry.status = "completed"
+        #expect(entry.statusIcon == "checkmark.circle.fill")
+        entry.status = "failed"
+        #expect(entry.statusIcon == "xmark.circle.fill")
+        entry.status = "mystery"
+        #expect(entry.statusIcon == "questionmark.circle")
     }
 }
