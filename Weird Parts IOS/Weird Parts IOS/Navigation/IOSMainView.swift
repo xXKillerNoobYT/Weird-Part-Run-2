@@ -675,6 +675,7 @@ struct ModuleHostView: View {
                             sidebarRow(tab: tab, selected: tab.id == selectedTabId)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("subTab_\(tab.id)")
                     }
                 }
                 .padding(.vertical, DS.Space.sm)
@@ -739,6 +740,7 @@ struct ModuleHostView: View {
                         subTabChip(tab: tab, selected: isSelected(tab), chipH: chipH)
                     }
                     .buttonStyle(.glass)
+                    .accessibilityIdentifier("subTab_\(tab.id)")
                 }
             }
             .padding(.horizontal, DS.Space.lg)

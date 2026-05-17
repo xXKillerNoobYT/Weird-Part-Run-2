@@ -9,6 +9,8 @@ build/
 
 # Swift Package Manager
 .build/
+# Per-issue ad hoc SwiftPM build directories (for example core/.build-WEI378)
+.build-*/
 .swiftpm/
 Package.resolved
 # Exception: core/Package.resolved is committed to pin duckduckgo/GRDB.swift to a

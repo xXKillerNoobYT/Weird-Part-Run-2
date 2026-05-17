@@ -754,7 +754,14 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         XCTAssertEqual(receiving.label, "Receiving")
         XCTAssertEqual(auditQueue.label, "Audit Queue")
         XCTAssertGreaterThanOrEqual(auditQueue.frame.height, 44, "Audit Queue quick action should meet the minimum tap target height")
+        XCTAssertTrue(app.buttons["subTab_warehouse-audit"].waitForExistence(timeout: 5),
+                      "Warehouse sub-tabs should expose a stable Audit accessibility identifier for compact-width QA navigation")
         XCTAssertFalse(app.buttons["whAction_setupWizard"].exists, "Setup Wizard should not occupy one of the four operational quick-action slots")
+
+        auditQueue.tap()
+        XCTAssertTrue(app.staticTexts["Warehouse Audit"].waitForExistence(timeout: 8) ||
+                      app.navigationBars["Warehouse Audit"].waitForExistence(timeout: 2),
+                      "Audit Queue quick action should navigate to the Warehouse Audit page")
     }
     private func logInAsUITestOwnerIfNeeded() {
         if app.buttons["tab_dashboard"].waitForExistence(timeout: 5) && app.buttons["tab_dashboard"].isHittable ||
