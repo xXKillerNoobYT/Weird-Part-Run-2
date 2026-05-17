@@ -293,8 +293,11 @@ public final class ToolsService: Sendable {
     /// - Parameters:
     ///   - toolId: Optional tool ID to filter by.
     ///   - active: When true, only return currently active (unreturned) checkouts.
+    ///   - limit: Optional maximum number of rows to return. Leave nil for full history callers.
     /// - Returns: An array of `CheckoutRow` rows.
-    public func listCheckouts(toolId: Int64? = nil, active: Bool = false) throws -> [CheckoutRow] {
+    public func listCheckouts(toolId: Int64? = nil, active: Bool = false, limit: Int? = nil) throws -> [CheckoutRow] {
+        if let limit, limit <= 0 { return [] }
+
         do {
             return try db.writer.read { dbConn -> [CheckoutRow] in
                 var whereClauses = ["tm.deleted_at IS NULL"]
@@ -307,7 +310,11 @@ public final class ToolsService: Sendable {
                 if active {
                     whereClauses.append("tm.movement_type = 'checkout'")
                 }
+                if let limit {
+                    args.append(limit)
+                }
 
+                let limitClause = limit == nil ? "" : " LIMIT ?"
                 let sql = """
                     SELECT tm.id, tm.created_at AS checked_out_at,
                            NULL AS expected_return, NULL AS returned_at,
@@ -317,7 +324,7 @@ public final class ToolsService: Sendable {
                     LEFT JOIN tools t ON t.id = tm.tool_id AND t.deleted_at IS NULL
                     LEFT JOIN users u ON u.id = tm.performed_by AND u.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
-                    ORDER BY tm.created_at DESC
+                    ORDER BY tm.created_at DESC, tm.id DESC\(limitClause)
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
