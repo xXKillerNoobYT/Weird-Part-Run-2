@@ -262,6 +262,35 @@ struct SettingsServiceTests {
         #expect(map["size"] == "14")
     }
 
+    @Test("upsertSettingsMap rolls back all values when one write fails")
+    func testUpsertSettingsMapIsAtomic() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                CREATE TRIGGER fail_after_first_atomic_setting
+                BEFORE INSERT ON settings
+                WHEN NEW.category = 'atomic_test'
+                  AND (SELECT COUNT(*) FROM settings WHERE category = 'atomic_test') > 0
+                BEGIN
+                    SELECT RAISE(ABORT, 'simulated mid-map settings failure');
+                END
+                """)
+        }
+
+        do {
+            try svc.upsertSettingsMap(
+                ["first": "saved-before-failure", "second": "should-fail"],
+                category: "atomic_test"
+            )
+            Issue.record("Expected upsertSettingsMap to throw when the trigger aborts the second insert")
+        } catch {
+            let map = try svc.getSettingsByCategory("atomic_test")
+            #expect(map.isEmpty)
+        }
+    }
+
     // MARK: - Business Profile
 
     @Test("createBusinessProfile and hasBusinessProfile")

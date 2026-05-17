@@ -136,9 +136,23 @@ public final class SettingsService: Sendable {
     }
 
     /// Bulk upsert a dictionary of key->value pairs under one category.
+    ///
+    /// This must be a single database write transaction so a mid-map failure cannot
+    /// leave only some keys persisted. Several settings screens save compound
+    /// values through this method and expect the category to move between coherent
+    /// snapshots, not partially-updated field sets.
     public func upsertSettingsMap(_ data: [String: String], category: String) throws {
-        for (key, value) in data {
-            try upsertSetting(key: key, value: value, category: category)
+        try db.writer.write { dbConnection in
+            for (key, value) in data {
+                try dbConnection.execute(
+                    sql: """
+                        INSERT INTO settings (key, value, category, updated_at)
+                        VALUES (?, ?, ?, datetime('now'))
+                        ON CONFLICT(key) DO UPDATE SET value = ?, category = ?, updated_at = datetime('now')
+                        """,
+                    arguments: [key, value, category, value, category]
+                )
+            }
         }
     }
 
