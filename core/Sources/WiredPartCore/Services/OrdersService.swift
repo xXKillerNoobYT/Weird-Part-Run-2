@@ -2687,6 +2687,17 @@ public final class OrdersService: Sendable {
                         """,
                     arguments: [poId, jpoLineId, partId, qty]
                 )
+                let poLineId = dbConn.lastInsertedRowID
+                try dbConn.execute(
+                    sql: """
+                        UPDATE jpo_line_items
+                        SET line_status = 'in_procurement',
+                            po_line_id = ?,
+                            status_updated_at = datetime('now')
+                        WHERE id = ? AND deleted_at IS NULL
+                        """,
+                    arguments: [poLineId, jpoLineId]
+                )
             }
 
             // Link PO to JPO (fixes #203: removed try? to propagate errors)
