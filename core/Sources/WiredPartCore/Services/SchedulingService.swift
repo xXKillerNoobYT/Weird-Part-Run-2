@@ -502,6 +502,12 @@ public final class SchedulingService: Sendable {
         status: String,
         approvedBy: Int64? = nil
     ) throws {
+        if let approvedBy {
+            try db.writer.read { dbConn in
+                try ServicePermissionGate.requirePermission(dbConn, userId: approvedBy, permissionKey: "approve_time_off")
+            }
+        }
+
         let validStatuses = ["pending", "approved", "denied", "cancelled"]
         guard validStatuses.contains(status) else {
             throw SchedulingError.invalidStatus(status)
