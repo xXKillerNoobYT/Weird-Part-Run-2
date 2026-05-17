@@ -123,6 +123,7 @@ extension AppDatabase {
         registerMigration084WarehouseOnboardingCompletedSteps(&migrator)
         registerMigration085AuditSessionEvents(&migrator)
         registerMigration086PartAutoWishlistOptIn(&migrator)
+        registerMigration087MultiUserAuditResolutionColumns(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4663,6 +4664,11 @@ extension AppDatabase {
                 t.column("audit_session_id", .integer)
                     .references("audit_sessions_v2", onDelete: .cascade)
                 t.column("expected_quantity", .integer)
+                t.column("resolved_quantity", .integer)
+                t.column("resolution_method", .text)
+                t.column("resolved_by", .integer)
+                    .references("users")
+                t.column("resolved_at", .text)
                 t.column("notes", .text)
                 t.column("created_at", .text).defaults(sql: "(datetime('now'))")
             }
@@ -5126,6 +5132,39 @@ extension AppDatabase {
                 column: "auto_add_to_wishlist_when_low",
                 type: .integer,
                 defaultValue: 0
+            )
+        }
+    }
+
+    private static func registerMigration087MultiUserAuditResolutionColumns(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("087_multi_user_audit_resolution_columns") { db in
+            // MultiUserAuditAssignment persists resolution metadata after
+            // quorum/manager decisions. Fresh databases get these columns from
+            // migration 059; this incremental migration repairs databases that
+            // already ran 059 before the model gained the resolution fields.
+            try addColumnIfMissing(
+                db,
+                table: "multi_user_audit_assignments",
+                column: "resolved_quantity",
+                type: .integer
+            )
+            try addColumnIfMissing(
+                db,
+                table: "multi_user_audit_assignments",
+                column: "resolution_method",
+                type: .text
+            )
+            try addColumnIfMissing(
+                db,
+                table: "multi_user_audit_assignments",
+                column: "resolved_by",
+                type: .integer
+            )
+            try addColumnIfMissing(
+                db,
+                table: "multi_user_audit_assignments",
+                column: "resolved_at",
+                type: .text
             )
         }
     }
