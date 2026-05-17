@@ -41,19 +41,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # PR CodeQL has been hanging inside the Swift build on GitHub-hosted
-      # macOS runners, leaving required checks permanently pending. Keep the
-      # required `Analyze (swift)` check green for pull requests while retaining
-      # the full CodeQL scan for main/scheduled runs where it cannot block PR
-      # merge progress.
-      - name: Swift CodeQL PR recovery gate
-        if: github.event_name == 'pull_request'
-        run: |
-          echo "Skipping Swift CodeQL on pull_request because GitHub-hosted CodeQL Swift builds are currently hanging."
-          echo "The full CodeQL scan still runs on push and schedule events."
-
       - name: Initialize CodeQL
-        if: github.event_name != 'pull_request'
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
@@ -62,11 +50,9 @@ jobs:
           queries: security-and-quality
 
       - name: Build Swift package
-        if: github.event_name != 'pull_request'
         run: swift build --package-path core
 
       - name: Perform CodeQL Analysis
-        if: github.event_name != 'pull_request'
         uses: github/codeql-action/analyze@v3
         with:
           category: "/language:${{ matrix.language }}"
