@@ -516,6 +516,12 @@ final class AppCore: ObservableObject {
 
     // MARK: - SQLCipher Device Bootstrap Key
 
+    /// Stable simulator-only fallback used when ad-hoc/no-codesign QA builds cannot
+    /// access the Keychain (`errSecMissingEntitlement`, -34018). Production devices
+    /// still require the Keychain-backed random bootstrap key below.
+    nonisolated private static let simulatorKeychainFallbackKeyHex =
+        "8f1df32f4be04d5fcde1e8e6ddf9187f53a4b68370d5aafc56f0d43f2e9732a1"
+
     /// Return the device-bound SQLCipher bootstrap key (hex-encoded 64 chars).
     ///
     /// This key is used exclusively to encrypt the database file. It is a random
@@ -541,6 +547,12 @@ final class AppCore: ObservableObject {
         if readStatus == errSecSuccess, let data = result as? Data, data.count == 32 {
             return data.map { String(format: "%02x", $0) }.joined()
         }
+
+        #if targetEnvironment(simulator)
+        if readStatus == errSecMissingEntitlement {
+            return simulatorKeychainFallbackKeyHex
+        }
+        #endif
 
         // Generate 32 fresh random bytes.
         var keyBytes = [UInt8](repeating: 0, count: 32)
@@ -568,6 +580,11 @@ final class AppCore: ObservableObject {
             }
             throw CipherKeyError.keychainAccessFailed(rereadStatus)
         } else if addStatus != errSecSuccess {
+            #if targetEnvironment(simulator)
+            if addStatus == errSecMissingEntitlement {
+                return simulatorKeychainFallbackKeyHex
+            }
+            #endif
             throw CipherKeyError.keychainAccessFailed(addStatus)
         }
         return keyData.map { String(format: "%02x", $0) }.joined()
