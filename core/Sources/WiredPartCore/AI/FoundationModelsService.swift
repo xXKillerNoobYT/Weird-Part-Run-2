@@ -519,6 +519,24 @@ public actor FoundationModelsService {
         }
     }
 
+    /// Return the most recently active conversation ID, if any persisted chat exists.
+    ///
+    /// The AI assistant panel uses this to resume the last conversation across app launches
+    /// instead of generating a new UUID every time the panel is rebuilt.
+    public static func latestConversationId(from db: AppDatabase) async throws -> String? {
+        try await db.writer.read { dbConn in
+            try String.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT conversation_id
+                    FROM ai_conversation_messages
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """
+            )
+        }
+    }
+
     // MARK: - Private Generation
 
     /// Core generation method that handles the FoundationModels API call.
