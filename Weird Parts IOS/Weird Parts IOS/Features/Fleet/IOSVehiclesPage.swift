@@ -13,7 +13,7 @@ struct IOSVehiclesPage: View {
     // MARK: - State
 
     @State private var vehicles: [FleetService.VehicleListItem] = []
-    @State private var allVehicles: [FleetService.VehicleListItem] = []
+    @State private var vehicleStatusCounts: [String: Int] = [:]
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var statusFilter = "all"
@@ -112,8 +112,8 @@ struct IOSVehiclesPage: View {
     // MARK: - Status Picker
 
     private func countForStatus(_ status: String) -> Int {
-        if status == "all" { return allVehicles.count }
-        return allVehicles.filter { $0.status == status }.count
+        if status == "all" { return vehicleStatusCounts.values.reduce(0, +) }
+        return vehicleStatusCounts[status, default: 0]
     }
 
     private var statusPicker: some View {
@@ -270,10 +270,8 @@ struct IOSVehiclesPage: View {
         isLoading = vehicles.isEmpty
         loadError = nil
         do {
-            allVehicles = try service.listVehicles(status: nil)
-            vehicles = statusFilter == "all"
-                ? allVehicles
-                : allVehicles.filter { $0.status == statusFilter }
+            vehicleStatusCounts = try service.countVehiclesByStatus()
+            vehicles = try service.listVehicles(status: statusFilter == "all" ? nil : statusFilter)
         } catch {
             loadError = userFriendlyError(error, context: "load vehicles")
         }

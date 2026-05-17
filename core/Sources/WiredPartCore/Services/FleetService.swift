@@ -335,6 +335,30 @@ public final class FleetService: Sendable {
         }
     }
 
+    /// Count active, non-deleted vehicles grouped by status.
+    ///
+    /// `IOSVehiclesPage` uses these pre-aggregated counts for its status cards so
+    /// rendering does not repeatedly scan the full vehicle list in Swift.
+    public func countVehiclesByStatus() throws -> [String: Int] {
+        do {
+            return try db.writer.read { dbConn -> [String: Int] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT status, COUNT(*) AS count
+                    FROM vehicles
+                    WHERE deleted_at IS NULL AND is_active = 1
+                    GROUP BY status
+                    """)
+
+                return Dictionary(uniqueKeysWithValues: rows.map { row in
+                    (row["status"] ?? "active", row["count"] ?? 0)
+                })
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [:] }
+            throw error
+        }
+    }
+
     /// Get a single vehicle by ID with full detail and active assignments.
     public func getVehicleDetail(id: Int64) throws -> VehicleDetail? {
         do {

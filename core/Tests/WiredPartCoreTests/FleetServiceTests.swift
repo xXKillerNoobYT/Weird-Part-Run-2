@@ -59,6 +59,25 @@ struct FleetServiceTests {
         #expect(active.count >= 1)
     }
 
+    @Test("Count vehicles by status uses SQL aggregation")
+    func testCountVehiclesByStatus() throws {
+        let env = try E2ETestHelpers.setUp()
+        let activeId = try env.fleet.createVehicle(actorId: env.adminUserId, vehicleNumber: "V-CNT-A", vehicleName: "Count Active", vehicleType: "truck", make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil)
+        let maintenanceId = try env.fleet.createVehicle(actorId: env.adminUserId, vehicleNumber: "V-CNT-M", vehicleName: "Count Maintenance", vehicleType: "truck", make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE vehicles SET status = 'maintenance' WHERE id = ?", arguments: [maintenanceId])
+        }
+
+        let counts = try env.fleet.countVehiclesByStatus()
+        #expect(counts["active", default: 0] >= 1)
+        #expect(counts["maintenance", default: 0] == 1)
+
+        let activeVehicles = try env.fleet.listVehicles(status: "active")
+        #expect(activeVehicles.contains(where: { $0.id == activeId }))
+        #expect(!activeVehicles.contains(where: { $0.id == maintenanceId }))
+    }
+
     // MARK: - Trailer CRUD
 
     @Test("Create and list trailers")
