@@ -106,6 +106,7 @@ let appModules: [AppModule] = [
         AppTab(id: "warehouse-inventory", label: "Inventory", icon: "square.grid.3x3.fill", path: "/warehouse/inventory"),
         AppTab(id: "warehouse-locations", label: "Locations", icon: "map.fill", path: "/warehouse/locations"),
         AppTab(id: "warehouse-audit", label: "Audit", icon: "checkmark.shield.fill", path: "/warehouse/audit", permission: "perform_audit"),
+        AppTab(id: "warehouse-my-verifications", label: "My Verifications", icon: "checkmark.seal.fill", path: "/warehouse/my-verifications", permission: "perform_audit"),
         AppTab(id: "warehouse-returns", label: "Returns", icon: "arrow.uturn.left", path: "/warehouse/returns"),
         AppTab(id: "warehouse-tools", label: "Tools", icon: "wrench.and.screwdriver.fill", path: "/warehouse/tools"),
         AppTab(id: "warehouse-organization", label: "Org Audit", icon: "tag.fill", path: "/warehouse/organization", permission: "manage_warehouse"),
@@ -420,6 +421,12 @@ extension Notification.Name {
 
     /// Posted when the warehouse audit page disappears.
     static let warehouseAuditPageInactive = Notification.Name("WiredPart.warehouseAuditPageInactive")
+
+    /// Posted when the operator My Verifications page appears, with read-only assignment context for AI.
+    static let warehouseMyVerificationsPageActive = Notification.Name("WiredPart.warehouseMyVerificationsPageActive")
+
+    /// Posted when the operator My Verifications page disappears.
+    static let warehouseMyVerificationsPageInactive = Notification.Name("WiredPart.warehouseMyVerificationsPageInactive")
 
     /// Posted when the warehouse returns page appears, with read-only return status context for AI.
     static let warehouseReturnsPageActive = Notification.Name("WiredPart.warehouseReturnsPageActive")
