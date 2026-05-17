@@ -67,10 +67,13 @@ jobs:
           # security-and-quality is the broader query pack — catches
           # both vulnerabilities and code-smell patterns.
           queries: security-and-quality
+          config-file: ./.github/codeql/codeql-config.yml
 
-      - name: Build Swift package
+      - name: Build Swift package outside repository
         if: github.event_name != 'pull_request'
-        run: swift build --package-path core
+        # Keep SwiftPM dependency checkouts out of $GITHUB_WORKSPACE so CodeQL
+        # does not report third-party package internals as application alerts.
+        run: swift build --package-path core --scratch-path "$RUNNER_TEMP/wiredpart-swiftpm-build"
 
       - name: Perform CodeQL Analysis
         if: github.event_name != 'pull_request'
