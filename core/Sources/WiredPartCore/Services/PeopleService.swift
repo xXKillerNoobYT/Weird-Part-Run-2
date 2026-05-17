@@ -1799,6 +1799,10 @@ public final class PeopleService: Sendable {
     /// Add a communication entry for a customer.
     @discardableResult
     public func addCommunicationEntry(customerId: Int64, commType: String, content: String, createdBy: Int64) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_people")
+        }
+
         guard !commType.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw PeopleError.requiredFieldEmpty("commType")
         }
@@ -1926,6 +1930,10 @@ public final class PeopleService: Sendable {
     /// Add a note to a contractor.
     @discardableResult
     public func addContractorNote(contractorId: Int64, content: String, createdBy: Int64) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_people")
+        }
+
         guard !content.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw PeopleError.requiredFieldEmpty("content")
         }
@@ -2247,6 +2255,10 @@ public final class PeopleService: Sendable {
         customerId: Int64, jobId: Int64?, amount: Double, dueDate: String,
         invoiceNumber: String?, createdBy: Int64
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_people")
+        }
+
         guard amount > 0 else { throw PeopleError.invalidAmount(amount) }
         guard !dueDate.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw PeopleError.requiredFieldEmpty("dueDate")

@@ -539,6 +539,11 @@ public final class JobsService: Sendable {
     ) throws -> Int64 {
         guard !jobName.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
         guard !jobNumber.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
+        if let createdBy {
+            try db.writer.read { dbConn in
+                try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "create_jobs")
+            }
+        }
         return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
@@ -1504,6 +1509,10 @@ public final class JobsService: Sendable {
         createdBy: Int64,
         targetUserId: Int64? = nil
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "create_jobs")
+        }
+
         guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
         return try db.writer.write { dbConn in
             try dbConn.execute(
@@ -1700,6 +1709,10 @@ public final class JobsService: Sendable {
 
     /// Mark a daily report as reviewed.
     public func markReportReviewed(reportId: Int64, reviewedBy: Int64) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: reviewedBy, permissionKey: "view_job_reports")
+        }
+
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
