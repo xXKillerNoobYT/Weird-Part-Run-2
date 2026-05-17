@@ -559,17 +559,6 @@ struct IOSOfficeDashboardPage: View {
         }
     }
 
-    private func scheduleDailyBriefingNotificationIfAllowed() {
-        guard let userId = appCore.currentUser?.id else { return }
-        let hasOfficeAccess = appCore.hasPermission(officeAccessPermission)
-        Task {
-            _ = await OfficeDailyBriefingNotificationScheduler().scheduleIfAllowed(
-                userId: userId,
-                hasOfficeAccess: hasOfficeAccess
-            )
-        }
-    }
-
     private func suggestedAction(for item: DashboardService.AttentionItem) -> String {
         switch item.itemType {
         case "overdue_po": return "Go to Orders → Purchase Orders to follow up with the supplier."
