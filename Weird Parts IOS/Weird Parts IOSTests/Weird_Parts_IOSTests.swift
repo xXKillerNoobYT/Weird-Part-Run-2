@@ -23,4 +23,12 @@ struct Weird_Parts_IOSTests {
         #expect(!QAThreadStatusBuckets.isResolved("open"))
         #expect(!QAThreadStatusBuckets.isResolved("escalated"))
     }
+
+    @MainActor
+    @Test func warehouseAuditTabStaysWithinInitialPhoneToolbarViewport() async throws {
+        let warehouseTabs = appModules.first { $0.id == "warehouse" }?.tabs ?? []
+        let auditIndex = try #require(warehouseTabs.firstIndex { $0.id == "warehouse-audit" })
+
+        #expect(auditIndex <= 2)
+    }
 }
