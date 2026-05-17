@@ -381,7 +381,7 @@ public final class ReportsService: Sendable {
                         AND NOT EXISTS (
                             SELECT 1
                             FROM billing_periods bp
-                            WHERE bp.job_id = le.job_id
+                            WHERE (bp.job_id = le.job_id OR bp.job_id IS NULL)
                               AND bp.locked_at IS NOT NULL
                               AND bp.deleted_at IS NULL
                               AND date(le.clock_in) >= date(bp.period_start)
