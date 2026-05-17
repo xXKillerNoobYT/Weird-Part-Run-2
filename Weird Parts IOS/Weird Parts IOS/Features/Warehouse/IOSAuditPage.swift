@@ -364,38 +364,6 @@ struct IOSAuditPage: View {
                 }
             }
 
-            if isMultiUserVerificationFixtureEnabled {
-                Section("QA Fixture") {
-                    if let fixtureItem = fixtureVerificationItem {
-                        VStack(alignment: .leading, spacing: 10) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(fixtureItem.partName)
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                Text(fixtureItem.partCode ?? Self.multiUserFixturePartCode)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Button {
-                                selectedItemForVerification = fixtureItem
-                            } label: {
-                                Label("Verify Fixture Part", systemImage: "person.2.badge.gearshape")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.orange)
-                            .accessibilityIdentifier("qaFixtureVerifyButton")
-                        }
-                        .accessibilityIdentifier("qaFixturePartRow")
-                    } else {
-                        Text("Fixture part \(Self.multiUserFixturePartCode) is not available in this audit queue yet.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .accessibilityIdentifier("qaFixturePartMissingMessage")
-                    }
-                }
-            }
-
             if !walkingPathAreaIds.isEmpty || walkingPathSourceHint != nil || prunedStopsBanner != nil {
                 Section("Walking Path") {
                     if let prunedStopsBanner {
