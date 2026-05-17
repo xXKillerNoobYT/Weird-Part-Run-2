@@ -32,6 +32,33 @@ struct PeopleServiceTests {
         #expect(detail.displayName == "TestAdmin")
     }
 
+    @Test("Recent employee activity returns empty on fresh DB")
+    func testGetEmployeeRecentActivityEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let activity = try env.people.getEmployeeRecentActivity(id: env.adminUserId)
+        #expect(activity.isEmpty)
+    }
+
+    @Test("Recent employee activity returns job session rows")
+    func testGetEmployeeRecentActivityWithLaborEntry() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-ACT", name: "Activity Job")
+
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        try env.jobs.setClockEntryWorkType(clockEntryId: laborEntryId, workType: "warranty")
+        try env.jobs.clockOut(laborEntryId: laborEntryId)
+
+        let activity = try env.people.getEmployeeRecentActivity(id: env.adminUserId)
+        let first = try #require(activity.first)
+        #expect(first.id == laborEntryId)
+        #expect(first.jobId == jobId)
+        #expect(first.jobNumber == "J-ACT")
+        #expect(first.jobName == "Activity Job")
+        #expect(first.status == "completed")
+        #expect(first.clockOut != nil)
+        #expect(first.workType == "warranty")
+    }
+
     @Test("Update employee contact info")
     func testUpdateEmployeeContact() throws {
         let env = try E2ETestHelpers.setUp()

@@ -196,6 +196,7 @@ public final class ChatService: Sendable {
     public struct QAThreadRow: Sendable, Identifiable {
         public let id: Int64
         public let jobId: Int64
+        public let askedById: Int64?
         public let question: String
         public let askedByName: String
         public let currentLevel: String
@@ -205,12 +206,14 @@ public final class ChatService: Sendable {
         public let answeredByName: String?
 
         public init(
-            id: Int64, jobId: Int64 = 0, question: String, askedByName: String,
+            id: Int64, jobId: Int64 = 0, askedById: Int64? = nil,
+            question: String, askedByName: String,
             currentLevel: String, status: String, priority: String,
             answer: String?, answeredByName: String?
         ) {
             self.id = id
             self.jobId = jobId
+            self.askedById = askedById
             self.question = question
             self.askedByName = askedByName
             self.currentLevel = currentLevel
@@ -396,7 +399,7 @@ public final class ChatService: Sendable {
                 }
 
                 let sql = """
-                    SELECT qa.id, COALESCE(qa.job_id, 0) AS job_id, qa.subject, qa.current_level, qa.status, qa.priority,
+                    SELECT qa.id, COALESCE(qa.job_id, 0) AS job_id, qa.asked_by, qa.subject, qa.current_level, qa.status, qa.priority,
                            qa.answer_text,
                            COALESCE(ua.display_name, ua.email, 'Unknown') AS asked_by_name,
                            COALESCE(ub.display_name, ub.email) AS answered_by_name
@@ -412,6 +415,7 @@ public final class ChatService: Sendable {
                     QAThreadRow(
                         id: row["id"] ?? 0,
                         jobId: row["job_id"] ?? 0,
+                        askedById: row["asked_by"] as Int64?,
                         question: row["subject"] ?? "",
                         askedByName: row["asked_by_name"] ?? "Unknown",
                         currentLevel: row["current_level"] ?? "field",
@@ -441,7 +445,7 @@ public final class ChatService: Sendable {
                 }
 
                 let sql = """
-                    SELECT qa.id, COALESCE(qa.job_id, 0) AS job_id, qa.subject, qa.current_level, qa.status, qa.priority,
+                    SELECT qa.id, COALESCE(qa.job_id, 0) AS job_id, qa.asked_by, qa.subject, qa.current_level, qa.status, qa.priority,
                            qa.answer_text,
                            COALESCE(ua.display_name, ua.email, 'Unknown') AS asked_by_name,
                            COALESCE(ub.display_name, ub.email) AS answered_by_name
@@ -457,6 +461,7 @@ public final class ChatService: Sendable {
                     QAThreadRow(
                         id: row["id"] ?? 0,
                         jobId: row["job_id"] ?? 0,
+                        askedById: row["asked_by"] as Int64?,
                         question: row["subject"] ?? "",
                         askedByName: row["asked_by_name"] ?? "Unknown",
                         currentLevel: row["current_level"] ?? "field",

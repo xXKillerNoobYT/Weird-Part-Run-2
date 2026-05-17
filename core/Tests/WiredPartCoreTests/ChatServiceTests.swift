@@ -96,6 +96,7 @@ struct ChatServiceTests {
         let threads = try env.chat.listQAThreads(status: nil)
         #expect(threads.count >= 1)
         #expect(threads.first?.question == "Where are the 12 AWG connectors?")
+        #expect(threads.first?.askedById == env.adminUserId)
     }
 
     @Test("Filter QA threads by job")
@@ -110,6 +111,7 @@ struct ChatServiceTests {
         let job1Threads = try env.chat.listQAThreads(jobId: job1, status: nil)
         #expect(job1Threads.count == 1)
         #expect(job1Threads.first?.question == "Q for Job 1")
+        #expect(job1Threads.first?.askedById == env.adminUserId)
     }
 
     @Test("Escalate and resolve QA thread")
