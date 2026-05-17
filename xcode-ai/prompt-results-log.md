@@ -3265,4 +3265,4 @@ All 136 prompts verified and implemented. Program ready for review.
 - Added pull-to-refresh support to ReceivingRoutingFlow so currently displayed routing data can be reloaded without dismissing the flow.
 - Confirmed IOSFlexPoolPage already has .refreshable on the current base branch.
 **Issues Found:** None
-**Build:** PARTIAL — `swift build` PASS; `swift test` FAILS in pre-existing NotebooksServiceTests jobId filter expectations unrelated to this UI refreshability change; iOS app has no xcodeproj in repo for app target build.
+**Build:** PARTIAL — `swift build` PASS; `swift test` FAILS in pre-existing NotebooksServiceTests jobId filter expectations unrelated to this UI refreshability change. App-target validation was not run during this initial pass.
