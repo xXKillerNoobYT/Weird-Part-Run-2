@@ -49,6 +49,15 @@ struct IOSToolDetailPage: View {
             case .help: "help"
             }
         }
+
+        var presentationDetents: Set<PresentationDetent> {
+            switch self {
+            case .help:
+                [.medium, .large]
+            default:
+                [.large]
+            }
+        }
     }
 
     var body: some View {
@@ -107,7 +116,7 @@ struct IOSToolDetailPage: View {
         }
         .sheet(item: $activeSheet) { sheet in
             sheetContent(sheet)
-                .presentationDetents([.large])
+                .presentationDetents(sheet.presentationDetents)
                 .presentationDragIndicator(.visible)
         }
         .refreshable { loadAllData() }
