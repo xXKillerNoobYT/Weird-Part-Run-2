@@ -24,7 +24,8 @@ struct Weird_Parts_IOSTests {
         #expect(!QAThreadStatusBuckets.isResolved("escalated"))
     }
 
-    @Test func officeNavigationUsesOfficeOnlyGateAndFinancialRedactionGate() throws {
+    @MainActor
+    @Test func officeNavigationUsesOfficeOnlyGateAndFinancialRedactionGate() async throws {
         let leadPermissions = ["view_jobs", "manage_jobs", "view_orders"]
         let officePermissions = ["approve_orders", "show_dollar_values", "manage_jobs"]
 
