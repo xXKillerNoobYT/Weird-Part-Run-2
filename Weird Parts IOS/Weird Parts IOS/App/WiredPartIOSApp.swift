@@ -42,6 +42,16 @@ struct WiredPartIOSApp: App {
         ProcessInfo.processInfo.arguments.contains("-UITestingWarehouseSetupWizard")
     }
 
+    private var shouldOpenMyVerificationsForUITest: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-UITestingMultiUserVerificationFixture") ||
+            args.contains("-UITestingMyVerificationsPopulated") ||
+            args.contains("-UITestingMyVerificationsEmpty") ||
+            args.contains("-UITestingMyVerificationsError") ||
+            args.contains("-UITestingMyVerificationsLoading") ||
+            args.contains("-UITestingMyVerificationsDuplicate")
+    }
+
     /// Resolved color scheme from the user's theme setting.
     private var resolvedColorScheme: ColorScheme? {
         switch appCore.theme.themeMode {
@@ -66,6 +76,14 @@ struct WiredPartIOSApp: App {
                     } else if appCore.needsBootstrap {
                         BootstrapView()
                             .environmentObject(appCore)
+                    } else if shouldOpenWarehouseSetupForUITest {
+                        WarehouseOnboardingWizard()
+                            .environmentObject(appCore)
+                    } else if shouldOpenMyVerificationsForUITest {
+                        NavigationStack {
+                            IOSMyVerificationsPage()
+                                .environmentObject(appCore)
+                        }
                     } else if appCore.currentUser == nil {
                         LoginView()
                             .environmentObject(appCore)
@@ -77,9 +95,6 @@ struct WiredPartIOSApp: App {
                             .environmentObject(appCore)
                     } else if !hasCompletedOnboarding {
                         OnboardingWalkthroughView()
-                            .environmentObject(appCore)
-                    } else if shouldOpenWarehouseSetupForUITest {
-                        WarehouseOnboardingWizard()
                             .environmentObject(appCore)
                     } else {
                         IOSMainView()

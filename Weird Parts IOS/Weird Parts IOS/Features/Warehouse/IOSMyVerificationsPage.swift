@@ -121,6 +121,7 @@ struct IOSMyVerificationsPage: View {
 
     private func submit(row: VerificationRow, quantity: Int, notes: String?) {
         if row.isFixtureDuplicate {
+            selectedRow = nil
             actionError = Self.duplicateSubmitMessage
             return
         }
@@ -148,6 +149,7 @@ struct IOSMyVerificationsPage: View {
             selectedRow = nil
             loadData()
         } catch WarehouseService.WarehouseError.sessionAlreadyCompleted {
+            selectedRow = nil
             actionError = Self.duplicateSubmitMessage
         } catch {
             actionError = error.localizedDescription
