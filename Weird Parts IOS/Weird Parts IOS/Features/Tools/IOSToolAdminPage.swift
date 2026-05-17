@@ -49,6 +49,8 @@ struct IOSToolAdminPage: View {
                     ("Tips", "Use this page for audits and inventory checks. Sort through tools to verify serial numbers match physical tools. If a tool shows 'Checked Out' but is sitting on the shelf, open its detail page and return it to keep records accurate.")
                 ]
             )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .refreshable { await loadData() }
         .task { await loadData() }
