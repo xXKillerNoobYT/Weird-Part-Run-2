@@ -151,10 +151,8 @@ struct IOSMileagePage: View {
         isLoading = mileageLogs.isEmpty
         loadError = nil
         do {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd"
-            let startStr = formatter.string(from: effectiveStart)
-            let endStr = formatter.string(from: effectiveEnd)
+            let startStr = Formatters.localDateFormatter.string(from: effectiveStart)
+            let endStr = Formatters.localDateFormatter.string(from: effectiveEnd)
             mileageLogs = try service.listMileageLogs(start: startStr, end: endStr)
         } catch {
             loadError = userFriendlyError(error, context: "load mileage data")
