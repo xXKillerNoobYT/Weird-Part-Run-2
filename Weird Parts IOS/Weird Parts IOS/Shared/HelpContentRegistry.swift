@@ -123,6 +123,7 @@ struct HelpContentRegistry {
         "WiredPart.dispatchPageActive": "scheduling-dispatch",
         "WiredPart.scheduleCalendarPageActive": "scheduling-calendar",
         "WiredPart.employeesPageActive": "people-employees",
+        "WiredPart.employeeDetailPageActive": "people-employee-detail",
         "WiredPart.peopleDashboardPageActive": "people-dashboard",
         "WiredPart.customersPageActive": "people-customers",
         "WiredPart.contactsPageActive": "people-contacts",
@@ -148,7 +149,21 @@ struct HelpContentRegistry {
         "WiredPart.reportsDailySummaryPageActive": "reports-daily-summary",
         "WiredPart.reportsHubPageActive": "reports-hub",
         "WiredPart.reportsBuilderPageActive": "reports-builder",
+        "WiredPart.reportsFleetFuelCostsPageActive": "reports-fleet-fuel-costs",
+        "WiredPart.reportsFleetMaintenanceTrendsPageActive": "reports-fleet-maintenance-trends",
+        "WiredPart.reportsFleetMileageSummaryPageActive": "reports-fleet-mileage-summary",
+        "WiredPart.reportsFleetUtilizationPageActive": "reports-fleet-utilization",
+        "WiredPart.reportsSchedulingDispatchEfficiencyPageActive": "reports-scheduling-dispatch-efficiency",
+        "WiredPart.reportsSchedulingCrewUtilizationPageActive": "reports-scheduling-crew-utilization",
+        "WiredPart.reportsSchedulingPipelineSummaryPageActive": "reports-scheduling-pipeline-summary",
+        "WiredPart.reportsWarehouseInventoryValuePageActive": "reports-warehouse-inventory-value",
+        "WiredPart.reportsWarehouseBackorderStatusPageActive": "reports-warehouse-backorder-status",
+        "WiredPart.reportsWarehouseTurnoverPageActive": "reports-warehouse-turnover",
         "WiredPart.vehiclesPageActive": "fleet-vehicles",
+        "WiredPart.fleetDashboardPageActive": "fleet-dashboard",
+        "WiredPart.fleetMaintenancePageActive": "fleet-maintenance",
+        "WiredPart.partsBrandsPageActive": "parts-brands",
+        "WiredPart.partsCategoriesPageActive": "parts-categories",
         "WiredPart.toolRegistryPageActive": "tools-registry",
         "WiredPart.notebooksListPageActive": "notebooks-all",
         "WiredPart.settingsPageActive": "settings-app-config",
@@ -922,6 +937,106 @@ struct HelpContentRegistry {
                 ("What This Page Does", "Build a custom report in four steps: Type, Fields, Filters, and Results."),
                 ("How to Use It", "Select a report type, choose columns, set dates, generate rows, then export or save."),
                 ("Tips", "Start broad with more columns, then trim fields once you validate the result set."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "reports-fleet-fuel-costs",
+            title: "Fuel Costs Help",
+            sections: [
+                ("What This Page Does", "Breaks down fuel spending per vehicle for a selected date range."),
+                ("How to Use It", "Set dates, review summary totals, then compare per-vehicle gallons and spend."),
+                ("Tips", "Use this report to spot expensive vehicles and fuel-efficiency drift."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "reports-fleet-maintenance-trends",
+            title: "Maintenance Trends Help",
+            sections: [
+                ("What This Page Does", "Lists maintenance records and cost trends by vehicle over time."),
+                ("How to Use It", "Pick a date range, then review total cost and per-record maintenance details."),
+                ("Tips", "Repeated high-cost records can indicate replacement or preventive-maintenance gaps."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "reports-fleet-mileage-summary",
+            title: "Mileage Summary Help",
+            sections: [
+                ("What This Page Does", "Summarizes miles, trip counts, and average miles per trip by vehicle."),
+                ("How to Use It", "Filter by date, then compare vehicle mileage volume and trip density."),
+                ("Tips", "Use this with fuel costs to spot outlier vehicles."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "reports-fleet-utilization",
+            title: "Vehicle Utilization Help",
+            sections: [
+                ("What This Page Does", "Shows days active vs total days to measure fleet utilization."),
+                ("How to Use It", "Review average utilization and compare per-vehicle utilization percentages."),
+                ("Tips", "Persistently low-utilization vehicles are candidates for reassignment."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "reports-scheduling-dispatch-efficiency",
+            title: "Dispatch Efficiency Help",
+            sections: [
+                ("What This Page Does", "Tracks scheduled, dispatched, and completed job counts by date."),
+                ("How to Use It", "Set date range, check completion rate trends, then inspect low-efficiency days."),
+                ("Tips", "Large scheduled-to-completed gaps indicate execution bottlenecks."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "reports-scheduling-crew-utilization",
+            title: "Crew Utilization Help",
+            sections: [
+                ("What This Page Does", "Compares scheduled vs available hours for each employee."),
+                ("How to Use It", "Pick a date range and review utilization percentages by employee."),
+                ("Tips", "Use this to rebalance underbooked and overbooked crews."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "reports-scheduling-pipeline-summary",
+            title: "Pipeline Summary Help",
+            sections: [
+                ("What This Page Does", "Groups jobs by pipeline status with total estimated hours."),
+                ("How to Use It", "Review status counts and hours to identify pipeline imbalance."),
+                ("Tips", "Growing pending/on-hold counts can signal approval or material constraints."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "reports-warehouse-inventory-value",
+            title: "Inventory Value Help",
+            sections: [
+                ("What This Page Does", "Shows on-hand and on-order inventory value by category."),
+                ("How to Use It", "Review total value cards, then drill into category-level value concentration."),
+                ("Tips", "High-value categories should get tighter stock controls."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "reports-warehouse-backorder-status",
+            title: "Backorder Status Help",
+            sections: [
+                ("What This Page Does", "Lists PO line items that are not fully received."),
+                ("How to Use It", "Use summary counts and line details to track missing quantities by part."),
+                ("Tips", "Escalate long-running backorders before they impact job schedules."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "reports-warehouse-turnover",
+            title: "Inventory Turnover Help",
+            sections: [
+                ("What This Page Does", "Ranks parts by movement volume and quantity moved."),
+                ("How to Use It", "Filter by date and review top movers against current stock."),
+                ("Tips", "High-turnover items with low stock indicate reorder risk."),
             ]
         ),
 

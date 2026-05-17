@@ -1,7 +1,7 @@
 # AI Page Context Coverage Inventory
 
 Issue: WEI-1112 / WEI-1194 / GitHub #86 T1-19
-Updated: 2026-05-15
+Updated: 2026-05-16
 
 ## Success Condition
 
@@ -9,11 +9,11 @@ Complete the 87-page page-context coverage set by adding read-only page-active/p
 
 ## Current Coverage
 
-Implemented page-context notifications observed by `IOSAIAssistantPanel`: 72 page contexts.
+Implemented page-context notifications observed by `IOSAIAssistantPanel`: 87 page contexts.
 
-Help registry mappings with matching help entries: 72 page contexts.
+Help registry mappings with matching help entries: 87 page contexts.
 
-Known gap: none in the currently observed AI page-context set. Remaining work is additional unobserved functional pages, not broken mappings.
+Known gap: none in the currently observed AI page-context set.
 
 ## Covered Pages
 
@@ -24,6 +24,8 @@ Known gap: none in the currently observed AI page-context set. Remaining work is
 | Parts | Parts Suppliers | `suppliersPageActive` | `parts-suppliers` |
 | Parts | Parts Companions | `companionsPageActive` | `parts-companions` |
 | Parts | Parts Forecasting | `forecastingPageActive` | `parts-forecasting` |
+| Parts | Parts Brands | `partsBrandsPageActive` | `parts-brands` |
+| Parts | Parts Categories | `partsCategoriesPageActive` | `parts-categories` |
 | Dashboard | Dashboard Home | `dashboardPageActive` | `dashboard-home` |
 | Jobs | Jobs List | `jobsListPageActive` | `jobs-list` |
 | Jobs | Clock In/Out | `clockPageActive` | `dashboard-clock` |
@@ -63,6 +65,7 @@ Known gap: none in the currently observed AI page-context set. Remaining work is
 | Scheduling | Schedule Calendar | `scheduleCalendarPageActive` | `scheduling-calendar` |
 | People | People Dashboard | `peopleDashboardPageActive` | `people-dashboard` |
 | People | Employees | `employeesPageActive` | `people-employees` |
+| People | Employee Detail | `employeeDetailPageActive` | `people-employee-detail` |
 | People | Customers | `customersPageActive` | `people-customers` |
 | People | Contacts | `contactsPageActive` | `people-contacts` |
 | People | Contractors | `contractorsPageActive` | `people-contractors` |
@@ -87,7 +90,19 @@ Known gap: none in the currently observed AI page-context set. Remaining work is
 | Reports | Daily Reports Summary | `reportsDailySummaryPageActive` | `reports-daily-summary` |
 | Reports | Reports Hub | `reportsHubPageActive` | `reports-hub` |
 | Reports | Report Builder | `reportsBuilderPageActive` | `reports-builder` |
+| Reports | Fleet Fuel Costs | `reportsFleetFuelCostsPageActive` | `reports-fleet-fuel-costs` |
+| Reports | Fleet Maintenance Trends | `reportsFleetMaintenanceTrendsPageActive` | `reports-fleet-maintenance-trends` |
+| Reports | Fleet Mileage Summary | `reportsFleetMileageSummaryPageActive` | `reports-fleet-mileage-summary` |
+| Reports | Fleet Utilization | `reportsFleetUtilizationPageActive` | `reports-fleet-utilization` |
+| Reports | Scheduling Dispatch Efficiency | `reportsSchedulingDispatchEfficiencyPageActive` | `reports-scheduling-dispatch-efficiency` |
+| Reports | Scheduling Crew Utilization | `reportsSchedulingCrewUtilizationPageActive` | `reports-scheduling-crew-utilization` |
+| Reports | Scheduling Pipeline Summary | `reportsSchedulingPipelineSummaryPageActive` | `reports-scheduling-pipeline-summary` |
+| Reports | Warehouse Inventory Value | `reportsWarehouseInventoryValuePageActive` | `reports-warehouse-inventory-value` |
+| Reports | Warehouse Backorder Status | `reportsWarehouseBackorderStatusPageActive` | `reports-warehouse-backorder-status` |
+| Reports | Warehouse Turnover | `reportsWarehouseTurnoverPageActive` | `reports-warehouse-turnover` |
 | Fleet | Vehicles | `vehiclesPageActive` | `fleet-vehicles` |
+| Fleet | Fleet Dashboard | `fleetDashboardPageActive` | `fleet-dashboard` |
+| Fleet | Fleet Maintenance | `fleetMaintenancePageActive` | `fleet-maintenance` |
 | Tools | Tool Registry | `toolRegistryPageActive` | `tools-registry` |
 | Notebooks | Notebooks List | `notebooksListPageActive` | `notebooks-all` |
 | Settings | App Config | `settingsPageActive` | `settings-app-config` |
@@ -203,9 +218,27 @@ Added the next Office/Reports route-context slice:
 
 All payloads are read-only summaries of visible state, route scope, selected filters, lifecycle state, and available entry points. They do not expose mutating commands, action IDs, or write intents.
 
-## Next Highest-Traffic Remaining Slices
+## Specialized Reports Slice
 
-1. Specialized report pages: fleet, scheduling, and warehouse report detail pages still not observed by AI page-context notifications.
+Added specialized Fleet/Scheduling/Warehouse report detail page contexts:
+
+- Fleet: Fuel Costs, Maintenance Trends, Mileage Summary, Vehicle Utilization.
+- Scheduling: Dispatch Efficiency, Crew Utilization, Pipeline Summary.
+- Warehouse: Inventory Value, Backorder Status, Inventory Turnover.
+
+All payloads are read-only summaries of date ranges, visible rows, aggregate totals, and error state. They do not expose mutating commands, action IDs, or write intents.
+
+## Final 87/87 Closure Slice
+
+Closed the remaining five contexts to complete the target set:
+
+- `IOSFleetDashboardPage`: fleet KPI, utilization, due/overdue maintenance counts, and error state.
+- `IOSMaintenancePage`: loaded/visible maintenance records, search/date filters, completion status counts, and error state.
+- `PartsBrandsPage`: loaded/visible brand counts, supplier-link gaps, search state, and error state.
+- `PartsCategoriesPage`: hierarchy breadth, expanded-node counts, selected tree node, and error state.
+- `IOSEmployeeDetailPage`: selected tab, skills/teams/certification counts, assigned hats, activity rows, and permission/error state.
+
+All payloads are read-only summaries of visible state and available read-only analysis actions.
 
 ## Validation
 
@@ -238,6 +271,12 @@ Validated People/Office/Reports slice in the shared workspace on 2026-05-15:
 
 - People/Office/Reports notification names are declared, posted by their pages, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
 - Help registry mapping check returned no missing mapped page IDs.
+
+Validated final 87/87 closure slice in the shared workspace on 2026-05-16:
+
+- Added notification declarations for fleet dashboard, fleet maintenance, parts brands, parts categories, and employee detail active/inactive pairs.
+- Confirmed each page posts read-only active context and inactive notifications.
+- Confirmed `IOSAIAssistantPanel` observer wiring, active page tracking, and help mapping entries for the five new contexts.
 - `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was pre-existing warnings only.
 
 Validated Settings gap closure slice in the clean WEI-1112 settings worktree on 2026-05-15:
@@ -257,6 +296,13 @@ Validated Office/Reports route slice in the clean WEI-1112 tail worktree on 2026
 
 - Route slice notification names are declared, posted by Office/Reports route pages, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
 - Help registry mapping check returned no missing mapped page IDs.
+- `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was pre-existing warnings only.
+
+Validated specialized report slice in the clean WEI-1112 tail worktree on 2026-05-16:
+
+- Specialized report notification names are declared, posted by Fleet/Scheduling/Warehouse report pages, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
+- Help registry mapping check returned no missing mapped page IDs.
+- First build attempt surfaced Swift type-checker complexity in `IOSAIAssistantPanel`; observer and active-page trackers were split into smaller modifiers.
 - `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was pre-existing warnings only.
 
 Static validation:

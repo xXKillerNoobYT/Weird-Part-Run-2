@@ -89,6 +89,10 @@ struct SchedulingPipelineReport: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .reportsSchedulingPipelineSummaryPageInactive, object: nil)
+        }
     }
 
     private var totalJobs: Int { pipelineData.reduce(0) { $0 + $1.jobCount } }
@@ -123,5 +127,13 @@ struct SchedulingPipelineReport: View {
             loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let context = """
+        Scheduling Pipeline Summary report page. Status rows: \(pipelineData.count). Total jobs: \(totalJobs). Total estimated hours: \(String(format: "%.0f", totalHours)). Error state: \(loadError ?? "none"). Available read-only actions: summarize pipeline stage mix, identify bottleneck statuses, explain hours distribution across statuses.
+        """
+        NotificationCenter.default.post(name: .reportsSchedulingPipelineSummaryPageActive, object: nil, userInfo: ["context": context])
     }
 }

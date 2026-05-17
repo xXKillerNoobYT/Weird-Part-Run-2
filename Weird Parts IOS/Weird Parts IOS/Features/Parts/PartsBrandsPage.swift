@@ -86,6 +86,9 @@ struct PartsBrandsPage: View {
             await loadData()
             appCore.onboardingManager?.markCompleted("brands-view")
         }
+        .onDisappear {
+            NotificationCenter.default.post(name: .partsBrandsPageInactive, object: nil)
+        }
         .alert("Delete Brand?", isPresented: $showDeleteConfirm) {
             Button("Cancel", role: .cancel) { brandToDelete = nil }
             Button("Delete", role: .destructive) {
@@ -260,10 +263,20 @@ struct PartsBrandsPage: View {
             }
             isLoading = false
             loadError = nil
+            postPageContext()
         } catch {
             loadError = userFriendlyError(error, context: "load brands")
             isLoading = false
+            postPageContext()
         }
+    }
+
+    private func postPageContext() {
+        let noSupplierCount = brands.filter { $0.supplierCount == 0 }.count
+        let context = """
+        Parts Brands page. Loaded brands: \(brands.count). Visible brands: \(filteredBrands.count). Search: \(searchText.isEmpty ? "none" : searchText). Brands without suppliers: \(noSupplierCount). Delete error: \(deleteError ?? "none"). Load error: \(loadError ?? "none"). Available read-only actions: summarize brand coverage, identify supplier-link gaps, explain filtered brand list state.
+        """
+        NotificationCenter.default.post(name: .partsBrandsPageActive, object: nil, userInfo: ["context": context])
     }
 
     // MARK: - Delete
