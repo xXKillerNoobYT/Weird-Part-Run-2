@@ -585,6 +585,33 @@ struct ToolsServiceTests {
         #expect(active[0].toolName == "Active Tool")
     }
 
+    @Test("listCheckouts limit bounds results without changing full history default")
+    func testListCheckoutsLimit() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let tool1 = try insertTool(env, toolNumber: "T-LIM-1", name: "Old Checkout Tool")
+        let tool2 = try insertTool(env, toolNumber: "T-LIM-2", name: "Middle Checkout Tool")
+        let tool3 = try insertTool(env, toolNumber: "T-LIM-3", name: "Newest Checkout Tool")
+
+        let movement1 = try insertToolMovement(env, toolId: tool1, movementType: "checkout", performedBy: env.adminUserId)
+        let movement2 = try insertToolMovement(env, toolId: tool2, movementType: "return", performedBy: env.adminUserId)
+        let movement3 = try insertToolMovement(env, toolId: tool3, movementType: "checkout", performedBy: env.adminUserId)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE tool_movements SET created_at = '2026-01-01 09:00:00' WHERE id = ?", arguments: [movement1])
+            try db.execute(sql: "UPDATE tool_movements SET created_at = '2026-01-02 09:00:00' WHERE id = ?", arguments: [movement2])
+            try db.execute(sql: "UPDATE tool_movements SET created_at = '2026-01-03 09:00:00' WHERE id = ?", arguments: [movement3])
+        }
+
+        let fullHistory = try env.tools.listCheckouts()
+        let limited = try env.tools.listCheckouts(limit: 2)
+        let zeroLimit = try env.tools.listCheckouts(limit: 0)
+
+        #expect(fullHistory.map(\.toolName) == ["Newest Checkout Tool", "Middle Checkout Tool", "Old Checkout Tool"])
+        #expect(limited.map(\.toolName) == ["Newest Checkout Tool", "Middle Checkout Tool"])
+        #expect(zeroLimit.isEmpty)
+    }
+
     // =========================================================================
     // MARK: - 9. Tools Stats
     // =========================================================================

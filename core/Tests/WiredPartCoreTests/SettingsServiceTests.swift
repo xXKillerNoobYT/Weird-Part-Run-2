@@ -71,6 +71,52 @@ struct SettingsServiceTests {
         #expect(all["cat_b"]?["b"] == "2")
     }
 
+    @Test("syncScope classifies personal device and company settings")
+    func testSyncScopeClassification() throws {
+        #expect(SettingsService.syncScope(for: "theme_mode", category: "general") == .personal)
+        #expect(SettingsService.syncScope(for: "custom_color", category: "theme") == .personal)
+
+        #expect(SettingsService.syncScope(for: "update_channel", category: "general") == .device)
+        #expect(SettingsService.syncScope(for: "custom_backup_key", category: "backup") == .device)
+
+        #expect(SettingsService.syncScope(for: "payment_terms", category: "pdf") == .company)
+        #expect(SettingsService.syncScope(for: "unknown_future_setting") == .company)
+    }
+
+    @Test("getSettings filters rows by sync scope")
+    func testGetSettingsBySyncScope() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        try svc.upsertSetting(key: "payment_terms", value: "Net 30", category: "pdf")
+        try svc.upsertSetting(key: "theme_mode", value: "dark", category: "theme")
+        try svc.upsertSetting(key: "update_channel", value: "beta", category: "updates")
+
+        let company = try svc.getSettings(scope: .company)
+        let personal = try svc.getSettings(scope: .personal)
+        let device = try svc.getSettings(scope: .device)
+
+        #expect(company.contains { $0.key == "payment_terms" && $0.syncScope == .company })
+        #expect(personal.contains { $0.key == "theme_mode" && $0.syncScope == .personal })
+        #expect(device.contains { $0.key == "update_channel" && $0.syncScope == .device })
+    }
+
+    @Test("getSettings excluding device returns syncable rows only")
+    func testGetSettingsExcludingDevice() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        try svc.upsertSetting(key: "payment_terms", value: "Net 30", category: "pdf")
+        try svc.upsertSetting(key: "theme_mode", value: "dark", category: "theme")
+        try svc.upsertSetting(key: "last_backup_time", value: "2026-05-17T00:00:00Z", category: "backup")
+
+        let syncable = try svc.getSettings(excludingScope: .device)
+
+        #expect(syncable.contains { $0.key == "payment_terms" })
+        #expect(syncable.contains { $0.key == "theme_mode" })
+        #expect(!syncable.contains { $0.key == "last_backup_time" })
+    }
+
     // MARK: - Theme
 
     @Test("getTheme returns defaults when no settings exist")
