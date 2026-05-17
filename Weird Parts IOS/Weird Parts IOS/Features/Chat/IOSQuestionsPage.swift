@@ -98,7 +98,8 @@ struct IOSQuestionsPage: View {
         case .all: return threads.count
         case .open: return threads.filter { QAThreadStatusBuckets.isOpen($0.status) }.count
         case .myQuestions:
-            return threads.count // All shown for now — user-specific filtering added later
+            guard let currentUserId = appCore.currentUser?.id else { return 0 }
+            return threads.filter { $0.askedById == currentUserId }.count
         case .needsMyReview: return threads.filter { $0.status == "open" }.count
         case .resolved: return threads.filter { QAThreadStatusBuckets.isResolved($0.status) }.count
         }
@@ -189,7 +190,12 @@ struct IOSQuestionsPage: View {
         switch statusFilter {
         case .all: break
         case .open: items = items.filter { QAThreadStatusBuckets.isOpen($0.status) }
-        case .myQuestions: break // Show all for now
+        case .myQuestions:
+            guard let currentUserId = appCore.currentUser?.id else {
+                items = []
+                break
+            }
+            items = items.filter { $0.askedById == currentUserId }
         case .needsMyReview: items = items.filter { $0.status == "open" }
         case .resolved: items = items.filter { QAThreadStatusBuckets.isResolved($0.status) }
         }
