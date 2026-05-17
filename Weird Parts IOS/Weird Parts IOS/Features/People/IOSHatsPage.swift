@@ -423,7 +423,10 @@ private struct HatDetailSheet: View {
     }
 
     private func removeMember(at offsets: IndexSet) {
-        guard let service = appCore.peopleService else { return }
+        guard let service = appCore.peopleService else {
+            loadError = "People service unavailable"
+            return
+        }
         for index in offsets {
             let member = members[index]
             do {
@@ -545,7 +548,10 @@ private struct AddEmployeeToHatSheet: View {
     }
 
     private func assignEmployee(_ employeeId: Int64) {
-        guard let service = appCore.peopleService else { return }
+        guard let service = appCore.peopleService else {
+            loadError = "People service unavailable"
+            return
+        }
         do {
             try service.toggleHatAssignment(employeeId: employeeId, hatId: hatId, assign: true)
             dismiss()
