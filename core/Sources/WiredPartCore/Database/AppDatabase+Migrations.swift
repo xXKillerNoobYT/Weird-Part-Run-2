@@ -123,6 +123,7 @@ extension AppDatabase {
         registerMigration084WarehouseOnboardingCompletedSteps(&migrator)
         registerMigration085AuditSessionEvents(&migrator)
         registerMigration086PartAutoWishlistOptIn(&migrator)
+        registerMigration087NotebookClassificationPermissions(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5127,6 +5128,26 @@ extension AppDatabase {
                 type: .integer,
                 defaultValue: 0
             )
+        }
+    }
+
+
+    private static func registerMigration087NotebookClassificationPermissions(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("087_notebook_classification_permissions") { db in
+            let permissionGrants: [(key: String, hatNames: [String])] = [
+                ("notebooks.classify_todo", ["Admin", "Manager", "Lead", "Worker"]),
+                ("notebooks.reclassify_todo", ["Admin", "Manager"]),
+                ("notebooks.review_classification", ["Admin", "Manager"]),
+            ]
+
+            for grant in permissionGrants {
+                for hatName in grant.hatNames {
+                    try db.execute(sql: """
+                        INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+                        SELECT id, ? FROM hats WHERE name = ?
+                        """, arguments: [grant.key, hatName])
+                }
+            }
         }
     }
 
