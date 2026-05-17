@@ -52,12 +52,17 @@ public final class JobsService: Sendable {
         public let startDate: String?
         public let dueDate: String?
         public let currentStageId: Int64?
+        public let estimatedHours: Double?
+        public let laborHours: Double
+        public let budgetLimit: Double?
+        public let actualCost: Double
 
         public init(
             id: Int64, jobNumber: String, jobName: String, customerName: String?,
             status: String, priority: String, jobType: String = "service",
             teamCount: Int, startDate: String?, dueDate: String?,
-            currentStageId: Int64? = nil
+            currentStageId: Int64? = nil, estimatedHours: Double? = nil,
+            laborHours: Double = 0, budgetLimit: Double? = nil, actualCost: Double = 0
         ) {
             self.id = id
             self.jobNumber = jobNumber
@@ -70,6 +75,10 @@ public final class JobsService: Sendable {
             self.startDate = startDate
             self.dueDate = dueDate
             self.currentStageId = currentStageId
+            self.estimatedHours = estimatedHours
+            self.laborHours = laborHours
+            self.budgetLimit = budgetLimit
+            self.actualCost = actualCost
         }
     }
 
@@ -410,9 +419,15 @@ public final class JobsService: Sendable {
                 let sql = """
                     SELECT j.id, j.job_number, j.job_name, j.customer_name,
                            j.status, j.priority, j.job_type, j.start_date, j.due_date,
-                           j.current_stage_id,
+                           j.current_stage_id, j.estimated_hours, j.budget_limit,
                            COALESCE((SELECT COUNT(*) FROM job_team_members jtm
-                                     WHERE jtm.job_id = j.id AND jtm.deleted_at IS NULL), 0) AS team_count
+                                     WHERE jtm.job_id = j.id AND jtm.deleted_at IS NULL), 0) AS team_count,
+                           COALESCE((SELECT SUM(le.regular_hours + le.overtime_hours)
+                                     FROM labor_entries le
+                                     WHERE le.job_id = j.id AND le.deleted_at IS NULL), 0) AS labor_hours,
+                           COALESCE((SELECT SUM(jp.qty_consumed * COALESCE(jp.unit_cost_at_consume, 0))
+                                     FROM job_parts jp
+                                     WHERE jp.job_id = j.id AND jp.deleted_at IS NULL), 0) AS parts_cost
                     FROM jobs j
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY j.created_at DESC
@@ -432,7 +447,11 @@ public final class JobsService: Sendable {
                         teamCount: row["team_count"] ?? 0,
                         startDate: row["start_date"] as String?,
                         dueDate: row["due_date"] as String?,
-                        currentStageId: row["current_stage_id"] as Int64?
+                        currentStageId: row["current_stage_id"] as Int64?,
+                        estimatedHours: row["estimated_hours"] as Double?,
+                        laborHours: row["labor_hours"] ?? 0.0,
+                        budgetLimit: row["budget_limit"] as Double?,
+                        actualCost: row["parts_cost"] ?? 0.0
                     )
                 }
             }
@@ -539,6 +558,11 @@ public final class JobsService: Sendable {
     ) throws -> Int64 {
         guard !jobName.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
         guard !jobNumber.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
+        if let createdBy {
+            try db.writer.read { dbConn in
+                try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "create_jobs")
+            }
+        }
         return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
@@ -567,8 +591,31 @@ public final class JobsService: Sendable {
                     jobClassification
                 ]
             )
-            return dbConn.lastInsertedRowID
+            let jobId = dbConn.lastInsertedRowID
+            let notebookCreatorId = try resolveJobNotebookCreatorId(dbConn: dbConn, preferredUserId: createdBy)
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO notebooks
+                    (title, notebook_type, job_id, created_by, status, created_at, updated_at)
+                    VALUES (?, 'job', ?, ?, 'active', datetime('now'), datetime('now'))
+                    """,
+                arguments: ["\(jobName) Job Notebook", jobId, notebookCreatorId]
+            )
+            return jobId
         }
+    }
+
+    private func resolveJobNotebookCreatorId(dbConn: Database, preferredUserId: Int64?) throws -> Int64 {
+        if let preferredUserId {
+            return preferredUserId
+        }
+        if let fallbackUserId = try Int64.fetchOne(
+            dbConn,
+            sql: "SELECT id FROM users WHERE deleted_at IS NULL ORDER BY id ASC LIMIT 1"
+        ) {
+            return fallbackUserId
+        }
+        throw JobsError.requiredFieldEmpty
     }
 
     /// Update an existing job. Only non-nil fields are updated.
@@ -931,13 +978,15 @@ public final class JobsService: Sendable {
     ) throws -> Int64 {
         try db.writer.write { dbConn in
             // Verify the entry exists and is clocked in
-            guard let _ = try Row.fetchOne(
+            guard let entry = try Row.fetchOne(
                 dbConn,
-                sql: "SELECT id, clock_in FROM labor_entries WHERE id = ? AND status = 'clocked_in' AND deleted_at IS NULL",
+                sql: "SELECT id, user_id, clock_in FROM labor_entries WHERE id = ? AND status = 'clocked_in' AND deleted_at IS NULL",
                 arguments: [laborEntryId]
             ) else {
                 throw JobsError.laborEntryNotFound(laborEntryId)
             }
+            let userId: Int64 = entry["user_id"] ?? 0
+            let clockIn: String = entry["clock_in"] ?? ""
 
             // Calculate raw elapsed hours
             let rawHours = try Double.fetchOne(dbConn, sql: """
@@ -952,9 +1001,22 @@ public final class JobsService: Sendable {
                 """, arguments: [laborEntryId]) ?? 0
             let totalHours = max(0, rawHours - (breakMinutes / 60.0))
 
-            // Split into regular/overtime at 8-hour daily threshold
-            let regularHours = min(totalHours, 8.0)
-            let overtimeHours = max(0, totalHours - 8.0)
+            // Split into regular/overtime at the per-user, per-day threshold. Count earlier
+            // completed entries for the same worker/day so switching jobs does not restart
+            // the daily regular-hours allowance.
+            let priorWorkedHours = try Double.fetchOne(dbConn, sql: """
+                SELECT COALESCE(SUM(regular_hours + overtime_hours), 0)
+                FROM labor_entries
+                WHERE user_id = ?
+                  AND id != ?
+                  AND status = 'completed'
+                  AND deleted_at IS NULL
+                  AND date(clock_in) = date(?)
+                  AND clock_in < ?
+                """, arguments: [userId, laborEntryId, clockIn, clockIn]) ?? 0
+            let remainingRegularHours = max(0, 8.0 - priorWorkedHours)
+            let regularHours = min(totalHours, remainingRegularHours)
+            let overtimeHours = max(0, totalHours - regularHours)
 
             try dbConn.execute(
                 sql: """
@@ -1481,6 +1543,10 @@ public final class JobsService: Sendable {
         createdBy: Int64,
         targetUserId: Int64? = nil
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "create_jobs")
+        }
+
         guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
         return try db.writer.write { dbConn in
             try dbConn.execute(
@@ -1677,6 +1743,10 @@ public final class JobsService: Sendable {
 
     /// Mark a daily report as reviewed.
     public func markReportReviewed(reportId: Int64, reviewedBy: Int64) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: reviewedBy, permissionKey: "view_job_reports")
+        }
+
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """

@@ -196,6 +196,7 @@ public final class ChatService: Sendable {
     public struct QAThreadRow: Sendable, Identifiable {
         public let id: Int64
         public let jobId: Int64
+        public let askedById: Int64?
         public let question: String
         public let askedByName: String
         public let currentLevel: String
@@ -205,12 +206,14 @@ public final class ChatService: Sendable {
         public let answeredByName: String?
 
         public init(
-            id: Int64, jobId: Int64 = 0, question: String, askedByName: String,
+            id: Int64, jobId: Int64 = 0, askedById: Int64? = nil,
+            question: String, askedByName: String,
             currentLevel: String, status: String, priority: String,
             answer: String?, answeredByName: String?
         ) {
             self.id = id
             self.jobId = jobId
+            self.askedById = askedById
             self.question = question
             self.askedByName = askedByName
             self.currentLevel = currentLevel
@@ -353,6 +356,10 @@ public final class ChatService: Sendable {
         jobId: Int64? = nil,
         createdBy: Int64
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_chat")
+        }
+
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw ChatError.requiredFieldEmpty
         }
@@ -396,7 +403,7 @@ public final class ChatService: Sendable {
                 }
 
                 let sql = """
-                    SELECT qa.id, COALESCE(qa.job_id, 0) AS job_id, qa.subject, qa.current_level, qa.status, qa.priority,
+                    SELECT qa.id, COALESCE(qa.job_id, 0) AS job_id, qa.asked_by, qa.subject, qa.current_level, qa.status, qa.priority,
                            qa.answer_text,
                            COALESCE(ua.display_name, ua.email, 'Unknown') AS asked_by_name,
                            COALESCE(ub.display_name, ub.email) AS answered_by_name
@@ -412,6 +419,7 @@ public final class ChatService: Sendable {
                     QAThreadRow(
                         id: row["id"] ?? 0,
                         jobId: row["job_id"] ?? 0,
+                        askedById: row["asked_by"] as Int64?,
                         question: row["subject"] ?? "",
                         askedByName: row["asked_by_name"] ?? "Unknown",
                         currentLevel: row["current_level"] ?? "field",
@@ -441,7 +449,7 @@ public final class ChatService: Sendable {
                 }
 
                 let sql = """
-                    SELECT qa.id, COALESCE(qa.job_id, 0) AS job_id, qa.subject, qa.current_level, qa.status, qa.priority,
+                    SELECT qa.id, COALESCE(qa.job_id, 0) AS job_id, qa.asked_by, qa.subject, qa.current_level, qa.status, qa.priority,
                            qa.answer_text,
                            COALESCE(ua.display_name, ua.email, 'Unknown') AS asked_by_name,
                            COALESCE(ub.display_name, ub.email) AS answered_by_name
@@ -457,6 +465,7 @@ public final class ChatService: Sendable {
                     QAThreadRow(
                         id: row["id"] ?? 0,
                         jobId: row["job_id"] ?? 0,
+                        askedById: row["asked_by"] as Int64?,
                         question: row["subject"] ?? "",
                         askedByName: row["asked_by_name"] ?? "Unknown",
                         currentLevel: row["current_level"] ?? "field",
@@ -648,7 +657,11 @@ public final class ChatService: Sendable {
         holdReason: String?,
         userId: Int64
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "manage_orders")
+        }
+
+        return try db.writer.write { dbConn in
             let channelName = "Hold: \(partName) (\(jpoNumber))"
 
             // Check if a thread already exists for this part + JPO
@@ -910,6 +923,10 @@ public final class ChatService: Sendable {
     /// `userId` must flow from the session; no default to prevent hardcoded user 1
     /// attribution on auto-created notebooks (documented in memory/feedback_hardcoded_user_ids.md).
     public func autoSaveToJobNotebook(channelId: Int64, attachment: MessageAttachment, userId: Int64) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "manage_notebooks")
+        }
+
         try db.writer.write { dbConn in
             // Get job ID from channel
             guard let row = try Row.fetchOne(dbConn, sql: """
@@ -1213,6 +1230,10 @@ public final class ChatService: Sendable {
 
     /// Escalate a Q&A thread to the next level.
     public func escalateThread(threadId: Int64, escalatedBy: Int64, notes: String?) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: escalatedBy, permissionKey: "moderate_chat")
+        }
+
         try db.writer.write { dbConn in
             guard let row = try Row.fetchOne(dbConn, sql: """
                 SELECT current_level FROM qa_threads WHERE id = ? AND deleted_at IS NULL
@@ -1315,7 +1336,11 @@ public final class ChatService: Sendable {
         createdBy: Int64,
         jobId: Int64? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_chat")
+        }
+
+        return try db.writer.write { dbConn in
             // Create the channel with type "supplier" and optional job link
             try dbConn.execute(sql: """
                 INSERT INTO chat_channels (channel_type, job_id, name, created_by, is_active, created_at)

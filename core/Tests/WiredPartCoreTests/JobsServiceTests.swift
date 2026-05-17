@@ -24,6 +24,55 @@ struct JobsServiceTests {
         #expect(jobs.contains(where: { $0.jobNumber == "J-TEST" }))
     }
 
+    @Test("Create job creates exactly one active linked job notebook")
+    func testCreateJobCreatesLinkedNotebook() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try env.jobs.createJob(
+            jobNumber: "J-NB-001",
+            jobName: "Notebook Atomic Job",
+            createdBy: env.adminUserId
+        )
+
+        let notebooks = try env.notebooks.listNotebooks(notebookType: "job", jobId: jobId)
+        #expect(notebooks.count == 1)
+        #expect(notebooks.first?.status == "active")
+        #expect(notebooks.first?.title == "Notebook Atomic Job Job Notebook")
+    }
+
+    @Test("Create job rolls back when linked notebook cannot be created")
+    func testCreateJobRollsBackWhenNotebookCreationFails() throws {
+        let env = try E2ETestHelpers.setUp()
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now')")
+        }
+
+        var threw = false
+        do {
+            _ = try env.jobs.createJob(jobNumber: "J-NB-ROLLBACK", jobName: "Rollback Job")
+        } catch JobsService.JobsError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+
+        let jobCount = try env.db.writer.read { db in
+            try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM jobs WHERE job_number = ?",
+                arguments: ["J-NB-ROLLBACK"]
+            ) ?? 0
+        }
+        let notebookCount = try env.db.writer.read { db in
+            try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM notebooks WHERE title = ?",
+                arguments: ["Rollback Job Job Notebook"]
+            ) ?? 0
+        }
+
+        #expect(threw)
+        #expect(jobCount == 0)
+        #expect(notebookCount == 0)
+    }
+
     @Test("Get job detail")
     func testGetJobDetail() throws {
         let env = try E2ETestHelpers.setUp()
@@ -77,6 +126,52 @@ struct JobsServiceTests {
 
         let summary = try env.jobs.getLaborSummary(jobId: jobId)
         #expect(summary.totalEntries >= 1)
+    }
+
+    @Test("Daily overtime threshold spans multiple labor entries")
+    func testDailyOvertimeThresholdSpansMultipleLaborEntries() throws {
+        let env = try E2ETestHelpers.setUp()
+        let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-1", name: "First OT Job")
+        let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-2", name: "Second OT Job")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES
+                    (
+                        ?,
+                        ?,
+                        date(datetime('now', '-4 hours')) || ' 00:00:00',
+                        date(datetime('now', '-4 hours')) || ' 06:00:00',
+                        6.0,
+                        0.0,
+                        'completed',
+                        datetime('now')
+                    )
+                """, arguments: [env.adminUserId, firstJobId])
+        }
+
+        let secondLaborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: secondJobId)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE labor_entries SET clock_in = datetime('now', '-4 hours') WHERE id = ?",
+                arguments: [secondLaborEntryId]
+            )
+        }
+
+        try env.jobs.clockOut(laborEntryId: secondLaborEntryId)
+
+        let secondEntry = try env.db.writer.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT regular_hours, overtime_hours FROM labor_entries WHERE id = ?",
+                arguments: [secondLaborEntryId]
+            )
+        }
+
+        #expect(secondEntry?["regular_hours"] as Double? == 2.0)
+        #expect(secondEntry?["overtime_hours"] as Double? == 2.0)
     }
 
     // MARK: - Team Members

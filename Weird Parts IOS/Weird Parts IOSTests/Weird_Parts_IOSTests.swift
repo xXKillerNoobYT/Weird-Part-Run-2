@@ -24,7 +24,6 @@ struct Weird_Parts_IOSTests {
         #expect(!QAThreadStatusBuckets.isResolved("escalated"))
     }
 
-    @MainActor
     @Test func officeNavigationUsesOfficeOnlyGateAndFinancialRedactionGate() throws {
         let leadPermissions = ["view_jobs", "manage_jobs", "view_orders"]
         let officePermissions = ["approve_orders", "show_dollar_values", "manage_jobs"]
@@ -41,5 +40,13 @@ struct Weird_Parts_IOSTests {
         #expect(officeTabs.contains("office-approvals"))
         #expect(officeTabs.contains("office-spending"))
         #expect(financialValuesPermission == "show_dollar_values")
+    }
+
+    @MainActor
+    @Test func warehouseAuditTabStaysWithinInitialPhoneToolbarViewport() async throws {
+        let warehouseTabs = appModules.first { $0.id == "warehouse" }?.tabs ?? []
+        let auditIndex = try #require(warehouseTabs.firstIndex { $0.id == "warehouse-audit" })
+
+        #expect(auditIndex <= 2)
     }
 }

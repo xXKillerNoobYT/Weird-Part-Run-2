@@ -566,6 +566,10 @@ public final class WarehouseService: Sendable {
         unitCostAtMove: Double? = nil,
         unitSellAtMove: Double? = nil
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: performedBy, permissionKey: "move_stock_warehouse")
+        }
+
         // qty must be positive. Movement direction (pull vs. add) is determined by
         // which of fromLocationType/toLocationType is non-nil, not by sign. A
         // negative qty inverts the stock delta: `qty = qty - (-3)` = qty + 3.
@@ -705,6 +709,10 @@ public final class WarehouseService: Sendable {
     /// the entire batch rolls back — no partial state is committed.
     @discardableResult
     public func createBatchMovements(movements: [MovementInput], performedBy: Int64) throws -> [Int64] {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: performedBy, permissionKey: "move_stock_warehouse")
+        }
+
         guard !movements.isEmpty else { return [] }
         for m in movements {
             guard m.qty > 0 else { throw WarehouseError.invalidQuantity }
@@ -1601,6 +1609,10 @@ public final class WarehouseService: Sendable {
         notes: String?,
         userId: Int64
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "perform_audit")
+        }
+
         guard !scope.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw WarehouseError.requiredFieldEmpty
         }
@@ -1647,6 +1659,12 @@ public final class WarehouseService: Sendable {
         reason: String?,
         performedBy: Int64?
     ) throws {
+        if let performedBy {
+            try db.writer.read { dbConn in
+                try ServicePermissionGate.requirePermission(dbConn, userId: performedBy, permissionKey: "perform_audit")
+            }
+        }
+
         guard newQty >= 0 else { throw WarehouseError.invalidQuantity }
         try db.writer.write { dbConn in
             if let uid = performedBy {
@@ -1840,7 +1858,11 @@ public final class WarehouseService: Sendable {
         recordedBy: Int64,
         notes: String? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: recordedBy, permissionKey: "manage_warehouse")
+        }
+
+        return try db.writer.write { dbConn in
             // Guard: trailer must exist and not be tombstoned — otherwise the
             // INSERT creates an orphan trailer_location_events row against a
             // decommissioned trailer (the FK constraint accepts the write).
@@ -2450,6 +2472,53 @@ public final class WarehouseService: Sendable {
             .fetchAll(dbConn)
     }
 
+    @discardableResult
+    private func pruneOrphanedStops(floorPlanId: Int64, dbConn: Database) throws -> Int {
+        let orphanIds = try Int64.fetchAll(dbConn, sql: """
+            SELECT s.id
+            FROM warehouse_walking_path_stops s
+            JOIN warehouse_walking_paths p
+                ON p.id = s.path_id
+               AND p.floor_plan_id = ?
+               AND p.deleted_at IS NULL
+               AND p.is_active = 1
+            LEFT JOIN warehouse_storage_areas a
+                ON a.id = s.area_id
+            LEFT JOIN warehouse_storage_levels l
+                ON l.id = a.level_id
+            LEFT JOIN warehouse_storage_units u
+                ON u.id = l.unit_id
+            WHERE s.deleted_at IS NULL
+              AND s.is_active = 1
+              AND (
+                a.id IS NULL OR a.deleted_at IS NOT NULL OR
+                l.id IS NULL OR l.deleted_at IS NOT NULL OR
+                u.id IS NULL OR u.deleted_at IS NOT NULL OR
+                u.floor_plan_id != p.floor_plan_id
+              )
+            """, arguments: [floorPlanId])
+
+        for stopId in orphanIds {
+            try dbConn.execute(
+                sql: "UPDATE warehouse_walking_path_stops SET deleted_at = datetime('now'), is_active = 0 WHERE id = ?",
+                arguments: [stopId]
+            )
+        }
+
+        if !orphanIds.isEmpty {
+            let affectedPathIds = try Int64.fetchAll(dbConn, sql: """
+                SELECT DISTINCT path_id FROM warehouse_walking_path_stops
+                WHERE id IN (\(orphanIds.map { _ in "?" }.joined(separator: ",")))
+                """, arguments: StatementArguments(orphanIds))
+            for pathId in affectedPathIds {
+                try normalizeWalkingPathOrder(pathId: pathId, dbConn: dbConn)
+                try touchWalkingPath(pathId: pathId, dbConn: dbConn)
+            }
+        }
+
+        return orphanIds.count
+    }
+
     private func ensureWalkingPathExists(pathId: Int64, dbConn: Database) throws {
         let exists = (try Int.fetchOne(dbConn, sql: """
             SELECT COUNT(*) FROM warehouse_walking_paths
@@ -2747,7 +2816,7 @@ public final class WarehouseService: Sendable {
 
     /// Fetch the default active walking path for a floor plan with active stops in order.
     public func getDefaultWalkingPath(floorPlanId: Int64) throws -> WalkingPathWithStops? {
-        try db.writer.read { dbConn in
+        try db.writer.write { dbConn in
             guard let path = try WarehouseWalkingPath
                 .filter(
                     Column("floor_plan_id") == floorPlanId &&
@@ -2759,8 +2828,13 @@ public final class WarehouseService: Sendable {
                 .fetchOne(dbConn)
             else { return nil }
 
-            let stops = try activeWalkingPathStops(pathId: path.id ?? 0, dbConn: dbConn)
-            return WalkingPathWithStops(path: path, stops: stops)
+            let pathId = path.id ?? 0
+            let prunedCount = try pruneOrphanedStops(floorPlanId: floorPlanId, dbConn: dbConn)
+            let currentPath = prunedCount > 0
+                ? try WarehouseWalkingPath.fetchOne(dbConn, key: pathId) ?? path
+                : path
+            let stops = try activeWalkingPathStops(pathId: pathId, dbConn: dbConn)
+            return WalkingPathWithStops(path: currentPath, stops: stops)
         }
     }
 
@@ -2945,49 +3019,7 @@ public final class WarehouseService: Sendable {
     @discardableResult
     public func pruneOrphanedStops(floorPlanId: Int64) throws -> Int {
         try db.writer.write { dbConn in
-            let orphanIds = try Int64.fetchAll(dbConn, sql: """
-                SELECT s.id
-                FROM warehouse_walking_path_stops s
-                JOIN warehouse_walking_paths p
-                    ON p.id = s.path_id
-                   AND p.floor_plan_id = ?
-                   AND p.deleted_at IS NULL
-                   AND p.is_active = 1
-                LEFT JOIN warehouse_storage_areas a
-                    ON a.id = s.area_id
-                LEFT JOIN warehouse_storage_levels l
-                    ON l.id = a.level_id
-                LEFT JOIN warehouse_storage_units u
-                    ON u.id = l.unit_id
-                WHERE s.deleted_at IS NULL
-                  AND s.is_active = 1
-                  AND (
-                    a.id IS NULL OR a.deleted_at IS NOT NULL OR
-                    l.id IS NULL OR l.deleted_at IS NOT NULL OR
-                    u.id IS NULL OR u.deleted_at IS NOT NULL OR
-                    u.floor_plan_id != p.floor_plan_id
-                  )
-                """, arguments: [floorPlanId])
-
-            for stopId in orphanIds {
-                try dbConn.execute(
-                    sql: "UPDATE warehouse_walking_path_stops SET deleted_at = datetime('now'), is_active = 0 WHERE id = ?",
-                    arguments: [stopId]
-                )
-            }
-
-            if !orphanIds.isEmpty {
-                let affectedPathIds = try Int64.fetchAll(dbConn, sql: """
-                    SELECT DISTINCT path_id FROM warehouse_walking_path_stops
-                    WHERE id IN (\(orphanIds.map { _ in "?" }.joined(separator: ",")))
-                    """, arguments: StatementArguments(orphanIds))
-                for pathId in affectedPathIds {
-                    try normalizeWalkingPathOrder(pathId: pathId, dbConn: dbConn)
-                    try touchWalkingPath(pathId: pathId, dbConn: dbConn)
-                }
-            }
-
-            return orphanIds.count
+            try pruneOrphanedStops(floorPlanId: floorPlanId, dbConn: dbConn)
         }
     }
 
@@ -3009,6 +3041,8 @@ public final class WarehouseService: Sendable {
                 WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [sessionId]) ?? 0) > 0
             guard sessionExists else { throw WarehouseError.sessionNotFound(sessionId) }
+
+            try ServicePermissionGate.requirePermission(dbConn, userId: recordedBy, permissionKey: "perform_audit")
 
             try dbConn.execute(sql: """
                 INSERT INTO audit_session_events
@@ -4438,12 +4472,18 @@ public final class WarehouseService: Sendable {
                 try conf.update(dbConn)
             }
 
-            // Update audit session if active
+            // Update the latest active audit session if one exists. Use a subquery
+            // instead of UPDATE ... ORDER BY ... LIMIT because the bundled SQLite
+            // build used by tests does not enable UPDATE_LIMIT syntax.
             try dbConn.execute(sql: """
                 UPDATE audit_sessions_v2
                 SET misplaced_found = misplaced_found + 1
-                WHERE status = 'active' AND started_by = ?
-                ORDER BY started_at DESC LIMIT 1
+                WHERE id = (
+                    SELECT id FROM audit_sessions_v2
+                    WHERE status = 'active' AND started_by = ?
+                    ORDER BY started_at DESC
+                    LIMIT 1
+                )
                 """, arguments: [foundBy])
 
             return log
