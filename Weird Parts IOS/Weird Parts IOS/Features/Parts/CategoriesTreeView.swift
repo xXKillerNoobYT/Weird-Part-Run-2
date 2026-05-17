@@ -29,6 +29,7 @@ struct CategoriesTreeView: View {
 
     /// Cache of effective cost per colorId, loaded alongside hierarchy.
     @State private var colorPriceCache: [Int64: Double?] = [:]
+    @State private var colorPriceError: String?
 
     // Single active-sheet enum to avoid multiple .sheet conflicts
     enum ActiveSheet: Identifiable {
@@ -124,6 +125,15 @@ struct CategoriesTreeView: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .padding(.horizontal, DS.Space.lg)
             .padding(.bottom, DS.Space.sm)
+
+            if let colorPriceError {
+                Label(colorPriceError, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, DS.Space.lg)
+                    .padding(.bottom, DS.Space.sm)
+            }
 
             if filteredCategories.isEmpty {
                 if searchText.isEmpty {
@@ -237,7 +247,11 @@ struct CategoriesTreeView: View {
 
     /// Load effective cost for every color in the hierarchy into the cache.
     private func loadColorPrices() {
-        guard let parts = appCore.partsService else { return }
+        guard let parts = appCore.partsService else {
+            colorPriceError = "Parts service unavailable"
+            return
+        }
+        colorPriceError = nil
         var cache: [Int64: Double?] = [:]
         for catNode in hierarchy.categories {
             for styleNode in catNode.styles {
