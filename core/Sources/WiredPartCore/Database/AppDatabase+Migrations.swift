@@ -124,6 +124,7 @@ extension AppDatabase {
         registerMigration085AuditSessionEvents(&migrator)
         registerMigration086PartAutoWishlistOptIn(&migrator)
         registerMigration087ServicePermissionGateBackfill(&migrator)
+        registerMigration088FleetInspectionDashboardLookupIndex(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5167,6 +5168,15 @@ extension AppDatabase {
                         """, arguments: [grant.key, hatName])
                 }
             }
+        }
+    }
+
+    private static func registerMigration088FleetInspectionDashboardLookupIndex(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("088_fleet_inspection_dashboard_index") { db in
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_ir_vehicle_performed_at
+                ON inspection_records(vehicle_id, performed_at)
+                """)
         }
     }
 
