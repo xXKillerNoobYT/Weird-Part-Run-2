@@ -87,6 +87,40 @@ public final class FleetService: Sendable {
         }
     }
 
+    /// SQL-backed vehicle status counts for fleet filter cards.
+    public struct VehicleStatusCounts: Sendable, Equatable {
+        public let all: Int
+        public let active: Int
+        public let inactive: Int
+        public let maintenance: Int
+        public let retired: Int
+
+        public init(
+            all: Int = 0,
+            active: Int = 0,
+            inactive: Int = 0,
+            maintenance: Int = 0,
+            retired: Int = 0
+        ) {
+            self.all = all
+            self.active = active
+            self.inactive = inactive
+            self.maintenance = maintenance
+            self.retired = retired
+        }
+
+        public func count(for status: String) -> Int {
+            switch status {
+            case "all": return all
+            case "active": return active
+            case "inactive": return inactive
+            case "maintenance": return maintenance
+            case "retired": return retired
+            default: return 0
+            }
+        }
+    }
+
     /// Full vehicle detail including all fields and active assignments.
     public struct VehicleDetail: Sendable {
         public let id: Int64
@@ -331,6 +365,49 @@ public final class FleetService: Sendable {
             }
         } catch {
             if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Count active, non-deleted vehicles by status without hydrating the full vehicle list.
+    public func getVehicleStatusCounts() throws -> VehicleStatusCounts {
+        do {
+            return try db.writer.read { dbConn -> VehicleStatusCounts in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT status, COUNT(*) AS count
+                    FROM vehicles
+                    WHERE deleted_at IS NULL AND is_active = 1
+                    GROUP BY status
+                    """)
+
+                var all = 0
+                var active = 0
+                var inactive = 0
+                var maintenance = 0
+                var retired = 0
+
+                for row in rows {
+                    let count: Int = row["count"] ?? 0
+                    all += count
+                    switch row["status"] as String? {
+                    case "active": active = count
+                    case "inactive": inactive = count
+                    case "maintenance": maintenance = count
+                    case "retired": retired = count
+                    default: break
+                    }
+                }
+
+                return VehicleStatusCounts(
+                    all: all,
+                    active: active,
+                    inactive: inactive,
+                    maintenance: maintenance,
+                    retired: retired
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) { return VehicleStatusCounts() }
             throw error
         }
     }
@@ -1755,6 +1832,10 @@ public final class FleetService: Sendable {
         trailerId: Int64, locationType: String, locationLabel: String?,
         jobId: Int64? = nil, recordedBy: Int64
     ) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: recordedBy, permissionKey: "manage_fleet")
+        }
+
         try db.writer.write { dbConn in
             // Guard: trailer must be active and not tombstoned — inserting history
             // against a soft-deleted trailer creates an orphan audit row and leaves

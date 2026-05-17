@@ -345,6 +345,10 @@ public final class NotebooksService: Sendable {
         jobId: Int64? = nil,
         createdBy: Int64
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_notebooks")
+        }
+
         guard !title.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw NotebooksError.requiredFieldEmpty
         }
@@ -375,6 +379,10 @@ public final class NotebooksService: Sendable {
         entryType: String = "note",
         createdBy: Int64
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_notebooks")
+        }
+
         guard !title.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw NotebooksError.requiredFieldEmpty
         }
@@ -484,6 +492,10 @@ public final class NotebooksService: Sendable {
 
     /// Classify a to-do as regular or warranty work.
     public func classifyTodoWork(entryId: Int64, classification: String, classifiedBy: Int64) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: classifiedBy, permissionKey: "manage_notebooks")
+        }
+
         try db.writer.write { dbConn in
             // Get current classification for history
             let current = try String.fetchOne(dbConn, sql: """
@@ -512,6 +524,10 @@ public final class NotebooksService: Sendable {
 
     /// Manager reviews/approves a classification.
     public func reviewClassification(entryId: Int64, reviewedBy: Int64, approved: Bool, newClassification: String?) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: reviewedBy, permissionKey: "manage_notebooks")
+        }
+
         try db.writer.write { dbConn in
             if approved {
                 // Approve current classification
@@ -591,6 +607,10 @@ public final class NotebooksService: Sendable {
 
     /// Reclassify a to-do with reason tracking. Resets the review flag.
     public func reclassifyTodoWork(entryId: Int64, newClassification: String, changedBy: Int64, reason: String?) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: changedBy, permissionKey: "manage_notebooks")
+        }
+
         try db.writer.write { dbConn in
             let current = try String.fetchOne(dbConn, sql: """
                 SELECT work_classification FROM notebook_entries WHERE id = ?
@@ -883,7 +903,11 @@ public final class NotebooksService: Sendable {
         createdBy: Int64,
         sortOrder: Int? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_notebooks")
+        }
+
+        return try db.writer.write { dbConn in
             let order: Int
             if let so = sortOrder {
                 order = so
@@ -1177,6 +1201,10 @@ public final class NotebooksService: Sendable {
         templateData: NotebookTemplateData,
         createdBy: Int64
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_templates")
+        }
+
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw NotebooksError.requiredFieldEmpty
         }
@@ -1193,6 +1221,10 @@ public final class NotebooksService: Sendable {
 
     /// Apply a job template to a notebook — creates groups, sections, and entries.
     public func applyJobTemplate(templateId: Int64, notebookId: Int64, createdBy: Int64) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_templates")
+        }
+
         let templateRow = try db.writer.read { dbConn in
             try Row.fetchOne(dbConn, sql: "SELECT template_data FROM notebook_templates WHERE id = ?", arguments: [templateId])
         }
@@ -1248,6 +1280,10 @@ public final class NotebooksService: Sendable {
 
     /// Apply a page template to a section — creates entries.
     public func applyPageTemplate(templateId: Int64, sectionId: Int64, createdBy: Int64) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_templates")
+        }
+
         let templateRow = try db.writer.read { dbConn in
             try Row.fetchOne(dbConn, sql: "SELECT template_data FROM notebook_templates WHERE id = ?", arguments: [templateId])
         }
@@ -1290,6 +1326,10 @@ public final class NotebooksService: Sendable {
 
     /// Seed default templates if none exist.
     public func seedDefaultTemplates(createdBy: Int64) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_templates")
+        }
+
         let count = try db.writer.read { dbConn -> Int in
             try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM notebook_templates WHERE is_default = 1") ?? 0
         }

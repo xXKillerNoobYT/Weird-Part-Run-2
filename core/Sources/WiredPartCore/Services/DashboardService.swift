@@ -1394,7 +1394,11 @@ public final class DashboardService: Sendable {
         issues: String,
         tomorrowNotes: String
     ) throws -> Int64 {
-        try db.writer.write { conn in
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "view_job_reports")
+        }
+
+        return try db.writer.write { conn in
             // Find or create a "Daily Reports" notebook for this user
             var notebookId = try Int64.fetchOne(conn, sql: """
                 SELECT id FROM notebooks
@@ -1465,7 +1469,11 @@ public final class DashboardService: Sendable {
         jobId: Int64?,
         description: String
     ) throws -> Int64 {
-        try db.writer.write { conn in
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "view_jobs")
+        }
+
+        return try db.writer.write { conn in
             // Find or create a "Problem Reports" notebook
             var notebookId = try Int64.fetchOne(conn, sql: """
                 SELECT id FROM notebooks
