@@ -798,7 +798,7 @@ public final class WishlistService: Sendable {
                 INSERT INTO stock_movements
                 (part_id, qty, from_location_type, from_location_id, to_location_type, to_location_id,
                  movement_type, reason, notes, performed_by, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, 'restock_from_shop', 'Below MIN restock from shop', ?, ?, datetime('now'))
+                VALUES (?, ?, ?, ?, ?, ?, '\(StockMovement.MovementType.restockFromShop.rawValue)', 'Below MIN restock from shop', ?, ?, datetime('now'))
                 """, arguments: [
                     partId, transferQty, source.locationType, source.locationId,
                     toLocationType, toLocationId, "\(marker) Generated below-MIN shop restock.", performedBy

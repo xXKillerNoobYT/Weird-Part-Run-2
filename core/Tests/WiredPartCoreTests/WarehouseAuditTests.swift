@@ -810,7 +810,7 @@ struct WarehouseAuditTests {
         #expect(qty == 7)
 
         // Verify the adjustment movement was recorded
-        let movements = try env.warehouse.listMovements(movementType: "adjustment")
+        let movements = try env.warehouse.listMovements(movementType: StockMovement.MovementType.adjustment.rawValue)
         #expect(movements.contains { $0.partId == partId })
     }
 

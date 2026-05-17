@@ -7,6 +7,44 @@ import GRDB
 /// Tracks the full journey of parts: Supplier → Warehouse → Staging → Truck → Job.
 public struct StockMovement: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "stock_movements"
+
+    /// Canonical values stored in `stock_movements.movement_type`.
+    ///
+    /// Keep SQL queries and write paths on these constants instead of open-coded
+    /// strings so forecasting/reporting do not silently drift when a movement
+    /// writer uses a synonym such as `job_pull` instead of `consume`.
+    public enum MovementType: String, Codable, CaseIterable, Sendable {
+        case transfer
+        case receive
+        case receiving
+        case receivingStaged = "receiving_staged"
+        case receipt
+        case stockReturn = "return"
+        case returnToSupplier = "return_to_supplier"
+        case adjustment
+        case addStock = "add_stock"
+        case writeOff = "write_off"
+        case consume
+        case pull
+        case usage
+        case jobPull = "job_pull"
+        case restockFromShop = "restock_from_shop"
+
+        /// Movement types that remove stock from normal availability and should
+        /// contribute to demand/forecast calculations.
+        public static let forecastConsumptionTypes: [MovementType] = [
+            .consume, .pull, .usage, .jobPull, .returnToSupplier
+        ]
+
+        /// Movement types shown as material usage in reports.
+        public static let materialUsageTypes: [MovementType] = [
+            .consume, .pull, .usage, .jobPull
+        ]
+
+        public static func sqlList(_ types: [MovementType]) -> String {
+            "(" + types.map { "'\($0.rawValue)'" }.joined(separator: ", ") + ")"
+        }
+    }
     public var id: Int64?
     public var partId: Int64
     public var qty: Int
