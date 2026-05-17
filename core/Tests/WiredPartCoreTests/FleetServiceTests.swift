@@ -73,6 +73,12 @@ struct FleetServiceTests {
         #expect(counts["active", default: 0] >= 1)
         #expect(counts["maintenance", default: 0] == 1)
 
+        let statusCounts = try env.fleet.getVehicleStatusCounts()
+        #expect(statusCounts.count(for: "all") >= 2)
+        #expect(statusCounts.count(for: "active") >= 1)
+        #expect(statusCounts.count(for: "maintenance") == 1)
+        #expect(statusCounts.count(for: "retired") == 0)
+
         let activeVehicles = try env.fleet.listVehicles(status: "active")
         #expect(activeVehicles.contains(where: { $0.id == activeId }))
         #expect(!activeVehicles.contains(where: { $0.id == maintenanceId }))

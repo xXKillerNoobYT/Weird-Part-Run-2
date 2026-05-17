@@ -335,6 +335,23 @@ public final class FleetService: Sendable {
         }
     }
 
+    /// Counts for the vehicle status filter cards.
+    public struct VehicleStatusCounts: Sendable, Equatable {
+        public let countsByStatus: [String: Int]
+
+        public init(countsByStatus: [String: Int] = [:]) {
+            self.countsByStatus = countsByStatus
+        }
+
+        public var total: Int {
+            countsByStatus.values.reduce(0, +)
+        }
+
+        public func count(for status: String) -> Int {
+            status == "all" ? total : countsByStatus[status, default: 0]
+        }
+    }
+
     /// Count active, non-deleted vehicles grouped by status.
     ///
     /// `IOSVehiclesPage` uses these pre-aggregated counts for its status cards so
@@ -357,6 +374,11 @@ public final class FleetService: Sendable {
             if isTableNotFoundError(error) { return [:] }
             throw error
         }
+    }
+
+    /// Return strongly typed status counts for UI filter cards.
+    public func getVehicleStatusCounts() throws -> VehicleStatusCounts {
+        VehicleStatusCounts(countsByStatus: try countVehiclesByStatus())
     }
 
     /// Get a single vehicle by ID with full detail and active assignments.
