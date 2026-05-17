@@ -62,6 +62,10 @@ struct IOSTimesheetsPage: View {
         .searchable(text: $searchText, prompt: "Search employees...")
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .reportsTimesheetsPageInactive, object: nil)
+        }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
     }
@@ -157,5 +161,18 @@ struct IOSTimesheetsPage: View {
             loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let totalHours = rows.reduce(0) { $0 + $1.totalHours }
+        let overtimeHours = rows.reduce(0) { $0 + $1.overtimeHours }
+        NotificationCenter.default.post(
+            name: .reportsTimesheetsPageActive,
+            object: nil,
+            userInfo: [
+                "context": "Timesheets Report: \(startDateString) to \(endDateString), \(rows.count) employees, \(filteredRows.count) visible, \(String(format: "%.1f", totalHours)) total hours, \(String(format: "%.1f", overtimeHours)) overtime."
+            ]
+        )
     }
 }

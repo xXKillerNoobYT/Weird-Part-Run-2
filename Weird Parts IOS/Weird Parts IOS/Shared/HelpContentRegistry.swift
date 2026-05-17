@@ -123,6 +123,19 @@ struct HelpContentRegistry {
         "WiredPart.dispatchPageActive": "scheduling-dispatch",
         "WiredPart.scheduleCalendarPageActive": "scheduling-calendar",
         "WiredPart.employeesPageActive": "people-employees",
+        "WiredPart.peopleDashboardPageActive": "people-dashboard",
+        "WiredPart.customersPageActive": "people-customers",
+        "WiredPart.contactsPageActive": "people-contacts",
+        "WiredPart.officeDashboardPageActive": "office-dashboard",
+        "WiredPart.officeApprovalsPageActive": "office-approvals",
+        "WiredPart.officeSpendingPageActive": "office-spending",
+        "WiredPart.reportsLaborPageActive": "reports-labor",
+        "WiredPart.reportsSpendingPageActive": "reports-spending",
+        "WiredPart.reportsProfitabilityPageActive": "reports-profitability",
+        "WiredPart.reportsTimesheetsPageActive": "reports-timesheets",
+        "WiredPart.reportsPrebillingPageActive": "reports-prebilling",
+        "WiredPart.reportsBookkeeperPageActive": "reports-bookkeeper",
+        "WiredPart.reportsDailySummaryPageActive": "reports-daily-summary",
         "WiredPart.vehiclesPageActive": "fleet-vehicles",
         "WiredPart.toolRegistryPageActive": "tools-registry",
         "WiredPart.notebooksListPageActive": "notebooks-all",
@@ -622,6 +635,39 @@ struct HelpContentRegistry {
         ),
 
         HelpEntry(
+            pageId: "people-dashboard",
+            title: "People Dashboard Help",
+            sections: [
+                ("What This Page Does", "The People Dashboard gives you a real-time overview of your workforce. See who is clocked in, who is off today, which certifications are expiring, and which teams are assigned to jobs."),
+                ("How to Use It", "The smart cards at the top summarize key numbers at a glance. Scroll down to see details for Working Now, Off Today, Certifications Expiring Soon, and Team Assignments Today."),
+                ("Payment Alerts", "When payment tracking is enabled, overdue customer invoices appear at the bottom with the amount and number of days overdue."),
+                ("Tips", "Pull down to refresh the dashboard with the latest data. Tap into other People pages from the navigation menu to manage employees, customers, contractors, teams, and contacts."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "people-customers",
+            title: "Customers Help",
+            sections: [
+                ("What This Page Does", "View and manage all customers. Each row shows the company name, primary contact, email, and phone number."),
+                ("How to Use It", "Type in the search bar to filter customers by company name, contact name, or email. Tap a customer to see their full detail page with contacts, job history, billing, and communication logs. Tap the + button to add a new customer."),
+                ("Adding a Customer", "The contact name is required. You can also add a company name, email, phone, and address. Customers appear in the list immediately after saving."),
+                ("Tips", "Pull down to refresh the customer list. Tap into a customer to add additional contacts, record payments, or log communications like calls and meetings."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "people-contacts",
+            title: "Contacts Help",
+            sections: [
+                ("What This Page Does", "View and manage all contacts across your organization. Contacts include GCs, suppliers, contractors, owners, vendors, and other external people you work with."),
+                ("Smart Card Filters", "Tap the type cards at the top to filter by contact type: All, GC, Supplier, Contractor, Owner, Vendor, Active, or Inactive. The count on each card shows how many contacts match that type."),
+                ("Sorting & Search", "Use the sort button to order contacts by Recently Updated, Name, or Type. The search bar filters by first name, last name, company, or email."),
+                ("Tips", "Pull down to refresh. Contact type badges are color-coded by type. Tap the + button to add a new contact with a first name and phone number."),
+            ]
+        ),
+
+        HelpEntry(
             pageId: "people-employee-detail",
             title: "Employee Detail Help",
             sections: [
@@ -719,6 +765,16 @@ struct HelpContentRegistry {
                 ("What This Page Does", "Shows all items waiting for manager approval in one place. This includes JPO requests from field workers, scheduled part deletions, time-off requests, and tool edit verifications."),
                 ("How to Use It", "Use the filter cards at the top to narrow by type (JPOs, Deletions, Time-Off, Tool Edits). Search by name or requester. For each item, tap Approve or Reject. Rejections require a reason that gets sent back to the requester."),
                 ("Tips", "Pull down to refresh the list. Items disappear from this page once approved or rejected. If you reject a JPO, the field worker gets notified with your reason so they can revise and resubmit. This same page is accessible from both Office > Approvals and Orders > Approvals."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "office-spending",
+            title: "Spending Dashboard Help",
+            sections: [
+                ("Overview", "Aggregate spending data across all jobs. See total parts costs, labor costs, and budget utilization at a glance."),
+                ("Breakdown", "Cards show spending by category. Tap for detailed breakdowns by job, supplier, or time period."),
+                ("Permissions", "This page requires the show dollar values permission. Contact your admin if you cannot see cost data."),
             ]
         ),
 
