@@ -96,9 +96,23 @@ struct DatabaseTests {
         }
     }
 
-    @Test("Schema version is 83")
+    @Test("Schema version is 88")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 83)
+        #expect(AppDatabase.schemaVersion == 88)
+    }
+
+    @Test("Migration 088 adds fleet inspection dashboard lookup index")
+    func testMigration088FleetInspectionDashboardLookupIndex() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+
+        let indexRows = try db.writer.read { db in
+            try Row.fetchAll(db, sql: "PRAGMA index_info('idx_ir_vehicle_performed_at')")
+        }
+
+        let indexedColumns = indexRows.map { row -> String in
+            row["name"]
+        }
+        #expect(indexedColumns == ["vehicle_id", "performed_at"])
     }
 
     @Test("Migration 082 adds structured estimation review columns")
