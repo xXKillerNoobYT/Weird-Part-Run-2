@@ -1124,8 +1124,14 @@ struct IOSAuditPage: View {
     }
 
     private func recordWalkingPathEvent(type: String, notes: String? = nil) {
-        guard let service = appCore.warehouseService,
-              let sessionId = activeSession?.id else { return }
+        guard let service = appCore.warehouseService else {
+            auditLog.error("recordAuditSessionEvent skipped: warehouse service unavailable")
+            return
+        }
+        guard let sessionId = activeSession?.id else {
+            auditLog.error("recordAuditSessionEvent skipped: no active audit session")
+            return
+        }
         do {
             try service.recordAuditSessionEvent(
                 sessionId: sessionId,

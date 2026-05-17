@@ -253,6 +253,29 @@ The QR scanner page has: camera button (tap to scan), manual entry field, result
 
 ---
 
+## T2-21: Dashboard Quick Actions Above the Fold
+
+**Problem:** Quick Actions were rendered after KPI cards, charts, alerts, and background tasks, which made the most common commands easy to miss on phone-sized screens.
+
+**Spec:** Keep the existing action set unchanged and promote the Quick Actions rail into the first loaded Dashboard content block after the greeting/onboarding/clock-status area. The loaded Dashboard order should be:
+
+1. Quick Actions
+2. KPI cards
+3. Charts
+4. Alerts
+5. Background tasks
+
+**Responsive behavior:**
+- iPhone 375×812: preserve the current horizontal action rail so each button keeps its existing minimum hit target and the row can be reached immediately without scrolling past charts.
+- iPad / desktop: preserve the current horizontal rail behavior; the promoted placement keeps the actions visually grouped above the analytics content without inventing new actions.
+- Chart visibility is not sacrificed: charts remain directly after KPI cards, with only the already-existing Quick Actions section moved ahead of them.
+
+**Implementation note:** `DashboardView.swift` now renders `quickActionsSection` before `kpiSection` / `chartsSection`, and the Dashboard help copy describes Quick Actions as near the top instead of at the bottom.
+
+**Evidence to capture when simulator stability permits:** before/after screenshots at phone 375×812, iPad, and desktop/Catalyst if available. The expected after-state is Quick Actions appearing before KPI/charts while retaining the existing five actions: Scan QR, Clock In, Daily Report, Move Stock, New Order.
+
+---
+
 ## Prompt Breakdown
 
 | Prompt | What It Does | Files Touched |

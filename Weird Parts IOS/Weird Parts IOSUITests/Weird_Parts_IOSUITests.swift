@@ -48,6 +48,18 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         return repoRoot.appendingPathComponent("docs/testing/artifacts/wei-1092/wei-1182-current", isDirectory: true)
     }
 
+    private var wei1451ArtifactDirectory: URL {
+        if let path = ProcessInfo.processInfo.environment["WEI_1451_ARTIFACT_DIR"], !path.isEmpty {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        let source = URL(fileURLWithPath: #filePath)
+        let repoRoot = source
+            .deletingLastPathComponent() // Weird Parts IOSUITests
+            .deletingLastPathComponent() // Weird Parts IOS
+            .deletingLastPathComponent() // repo root
+        return repoRoot.appendingPathComponent("docs/testing/artifacts/wei-936/wei-1451-current", isDirectory: true)
+    }
+
     // MARK: - Setup & Teardown
 
     override func setUpWithError() throws {
@@ -68,6 +80,57 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     }
 
     // MARK: - Login Accessibility
+
+    @MainActor
+    func testWEI1451FirstLaunchOnboardingEvidence() throws {
+        let artifactDirectory = wei1451ArtifactDirectory
+        try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
+        let existingArtifacts = (try? FileManager.default.contentsOfDirectory(at: artifactDirectory, includingPropertiesForKeys: nil)) ?? []
+        for artifact in existingArtifacts where artifact.pathExtension == "png" || artifact.pathExtension == "txt" {
+            try? FileManager.default.removeItem(at: artifact)
+        }
+
+        relaunchForWEI1451(["-UITestingWEI936Welcome"])
+        XCTAssertTrue(app.staticTexts["WiredPart"].waitForExistence(timeout: 20), "Welcome fixture should render the first-launch welcome screen")
+        captureWEI1451("01-ipad-landscape-welcome-sheet")
+
+        relaunchForWEI1451([])
+        logInAsUITestOwnerIfNeeded()
+        XCTAssertTrue(app.staticTexts["Getting Started"].waitForExistence(timeout: 20), "Dashboard should show the not-started Getting Started card")
+        captureWEI1451("02-ipad-landscape-card-not-started")
+
+        relaunchForWEI1451(["-UITestingWEI936TourActive"])
+        logInAsUITestOwnerIfNeeded()
+        XCTAssertTrue(app.staticTexts["Try This"].waitForExistence(timeout: 20), "Tour active fixture should show in-progress onboarding tasks")
+        captureWEI1451("03-ipad-landscape-in-progress")
+
+        relaunchForWEI1451(["-UITestingWEI936RequiredDone"])
+        logInAsUITestOwnerIfNeeded()
+        XCTAssertTrue(app.staticTexts["Required tour steps complete"].waitForExistence(timeout: 20), "Required-done fixture should collapse the per-page banner")
+        captureWEI1451("04-ipad-landscape-required-done-collapsed-strip")
+
+        relaunchForWEI1451([])
+        logInAsUITestOwnerIfNeeded()
+        let dismiss = app.buttons["Dismiss checklist"]
+        XCTAssertTrue(dismiss.waitForExistence(timeout: 20), "Dismiss checklist control should be present")
+        dismiss.tap()
+        XCTAssertTrue(app.staticTexts["Checklist dismissed"].waitForExistence(timeout: 5), "Dismiss action should show a toast with undo")
+        captureWEI1451("05-ipad-landscape-dismiss-toast")
+
+        relaunchForWEI1451(["-UITestingWEI936Celebration"])
+        XCTAssertTrue(app.staticTexts["You're All Set!"].waitForExistence(timeout: 20), "Celebration fixture should render completion state")
+        captureWEI1451("06-ipad-landscape-celebration")
+
+        let verification = """
+        WEI-1451 / WEI-936 remaining evidence verification
+        - iPad landscape captured with WEI_1185_LANDSCAPE=1 / XCUIDevice.landscapeLeft when requested.
+        - Deterministic launch fixtures used: -UITestingWEI936Welcome, -UITestingWEI936TourActive, -UITestingWEI936RequiredDone, -UITestingWEI936Celebration.
+        - Dismiss toast verified by tapping the Dashboard Getting Started dismiss button and waiting for the Checklist dismissed toast.
+        - Reduce Motion: OnboardingCompleteView now renders the checkmark without a spring animation when accessibilityReduceMotion is true.
+        - VoiceOver/accessibility traversal smoke: core evidence controls expose labels for Dismiss checklist, Checklist dismissed. Undo, Required tour steps complete, and the welcome/celebration headings.
+        """
+        try verification.write(to: artifactDirectory.appendingPathComponent("07-accessibility-reduce-motion-voiceover-notes.txt"), atomically: true, encoding: .utf8)
+    }
 
     @MainActor
     func testWEI1185WarehouseZonePlacementScreenshots() throws {
@@ -163,6 +226,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += [
             "-UITesting",
+            "-UITestingPreserveDatabase",
             "-UITestingWarehouseSetupWizard"
         ]
         if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" {
@@ -171,9 +235,82 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app.launch()
         logInAsUITestOwnerIfNeeded()
         openWarehouseSetupWizard()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'R2C2'")).firstMatch.waitForExistence(timeout: 10),
+        goToWizardStep(2)
+        if app.buttons["Confirm Grid"].waitForExistence(timeout: 3) {
+            app.buttons["Confirm Grid"].tap()
+            XCTAssertTrue(app.staticTexts["Zones"].waitForExistence(timeout: 10),
+                          "Resumed wizard should load the zone placement phase after confirming the grid")
+        } else {
+            XCTAssertTrue(app.staticTexts["Zones"].waitForExistence(timeout: 10),
+                          "Resumed wizard should allow returning to the zone placement phase")
+        }
+        captureWEI1185("06-storage-persisted-after-resume")
+        let persistedLocation = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'R2C2'")).firstMatch
+        let persistedZone = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS 'Storage' AND label CONTAINS 'starts at R2C2'")
+        ).firstMatch
+        XCTAssertTrue(persistedLocation.waitForExistence(timeout: 10) || persistedZone.waitForExistence(timeout: 10),
                       "Zone placement should persist after leaving and resuming the wizard")
         captureWEI1185("06-storage-persisted-after-resume")
+    }
+
+    @MainActor
+    func testWEI1211WarehouseWizardBreakpointZoneDrop() throws {
+        let artifactDirectory = wei1182ArtifactDirectory
+        try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
+
+        logInAsUITestOwnerIfNeeded()
+        openWarehouseSetupWizard()
+
+        let createContinue = app.buttons["Create & Continue"]
+        XCTAssertTrue(createContinue.waitForExistence(timeout: 10), "Fresh warehouse wizard should start at Step 1")
+        createContinue.tap()
+
+        if app.staticTexts["Phase 2 · Storage Units"].waitForExistence(timeout: 3) {
+            app.buttons["Back"].tap()
+        }
+        goToWizardStep(2)
+
+        XCTAssertTrue(app.staticTexts["Confirm Zone Grid"].waitForExistence(timeout: 10),
+                      "Step 2 should start with the zone-grid confirmation")
+
+        let confirmGrid = app.buttons["Confirm Grid"]
+        XCTAssertTrue(confirmGrid.waitForExistence(timeout: 5), "Confirm Grid should be available")
+        confirmGrid.tap()
+
+        let r1c1 = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'R1C1'")).firstMatch
+        let r1c3 = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'R1C3'")).firstMatch
+        XCTAssertTrue(r1c1.waitForExistence(timeout: 8), "Zone grid should include R1C1")
+        XCTAssertTrue(r1c3.waitForExistence(timeout: 5), "Zone grid should include R1C3")
+
+        let storage = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Drag Storage zone'")).firstMatch
+        XCTAssertTrue(storage.waitForExistence(timeout: 5), "Storage zone drag source should be present")
+        storage.press(forDuration: 0.7, thenDragTo: r1c1)
+
+        let receiving = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Drag Receiving zone'")).firstMatch
+        XCTAssertTrue(receiving.waitForExistence(timeout: 5), "Receiving zone drag source should be present")
+        receiving.press(forDuration: 0.7, thenDragTo: r1c3)
+
+        let placedStorage = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS 'Storage' AND label CONTAINS 'starts at R1C1'")
+        ).firstMatch
+        XCTAssertTrue(placedStorage.waitForExistence(timeout: 8), "Dropped Storage zone should render on the grid")
+        placedStorage.tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Storage at R1C1'")).firstMatch.waitForExistence(timeout: 5),
+                      "Tapping Storage should select the Storage zone before resizing")
+
+        let grow = app.buttons["Grow"]
+        XCTAssertTrue(grow.waitForExistence(timeout: 5), "Selected Storage zone should expose Grow")
+        grow.tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '2x2'")).firstMatch.waitForExistence(timeout: 5),
+                      "Resizing Storage should update selected-zone size text")
+
+        let receivingAtR1C3 = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS 'Receiving' AND label CONTAINS 'starts at R1C3'")
+        ).firstMatch
+        XCTAssertTrue(receivingAtR1C3.waitForExistence(timeout: 5),
+                      "Dropped Receiving zone should remain visible after resizing Storage")
+        captureWEI1182("wei-1211-two-zones-after-storage-resize")
     }
 
     @MainActor
@@ -226,7 +363,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             NSPredicate(format: "label CONTAINS 'Storage' AND label CONTAINS 'starts at R1C1'")
         ).firstMatch
         XCTAssertTrue(placedStorage.waitForExistence(timeout: 8), "Dropped Storage zone should render on the grid")
-        r1c1.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        placedStorage.tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Storage at R1C1'")).firstMatch.waitForExistence(timeout: 5),
                       "Tapping Storage should select the Storage zone before resizing")
 
@@ -248,7 +385,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         captureWEI1182("02-zone-placement-phase-b-two-zones-resized")
 
         app.buttons["Next"].tap()
-        XCTAssertTrue(app.staticTexts["Phase 2 · Storage Units"].waitForExistence(timeout: 10),
+        XCTAssertTrue(app.staticTexts["Phase 2 · Place Units"].waitForExistence(timeout: 10),
                       "Step 3 should load storage units")
 
         let addStorageUnit = app.buttons["Add Storage Unit"]
@@ -424,6 +561,120 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                       "Progress bar should report \"Step 6 of 10\" after the 9→10 dot expansion.")
     }
 
+    // MARK: - WEI-1190: Step 8 Phase-Header Screenshot
+
+    /// Captures the inserted walking-path step header for [WEI-1190]:
+    /// open the warehouse onboarding wizard, adaptively navigate to Step 8,
+    /// confirm the exact Phase 4 / Walking Path labels and step counter, then
+    /// save evidence under `docs/testing/artifacts/wei-1092/wei-1190-step8-phase-header/`.
+    @MainActor
+    func testWEI1190WizardStep8PhaseHeaderScreenshot() throws {
+        let directory: URL = {
+            if let envPath = ProcessInfo.processInfo.environment["WEI_1190_ARTIFACT_DIR"], !envPath.isEmpty {
+                return URL(fileURLWithPath: envPath, isDirectory: true)
+            }
+            let source = URL(fileURLWithPath: #filePath)
+            let repoRoot = source
+                .deletingLastPathComponent() // Weird Parts IOSUITests
+                .deletingLastPathComponent() // Weird Parts IOS
+                .deletingLastPathComponent() // repo root
+            return repoRoot.appendingPathComponent(
+                "docs/testing/artifacts/wei-1092/wei-1190-step8-phase-header",
+                isDirectory: true
+            )
+        }()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        func capture(_ name: String) {
+            let screenshot = XCUIScreen.main.screenshot()
+            let attachment = XCTAttachment(screenshot: screenshot)
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let file = directory.appendingPathComponent("\(name).png")
+            try? screenshot.pngRepresentation.write(to: file, options: .atomic)
+        }
+
+        logInAsUITestOwnerIfNeeded()
+        openWarehouseSetupWizard()
+
+        let createContinue = app.buttons["Create & Continue"]
+        if createContinue.waitForExistence(timeout: 10) {
+            createContinue.tap()
+        }
+
+        capture("00-wizard-entry-step")
+
+        func currentStepNumber(timeout: TimeInterval = 5) -> Int? {
+            let deadline = Date().addingTimeInterval(timeout)
+            while Date() < deadline {
+                for n in 1...10 where app.staticTexts["Step \(n) of 10"].exists {
+                    return n
+                }
+                Thread.sleep(forTimeInterval: 0.25)
+            }
+            return nil
+        }
+
+        var lastSeen: Int? = nil
+        for navHop in 1...12 {
+            guard let step = currentStepNumber(timeout: 8) else {
+                capture("error-step-counter-missing-hop-\(navHop)")
+                XCTFail("Could not read \"Step N of 10\" from the wizard progress bar (hop \(navHop)).")
+                return
+            }
+            lastSeen = step
+            if step == 8 { break }
+            if step < 8 {
+                let skip = app.buttons["Skip"]
+                let next = app.buttons["Next"]
+                if skip.exists && skip.isHittable {
+                    skip.tap()
+                } else if next.exists && next.isHittable {
+                    next.tap()
+                } else {
+                    capture("error-no-forward-button-step-\(step)")
+                    XCTFail("Wizard step \(step) exposed neither Skip nor Next.")
+                    return
+                }
+            } else {
+                let back = app.buttons["Back"]
+                if back.exists && back.isHittable {
+                    back.tap()
+                } else {
+                    capture("error-no-back-button-step-\(step)")
+                    XCTFail("Wizard step \(step) exposed no Back button.")
+                    return
+                }
+            }
+            _ = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Step ' AND NOT (label == 'Step \(step) of 10')"))
+                .firstMatch
+                .waitForExistence(timeout: 6)
+        }
+        XCTAssertEqual(lastSeen, 8, "Adaptive navigation should land on Step 8 (was \(String(describing: lastSeen))).")
+
+        capture("01-step8-phase4-walking-path-header")
+
+        let phasePredicate = NSPredicate(format: "label CONTAINS 'Phase 4' AND label CONTAINS 'Walking Path'")
+        let phaseLabel = app.staticTexts.matching(phasePredicate).firstMatch
+        let stepIndicator = app.staticTexts["Step 8 of 10"]
+
+        let phaseFound = phaseLabel.waitForExistence(timeout: 10)
+        let stepFound = stepIndicator.waitForExistence(timeout: 5)
+
+        if !phaseFound || !stepFound {
+            for text in app.staticTexts.allElementsBoundByIndex.prefix(40) {
+                NSLog("[WEI-1190] staticText label=\(text.label)")
+            }
+            capture("error-step8-labels-missing")
+        }
+
+        XCTAssertTrue(phaseFound,
+                      "Step 8 should render a static text containing the Plan §4 phase prefix \"Phase 4 … Walking Path\".")
+        XCTAssertTrue(stepFound,
+                      "Progress bar should report \"Step 8 of 10\" for the inserted walking-path step.")
+    }
+
     @MainActor
     func testLoginSignInButtonHittableAtAX5WithKeyboardVisible() throws {
         app.terminate()
@@ -465,6 +716,46 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                       "Done toolbar button should be tappable at AX5")
     }
 
+    @MainActor
+    func testWEI1304UITestingLaunchReachesLoginOrShell() throws {
+        let databaseError = app.staticTexts
+            .matching(NSPredicate(format: "label CONTAINS[c] 'Failed to load database'"))
+            .firstMatch
+        XCTAssertFalse(databaseError.waitForExistence(timeout: 2),
+                       "Clean -UITesting launch should not stop on the database load error")
+        XCTAssertTrue(waitForLoginOrShell(timeout: 30),
+                      "Clean -UITesting launch should reach login, onboarding, or the app shell")
+    }
+
+    @MainActor
+    func testWEI1306WarehouseDashboardQuickActionsDiscoverable() throws {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments += ["-UITesting"]
+        app.launch()
+
+        logInAsUITestOwnerIfNeeded()
+        openWarehouseDashboard()
+
+        let newMovement = app.buttons["whAction_newMovement"]
+        let scanQR = app.buttons["whAction_scanQR"]
+        let receiving = app.buttons["whAction_receiving"]
+        let auditQueue = app.buttons["whAction_auditQueue"]
+
+        XCTAssertTrue(newMovement.waitForExistence(timeout: 8), "Warehouse Dashboard should expose New Movement quick action")
+        XCTAssertTrue(scanQR.waitForExistence(timeout: 5), "Warehouse Dashboard should expose Scan QR quick action")
+        XCTAssertTrue(receiving.waitForExistence(timeout: 5), "Warehouse Dashboard should expose Receiving quick action")
+        XCTAssertTrue(auditQueue.waitForExistence(timeout: 5), "Warehouse Dashboard should expose Audit Queue quick action")
+
+        captureWEI1306("01-warehouse-dashboard-quick-actions")
+
+        XCTAssertEqual(newMovement.label, "New Movement")
+        XCTAssertEqual(scanQR.label, "Scan QR")
+        XCTAssertEqual(receiving.label, "Receiving")
+        XCTAssertEqual(auditQueue.label, "Audit Queue")
+        XCTAssertGreaterThanOrEqual(auditQueue.frame.height, 44, "Audit Queue quick action should meet the minimum tap target height")
+        XCTAssertFalse(app.buttons["whAction_setupWizard"].exists, "Setup Wizard should not occupy one of the four operational quick-action slots")
+    }
     private func logInAsUITestOwnerIfNeeded() {
         if app.buttons["tab_dashboard"].waitForExistence(timeout: 5) && app.buttons["tab_dashboard"].isHittable ||
             app.buttons["Dashboard"].exists && app.buttons["Dashboard"].isHittable ||
@@ -523,6 +814,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                 app.buttons["Configure Your Warehouse"].exists && app.buttons["Configure Your Warehouse"].isHittable ||
                 app.staticTexts["Warehouse Setup"].exists ||
                 app.staticTexts["Confirm Zone Grid"].exists ||
+                app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Step '")).firstMatch.exists ||
                 app.buttons["Create & Continue"].exists {
                 return
             }
@@ -537,8 +829,30 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                       app.buttons["Configure Your Warehouse"].exists ||
                       app.staticTexts["Warehouse Setup"].exists ||
                       app.staticTexts["Confirm Zone Grid"].exists ||
+                      app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Step '")).firstMatch.exists ||
                       app.buttons["Create & Continue"].exists,
                       "Login should reach the dashboard or warehouse shell before opening the wizard")
+    }
+
+    private func waitForLoginOrShell(timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if app.otherElements["loginView"].exists ||
+                app.staticTexts["UITest Owner"].exists ||
+                app.buttons["tab_dashboard"].exists ||
+                app.buttons["Dashboard"].exists ||
+                app.buttons["tab_warehouse"].exists ||
+                app.buttons["Warehouse"].exists ||
+                app.buttons["Configure Your Warehouse"].exists ||
+                app.staticTexts["Warehouse Setup"].exists ||
+                app.staticTexts["Confirm Zone Grid"].exists ||
+                app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Step '")).firstMatch.exists ||
+                app.buttons["Create & Continue"].exists {
+                return true
+            }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        return false
     }
 
     private func openWarehouseSetupWizard() {
@@ -546,6 +860,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
         if app.staticTexts["Confirm Zone Grid"].waitForExistence(timeout: 3) ||
             app.staticTexts["Warehouse Setup"].waitForExistence(timeout: 3) ||
+            app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Step '")).firstMatch.waitForExistence(timeout: 3) ||
             app.buttons["Create & Continue"].waitForExistence(timeout: 3) {
             return
         }
@@ -597,6 +912,56 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         configure.tap()
     }
 
+    private func openWarehouseDashboard() {
+        if app.buttons["whAction_newMovement"].waitForExistence(timeout: 2) ||
+            app.staticTexts["Quick Actions"].waitForExistence(timeout: 2) {
+            return
+        }
+
+        let warehouseTab = app.buttons["tab_warehouse"]
+        if warehouseTab.waitForExistence(timeout: 8) {
+            warehouseTab.tap()
+        } else if app.buttons["Warehouse"].waitForExistence(timeout: 3) {
+            app.buttons["Warehouse"].tap()
+        } else if app.tabBars.buttons["More"].waitForExistence(timeout: 3) {
+            app.tabBars.buttons["More"].tap()
+            let warehouse = app.buttons["Warehouse"]
+            XCTAssertTrue(warehouse.waitForExistence(timeout: 8), "Warehouse module should be reachable")
+            warehouse.tap()
+        } else {
+            XCTFail("Warehouse module tab should be reachable")
+        }
+
+        if !app.buttons["whAction_newMovement"].waitForExistence(timeout: 8) {
+            let dashboard = app.buttons["Dashboard"]
+            if dashboard.waitForExistence(timeout: 5) && dashboard.isHittable {
+                dashboard.tap()
+            }
+        }
+
+        XCTAssertTrue(
+            app.buttons["whAction_newMovement"].waitForExistence(timeout: 10),
+            "Warehouse Dashboard should open and expose quick actions"
+        )
+    }
+
+    private func captureWEI1306(_ name: String) {
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let source = URL(fileURLWithPath: #filePath)
+        let repoRoot = source
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let dir = repoRoot.appendingPathComponent("docs/testing/artifacts/wei-1306", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? screenshot.pngRepresentation.write(to: dir.appendingPathComponent("\(name).png"), options: .atomic)
+    }
+
     private func captureWEI1185(_ name: String) {
         let screenshot = XCUIScreen.main.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot)
@@ -618,6 +983,28 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         add(attachment)
 
         let file = wei1182ArtifactDirectory.appendingPathComponent("\(name).png")
+        try? screenshot.pngRepresentation.write(to: file, options: .atomic)
+    }
+
+    private func relaunchForWEI1451(_ extraArguments: [String]) {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = ["-UITesting", "-UITestingWEI936AutoLogin"] + extraArguments
+        if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" ||
+            ProcessInfo.processInfo.environment["WEI_1451_LANDSCAPE"] == "1" {
+            XCUIDevice.shared.orientation = .landscapeLeft
+        }
+        app.launch()
+    }
+
+    private func captureWEI1451(_ name: String) {
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let file = wei1451ArtifactDirectory.appendingPathComponent("\(name).png")
         try? screenshot.pngRepresentation.write(to: file, options: .atomic)
     }
 

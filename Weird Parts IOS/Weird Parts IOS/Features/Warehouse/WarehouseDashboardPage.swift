@@ -537,12 +537,16 @@ struct WarehouseDashboardPage: View {
                 .padding(.horizontal, 4)
 
             if usesCompactQuickActionGrid {
-                LazyVGrid(columns: [
-                    GridItem(.flexible(), spacing: 12),
-                    GridItem(.flexible(), spacing: 12),
-                ], spacing: 12) {
-                    ForEach(quickActions) { action in
-                        quickActionTile(action)
+                VStack(spacing: 12) {
+                    ForEach(Array(quickActionRows.enumerated()), id: \.offset) { _, row in
+                        HStack(spacing: 12) {
+                            ForEach(row) { action in
+                                quickActionTile(action)
+                            }
+                            if row.count == 1 {
+                                Color.clear
+                            }
+                        }
                     }
                 }
                 .dynamicTypeSize(...DynamicTypeSize.xxLarge)
@@ -599,6 +603,12 @@ struct WarehouseDashboardPage: View {
         ]
     }
 
+    private var quickActionRows: [[WarehouseQuickAction]] {
+        stride(from: 0, to: quickActions.count, by: 2).map { start in
+            Array(quickActions[start..<min(start + 2, quickActions.count)])
+        }
+    }
+
     private func quickActionTile(_ action: WarehouseQuickAction) -> some View {
         Button { performQuickAction(action) } label: {
             quickActionButton(
@@ -608,7 +618,9 @@ struct WarehouseDashboardPage: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(action.title)
+        .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier(action.identifier)
     }
 
@@ -696,7 +708,7 @@ struct WarehouseDashboardPage: View {
             .clipShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier(identifier)
+        .accessibilityIdentifier("whSubPage_\(tabId)")
         .accessibilityLabel(title)
     }
 
