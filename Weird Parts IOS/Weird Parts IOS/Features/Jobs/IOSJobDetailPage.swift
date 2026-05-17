@@ -692,6 +692,7 @@ struct IOSJobDetailPage: View {
             return
         }
         isLoading = job == nil
+        loadError = nil
         do {
             job = try service.getJob(id: jobId)
             teamMembers = try service.getTeamMembers(jobId: jobId)
