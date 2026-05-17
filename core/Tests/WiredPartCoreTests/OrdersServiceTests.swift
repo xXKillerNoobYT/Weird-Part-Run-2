@@ -147,13 +147,49 @@ struct OrdersServiceTests {
         #expect(detail.lines.first?.unitPrice == 1.25)
     }
 
-    @Test("Update PO status")
+    @Test("Update PO status supports submitted lifecycle before ordered")
     func testUpdatePOStatus() throws {
         let env = try E2ETestHelpers.setUp()
         let supplierId = try E2ETestHelpers.seedSupplier(env)
         let poId = try env.orders.createPurchaseOrder(poNumber: "PO-STS", supplierId: supplierId, notes: nil)
-        // draft → ordered is the valid first PO transition (fixes #205 validation; "sent" removed)
+
+        try env.orders.updatePOStatus(id: poId, status: "submitted", userId: env.adminUserId)
+        var detail = try env.orders.getPODetail(id: poId)
+        #expect(detail.status == "submitted")
+
         try env.orders.updatePOStatus(id: poId, status: "ordered", userId: env.adminUserId)
+        detail = try env.orders.getPODetail(id: poId)
+        #expect(detail.status == "ordered")
+    }
+
+    @Test("Update PO status supports cancellation from active states")
+    func testUpdatePOStatusCancellation() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+
+        let draftPoId = try env.orders.createPurchaseOrder(poNumber: "PO-CAN-DRAFT", supplierId: supplierId, notes: nil)
+        try env.orders.updatePOStatus(id: draftPoId, status: "cancelled", userId: env.adminUserId)
+        let draftDetail = try env.orders.getPODetail(id: draftPoId)
+        #expect(draftDetail.status == "cancelled")
+
+        let submittedPoId = try env.orders.createPurchaseOrder(poNumber: "PO-CAN-SUB", supplierId: supplierId, notes: nil)
+        try env.orders.updatePOStatus(id: submittedPoId, status: "submitted", userId: env.adminUserId)
+        try env.orders.updatePOStatus(id: submittedPoId, status: "cancelled", userId: env.adminUserId)
+        let submittedDetail = try env.orders.getPODetail(id: submittedPoId)
+        #expect(submittedDetail.status == "cancelled")
+    }
+
+    @Test("Cancelled PO status is terminal")
+    func testCancelledPOStatusIsTerminal() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-CAN-TERM", supplierId: supplierId, notes: nil)
+
+        try env.orders.updatePOStatus(id: poId, status: "cancelled", userId: env.adminUserId)
+
+        #expect(throws: OrdersService.OrdersError.invalidStatusTransition(entity: "PO", from: "cancelled", to: "ordered")) {
+            try env.orders.updatePOStatus(id: poId, status: "ordered", userId: env.adminUserId)
+        }
     }
 
     @Test("Delete PO")
