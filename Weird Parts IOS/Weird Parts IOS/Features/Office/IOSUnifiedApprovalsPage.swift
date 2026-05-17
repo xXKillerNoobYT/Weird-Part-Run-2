@@ -199,6 +199,16 @@ struct IOSUnifiedApprovalsPage: View {
             loadData()
             appCore.onboardingManager?.markCompleted("approvals-view")
         }
+        .onAppear {
+            NotificationCenter.default.post(
+                name: .officeApprovalsPageActive,
+                object: nil,
+                userInfo: ["context": approvalsPageContext]
+            )
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .officeApprovalsPageInactive, object: nil)
+        }
         .alert("Error", isPresented: Binding(
             get: { actionError != nil },
             set: { if !$0 { actionError = nil } }
@@ -245,6 +255,17 @@ struct IOSUnifiedApprovalsPage: View {
     }
 
     private var totalCount: Int { allItems.count }
+
+    private var approvalsPageContext: String {
+        let pendingSummary = ApprovalType.allCases
+            .map { "\($0.label): \(count(for: $0))" }
+            .joined(separator: ", ")
+        let selectedFilter = activeFilter?.label ?? "All"
+        let searchState = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "none" : "active"
+        return """
+        page=Office Approvals; total_pending=\(totalCount); visible_pending=\(filteredItems.count); selected_filter=\(selectedFilter); search=\(searchState); pending_by_type=[\(pendingSummary)]
+        """
+    }
 
     private func count(for type: ApprovalType) -> Int {
         switch type {

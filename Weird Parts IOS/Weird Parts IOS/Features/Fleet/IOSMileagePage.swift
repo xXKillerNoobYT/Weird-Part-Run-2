@@ -46,6 +46,16 @@ struct IOSMileagePage: View {
             .onChange(of: dateRange) { loadData() }
             .onChange(of: customStart) { loadData() }
             .onChange(of: customEnd) { loadData() }
+            .onAppear {
+                NotificationCenter.default.post(
+                    name: .fleetMileagePageActive,
+                    object: nil,
+                    userInfo: ["context": fleetMileageContext]
+                )
+            }
+            .onDisappear {
+                NotificationCenter.default.post(name: .fleetMileagePageInactive, object: nil)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
@@ -68,6 +78,11 @@ struct IOSMileagePage: View {
     }
 
     // MARK: - Mileage List
+
+    private var fleetMileageContext: String {
+        let searchState = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "none" : "active"
+        return "page=Fleet Mileage; total_logs=\(mileageLogs.count); visible_logs=\(filteredLogs.count); date_range=\(dateRange.rawValue); search=\(searchState)"
+    }
 
     @ViewBuilder
     private var mileageList: some View {

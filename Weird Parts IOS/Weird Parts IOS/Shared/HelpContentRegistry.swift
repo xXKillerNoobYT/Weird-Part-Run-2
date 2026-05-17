@@ -132,6 +132,7 @@ struct HelpContentRegistry {
         "WiredPart.fleetInspectionsPageActive": "fleet-inspections",
         "WiredPart.fleetTrackingPageActive": "fleet-tracking",
         "WiredPart.fleetMyTruckPageActive": "fleet-my-truck",
+        "WiredPart.officeApprovalsPageActive": "office-approvals",
         "WiredPart.toolRegistryPageActive": "tools-registry",
         "WiredPart.notebooksListPageActive": "notebooks-all",
     ]
