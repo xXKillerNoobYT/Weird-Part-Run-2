@@ -358,6 +358,10 @@ public final class ChatService: Sendable {
         jobId: Int64? = nil,
         createdBy: Int64
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_chat")
+        }
+
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw ChatError.requiredFieldEmpty
         }
@@ -655,7 +659,11 @@ public final class ChatService: Sendable {
         holdReason: String?,
         userId: Int64
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "manage_orders")
+        }
+
+        return try db.writer.write { dbConn in
             let channelName = "Hold: \(partName) (\(jpoNumber))"
 
             // Check if a thread already exists for this part + JPO
@@ -936,6 +944,10 @@ public final class ChatService: Sendable {
     /// `userId` must flow from the session; no default to prevent hardcoded user 1
     /// attribution on auto-created notebooks (documented in memory/feedback_hardcoded_user_ids.md).
     public func autoSaveToJobNotebook(channelId: Int64, attachment: MessageAttachment, userId: Int64) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "manage_notebooks")
+        }
+
         try db.writer.write { dbConn in
             // Get job ID from channel
             guard let row = try Row.fetchOne(dbConn, sql: """
@@ -1239,6 +1251,10 @@ public final class ChatService: Sendable {
 
     /// Escalate a Q&A thread to the next level.
     public func escalateThread(threadId: Int64, escalatedBy: Int64, notes: String?) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: escalatedBy, permissionKey: "moderate_chat")
+        }
+
         try db.writer.write { dbConn in
             guard let row = try Row.fetchOne(dbConn, sql: """
                 SELECT current_level FROM qa_threads WHERE id = ? AND deleted_at IS NULL
@@ -1341,7 +1357,11 @@ public final class ChatService: Sendable {
         createdBy: Int64,
         jobId: Int64? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_chat")
+        }
+
+        return try db.writer.write { dbConn in
             // Create the channel with type "supplier" and optional job link
             try dbConn.execute(sql: """
                 INSERT INTO chat_channels (channel_type, job_id, name, created_by, is_active, created_at)
