@@ -166,6 +166,10 @@ struct IOSEmployeeDetailPage: View {
                                 Capsule().fill(selectedTab == tab ? Color.accentColor : Color.secondary.opacity(0.15))
                             )
                             .foregroundStyle(selectedTab == tab ? .white : .primary)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                            .accessibilityLabel(Text("\(tab.capitalized) tab"))
+                            .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
                     }
                     .buttonStyle(.plain)
                 }
