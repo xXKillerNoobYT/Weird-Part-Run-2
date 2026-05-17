@@ -634,6 +634,10 @@ public final class ReportsService: Sendable {
         name: String, type: String, columns: [String],
         filters: [String: String], userId: Int64, isShared: Bool
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "view_reports")
+        }
+
         let columnsData = try JSONSerialization.data(withJSONObject: columns)
         let filtersData = try JSONSerialization.data(withJSONObject: filters)
         let columnsJson = String(data: columnsData, encoding: .utf8) ?? "[]"
@@ -648,6 +652,7 @@ public final class ReportsService: Sendable {
     }
 
     /// Get saved reports for a user (own + shared).
+    // SCANNER-IGNORE: system-only read-only listing; does not write audit fields.
     public func getSavedReports(userId: Int64) throws -> [SavedReport] {
         do {
             return try db.writer.read { dbConn -> [SavedReport] in
