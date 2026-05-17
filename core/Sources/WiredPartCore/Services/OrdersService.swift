@@ -1769,13 +1769,13 @@ public final class OrdersService: Sendable {
             )
             let poId = dbConn.lastInsertedRowID
 
-            // Copy JPO line items to PO line items
+            // Copy only procurement-eligible JPO line items to PO line items
             let lines = try Row.fetchAll(
                 dbConn,
                 sql: """
                     SELECT id, part_id, qty_requested
                     FROM jpo_line_items
-                    WHERE jpo_id = ? AND deleted_at IS NULL
+                    WHERE jpo_id = ? AND line_status = 'approved' AND deleted_at IS NULL
                     """,
                 arguments: [jpoId]
             )
@@ -1798,7 +1798,7 @@ public final class OrdersService: Sendable {
                         SET line_status = 'in_procurement',
                             po_line_id = ?,
                             status_updated_at = datetime('now')
-                        WHERE id = ? AND deleted_at IS NULL
+                        WHERE id = ? AND line_status = 'approved' AND deleted_at IS NULL
                         """,
                     arguments: [poLineId, jpoLineId]
                 )

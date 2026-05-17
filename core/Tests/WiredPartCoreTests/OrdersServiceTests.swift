@@ -259,6 +259,35 @@ struct OrdersServiceTests {
         #expect(generatedLine.poLineId == poDetail.lines.first?.id)
     }
 
+    @Test("Generate PO from JPO only copies approved lines")
+    func testGeneratePOFromJPOOnlyCopiesApprovedLines() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let catId = try E2ETestHelpers.seedCategory(env, name: "GeneratePOMixedCat")
+        let partAId = try E2ETestHelpers.seedPart(env, name: "Generate PO Approved Part", categoryId: catId)
+        let partBId = try E2ETestHelpers.seedPart(env, name: "Generate PO Transfer Part", categoryId: catId)
+
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let approvedLineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partAId, quantity: 4, notes: nil)
+        let transferLineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partBId, quantity: 2, notes: nil)
+        try env.orders.updateJPOLineStatus(lineId: approvedLineId, status: "approved", updatedBy: env.adminUserId)
+        try env.orders.updateJPOLineStatus(lineId: transferLineId, status: "transfer", updatedBy: env.adminUserId)
+
+        let poId = try env.orders.generatePOFromJPO(jpoId: jpoId, supplierId: supplierId)
+        let poDetail = try env.orders.getPODetail(id: poId)
+        #expect(poDetail.lines.count == 1)
+        #expect(poDetail.lines.first?.jpoLineId == approvedLineId)
+
+        let jpoDetail = try env.orders.getJPODetail(id: jpoId)
+        let approvedLine = try #require(jpoDetail.lines.first(where: { $0.id == approvedLineId }))
+        let transferLine = try #require(jpoDetail.lines.first(where: { $0.id == transferLineId }))
+        #expect(approvedLine.lineStatus == "in_procurement")
+        #expect(approvedLine.poLineId == poDetail.lines.first?.id)
+        #expect(transferLine.lineStatus == "transfer")
+        #expect(transferLine.poLineId == nil)
+    }
+
     // MARK: - Update Return Status
 
     @Test("Update return status")
