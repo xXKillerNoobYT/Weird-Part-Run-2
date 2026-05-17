@@ -393,6 +393,7 @@ public struct Part: Codable, FetchableRecord, MutablePersistableRecord, Sendable
     public var forecastTargetQty: Int?
     public var forecastSuggestedOrder: Int?
     public var forecastDaysUntilLow: Int?
+    public var autoAddToWishlistWhenLow: Int = 0
     public var isDeprecated: Int?
     public var deprecationReason: String?
     public var isQrTagged: Int?
@@ -433,6 +434,7 @@ public struct Part: Codable, FetchableRecord, MutablePersistableRecord, Sendable
         case forecastTargetQty = "forecast_target_qty"
         case forecastSuggestedOrder = "forecast_suggested_order"
         case forecastDaysUntilLow = "forecast_days_until_low"
+        case autoAddToWishlistWhenLow = "auto_add_to_wishlist_when_low"
         case isDeprecated = "is_deprecated"
         case deprecationReason = "deprecation_reason"
         case isQrTagged = "is_qr_tagged"

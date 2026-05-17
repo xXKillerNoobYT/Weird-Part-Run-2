@@ -96,9 +96,9 @@ struct DatabaseTests {
         }
     }
 
-    @Test("Schema version is 85")
+    @Test("Schema version is 83")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 85)
+        #expect(AppDatabase.schemaVersion == 83)
     }
 
     @Test("Migration 082 adds structured estimation review columns")

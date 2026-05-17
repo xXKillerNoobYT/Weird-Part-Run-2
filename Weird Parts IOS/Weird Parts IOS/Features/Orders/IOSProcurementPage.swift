@@ -19,7 +19,6 @@ struct IOSProcurementPage: View {
     @State private var splitByJPOPartId: Int64? = nil           // expanded part for per-JPO split
     @State private var perJPOSupplier: [String: Int64] = [:]    // [sourceId: supplierId] for split mode
     @State private var checkedParts: Set<Int64> = []            // parts included in generation
-    @State private var excludedPreviewLineKeys: Set<String> = []
     @State private var generateError: String?
     @State private var generateSuccess: String?
     @State private var isGenerating = false
@@ -149,7 +148,6 @@ struct IOSProcurementPage: View {
         }
         .onChange(of: checkedParts) { updateReadyToGenerate() }
         .onChange(of: selectedSupplier) { updateReadyToGenerate() }
-        .onChange(of: perJPOSupplier) { updateReadyToGenerate() }
         .onDisappear {
             NotificationCenter.default.post(name: .procurementPageInactive, object: nil)
         }
@@ -336,21 +334,9 @@ struct IOSProcurementPage: View {
     private func updateReadyToGenerate() {
         cachedReadyToGenerate = items.filter { item in
             checkedParts.contains(item.id) &&
-            hasSupplierSelection(for: item) &&
-            hasSatisfiedOverMaxPull(for: item) &&
+            selectedSupplier[item.id] != nil &&
             effectiveOrderQty(for: item) > 0
         }
-    }
-
-    private func hasSatisfiedOverMaxPull(for item: OrdersService.ProcurementItem) -> Bool {
-        item.maxStock <= 0 || item.shopStock <= item.maxStock
-    }
-
-    private func hasSupplierSelection(for item: OrdersService.ProcurementItem) -> Bool {
-        if item.lockedSupplierId != nil { return true }
-        if selectedSupplier[item.id] != nil { return true }
-        let jpoSources = item.sources.filter { $0.sourceType == "jpo" }
-        return !jpoSources.isEmpty && jpoSources.allSatisfy { supplierId(for: $0, in: item) != nil }
     }
 
     /// The effective order quantity for a part, accounting for any pull decision.
@@ -358,7 +344,7 @@ struct IOSProcurementPage: View {
         if let decision = pullDecisions[item.id] {
             return decision.orderQty
         }
-        return max(0, item.totalDemand - item.stagedPullQty)
+        return item.totalDemand
     }
 
     private func procurementRow(_ item: OrdersService.ProcurementItem) -> some View {
@@ -400,14 +386,13 @@ struct IOSProcurementPage: View {
                 Spacer()
                 if item.totalDemand > 0 {
                     let orderQty = effectiveOrderQty(for: item)
-                    let pulledQty = (pullDecisions[item.id]?.pullQty ?? 0) + item.stagedPullQty
-                    if pulledQty > 0 {
+                    if let decision = pullDecisions[item.id], decision.pullQty > 0 {
                         VStack(alignment: .trailing, spacing: 1) {
                             Text("Order: \(orderQty)")
                                 .font(.subheadline)
                                 .fontWeight(.bold)
                                 .foregroundStyle(orderQty > 0 ? Color.primary : Color.green)
-                            Text("(\(pulledQty) staged)")
+                            Text("(\(decision.pullQty) pulled)")
                                 .font(.caption2)
                                 .foregroundStyle(.green)
                         }
@@ -459,16 +444,6 @@ struct IOSProcurementPage: View {
                         .foregroundStyle(.red)
                 }
             }
-            if item.stagedPullQty > 0 {
-                HStack(spacing: 4) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                        .accessibilityHidden(true)
-                    Text("\(item.stagedPullQty) already in pulled staging")
-                        .font(.caption)
-                        .foregroundStyle(.green)
-                }
-            }
 
             // Urgency indicator for understock
             if item.urgency == "understock" {
@@ -506,7 +481,7 @@ struct IOSProcurementPage: View {
                         .font(.caption2)
                         .foregroundStyle(.orange)
                         .accessibilityHidden(true)
-                    Text(genericLockText(for: item))
+                    Text("Generic — supplier locked per job")
                         .font(.caption2)
                         .foregroundStyle(.orange)
                 }
@@ -541,67 +516,39 @@ struct IOSProcurementPage: View {
                         .foregroundStyle(.secondary)
                 }
 
-                // Grouped by supplier, then by job/source.
+                // Grouped by supplier
                 ForEach(poPreviewGroups, id: \.supplierId) { group in
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text(group.supplierName)
                             .font(.caption)
                             .fontWeight(.semibold)
-                        ForEach(group.jobs, id: \.key) { job in
-                            VStack(alignment: .leading, spacing: 3) {
-                                HStack {
-                                    Text(job.jobName)
-                                        .font(.caption2)
-                                        .fontWeight(.medium)
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
-                                    Button {
-                                        excludedPreviewLineKeys.formUnion(job.parts.map(\.key))
-                                    } label: {
-                                        Image(systemName: "minus.circle")
-                                    }
-                                    .buttonStyle(.plain)
+                        ForEach(group.parts, id: \.partId) { part in
+                            HStack {
+                                Text(part.partName)
+                                    .font(.caption)
                                     .foregroundStyle(.secondary)
-                                    .accessibilityLabel("Remove \(job.jobName) from preview")
+                                // Show pull badge if this part had stock pulled
+                                if let decision = pullDecisions[part.partId], decision.pullQty > 0 {
+                                    Text("pulled \(decision.pullQty)")
+                                        .font(.system(.caption2, weight: .medium))
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 1)
+                                        .background(Capsule().fill(Color.green.opacity(0.15)))
+                                        .foregroundStyle(.green)
                                 }
-
-                                ForEach(job.parts, id: \.key) { part in
-                                    HStack {
-                                        Text(part.partName)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                        if let decision = pullDecisions[part.demandItemId], decision.pullQty > 0 {
-                                            Text("pulled \(decision.pullQty)")
-                                                .font(.system(.caption2, weight: .medium))
-                                                .padding(.horizontal, 4)
-                                                .padding(.vertical, 1)
-                                                .background(Capsule().fill(Color.green.opacity(0.15)))
-                                                .foregroundStyle(.green)
-                                        }
-                                        Spacer()
-                                        Text("x\(part.quantity)")
-                                            .font(.caption)
-                                            .monospaced()
-                                        if let cost = part.unitCost {
-                                            Text(String(format: "$%.2f", cost * Double(part.quantity)))
-                                                .font(.caption)
-                                                .monospaced()
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        Button {
-                                            excludedPreviewLineKeys.insert(part.key)
-                                        } label: {
-                                            Image(systemName: "xmark.circle")
-                                        }
-                                        .buttonStyle(.plain)
+                                Spacer()
+                                Text("x\(part.quantity)")
+                                    .font(.caption)
+                                    .monospaced()
+                                if let cost = part.unitCost {
+                                    Text(String(format: "$%.2f", cost * Double(part.quantity)))
+                                        .font(.caption)
+                                        .monospaced()
                                         .foregroundStyle(.secondary)
-                                        .accessibilityLabel("Remove \(part.partName) from preview")
-                                    }
                                 }
                             }
-                            .padding(.leading, 8)
                         }
-                        let totalCost = group.jobs.flatMap(\.parts).compactMap { p in
+                        let totalCost = group.parts.compactMap { p in
                             p.unitCost.map { $0 * Double(p.quantity) }
                         }.reduce(0, +)
                         if totalCost > 0 {
@@ -630,7 +577,7 @@ struct IOSProcurementPage: View {
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(isGenerating || poPreviewGroups.isEmpty)
+                    .disabled(isGenerating)
 
                     Button {
                         withAnimation { showSavedToast = true }
@@ -646,41 +593,40 @@ struct IOSProcurementPage: View {
         }
     }
 
-    private var poPreviewGroups: [OrdersService.ProcurementPreviewGroup] {
-        let splitIds: Set<Int64> = splitByJPOPartId.map { Set([$0]) } ?? Set()
-        let orderQuantities = Dictionary(uniqueKeysWithValues: cachedReadyToGenerate.map { ($0.id, effectiveOrderQty(for: $0)) })
-        return OrdersService.buildProcurementPreviewGroups(
-            items: cachedReadyToGenerate,
-            selection: OrdersService.ProcurementPreviewSelection(
-                checkedPartIds: checkedParts,
-                selectedSuppliers: selectedSupplier,
-                perSourceSuppliers: perJPOSupplier,
-                splitPartIds: splitIds,
-                orderQuantities: orderQuantities,
-                excludedLineKeys: excludedPreviewLineKeys
+    private struct POPreviewGroup {
+        let supplierId: Int64
+        let supplierName: String
+        let parts: [POPreviewPart]
+    }
+
+    private struct POPreviewPart {
+        let partId: Int64
+        let partName: String
+        let quantity: Int
+        let unitCost: Double?
+        let jpoLineIds: [Int64]
+    }
+
+    private var poPreviewGroups: [POPreviewGroup] {
+        var groups: [Int64: (name: String, parts: [POPreviewPart])] = [:]
+        for item in cachedReadyToGenerate {
+            guard let supplierId = selectedSupplier[item.id] else { continue }
+            let supplierName = item.suppliers.first(where: { $0.id == supplierId })?.name ?? "Unknown"
+            let unitCost = item.suppliers.first(where: { $0.id == supplierId })?.unitPrice
+            let allLineIds = item.sources.flatMap(\.lineIds)
+            let orderQty = effectiveOrderQty(for: item)
+
+            let part = POPreviewPart(
+                partId: item.id,
+                partName: item.partName,
+                quantity: orderQty,
+                unitCost: unitCost,
+                jpoLineIds: allLineIds
             )
-        )
-    }
-
-    private func usesPerJPOSuppliers(for item: OrdersService.ProcurementItem) -> Bool {
-        item.isGeneric || splitByJPOPartId == item.id || item.sources.contains { $0.lockedSupplierId != nil }
-    }
-
-    private func supplierId(for source: OrdersService.DemandSource?, in item: OrdersService.ProcurementItem) -> Int64? {
-        if let source {
-            return source.lockedSupplierId ?? perJPOSupplier[source.id] ?? item.lockedSupplierId ?? selectedSupplier[item.id] ?? item.suppliers.first?.id
+            groups[supplierId, default: (name: supplierName, parts: [])].parts.append(part)
         }
-        return item.lockedSupplierId ?? selectedSupplier[item.id] ?? item.suppliers.first?.id
-    }
-
-    private func genericLockText(for item: OrdersService.ProcurementItem) -> String {
-        guard let supplierName = item.lockedSupplierName else {
-            return "Generic - no prior supplier lock"
-        }
-        if let source = item.lockSourceName {
-            return "Generic - locked to \(supplierName) from \(source)"
-        }
-        return "Generic - locked to \(supplierName)"
+        return groups.map { POPreviewGroup(supplierId: $0.key, supplierName: $0.value.name, parts: $0.value.parts) }
+            .sorted { $0.supplierName < $1.supplierName }
     }
 
     // MARK: - Confirmation Dialog Content
@@ -691,7 +637,7 @@ struct IOSProcurementPage: View {
     }
 
     private var generatePOsConfirmationMessage: String {
-        let totalCost = poPreviewGroups.flatMap(\.jobs).flatMap(\.parts).compactMap { p in
+        let totalCost = poPreviewGroups.flatMap(\.parts).compactMap { p in
             p.unitCost.map { $0 * Double(p.quantity) }
         }.reduce(0, +)
         if totalCost > 0 {
@@ -724,15 +670,13 @@ struct IOSProcurementPage: View {
         defer { isGenerating = false }
 
         let generateItems = poPreviewGroups.flatMap { group in
-            group.jobs.flatMap(\.parts).map { part in
+            group.parts.map { part in
                 OrdersService.ProcurementGenerateItem(
                     partId: part.partId,
                     supplierId: group.supplierId,
                     quantity: part.quantity,
                     unitCost: part.unitCost,
-                    jpoLineIds: part.jpoLineIds,
-                    wishlistItemIds: part.wishlistItemIds,
-                    forecastTargetIds: part.forecastTargetIds
+                    jpoLineIds: part.jpoLineIds
                 )
             }
         }
@@ -746,14 +690,8 @@ struct IOSProcurementPage: View {
             for item in cachedReadyToGenerate {
                 checkedParts.remove(item.id)
             }
-            excludedPreviewLineKeys.removeAll()
         } catch {
-            if let ordersError = error as? OrdersService.OrdersError,
-               let message = ordersError.errorDescription {
-                generateError = message
-            } else {
-                generateError = userFriendlyError(error, context: "generate document")
-            }
+            generateError = userFriendlyError(error, context: "generate document")
         }
     }
 
@@ -898,7 +836,6 @@ struct IOSProcurementPage: View {
         case "cheapest": return ("Cheapest", .green)
         case "rated": return ("Top Rated", .purple)
         case "fastest": return ("Fastest", .orange)
-        case "locked": return ("Locked", .orange)
         default: return (tag.capitalized, .secondary)
         }
     }
@@ -908,7 +845,6 @@ struct IOSProcurementPage: View {
         case "cheapest": return "- Cheapest"
         case "rated": return "- Top Rated"
         case "fastest": return "- Fastest"
-        case "locked": return "- Locked"
         default: return ""
         }
     }
@@ -919,7 +855,6 @@ struct IOSProcurementPage: View {
     private func pullOptionsView(_ item: OrdersService.ProcurementItem) -> some View {
         if item.shopStock > 0 && item.totalDemand > 0 {
             let currentlyPulling = isPulling.contains(item.id)
-            let remainingDemand = max(0, item.totalDemand - item.stagedPullQty)
 
             VStack(spacing: 4) {
                 if let decision = pullDecisions[item.id] {
@@ -929,9 +864,8 @@ struct IOSProcurementPage: View {
                             .foregroundStyle(.green)
                             .font(.caption)
                         VStack(alignment: .leading, spacing: 1) {
-                            let totalPulled = decision.pullQty + item.stagedPullQty
-                            if totalPulled > 0 {
-                                Text("\(totalPulled) in pulled staging")
+                            if decision.pullQty > 0 {
+                                Text("Pulling \(decision.pullQty) from shelf")
                                     .font(.caption)
                                     .foregroundStyle(.green)
                             }
@@ -959,10 +893,10 @@ struct IOSProcurementPage: View {
                     .padding(.horizontal, 8)
                     .background(Color.green.opacity(0.08))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
-                } else if remainingDemand > 0 {
+                } else {
                     // Option 1: Pull to Target + order remaining (RECOMMENDED)
-                    let pullToTarget = min(remainingDemand, max(0, item.shopStock - item.targetStock))
-                    let orderAfterPull = max(0, remainingDemand - pullToTarget)
+                    let pullToTarget = max(0, item.shopStock - item.targetStock)
+                    let orderAfterPull = max(0, item.totalDemand - pullToTarget)
                     if pullToTarget > 0 {
                         pullButton(
                             item: item,
@@ -975,13 +909,12 @@ struct IOSProcurementPage: View {
                     }
 
                     // Option 2: Pull all + order remaining
-                    let pullAll = min(item.shopStock, remainingDemand)
-                    let orderAfterAll = max(0, remainingDemand - item.shopStock)
-                    if item.shopStock >= remainingDemand {
+                    let orderAfterAll = max(0, item.totalDemand - item.shopStock)
+                    if item.shopStock >= item.totalDemand {
                         pullButton(
                             item: item,
-                            label: "Pull \(remainingDemand) from shelf (no order needed)",
-                            pullQty: remainingDemand,
+                            label: "Pull \(item.totalDemand) from shelf (no order needed)",
+                            pullQty: item.totalDemand,
                             orderQty: 0,
                             style: pullToTarget == 0 ? .recommended : .normal,
                             isLoading: currentlyPulling
@@ -989,8 +922,8 @@ struct IOSProcurementPage: View {
                     } else {
                         pullButton(
                             item: item,
-                            label: "Pull all \(pullAll) + order \(orderAfterAll)",
-                            pullQty: pullAll,
+                            label: "Pull all \(item.shopStock) + order \(orderAfterAll)",
+                            pullQty: item.shopStock,
                             orderQty: orderAfterAll,
                             style: .normal,
                             isLoading: currentlyPulling
@@ -999,8 +932,8 @@ struct IOSProcurementPage: View {
 
                     // Option 3: Pull to MIN + order remaining (only if different from target)
                     if item.minStock > 0 && item.minStock != item.targetStock {
-                        let pullToMin = min(remainingDemand, max(0, item.shopStock - item.minStock))
-                        let orderAfterMin = max(0, remainingDemand - pullToMin)
+                        let pullToMin = max(0, item.shopStock - item.minStock)
+                        let orderAfterMin = max(0, item.totalDemand - pullToMin)
                         if pullToMin > 0 && pullToMin != pullToTarget {
                             pullButton(
                                 item: item,
@@ -1016,9 +949,9 @@ struct IOSProcurementPage: View {
                     // Option 4: Order all (no pull)
                     pullButton(
                         item: item,
-                        label: "Order all \(remainingDemand)",
+                        label: "Order all \(item.totalDemand)",
                         pullQty: 0,
-                        orderQty: remainingDemand,
+                        orderQty: item.totalDemand,
                         style: .subdued,
                         isLoading: false
                     )
@@ -1037,17 +970,6 @@ struct IOSProcurementPage: View {
                             .foregroundStyle(.red)
                     }
                     .padding(.vertical, 4)
-                }
-                if item.stagedPullQty > 0 {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                            .font(.caption2)
-                            .accessibilityHidden(true)
-                        Text("\(item.stagedPullQty) already in pulled staging")
-                            .font(.caption2)
-                            .foregroundStyle(.green)
-                    }
                 }
             }
         }
@@ -1113,10 +1035,6 @@ struct IOSProcurementPage: View {
 
     /// Stores the pending pull intent and shows the confirmation dialog.
     private func requestPullAction(item: OrdersService.ProcurementItem, pullQty: Int, orderQty: Int) {
-        if item.maxStock > 0 && item.shopStock > item.maxStock && pullQty < item.shopStock - item.maxStock {
-            pullActionError = "This part is over MAX. Pull at least \(item.shopStock - item.maxStock) before ordering."
-            return
-        }
         // If no pull needed (order-all), just record the decision — no confirmation required
         if pullQty == 0 {
             pullDecisions[item.id] = (pullQty: 0, orderQty: orderQty)
@@ -1131,8 +1049,8 @@ struct IOSProcurementPage: View {
 
     /// Executes a pull from warehouse shelf to pulled-staging and records the decision.
     private func executePullAction(item: OrdersService.ProcurementItem, pullQty: Int, orderQty: Int) {
-        guard let service = appCore.ordersService else {
-            pullActionError = "Orders service not available"
+        guard let warehouseService = appCore.warehouseService else {
+            pullActionError = "Warehouse service not available"
             return
         }
         guard let userId = appCore.currentUser?.id else {
@@ -1144,22 +1062,35 @@ struct IOSProcurementPage: View {
         defer { isPulling.remove(item.id) }
 
         do {
-            let result = try service.pullStockForProcurement(
-                demandItemId: item.id,
-                partId: item.partId,
-                requestedPullQty: pullQty,
-                totalDemand: item.totalDemand,
-                jpoLineIds: item.sources.flatMap(\.lineIds),
-                performedBy: userId
+            // Verify stock is still available before pulling
+            let currentStock = try warehouseService.getStockQty(
+                partId: item.id,
+                locationType: "warehouse",
+                locationId: 1
             )
-            let actualPull = result.pulledQty
+
+            let actualPull = min(pullQty, currentStock)
             if actualPull <= 0 {
                 pullActionError = "No stock available on shelf for \(item.partName)"
                 return
             }
 
+            // Create the warehouse -> pulled movement
+            try warehouseService.createMovement(
+                partId: item.id,
+                qty: actualPull,
+                fromLocationType: "warehouse",
+                fromLocationId: 1,
+                toLocationType: "pulled",
+                toLocationId: 1,
+                movementType: "transfer",
+                reason: "Procurement pull",
+                notes: "Pulled \(actualPull) for procurement demand of \(item.totalDemand)",
+                performedBy: userId
+            )
+
             // Calculate adjusted order quantity
-            let adjustedOrder = result.remainingOrderQty
+            let adjustedOrder = max(0, item.totalDemand - actualPull)
 
             // Record the decision
             pullDecisions[item.id] = (pullQty: actualPull, orderQty: adjustedOrder)
@@ -1234,9 +1165,6 @@ struct IOSProcurementPage: View {
             // Auto-select preferred suppliers
             for item in items {
                 if selectedSupplier[item.id] == nil,
-                   let lockedSupplierId = item.lockedSupplierId {
-                    selectedSupplier[item.id] = lockedSupplierId
-                } else if selectedSupplier[item.id] == nil,
                    let preferred = item.suppliers.first(where: { $0.isPreferred }) {
                     selectedSupplier[item.id] = preferred.id
                 }

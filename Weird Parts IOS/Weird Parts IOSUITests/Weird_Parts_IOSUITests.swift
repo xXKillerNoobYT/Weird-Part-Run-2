@@ -163,7 +163,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += [
             "-UITesting",
-            "-UITestingPreserveDatabase",
             "-UITestingWarehouseSetupWizard"
         ]
         if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" {
@@ -172,82 +171,9 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app.launch()
         logInAsUITestOwnerIfNeeded()
         openWarehouseSetupWizard()
-        goToWizardStep(2)
-        if app.buttons["Confirm Grid"].waitForExistence(timeout: 3) {
-            app.buttons["Confirm Grid"].tap()
-            XCTAssertTrue(app.staticTexts["Zones"].waitForExistence(timeout: 10),
-                          "Resumed wizard should load the zone placement phase after confirming the grid")
-        } else {
-            XCTAssertTrue(app.staticTexts["Zones"].waitForExistence(timeout: 10),
-                          "Resumed wizard should allow returning to the zone placement phase")
-        }
-        captureWEI1185("06-storage-persisted-after-resume")
-        let persistedLocation = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'R2C2'")).firstMatch
-        let persistedZone = app.descendants(matching: .any).matching(
-            NSPredicate(format: "label CONTAINS 'Storage' AND label CONTAINS 'starts at R2C2'")
-        ).firstMatch
-        XCTAssertTrue(persistedLocation.waitForExistence(timeout: 10) || persistedZone.waitForExistence(timeout: 10),
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'R2C2'")).firstMatch.waitForExistence(timeout: 10),
                       "Zone placement should persist after leaving and resuming the wizard")
         captureWEI1185("06-storage-persisted-after-resume")
-    }
-
-    @MainActor
-    func testWEI1211WarehouseWizardBreakpointZoneDrop() throws {
-        let artifactDirectory = wei1182ArtifactDirectory
-        try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
-
-        logInAsUITestOwnerIfNeeded()
-        openWarehouseSetupWizard()
-
-        let createContinue = app.buttons["Create & Continue"]
-        XCTAssertTrue(createContinue.waitForExistence(timeout: 10), "Fresh warehouse wizard should start at Step 1")
-        createContinue.tap()
-
-        if app.staticTexts["Phase 2 · Storage Units"].waitForExistence(timeout: 3) {
-            app.buttons["Back"].tap()
-        }
-        goToWizardStep(2)
-
-        XCTAssertTrue(app.staticTexts["Confirm Zone Grid"].waitForExistence(timeout: 10),
-                      "Step 2 should start with the zone-grid confirmation")
-
-        let confirmGrid = app.buttons["Confirm Grid"]
-        XCTAssertTrue(confirmGrid.waitForExistence(timeout: 5), "Confirm Grid should be available")
-        confirmGrid.tap()
-
-        let r1c1 = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'R1C1'")).firstMatch
-        let r1c3 = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'R1C3'")).firstMatch
-        XCTAssertTrue(r1c1.waitForExistence(timeout: 8), "Zone grid should include R1C1")
-        XCTAssertTrue(r1c3.waitForExistence(timeout: 5), "Zone grid should include R1C3")
-
-        let storage = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Drag Storage zone'")).firstMatch
-        XCTAssertTrue(storage.waitForExistence(timeout: 5), "Storage zone drag source should be present")
-        storage.press(forDuration: 0.7, thenDragTo: r1c1)
-
-        let receiving = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Drag Receiving zone'")).firstMatch
-        XCTAssertTrue(receiving.waitForExistence(timeout: 5), "Receiving zone drag source should be present")
-        receiving.press(forDuration: 0.7, thenDragTo: r1c3)
-
-        let placedStorage = app.descendants(matching: .any).matching(
-            NSPredicate(format: "label CONTAINS 'Storage' AND label CONTAINS 'starts at R1C1'")
-        ).firstMatch
-        XCTAssertTrue(placedStorage.waitForExistence(timeout: 8), "Dropped Storage zone should render on the grid")
-        placedStorage.tap()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Storage at R1C1'")).firstMatch.waitForExistence(timeout: 5),
-                      "Tapping Storage should select the Storage zone before resizing")
-
-        let grow = app.buttons["Grow"]
-        XCTAssertTrue(grow.waitForExistence(timeout: 5), "Selected Storage zone should expose Grow")
-        grow.tap()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '2x2'")).firstMatch.waitForExistence(timeout: 5),
-                      "Resizing Storage should update selected-zone size text")
-
-        let receivingAtR1C3 = app.descendants(matching: .any).matching(
-            NSPredicate(format: "label CONTAINS 'Receiving' AND label CONTAINS 'starts at R1C3'")
-        ).firstMatch
-        XCTAssertTrue(receivingAtR1C3.waitForExistence(timeout: 5),
-                      "Dropped Receiving zone should remain visible after resizing Storage")
-        captureWEI1182("wei-1211-two-zones-after-storage-resize")
     }
 
     @MainActor
@@ -300,7 +226,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             NSPredicate(format: "label CONTAINS 'Storage' AND label CONTAINS 'starts at R1C1'")
         ).firstMatch
         XCTAssertTrue(placedStorage.waitForExistence(timeout: 8), "Dropped Storage zone should render on the grid")
-        placedStorage.tap()
+        r1c1.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Storage at R1C1'")).firstMatch.waitForExistence(timeout: 5),
                       "Tapping Storage should select the Storage zone before resizing")
 
@@ -322,7 +248,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         captureWEI1182("02-zone-placement-phase-b-two-zones-resized")
 
         app.buttons["Next"].tap()
-        XCTAssertTrue(app.staticTexts["Phase 2 · Place Units"].waitForExistence(timeout: 10),
+        XCTAssertTrue(app.staticTexts["Phase 2 · Storage Units"].waitForExistence(timeout: 10),
                       "Step 3 should load storage units")
 
         let addStorageUnit = app.buttons["Add Storage Unit"]
@@ -539,46 +465,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                       "Done toolbar button should be tappable at AX5")
     }
 
-    @MainActor
-    func testWEI1304UITestingLaunchReachesLoginOrShell() throws {
-        let databaseError = app.staticTexts
-            .matching(NSPredicate(format: "label CONTAINS[c] 'Failed to load database'"))
-            .firstMatch
-        XCTAssertFalse(databaseError.waitForExistence(timeout: 2),
-                       "Clean -UITesting launch should not stop on the database load error")
-        XCTAssertTrue(waitForLoginOrShell(timeout: 30),
-                      "Clean -UITesting launch should reach login, onboarding, or the app shell")
-    }
-
-    @MainActor
-    func testWEI1306WarehouseDashboardQuickActionsDiscoverable() throws {
-        app.terminate()
-        app = XCUIApplication()
-        app.launchArguments += ["-UITesting"]
-        app.launch()
-
-        logInAsUITestOwnerIfNeeded()
-        openWarehouseDashboard()
-
-        let newMovement = app.buttons["whAction_newMovement"]
-        let scanQR = app.buttons["whAction_scanQR"]
-        let receiving = app.buttons["whAction_receiving"]
-        let auditQueue = app.buttons["whAction_auditQueue"]
-
-        XCTAssertTrue(newMovement.waitForExistence(timeout: 8), "Warehouse Dashboard should expose New Movement quick action")
-        XCTAssertTrue(scanQR.waitForExistence(timeout: 5), "Warehouse Dashboard should expose Scan QR quick action")
-        XCTAssertTrue(receiving.waitForExistence(timeout: 5), "Warehouse Dashboard should expose Receiving quick action")
-        XCTAssertTrue(auditQueue.waitForExistence(timeout: 5), "Warehouse Dashboard should expose Audit Queue quick action")
-
-        captureWEI1306("01-warehouse-dashboard-quick-actions")
-
-        XCTAssertEqual(newMovement.label, "New Movement")
-        XCTAssertEqual(scanQR.label, "Scan QR")
-        XCTAssertEqual(receiving.label, "Receiving")
-        XCTAssertEqual(auditQueue.label, "Audit Queue")
-        XCTAssertGreaterThanOrEqual(auditQueue.frame.height, 44, "Audit Queue quick action should meet the minimum tap target height")
-        XCTAssertFalse(app.buttons["whAction_setupWizard"].exists, "Setup Wizard should not occupy one of the four operational quick-action slots")
-    }
     private func logInAsUITestOwnerIfNeeded() {
         if app.buttons["tab_dashboard"].waitForExistence(timeout: 5) && app.buttons["tab_dashboard"].isHittable ||
             app.buttons["Dashboard"].exists && app.buttons["Dashboard"].isHittable ||
@@ -637,7 +523,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                 app.buttons["Configure Your Warehouse"].exists && app.buttons["Configure Your Warehouse"].isHittable ||
                 app.staticTexts["Warehouse Setup"].exists ||
                 app.staticTexts["Confirm Zone Grid"].exists ||
-                app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Step '")).firstMatch.exists ||
                 app.buttons["Create & Continue"].exists {
                 return
             }
@@ -652,7 +537,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                       app.buttons["Configure Your Warehouse"].exists ||
                       app.staticTexts["Warehouse Setup"].exists ||
                       app.staticTexts["Confirm Zone Grid"].exists ||
-                      app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Step '")).firstMatch.exists ||
                       app.buttons["Create & Continue"].exists,
                       "Login should reach the dashboard or warehouse shell before opening the wizard")
     }
@@ -662,7 +546,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
         if app.staticTexts["Confirm Zone Grid"].waitForExistence(timeout: 3) ||
             app.staticTexts["Warehouse Setup"].waitForExistence(timeout: 3) ||
-            app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Step '")).firstMatch.waitForExistence(timeout: 3) ||
             app.buttons["Create & Continue"].waitForExistence(timeout: 3) {
             return
         }
@@ -712,56 +595,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         captureWEI1185("00-wizard-route-not-found")
         XCTAssertTrue(configure.waitForExistence(timeout: 10), "Dashboard should expose Configure Your Warehouse")
         configure.tap()
-    }
-
-    private func openWarehouseDashboard() {
-        if app.buttons["whAction_newMovement"].waitForExistence(timeout: 2) ||
-            app.staticTexts["Quick Actions"].waitForExistence(timeout: 2) {
-            return
-        }
-
-        let warehouseTab = app.buttons["tab_warehouse"]
-        if warehouseTab.waitForExistence(timeout: 8) {
-            warehouseTab.tap()
-        } else if app.buttons["Warehouse"].waitForExistence(timeout: 3) {
-            app.buttons["Warehouse"].tap()
-        } else if app.tabBars.buttons["More"].waitForExistence(timeout: 3) {
-            app.tabBars.buttons["More"].tap()
-            let warehouse = app.buttons["Warehouse"]
-            XCTAssertTrue(warehouse.waitForExistence(timeout: 8), "Warehouse module should be reachable")
-            warehouse.tap()
-        } else {
-            XCTFail("Warehouse module tab should be reachable")
-        }
-
-        if !app.buttons["whAction_newMovement"].waitForExistence(timeout: 8) {
-            let dashboard = app.buttons["Dashboard"]
-            if dashboard.waitForExistence(timeout: 5) && dashboard.isHittable {
-                dashboard.tap()
-            }
-        }
-
-        XCTAssertTrue(
-            app.buttons["whAction_newMovement"].waitForExistence(timeout: 10),
-            "Warehouse Dashboard should open and expose quick actions"
-        )
-    }
-
-    private func captureWEI1306(_ name: String) {
-        let screenshot = XCUIScreen.main.screenshot()
-        let attachment = XCTAttachment(screenshot: screenshot)
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
-
-        let source = URL(fileURLWithPath: #filePath)
-        let repoRoot = source
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let dir = repoRoot.appendingPathComponent("docs/testing/artifacts/wei-1306", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try? screenshot.pngRepresentation.write(to: dir.appendingPathComponent("\(name).png"), options: .atomic)
     }
 
     private func captureWEI1185(_ name: String) {
