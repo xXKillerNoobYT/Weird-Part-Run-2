@@ -213,6 +213,15 @@ final class AppCore: ObservableObject {
                 needsBootstrap = false
                 needsOnboarding = false
             }
+
+            if uiTestingMode && ProcessInfo.processInfo.arguments.contains("-UITestingWEI936AutoLogin"),
+               let uiTestUser = result.users.first(where: { $0.displayName == "UITest Owner" }),
+               let userId = uiTestUser.id {
+                currentUser = uiTestUser
+                permissions = (try? result.auth.getUserPermissions(userId)) ?? []
+                onboardingManager = OnboardingProgressManager(userId: userId)
+                badgeCountManager.setUserId(userId)
+            }
             isReady = true
             await evaluateOnboardAIRuntimeIfEnabled()
 
@@ -672,5 +681,33 @@ final class AppCore: ObservableObject {
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
         UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+
+        seedWEI936OnboardingStateIfRequested()
+    }
+
+    nonisolated private static func seedWEI936OnboardingStateIfRequested() {
+        let args = ProcessInfo.processInfo.arguments
+        guard args.contains("-UITestingWEI936TourActive") ||
+            args.contains("-UITestingWEI936RequiredDone") ||
+            args.contains("-UITestingWEI936DismissedChecklist") else { return }
+
+        let storageKey = "onboarding_progress_1"
+        UserDefaults.standard.set(true, forKey: storageKey + "_active")
+        UserDefaults.standard.removeObject(forKey: "onboarding_checklist_dismissed")
+
+        var completedTasks: Set<String> = []
+        if args.contains("-UITestingWEI936TourActive") {
+            completedTasks.insert("dashboard-view-kpis")
+        }
+        if args.contains("-UITestingWEI936RequiredDone") {
+            completedTasks.formUnion(["dashboard-view-kpis", "dashboard-tap-kpi"])
+        }
+        if let data = try? JSONEncoder().encode(completedTasks) {
+            UserDefaults.standard.set(data, forKey: storageKey)
+        }
+
+        if args.contains("-UITestingWEI936DismissedChecklist") {
+            UserDefaults.standard.set(true, forKey: "onboarding_checklist_dismissed")
+        }
     }
 }

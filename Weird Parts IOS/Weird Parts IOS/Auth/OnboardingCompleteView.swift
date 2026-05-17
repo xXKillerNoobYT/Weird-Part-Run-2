@@ -8,6 +8,7 @@ import WiredPartCore
 /// the app root to show IOSMainView.
 struct OnboardingCompleteView: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
@@ -22,9 +23,9 @@ struct OnboardingCompleteView: View {
                 Image(systemName: "checkmark.circle.fill")
                     .decorativeIconFont(80)
                     .foregroundStyle(.green)
-                    .scaleEffect(showCheckmark ? 1.0 : 0.5)
-                    .opacity(showCheckmark ? 1.0 : 0.0)
-                    .animation(.spring(response: 0.6, dampingFraction: 0.6), value: showCheckmark)
+                    .scaleEffect(showCheckmark || reduceMotion ? 1.0 : 0.5)
+                    .opacity(showCheckmark || reduceMotion ? 1.0 : 0.0)
+                    .animation(reduceMotion ? nil : .spring(response: 0.6, dampingFraction: 0.6), value: showCheckmark)
 
                 Text("You're All Set!")
                     .font(.largeTitle)
@@ -65,7 +66,11 @@ struct OnboardingCompleteView: View {
         .background(Color(.systemBackground))
         .navigationBarBackButtonHidden(true)
         .onAppear {
-            showCheckmark = true
+            if reduceMotion {
+                showCheckmark = true
+            } else {
+                showCheckmark = true
+            }
         }
     }
 }
