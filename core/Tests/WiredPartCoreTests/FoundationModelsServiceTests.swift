@@ -217,6 +217,37 @@ struct FoundationModelsServiceTests {
         #expect(list.first?.preview == "Latest reply")
     }
 
+    @Test("latestConversationId returns nil when no messages exist")
+    func testLatestConversationId_emptyDatabase() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let latest = try await FoundationModelsService.latestConversationId(from: env.db)
+        #expect(latest == nil)
+    }
+
+    @Test("latestConversationId returns most recently active conversation")
+    func testLatestConversationId_returnsMostRecentConversation() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let older = AIConversationMessage(
+            id: "latest-old",
+            conversationId: "older-conv",
+            role: "user",
+            content: "Older thread",
+            createdAt: "2026-04-20 07:00:00"
+        )
+        let newer = AIConversationMessage(
+            id: "latest-new",
+            conversationId: "newer-conv",
+            role: "assistant",
+            content: "Newer thread",
+            createdAt: "2026-04-20 08:00:00"
+        )
+        try await FoundationModelsService.saveMessage(older, to: env.db)
+        try await FoundationModelsService.saveMessage(newer, to: env.db)
+
+        let latest = try await FoundationModelsService.latestConversationId(from: env.db)
+        #expect(latest == "newer-conv")
+    }
+
     // MARK: - AIConversationMessage Init
 
     @Test("AIConversationMessage defaults to UUID id and now timestamp")
