@@ -29,6 +29,7 @@ struct CategoriesTreeView: View {
 
     /// Cache of effective cost per colorId, loaded alongside hierarchy.
     @State private var colorPriceCache: [Int64: Double?] = [:]
+    @State private var colorPriceError: String?
 
     // Single active-sheet enum to avoid multiple .sheet conflicts
     enum ActiveSheet: Identifiable {
