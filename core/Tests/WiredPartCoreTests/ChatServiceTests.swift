@@ -114,6 +114,43 @@ struct ChatServiceTests {
         #expect(job1Threads.first?.askedById == env.adminUserId)
     }
 
+    @Test("QA thread rows expose asker ids for My Questions filtering")
+    func testQAThreadRowsExposeAskerIdsForMyQuestionsFiltering() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-QA-MINE", name: "QA My Questions")
+        let otherUserId = try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO users (display_name, email, pin_hash, is_active)
+                    VALUES (?, ?, ?, 1)
+                    """,
+                arguments: ["Other Worker", "other-worker@example.test", "test-pin-hash"]
+            )
+            return db.lastInsertedRowID
+        }
+
+        let mine = try env.chat.createQAThread(
+            jobId: jobId,
+            askedBy: env.adminUserId,
+            subject: "My question should appear",
+            priority: "normal"
+        )
+        let theirs = try env.chat.createQAThread(
+            jobId: jobId,
+            askedBy: otherUserId,
+            subject: "Other worker question should not appear",
+            priority: "normal"
+        )
+
+        let allThreads = try env.chat.listQAThreads(status: nil)
+        #expect(allThreads.contains(where: { $0.id == mine }))
+        #expect(allThreads.contains(where: { $0.id == theirs }))
+
+        let myQuestions = allThreads.filter { $0.askedById == env.adminUserId }
+        #expect(myQuestions.contains(where: { $0.id == mine }))
+        #expect(!myQuestions.contains(where: { $0.id == theirs }))
+    }
+
     @Test("Escalate and resolve QA thread")
     func testEscalateAndResolve() throws {
         let env = try E2ETestHelpers.setUp()
