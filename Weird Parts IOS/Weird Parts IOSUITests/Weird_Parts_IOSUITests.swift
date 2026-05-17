@@ -549,6 +549,137 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                       "Progress bar should report \"Step 6 of 10\" after the 9→10 dot expansion.")
     }
 
+    // MARK: - WEI-1193: Step 8 Phase-Header Screenshot for WEI-1190
+
+    /// Captures the wizard section-header screenshot acceptance for [WEI-1190]:
+    /// open the warehouse onboarding wizard, reach Step 8 (Walking Path), confirm
+    /// the exact Plan §4 phase prefix ("Phase 4 · Walking Path") is rendered in
+    /// both the nav bar title and progress-bar caption, then save the screenshots
+    /// under `docs/testing/artifacts/wei-1092/wei-1190-step8-phase-header/`.
+    @MainActor
+    func testWEI1190WizardStep8PhaseHeaderScreenshot() throws {
+        let directory: URL = {
+            if let envPath = ProcessInfo.processInfo.environment["WEI_1190_ARTIFACT_DIR"], !envPath.isEmpty {
+                return URL(fileURLWithPath: envPath, isDirectory: true)
+            }
+            let source = URL(fileURLWithPath: #filePath)
+            let repoRoot = source
+                .deletingLastPathComponent() // Weird Parts IOSUITests
+                .deletingLastPathComponent() // Weird Parts IOS
+                .deletingLastPathComponent() // repo root
+            return repoRoot.appendingPathComponent(
+                "docs/testing/artifacts/wei-1092/wei-1190-step8-phase-header",
+                isDirectory: true
+            )
+        }()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        func capture(_ name: String) {
+            let screenshot = XCUIScreen.main.screenshot()
+            let attachment = XCTAttachment(screenshot: screenshot)
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let file = directory.appendingPathComponent("\(name).png")
+            try? screenshot.pngRepresentation.write(to: file, options: .atomic)
+        }
+
+        logInAsUITestOwnerIfNeeded()
+        openWarehouseSetupWizard()
+
+        // Step 1: create the floor plan if it doesn't exist yet. A resumed
+        // session lands on the previous step with a "Next" button instead.
+        let createContinue = app.buttons["Create & Continue"]
+        if createContinue.waitForExistence(timeout: 10) {
+            createContinue.tap()
+        }
+
+        capture("00-wizard-entry-step")
+
+        // Adaptive navigation to Step 8: while the wizard reports a step less
+        // than 8, tap Skip (or Next as fallback) and wait for the step counter
+        // to advance. While it reports a step greater than 8, tap Back. This
+        // tolerates any saved progress state from prior runs.
+        func currentStepNumber(timeout: TimeInterval = 5) -> Int? {
+            let deadline = Date().addingTimeInterval(timeout)
+            while Date() < deadline {
+                for n in 1...10 where app.staticTexts["Step \(n) of 10"].exists {
+                    return n
+                }
+                Thread.sleep(forTimeInterval: 0.25)
+            }
+            return nil
+        }
+
+        var lastSeen: Int? = nil
+        for navHop in 1...14 {
+            guard let step = currentStepNumber(timeout: 8) else {
+                capture("error-step-counter-missing-hop-\(navHop)")
+                XCTFail("Could not read \"Step N of 10\" from the wizard progress bar (hop \(navHop)).")
+                return
+            }
+            lastSeen = step
+            if step == 8 { break }
+            if step < 8 {
+                let skip = app.buttons["Skip"]
+                let next = app.buttons["Next"]
+                if skip.exists && skip.isHittable {
+                    skip.tap()
+                } else if next.exists && next.isHittable {
+                    next.tap()
+                } else {
+                    capture("error-no-forward-button-step-\(step)")
+                    XCTFail("Wizard step \(step) exposed neither Skip nor Next.")
+                    return
+                }
+            } else {
+                let back = app.buttons["Back"]
+                if back.exists && back.isHittable {
+                    back.tap()
+                } else {
+                    capture("error-no-back-button-step-\(step)")
+                    XCTFail("Wizard step \(step) exposed no Back button.")
+                    return
+                }
+            }
+            // Wait for the step counter to actually change before continuing.
+            _ = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Step ' AND NOT (label == 'Step \(step) of 10')"))
+                .firstMatch
+                .waitForExistence(timeout: 6)
+        }
+        XCTAssertEqual(lastSeen, 8, "Adaptive navigation should land on Step 8 (was \(String(describing: lastSeen))).")
+
+        // Capture immediately so we have the artifact regardless of which
+        // predicate matches the exact phase-prefix copy.
+        capture("01-step8-phase4-walking-path-header")
+
+        // The Plan §4 phase prefix renders in two places at Step 8:
+        //   1. The navigation bar title ("Phase 4 · Walking Path").
+        //   2. The progress bar caption (right-aligned blue caption).
+        // Use CONTAINS so we tolerate any whitespace nuance between the
+        // SF Symbols middle dot ("·" U+00B7) and surrounding spacing.
+        let phasePredicate = NSPredicate(format: "label CONTAINS 'Phase 4' AND label CONTAINS 'Walking Path'")
+        let phaseLabel = app.staticTexts.matching(phasePredicate).firstMatch
+        let stepIndicator = app.staticTexts["Step 8 of 10"]
+
+        let phaseFound = phaseLabel.waitForExistence(timeout: 10)
+        let stepFound = stepIndicator.waitForExistence(timeout: 5)
+
+        if !phaseFound || !stepFound {
+            // Dump every visible static text to the xcresult so a human can
+            // see what XCUI actually exposed at Step 8.
+            for text in app.staticTexts.allElementsBoundByIndex.prefix(40) {
+                NSLog("[WEI-1193] staticText label=\(text.label)")
+            }
+            capture("error-step8-labels-missing")
+        }
+
+        XCTAssertTrue(phaseFound,
+                      "Step 8 should render a static text containing the Plan §4 phase prefix \"Phase 4 … Walking Path\".")
+        XCTAssertTrue(stepFound,
+                      "Progress bar should report \"Step 8 of 10\" after the 9→10 dot expansion.")
+    }
+
     @MainActor
     func testLoginSignInButtonHittableAtAX5WithKeyboardVisible() throws {
         app.terminate()
