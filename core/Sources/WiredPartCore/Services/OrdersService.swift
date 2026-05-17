@@ -1141,12 +1141,15 @@ public final class OrdersService: Sendable {
                 let hour = calendar.component(.hour, from: Date())
                 let isPre2PM = hour < 14
 
-                // 1. Get approved JPO lines not yet in procurement/ordered
-                let jpoLines = try Row.fetchAll(dbConn, sql: """
+                // 1. Get approved JPO demand grouped in SQL by part + JPO.
+                // GROUP_CONCAT preserves contributing line IDs without fetching every
+                // raw JPO line into Swift and folding dictionaries there.
+                let jpoDemandRows = try Row.fetchAll(dbConn, sql: """
                     SELECT jl.part_id, p.name AS part_name, p.code AS part_code,
                            b.name AS brand_name,
                            CASE WHEN b.name IS NULL OR b.name = 'General' THEN 1 ELSE 0 END AS is_generic,
-                           jl.qty_requested AS quantity, jl.id AS line_id,
+                           SUM(jl.qty_requested) AS quantity,
+                           GROUP_CONCAT(jl.id) AS line_ids_csv,
                            jpo.id AS jpo_id, j.job_name
                     FROM jpo_line_items jl
                     JOIN job_parts_orders jpo ON jpo.id = jl.jpo_id
@@ -1156,28 +1159,26 @@ public final class OrdersService: Sendable {
                     WHERE jl.line_status = 'approved'
                       AND jl.deleted_at IS NULL
                       AND jpo.deleted_at IS NULL
+                    GROUP BY jl.part_id, p.name, p.code, b.name, jpo.id, j.job_name
                     """)
 
-                // Group by part_id, tracking JPO line IDs per source
                 var partDemand: [Int64: (partRow: Row, sources: [DemandSource], totalQty: Int)] = [:]
-                // Track line IDs per (partId, jpoId) for merging lines from same JPO
-                var lineIdTracker: [Int64: [Int64: [Int64]]] = [:]  // [partId: [jpoId: [lineIds]]]
 
-                for row in jpoLines {
+                for row in jpoDemandRows {
                     guard let partId: Int64 = row["part_id"] else { continue }
                     let jpoId: Int64 = row["jpo_id"] ?? 0
                     let jobName: String = row["job_name"] ?? ""
                     let qty: Int = row["quantity"] ?? 0
-                    let lineId: Int64 = row["line_id"] ?? 0
-
-                    lineIdTracker[partId, default: [:]][jpoId, default: []].append(lineId)
+                    let lineIds = (row["line_ids_csv"] as String? ?? "")
+                        .split(separator: ",")
+                        .compactMap { Int64($0) }
 
                     let source = DemandSource(
                         sourceType: "jpo",
                         sourceId: jpoId,
                         sourceName: "JPO #\(jpoId) (\(jobName))",
                         quantity: qty,
-                        lineIds: [lineId]
+                        lineIds: lineIds
                     )
 
                     if partDemand[partId] != nil {
