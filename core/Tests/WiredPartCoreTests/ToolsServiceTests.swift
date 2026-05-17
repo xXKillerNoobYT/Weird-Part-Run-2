@@ -1313,6 +1313,54 @@ struct ToolsServiceTests {
         #expect(abs(score - 0.9) < 0.0001, "Confidence score should decay from 1.0 to 0.9 with decay_rate=0.1")
     }
 
+    @Test("runScheduledMaintenance expires old trades and updates confidence scores")
+    func testRunScheduledMaintenance_runsAllToolsMaintenanceJobs() throws {
+        let env = try E2ETestHelpers.setUp()
+        let tradeToolId = try insertTool(
+            env, toolNumber: "T-SCHED-TRADE", name: "Scheduled Trade Tool",
+            status: "checked_out", assignedTo: env.adminUserId
+        )
+        let decayToolId = try insertTool(env, toolNumber: "T-SCHED-DECAY", name: "Scheduled Decay Tool")
+        let recipientId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO users (display_name, pin_hash, is_active, created_at, updated_at)
+                VALUES ('ScheduledTradeRecipient', 'hash', 1, datetime('now'), datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO tool_trades
+                    (tool_id, from_user_id, to_user_id, condition_at_send, status, expires_at, created_at)
+                VALUES (?, ?, ?, 'Good', 'pending', datetime('now', '-1 day'), datetime('now'))
+                """, arguments: [tradeToolId, env.adminUserId, recipientId])
+            try db.execute(sql: "UPDATE tools SET confidence_score = 1.0 WHERE id = ?", arguments: [decayToolId])
+            try db.execute(sql: """
+                INSERT INTO tool_maintenance_configs
+                    (tool_id, maintenance_type, decay_rate, is_active, created_at)
+                VALUES (?, 'decreasing_based', 0.25, 1, datetime('now'))
+                """, arguments: [decayToolId])
+        }
+
+        let result = try env.tools.runScheduledMaintenance()
+
+        #expect(result.expiredTrades == 1)
+        #expect(result.updatedConfidenceScores == 1)
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT
+                    (SELECT status FROM tool_trades WHERE tool_id = ?) AS trade_status,
+                    (SELECT confidence_score FROM tools WHERE id = ?) AS confidence_score
+                """, arguments: [tradeToolId, decayToolId])
+        }
+        let tradeStatus: String? = row?["trade_status"]
+        let confidenceScore: Double = row?["confidence_score"] ?? -1
+        #expect(tradeStatus == "expired")
+        #expect(abs(confidenceScore - 0.75) < 0.0001)
+    }
+
     // MARK: - ratingToCondition (pure static)
 
     @Test("ratingToCondition maps 5 to Excellent")
