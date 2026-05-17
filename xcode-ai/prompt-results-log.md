@@ -3253,3 +3253,16 @@ All 136 prompts verified and implemented. Program ready for review.
 
 **Build:** N/A (no Swift changes this run)
 **Tests:** 909/909 (no changes)
+
+## Prompt WEI-401 — Refreshable Missing Surfaces (2026-05-17)
+
+**Status:** SUCCESS
+**Files Changed:**
+- Weird Parts IOS/Weird Parts IOS/Features/Chat/CreateChannelSheet.swift
+- Weird Parts IOS/Weird Parts IOS/Features/Warehouse/ReceivingRoutingFlow.swift
+**What Was Done:**
+- Added pull-to-refresh support to CreateChannelSheet by reusing supplier loading from both .task and .refreshable.
+- Added pull-to-refresh support to ReceivingRoutingFlow so currently displayed routing data can be reloaded without dismissing the flow.
+- Confirmed IOSFlexPoolPage already has .refreshable on the current base branch.
+**Issues Found:** None
+**Build:** PARTIAL — `swift build` PASS; `swift test` FAILS in pre-existing NotebooksServiceTests jobId filter expectations unrelated to this UI refreshability change; iOS app has no xcodeproj in repo for app target build.
