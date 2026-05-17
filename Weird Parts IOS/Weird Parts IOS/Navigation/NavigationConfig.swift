@@ -487,6 +487,54 @@ extension Notification.Name {
     /// Posted when the Vehicles page disappears.
     static let vehiclesPageInactive = Notification.Name("WiredPart.vehiclesPageInactive")
 
+    /// Posted when the Fleet Dashboard page appears, with dashboard summary context for AI.
+    static let fleetDashboardPageActive = Notification.Name("WiredPart.fleetDashboardPageActive")
+
+    /// Posted when the Fleet Dashboard page disappears.
+    static let fleetDashboardPageInactive = Notification.Name("WiredPart.fleetDashboardPageInactive")
+
+    /// Posted when the Trailers page appears, with trailer workflow context for AI.
+    static let fleetTrailersPageActive = Notification.Name("WiredPart.fleetTrailersPageActive")
+
+    /// Posted when the Trailers page disappears.
+    static let fleetTrailersPageInactive = Notification.Name("WiredPart.fleetTrailersPageInactive")
+
+    /// Posted when the Fleet Maintenance page appears, with maintenance workflow context for AI.
+    static let fleetMaintenancePageActive = Notification.Name("WiredPart.fleetMaintenancePageActive")
+
+    /// Posted when the Fleet Maintenance page disappears.
+    static let fleetMaintenancePageInactive = Notification.Name("WiredPart.fleetMaintenancePageInactive")
+
+    /// Posted when the Mileage page appears, with mileage workflow context for AI.
+    static let fleetMileagePageActive = Notification.Name("WiredPart.fleetMileagePageActive")
+
+    /// Posted when the Mileage page disappears.
+    static let fleetMileagePageInactive = Notification.Name("WiredPart.fleetMileagePageInactive")
+
+    /// Posted when the Fuel page appears, with fuel workflow context for AI.
+    static let fleetFuelPageActive = Notification.Name("WiredPart.fleetFuelPageActive")
+
+    /// Posted when the Fuel page disappears.
+    static let fleetFuelPageInactive = Notification.Name("WiredPart.fleetFuelPageInactive")
+
+    /// Posted when the Inspections page appears, with inspection workflow context for AI.
+    static let fleetInspectionsPageActive = Notification.Name("WiredPart.fleetInspectionsPageActive")
+
+    /// Posted when the Inspections page disappears.
+    static let fleetInspectionsPageInactive = Notification.Name("WiredPart.fleetInspectionsPageInactive")
+
+    /// Posted when the Fleet Tracking page appears, with telematics context for AI.
+    static let fleetTrackingPageActive = Notification.Name("WiredPart.fleetTrackingPageActive")
+
+    /// Posted when the Fleet Tracking page disappears.
+    static let fleetTrackingPageInactive = Notification.Name("WiredPart.fleetTrackingPageInactive")
+
+    /// Posted when the My Truck page appears, with driver vehicle context for AI.
+    static let fleetMyTruckPageActive = Notification.Name("WiredPart.fleetMyTruckPageActive")
+
+    /// Posted when the My Truck page disappears.
+    static let fleetMyTruckPageInactive = Notification.Name("WiredPart.fleetMyTruckPageInactive")
+
     // MARK: - Tools
 
     /// Posted when the Tool Registry page appears, with tool count context for AI.
