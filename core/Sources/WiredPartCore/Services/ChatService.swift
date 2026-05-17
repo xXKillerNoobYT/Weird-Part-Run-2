@@ -23,6 +23,7 @@ public final class ChatService: Sendable {
         case channelNotFound(Int64)
         case messageNotFound(Int64)
         case threadNotFound(Int64)
+        case notChannelMember(channelId: Int64, userId: Int64)
         case requiredFieldEmpty
     }
 
@@ -321,6 +322,7 @@ public final class ChatService: Sendable {
             throw ChatError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
+            try requireActiveChannelMembership(dbConn, channelId: channelId, userId: senderId)
             try dbConn.execute(
                 sql: """
                     INSERT INTO chat_messages
@@ -761,6 +763,24 @@ public final class ChatService: Sendable {
         return message.contains("no such table") || message.contains("no such column")
     }
 
+    /// Enforce the same active-channel/current-member gate for writes that read-side
+    /// inbox/message queries already use. This closes the phantom-member write gap
+    /// where a removed or never-added user could still insert messages if they kept
+    /// or guessed a channel ID.
+    private func requireActiveChannelMembership(_ dbConn: Database, channelId: Int64, userId: Int64) throws {
+        let channelExists = (try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM chat_channels
+            WHERE id = ? AND is_active = 1 AND deleted_at IS NULL
+            """, arguments: [channelId]) ?? 0) > 0
+        guard channelExists else { throw ChatError.channelNotFound(channelId) }
+
+        let isMember = (try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM chat_channel_members
+            WHERE channel_id = ? AND user_id = ? AND left_at IS NULL AND deleted_at IS NULL
+            """, arguments: [channelId, userId]) ?? 0) > 0
+        guard isMember else { throw ChatError.notChannelMember(channelId: channelId, userId: userId) }
+    }
+
     /// Parse an ISO 8601 date string from SQLite.
     private func parseDate(_ string: String) -> Date? { CoreFormatters.parseDateTime(string) }
 
@@ -813,6 +833,7 @@ public final class ChatService: Sendable {
         attachments: [PendingAttachment]
     ) throws -> Int64 {
         try db.writer.write { dbConn in
+            try requireActiveChannelMembership(dbConn, channelId: channelId, userId: userId)
             // Insert message
             try dbConn.execute(
                 sql: """
@@ -1392,6 +1413,7 @@ public final class ChatService: Sendable {
         attachmentRef: String? = nil
     ) throws -> Int64 {
         try db.writer.write { dbConn in
+            try requireActiveChannelMembership(dbConn, channelId: channelId, userId: senderId)
             // Send as regular chat message
             try dbConn.execute(sql: """
                 INSERT INTO chat_messages (channel_id, sender_id, message_type, content, created_at)
