@@ -49,8 +49,8 @@ jobs:
           # both vulnerabilities and code-smell patterns.
           queries: security-and-quality
 
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+      - name: Build Swift package
+        run: swift build --package-path core
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
