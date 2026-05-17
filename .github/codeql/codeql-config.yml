@@ -1,0 +1,8 @@
+name: "WiredPart CodeQL config"
+
+# Swift Package Manager checks dependencies out under core/.build by default.
+# Those generated dependency sources are not application code and previously
+# produced alerts against GRDB internals. Keep CodeQL focused on tracked source.
+paths-ignore:
+  - "**/.build/**"
+  - "**/DerivedData/**"
