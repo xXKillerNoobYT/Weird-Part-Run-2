@@ -2494,6 +2494,24 @@ struct SchedulingServiceTests {
         #expect(entries.isEmpty)
     }
 
+    @Test("checkTimeOffConflict ignores pending time-off")
+    func testCheckTimeOffConflictIgnoresPendingTimeOff() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        _ = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2026-12-21",
+            endDate: "2026-12-21",
+            reason: "Pending PTO"
+        )
+
+        let conflict = try env.scheduling.checkTimeOffConflict(
+            employeeId: env.adminUserId,
+            date: "2026-12-21"
+        )
+        #expect(conflict == nil)
+    }
+
     @Test("checkTimeOffConflict ignores soft-deleted time-off")
     func testCheckTimeOffConflictIgnoresSoftDeleted() throws {
         let env = try E2ETestHelpers.setUp()
