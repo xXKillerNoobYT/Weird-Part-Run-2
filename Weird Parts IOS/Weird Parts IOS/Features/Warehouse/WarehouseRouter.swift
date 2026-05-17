@@ -31,6 +31,8 @@ struct WarehouseRouter: View {
             IOSWarehouseReturnsPage()
         case "warehouse-audit":
             IOSAuditPage()
+        case "warehouse-my-verifications":
+            IOSMyVerificationsPage()
         case "warehouse-inventory":
             IOSInventoryGridPage()
         case "warehouse-tools":

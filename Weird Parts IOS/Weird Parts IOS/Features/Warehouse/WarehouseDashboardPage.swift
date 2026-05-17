@@ -669,6 +669,7 @@ struct WarehouseDashboardPage: View {
                 subPageLink(title: "Inventory", icon: "square.grid.3x3.fill", color: .purple, tabId: "warehouse-inventory")
                 subPageLink(title: "Locations", icon: "map.fill", color: .mint, tabId: "warehouse-locations")
                 subPageLink(title: "Audit", icon: "checkmark.shield.fill", color: .orange, tabId: "warehouse-audit")
+                subPageLink(title: "My Verifications", icon: "checkmark.seal.fill", color: .blue, tabId: "warehouse-my-verifications")
                 subPageLink(title: "Returns", icon: "arrow.uturn.left", color: .indigo, tabId: "warehouse-returns")
                 subPageLink(title: "Tools", icon: "wrench.and.screwdriver.fill", color: .brown, tabId: "warehouse-tools")
                 subPageLink(title: "Leaderboard", icon: "trophy.fill", color: .yellow, tabId: "warehouse-leaderboard")
