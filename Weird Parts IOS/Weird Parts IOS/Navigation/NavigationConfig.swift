@@ -100,13 +100,14 @@ let appModules: [AppModule] = [
     // 5. Warehouse — movements, receiving, staging
     AppModule(id: "warehouse", label: "Warehouse", icon: "building.fill", tabs: [
         AppTab(id: "warehouse-dashboard", label: "Dashboard", icon: "chart.bar.fill", path: "/warehouse/dashboard"),
+        // Keep Audit near the front so 375pt iPhone QA can tap it without first scrolling the horizontal tab bar.
+        AppTab(id: "warehouse-audit", label: "Audit", icon: "checkmark.shield.fill", path: "/warehouse/audit", permission: "perform_audit"),
+        AppTab(id: "warehouse-my-verifications", label: "My Verifications", icon: "checkmark.seal.fill", path: "/warehouse/my-verifications", permission: "perform_audit"),
         AppTab(id: "warehouse-receiving", label: "Sorting", icon: "shippingbox.fill", path: "/warehouse/receiving"),
         AppTab(id: "warehouse-staging", label: "Staging", icon: "tray.2.fill", path: "/warehouse/staging"),
         AppTab(id: "warehouse-movements", label: "Movements", icon: "arrow.left.arrow.right", path: "/warehouse/movements"),
         AppTab(id: "warehouse-inventory", label: "Inventory", icon: "square.grid.3x3.fill", path: "/warehouse/inventory"),
         AppTab(id: "warehouse-locations", label: "Locations", icon: "map.fill", path: "/warehouse/locations"),
-        AppTab(id: "warehouse-audit", label: "Audit", icon: "checkmark.shield.fill", path: "/warehouse/audit", permission: "perform_audit"),
-        AppTab(id: "warehouse-my-verifications", label: "My Verifications", icon: "checkmark.seal.fill", path: "/warehouse/my-verifications", permission: "perform_audit"),
         AppTab(id: "warehouse-returns", label: "Returns", icon: "arrow.uturn.left", path: "/warehouse/returns"),
         AppTab(id: "warehouse-tools", label: "Tools", icon: "wrench.and.screwdriver.fill", path: "/warehouse/tools"),
         AppTab(id: "warehouse-organization", label: "Org Audit", icon: "tag.fill", path: "/warehouse/organization", permission: "manage_warehouse"),
