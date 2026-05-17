@@ -750,15 +750,19 @@ struct ColorSupplierPartNumbersSection: View {
         isLoading = true
         supplierPartsError = nil
         Task.detached {
-            let results: [(supplierId: Int64, supplierName: String, supplierPartNumber: String?)]
             do {
-                results = try service.getColorSupplierPartNumbers(colorId: colorId)
+                let results = try service.getColorSupplierPartNumbers(colorId: colorId)
+                await MainActor.run {
+                    supplierParts = results
+                    supplierPartsError = nil
+                    isLoading = false
+                }
             } catch {
-                results = [] // Non-critical: supplier part numbers may not be configured
-            }
-            await MainActor.run {
-                supplierParts = results
-                isLoading = false
+                await MainActor.run {
+                    supplierParts = []
+                    supplierPartsError = "Failed to load supplier part numbers"
+                    isLoading = false
+                }
             }
         }
     }
