@@ -825,6 +825,10 @@ public final class OrdersService: Sendable {
         partName: String,
         jpoId: Int64
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "manage_orders")
+        }
+
         guard !holdReason.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw OrdersError.requiredFieldEmpty("holdReason")
         }
@@ -2001,6 +2005,10 @@ public final class OrdersService: Sendable {
     /// Update the status of a purchase order.
     /// Fixes #195: fetch old status BEFORE update. Fixes #204: accept userId instead of hardcoding 1.
     public func updatePOStatus(id: Int64, status: String, userId: Int64) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "manage_orders")
+        }
+
         try db.writer.write { dbConn in
             // 1. Fetch old status BEFORE the update (fixes #195)
             guard let row = try Row.fetchOne(

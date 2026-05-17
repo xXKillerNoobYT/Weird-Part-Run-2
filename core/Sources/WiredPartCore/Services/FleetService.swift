@@ -1755,6 +1755,10 @@ public final class FleetService: Sendable {
         trailerId: Int64, locationType: String, locationLabel: String?,
         jobId: Int64? = nil, recordedBy: Int64
     ) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: recordedBy, permissionKey: "manage_fleet")
+        }
+
         try db.writer.write { dbConn in
             // Guard: trailer must be active and not tombstoned — inserting history
             // against a soft-deleted trailer creates an orphan audit row and leaves
