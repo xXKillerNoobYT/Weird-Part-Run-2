@@ -196,7 +196,7 @@ public final class ChatService: Sendable {
     public struct QAThreadRow: Sendable, Identifiable {
         public let id: Int64
         public let jobId: Int64
-        public let askedById: Int64?
+        public let askedById: Int64
         public let question: String
         public let askedByName: String
         public let currentLevel: String
@@ -206,7 +206,7 @@ public final class ChatService: Sendable {
         public let answeredByName: String?
 
         public init(
-            id: Int64, jobId: Int64 = 0, askedById: Int64? = nil,
+            id: Int64, jobId: Int64 = 0, askedById: Int64,
             question: String, askedByName: String,
             currentLevel: String, status: String, priority: String,
             answer: String?, answeredByName: String?
@@ -415,7 +415,7 @@ public final class ChatService: Sendable {
                     QAThreadRow(
                         id: row["id"] ?? 0,
                         jobId: row["job_id"] ?? 0,
-                        askedById: row["asked_by"] as Int64?,
+                        askedById: row["asked_by"],
                         question: row["subject"] ?? "",
                         askedByName: row["asked_by_name"] ?? "Unknown",
                         currentLevel: row["current_level"] ?? "field",
@@ -461,7 +461,7 @@ public final class ChatService: Sendable {
                     QAThreadRow(
                         id: row["id"] ?? 0,
                         jobId: row["job_id"] ?? 0,
-                        askedById: row["asked_by"] as Int64?,
+                        askedById: row["asked_by"],
                         question: row["subject"] ?? "",
                         askedByName: row["asked_by_name"] ?? "Unknown",
                         currentLevel: row["current_level"] ?? "field",
