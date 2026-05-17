@@ -239,23 +239,23 @@ struct IOSContentRouter: View {
 
         // Office sub-routes
         case "/office/dashboard":
-            officeRoute(tabId: "office-dashboard", permission: officeAccessPermission)
+            officeRoute(tabId: "office-dashboard", permissions: [officeAccessPermission])
         case "/office/approvals":
-            officeRoute(tabId: "office-approvals", permission: officeAccessPermission)
+            officeRoute(tabId: "office-approvals", permissions: [officeAccessPermission])
         case "/office/manage-jobs":
-            officeRoute(tabId: "office-manage-jobs", permission: "manage_jobs")
+            officeRoute(tabId: "office-manage-jobs", permissions: [officeAccessPermission, "manage_jobs"])
         case "/office/warehouse-exec":
-            officeRoute(tabId: "office-warehouse-exec", permission: "manage_warehouse")
+            officeRoute(tabId: "office-warehouse-exec", permissions: [officeAccessPermission, "manage_warehouse"])
         case "/office/estimation-settings":
-            officeRoute(tabId: "office-estimation-settings", permission: "manage_jobs")
+            officeRoute(tabId: "office-estimation-settings", permissions: [officeAccessPermission, "manage_jobs"])
         case "/office/pipeline":
-            officeRoute(tabId: "office-pipeline", permission: "manage_jobs")
+            officeRoute(tabId: "office-pipeline", permissions: [officeAccessPermission, "manage_jobs"])
         case "/office/spending":
-            officeRoute(tabId: "office-spending", permission: financialValuesPermission)
+            officeRoute(tabId: "office-spending", permissions: [officeAccessPermission, financialValuesPermission])
         case "/office/teams":
-            officeRoute(tabId: "office-teams", permission: officeAccessPermission)
+            officeRoute(tabId: "office-teams", permissions: [officeAccessPermission])
         case "/office/reports":
-            officeRoute(tabId: "office-reports", permission: "view_reports")
+            officeRoute(tabId: "office-reports", permissions: [officeAccessPermission, "view_reports"])
 
         // Chat sub-routes
         case "/chat/channels", "/chat/messages":
@@ -350,14 +350,19 @@ struct IOSContentRouter: View {
     }
 
     @ViewBuilder
-    private func officeRoute(tabId: String, permission: String) -> some View {
-        if appCore.hasPermission(permission) {
+    private func officeRoute(tabId: String, permissions: [String]) -> some View {
+        if permissions.allSatisfy({ appCore.hasPermission($0) }) {
             OfficeRouter(tabId: tabId)
         } else {
+            let hasOfficeAccess = appCore.hasPermission(officeAccessPermission)
             ContentUnavailableView(
-                "Office access required",
+                hasOfficeAccess ? "Permission required" : "Office access required",
                 systemImage: "lock.shield",
-                description: Text("You do not have permission to open this Office page.")
+                description: Text(
+                    hasOfficeAccess
+                        ? "You do not have the required permission to open this Office page."
+                        : "You do not have Office access."
+                )
             )
         }
     }
