@@ -18,11 +18,19 @@ struct TypeBrandColorSection: View {
 
     @State private var allBrands: [Brand] = []
     @State private var linkedBrandIds: Set<Int64> = []
-    @State private var isGeneralLinked = false
+    @State private var isGeneralLinked = true
     @State private var isLoading = true
     @State private var loadError: String?
-    @State private var expandedBrandId: Int64? // Which brand's color picker is open
+    @State private var expandedBrandId: Int64? = -1 // Which brand's color picker is open
+    @State private var pendingBrandRemoval: PendingBrandRemoval?
     @State private var mfrPartNumbers: [Int64: String] = [:]
+
+    private struct PendingBrandRemoval: Identifiable {
+        let name: String
+        let brandId: Int64?
+
+        var id: String { brandId.map(String.init) ?? "general" }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
@@ -77,6 +85,19 @@ struct TypeBrandColorSection: View {
             }
         }
         .task { await loadBrandData() }
+        .alert("Remove Brand?", isPresented: Binding(
+            get: { pendingBrandRemoval != nil },
+            set: { if !$0 { pendingBrandRemoval = nil } }
+        )) {
+            Button("Cancel", role: .cancel) { pendingBrandRemoval = nil }
+            Button("Remove", role: .destructive) {
+                Task { await confirmPendingBrandRemoval() }
+            }
+        } message: {
+            if let removal = pendingBrandRemoval {
+                Text("Are you sure you want to remove brand \(removal.name) from this type? This may affect linked parts and colors.")
+            }
+        }
     }
 
     // MARK: - Selected brands helper
@@ -92,7 +113,12 @@ struct TypeBrandColorSection: View {
         BrandFlowLayout(spacing: 8) {
             // General chip
             brandChip(name: "General", isSelected: isGeneralLinked) {
-                isGeneralLinked.toggle()
+                if isGeneralLinked {
+                    pendingBrandRemoval = PendingBrandRemoval(name: "General", brandId: nil)
+                } else {
+                    isGeneralLinked = true
+                    expandedBrandId = -1
+                }
             }
 
             // Named brand chips
@@ -100,7 +126,11 @@ struct TypeBrandColorSection: View {
                 let brandId = brand.id ?? 0
                 let isLinked = linkedBrandIds.contains(brandId)
                 brandChip(name: brand.name, isSelected: isLinked) {
-                    Task { await toggleBrand(brandId: brandId, isLinked: isLinked) }
+                    if isLinked {
+                        pendingBrandRemoval = PendingBrandRemoval(name: brand.name, brandId: brandId)
+                    } else {
+                        Task { await toggleBrand(brandId: brandId, isLinked: false) }
+                    }
                 }
             }
         }
@@ -278,11 +308,11 @@ struct TypeBrandColorSection: View {
                 allBrands = allBrandsList
                 linkedBrandIds = linkedIds
                 isLoading = false
-                // Auto-expand first selected brand
-                if let first = allBrandsList.first(where: { linkedIds.contains($0.id ?? 0) }) {
-                    expandedBrandId = first.id
-                } else if isGeneralLinked {
+                // General is the safe default selection when a type is opened.
+                if isGeneralLinked {
                     expandedBrandId = -1
+                } else if let first = allBrandsList.first(where: { linkedIds.contains($0.id ?? 0) }) {
+                    expandedBrandId = first.id
                 }
             }
         } catch {
@@ -294,6 +324,22 @@ struct TypeBrandColorSection: View {
     }
 
     // MARK: - Toggle Brand Link
+
+    @MainActor
+    private func confirmPendingBrandRemoval() async {
+        guard let removal = pendingBrandRemoval else { return }
+        pendingBrandRemoval = nil
+
+        if let brandId = removal.brandId {
+            await toggleBrand(brandId: brandId, isLinked: true)
+        } else {
+            isGeneralLinked = false
+            if expandedBrandId == -1 {
+                expandedBrandId = nil
+            }
+            await onRefresh()
+        }
+    }
 
     private func toggleBrand(brandId: Int64, isLinked: Bool) async {
         guard let service = appCore.partsService else {
