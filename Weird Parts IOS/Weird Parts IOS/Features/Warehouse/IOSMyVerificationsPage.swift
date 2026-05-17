@@ -38,13 +38,6 @@ struct IOSMyVerificationsPage: View {
         } message: {
             Text(actionError ?? "")
         }
-        .onAppear {
-            NotificationCenter.default.post(
-                name: .warehouseMyVerificationsPageActive,
-                object: nil,
-                userInfo: ["context": "My Verifications: \(rows.count) pending operator count assignments."]
-            )
-        }
         .onDisappear {
             NotificationCenter.default.post(name: .warehouseMyVerificationsPageInactive, object: nil)
         }
@@ -92,6 +85,9 @@ struct IOSMyVerificationsPage: View {
                 loadError = "Unable to load verification assignments."
                 isLoading = false
             }
+            if !isLoading, loadError == nil {
+                postActiveContext()
+            }
             return
         }
 
@@ -112,6 +108,7 @@ struct IOSMyVerificationsPage: View {
         do {
             rows = try service.getMyMultiUserAuditAssignments(userId: userId).compactMap(VerificationRow.init)
             isLoading = false
+            postActiveContext()
         } catch {
             rows = []
             loadError = error.localizedDescription
@@ -120,6 +117,11 @@ struct IOSMyVerificationsPage: View {
     }
 
     private func submit(row: VerificationRow, quantity: Int, notes: String?) {
+        guard quantity >= 0 else {
+            actionError = "Quantity counted must be 0 or greater."
+            return
+        }
+
         if row.isFixtureDuplicate {
             selectedRow = nil
             actionError = Self.duplicateSubmitMessage
@@ -151,9 +153,19 @@ struct IOSMyVerificationsPage: View {
         } catch WarehouseService.WarehouseError.sessionAlreadyCompleted {
             selectedRow = nil
             actionError = Self.duplicateSubmitMessage
+        } catch WarehouseService.WarehouseError.invalidQuantity {
+            actionError = "Quantity counted must be 0 or greater."
         } catch {
             actionError = error.localizedDescription
         }
+    }
+
+    private func postActiveContext() {
+        NotificationCenter.default.post(
+            name: .warehouseMyVerificationsPageActive,
+            object: nil,
+            userInfo: ["context": "My Verifications: \(rows.count) pending operator count assignments."]
+        )
     }
 
     private func fixtureRowsIfRequested() -> [VerificationRow]? {
@@ -318,6 +330,16 @@ private struct SubmitVerificationCountSheet: View {
         Int(quantityText.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
+    private var isQuantityValid: Bool {
+        guard let quantity else { return false }
+        return quantity >= 0
+    }
+
+    private var quantityValidationMessage: String? {
+        guard let quantity else { return nil }
+        return quantity < 0 ? "Quantity counted must be 0 or greater." : nil
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -338,9 +360,16 @@ private struct SubmitVerificationCountSheet: View {
                         .keyboardType(.numberPad)
                         .focused($quantityFocused)
                         .accessibilityIdentifier("myVerificationQuantityField")
-                        .accessibilityLabel("S3 quantity counted")
+                        .accessibilityLabel("\(row.partName) quantity counted")
                         .accessibilityHint("Enter the physical quantity counted. The expected quantity is not shown.")
                         .accessibilitySortPriority(2)
+
+                    if let quantityValidationMessage {
+                        Text(quantityValidationMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .accessibilityIdentifier("myVerificationQuantityValidation")
+                    }
 
                     TextField("Notes optional", text: $notes, axis: .vertical)
                         .lineLimit(2...4)
@@ -358,7 +387,7 @@ private struct SubmitVerificationCountSheet: View {
                         guard let quantity else { return }
                         onSubmit(quantity, notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes)
                     }
-                    .disabled(quantity == nil)
+                    .disabled(!isQuantityValid)
                     .accessibilityIdentifier("myVerificationSubmitButton")
                 }
             }
