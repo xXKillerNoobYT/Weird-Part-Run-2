@@ -13,7 +13,9 @@ struct IOSMileagePage: View {
     // MARK: - State
 
     @State private var mileageLogs: [FleetService.MileageRow] = []
-    @State private var isLoading = true
+    @State private var isInitialLoading = true
+    @State private var isRefreshing = false
+    @State private var hasLoadedOnce = false
     @State private var searchText = ""
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
@@ -71,22 +73,39 @@ struct IOSMileagePage: View {
 
     @ViewBuilder
     private var mileageList: some View {
-        if isLoading {
-            ProgressView("Loading mileage logs...")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error = loadError {
-            ErrorStateView(message: error) { loadData() }
-        } else if filteredLogs.isEmpty {
-            ContentUnavailableView {
-                Label("No Mileage Logs", systemImage: "road.lanes")
-            } description: {
-                Text("No mileage logs found.")
+        Group {
+            if isInitialLoading {
+                ProgressView("Loading mileage logs...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ErrorStateView(message: error) { loadData() }
+            } else if filteredLogs.isEmpty {
+                ContentUnavailableView {
+                    Label("No Mileage Logs", systemImage: "road.lanes")
+                } description: {
+                    Text("No mileage logs found.")
+                }
+            } else {
+                List(filteredLogs, id: \.id) { log in
+                    mileageRow(log)
+                }
+                .listStyle(.insetGrouped)
             }
-        } else {
-            List(filteredLogs, id: \.id) { log in
-                mileageRow(log)
-            }
-            .listStyle(.insetGrouped)
+        }
+        .overlay(alignment: .top) {
+            refreshingOverlay
+        }
+    }
+
+    @ViewBuilder
+    private var refreshingOverlay: some View {
+        if isRefreshing {
+            ProgressView()
+                .progressViewStyle(.linear)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .transition(.opacity)
+                .accessibilityLabel("Refreshing mileage logs")
         }
     }
 
@@ -145,10 +164,24 @@ struct IOSMileagePage: View {
     private func loadData() {
         guard let service = appCore.fleetService else {
             loadError = "Fleet service not available"
-            isLoading = false
+            hasLoadedOnce = true
+            isInitialLoading = false
+            isRefreshing = false
             return
         }
-        isLoading = mileageLogs.isEmpty
+
+        if hasLoadedOnce {
+            isRefreshing = true
+        } else {
+            isInitialLoading = true
+        }
+
+        defer {
+            hasLoadedOnce = true
+            isInitialLoading = false
+            isRefreshing = false
+        }
+
         loadError = nil
         do {
             let startStr = Formatters.localDateFormatter.string(from: effectiveStart)
@@ -157,6 +190,5 @@ struct IOSMileagePage: View {
         } catch {
             loadError = userFriendlyError(error, context: "load mileage data")
         }
-        isLoading = false
     }
 }

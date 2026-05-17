@@ -13,7 +13,9 @@ struct IOSMaintenancePage: View {
     // MARK: - State
 
     @State private var records: [FleetService.MaintenanceRow] = []
-    @State private var isLoading = true
+    @State private var isInitialLoading = true
+    @State private var isRefreshing = false
+    @State private var hasLoadedOnce = false
     @State private var searchText = ""
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
@@ -73,22 +75,39 @@ struct IOSMaintenancePage: View {
 
     @ViewBuilder
     private var maintenanceList: some View {
-        if isLoading {
-            ProgressView("Loading maintenance records...")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error = loadError {
-            ErrorStateView(message: error) { loadData() }
-        } else if filteredRecords.isEmpty {
-            ContentUnavailableView {
-                Label("No Maintenance Records", systemImage: "wrench.and.screwdriver")
-            } description: {
-                Text("No maintenance records found.")
+        Group {
+            if isInitialLoading {
+                ProgressView("Loading maintenance records...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ErrorStateView(message: error) { loadData() }
+            } else if filteredRecords.isEmpty {
+                ContentUnavailableView {
+                    Label("No Maintenance Records", systemImage: "wrench.and.screwdriver")
+                } description: {
+                    Text("No maintenance records found.")
+                }
+            } else {
+                List(filteredRecords, id: \.id) { record in
+                    maintenanceRow(record)
+                }
+                .listStyle(.insetGrouped)
             }
-        } else {
-            List(filteredRecords, id: \.id) { record in
-                maintenanceRow(record)
-            }
-            .listStyle(.insetGrouped)
+        }
+        .overlay(alignment: .top) {
+            refreshingOverlay
+        }
+    }
+
+    @ViewBuilder
+    private var refreshingOverlay: some View {
+        if isRefreshing {
+            ProgressView()
+                .progressViewStyle(.linear)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .transition(.opacity)
+                .accessibilityLabel("Refreshing maintenance records")
         }
     }
 
@@ -153,10 +172,24 @@ struct IOSMaintenancePage: View {
     private func loadData() {
         guard let service = appCore.fleetService else {
             loadError = "Fleet service not available"
-            isLoading = false
+            hasLoadedOnce = true
+            isInitialLoading = false
+            isRefreshing = false
             return
         }
-        isLoading = records.isEmpty
+
+        if hasLoadedOnce {
+            isRefreshing = true
+        } else {
+            isInitialLoading = true
+        }
+
+        defer {
+            hasLoadedOnce = true
+            isInitialLoading = false
+            isRefreshing = false
+        }
+
         loadError = nil
         do {
             let startStr = Formatters.localDateFormatter.string(from: effectiveStart)
@@ -165,6 +198,5 @@ struct IOSMaintenancePage: View {
         } catch {
             loadError = userFriendlyError(error, context: "load maintenance data")
         }
-        isLoading = false
     }
 }

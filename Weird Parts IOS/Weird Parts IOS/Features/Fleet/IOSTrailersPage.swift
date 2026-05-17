@@ -13,7 +13,9 @@ struct IOSTrailersPage: View {
     // MARK: - State
 
     @State private var trailers: [FleetService.TrailerListItem] = []
-    @State private var isLoading = true
+    @State private var isInitialLoading = true
+    @State private var isRefreshing = false
+    @State private var hasLoadedOnce = false
     @State private var searchText = ""
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
@@ -78,24 +80,39 @@ struct IOSTrailersPage: View {
 
     @ViewBuilder
     private var trailerList: some View {
-        if isLoading {
-            ProgressView("Loading trailers...")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error = loadError {
-            ErrorStateView(message: error) { loadData() }
-        } else if filteredTrailers.isEmpty {
-            ContentUnavailableView {
-                Label("No Trailers", systemImage: "shippingbox")
-            } description: {
-                Text("No trailers found.")
-            }
-        } else {
-            List(filteredTrailers, id: \.id) { trailer in
-                NavigationLink(destination: IOSTrailerDetailPage(trailerId: trailer.id)) {
+        Group {
+            if isInitialLoading {
+                ProgressView("Loading trailers...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ErrorStateView(message: error) { loadData() }
+            } else if filteredTrailers.isEmpty {
+                ContentUnavailableView {
+                    Label("No Trailers", systemImage: "truck.box")
+                } description: {
+                    Text("No trailers have been added yet.")
+                }
+            } else {
+                List(filteredTrailers, id: \.id) { trailer in
                     trailerRow(trailer)
                 }
+                .listStyle(.insetGrouped)
             }
-            .listStyle(.insetGrouped)
+        }
+        .overlay(alignment: .top) {
+            refreshingOverlay
+        }
+    }
+
+    @ViewBuilder
+    private var refreshingOverlay: some View {
+        if isRefreshing {
+            ProgressView()
+                .progressViewStyle(.linear)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .transition(.opacity)
+                .accessibilityLabel("Refreshing trailers")
         }
     }
 
@@ -177,16 +194,29 @@ struct IOSTrailersPage: View {
     private func loadData() {
         guard let service = appCore.fleetService else {
             loadError = "Fleet service not available"
-            isLoading = false
+            hasLoadedOnce = true
+            isInitialLoading = false
+            isRefreshing = false
             return
         }
-        isLoading = trailers.isEmpty
+
+        if hasLoadedOnce {
+            isRefreshing = true
+        } else {
+            isInitialLoading = true
+        }
+
+        defer {
+            hasLoadedOnce = true
+            isInitialLoading = false
+            isRefreshing = false
+        }
+
         loadError = nil
         do {
             trailers = try service.listTrailers()
         } catch {
             loadError = userFriendlyError(error, context: "load trailers")
         }
-        isLoading = false
     }
 }
