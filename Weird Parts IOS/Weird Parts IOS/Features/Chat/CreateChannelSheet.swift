@@ -61,6 +61,9 @@ struct CreateChannelSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .scrollDismissesKeyboard(.immediately)
             .interactiveDismissDisabled(isSaving)
+            .refreshable {
+                loadSuppliers()
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -72,9 +75,7 @@ struct CreateChannelSheet: View {
                 }
             }
             .task {
-                if isSupplier, let service = appCore.partsService {
-                    suppliers = (try? service.listSuppliers()) ?? []
-                }
+                loadSuppliers()
             }
         }
     }
@@ -82,6 +83,11 @@ struct CreateChannelSheet: View {
     private var isCreateDisabled: Bool {
         if isSupplier { return selectedSupplierId == 0 }
         return channelName.isEmpty
+    }
+
+    private func loadSuppliers() {
+        guard isSupplier, let service = appCore.partsService else { return }
+        suppliers = (try? service.listSuppliers()) ?? []
     }
 
     private func saveChannel() {
