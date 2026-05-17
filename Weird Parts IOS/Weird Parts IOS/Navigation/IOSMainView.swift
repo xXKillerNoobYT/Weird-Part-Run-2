@@ -23,12 +23,7 @@ struct IOSMainView: View {
         case conflictReview
         case aiAssistant
 
-        var id: String {
-            switch self {
-            case .conflictReview: return "conflictReview"
-            case .aiAssistant: return "aiAssistant"
-            }
-        }
+        var id: Self { self }
     }
 
     // Full sidebar state
@@ -41,13 +36,7 @@ struct IOSMainView: View {
         case tabEditor
         case aiAssistant
 
-        var id: String {
-            switch self {
-            case .userMenu: return "userMenu"
-            case .tabEditor: return "tabEditor"
-            case .aiAssistant: return "aiAssistant"
-            }
-        }
+        var id: Self { self }
     }
 
     @State private var activeSidebarSheet: SidebarSheet?
