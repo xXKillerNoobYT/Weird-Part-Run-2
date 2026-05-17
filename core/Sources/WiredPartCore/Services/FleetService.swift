@@ -1140,13 +1140,30 @@ public final class FleetService: Sendable {
                 """, arguments: [userId]) ?? 0) > 0
             guard userExists else { return }
 
+            let now = CoreFormatters.nowISO()
+            // A vehicle can only have one active driver assignment, and a user
+            // can only be actively assigned to one vehicle. Close any existing
+            // active rows for either side before inserting the replacement.
+            try dbConn.execute(
+                sql: """
+                    UPDATE vehicle_assignments
+                    SET is_active = 0,
+                        end_date = COALESCE(end_date, date('now')),
+                        updated_at = ?
+                    WHERE deleted_at IS NULL
+                      AND is_active = 1
+                      AND (vehicle_id = ? OR user_id = ?)
+                    """,
+                arguments: [now, vehicleId, userId]
+            )
+
             try dbConn.execute(
                 sql: """
                     INSERT INTO vehicle_assignments
-                        (vehicle_id, user_id, assignment_type, is_take_home, is_active)
-                    VALUES (?, ?, ?, ?, 1)
+                        (vehicle_id, user_id, assignment_type, is_take_home, is_active, updated_at)
+                    VALUES (?, ?, ?, ?, 1, ?)
                     """,
-                arguments: [vehicleId, userId, assignmentType, isTakeHome ? 1 : 0]
+                arguments: [vehicleId, userId, assignmentType, isTakeHome ? 1 : 0, now]
             )
         }
     }

@@ -101,6 +101,96 @@ struct FleetServiceTests {
         #expect(detail != nil)
     }
 
+    @Test("assignDriver deactivates prior active assignments for the same vehicle")
+    func testAssignDriver_deactivatesPriorVehicleAssignment() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
+            vehicleNumber: "V-ASGN-ONE",
+            vehicleName: "Driver Truck One",
+            vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let firstUserId = try env.auth.createUser(displayName: "Fleet Driver One", pin: "1111")
+        let secondUserId = try env.auth.createUser(displayName: "Fleet Driver Two", pin: "2222")
+
+        try env.fleet.assignDriver(
+            actorId: env.adminUserId,
+            vehicleId: vehicleId,
+            userId: firstUserId,
+            assignmentType: "primary",
+            isTakeHome: false
+        )
+        try env.fleet.assignDriver(
+            actorId: env.adminUserId,
+            vehicleId: vehicleId,
+            userId: secondUserId,
+            assignmentType: "primary",
+            isTakeHome: true
+        )
+
+        let rows = try env.db.writer.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT user_id, is_active FROM vehicle_assignments
+                WHERE vehicle_id = ? AND deleted_at IS NULL
+                ORDER BY id
+                """, arguments: [vehicleId])
+        }
+        let activeRows = rows.filter { row in (row["is_active"] as Int64) == 1 }
+
+        #expect(rows.count == 2)
+        #expect(activeRows.count == 1, "A vehicle must have only one active driver assignment")
+        #expect(activeRows.first?["user_id"] as Int64? == secondUserId)
+    }
+
+    @Test("assignDriver deactivates prior active assignments for the same user")
+    func testAssignDriver_deactivatesPriorUserAssignment() throws {
+        let env = try E2ETestHelpers.setUp()
+        let firstVehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
+            vehicleNumber: "V-ASGN-USER-1",
+            vehicleName: "User Truck One",
+            vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let secondVehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
+            vehicleNumber: "V-ASGN-USER-2",
+            vehicleName: "User Truck Two",
+            vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let driverId = try env.auth.createUser(displayName: "Fleet Driver Reassigned", pin: "3333")
+
+        try env.fleet.assignDriver(
+            actorId: env.adminUserId,
+            vehicleId: firstVehicleId,
+            userId: driverId,
+            assignmentType: "primary",
+            isTakeHome: false
+        )
+        try env.fleet.assignDriver(
+            actorId: env.adminUserId,
+            vehicleId: secondVehicleId,
+            userId: driverId,
+            assignmentType: "primary",
+            isTakeHome: false
+        )
+
+        let rows = try env.db.writer.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT vehicle_id, is_active FROM vehicle_assignments
+                WHERE user_id = ? AND deleted_at IS NULL
+                ORDER BY id
+                """, arguments: [driverId])
+        }
+        let activeRows = rows.filter { row in (row["is_active"] as Int64) == 1 }
+
+        #expect(rows.count == 2)
+        #expect(activeRows.count == 1, "A user must have only one active vehicle assignment")
+        #expect(activeRows.first?["vehicle_id"] as Int64? == secondVehicleId)
+    }
+
     @Test("My vehicle stats")
     func testMyVehicleStats() throws {
         let env = try E2ETestHelpers.setUp()
