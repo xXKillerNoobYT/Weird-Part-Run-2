@@ -127,6 +127,54 @@ struct IOSMainView: View {
                 badgeManager.refresh()
             }
         }
+        .onChange(of: showAIAssistant) { _, isVisible in
+            guard aiDisplayMode == .sheet else { return }
+            if isVisible {
+                if tabPrefs.navigationStyle == .fullSidebar {
+                    if activeSidebarSheet != .aiAssistant {
+                        activeSidebarSheet = .aiAssistant
+                    }
+                } else if activeRootSheet != .aiAssistant {
+                    activeRootSheet = .aiAssistant
+                }
+            } else {
+                if activeSidebarSheet == .aiAssistant {
+                    activeSidebarSheet = nil
+                }
+                if activeRootSheet == .aiAssistant {
+                    activeRootSheet = nil
+                }
+            }
+        }
+        .onChange(of: aiDisplayMode) { _, mode in
+            guard showAIAssistant else { return }
+            if mode == .sheet {
+                if tabPrefs.navigationStyle == .fullSidebar {
+                    if activeSidebarSheet != .aiAssistant {
+                        activeSidebarSheet = .aiAssistant
+                    }
+                } else if activeRootSheet != .aiAssistant {
+                    activeRootSheet = .aiAssistant
+                }
+            } else {
+                if activeSidebarSheet == .aiAssistant {
+                    activeSidebarSheet = nil
+                }
+                if activeRootSheet == .aiAssistant {
+                    activeRootSheet = nil
+                }
+            }
+        }
+        .onChange(of: activeRootSheet) { oldValue, newValue in
+            if oldValue == .aiAssistant, newValue != .aiAssistant, aiDisplayMode == .sheet {
+                showAIAssistant = false
+            }
+        }
+        .onChange(of: activeSidebarSheet) { oldValue, newValue in
+            if oldValue == .aiAssistant, newValue != .aiAssistant, aiDisplayMode == .sheet {
+                showAIAssistant = false
+            }
+        }
         // Safety: this .onReceive closure captures tabPrefs and appCore strongly, but that is fine.
         // IOSMainView is only shown when appCore.currentUser != nil (see WiredPartIOSApp.swift).
         // On logout, currentUser becomes nil and SwiftUI tears down this entire view, which
