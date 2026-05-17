@@ -19,6 +19,17 @@ public final class ToolsService: Sendable {
     // MARK: - Result Types
     // =========================================================================
 
+    /// Counts returned by automatic Tools maintenance jobs.
+    public struct ScheduledMaintenanceResult: Sendable, Equatable {
+        public let expiredTrades: Int
+        public let updatedConfidenceScores: Int
+
+        public init(expiredTrades: Int, updatedConfidenceScores: Int) {
+            self.expiredTrades = expiredTrades
+            self.updatedConfidenceScores = updatedConfidenceScores
+        }
+    }
+
     /// A tool row for list views with assignment info.
     public struct ToolListItem: Sendable, Identifiable {
         public let id: Int64
@@ -1213,6 +1224,17 @@ public final class ToolsService: Sendable {
                                      String(fromUserId), String(toUserId)])
             }
         }
+    }
+
+    /// Run all Tools maintenance jobs that should be performed automatically on app startup.
+    @discardableResult
+    public func runScheduledMaintenance() throws -> ScheduledMaintenanceResult {
+        let expiredTrades = try expireOldTrades()
+        let updatedConfidenceScores = try updateConfidenceScores()
+        return ScheduledMaintenanceResult(
+            expiredTrades: expiredTrades,
+            updatedConfidenceScores: updatedConfidenceScores
+        )
     }
 
     /// Expire old trades that passed 7-day window.
