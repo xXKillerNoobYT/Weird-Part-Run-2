@@ -411,6 +411,10 @@ public final class ToolsService: Sendable {
     /// Logs the status change in `tool_change_log` with `performedBy` for
     /// audit traceability (#272).
     public func markToolMaintenance(toolId: Int64, performedBy: Int64) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: performedBy, permissionKey: "maintain_tools")
+        }
+
         try db.writer.write { dbConn in
             // FK-orphan guards mirror the pattern in other write methods.
             let toolExists = (try Int.fetchOne(dbConn, sql: """
@@ -773,6 +777,10 @@ public final class ToolsService: Sendable {
     public func checkoutToolWithCondition(
         toolId: Int64, userId: Int64, condition: String, notes: String? = nil
     ) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "checkout_tools")
+        }
+
         guard !condition.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw ToolsError.requiredFieldEmpty("condition")
         }
@@ -818,6 +826,10 @@ public final class ToolsService: Sendable {
     public func returnToolWithCondition(
         toolId: Int64, userId: Int64, condition: String, notes: String? = nil
     ) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "checkout_tools")
+        }
+
         guard !condition.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw ToolsError.requiredFieldEmpty("condition")
         }
@@ -1477,7 +1489,11 @@ public final class ToolsService: Sendable {
         performedBy: Int64, conditionBefore: String?, conditionAfter: String?,
         notes: String?, cost: Double?
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: performedBy, permissionKey: "maintain_tools")
+        }
+
+        return try db.writer.write { dbConn in
             // Guard: tool must exist and not be tombstoned — otherwise the
             // INSERT INTO tool_maintenance_records below would create an orphan record.
             let exists = (try Int.fetchOne(dbConn, sql: """

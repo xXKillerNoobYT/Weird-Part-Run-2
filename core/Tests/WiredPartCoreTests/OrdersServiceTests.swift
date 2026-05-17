@@ -175,6 +175,60 @@ struct OrdersServiceTests {
         #expect(demand.count >= 0)
     }
 
+    @Test("Procurement demand SQL grouping preserves combined JPO quantity and line ids")
+    func testProcurementDemandSQLGroupingPreservesQuantityAndLineIds() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Grouped Generic Clamp", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-GROUP-1", name: "Grouped Job")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Grouped Supplier")
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: supplierId, costPrice: 2.75)
+
+        let jpoId: Int64 = try env.db.writer.write { db in
+            let orderNumber = "JPO-GROUP-\(UUID().uuidString)"
+            try db.execute(
+                sql: """
+                    INSERT INTO job_parts_orders
+                    (job_id, order_number, requested_by, status, priority, notes, created_at, updated_at)
+                    VALUES (?, ?, ?, 'approved', 'normal', NULL, datetime('now'), datetime('now'))
+                    """,
+                arguments: [jobId, orderNumber, env.adminUserId]
+            )
+            return db.lastInsertedRowID
+        }
+
+        let lineA: Int64 = try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO jpo_line_items
+                    (jpo_id, part_id, qty_requested, line_status, created_at)
+                    VALUES (?, ?, 2, 'approved', datetime('now'))
+                    """,
+                arguments: [jpoId, partId]
+            )
+            return db.lastInsertedRowID
+        }
+        let lineB: Int64 = try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO jpo_line_items
+                    (jpo_id, part_id, qty_requested, line_status, created_at)
+                    VALUES (?, ?, 3, 'approved', datetime('now'))
+                    """,
+                arguments: [jpoId, partId]
+            )
+            return db.lastInsertedRowID
+        }
+
+        let demand = try env.orders.getProcurementDemand()
+        let item = try #require(demand.filter { $0.id == partId }.first)
+        let source = try #require(item.sources.filter { $0.sourceType == "jpo" && $0.sourceId == jpoId }.first)
+
+        #expect(item.totalDemand == 5)
+        #expect(source.quantity == 5)
+        #expect(Set(source.lineIds) == Set([lineA, lineB]))
+    }
+
     // MARK: - Returns
 
     @Test("List returns empty on fresh DB")
