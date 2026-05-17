@@ -125,6 +125,15 @@ struct CategoriesTreeView: View {
             .padding(.horizontal, DS.Space.lg)
             .padding(.bottom, DS.Space.sm)
 
+            if let colorPriceError {
+                Label(colorPriceError, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, DS.Space.lg)
+                    .padding(.bottom, DS.Space.sm)
+            }
+
             if filteredCategories.isEmpty {
                 if searchText.isEmpty {
                     VStack(spacing: DS.Space.lg) {
@@ -237,7 +246,11 @@ struct CategoriesTreeView: View {
 
     /// Load effective cost for every color in the hierarchy into the cache.
     private func loadColorPrices() {
-        guard let parts = appCore.partsService else { return }
+        guard let parts = appCore.partsService else {
+            colorPriceError = "Parts service unavailable"
+            return
+        }
+        colorPriceError = nil
         var cache: [Int64: Double?] = [:]
         for catNode in hierarchy.categories {
             for styleNode in catNode.styles {
