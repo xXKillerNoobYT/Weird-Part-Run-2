@@ -178,10 +178,10 @@ let onboardingTaskRegistry: [String: [OnboardingTask]] = [
 
     // MARK: - Office
     "office-dashboard": [
-        OnboardingTask(id: "office-view", title: "View Office Dashboard", description: "See the daily briefing, attention items, and financial snapshot.", requiredPermission: "manage_jobs", isRequired: true),
+        OnboardingTask(id: "office-view", title: "View Office Dashboard", description: "See the daily briefing, attention items, and financial snapshot.", requiredPermission: officeAccessPermission, isRequired: true),
     ],
     "office-approvals": [
-        OnboardingTask(id: "approvals-view", title: "View Approvals Queue", description: "See all pending approvals — JPOs, deletions, tool edits, time-off.", requiredPermission: "manage_jobs", isRequired: true),
+        OnboardingTask(id: "approvals-view", title: "View Approvals Queue", description: "See all pending approvals — JPOs, deletions, tool edits, time-off.", requiredPermission: officeAccessPermission, isRequired: true),
     ],
 
     // MARK: - Reports
