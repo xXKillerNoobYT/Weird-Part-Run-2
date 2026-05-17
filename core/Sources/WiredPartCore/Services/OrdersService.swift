@@ -825,23 +825,24 @@ public final class OrdersService: Sendable {
         partName: String,
         jpoId: Int64
     ) throws -> Int64 {
-        try db.writer.read { dbConn in
-            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "manage_orders")
-        }
-
         guard !holdReason.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw OrdersError.requiredFieldEmpty("holdReason")
         }
 
-        return try db.writer.write { dbConn -> Int64 in
+        try db.writer.read { dbConn in
             // Guard: holding manager must not be tombstoned — they become created_by on
             // the chat channel and sender_id on the first message; tombstoned user would
-            // orphan-FK both rows while also being invisible in the member list.
+            // orphan-FK both rows while also being invisible in the member list. Check this
+            // before permission gating so callers get the domain-specific userNotFound error
+            // instead of a generic insufficient-permissions failure.
             let userExists = (try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [userId]) ?? 0) > 0
             guard userExists else { throw OrdersError.userNotFound(userId) }
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "manage_orders")
+        }
 
+        return try db.writer.write { dbConn -> Int64 in
             // Create a chat channel for this Q&A
             let channelName = "JPO #\(jpoId) — \(partName)"
             try dbConn.execute(
