@@ -426,4 +426,14 @@ struct IOSChannelsPage: View {
         }
         isLoading = false
     }
+
+
+
+
+    private func postPageContext() {
+        let context = """
+        Chat Channels page. Unified chat inbox is open. Available read-only actions: summarize conversation workload, explain channel filters, and help find conversations.
+        """
+        NotificationCenter.default.post(name: .chatChannelsPageActive, object: nil, userInfo: ["context": context])
+    }
 }

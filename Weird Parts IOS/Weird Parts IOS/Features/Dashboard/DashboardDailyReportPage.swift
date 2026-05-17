@@ -636,6 +636,14 @@ struct DashboardDailyReportPage: View {
         }
         .dsCard()
     }
+
+
+    private func postPageContext() {
+        let context = """
+        Dashboard Daily Report page. Current daily reporting workspace is open. Available read-only actions: explain daily report workflow, summarize report readiness, and help navigate daily report review.
+        """
+        NotificationCenter.default.post(name: .dashboardDailyReportPageActive, object: nil, userInfo: ["context": context])
+    }
 }
 
 // MARK: - Local Model Types
@@ -1004,4 +1012,6 @@ private struct SubmitDailyReportSheet: View {
             isSaving = false
         }
     }
+
+
 }

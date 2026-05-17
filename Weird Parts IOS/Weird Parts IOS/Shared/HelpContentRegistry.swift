@@ -86,6 +86,11 @@ struct HelpContentRegistry {
         "WiredPart.companionsPageActive": "parts-companions",
         "WiredPart.forecastingPageActive": "parts-forecasting",
         "WiredPart.dashboardPageActive": "dashboard-home",
+        "WiredPart.dashboardDailyReportPageActive": "dashboard-report",
+        "WiredPart.dashboardScannerPageActive": "dashboard-scanner",
+        "WiredPart.chatChannelsPageActive": "chat-channels",
+        "WiredPart.chatQuestionsPageActive": "chat-questions",
+        "WiredPart.chatRFIsPageActive": "chat-rfis",
         "WiredPart.jobsListPageActive": "jobs-list",
         "WiredPart.clockPageActive": "dashboard-clock",
         "WiredPart.jobDetailPageActive": "jobs-detail",
@@ -161,6 +166,7 @@ struct HelpContentRegistry {
         "WiredPart.vehiclesPageActive": "fleet-vehicles",
         "WiredPart.toolRegistryPageActive": "tools-registry",
         "WiredPart.notebooksListPageActive": "notebooks-all",
+        "WiredPart.settingsPageActive": "settings-app-config",
     ]
 
     // MARK: - All Entries (extracted from PageHelpSheet usages)
@@ -168,6 +174,18 @@ struct HelpContentRegistry {
     /// Complete list of help entries, extracted from the actual PageHelpSheet calls
     /// in each page's source file. Content is verbatim from the page implementations.
     private static let allEntries: [HelpEntry] = [
+
+        // ── SETTINGS ──────────────────────────────────────────────────────
+
+        HelpEntry(
+            pageId: "settings-app-config",
+            title: "App Configuration Help",
+            sections: [
+                ("Overview", "Use App Config to review and adjust application-level settings available to your role."),
+                ("Navigation", "Settings pages are grouped by theme, notifications, sync, security, and audit/log controls. Pick the appropriate tab for the setting you need."),
+                ("Tips", "Some settings require elevated permissions. If a control is missing or disabled, verify your role and permissions before changing configuration."),
+            ]
+        ),
 
         // ── DASHBOARD ─────────────────────────────────────────────────────
 
@@ -178,6 +196,61 @@ struct HelpContentRegistry {
                 ("Overview", "Your daily command center. See clock status, KPI stats, charts, alerts, and quick actions all in one place."),
                 ("KPI Cards", "Tap any KPI card to see detailed breakdowns. Cards show part types, total stock, active jobs, pending orders, and low stock warnings."),
                 ("Quick Actions", "Use the quick action buttons at the bottom to scan QR codes, clock in/out, view the daily report, move stock, or create new orders."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "dashboard-report",
+            title: "Daily Report Dashboard Help",
+            sections: [
+                ("Overview", "Use the dashboard Daily Report page to review job reporting activity from the dashboard workflow."),
+                ("Review", "Check report readiness, missing report states, and date-specific reporting status before following up with crews."),
+                ("Tips", "Pull down or reopen the page to refresh current reporting data before asking the assistant to summarize it."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "dashboard-scanner",
+            title: "QR Scanner Help",
+            sections: [
+                ("Scanning", "Point the camera at any WiredPart QR code. The scanner runs continuously and shows item info in real time as you scan."),
+                ("Lock & Actions", "Tap the lock button to freeze on a result and see quick actions. Tap Resume Scanning to continue. Quick actions auto-lock the camera."),
+                ("Manual Entry", "No camera? Type or paste a code in the manual entry field below the camera view to look up items directly."),
+            ]
+        ),
+
+        // ── CHAT ───────────────────────────────────────────────────────────
+
+        HelpEntry(
+            pageId: "chat-channels",
+            title: "Chat Channels Help",
+            sections: [
+                ("What This Page Does", "This is your unified chat inbox. It shows all your conversations in one place -- group channels, direct messages, job chats, supplier threads, and Q&A discussions. Unread messages float to the top so you never miss anything important."),
+                ("How to Use It", "Use the filter cards at the top to narrow by type (Office, Messages, DMs, Job, Q&A, Supplier). Tap any conversation to open it. Use the search bar to find conversations by name, message content, or sender. Pull down to refresh the list."),
+                ("Starting New Conversations", "Tap the + button in the top right to create a new group channel, start a direct message, or open a supplier channel."),
+                ("Tips", "Unread counts show as red badges on each conversation. The type icon on the left tells you what kind of channel it is at a glance."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "chat-questions",
+            title: "Q&A Help",
+            sections: [
+                ("What This Page Does", "The Q&A page is where field workers ask questions and get answers through the escalation chain."),
+                ("How to Use It", "Use the filter cards to see All questions, Open ones, your own questions, ones awaiting your input, or Resolved threads. Tap any question to see its full escalation timeline."),
+                ("Asking a Question", "Tap the + button to submit a new question. Pick the job it relates to, type your question, and set the priority."),
+                ("Tips", "Urgent and high-priority questions are flagged with colored badges so they stand out. Pull down to refresh the list."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "chat-rfis",
+            title: "RFI Help",
+            sections: [
+                ("What This Page Does", "RFIs are questions escalated to the office level. This page gives office and management a single view of open RFIs and supplier questions."),
+                ("How to Use It", "Use the filter cards to view All RFIs, Open ones, Pending Response items, or Closed items. Tap any RFI to see the escalation timeline."),
+                ("Supplier Questions", "Supplier Questions show vendor communications about pricing, availability, lead times, or technical specs."),
+                ("Tips", "Color-coded status and priority badges help quickly triage which RFIs need attention first."),
             ]
         ),
 

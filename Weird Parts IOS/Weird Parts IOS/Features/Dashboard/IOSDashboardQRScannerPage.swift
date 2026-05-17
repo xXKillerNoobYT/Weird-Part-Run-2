@@ -145,8 +145,10 @@ struct IOSDashboardQRScannerPage: View {
             if let service = appCore.warehouseService, let userId = appCore.currentUser?.id {
                 userPositionAreaId = try? service.getUserCurrentPosition(userId: userId)
             }
+            postPageContext()
         }
         .onDisappear {
+            NotificationCenter.default.post(name: .dashboardScannerPageInactive, object: nil)
             #if os(iOS) && !targetEnvironment(macCatalyst)
             scanner?.stopScanning()
             #endif
@@ -801,6 +803,14 @@ struct IOSDashboardQRScannerPage: View {
     private func navigateToModule(_ moduleId: String) {
         NotificationCenter.default.post(name: .navigateToModule, object: nil, userInfo: ["moduleId": moduleId])
     }
+
+
+    private func postPageContext() {
+        let context = """
+        QR Scanner dashboard page. Dashboard scanner workflow is open. Available read-only actions: explain scanner workflow, help with manual entry, and summarize current scan state.
+        """
+        NotificationCenter.default.post(name: .dashboardScannerPageActive, object: nil, userInfo: ["context": context])
+    }
 }
 
 // MARK: - Local Types
@@ -824,4 +834,6 @@ private struct StockLocation {
 private struct DetailField {
     let key: String
     let value: String
+
+
 }

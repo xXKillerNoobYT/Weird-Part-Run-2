@@ -696,7 +696,7 @@ struct WarehouseDashboardPage: View {
             .clipShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier(identifier)
+        .accessibilityIdentifier(tabId)
         .accessibilityLabel(title)
     }
 

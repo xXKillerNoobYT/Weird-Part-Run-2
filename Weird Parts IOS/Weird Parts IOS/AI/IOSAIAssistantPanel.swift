@@ -42,6 +42,11 @@ struct IOSAIAssistantPanel: View {
 
     // Page context from all feature areas (prompt 60M)
     @State private var dashboardContext: String?
+    @State private var dashboardDailyReportContext: String?
+    @State private var dashboardScannerContext: String?
+    @State private var chatChannelsContext: String?
+    @State private var chatQuestionsContext: String?
+    @State private var chatRFIsContext: String?
     @State private var jobsListContext: String?
     @State private var clockContext: String?
     @State private var jobDetailContext: String?
@@ -294,6 +299,11 @@ struct IOSAIAssistantPanel: View {
         ))
         .modifier(FeaturePageContextObservers(
             dashboardContext: $dashboardContext,
+            dashboardDailyReportContext: $dashboardDailyReportContext,
+            dashboardScannerContext: $dashboardScannerContext,
+            chatChannelsContext: $chatChannelsContext,
+            chatQuestionsContext: $chatQuestionsContext,
+            chatRFIsContext: $chatRFIsContext,
             jobsListContext: $jobsListContext,
             clockContext: $clockContext,
             jobDetailContext: $jobDetailContext,
@@ -634,6 +644,21 @@ struct IOSAIAssistantPanel: View {
             // Append all feature page contexts (prompt 60M)
             if let ctx = dashboardContext {
                 navContext += "\n\nDashboard Context: \(ctx)"
+            }
+            if let ctx = dashboardDailyReportContext {
+                navContext += "\n\nDashboard Daily Report Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = dashboardScannerContext {
+                navContext += "\n\nDashboard QR Scanner Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = chatChannelsContext {
+                navContext += "\n\nChat Channels Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = chatQuestionsContext {
+                navContext += "\n\nQ&A Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = chatRFIsContext {
+                navContext += "\n\nRFI Context (READ-ONLY): \(ctx)"
             }
             if let ctx = jobsListContext {
                 navContext += "\n\nJobs List Context: \(ctx)"
@@ -1202,6 +1227,11 @@ private struct PartsPageContextObservers: ViewModifier {
 /// to avoid Swift type-checker complexity limits from long `.onReceive` chains.
 private struct FeaturePageContextObservers: ViewModifier {
     @Binding var dashboardContext: String?
+    @Binding var dashboardDailyReportContext: String?
+    @Binding var dashboardScannerContext: String?
+    @Binding var chatChannelsContext: String?
+    @Binding var chatQuestionsContext: String?
+    @Binding var chatRFIsContext: String?
     @Binding var jobsListContext: String?
     @Binding var clockContext: String?
     @Binding var jobDetailContext: String?
@@ -1248,6 +1278,11 @@ private struct FeaturePageContextObservers: ViewModifier {
         content
             .modifier(FeaturePageContextObserversGroupA(
                 dashboardContext: $dashboardContext,
+                dashboardDailyReportContext: $dashboardDailyReportContext,
+                dashboardScannerContext: $dashboardScannerContext,
+                chatChannelsContext: $chatChannelsContext,
+                chatQuestionsContext: $chatQuestionsContext,
+                chatRFIsContext: $chatRFIsContext,
                 jobsListContext: $jobsListContext,
                 clockContext: $clockContext,
                 jposContext: $jposContext,
@@ -1306,6 +1341,11 @@ private struct FeaturePageContextObservers: ViewModifier {
 /// First group of feature page observers (Dashboard, Jobs, Clock, JPOs, POs, Inventory, Dispatch).
 private struct FeaturePageContextObserversGroupA: ViewModifier {
     @Binding var dashboardContext: String?
+    @Binding var dashboardDailyReportContext: String?
+    @Binding var dashboardScannerContext: String?
+    @Binding var chatChannelsContext: String?
+    @Binding var chatQuestionsContext: String?
+    @Binding var chatRFIsContext: String?
     @Binding var jobsListContext: String?
     @Binding var clockContext: String?
     @Binding var jposContext: String?
@@ -1321,6 +1361,13 @@ private struct FeaturePageContextObserversGroupA: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .dashboardPageInactive)) { _ in
                 dashboardContext = nil
             }
+            .modifier(FeaturePageContextObserversDashboardChat(
+                dashboardDailyReportContext: $dashboardDailyReportContext,
+                dashboardScannerContext: $dashboardScannerContext,
+                chatChannelsContext: $chatChannelsContext,
+                chatQuestionsContext: $chatQuestionsContext,
+                chatRFIsContext: $chatRFIsContext
+            ))
             .onReceive(NotificationCenter.default.publisher(for: .jobsListPageActive)) { notification in
                 if let ctx = notification.userInfo?["context"] as? String { jobsListContext = ctx }
             }
@@ -1356,6 +1403,48 @@ private struct FeaturePageContextObserversGroupA: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .dispatchPageInactive)) { _ in
                 dispatchContext = nil
+            }
+    }
+}
+
+private struct FeaturePageContextObserversDashboardChat: ViewModifier {
+    @Binding var dashboardDailyReportContext: String?
+    @Binding var dashboardScannerContext: String?
+    @Binding var chatChannelsContext: String?
+    @Binding var chatQuestionsContext: String?
+    @Binding var chatRFIsContext: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .dashboardDailyReportPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { dashboardDailyReportContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .dashboardDailyReportPageInactive)) { _ in
+                dashboardDailyReportContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .dashboardScannerPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { dashboardScannerContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .dashboardScannerPageInactive)) { _ in
+                dashboardScannerContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .chatChannelsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { chatChannelsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .chatChannelsPageInactive)) { _ in
+                chatChannelsContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .chatQuestionsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { chatQuestionsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .chatQuestionsPageInactive)) { _ in
+                chatQuestionsContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .chatRFIsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { chatRFIsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .chatRFIsPageInactive)) { _ in
+                chatRFIsContext = nil
             }
     }
 }
@@ -2190,6 +2279,16 @@ private struct ActivePageIdTrackerDashJobs: ViewModifier {
         content
             .onReceive(NotificationCenter.default.publisher(for: .dashboardPageActive)) { _ in activePageId = "dashboard-home" }
             .onReceive(NotificationCenter.default.publisher(for: .dashboardPageInactive)) { _ in if activePageId == "dashboard-home" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .dashboardDailyReportPageActive)) { _ in activePageId = "dashboard-report" }
+            .onReceive(NotificationCenter.default.publisher(for: .dashboardDailyReportPageInactive)) { _ in if activePageId == "dashboard-report" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .dashboardScannerPageActive)) { _ in activePageId = "dashboard-scanner" }
+            .onReceive(NotificationCenter.default.publisher(for: .dashboardScannerPageInactive)) { _ in if activePageId == "dashboard-scanner" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .chatChannelsPageActive)) { _ in activePageId = "chat-channels" }
+            .onReceive(NotificationCenter.default.publisher(for: .chatChannelsPageInactive)) { _ in if activePageId == "chat-channels" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .chatQuestionsPageActive)) { _ in activePageId = "chat-questions" }
+            .onReceive(NotificationCenter.default.publisher(for: .chatQuestionsPageInactive)) { _ in if activePageId == "chat-questions" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .chatRFIsPageActive)) { _ in activePageId = "chat-rfis" }
+            .onReceive(NotificationCenter.default.publisher(for: .chatRFIsPageInactive)) { _ in if activePageId == "chat-rfis" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .jobsListPageActive)) { _ in activePageId = "jobs-list" }
             .onReceive(NotificationCenter.default.publisher(for: .jobsListPageInactive)) { _ in if activePageId == "jobs-list" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .clockPageActive)) { _ in activePageId = "dashboard-clock" }

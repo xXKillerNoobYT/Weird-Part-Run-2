@@ -9,11 +9,11 @@ Complete the 87-page page-context coverage set by adding read-only page-active/p
 
 ## Current Coverage
 
-Implemented page-context notifications observed by `IOSAIAssistantPanel`: 82 page contexts.
+Implemented page-context notifications observed by `IOSAIAssistantPanel`: 87 page contexts.
 
-Help registry mappings with matching help entries: 82 page contexts.
+Help registry mappings with matching help entries: 87 page contexts.
 
-Known gap: `settingsPageActive` is observed by the AI panel and active-page tracker, but `HelpContentRegistry` does not yet contain a `settings-app-config` entry. That should be handled in the settings slice rather than mapped to a missing help entry.
+The 87-page coverage target is complete: every page-active notification in this inventory is observed by the AI panel, tracked for active help-page selection, and mapped to a `HelpContentRegistry` page ID with a matching help entry.
 
 ## Covered Pages
 
@@ -25,6 +25,11 @@ Known gap: `settingsPageActive` is observed by the AI panel and active-page trac
 | Parts | Parts Companions | `companionsPageActive` | `parts-companions` |
 | Parts | Parts Forecasting | `forecastingPageActive` | `parts-forecasting` |
 | Dashboard | Dashboard Home | `dashboardPageActive` | `dashboard-home` |
+| Dashboard | Daily Report | `dashboardDailyReportPageActive` | `dashboard-report` |
+| Dashboard | QR Scanner | `dashboardScannerPageActive` | `dashboard-scanner` |
+| Chat | Channels | `chatChannelsPageActive` | `chat-channels` |
+| Chat | Q&A | `chatQuestionsPageActive` | `chat-questions` |
+| Chat | RFIs | `chatRFIsPageActive` | `chat-rfis` |
 | Jobs | Jobs List | `jobsListPageActive` | `jobs-list` |
 | Jobs | Clock In/Out | `clockPageActive` | `dashboard-clock` |
 | Jobs | Job Detail | `jobDetailPageActive` | `jobs-detail` |
@@ -100,7 +105,7 @@ Known gap: `settingsPageActive` is observed by the AI panel and active-page trac
 | Fleet | Vehicles | `vehiclesPageActive` | `fleet-vehicles` |
 | Tools | Tool Registry | `toolRegistryPageActive` | `tools-registry` |
 | Notebooks | Notebooks List | `notebooksListPageActive` | `notebooks-all` |
-| Settings | Settings/App Config observer only | `settingsPageActive` | missing help entry |
+| Settings | Settings/App Config | `settingsPageActive` | `settings-app-config` |
 
 ## WEI-1194 Slice
 
@@ -223,10 +228,22 @@ Added specialized Fleet/Scheduling/Warehouse report detail page contexts:
 
 All payloads are read-only summaries of date ranges, visible rows, aggregate totals, and error state. They do not expose mutating commands, action IDs, or write intents.
 
-## Next Highest-Traffic Remaining Slices
+## Dashboard/Chat Completion Slice
 
-1. Remaining functional pages not yet observed by AI page-context notifications (target: 87 total, currently 82).
-2. Settings: add missing help entries and page context for high-use settings subpages before mapping them to help content.
+Added the final high-traffic dashboard/chat coverage slice:
+
+- `DashboardDailyReportPage`: dashboard daily-report workspace context.
+- `IOSDashboardQRScannerPage`: dashboard scanner workflow context.
+- `IOSChannelsPage`: unified chat inbox context.
+- `IOSQuestionsPage`: Q&A escalation list context.
+- `IOSRFIListPage`: RFI and supplier-question triage context.
+- `WarehouseDashboardPage`: corrected sub-page link accessibility identifier from the undefined `identifier` symbol to `tabId` so the generic iOS build completes.
+
+All payloads are read-only summaries of page state and available entry points. They do not expose mutating commands, action IDs, or write intents.
+
+## Remaining Coverage Work
+
+The 87-page page-context target is complete. Future work can add deeper context for optional settings subpages or lower-traffic module placeholders as separate expansion slices.
 
 ## Validation
 
@@ -301,3 +318,11 @@ Build validation:
 ```bash
 xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
 ```
+
+
+Validated dashboard/chat completion slice in the WEI-1112 worktree on 2026-05-16:
+
+- Dashboard/chat completion notification names are declared, posted by their pages, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
+- Coverage check shows 87 active notification constants, 87 AI-panel observations, and 87 help-registry mappings for the 87-page target.
+- `git diff --check` passed.
+- `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' -derivedDataPath .paperclip/DerivedData-WEI1112 CODE_SIGNING_ALLOWED=NO build` passed.

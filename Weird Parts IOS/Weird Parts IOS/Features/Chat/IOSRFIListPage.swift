@@ -79,6 +79,10 @@ struct IOSRFIListPage: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .chatRFIsPageInactive, object: nil)
+        }
     }
 
     // MARK: - Smart Card Filters
@@ -335,5 +339,15 @@ struct IOSRFIListPage: View {
             loadError = userFriendlyError(error, context: "load RFIs")
         }
         isLoading = false
+    }
+
+
+
+
+    private func postPageContext() {
+        let context = """
+        RFI page. Office RFI list is open. Available read-only actions: summarize open RFIs, explain escalation status, and help triage supplier questions.
+        """
+        NotificationCenter.default.post(name: .chatRFIsPageActive, object: nil, userInfo: ["context": context])
     }
 }

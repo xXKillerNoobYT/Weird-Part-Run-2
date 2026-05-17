@@ -247,6 +247,18 @@ extension Notification.Name {
     /// Posted when the Dashboard page disappears.
     static let dashboardPageInactive = Notification.Name("WiredPart.dashboardPageInactive")
 
+    /// Posted when the Dashboard Daily Report page appears, with read-only report summary context for AI.
+    static let dashboardDailyReportPageActive = Notification.Name("WiredPart.dashboardDailyReportPageActive")
+
+    /// Posted when the Dashboard Daily Report page disappears.
+    static let dashboardDailyReportPageInactive = Notification.Name("WiredPart.dashboardDailyReportPageInactive")
+
+    /// Posted when the Dashboard QR Scanner page appears, with read-only scanner state context for AI.
+    static let dashboardScannerPageActive = Notification.Name("WiredPart.dashboardScannerPageActive")
+
+    /// Posted when the Dashboard QR Scanner page disappears.
+    static let dashboardScannerPageInactive = Notification.Name("WiredPart.dashboardScannerPageInactive")
+
     // MARK: - Jobs
 
     /// Posted when the Jobs List page appears, with job count and filter context for AI.
@@ -470,6 +482,26 @@ extension Notification.Name {
 
     /// Posted when the Schedule Calendar page disappears.
     static let scheduleCalendarPageInactive = Notification.Name("WiredPart.scheduleCalendarPageInactive")
+
+    // MARK: - Chat
+
+    /// Posted when the Chat Channels page appears, with read-only inbox context for AI.
+    static let chatChannelsPageActive = Notification.Name("WiredPart.chatChannelsPageActive")
+
+    /// Posted when the Chat Channels page disappears.
+    static let chatChannelsPageInactive = Notification.Name("WiredPart.chatChannelsPageInactive")
+
+    /// Posted when the Q&A page appears, with read-only question thread context for AI.
+    static let chatQuestionsPageActive = Notification.Name("WiredPart.chatQuestionsPageActive")
+
+    /// Posted when the Q&A page disappears.
+    static let chatQuestionsPageInactive = Notification.Name("WiredPart.chatQuestionsPageInactive")
+
+    /// Posted when the RFI page appears, with read-only escalation context for AI.
+    static let chatRFIsPageActive = Notification.Name("WiredPart.chatRFIsPageActive")
+
+    /// Posted when the RFI page disappears.
+    static let chatRFIsPageInactive = Notification.Name("WiredPart.chatRFIsPageInactive")
 
     // MARK: - People
 

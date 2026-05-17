@@ -72,6 +72,10 @@ struct IOSQuestionsPage: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .chatQuestionsPageInactive, object: nil)
+        }
     }
 
     // MARK: - Smart Card Filters
@@ -303,6 +307,14 @@ struct IOSQuestionsPage: View {
         }
         isLoading = false
     }
+
+
+    private func postPageContext() {
+        let context = """
+        Q&A page. Question escalation list is open. Available read-only actions: summarize open questions, explain escalation status, and help triage Q&A threads.
+        """
+        NotificationCenter.default.post(name: .chatQuestionsPageActive, object: nil, userInfo: ["context": context])
+    }
 }
 
 enum QAThreadStatusBuckets {
@@ -313,4 +325,6 @@ enum QAThreadStatusBuckets {
     static func isResolved(_ status: String) -> Bool {
         status == "answered" || status == "closed" || status == "resolved"
     }
+
+
 }
