@@ -80,6 +80,14 @@ struct IOSAIAssistantPanel: View {
     @State private var scheduleCalendarContext: String?
     @State private var employeesContext: String?
     @State private var vehiclesContext: String?
+    @State private var fleetDashboardContext: String?
+    @State private var fleetTrailersContext: String?
+    @State private var fleetMaintenanceContext: String?
+    @State private var fleetMileageContext: String?
+    @State private var fleetFuelContext: String?
+    @State private var fleetInspectionsContext: String?
+    @State private var fleetTrackingContext: String?
+    @State private var fleetMyTruckContext: String?
     @State private var toolRegistryContext: String?
     @State private var notebooksListContext: String?
     @State private var settingsContext: String?
@@ -300,6 +308,16 @@ struct IOSAIAssistantPanel: View {
             toolRegistryContext: $toolRegistryContext,
             notebooksListContext: $notebooksListContext,
             settingsContext: $settingsContext
+        ))
+        .modifier(FleetPageContextObservers(
+            fleetDashboardContext: $fleetDashboardContext,
+            fleetTrailersContext: $fleetTrailersContext,
+            fleetMaintenanceContext: $fleetMaintenanceContext,
+            fleetMileageContext: $fleetMileageContext,
+            fleetFuelContext: $fleetFuelContext,
+            fleetInspectionsContext: $fleetInspectionsContext,
+            fleetTrackingContext: $fleetTrackingContext,
+            fleetMyTruckContext: $fleetMyTruckContext
         ))
         .modifier(ActivePageIdTracker(activePageId: $activePageId))
     }
@@ -1485,6 +1503,71 @@ private struct FeaturePageContextObserversGroupB: ViewModifier {
     }
 }
 
+
+/// Fleet page observers added for WEI-1112 coverage slices beyond Vehicles.
+private struct FleetPageContextObservers: ViewModifier {
+    @Binding var fleetDashboardContext: String?
+    @Binding var fleetTrailersContext: String?
+    @Binding var fleetMaintenanceContext: String?
+    @Binding var fleetMileageContext: String?
+    @Binding var fleetFuelContext: String?
+    @Binding var fleetInspectionsContext: String?
+    @Binding var fleetTrackingContext: String?
+    @Binding var fleetMyTruckContext: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .fleetDashboardPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { fleetDashboardContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetDashboardPageInactive)) { _ in
+                fleetDashboardContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTrailersPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { fleetTrailersContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTrailersPageInactive)) { _ in
+                fleetTrailersContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMaintenancePageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { fleetMaintenanceContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMaintenancePageInactive)) { _ in
+                fleetMaintenanceContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMileagePageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { fleetMileageContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMileagePageInactive)) { _ in
+                fleetMileageContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetFuelPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { fleetFuelContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetFuelPageInactive)) { _ in
+                fleetFuelContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetInspectionsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { fleetInspectionsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetInspectionsPageInactive)) { _ in
+                fleetInspectionsContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTrackingPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { fleetTrackingContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTrackingPageInactive)) { _ in
+                fleetTrackingContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMyTruckPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { fleetMyTruckContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMyTruckPageInactive)) { _ in
+                fleetMyTruckContext = nil
+            }
+    }
+}
+
 // MARK: - Active Page ID Tracker (prompt 60N)
 
 /// Tracks which page the user is currently viewing by listening to all page-active/inactive
@@ -1501,6 +1584,7 @@ private struct ActivePageIdTracker: ViewModifier {
             .modifier(ActivePageIdTrackerDashJobs(activePageId: $activePageId))
             .modifier(ActivePageIdTrackerOrdersWarehouse(activePageId: $activePageId))
             .modifier(ActivePageIdTrackerSchedulePeopleMore(activePageId: $activePageId))
+            .modifier(ActivePageIdTrackerFleetExtra(activePageId: $activePageId))
     }
 }
 
@@ -1713,4 +1797,27 @@ struct AssistantMessage: Identifiable, Sendable {
 
 enum MessageRole: Sendable {
     case user, assistant
+}
+
+private struct ActivePageIdTrackerFleetExtra: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .fleetDashboardPageActive)) { _ in activePageId = "fleet-dashboard" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetDashboardPageInactive)) { _ in if activePageId == "fleet-dashboard" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTrailersPageActive)) { _ in activePageId = "fleet-trailers" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTrailersPageInactive)) { _ in if activePageId == "fleet-trailers" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMaintenancePageActive)) { _ in activePageId = "fleet-maintenance" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMaintenancePageInactive)) { _ in if activePageId == "fleet-maintenance" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMileagePageActive)) { _ in activePageId = "fleet-mileage" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMileagePageInactive)) { _ in if activePageId == "fleet-mileage" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetFuelPageActive)) { _ in activePageId = "fleet-fuel" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetFuelPageInactive)) { _ in if activePageId == "fleet-fuel" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetInspectionsPageActive)) { _ in activePageId = "fleet-inspections" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetInspectionsPageInactive)) { _ in if activePageId == "fleet-inspections" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTrackingPageActive)) { _ in activePageId = "fleet-tracking" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTrackingPageInactive)) { _ in if activePageId == "fleet-tracking" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMyTruckPageActive)) { _ in activePageId = "fleet-my-truck" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMyTruckPageInactive)) { _ in if activePageId == "fleet-my-truck" { activePageId = nil } }
+    }
 }
