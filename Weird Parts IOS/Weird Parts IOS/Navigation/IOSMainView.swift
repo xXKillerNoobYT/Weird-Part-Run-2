@@ -19,6 +19,7 @@ struct IOSMainView: View {
     @State private var aiDisplayMode: AIDisplayMode = .sheet
     @State private var showConflictReview = false
     @State private var moduleNavigationRequests: [String: ModuleNavigationRequest] = [:]
+    @State private var moreNavigationPath: [String] = []
 
     // Full sidebar state
     @State private var expandedModuleId: String? = "dashboard"
@@ -131,10 +132,21 @@ struct IOSMainView: View {
                     if let requestedTabId {
                         moduleNavigationRequests[moduleId] = ModuleNavigationRequest(moduleId: moduleId, tabId: requestedTabId)
                     }
-                    selectedModuleId = moduleId
+                    routeToModuleInTabLayout(moduleId)
                 }
             }
         }
+    }
+
+    private func routeToModuleInTabLayout(_ moduleId: String) {
+        if primaryModules.contains(where: { $0.id == moduleId }) {
+            selectedModuleId = moduleId
+            return
+        }
+
+        guard overflowModules.contains(where: { $0.id == moduleId }) else { return }
+        moreNavigationPath = [moduleId]
+        selectedModuleId = "__more__"
     }
 
     // MARK: - Tab View Layout (existing)
@@ -482,7 +494,7 @@ struct IOSMainView: View {
 
     @ViewBuilder
     private var moreTab: some View {
-        NavigationStack {
+        NavigationStack(path: $moreNavigationPath) {
             List {
                 // Overflow modules
                 if !overflowModules.isEmpty {
