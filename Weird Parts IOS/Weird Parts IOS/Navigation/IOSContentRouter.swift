@@ -139,6 +139,8 @@ struct IOSContentRouter: View {
             WarehouseRouter(tabId: "warehouse-returns")
         case "/warehouse/audit":
             WarehouseRouter(tabId: "warehouse-audit")
+        case "/warehouse/my-verifications":
+            WarehouseRouter(tabId: "warehouse-my-verifications")
         case "/warehouse/inventory":
             WarehouseRouter(tabId: "warehouse-inventory")
         case "/warehouse/tools":
