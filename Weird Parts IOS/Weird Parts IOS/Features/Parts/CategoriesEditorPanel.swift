@@ -6,6 +6,7 @@ import WiredPartCore
 struct CategoriesEditorPanel: View {
     let selection: TreeSelection?
     let hierarchy: PartsService.HierarchyTree
+    @Binding var generalBrandSelectionByType: [Int64: Bool]
     var onRefresh: () async -> Void
 
     @EnvironmentObject private var appCore: AppCore
@@ -331,6 +332,10 @@ struct CategoriesEditorPanel: View {
                 TypeBrandColorSection(
                     typeId: typeId,
                     hierarchy: hierarchy,
+                    isGeneralLinked: Binding(
+                        get: { generalBrandSelectionByType[typeId] ?? true },
+                        set: { generalBrandSelectionByType[typeId] = $0 }
+                    ),
                     onRefresh: onRefresh,
                     onAddColor: { activeSheet = .addColor }
                 )
