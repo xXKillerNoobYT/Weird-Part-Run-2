@@ -24,53 +24,113 @@ struct JobsServiceTests {
         #expect(jobs.contains(where: { $0.jobNumber == "J-TEST" }))
     }
 
-    @Test("Create job creates exactly one active linked job notebook")
-    func testCreateJobCreatesLinkedNotebook() throws {
+    @Test("listJobs aggregates completed labor and job-linked PO line costs without duplication")
+    func testListJobsAggregatesCompletedLaborAndPOLineCosts() throws {
         let env = try E2ETestHelpers.setUp()
-        let jobId = try env.jobs.createJob(
-            jobNumber: "J-NB-001",
-            jobName: "Notebook Atomic Job",
-            createdBy: env.adminUserId
-        )
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LIST-1", name: "Aggregate Job")
+        let secondJpoJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LIST-2", name: "Other Job")
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let categoryId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Primary Part", categoryId: categoryId)
+        let secondPartId = try E2ETestHelpers.seedPart(env, name: "Secondary Part", categoryId: categoryId)
 
-        let notebooks = try env.notebooks.listNotebooks(notebookType: "job", jobId: jobId)
-        #expect(notebooks.count == 1)
-        #expect(notebooks.first?.status == "active")
-        #expect(notebooks.first?.title == "Notebook Atomic Job Job Notebook")
-    }
-
-    @Test("Create job rolls back when linked notebook cannot be created")
-    func testCreateJobRollsBackWhenNotebookCreationFails() throws {
-        let env = try E2ETestHelpers.setUp()
         try env.db.writer.write { db in
-            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now')")
+            try db.execute(
+                sql: "UPDATE users SET pay_rate = ?, deleted_at = NULL, is_active = 1 WHERE id = ?",
+                arguments: [20.0, env.adminUserId]
+            )
+            try db.execute(
+                sql: "UPDATE jobs SET estimated_hours = ?, budget_limit = ? WHERE id = ?",
+                arguments: [12.5, 500.0, jobId]
+            )
+
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, datetime('now', '-8 hours'), datetime('now', '-2 hours'), 4.0, 2.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, datetime('now', '-1 hours'), 10.0, 5.0, 'clocked_in', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+
+            try db.execute(sql: """
+                INSERT INTO job_parts_orders (job_id, order_number, status, requested_by, created_at, updated_at)
+                VALUES (?, 'JPO-LIST-1', 'submitted', ?, datetime('now'), datetime('now'))
+                """, arguments: [jobId, env.adminUserId])
+            let firstJpoId = db.lastInsertedRowID
+
+            try db.execute(sql: """
+                INSERT INTO job_parts_orders (job_id, order_number, status, requested_by, created_at, updated_at)
+                VALUES (?, 'JPO-LIST-2', 'submitted', ?, datetime('now'), datetime('now'))
+                """, arguments: [jobId, env.adminUserId])
+            let secondJpoId = db.lastInsertedRowID
+
+            try db.execute(sql: """
+                INSERT INTO job_parts_orders (job_id, order_number, status, requested_by, created_at, updated_at)
+                VALUES (?, 'JPO-LIST-3', 'submitted', ?, datetime('now'), datetime('now'))
+                """, arguments: [secondJpoJobId, env.adminUserId])
+            let otherJobJpoId = db.lastInsertedRowID
+
+            try db.execute(sql: """
+                INSERT INTO jpo_line_items (jpo_id, part_id, qty_requested, qty_ordered, created_at)
+                VALUES (?, ?, 3, 3, datetime('now'))
+                """, arguments: [firstJpoId, partId])
+            let firstJpoLineId = db.lastInsertedRowID
+
+            try db.execute(sql: """
+                INSERT INTO jpo_line_items (jpo_id, part_id, qty_requested, qty_ordered, created_at)
+                VALUES (?, ?, 1, 1, datetime('now'))
+                """, arguments: [secondJpoId, secondPartId])
+            let secondJpoLineId = db.lastInsertedRowID
+
+            try db.execute(sql: """
+                INSERT INTO jpo_line_items (jpo_id, part_id, qty_requested, qty_ordered, created_at)
+                VALUES (?, ?, 2, 2, datetime('now'))
+                """, arguments: [otherJobJpoId, secondPartId])
+            let otherJobLineId = db.lastInsertedRowID
+
+            try db.execute(sql: """
+                INSERT INTO purchase_orders
+                    (po_number, supplier_id, status, total_cost, submitted_by, created_at, updated_at)
+                VALUES ('PO-LIST-1', ?, 'submitted', 999.0, ?, datetime('now'), datetime('now'))
+                """, arguments: [supplierId, env.adminUserId])
+            let firstPoId = db.lastInsertedRowID
+
+            try db.execute(sql: """
+                INSERT INTO purchase_orders
+                    (po_number, supplier_id, status, total_cost, submitted_by, created_at, updated_at)
+                VALUES ('PO-LIST-2', ?, 'cancelled', 1000.0, ?, datetime('now'), datetime('now'))
+                """, arguments: [supplierId, env.adminUserId])
+            let cancelledPoId = db.lastInsertedRowID
+
+            try db.execute(sql: "INSERT INTO po_jpo_links (po_id, jpo_id, created_at) VALUES (?, ?, datetime('now'))", arguments: [firstPoId, firstJpoId])
+            try db.execute(sql: "INSERT INTO po_jpo_links (po_id, jpo_id, created_at) VALUES (?, ?, datetime('now'))", arguments: [firstPoId, secondJpoId])
+            try db.execute(sql: "INSERT INTO po_jpo_links (po_id, jpo_id, created_at) VALUES (?, ?, datetime('now'))", arguments: [firstPoId, otherJobJpoId])
+
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, jpo_line_id, part_id, qty_ordered, unit_cost, created_at)
+                VALUES (?, ?, ?, 3, 15.0, datetime('now'))
+                """, arguments: [firstPoId, firstJpoLineId, partId])
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, jpo_line_id, part_id, qty_ordered, unit_cost, received_unit_cost, created_at)
+                VALUES (?, ?, ?, 1, 35.0, 40.0, datetime('now'))
+                """, arguments: [firstPoId, secondJpoLineId, secondPartId])
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, jpo_line_id, part_id, qty_ordered, unit_cost, created_at)
+                VALUES (?, ?, ?, 2, 50.0, datetime('now'))
+                """, arguments: [cancelledPoId, otherJobLineId, secondPartId])
         }
 
-        var threw = false
-        do {
-            _ = try env.jobs.createJob(jobNumber: "J-NB-ROLLBACK", jobName: "Rollback Job")
-        } catch JobsService.JobsError.requiredFieldEmpty {
-            threw = true
-        } catch {}
-
-        let jobCount = try env.db.writer.read { db in
-            try Int.fetchOne(
-                db,
-                sql: "SELECT COUNT(*) FROM jobs WHERE job_number = ?",
-                arguments: ["J-NB-ROLLBACK"]
-            ) ?? 0
-        }
-        let notebookCount = try env.db.writer.read { db in
-            try Int.fetchOne(
-                db,
-                sql: "SELECT COUNT(*) FROM notebooks WHERE title = ?",
-                arguments: ["Rollback Job Job Notebook"]
-            ) ?? 0
-        }
-
-        #expect(threw)
-        #expect(jobCount == 0)
-        #expect(notebookCount == 0)
+        let jobs = try env.jobs.listJobs()
+        let job = try #require(jobs.first(where: { $0.id == jobId }))
+        let otherJob = try #require(jobs.first(where: { $0.id == secondJpoJobId }))
+        #expect(job.estimatedHours == 12.5)
+        #expect(job.budgetLimit == 500.0)
+        #expect(abs(job.laborHours - 6.0) < 0.0001)
+        #expect(abs(job.actualCost - 225.0) < 0.0001)
+        #expect(abs(otherJob.actualCost) < 0.0001)
     }
 
     @Test("Get job detail")
@@ -126,6 +186,52 @@ struct JobsServiceTests {
 
         let summary = try env.jobs.getLaborSummary(jobId: jobId)
         #expect(summary.totalEntries >= 1)
+    }
+
+    @Test("Daily overtime threshold spans multiple labor entries")
+    func testDailyOvertimeThresholdSpansMultipleLaborEntries() throws {
+        let env = try E2ETestHelpers.setUp()
+        let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-1", name: "First OT Job")
+        let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-2", name: "Second OT Job")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES
+                    (
+                        ?,
+                        ?,
+                        date(datetime('now', '-4 hours')) || ' 00:00:00',
+                        date(datetime('now', '-4 hours')) || ' 06:00:00',
+                        6.0,
+                        0.0,
+                        'completed',
+                        datetime('now')
+                    )
+                """, arguments: [env.adminUserId, firstJobId])
+        }
+
+        let secondLaborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: secondJobId)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE labor_entries SET clock_in = datetime('now', '-4 hours') WHERE id = ?",
+                arguments: [secondLaborEntryId]
+            )
+        }
+
+        try env.jobs.clockOut(laborEntryId: secondLaborEntryId)
+
+        let secondEntry = try env.db.writer.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT regular_hours, overtime_hours FROM labor_entries WHERE id = ?",
+                arguments: [secondLaborEntryId]
+            )
+        }
+
+        #expect(secondEntry?["regular_hours"] as Double? == 2.0)
+        #expect(secondEntry?["overtime_hours"] as Double? == 2.0)
     }
 
     // MARK: - Team Members

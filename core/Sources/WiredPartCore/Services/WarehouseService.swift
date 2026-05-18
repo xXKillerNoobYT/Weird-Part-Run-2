@@ -134,7 +134,7 @@ public final class WarehouseService: Sendable {
         let pendingReturns = try safeCount(
             sql: """
                 SELECT COUNT(*) FROM stock_movements
-                WHERE movement_type = 'return'
+                WHERE movement_type IN ('return', 'return_to_supplier')
                   AND date(created_at) = date('now')
                   AND deleted_at IS NULL
                 """
@@ -360,6 +360,19 @@ public final class WarehouseService: Sendable {
         }
     }
 
+    /// Sort order for movement list queries.
+    public enum MovementSortOrder: Sendable {
+        case newestFirst
+        case oldestFirst
+
+        fileprivate var sql: String {
+            switch self {
+            case .newestFirst: "DESC"
+            case .oldestFirst: "ASC"
+            }
+        }
+    }
+
     /// Movement validation result.
     public struct ValidationResult: Sendable {
         public let isValid: Bool
@@ -452,7 +465,8 @@ public final class WarehouseService: Sendable {
         search: String? = nil,
         movementType: String? = nil,
         limit: Int = 100,
-        offset: Int = 0
+        offset: Int = 0,
+        sortOrder: MovementSortOrder = .newestFirst
     ) throws -> [MovementRow] {
         do {
             return try db.writer.read { dbConn -> [MovementRow] in
@@ -481,7 +495,7 @@ public final class WarehouseService: Sendable {
                     LEFT JOIN parts p ON p.id = sm.part_id AND p.deleted_at IS NULL
                     LEFT JOIN users u ON u.id = sm.performed_by AND u.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
-                    ORDER BY sm.created_at DESC
+                    ORDER BY sm.created_at \(sortOrder.sql)
                     LIMIT ? OFFSET ?
                     """
 
