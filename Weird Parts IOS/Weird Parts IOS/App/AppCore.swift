@@ -213,6 +213,15 @@ final class AppCore: ObservableObject {
                 needsBootstrap = false
                 needsOnboarding = false
             }
+
+            if uiTestingMode && ProcessInfo.processInfo.arguments.contains("-UITestingWEI936AutoLogin"),
+               let uiTestUser = result.users.first(where: { $0.displayName == "UITest Owner" }),
+               let userId = uiTestUser.id {
+                currentUser = uiTestUser
+                permissions = (try? result.auth.getUserPermissions(userId)) ?? []
+                onboardingManager = OnboardingProgressManager(userId: userId)
+                badgeCountManager.setUserId(userId)
+            }
             isReady = true
             await evaluateOnboardAIRuntimeIfEnabled()
 
@@ -633,7 +642,10 @@ final class AppCore: ObservableObject {
     }
 
     nonisolated private static func seedUITestingFixtures(db: AppDatabase, authService: AuthService) throws {
-        _ = try authService.seedFirstAdmin(displayName: "UITest Owner", pin: "1234")
+        let seedResult = try authService.seedFirstAdmin(displayName: "UITest Owner", pin: "1234")
+        let fixtureUserId = seedResult.user?.id ??
+            authService.getActiveUsers().first(where: { $0.displayName == "UITest Owner" })?.id ??
+            authService.getActiveUsers().first?.id
 
         let now = ISO8601DateFormatter().string(from: Date())
         let longNotesLocal = String(repeating: "LOCAL_NOTES_SEGMENT_", count: 22)
@@ -672,5 +684,36 @@ final class AppCore: ObservableObject {
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
         UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+
+        seedWEI936OnboardingStateIfRequested(userId: fixtureUserId)
+    }
+
+    nonisolated private static func seedWEI936OnboardingStateIfRequested(userId: Int64?) {
+        let args = ProcessInfo.processInfo.arguments
+        guard args.contains("-UITestingWEI936TourActive") ||
+            args.contains("-UITestingWEI936RequiredDone") ||
+            args.contains("-UITestingWEI936DismissedChecklist") else { return }
+
+        UserDefaults.standard.removeObject(forKey: "onboarding_checklist_dismissed")
+
+        if let userId {
+            let storageKey = "onboarding_progress_\(userId)"
+            UserDefaults.standard.set(true, forKey: storageKey + "_active")
+
+            var completedTasks: Set<String> = []
+            if args.contains("-UITestingWEI936TourActive") {
+                completedTasks.insert("dashboard-view-kpis")
+            }
+            if args.contains("-UITestingWEI936RequiredDone") {
+                completedTasks.formUnion(["dashboard-view-kpis", "dashboard-tap-kpi"])
+            }
+            if let data = try? JSONEncoder().encode(completedTasks) {
+                UserDefaults.standard.set(data, forKey: storageKey)
+            }
+        }
+
+        if args.contains("-UITestingWEI936DismissedChecklist") {
+            UserDefaults.standard.set(true, forKey: "onboarding_checklist_dismissed")
+        }
     }
 }

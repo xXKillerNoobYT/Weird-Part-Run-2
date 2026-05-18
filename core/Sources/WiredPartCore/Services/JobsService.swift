@@ -52,12 +52,20 @@ public final class JobsService: Sendable {
         public let startDate: String?
         public let dueDate: String?
         public let currentStageId: Int64?
+        public let estimatedHours: Double?
+        public let budgetLimit: Double?
+        public let laborHours: Double
+        public let actualCost: Double
 
         public init(
             id: Int64, jobNumber: String, jobName: String, customerName: String?,
             status: String, priority: String, jobType: String = "service",
             teamCount: Int, startDate: String?, dueDate: String?,
-            currentStageId: Int64? = nil
+            currentStageId: Int64? = nil,
+            estimatedHours: Double? = nil,
+            budgetLimit: Double? = nil,
+            laborHours: Double = 0,
+            actualCost: Double = 0
         ) {
             self.id = id
             self.jobNumber = jobNumber
@@ -70,6 +78,10 @@ public final class JobsService: Sendable {
             self.startDate = startDate
             self.dueDate = dueDate
             self.currentStageId = currentStageId
+            self.estimatedHours = estimatedHours
+            self.budgetLimit = budgetLimit
+            self.laborHours = laborHours
+            self.actualCost = actualCost
         }
     }
 
@@ -408,12 +420,51 @@ public final class JobsService: Sendable {
                 args.append(offset)
 
                 let sql = """
+                    WITH team_counts AS (
+                        SELECT jtm.job_id, COUNT(*) AS team_count
+                        FROM job_team_members jtm
+                        WHERE jtm.deleted_at IS NULL
+                        GROUP BY jtm.job_id
+                    ),
+                    labor_totals AS (
+                        SELECT le.job_id,
+                               SUM(le.regular_hours + le.overtime_hours) AS labor_hours,
+                               SUM(
+                                   le.regular_hours * COALESCE(u.pay_rate, 0)
+                                   + le.overtime_hours * COALESCE(u.pay_rate, 0) * 1.5
+                               ) AS labor_cost
+                        FROM labor_entries le
+                        LEFT JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
+                        WHERE le.deleted_at IS NULL
+                          AND le.status = 'completed'
+                        GROUP BY le.job_id
+                    ),
+                    po_costs AS (
+                        SELECT jpo.job_id,
+                               SUM(
+                                   pli.qty_ordered * COALESCE(pli.received_unit_cost, pli.unit_cost, 0)
+                               ) AS po_cost
+                        FROM po_line_items pli
+                        JOIN purchase_orders po ON po.id = pli.po_id
+                        JOIN jpo_line_items jli ON jli.id = pli.jpo_line_id
+                        JOIN job_parts_orders jpo ON jpo.id = jli.jpo_id
+                        WHERE pli.deleted_at IS NULL
+                          AND jli.deleted_at IS NULL
+                          AND jpo.deleted_at IS NULL
+                          AND po.deleted_at IS NULL
+                          AND po.status NOT IN ('cancelled')
+                        GROUP BY jpo.job_id
+                    )
                     SELECT j.id, j.job_number, j.job_name, j.customer_name,
                            j.status, j.priority, j.job_type, j.start_date, j.due_date,
-                           j.current_stage_id,
-                           COALESCE((SELECT COUNT(*) FROM job_team_members jtm
-                                     WHERE jtm.job_id = j.id AND jtm.deleted_at IS NULL), 0) AS team_count
+                           j.current_stage_id, j.estimated_hours, j.budget_limit,
+                           COALESCE(tc.team_count, 0) AS team_count,
+                           COALESCE(lt.labor_hours, 0) AS labor_hours,
+                           COALESCE(lt.labor_cost, 0) + COALESCE(pc.po_cost, 0) AS actual_cost
                     FROM jobs j
+                    LEFT JOIN team_counts tc ON tc.job_id = j.id
+                    LEFT JOIN labor_totals lt ON lt.job_id = j.id
+                    LEFT JOIN po_costs pc ON pc.job_id = j.id
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY j.created_at DESC
                     LIMIT ? OFFSET ?
@@ -432,7 +483,11 @@ public final class JobsService: Sendable {
                         teamCount: row["team_count"] ?? 0,
                         startDate: row["start_date"] as String?,
                         dueDate: row["due_date"] as String?,
-                        currentStageId: row["current_stage_id"] as Int64?
+                        currentStageId: row["current_stage_id"] as Int64?,
+                        estimatedHours: row["estimated_hours"] as Double?,
+                        budgetLimit: row["budget_limit"] as Double?,
+                        laborHours: row["labor_hours"] ?? 0,
+                        actualCost: row["actual_cost"] ?? 0
                     )
                 }
             }
