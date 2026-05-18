@@ -120,6 +120,9 @@ struct ReceivingRoutingFlow: View {
                 }
                 .padding()
             }
+            .refreshable {
+                await refreshCurrentStep()
+            }
         }
         .animation(.easeInOut(duration: 0.25), value: currentStep)
     }
@@ -1031,6 +1034,20 @@ struct ReceivingRoutingFlow: View {
         } catch {
             routingError = userFriendlyError(error, context: "route receiving")
             isProcessing = false
+        }
+    }
+
+    @MainActor
+    private func refreshCurrentStep() async {
+        switch currentStep {
+        case .conditionCheck, .wrongPartCheck, .routeConfirmed:
+            routingError = nil
+        case .jobLinkCheck:
+            await checkJobLink()
+        case .jpoDemandCheck:
+            await checkJPODemand()
+        case .stockLevelCheck:
+            await loadStockLevels()
         }
     }
 
