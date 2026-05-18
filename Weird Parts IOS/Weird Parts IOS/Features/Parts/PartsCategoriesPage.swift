@@ -21,6 +21,7 @@ struct PartsCategoriesPage: View {
     @State private var expandedStyles: Set<Int64> = []
     @State private var expandedTypes: Set<Int64> = []
     @State private var expandedBrands: Set<Int64> = []
+    @State private var generalBrandSelectionByType: [Int64: Bool] = [:]
 
     private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
@@ -103,6 +104,7 @@ struct PartsCategoriesPage: View {
             CategoriesEditorPanel(
                 selection: selection,
                 hierarchy: hierarchy,
+                generalBrandSelectionByType: $generalBrandSelectionByType,
                 onRefresh: { await loadHierarchy() }
             )
             .frame(minWidth: 300, idealWidth: 400, maxWidth: .infinity)
@@ -127,6 +129,7 @@ struct PartsCategoriesPage: View {
                 CategoriesEditorPanel(
                     selection: sel,
                     hierarchy: hierarchy,
+                    generalBrandSelectionByType: $generalBrandSelectionByType,
                     onRefresh: { await loadHierarchy() }
                 )
                 .navigationTitle("Details")
@@ -194,4 +197,3 @@ extension TreeSelection: Hashable {
 #Preview {
     PartsCategoriesPage()
 }
-
