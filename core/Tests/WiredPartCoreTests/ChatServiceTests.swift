@@ -976,14 +976,18 @@ struct ChatServiceTests {
         let senderId = try env.auth.createUser(displayName: "Sender", pin: "1234", email: "sender@test.com")
         let readerId = try env.auth.createUser(displayName: "Reader", pin: "5678", email: "reader@test.com")
 
-        let channelId = try env.chat.createChannel(name: "Read Test Channel", channelType: "group", createdBy: senderId)
+        // Channel creation is an administrative action gated by manage_chat; markRead itself
+        // remains a participant-level receipt update. Use the seeded admin to create the
+        // fixture channel, then add sender/reader as ordinary members for the read test.
+        let channelId = try env.chat.createChannel(name: "Read Test Channel", channelType: "group", createdBy: env.adminUserId)
 
-        // Reader joins the channel — add them as a member
+        // Sender and reader join the channel — add them as members.
         try env.db.writer.write { db in
             try db.execute(sql: """
                 INSERT INTO chat_channel_members (channel_id, user_id, role, joined_at)
-                VALUES (?, ?, 'member', datetime('now'))
-                """, arguments: [channelId, readerId])
+                VALUES (?, ?, 'member', datetime('now')),
+                       (?, ?, 'member', datetime('now'))
+                """, arguments: [channelId, senderId, channelId, readerId])
         }
 
         // Sender sends 2 messages
@@ -1004,7 +1008,16 @@ struct ChatServiceTests {
         let env = try E2ETestHelpers.setUp()
 
         let userId = try env.auth.createUser(displayName: "Mono", pin: "1111", email: "mono@test.com")
-        let channelId = try env.chat.createChannel(name: "Mono Channel", channelType: "group", createdBy: userId)
+        // Channel creation is manage_chat-gated; keep this test focused on markRead
+        // monotonicity by using the seeded admin for fixture setup and the plain user
+        // as the channel participant whose read receipt is updated.
+        let channelId = try env.chat.createChannel(name: "Mono Channel", channelType: "group", createdBy: env.adminUserId)
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO chat_channel_members (channel_id, user_id, role, joined_at)
+                VALUES (?, ?, 'member', datetime('now'))
+                """, arguments: [channelId, userId])
+        }
 
         let msg1 = try env.chat.sendMessage(channelId: channelId, senderId: userId, content: "First")
         let msg2 = try env.chat.sendMessage(channelId: channelId, senderId: userId, content: "Second")
