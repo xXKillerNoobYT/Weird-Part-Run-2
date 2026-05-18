@@ -9,6 +9,10 @@ import WiredPartCore
 struct WarehouseDashboardPage: View {
     @EnvironmentObject private var appCore: AppCore
 
+    private var canPerformAudit: Bool {
+        appCore.hasPermission("perform_audit")
+    }
+
     // MARK: - State
 
     @State private var dashKPIs: WarehouseService.DashboardKPIs?
@@ -258,6 +262,9 @@ struct WarehouseDashboardPage: View {
                 // Smart Card Filters
                 smartCardFilters
 
+                // Alerts / Warnings
+                alertsBanner
+
                 // KPI Summary
                 kpiRow
 
@@ -348,6 +355,44 @@ struct WarehouseDashboardPage: View {
         .accessibilityLabel("\(filter.rawValue): \(count)")
     }
 
+    // MARK: - Alerts
+
+    @ViewBuilder
+    private var alertsBanner: some View {
+        let auditDueCount = max(0, auditSummary.map { $0.totalParts - $0.countedParts } ?? 0)
+        let lowConfidenceCount = auditSummary?.discrepancies ?? 0
+        let shortfalls = dashKPIs?.kpis.shortfallCount ?? 0
+
+        if auditDueCount > 0 || lowConfidenceCount > 0 || shortfalls > 0 {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Warehouse Alerts", systemImage: "exclamationmark.triangle.fill")
+                    .font(.headline)
+                    .foregroundStyle(.orange)
+
+                if auditDueCount > 0 {
+                    alertLine("\(auditDueCount) part\(auditDueCount == 1 ? "" : "s") still need audit coverage", icon: "clipboard")
+                }
+                if lowConfidenceCount > 0 {
+                    alertLine("\(lowConfidenceCount) low-confidence/variance area\(lowConfidenceCount == 1 ? "" : "s") need review", icon: "chart.bar.doc.horizontal")
+                }
+                if shortfalls > 0 {
+                    alertLine("\(shortfalls) stocked part\(shortfalls == 1 ? "" : "s") below minimum", icon: "shippingbox")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(Color.orange.opacity(0.10))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.orange.opacity(0.25), lineWidth: 1))
+        }
+    }
+
+    private func alertLine(_ text: String, icon: String) -> some View {
+        Label(text, systemImage: icon)
+            .font(.caption)
+            .foregroundStyle(.primary)
+    }
+
     // MARK: - KPI Row
 
     private var kpiRow: some View {
@@ -407,35 +452,37 @@ struct WarehouseDashboardPage: View {
                 .padding(.horizontal, 4)
 
             HStack(spacing: 12) {
-                Button { activeSheet = .newMovement } label: {
+                Button { navigate(to: "warehouse-movements") } label: {
                     quickActionButton(
-                        title: "New Movement",
+                        title: "Movements",
                         icon: "arrow.left.arrow.right.circle.fill",
                         color: .blue
                     )
                 }
                 .buttonStyle(.plain)
-                .accessibilityIdentifier("whAction_newMovement")
+                .accessibilityIdentifier("whAction_movements")
 
-                Button { activeSheet = .qrScanner } label: {
+                Button { navigate(to: "warehouse-receiving") } label: {
                     quickActionButton(
-                        title: "Scan QR",
-                        icon: "qrcode.viewfinder",
-                        color: .orange
-                    )
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("whAction_scanQR")
-
-                Button { activeSheet = .onboardingWizard } label: {
-                    quickActionButton(
-                        title: "Setup Wizard",
-                        icon: "wand.and.stars",
+                        title: "Receiving",
+                        icon: "arrow.down.circle",
                         color: .green
                     )
                 }
                 .buttonStyle(.plain)
-                .accessibilityIdentifier("whAction_setupWizard")
+                .accessibilityIdentifier("whAction_receiving")
+
+                if canPerformAudit {
+                    Button { navigate(to: "warehouse-audit") } label: {
+                        quickActionButton(
+                            title: "Audit",
+                            icon: "clipboard.fill",
+                            color: .orange
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("whAction_audit")
+                }
             }
         }
     }
@@ -469,21 +516,27 @@ struct WarehouseDashboardPage: View {
                 GridItem(.flexible(), spacing: 10),
                 GridItem(.flexible(), spacing: 10),
             ], spacing: 10) {
-                subPageLink(title: "Audit", icon: "clipboard", color: .orange, moduleId: "warehouse-audit")
-                subPageLink(title: "Staging", icon: "shippingbox.and.arrow.backward", color: .blue, moduleId: "warehouse-staging")
+                subPageLink(title: "Movements", icon: "arrow.left.arrow.right", color: .blue, moduleId: "warehouse-movements")
                 subPageLink(title: "Receiving", icon: "arrow.down.circle", color: .green, moduleId: "warehouse-receiving")
+                subPageLink(title: "Staging", icon: "shippingbox.and.arrow.backward", color: .blue, moduleId: "warehouse-staging")
+                subPageLink(title: "Returns", icon: "arrow.uturn.left", color: .purple, moduleId: "warehouse-returns")
+                if canPerformAudit {
+                    subPageLink(title: "Audit", icon: "clipboard", color: .orange, moduleId: "warehouse-audit")
+                }
                 subPageLink(title: "Inventory", icon: "square.grid.3x3", color: .purple, moduleId: "warehouse-inventory")
+                subPageLink(title: "Locations", icon: "mappin.and.ellipse", color: .teal, moduleId: "warehouse-locations")
+                subPageLink(title: "Floor Plan", icon: "map", color: .indigo, moduleId: "warehouse-locations")
+                subPageLink(title: "Tools", icon: "wrench.and.screwdriver", color: .brown, moduleId: "warehouse-tools")
+                subPageLink(title: "Network", icon: "point.3.connected.trianglepath.dotted", color: .cyan, moduleId: "warehouse-network")
+                subPageLink(title: "Leaderboard", icon: "trophy", color: .yellow, moduleId: "warehouse-leaderboard")
+                subPageLink(title: "Settings", icon: "gearshape", color: .gray, moduleId: "warehouse-settings")
             }
         }
     }
 
     private func subPageLink(title: String, icon: String, color: Color, moduleId: String) -> some View {
         Button {
-            NotificationCenter.default.post(
-                name: .navigateToModule,
-                object: nil,
-                userInfo: ["moduleId": moduleId]
-            )
+            navigate(to: moduleId)
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: icon)
@@ -506,6 +559,14 @@ struct WarehouseDashboardPage: View {
             .clipShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
+    }
+
+    private func navigate(to moduleId: String) {
+        NotificationCenter.default.post(
+            name: .navigateToModule,
+            object: nil,
+            userInfo: ["moduleId": moduleId]
+        )
     }
 
     // MARK: - Recent Activity
@@ -624,7 +685,7 @@ struct WarehouseDashboardPage: View {
         do {
             dashKPIs = try service.getDashboardKPIs()
             auditSummary = try service.getAuditSummary()
-            recentMovements = try service.listMovements(limit: 10)
+            recentMovements = try service.listMovements(limit: 10, sortOrder: .newestFirst)
             postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load warehouse dashboard")

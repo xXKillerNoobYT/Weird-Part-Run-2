@@ -1085,7 +1085,10 @@ private struct SupplierDetailSheet: View {
     }
 
     private func toggleBrandCarryStatus(_ item: (brandId: Int64, brandName: String, partCount: Int, carryStatus: String)) {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            loadError = "Parts service unavailable"
+            return
+        }
         let newStatus = item.carryStatus == "carry_on_shelf" ? "need_to_order" : "carry_on_shelf"
         do {
             try service.updateBrandSupplierCarryStatus(
