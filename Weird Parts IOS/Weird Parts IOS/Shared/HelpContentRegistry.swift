@@ -147,6 +147,7 @@ struct HelpContentRegistry {
         "WiredPart.fleetMyTruckPageActive": "fleet-my-truck",
         "WiredPart.toolRegistryPageActive": "tools-registry",
         "WiredPart.notebooksListPageActive": "notebooks-all",
+        "WiredPart.settingsPageActive": "settings-app-config",
     ]
 
     // MARK: - All Entries (extracted from PageHelpSheet usages)
@@ -164,6 +165,16 @@ struct HelpContentRegistry {
                 ("Overview", "Your daily command center. See clock status, KPI stats, charts, alerts, and quick actions all in one place."),
                 ("KPI Cards", "Tap any KPI card to see detailed breakdowns. Cards show part types, total stock, active jobs, pending orders, and low stock warnings."),
                 ("Quick Actions", "Use the quick action buttons at the bottom to scan QR codes, clock in/out, view the daily report, move stock, or create new orders."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "settings-app-config",
+            title: "App Config Help",
+            sections: [
+                ("What This Page Does", "General application configuration including auto-lock timeout, stale data warnings, archive retention, warranty defaults, and payment tracking settings."),
+                ("How to Use It", "Adjust values for each setting and tap Save. Auto-lock controls how long before the app locks. Stale data warning triggers when sync data is old."),
+                ("Payment Tracking", "When enabled, customer payment tracking shows payment status, terms, overdue warnings, and automatic payment holds."),
             ]
         ),
 

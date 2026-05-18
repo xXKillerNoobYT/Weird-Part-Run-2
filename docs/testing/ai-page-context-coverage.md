@@ -11,9 +11,9 @@ Complete the 87-page page-context coverage set by adding read-only page-active/p
 
 Implemented page-context notifications observed by `IOSAIAssistantPanel`: 60 page contexts.
 
-Help registry mappings with matching help entries: 59 page contexts.
+Help registry mappings with matching help entries: 60 page contexts.
 
-Known gap: `settingsPageActive` is observed by the AI panel and active-page tracker, but `HelpContentRegistry` does not yet contain a `settings-app-config` entry. That should be handled in the settings slice rather than mapped to a missing help entry.
+Known gap: none in the currently observed AI page-context set. Remaining work is additional unobserved functional pages, not broken mappings.
 
 ## Covered Pages
 
@@ -86,7 +86,7 @@ Known gap: `settingsPageActive` is observed by the AI panel and active-page trac
 | Fleet | My Truck | `fleetMyTruckPageActive` | `fleet-my-truck` |
 | Tools | Tool Registry | `toolRegistryPageActive` | `tools-registry` |
 | Notebooks | Notebooks List | `notebooksListPageActive` | `notebooks-all` |
-| Settings | Settings/App Config observer only | `settingsPageActive` | missing help entry |
+| Settings | App Config | `settingsPageActive` | `settings-app-config` |
 
 ## WEI-1194 Slice
 
@@ -165,10 +165,17 @@ Added the next People, Office, and Reports page-context slice:
 
 All payloads are read-only summaries of visible state, selected filters, lifecycle state, and report totals. They do not expose mutating commands, action IDs, or write intents.
 
+## Settings Gap Closure Slice
+
+Closed the known settings mapping gap:
+
+- `AppConfigPage`: auto-lock, stale-data warning, archive retention, warranty default, payment tracking, validation, saved/error state.
+
+The payload is a read-only summary of visible settings and validation state. It does not expose mutating commands, action IDs, or write intents.
+
 ## Next Highest-Traffic Remaining Slices
 
 1. People/Office/Reports tail: contractors, teams, hats, permissions, office manage-jobs, warehouse exec, estimation settings, pipeline, teams, reports router, and specialized fleet/scheduling/warehouse report pages.
-2. Settings: add missing help entries and page context for the high-use settings pages before mapping them to help content.
 
 ## Validation
 
@@ -201,6 +208,13 @@ Validated People/Office/Reports slice in the shared workspace on 2026-05-15:
 
 - People/Office/Reports notification names are declared, posted by their pages, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
 - Help registry mapping check returned no missing mapped page IDs.
+- `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was pre-existing warnings only.
+
+Validated Settings gap closure slice in the clean WEI-1112 settings worktree on 2026-05-15:
+
+- `settingsPageActive` is posted by `AppConfigPage`, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
+- Help registry mapping check returned no missing mapped page IDs.
+- First build exposed a recovered-branch compile issue in `IOSOfficeDashboardPage` background task status rows; the page now uses existing `BackgroundTaskService.TaskLogEntry` data instead of unavailable types.
 - `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was pre-existing warnings only.
 
 Static validation:
