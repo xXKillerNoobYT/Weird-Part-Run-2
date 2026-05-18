@@ -66,6 +66,16 @@ struct IOSMyTruckPage: View {
             loadData()
             appCore.onboardingManager?.markCompleted("fleet-my-truck")
         }
+        .onAppear {
+            NotificationCenter.default.post(
+                name: .fleetMyTruckPageActive,
+                object: nil,
+                userInfo: ["context": fleetMyTruckContext]
+            )
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .fleetMyTruckPageInactive, object: nil)
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
@@ -80,6 +90,13 @@ struct IOSMyTruckPage: View {
     }
 
     // MARK: - No Vehicle
+
+    private var fleetMyTruckContext: String {
+        let vehicleName = vehicle?.vehicleName ?? "unassigned"
+        return """
+        page=My Truck; vehicle=\(vehicleName); inventory_tab=\(inventoryTab.rawValue); truck_stock=\(truckStock.count); transfer_items=\(transferItems.count); recent_mileage_logs=\(recentMileage.count); recent_fuel_logs=\(recentFuel.count)
+        """
+    }
 
     private var noVehicleView: some View {
         EmptyStateView(

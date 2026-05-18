@@ -43,6 +43,10 @@ struct IOSDispatchTemplatesPage: View {
             }
             .refreshable { loadData() }
             .task { loadData() }
+            .onAppear { postPageContext() }
+            .onDisappear {
+                NotificationCenter.default.post(name: .schedulingTemplatesPageInactive, object: nil)
+            }
     }
 
     // MARK: - Content
@@ -135,5 +139,12 @@ struct IOSDispatchTemplatesPage: View {
             loadError = userFriendlyError(error, context: "load dispatch templates")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let activeCount = templates.filter { $0.isActive }.count
+        let context = "Page: Dispatch Templates; total templates: \(templates.count); visible templates: \(filteredTemplates.count); active templates: \(activeCount); inactive templates: \(templates.count - activeCount); search active: \(!searchText.isEmpty); loading: \(isLoading); error visible: \(loadError != nil); read-only actions: summarize reusable crew assignment patterns and template health."
+        NotificationCenter.default.post(name: .schedulingTemplatesPageActive, object: nil, userInfo: ["context": context])
     }
 }

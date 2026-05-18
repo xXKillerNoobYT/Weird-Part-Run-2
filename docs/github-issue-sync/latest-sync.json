@@ -1,0 +1,5287 @@
+{
+  "repository": "xXKillerNoobYT/Weird-Part-Run-2",
+  "runTimestampUtc": "2026-05-15T05:59:53Z",
+  "sourceIssue": "WEI-44",
+  "requestedState": "all",
+  "openIssueCount": 70,
+  "issueCount": 200,
+  "openCount": 70,
+  "closedCount": 130,
+  "runDir": "docs/github-issue-sync/2026-05-15T05-59-53Z",
+  "issues": [
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-14T02:00:55Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbZQ",
+          "name": "accessibility",
+          "description": "Apple HIG / accessibility issue",
+          "color": "0E8A16"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAdFg",
+          "name": "triage",
+          "description": "Newly filed — not yet reviewed",
+          "color": "fef3c7"
+        }
+      ],
+      "number": 464,
+      "state": "CLOSED",
+      "title": "[Cross-Cutting][UX] Finish empty-state help links on residual Orders/Warehouse/Chat states",
+      "updatedAt": "2026-05-15T05:24:18Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/464"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-14T01:45:41Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        }
+      ],
+      "number": 463,
+      "state": "CLOSED",
+      "title": "[Warehouse][Wizard] Second zone drop disappears during breakpoint QA",
+      "updatedAt": "2026-05-15T05:34:02Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/463"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-14T01:27:20Z",
+      "labels": [],
+      "number": 462,
+      "state": "CLOSED",
+      "title": "iOS build fails type-checking IOSProcurementPage alert binding",
+      "updatedAt": "2026-05-15T05:31:10Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/462"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T22:43:06Z",
+      "labels": [],
+      "number": 461,
+      "state": "CLOSED",
+      "title": "[Settings][UX] First-launch restart path is hidden in medium Settings sheet on phone",
+      "updatedAt": "2026-05-13T23:14:54Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/461"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T22:17:40Z",
+      "labels": [],
+      "number": 460,
+      "state": "CLOSED",
+      "title": "[QA][Bug] Simulator xctrunner launch failures block full first-launch onboarding verification",
+      "updatedAt": "2026-05-13T22:44:37Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/460"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T21:44:45Z",
+      "labels": [],
+      "number": 459,
+      "state": "CLOSED",
+      "title": "[Onboarding][Bug] First-launch QA test stops at stale Sign In assertion",
+      "updatedAt": "2026-05-15T05:33:54Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/459"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T19:11:39Z",
+      "labels": [],
+      "number": 458,
+      "state": "CLOSED",
+      "title": "[Chat][Bug] Q&A Resolved smart card omits resolved threads",
+      "updatedAt": "2026-05-14T02:22:34Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/458"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T18:58:38Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 457,
+      "state": "CLOSED",
+      "title": "[Cross-Cutting][A11y] Add dateRangeChip_* accessibility identifiers to StandardFilterBar",
+      "updatedAt": "2026-05-15T05:36:34Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/457"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T18:58:34Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 456,
+      "state": "CLOSED",
+      "title": "[People][UX] Migrate IOSEmployeesPage to FilterStack (pilot — chips-only)",
+      "updatedAt": "2026-05-15T05:36:32Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/456"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T18:58:30Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 455,
+      "state": "CLOSED",
+      "title": "[Orders][UX] Migrate IOSPurchaseOrdersPage to FilterStack (pilot — full stack)",
+      "updatedAt": "2026-05-15T05:36:31Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/455"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T18:58:24Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 454,
+      "state": "CLOSED",
+      "title": "[Cross-Cutting][Tech] Build FilterStack + FilterChipRow + filterCounts helper",
+      "updatedAt": "2026-05-15T05:36:29Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/454"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T18:53:40Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 453,
+      "state": "OPEN",
+      "title": "[Scheduling][Feature] Dispatch Board crew history, flex-pool, and permission validation",
+      "updatedAt": "2026-05-15T05:42:36Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/453"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T18:53:27Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 452,
+      "state": "OPEN",
+      "title": "[Scheduling][Feature] Put AI dispatch suggestions directly on the Dispatch Board",
+      "updatedAt": "2026-05-15T05:40:53Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/452"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T18:53:14Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 451,
+      "state": "OPEN",
+      "title": "[Scheduling][Feature] Dispatch Board true Gantt rescheduling and assignment drag/drop",
+      "updatedAt": "2026-05-15T05:40:06Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/451"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T18:40:33Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 450,
+      "state": "CLOSED",
+      "title": "[Cross-Cutting][UX] Define composition rules for date bar plus page-specific filters",
+      "updatedAt": "2026-05-15T05:40:05Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/450"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T18:40:31Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 449,
+      "state": "CLOSED",
+      "title": "[Warehouse][Settings][Chat][Notebooks][UX] Standardize date filters on operational history pages",
+      "updatedAt": "2026-05-15T05:40:03Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/449"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T18:40:30Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 448,
+      "state": "CLOSED",
+      "title": "[Jobs][Orders][UX] Add StandardFilterBar to core Jobs and Orders list gaps",
+      "updatedAt": "2026-05-15T05:40:01Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/448"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T18:40:28Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 447,
+      "state": "CLOSED",
+      "title": "[Reports][UX] Migrate ReportBuilder filters to StandardFilterBar",
+      "updatedAt": "2026-05-15T05:40:00Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/447"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T18:39:45Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 446,
+      "state": "CLOSED",
+      "title": "[Cross-Cutting][UX] Harden StandardFilterBar before program-wide migration",
+      "updatedAt": "2026-05-15T05:39:58Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/446"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T17:26:16Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwI1A",
+          "name": "data-integrity",
+          "description": "SQL/schema/migration issues",
+          "color": "E99695"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 445,
+      "state": "OPEN",
+      "title": "[Parts][Bug] Receiving price verification is lost when a session is interrupted",
+      "updatedAt": "2026-05-13T18:23:20Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/445"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T17:26:02Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwI1A",
+          "name": "data-integrity",
+          "description": "SQL/schema/migration issues",
+          "color": "E99695"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 444,
+      "state": "OPEN",
+      "title": "[Parts][Bug] Pricing tier conflict detection includes unrelated brand overrides",
+      "updatedAt": "2026-05-13T18:27:59Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/444"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T17:25:48Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 443,
+      "state": "OPEN",
+      "title": "[Parts][Feature] Add Part-level target support to Pricing Tier Wizard",
+      "updatedAt": "2026-05-13T17:55:57Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/443"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T17:22:02Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        }
+      ],
+      "number": 442,
+      "state": "OPEN",
+      "title": "[Parts][Bug] Supplier scores can be stale and miss return_to_supplier movements",
+      "updatedAt": "2026-05-13T18:32:57Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/442"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T17:22:02Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 441,
+      "state": "OPEN",
+      "title": "[Parts][Feature] Suppliers detail needs CRM history timeline, not only channel launch",
+      "updatedAt": "2026-05-13T18:02:13Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/441"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T17:22:02Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 440,
+      "state": "OPEN",
+      "title": "[Parts][Feature] Suppliers detail needs traceability UI and specific movement locations",
+      "updatedAt": "2026-05-13T18:07:54Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/440"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T17:03:19Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 439,
+      "state": "CLOSED",
+      "title": "[Settings][Feature] Wire Dispatch Preferences into AI dispatch, flex pool, and pipeline behavior",
+      "updatedAt": "2026-05-13T17:48:16Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/439"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T17:03:04Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 438,
+      "state": "CLOSED",
+      "title": "[Settings][Feature] Enforce saved Tool Policies in tool checkout, maintenance, trade, and edit workflows",
+      "updatedAt": "2026-05-13T17:39:32Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/438"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T17:02:49Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 437,
+      "state": "CLOSED",
+      "title": "[Settings][Feature] Move pre-trip checklist config onto inspection templates with reorder and required controls",
+      "updatedAt": "2026-05-13T17:29:28Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/437"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T17:02:34Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwI1A",
+          "name": "data-integrity",
+          "description": "SQL/schema/migration issues",
+          "color": "E99695"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 436,
+      "state": "CLOSED",
+      "title": "[Settings][Feature] Add complete break/lunch state presets for 50 states plus DC",
+      "updatedAt": "2026-05-13T17:14:53Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/436"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T17:02:19Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwI1A",
+          "name": "data-integrity",
+          "description": "SQL/schema/migration issues",
+          "color": "E99695"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcTw",
+          "name": "priority:P1",
+          "description": "High — next sprint",
+          "color": "e11d48"
+        }
+      ],
+      "number": 435,
+      "state": "CLOSED",
+      "title": "[Settings][Bug] Break/lunch policy saves create stale duplicate company policies",
+      "updatedAt": "2026-05-13T17:06:22Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/435"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T16:52:05Z",
+      "labels": [],
+      "number": 433,
+      "state": "CLOSED",
+      "title": "[Sync][UX] Sync Conflicts review is unusable at AX5 text size on iPhone",
+      "updatedAt": "2026-05-13T17:17:33Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/433"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T15:40:51Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACd_wDFw",
+          "name": "program-review",
+          "description": "Full program review — page-by-page rebuild",
+          "color": "5319E7"
+        }
+      ],
+      "number": 429,
+      "state": "OPEN",
+      "title": "[Parts][Bug] Companion poll admin permission gates are inconsistent",
+      "updatedAt": "2026-05-13T15:40:51Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/429"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T15:40:37Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACd_wDFw",
+          "name": "program-review",
+          "description": "Full program review — page-by-page rebuild",
+          "color": "5319E7"
+        }
+      ],
+      "number": 428,
+      "state": "OPEN",
+      "title": "[Parts][Bug] Companion cascade never creates style/type polls after accepted parent",
+      "updatedAt": "2026-05-13T15:40:37Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/428"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T15:40:25Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACd_wDFw",
+          "name": "program-review",
+          "description": "Full program review — page-by-page rebuild",
+          "color": "5319E7"
+        }
+      ],
+      "number": 427,
+      "state": "OPEN",
+      "title": "[Parts][Bug] Companion rule edit form drops hierarchy and option changes",
+      "updatedAt": "2026-05-13T15:40:25Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/427"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T15:40:14Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACd_wDFw",
+          "name": "program-review",
+          "description": "Full program review — page-by-page rebuild",
+          "color": "5319E7"
+        }
+      ],
+      "number": 426,
+      "state": "OPEN",
+      "title": "[Parts][Bug] Companion rule rows show hierarchy IDs instead of names",
+      "updatedAt": "2026-05-13T15:40:14Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/426"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T15:36:36Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 425,
+      "state": "OPEN",
+      "title": "[Inventory][Feature] Implement below-MIN wishlist generation with shop-check and physical audit routing",
+      "updatedAt": "2026-05-13T15:36:36Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/425"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T15:36:10Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 424,
+      "state": "OPEN",
+      "title": "[Parts][Feature] Add per-part auto-add-to-wishlist toggle",
+      "updatedAt": "2026-05-13T16:48:02Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/424"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T15:35:52Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 423,
+      "state": "OPEN",
+      "title": "[Orders][UX] Wishlist page needs smart card status filters",
+      "updatedAt": "2026-05-13T15:35:52Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/423"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T15:33:45Z",
+      "labels": [],
+      "number": 422,
+      "state": "OPEN",
+      "title": "[Sync][Bug] Conflict screenshot UI test never enables UITesting seed data",
+      "updatedAt": "2026-05-13T16:52:23Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/422"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T15:28:43Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        }
+      ],
+      "number": 421,
+      "state": "CLOSED",
+      "title": "[Parts][Bug] Empty Shelf deletion does not auto-cancel when stock rises",
+      "updatedAt": "2026-05-13T15:37:30Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/421"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T12:13:16Z",
+      "labels": [],
+      "number": 420,
+      "state": "CLOSED",
+      "title": "iPhone 13 mini AX5 login Sign In is obscured by number pad",
+      "updatedAt": "2026-05-13T16:37:17Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/420"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T11:20:18Z",
+      "labels": [],
+      "number": 418,
+      "state": "CLOSED",
+      "title": "UI test notebook QA routes are blocked before notebook detail on iPhone",
+      "updatedAt": "2026-05-13T15:29:14Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/418"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T07:25:51Z",
+      "labels": [],
+      "number": 417,
+      "state": "OPEN",
+      "title": "iPhone notebook detail controls are below 44pt and report horizontal overflow",
+      "updatedAt": "2026-05-13T16:39:06Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/417"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T04:52:11Z",
+      "labels": [],
+      "number": 410,
+      "state": "CLOSED",
+      "title": "iPhone sync conflict banner leaves notebook content nearly unusable",
+      "updatedAt": "2026-05-13T13:05:26Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/410"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T04:29:17Z",
+      "labels": [],
+      "number": 409,
+      "state": "CLOSED",
+      "title": "[Onboarding][Bug] First-launch welcome sheet can be skipped by stale UserDefaults",
+      "updatedAt": "2026-05-13T23:14:52Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/409"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T04:26:06Z",
+      "labels": [],
+      "number": 408,
+      "state": "CLOSED",
+      "title": "[Auth][Bug] iPhone keyboard covers Login Sign In button on 375pt viewport",
+      "updatedAt": "2026-05-13T11:52:13Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/408"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T04:23:19Z",
+      "labels": [],
+      "number": 407,
+      "state": "OPEN",
+      "title": "[Onboarding][Bug] Login accessibility identifiers are masked, blocking UI QA automation",
+      "updatedAt": "2026-05-13T11:13:18Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/407"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T02:36:44Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        }
+      ],
+      "number": 406,
+      "state": "CLOSED",
+      "title": "[Jobs] Detail dashboard does not use job-scoped trailer/RFI summaries",
+      "updatedAt": "2026-05-13T03:08:14Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/406"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T02:34:28Z",
+      "labels": [],
+      "number": 405,
+      "state": "CLOSED",
+      "title": "[iOS] Receive Shipment actual-price field is below 44pt tap target height",
+      "updatedAt": "2026-05-13T02:51:55Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/405"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T02:09:16Z",
+      "labels": [],
+      "number": 404,
+      "state": "CLOSED",
+      "title": "[Jobs] Compact job detail exposes duplicate Estimate tab accessibility elements",
+      "updatedAt": "2026-05-13T02:43:58Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/404"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T01:34:28Z",
+      "labels": [],
+      "number": 403,
+      "state": "CLOSED",
+      "title": "Time not updating",
+      "updatedAt": "2026-05-13T03:00:08Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/403"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T01:32:16Z",
+      "labels": [],
+      "number": 402,
+      "state": "CLOSED",
+      "title": "The Jobs Dashboard and controls details need to be defined and built out big time this is a kay thing to build",
+      "updatedAt": "2026-05-13T03:17:02Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/402"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T01:30:53Z",
+      "labels": [],
+      "number": 401,
+      "state": "CLOSED",
+      "title": "[Jobs] Compact iOS job detail Estimate tab is not reliably reachable in UI automation",
+      "updatedAt": "2026-05-13T02:37:21Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/401"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T01:19:30Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUOA",
+          "name": "documentation",
+          "description": "Improvements or additions to documentation",
+          "color": "0075ca"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACZz748g",
+          "name": "dependencies",
+          "description": "Pull requests that update a dependency file",
+          "color": "0366d6"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbZQ",
+          "name": "accessibility",
+          "description": "Apple HIG / accessibility issue",
+          "color": "0E8A16"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwI1A",
+          "name": "data-integrity",
+          "description": "SQL/schema/migration issues",
+          "color": "E99695"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcJw",
+          "name": "priority:P0",
+          "description": "Critical — stop everything",
+          "color": "b60205"
+        }
+      ],
+      "number": 400,
+      "state": "CLOSED",
+      "title": "Making New parts order",
+      "updatedAt": "2026-05-13T03:59:40Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/400"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T01:09:02Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        }
+      ],
+      "number": 399,
+      "state": "CLOSED",
+      "title": "UITesting fixture lacks jobs for iOS estimation review flow verification",
+      "updatedAt": "2026-05-13T03:17:02Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/399"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-13T00:39:27Z",
+      "labels": [],
+      "number": 398,
+      "state": "OPEN",
+      "title": "NOTEBOOKS",
+      "updatedAt": "2026-05-13T04:13:35Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/398"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-12T23:37:50Z",
+      "labels": [],
+      "number": 397,
+      "state": "CLOSED",
+      "title": "[Jobs][UX] Bottom search bar obscures job rows at large Dynamic Type",
+      "updatedAt": "2026-05-13T11:00:35Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/397"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-12T23:16:25Z",
+      "labels": [],
+      "number": 396,
+      "state": "CLOSED",
+      "title": "[Parts][Bug] Category sheet detents break Mac Catalyst build",
+      "updatedAt": "2026-05-13T03:17:02Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/396"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-12T23:16:13Z",
+      "labels": [],
+      "number": 395,
+      "state": "CLOSED",
+      "title": "[QA][Blocker] Xcode 26.5 selection exposes no iOS Simulator destinations for UI verification",
+      "updatedAt": "2026-05-13T03:17:02Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/395"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-12T21:18:59Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        }
+      ],
+      "number": 394,
+      "state": "CLOSED",
+      "title": "[Orders][UX] Receiving quantity and price controls need 44pt iPhone tap targets",
+      "updatedAt": "2026-05-13T05:02:43Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/394"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-12T21:18:42Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        }
+      ],
+      "number": 393,
+      "state": "CLOSED",
+      "title": "[Orders][Bug] Receiving quantity edits falsely mark barcode as confirmed",
+      "updatedAt": "2026-05-13T05:02:43Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/393"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-12T18:14:45Z",
+      "labels": [],
+      "number": 392,
+      "state": "CLOSED",
+      "title": "[AppCore][Bug] iOS simulator build blocked by userFriendlyError actor isolation",
+      "updatedAt": "2026-05-12T18:33:03Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/392"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-12T18:03:48Z",
+      "labels": [],
+      "number": 391,
+      "state": "CLOSED",
+      "title": "[iOS][Bug] AppCore actor-isolation errors block simulator build and Orders QA smoke",
+      "updatedAt": "2026-05-13T05:02:43Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/391"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-12T16:35:57Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACeHaG5Q",
+          "name": "usability-hunter",
+          "description": "Behavioral usability bug found by usability-hunter scanner",
+          "color": "FF6B6B"
+        }
+      ],
+      "number": 390,
+      "state": "OPEN",
+      "title": "[Usability][Settings] Dirty-discard confirmation omits Keep Editing cancel action on iPhone",
+      "updatedAt": "2026-05-12T18:07:05Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/390"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-12T14:38:21Z",
+      "labels": [],
+      "number": 389,
+      "state": "CLOSED",
+      "title": "[Navigation][T2][Bug] IOSMainView still has multiple competing sheet modifiers",
+      "updatedAt": "2026-05-12T18:07:03Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/389"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-12T14:37:50Z",
+      "labels": [],
+      "number": 388,
+      "state": "CLOSED",
+      "title": "[Navigation][T2][Bug] Fleet Reports and Supplier Profile still navigate to placeholder Text views",
+      "updatedAt": "2026-05-12T18:07:01Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/388"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-12T14:24:24Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACeHaG5Q",
+          "name": "usability-hunter",
+          "description": "Behavioral usability bug found by usability-hunter scanner",
+          "color": "FF6B6B"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwI1A",
+          "name": "data-integrity",
+          "description": "SQL/schema/migration issues",
+          "color": "E99695"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcTw",
+          "name": "priority:P1",
+          "description": "High — next sprint",
+          "color": "e11d48"
+        }
+      ],
+      "number": 387,
+      "state": "CLOSED",
+      "title": "[Jobs][P1][Bug] Break compliance auto-fill failures are swallowed during questionnaire submit",
+      "updatedAt": "2026-05-12T18:06:59Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/387"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-12T14:24:22Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACeHaG5Q",
+          "name": "usability-hunter",
+          "description": "Behavioral usability bug found by usability-hunter scanner",
+          "color": "FF6B6B"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 386,
+      "state": "CLOSED",
+      "title": "[Chat][P2][Bug] Attachment import and read receipt failures are silently dropped",
+      "updatedAt": "2026-05-12T18:06:57Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/386"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-12T14:24:21Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACeHaG5Q",
+          "name": "usability-hunter",
+          "description": "Behavioral usability bug found by usability-hunter scanner",
+          "color": "FF6B6B"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwI1A",
+          "name": "data-integrity",
+          "description": "SQL/schema/migration issues",
+          "color": "E99695"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcTw",
+          "name": "priority:P1",
+          "description": "High — next sprint",
+          "color": "e11d48"
+        }
+      ],
+      "number": 385,
+      "state": "CLOSED",
+      "title": "[Sync][P1][Bug] Peer sync swallows encryption/decode failures and can report false success",
+      "updatedAt": "2026-05-12T23:17:48Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/385"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-12T14:24:19Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACeHaG5Q",
+          "name": "usability-hunter",
+          "description": "Behavioral usability bug found by usability-hunter scanner",
+          "color": "FF6B6B"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwI1A",
+          "name": "data-integrity",
+          "description": "SQL/schema/migration issues",
+          "color": "E99695"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcTw",
+          "name": "priority:P1",
+          "description": "High — next sprint",
+          "color": "e11d48"
+        }
+      ],
+      "number": 384,
+      "state": "CLOSED",
+      "title": "[Database][P1][Bug] Migration backup restore swallows file errors and can report false recovery",
+      "updatedAt": "2026-05-12T18:06:53Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/384"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-12T10:10:55Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAdFg",
+          "name": "triage",
+          "description": "Newly filed — not yet reviewed",
+          "color": "fef3c7"
+        }
+      ],
+      "number": 383,
+      "state": "CLOSED",
+      "title": "[Parts][UI] Phone Catalog low-stock filter is not hittable during NL filter flow",
+      "updatedAt": "2026-05-12T13:05:40Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/383"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-12T05:46:18Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        }
+      ],
+      "number": 382,
+      "state": "OPEN",
+      "title": "[QA] Build full page-by-device UI verification matrix after launch blockers are cleared",
+      "updatedAt": "2026-05-12T10:13:11Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/382"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-12T05:45:33Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        }
+      ],
+      "number": 381,
+      "state": "OPEN",
+      "title": "[QA][Mac Catalyst] UI test runner times out enabling automation mode before app verification",
+      "updatedAt": "2026-05-12T13:19:19Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/381"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-12T05:42:23Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        }
+      ],
+      "number": 380,
+      "state": "CLOSED",
+      "title": "[QA][iPad] XCUITest navigation helper is not sidebar-aware, so tablet Parts verification stops before Catalog",
+      "updatedAt": "2026-05-12T13:05:40Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/380"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-12T05:37:40Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        }
+      ],
+      "number": 379,
+      "state": "CLOSED",
+      "title": "[QA][UI] -UITesting post-login path is blocked by On-Device AI onboarding gate",
+      "updatedAt": "2026-05-12T13:05:40Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/379"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-12T05:29:43Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwI1A",
+          "name": "data-integrity",
+          "description": "SQL/schema/migration issues",
+          "color": "E99695"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 377,
+      "state": "CLOSED",
+      "title": "[Reports][T2][Bug] Saved report delete/run mutations take only reportId, so any caller can mutate another user's report",
+      "updatedAt": "2026-05-12T09:44:04Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/377"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-08T23:10:06Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 372,
+      "state": "OPEN",
+      "title": "Paperclip/GitHub sync tracker for active WEI execution",
+      "updatedAt": "2026-05-15T05:52:20Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/372"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-06T21:24:22Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 371,
+      "state": "OPEN",
+      "title": "[Orders][T2][Bug] generatePOFromJPO doesn't update jpo_line_items.line_status — two PO-generation paths produce inconsistent per-line state",
+      "updatedAt": "2026-05-09T05:21:13Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/371"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-06T20:56:08Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 370,
+      "state": "CLOSED",
+      "title": "[Scheduling][T2][Bug] checkTimeOffConflict returns PENDING requests as conflicts (missing is_approved=1 filter)",
+      "updatedAt": "2026-05-12T05:33:47Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/370"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-06T20:27:53Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 369,
+      "state": "OPEN",
+      "title": "[Warehouse][T2][Bug] movement_type values are stringly-typed across UI + service + queries — no canonical constants, forecasting depends on 'consume' string only",
+      "updatedAt": "2026-05-06T20:28:49Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/369"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-06T19:31:42Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 368,
+      "state": "OPEN",
+      "title": "[Cross-Cutting][T2][Bug-Umbrella] 35 service mutation methods lack permission gates (service-permission-gate-scanner output)",
+      "updatedAt": "2026-05-12T05:34:03Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/368"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-06T19:29:19Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 367,
+      "state": "CLOSED",
+      "title": "[Parts][T2][Bug] approveRecommendation + dismissRecommendation lack permission gates (sister to #355/#363/#364)",
+      "updatedAt": "2026-05-12T05:19:20Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/367"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-06T19:24:57Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcTw",
+          "name": "priority:P1",
+          "description": "High — next sprint",
+          "color": "e11d48"
+        }
+      ],
+      "number": 366,
+      "state": "CLOSED",
+      "title": "[Cross-Cutting][T1][Security] hasPermission doesn't check user.deleted_at — soft-deleted users retain all hat permissions",
+      "updatedAt": "2026-05-12T05:33:36Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/366"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-06T18:56:14Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 365,
+      "state": "OPEN",
+      "title": "[Settings][T2][Bug] upsertSettingsMap is non-atomic — partial save on mid-loop failure leaves inconsistent state",
+      "updatedAt": "2026-05-06T18:57:07Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/365"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-06T18:27:15Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 364,
+      "state": "OPEN",
+      "title": "[Chat][T2][Bug] sendMessage doesn't check channel membership — read-side filters, write-side wide open (read-write asymmetry)",
+      "updatedAt": "2026-05-06T18:28:14Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/364"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-06T18:24:14Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 363,
+      "state": "OPEN",
+      "title": "[Notebooks][T2][Bug] Classification methods lack permission gates + can leak orphan history rows for soft-deleted entries",
+      "updatedAt": "2026-05-06T18:25:11Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/363"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-06T17:56:05Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 362,
+      "state": "OPEN",
+      "title": "[Reports][T2][Bug] getPreBillingData ignores billing_periods.locked_at — returns labor from locked periods",
+      "updatedAt": "2026-05-06T17:56:53Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/362"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-06T17:27:35Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 361,
+      "state": "OPEN",
+      "title": "[Inventory][T2][Bug] Wishlist sendToProcurement is a dead-end status — no consumer reads sent_to_procurement items",
+      "updatedAt": "2026-05-06T17:28:32Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/361"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-06T17:24:15Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 360,
+      "state": "OPEN",
+      "title": "[Fleet][T2][Bug] assignDriver doesn't deactivate existing active assignments — vehicle/user can have multiple active rows",
+      "updatedAt": "2026-05-06T17:25:06Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/360"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-06T16:55:24Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 359,
+      "state": "OPEN",
+      "title": "[Tools][T2][Bug] expireOldTrades + updateConfidenceScores not auto-scheduled — only run when iOS detail page opened",
+      "updatedAt": "2026-05-06T20:00:48Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/359"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-06T16:27:13Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 358,
+      "state": "OPEN",
+      "title": "[People][T2][Bug] getExpiringCertifications excludes already-expired certs (regulatory compliance risk)",
+      "updatedAt": "2026-05-12T10:07:00Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/358"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-06T16:05:05Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 357,
+      "state": "CLOSED",
+      "title": "[Orders][T2][Plan-Drift] PO state machine has 5 statuses in code but plan says 7; 'cancelled' + 'submitted' referenced by queries but absent from validPOTransitions",
+      "updatedAt": "2026-05-13T17:22:23Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/357"
+    },
+    {
+      "assignees": [
+        {
+          "id": "MDQ6VXNlcjM3OTU5OTU2",
+          "login": "xXKillerNoobYT",
+          "name": "",
+          "databaseId": 37959956
+        },
+        {
+          "id": "BOT_kgDOC9w8XQ",
+          "login": "Copilot",
+          "name": "",
+          "databaseId": 198982749
+        }
+      ],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-06T15:34:43Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 355,
+      "state": "CLOSED",
+      "title": "[Scheduling][T2][Bug] createDispatch doesn't check time-off conflicts at service layer (UI-only enforcement)",
+      "updatedAt": "2026-05-11T02:32:19Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/355"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-06T14:58:34Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 354,
+      "state": "OPEN",
+      "title": "[Warehouse][T2][Bug] adjustAuditCount writes newQty (absolute) instead of delta to stock_movements.qty",
+      "updatedAt": "2026-05-12T12:04:53Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/354"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-06T14:29:09Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 353,
+      "state": "OPEN",
+      "title": "[Jobs][T2][Bug] Overtime threshold applied per-labor-entry not per-day — under-counts OT when worker switches jobs",
+      "updatedAt": "2026-05-12T10:14:02Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/353"
+    },
+    {
+      "assignees": [
+        {
+          "id": "MDQ6VXNlcjM3OTU5OTU2",
+          "login": "xXKillerNoobYT",
+          "name": "",
+          "databaseId": 37959956
+        },
+        {
+          "id": "BOT_kgDOC9w8XQ",
+          "login": "Copilot",
+          "name": "",
+          "databaseId": 198982749
+        }
+      ],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-06T14:01:09Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 351,
+      "state": "CLOSED",
+      "title": "[Inventory][T2][Tests] 5 critical PartsService recommendation-pipeline methods have zero tests",
+      "updatedAt": "2026-05-11T02:07:45Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/351"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-05-01T22:38:56Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 347,
+      "state": "OPEN",
+      "title": "[Cross-Cutting][T2][Bug] IOSMainView root chain has 2 .sheet(isPresented:) modifiers — SwiftUI silent-dismissal pattern",
+      "updatedAt": "2026-05-12T12:15:50Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/347"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-30T14:45:37Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcTw",
+          "name": "priority:P1",
+          "description": "High — next sprint",
+          "color": "e11d48"
+        }
+      ],
+      "number": 345,
+      "state": "CLOSED",
+      "title": "[Cross-Cutting][T1][Bug] LEFT JOIN NULL propagation candidates in 5 services — 10 SQL queries need owner triage",
+      "updatedAt": "2026-05-12T04:57:28Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/345"
+    },
+    {
+      "assignees": [
+        {
+          "id": "MDQ6VXNlcjM3OTU5OTU2",
+          "login": "xXKillerNoobYT",
+          "name": "",
+          "databaseId": 37959956
+        },
+        {
+          "id": "BOT_kgDOC9w8XQ",
+          "login": "Copilot",
+          "name": "",
+          "databaseId": 198982749
+        }
+      ],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-30T14:44:51Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcTw",
+          "name": "priority:P1",
+          "description": "High — next sprint",
+          "color": "e11d48"
+        }
+      ],
+      "number": 344,
+      "state": "CLOSED",
+      "title": "[Parts][T1][Bug] GRDB Int? boolean fields inserted as NULL bypassing SQL DEFAULT (3 instances)",
+      "updatedAt": "2026-04-30T18:41:08Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/344"
+    },
+    {
+      "assignees": [
+        {
+          "id": "MDQ6VXNlcjM3OTU5OTU2",
+          "login": "xXKillerNoobYT",
+          "name": "",
+          "databaseId": 37959956
+        },
+        {
+          "id": "BOT_kgDOC9w8XQ",
+          "login": "Copilot",
+          "name": "",
+          "databaseId": 198982749
+        }
+      ],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-30T10:43:49Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbTw",
+          "name": "security",
+          "description": "Security vulnerability",
+          "color": "B60205"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcTw",
+          "name": "priority:P1",
+          "description": "High — next sprint",
+          "color": "e11d48"
+        }
+      ],
+      "number": 342,
+      "state": "CLOSED",
+      "title": "[Inventory][T1][Security] WishlistService.processAutoApprovals accepts free-form approver, no permission check",
+      "updatedAt": "2026-04-30T14:41:15Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/342"
+    },
+    {
+      "assignees": [
+        {
+          "id": "MDQ6VXNlcjM3OTU5OTU2",
+          "login": "xXKillerNoobYT",
+          "name": "",
+          "databaseId": 37959956
+        },
+        {
+          "id": "BOT_kgDOC9w8XQ",
+          "login": "Copilot",
+          "name": "",
+          "databaseId": 198982749
+        }
+      ],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-30T06:45:08Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcgw",
+          "name": "priority:P3",
+          "description": "Low / backburner",
+          "color": "6b7280"
+        }
+      ],
+      "number": 340,
+      "state": "CLOSED",
+      "title": "[Cross-Cutting][T3][Perf] Render-perf scanner discoveries: first(where:) + filter().count in 4 view-builder contexts",
+      "updatedAt": "2026-04-30T10:41:08Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/340"
+    },
+    {
+      "assignees": [
+        {
+          "id": "MDQ6VXNlcjM3OTU5OTU2",
+          "login": "xXKillerNoobYT",
+          "name": "",
+          "databaseId": 37959956
+        },
+        {
+          "id": "BOT_kgDOC9w8XQ",
+          "login": "Copilot",
+          "name": "",
+          "databaseId": 198982749
+        }
+      ],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-30T02:43:48Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcgw",
+          "name": "priority:P3",
+          "description": "Low / backburner",
+          "color": "6b7280"
+        }
+      ],
+      "number": 338,
+      "state": "CLOSED",
+      "title": "[Reports][T3][Perf] Render-perf bundle: filter().count + uncached DateFormatter creations across 3 report pages",
+      "updatedAt": "2026-04-30T06:41:20Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/338"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-27T14:18:47Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcgw",
+          "name": "priority:P3",
+          "description": "Low / backburner",
+          "color": "6b7280"
+        }
+      ],
+      "number": 330,
+      "state": "OPEN",
+      "title": "[Inventory][T3][Perf] OrdersService.getProcurementDemand groups in Swift instead of SQL",
+      "updatedAt": "2026-05-12T12:20:18Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/330"
+    },
+    {
+      "assignees": [
+        {
+          "id": "MDQ6VXNlcjM3OTU5OTU2",
+          "login": "xXKillerNoobYT",
+          "name": "",
+          "databaseId": 37959956
+        },
+        {
+          "id": "BOT_kgDOC9w8XQ",
+          "login": "Copilot",
+          "name": "",
+          "databaseId": 198982749
+        }
+      ],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-27T14:18:30Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 329,
+      "state": "CLOSED",
+      "title": "[Inventory][T2][Perf] Wishlist full re-fetch + re-section on every user interaction",
+      "updatedAt": "2026-04-29T22:44:10Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/329"
+    },
+    {
+      "assignees": [
+        {
+          "id": "MDQ6VXNlcjM3OTU5OTU2",
+          "login": "xXKillerNoobYT",
+          "name": "",
+          "databaseId": 37959956
+        },
+        {
+          "id": "BOT_kgDOC9w8XQ",
+          "login": "Copilot",
+          "name": "",
+          "databaseId": 198982749
+        }
+      ],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-27T14:18:09Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 328,
+      "state": "CLOSED",
+      "title": "[Inventory][T2][Perf] Repeated in-Swift filter/count scans on every render across 4 inventory pages",
+      "updatedAt": "2026-04-29T18:52:52Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/328"
+    },
+    {
+      "assignees": [
+        {
+          "id": "MDQ6VXNlcjM3OTU5OTU2",
+          "login": "xXKillerNoobYT",
+          "name": "",
+          "databaseId": 37959956
+        },
+        {
+          "id": "BOT_kgDOC9w8XQ",
+          "login": "Copilot",
+          "name": "",
+          "databaseId": 198982749
+        }
+      ],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-27T12:44:16Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbTw",
+          "name": "security",
+          "description": "Security vulnerability",
+          "color": "B60205"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcTw",
+          "name": "priority:P1",
+          "description": "High — next sprint",
+          "color": "e11d48"
+        }
+      ],
+      "number": 327,
+      "state": "CLOSED",
+      "title": "[Inventory][T1][Security] Wishlist state-mutation methods accept arbitrary identifiers, no permission check",
+      "updatedAt": "2026-04-29T17:32:31Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/327"
+    },
+    {
+      "assignees": [
+        {
+          "id": "MDQ6VXNlcjM3OTU5OTU2",
+          "login": "xXKillerNoobYT",
+          "name": "",
+          "databaseId": 37959956
+        },
+        {
+          "id": "BOT_kgDOC9w8XQ",
+          "login": "Copilot",
+          "name": "",
+          "databaseId": 198982749
+        }
+      ],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-27T12:15:02Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcgw",
+          "name": "priority:P3",
+          "description": "Low / backburner",
+          "color": "6b7280"
+        }
+      ],
+      "number": 326,
+      "state": "CLOSED",
+      "title": "[Inventory][T3] Haptic feedback missing on inventory state-changing actions",
+      "updatedAt": "2026-04-30T02:41:04Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/326"
+    },
+    {
+      "assignees": [
+        {
+          "id": "MDQ6VXNlcjM3OTU5OTU2",
+          "login": "xXKillerNoobYT",
+          "name": "",
+          "databaseId": 37959956
+        },
+        {
+          "id": "BOT_kgDOC9w8XQ",
+          "login": "Copilot",
+          "name": "",
+          "databaseId": 198982749
+        }
+      ],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-27T12:14:45Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 325,
+      "state": "CLOSED",
+      "title": "[Inventory][T2] Missing pre-action confirmations on bulk-irreversible procurement ops",
+      "updatedAt": "2026-04-29T18:45:28Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/325"
+    },
+    {
+      "assignees": [
+        {
+          "id": "MDQ6VXNlcjM3OTU5OTU2",
+          "login": "xXKillerNoobYT",
+          "name": "",
+          "databaseId": 37959956
+        },
+        {
+          "id": "BOT_kgDOC9w8XQ",
+          "login": "Copilot",
+          "name": "",
+          "databaseId": 198982749
+        }
+      ],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-27T10:16:43Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 324,
+      "state": "CLOSED",
+      "title": "[Inventory][T2] Dismiss-Safety: 3 inventory sheets missing isDirty + confirmation",
+      "updatedAt": "2026-04-29T18:41:35Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/324"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-27T04:51:36Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 323,
+      "state": "OPEN",
+      "title": "[Orders][T2][Plan-Drift] Supplier-lock-per-job for generic parts not implemented (Part F CONFIRMED)",
+      "updatedAt": "2026-05-12T12:30:48Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/323"
+    },
+    {
+      "assignees": [
+        {
+          "id": "MDQ6VXNlcjM3OTU5OTU2",
+          "login": "xXKillerNoobYT",
+          "name": "",
+          "databaseId": 37959956
+        },
+        {
+          "id": "BOT_kgDOC9w8XQ",
+          "login": "Copilot",
+          "name": "",
+          "databaseId": 198982749
+        }
+      ],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-27T04:40:16Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 322,
+      "state": "CLOSED",
+      "title": "[Infra][T2] Add .github/copilot-instructions.md so Copilot Coding Agent reads project conventions without per-issue restatement",
+      "updatedAt": "2026-04-29T17:27:06Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/322"
+    },
+    {
+      "assignees": [
+        {
+          "id": "MDQ6VXNlcjM3OTU5OTU2",
+          "login": "xXKillerNoobYT",
+          "name": "",
+          "databaseId": 37959956
+        },
+        {
+          "id": "BOT_kgDOC9w8XQ",
+          "login": "Copilot",
+          "name": "",
+          "databaseId": 198982749
+        }
+      ],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-26T00:59:28Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbTw",
+          "name": "security",
+          "description": "Security vulnerability",
+          "color": "B60205"
+        }
+      ],
+      "number": 319,
+      "state": "CLOSED",
+      "title": "[Security][DB] Implement SQLCipher whole-DB encryption (closes CodeQL #1-#15)",
+      "updatedAt": "2026-05-11T12:36:37Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/319"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-26T00:50:53Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 317,
+      "state": "CLOSED",
+      "title": "[Fleet][Perf] IOSMyTruckPage loadData fires 6 sequential DB calls — could be 2 with batching",
+      "updatedAt": "2026-05-12T12:28:05Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/317"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-26T00:50:35Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 316,
+      "state": "OPEN",
+      "title": "[Fleet][Perf] IOSVehiclesPage countForStatus() iterates allVehicles 5× per render; status filter done in Swift not SQL",
+      "updatedAt": "2026-05-12T12:39:32Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/316"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-26T00:50:18Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 315,
+      "state": "OPEN",
+      "title": "[Fleet][Perf] DateFormatter created per-render in IOSFleetDashboardPage.todayString and per-load in 3 Fleet list pages",
+      "updatedAt": "2026-04-26T01:24:23Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/315"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-26T00:49:58Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 314,
+      "state": "OPEN",
+      "title": "[Fleet][Perf] vehicle_location_logs table has no index — listTelematicsData GROUP BY subquery is a full table scan",
+      "updatedAt": "2026-05-12T12:40:34Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/314"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-26T00:49:45Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 313,
+      "state": "OPEN",
+      "title": "[Fleet][Perf] Missing compound index on inspection_records(vehicle_id, performed_at) hurts dashboard correlated subquery",
+      "updatedAt": "2026-05-12T12:45:52Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/313"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-26T00:49:32Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 312,
+      "state": "OPEN",
+      "title": "[Fleet][Perf] getFleetDashboardStats fires 8 separate DB round-trips — consolidate to 1-2 queries",
+      "updatedAt": "2026-04-26T01:24:19Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/312"
+    },
+    {
+      "assignees": [
+        {
+          "id": "MDQ6VXNlcjM3OTU5OTU2",
+          "login": "xXKillerNoobYT",
+          "name": "",
+          "databaseId": 37959956
+        }
+      ],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-26T00:42:45Z",
+      "labels": [],
+      "number": 311,
+      "state": "CLOSED",
+      "title": "[Security][Refactor] Unify sensitive-field encryption across services (consolidates CodeQL #1-#15)",
+      "updatedAt": "2026-04-26T00:58:48Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/311"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T23:57:17Z",
+      "labels": [],
+      "number": 310,
+      "state": "OPEN",
+      "title": "#21",
+      "updatedAt": "2026-04-25T23:57:17Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/310"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T23:56:50Z",
+      "labels": [],
+      "number": 309,
+      "state": "OPEN",
+      "title": "#20",
+      "updatedAt": "2026-04-25T23:56:50Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/309"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T23:56:24Z",
+      "labels": [],
+      "number": 308,
+      "state": "OPEN",
+      "title": "#19",
+      "updatedAt": "2026-04-25T23:56:24Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/308"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T23:56:00Z",
+      "labels": [],
+      "number": 307,
+      "state": "OPEN",
+      "title": "#18",
+      "updatedAt": "2026-04-25T23:56:00Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/307"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T23:53:28Z",
+      "labels": [],
+      "number": 305,
+      "state": "CLOSED",
+      "title": "#17",
+      "updatedAt": "2026-04-25T23:59:12Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/305"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T23:53:00Z",
+      "labels": [],
+      "number": 304,
+      "state": "CLOSED",
+      "title": "#16",
+      "updatedAt": "2026-04-25T23:59:10Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/304"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T23:52:26Z",
+      "labels": [],
+      "number": 303,
+      "state": "OPEN",
+      "title": "#15",
+      "updatedAt": "2026-04-26T00:52:26Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/303"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T23:51:52Z",
+      "labels": [],
+      "number": 302,
+      "state": "CLOSED",
+      "title": "#14",
+      "updatedAt": "2026-04-25T23:59:08Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/302"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T23:51:11Z",
+      "labels": [],
+      "number": 300,
+      "state": "CLOSED",
+      "title": "#13",
+      "updatedAt": "2026-04-25T23:59:14Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/300"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T23:48:27Z",
+      "labels": [],
+      "number": 298,
+      "state": "OPEN",
+      "title": "#9",
+      "updatedAt": "2026-04-26T00:52:25Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/298"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T23:47:39Z",
+      "labels": [],
+      "number": 296,
+      "state": "OPEN",
+      "title": "#7",
+      "updatedAt": "2026-04-26T00:52:24Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/296"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T23:46:49Z",
+      "labels": [],
+      "number": 294,
+      "state": "OPEN",
+      "title": "#6",
+      "updatedAt": "2026-04-26T00:52:23Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/294"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T23:46:04Z",
+      "labels": [],
+      "number": 292,
+      "state": "OPEN",
+      "title": "#5",
+      "updatedAt": "2026-04-26T00:52:22Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/292"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T23:45:20Z",
+      "labels": [],
+      "number": 291,
+      "state": "CLOSED",
+      "title": "#4",
+      "updatedAt": "2026-04-25T23:59:06Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/291"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T23:43:59Z",
+      "labels": [],
+      "number": 289,
+      "state": "CLOSED",
+      "title": "#3",
+      "updatedAt": "2026-04-25T23:59:04Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/289"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T23:43:34Z",
+      "labels": [],
+      "number": 288,
+      "state": "CLOSED",
+      "title": "#2",
+      "updatedAt": "2026-04-25T23:59:02Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/288"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T23:42:31Z",
+      "labels": [],
+      "number": 287,
+      "state": "CLOSED",
+      "title": "#1",
+      "updatedAt": "2026-04-25T23:59:00Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/287"
+    },
+    {
+      "assignees": [
+        {
+          "id": "MDQ6VXNlcjM3OTU5OTU2",
+          "login": "xXKillerNoobYT",
+          "name": "",
+          "databaseId": 37959956
+        },
+        {
+          "id": "BOT_kgDOC9w8XQ",
+          "login": "Copilot",
+          "name": "",
+          "databaseId": 198982749
+        }
+      ],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T18:46:18Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbTw",
+          "name": "security",
+          "description": "Security vulnerability",
+          "color": "B60205"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcgw",
+          "name": "priority:P3",
+          "description": "Low / backburner",
+          "color": "6b7280"
+        }
+      ],
+      "number": 282,
+      "state": "CLOSED",
+      "title": "[Fleet][T3] Defense-in-depth hygiene batch — recordedBy FK, free-text caps, userFriendlyError audit",
+      "updatedAt": "2026-04-27T05:56:55Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/282"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T17:54:07Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 281,
+      "state": "CLOSED",
+      "title": "[Fleet][HIG] Inspection-status uses literal .red/.green instead of semantic asset colors",
+      "updatedAt": "2026-05-12T17:26:24Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/281"
+    },
+    {
+      "assignees": [
+        {
+          "id": "MDQ6VXNlcjM3OTU5OTU2",
+          "login": "xXKillerNoobYT",
+          "name": "",
+          "databaseId": 37959956
+        },
+        {
+          "id": "BOT_kgDOC9w8XQ",
+          "login": "Copilot",
+          "name": "",
+          "databaseId": 198982749
+        }
+      ],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T17:53:53Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        }
+      ],
+      "number": 280,
+      "state": "CLOSED",
+      "title": "[Fleet][Security] Vehicle write paths lack permission/hat checks at UI layer",
+      "updatedAt": "2026-05-11T05:11:34Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/280"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T17:53:53Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 279,
+      "state": "OPEN",
+      "title": "[Fleet][UX] isLoading double-duty antipattern repeated across 6 list pages",
+      "updatedAt": "2026-05-12T16:43:33Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/279"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T17:21:04Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 278,
+      "state": "OPEN",
+      "title": "[Fleet][UX] Polish batch — presentationDetents, trailer-from-truck nav, search empty states",
+      "updatedAt": "2026-05-13T06:10:37Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/278"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T17:20:51Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        }
+      ],
+      "number": 277,
+      "state": "CLOSED",
+      "title": "[Fleet][Bug] ReportVehicleIssueSheet Submit button is a no-op (no service call)",
+      "updatedAt": "2026-04-25T23:17:51Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/277"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T17:20:42Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        }
+      ],
+      "number": 276,
+      "state": "CLOSED",
+      "title": "[Fleet][Bug] Date-range filter ignored on Fuel/Mileage/Maintenance pages",
+      "updatedAt": "2026-04-25T23:45:26Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/276"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T15:27:11Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        }
+      ],
+      "number": 275,
+      "state": "CLOSED",
+      "title": "[Fleet][T3] FleetService isActive default in VehicleDetail hydration silently treats NULL as active",
+      "updatedAt": "2026-04-25T23:39:52Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/275"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T05:54:39Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwJAg",
+          "name": "performance",
+          "description": "N+1 queries, memory, rendering",
+          "color": "FEF2C0"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcgw",
+          "name": "priority:P3",
+          "description": "Low / backburner",
+          "color": "6b7280"
+        }
+      ],
+      "number": 274,
+      "state": "OPEN",
+      "title": "[Tools][Perf] IOSToolsDashboardPage loads all checkouts unbounded — listCheckouts has no LIMIT",
+      "updatedAt": "2026-05-12T14:18:44Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/274"
+    },
+    {
+      "assignees": [
+        {
+          "id": "MDQ6VXNlcjM3OTU5OTU2",
+          "login": "xXKillerNoobYT",
+          "name": "",
+          "databaseId": 37959956
+        },
+        {
+          "id": "BOT_kgDOC9w8XQ",
+          "login": "Copilot",
+          "name": "",
+          "databaseId": 198982749
+        }
+      ],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T05:54:26Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwJAg",
+          "name": "performance",
+          "description": "N+1 queries, memory, rendering",
+          "color": "FEF2C0"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 273,
+      "state": "CLOSED",
+      "title": "[Tools][Perf] getToolsStats checkedOut uses O(n²) correlated NOT EXISTS on unindexed tool_movements",
+      "updatedAt": "2026-05-11T09:31:47Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/273"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T05:47:12Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbTw",
+          "name": "security",
+          "description": "Security vulnerability",
+          "color": "B60205"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcgw",
+          "name": "priority:P3",
+          "description": "Low / backburner",
+          "color": "6b7280"
+        }
+      ],
+      "number": 272,
+      "state": "CLOSED",
+      "title": "[Tools][Security] markToolMaintenance has no caller identity parameter — untraceable in audit log",
+      "updatedAt": "2026-04-25T23:53:35Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/272"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T05:47:06Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbTw",
+          "name": "security",
+          "description": "Security vulnerability",
+          "color": "B60205"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACgkAcZw",
+          "name": "priority:P2",
+          "description": "Medium — planned",
+          "color": "f97316"
+        }
+      ],
+      "number": 271,
+      "state": "CLOSED",
+      "title": "[Tools][Security] respondToTrade has no service-level recipient check — UI-only gate",
+      "updatedAt": "2026-04-25T23:49:40Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/271"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T05:38:52Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 270,
+      "state": "CLOSED",
+      "title": "[Tools][P2] Duplicate formatDate() in Tools pages — Formatters.formatDateString already exists",
+      "updatedAt": "2026-04-25T23:54:39Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/270"
+    },
+    {
+      "assignees": [
+        {
+          "id": "MDQ6VXNlcjM3OTU5OTU2",
+          "login": "xXKillerNoobYT",
+          "name": "",
+          "databaseId": 37959956
+        },
+        {
+          "id": "BOT_kgDOC9w8XQ",
+          "login": "Copilot",
+          "name": "",
+          "databaseId": 198982749
+        }
+      ],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T05:38:43Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 269,
+      "state": "CLOSED",
+      "title": "[Tools][P1] loadData() blocks main thread in 6 pages",
+      "updatedAt": "2026-05-06T11:30:50Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/269"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-25T05:31:03Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACeHaG5Q",
+          "name": "usability-hunter",
+          "description": "Behavioral usability bug found by usability-hunter scanner",
+          "color": "FF6B6B"
+        }
+      ],
+      "number": 268,
+      "state": "OPEN",
+      "title": "[Tools][UX] Tools sheets missing .presentationDetents (7 pages)",
+      "updatedAt": "2026-05-12T16:34:51Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/268"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-20T00:56:52Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        }
+      ],
+      "number": 267,
+      "state": "CLOSED",
+      "title": "[Orders][UX] Missing .accessibilityHidden on decorative icons (~29 remaining locations)",
+      "updatedAt": "2026-04-20T03:14:55Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/267"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-20T00:35:45Z",
+      "labels": [],
+      "number": 266,
+      "state": "CLOSED",
+      "title": "[Warehouse][UX] Missing .accessibilityHidden on decorative icons (~68 locations)",
+      "updatedAt": "2026-04-20T01:46:42Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/266"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-19T23:02:52Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 265,
+      "state": "CLOSED",
+      "title": "[Chat][Performance] Debounce search in IOSQuestionsPage to avoid per-keystroke DB calls",
+      "updatedAt": "2026-04-19T23:03:01Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/265"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-19T23:02:47Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 264,
+      "state": "CLOSED",
+      "title": "[Chat][UX] Add confirmation dialog before escalating a Q&A thread",
+      "updatedAt": "2026-04-20T03:15:57Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/264"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-19T22:07:53Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 263,
+      "state": "CLOSED",
+      "title": "[Inventory][Performance] Add composite index on stock_movements(part_id, created_at, movement_type)",
+      "updatedAt": "2026-04-20T01:35:20Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/263"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-19T22:03:06Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 262,
+      "state": "CLOSED",
+      "title": "[Parts][Enhancement] Extract duplicated urgency filter logic in PartsForecastingPage",
+      "updatedAt": "2026-04-20T03:06:43Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/262"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-19T19:49:55Z",
+      "labels": [],
+      "number": 261,
+      "state": "CLOSED",
+      "title": "[Scheduling][Performance] getLongTermTimeline N+1: 72 queries per call (36 months × 2)",
+      "updatedAt": "2026-04-19T21:06:08Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/261"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-19T19:20:04Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 260,
+      "state": "CLOSED",
+      "title": "[Warehouse][Enhancement] IOSAuditPage confidence data loaded via 11 separate queries",
+      "updatedAt": "2026-04-19T21:34:17Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/260"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-19T19:19:53Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        }
+      ],
+      "number": 259,
+      "state": "CLOSED",
+      "title": "[Warehouse][Bug] Movement Wizard batch execution lacks transaction atomicity",
+      "updatedAt": "2026-04-19T19:38:12Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/259"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-19T14:02:56Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 258,
+      "state": "OPEN",
+      "title": "[Settings][Sync] SettingsService needs SyncScope filtering when sync is implemented",
+      "updatedAt": "2026-05-12T14:16:11Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/258"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-18T23:17:31Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 257,
+      "state": "CLOSED",
+      "title": "[Docs][Hygiene] CLAUDE.md architecture section describes dual-platform Tauri/React that no longer exists",
+      "updatedAt": "2026-04-19T08:51:39Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/257"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-18T20:19:14Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 256,
+      "state": "OPEN",
+      "title": "[Automation][Subagent] parts-drift-detector — plan-vs-code drift report for C1b check",
+      "updatedAt": "2026-04-18T20:19:14Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/256"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-18T20:19:03Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 255,
+      "state": "CLOSED",
+      "title": "[Automation][Hook] PartsService SQL column validator — PostToolUse grep for known-bad column patterns",
+      "updatedAt": "2026-04-18T20:56:15Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/255"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-18T20:18:55Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 254,
+      "state": "CLOSED",
+      "title": "[Automation][Skill] parts-sql-schema-checker — cross-ref PartsService SQL against migration schema",
+      "updatedAt": "2026-04-18T20:22:43Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/254"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-18T20:17:25Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 253,
+      "state": "CLOSED",
+      "title": "[Parts][UI] Complete C7 usability audit — all 8 scanners on all 24 parts iOS files",
+      "updatedAt": "2026-04-20T00:02:30Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/253"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-18T20:09:50Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        }
+      ],
+      "number": 252,
+      "state": "CLOSED",
+      "title": "[Tools][Bug] Compile warning: redundant #require (ToolsServiceTests.swift:1217)",
+      "updatedAt": "2026-04-19T04:00:32Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/252"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-18T20:09:44Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        }
+      ],
+      "number": 251,
+      "state": "CLOSED",
+      "title": "[Scheduling][Bug] Compile warnings: 'is' test always true (SchedulingServiceTests.swift:2489-2491)",
+      "updatedAt": "2026-04-19T02:57:26Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/251"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-18T19:50:39Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 250,
+      "state": "CLOSED",
+      "title": "[Parts][Bug] recordCompanionFeedback: companion_feedback log entry silently skipped — suggestion_id FK prevents logging",
+      "updatedAt": "2026-04-19T04:12:23Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/250"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-18T05:47:36Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        }
+      ],
+      "number": 249,
+      "state": "OPEN",
+      "title": "[UX] Missing .refreshable on IOSFlexPoolPage, ReceivingRoutingFlow, CreateChannelSheet",
+      "updatedAt": "2026-05-06T07:27:50Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/249"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-18T05:47:31Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        }
+      ],
+      "number": 248,
+      "state": "OPEN",
+      "title": "[HIG][UX] Missing .presentationDetents on ~160 sheet call sites app-wide",
+      "updatedAt": "2026-05-13T06:17:01Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/248"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-18T05:47:19Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbTw",
+          "name": "security",
+          "description": "Security vulnerability",
+          "color": "B60205"
+        }
+      ],
+      "number": 247,
+      "state": "CLOSED",
+      "title": "[Security][Sync] LAN sync HTTP missing NSAllowsLocalNetworking ATS exemption + MITM exposure",
+      "updatedAt": "2026-04-18T16:21:12Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/247"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-18T05:47:07Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbZQ",
+          "name": "accessibility",
+          "description": "Apple HIG / accessibility issue",
+          "color": "0E8A16"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        }
+      ],
+      "number": 246,
+      "state": "CLOSED",
+      "title": "[HIG][Accessibility] Sub-44pt tap targets in color pickers and schedule config",
+      "updatedAt": "2026-04-20T00:39:54Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/246"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-18T05:41:59Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        }
+      ],
+      "number": 245,
+      "state": "CLOSED",
+      "title": "[Usability][#143] EditEmployeeContactSheet uses wrong dismiss predicate — isSaving not isDirty",
+      "updatedAt": "2026-04-18T06:23:34Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/245"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-16T04:20:05Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACeHaG5Q",
+          "name": "usability-hunter",
+          "description": "Behavioral usability bug found by usability-hunter scanner",
+          "color": "FF6B6B"
+        }
+      ],
+      "number": 244,
+      "state": "CLOSED",
+      "title": "[Usability] Scanner 3: IOSDailyReportTemplatesPage saveSettings() has no success feedback",
+      "updatedAt": "2026-04-16T14:27:00Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/244"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-15T04:57:12Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        }
+      ],
+      "number": 243,
+      "state": "OPEN",
+      "title": "[Orders][#98-10] Phase 3 UI — IOSPOCreationPage resolved-brand pill + wiring",
+      "updatedAt": "2026-05-12T18:06:45Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/243"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-15T04:56:57Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        }
+      ],
+      "number": 242,
+      "state": "OPEN",
+      "title": "[Orders][#98-9] Phase 3 UI — IOSJPOCreationPage General/Specific toggle",
+      "updatedAt": "2026-05-12T18:35:52Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/242"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-15T04:56:42Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 241,
+      "state": "CLOSED",
+      "title": "[Orders][#98-8] Phase 3 service — OrdersService.resolveGeneralLineItem",
+      "updatedAt": "2026-04-18T06:20:12Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/241"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-15T04:56:27Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        }
+      ],
+      "number": 240,
+      "state": "OPEN",
+      "title": "[Parts][#98-7] Phase 2 UI — New Supplier sheet linked-brand picker (#105 reverse direction)",
+      "updatedAt": "2026-04-18T17:31:32Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/240"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-15T04:56:10Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        }
+      ],
+      "number": 239,
+      "state": "OPEN",
+      "title": "[Parts][#98-6] Phase 2 UI — TypeBrandColorSection rewrite (drop nested mental model)",
+      "updatedAt": "2026-04-18T17:31:32Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/239"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-15T04:55:56Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        }
+      ],
+      "number": 238,
+      "state": "OPEN",
+      "title": "[Parts][#98-5] Phase 2 UI — CategoriesColorPicker hex=NULL named-only variants",
+      "updatedAt": "2026-04-18T17:31:32Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/238"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-15T04:55:37Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbvw",
+          "name": "ui",
+          "description": "Needs iOS UI work (Xcode prompt)",
+          "color": "1D76DB"
+        }
+      ],
+      "number": 237,
+      "state": "OPEN",
+      "title": "[Parts][#98-4] Phase 2 UI — CategoriesTreeView SKU rows + editor panel",
+      "updatedAt": "2026-04-19T13:04:38Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/237"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-15T04:55:17Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 236,
+      "state": "CLOSED",
+      "title": "[Parts][#98-3] Phase 1 search — searchParts UNION over part_colors + color_brand_skus",
+      "updatedAt": "2026-04-18T06:17:34Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/236"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-15T04:55:00Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 235,
+      "state": "CLOSED",
+      "title": "[Parts][#98-2] Phase 1 service — ColorBrandSKU CRUD methods",
+      "updatedAt": "2026-04-18T06:22:25Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/235"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-15T04:54:42Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 234,
+      "state": "CLOSED",
+      "title": "[Parts][#98-1] Phase 1 schema — color_brand_skus table + brand_selection_mode columns",
+      "updatedAt": "2026-04-18T06:22:28Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/234"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-15T04:37:00Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        }
+      ],
+      "number": 233,
+      "state": "OPEN",
+      "title": "[Infra][Scanner] github-issues-sync auto-closes issues with active docs/dev-qa.md Pending entries",
+      "updatedAt": "2026-04-16T03:23:16Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/233"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-15T03:05:56Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        }
+      ],
+      "number": 232,
+      "state": "CLOSED",
+      "title": "[Jobs][Bug] IOSJobDetailTabView progress bar crashes when job has only 1 stage (division by zero)",
+      "updatedAt": "2026-04-15T03:09:02Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/232"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-15T03:05:46Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbTw",
+          "name": "security",
+          "description": "Security vulnerability",
+          "color": "B60205"
+        }
+      ],
+      "number": 231,
+      "state": "CLOSED",
+      "title": "[Security][Medium] Keychain signing key uses AfterFirstUnlockThisDeviceOnly — should be WhenUnlockedThisDeviceOnly",
+      "updatedAt": "2026-04-15T04:41:37Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/231"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-15T03:05:36Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACdTTbTw",
+          "name": "security",
+          "description": "Security vulnerability",
+          "color": "B60205"
+        }
+      ],
+      "number": 230,
+      "state": "CLOSED",
+      "title": "[Security][Bug] encryptIfNeeded silently falls back to plaintext on encryption failure",
+      "updatedAt": "2026-04-15T03:35:02Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/230"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-15T03:02:42Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        }
+      ],
+      "number": 229,
+      "state": "CLOSED",
+      "title": "[Plan Drift] CategoriesTreeView pricingOverride wired before resolveConflicts tests",
+      "updatedAt": "2026-04-16T14:24:48Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/229"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-14T04:31:30Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        }
+      ],
+      "number": 228,
+      "state": "CLOSED",
+      "title": "[Auth][Security] SecItemAdd result unchecked — signing key may not persist to Keychain",
+      "updatedAt": "2026-04-15T03:35:05Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/228"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-14T04:31:24Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        }
+      ],
+      "number": 227,
+      "state": "CLOSED",
+      "title": "[Parts][Performance] Service-layer pagination missing — Parts catalog fetches all rows into memory",
+      "updatedAt": "2026-04-15T04:41:37Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/227"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-13T06:06:14Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwJBg",
+          "name": "audit-2026-04",
+          "description": "Found during April 2026 full program audit",
+          "color": "C2E0C6"
+        }
+      ],
+      "number": 226,
+      "state": "CLOSED",
+      "title": "[Code Quality] Debug print() statements in production code",
+      "updatedAt": "2026-04-15T04:11:11Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/226"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-13T06:06:13Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwI4A",
+          "name": "concurrency",
+          "description": "Race conditions, thread safety",
+          "color": "D4C5F9"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwJBg",
+          "name": "audit-2026-04",
+          "description": "Found during April 2026 full program audit",
+          "color": "C2E0C6"
+        }
+      ],
+      "number": 225,
+      "state": "CLOSED",
+      "title": "[Sync][Info] DeviceIdentity.current should be let instead of var",
+      "updatedAt": "2026-04-15T04:11:11Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/225"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-13T06:06:12Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwJBg",
+          "name": "audit-2026-04",
+          "description": "Found during April 2026 full program audit",
+          "color": "C2E0C6"
+        }
+      ],
+      "number": 224,
+      "state": "CLOSED",
+      "title": "[Parts][Info] Forecasting ADU includes transfer movements — inflates demand",
+      "updatedAt": "2026-04-15T04:11:11Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/224"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-13T06:06:04Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwJAg",
+          "name": "performance",
+          "description": "N+1 queries, memory, rendering",
+          "color": "FEF2C0"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwJBg",
+          "name": "audit-2026-04",
+          "description": "Found during April 2026 full program audit",
+          "color": "C2E0C6"
+        }
+      ],
+      "number": 223,
+      "state": "CLOSED",
+      "title": "[Performance] BaseRepository.findAll() has no default limit",
+      "updatedAt": "2026-04-15T04:11:11Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/223"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-13T06:06:02Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwI4A",
+          "name": "concurrency",
+          "description": "Race conditions, thread safety",
+          "color": "D4C5F9"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwJBg",
+          "name": "audit-2026-04",
+          "description": "Found during April 2026 full program audit",
+          "color": "C2E0C6"
+        }
+      ],
+      "number": 222,
+      "state": "CLOSED",
+      "title": "[Concurrency] @unchecked Sendable on BaseRepository and PeerDiscovery",
+      "updatedAt": "2026-04-15T04:14:47Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/222"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-13T06:06:01Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUQA",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwJBg",
+          "name": "audit-2026-04",
+          "description": "Found during April 2026 full program audit",
+          "color": "C2E0C6"
+        }
+      ],
+      "number": 221,
+      "state": "OPEN",
+      "title": "[Sync][Info] LWW uses row-level timestamps for field-level conflicts",
+      "updatedAt": "2026-05-12T17:49:44Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/221"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-13T06:05:59Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwI1A",
+          "name": "data-integrity",
+          "description": "SQL/schema/migration issues",
+          "color": "E99695"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwJBg",
+          "name": "audit-2026-04",
+          "description": "Found during April 2026 full program audit",
+          "color": "C2E0C6"
+        }
+      ],
+      "number": 220,
+      "state": "CLOSED",
+      "title": "[Sync][Bug] Sync silently drops UPDATE when record doesn't exist locally",
+      "updatedAt": "2026-04-15T03:38:20Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/220"
+    },
+    {
+      "assignees": [],
+      "author": {
+        "id": "MDQ6VXNlcjM3OTU5OTU2",
+        "is_bot": false,
+        "login": "xXKillerNoobYT",
+        "name": ""
+      },
+      "createdAt": "2026-04-13T06:05:34Z",
+      "labels": [
+        {
+          "id": "LA_kwDORWW5g88AAAACY_kUMg",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDORWW5g88AAAACfHwJBg",
+          "name": "audit-2026-04",
+          "description": "Found during April 2026 full program audit",
+          "color": "C2E0C6"
+        }
+      ],
+      "number": 219,
+      "state": "CLOSED",
+      "title": "[UI][Bug] IOSLaborOverviewPage missing proper empty state",
+      "updatedAt": "2026-04-15T04:20:53Z",
+      "url": "https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/219"
+    }
+  ]
+}

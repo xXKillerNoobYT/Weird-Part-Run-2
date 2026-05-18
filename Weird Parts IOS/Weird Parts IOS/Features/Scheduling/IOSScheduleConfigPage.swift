@@ -98,6 +98,10 @@ struct IOSScheduleConfigPage: View {
             sheetContent(for: sheet)
         }
         .task { loadAll() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .schedulingConfigPageInactive, object: nil)
+        }
         .alert("Configuration Saved", isPresented: $showSaveConfirmation) {
             Button("OK", role: .cancel) { }
         }
@@ -428,6 +432,7 @@ struct IOSScheduleConfigPage: View {
             saveError = userFriendlyError(error, context: "save")
         }
         isSaving = false
+        postPageContext()
     }
 
     private func loadAll() {
@@ -472,6 +477,12 @@ struct IOSScheduleConfigPage: View {
         if let people = appCore.peopleService {
             allHats = (try? people.listHats()) ?? []
         }
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let context = "Page: Schedule Config; work days selected: \(workDays.count); workday start/end configured; shift templates: \(shiftTemplates.count); holidays: \(holidays.count); supervisor hats selected: \(supervisorHatIds.count); overtime mode: \(overtimeMode); overtime threshold: \(overtimeThreshold); weekend scheduling: \(enableWeekendScheduling); saving: \(isSaving); error visible: \(saveError != nil || loadErrorMsg != nil); read-only actions: summarize scheduling policy settings, template counts, and supervisor visibility."
+        NotificationCenter.default.post(name: .schedulingConfigPageActive, object: nil, userInfo: ["context": context])
     }
 
     // MARK: - Template & Holiday Actions

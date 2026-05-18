@@ -81,6 +81,7 @@ struct IOSTimeOffPage: View {
             .refreshable { loadData() }
             .task { loadData() }
             .onAppear {
+                postPageContext()
                 // Register AI filter (prompt 62S)
                 appCore.aiFilterRegistry.register(
                     pageId: "time-off",
@@ -95,6 +96,7 @@ struct IOSTimeOffPage: View {
             }
             .onDisappear {
                 appCore.aiFilterRegistry.deregister(pageId: "time-off")
+                NotificationCenter.default.post(name: .schedulingTimeOffPageInactive, object: nil)
             }
             .onChange(of: dateRange) { loadData() }
             .onChange(of: customStart) { loadData() }
@@ -308,5 +310,11 @@ struct IOSTimeOffPage: View {
             loadError = userFriendlyError(error, context: "load time off data")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let context = "Page: Time Off; total requests: \(allRequests.count); visible requests: \(requests.count); selected status filter: \(statusFilter); date range: \(dateRange); search active: \(!searchText.isEmpty); pending/approved/denied/cancelled counts: \(countForStatus("pending"))/\(countForStatus("approved"))/\(countForStatus("denied"))/\(countForStatus("cancelled")); loading: \(isLoading); error visible: \(loadError != nil || actionError != nil); read-only actions: summarize request status, filters, and coverage impacts."
+        NotificationCenter.default.post(name: .schedulingTimeOffPageActive, object: nil, userInfo: ["context": context])
     }
 }

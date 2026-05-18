@@ -70,6 +70,10 @@ struct IOSWeeklyAvailabilityPage: View {
         .searchable(text: $searchText, prompt: "Search employees...")
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .schedulingAvailabilityPageInactive, object: nil)
+        }
     }
 
     // MARK: - Week Navigator
@@ -194,5 +198,11 @@ struct IOSWeeklyAvailabilityPage: View {
             loadError = userFriendlyError(error, context: "load availability")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let context = "Page: Weekly Availability; week: \(weekLabel); week offset: \(weekOffset); total employees: \(rows.count); visible employees: \(filteredRows.count); search active: \(!searchText.isEmpty); loading: \(isLoading); error visible: \(loadError != nil); read-only actions: summarize employee availability grid and scheduling risk."
+        NotificationCenter.default.post(name: .schedulingAvailabilityPageActive, object: nil, userInfo: ["context": context])
     }
 }

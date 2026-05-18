@@ -56,6 +56,10 @@ struct IOSSubSchedulePage: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .schedulingSubSchedulePageInactive, object: nil)
+        }
     }
 
     // MARK: - Date Navigator
@@ -193,5 +197,16 @@ struct IOSSubSchedulePage: View {
             loadError = userFriendlyError(error, context: "load sub schedule")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let visibleRows = rows.filter { searchText.isEmpty || $0.subName.localizedCaseInsensitiveContains(searchText) || $0.companyName.localizedCaseInsensitiveContains(searchText) || $0.jobName.localizedCaseInsensitiveContains(searchText) }
+        let pendingCount = rows.filter { $0.status == "pending" }.count
+        let confirmedCount = rows.filter { $0.status == "confirmed" }.count
+        let completedCount = rows.filter { $0.status == "completed" }.count
+        let cancelledCount = rows.filter { $0.status == "cancelled" }.count
+        let context = "Page: Sub Schedule; selected date: \(displayDate); total assignments: \(rows.count); visible assignments: \(visibleRows.count); search active: \(!searchText.isEmpty); status counts pending/confirmed/completed/cancelled: \(pendingCount)/\(confirmedCount)/\(completedCount)/\(cancelledCount); loading: \(isLoading); error visible: \(loadError != nil); read-only actions: summarize subcontractor coverage and pending confirmations."
+        NotificationCenter.default.post(name: .schedulingSubSchedulePageActive, object: nil, userInfo: ["context": context])
     }
 }

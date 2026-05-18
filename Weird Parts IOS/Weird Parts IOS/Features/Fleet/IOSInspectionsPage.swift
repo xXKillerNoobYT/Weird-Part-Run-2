@@ -32,6 +32,16 @@ struct IOSInspectionsPage: View {
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { loadData() }
             }
+            .onAppear {
+                NotificationCenter.default.post(
+                    name: .fleetInspectionsPageActive,
+                    object: nil,
+                    userInfo: ["context": fleetInspectionsContext]
+                )
+            }
+            .onDisappear {
+                NotificationCenter.default.post(name: .fleetInspectionsPageInactive, object: nil)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
@@ -54,6 +64,11 @@ struct IOSInspectionsPage: View {
     }
 
     // MARK: - Inspection List
+
+    private var fleetInspectionsContext: String {
+        let searchState = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "none" : "active"
+        return "page=Fleet Inspections; total_inspections=\(inspections.count); visible_inspections=\(filteredInspections.count); search=\(searchState)"
+    }
 
     @ViewBuilder
     private var inspectionList: some View {

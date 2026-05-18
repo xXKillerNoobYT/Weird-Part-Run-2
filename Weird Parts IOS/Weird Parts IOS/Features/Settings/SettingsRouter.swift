@@ -19,6 +19,16 @@ struct SettingsRouter: View {
                     .padding(.horizontal)
                     .padding(.vertical, 6)
             }
+            .onAppear {
+                NotificationCenter.default.post(
+                    name: .settingsPageActive,
+                    object: nil,
+                    userInfo: ["context": settingsPageContext]
+                )
+            }
+            .onDisappear {
+                NotificationCenter.default.post(name: .settingsPageInactive, object: nil)
+            }
     }
 
     @ViewBuilder
@@ -108,5 +118,10 @@ struct SettingsRouter: View {
     private func comingSoonPage(_ title: String, icon: String) -> some View {
         ContentUnavailableView(title, systemImage: icon, description: Text("This page is being built."))
             .navigationTitle(title)
+    }
+
+    private var settingsPageContext: String {
+        let scope = SyncScope.scope(for: tabId)
+        return "page=Settings; tab_id=\(tabId); sync_scope=\(scope.rawValue)"
     }
 }

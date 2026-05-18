@@ -99,6 +99,18 @@ struct IOSPermissionsPage: View {
         }
         .refreshable { loadData() }
         .task { loadData(); loadLegacyPinCount() }
+        .onAppear {
+            NotificationCenter.default.post(
+                name: .permissionsPageActive,
+                object: nil,
+                userInfo: [
+                    "context": "Permissions Page (READ-ONLY): hats: \(hats.count), permission groups: \(allPermissions.count), permission keys: \(allPermissions.reduce(0) { $0 + $1.keys.count }), selected hat: \(selectedHat?.name ?? "none"), selected hat enabled permissions: \(hatPermissions.count), legacy PIN upgrades pending: \(legacyPinCount), loading: \(isLoading), error shown: \(loadError != nil). Available read-only details: permission group/key names and selected hat state."
+                ]
+            )
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .permissionsPageInactive, object: nil)
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             loadLegacyPinCount()
         }

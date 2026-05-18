@@ -141,6 +141,10 @@ struct IOSShortTermPipelinePage: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .schedulingPipelinePageInactive, object: nil)
+        }
     }
 
     // MARK: - Content
@@ -335,6 +339,12 @@ struct IOSShortTermPipelinePage: View {
             loadError = userFriendlyError(error, context: "load pipeline data")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let context = "Page: Short-Term Pipeline; total pipeline jobs: \(pipelineItems.count); visible jobs: \(searchFilteredItems.count); start-anytime/schedule-needed/favorite-GC/small-job counts: \(startAnytimeItems.count)/\(scheduleNeededItems.count)/\(favoriteGCItems.count)/\(smallJobItems.count); callbacks due: \(callbacksDue.count); search active: \(!searchText.isEmpty); selected job present: \(selectedItem != nil); AI suggestions loaded: \(aiSuggestions.count); loading: \(isLoading || isLoadingAI); error visible: \(loadError != nil); read-only actions: summarize pipeline balance, callbacks, and schedule readiness."
+        NotificationCenter.default.post(name: .schedulingPipelinePageActive, object: nil, userInfo: ["context": context])
     }
 
     // MARK: - AI Dispatch

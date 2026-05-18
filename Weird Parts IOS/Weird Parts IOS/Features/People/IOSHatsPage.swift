@@ -40,6 +40,19 @@ struct IOSHatsPage: View {
             .onChange(of: searchText) { /* local filter only */ }
             .refreshable { loadData() }
             .task { loadData() }
+            .onAppear {
+                let assignedCount = hats.filter { $0.userCount > 0 }.count
+                NotificationCenter.default.post(
+                    name: .hatsPageActive,
+                    object: nil,
+                    userInfo: [
+                        "context": "Hats & Roles Page (READ-ONLY): total hats: \(hats.count), visible hats: \(filteredHats.count), hats with assigned users: \(assignedCount), search active: \(!searchText.isEmpty), loading: \(isLoading), error shown: \(loadError != nil). Available read-only details: hat names, descriptions, assigned user counts."
+                    ]
+                )
+            }
+            .onDisappear {
+                NotificationCenter.default.post(name: .hatsPageInactive, object: nil)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .addHat } label: {

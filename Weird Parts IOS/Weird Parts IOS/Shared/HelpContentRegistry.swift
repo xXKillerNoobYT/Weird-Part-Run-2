@@ -137,6 +137,8 @@ struct HelpContentRegistry {
         "WiredPart.reportsBookkeeperPageActive": "reports-bookkeeper",
         "WiredPart.reportsDailySummaryPageActive": "reports-daily-summary",
         "WiredPart.vehiclesPageActive": "fleet-vehicles",
+        "WiredPart.fleetDashboardPageActive": "fleet-dashboard",
+        "WiredPart.fleetMaintenancePageActive": "fleet-maintenance",
         "WiredPart.toolRegistryPageActive": "tools-registry",
         "WiredPart.notebooksListPageActive": "notebooks-all",
     ]

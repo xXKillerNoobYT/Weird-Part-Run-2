@@ -66,6 +66,10 @@ struct IOSLongTermPipelinePage: View {
         .searchable(text: $searchText, prompt: "Search months or jobs...")
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .schedulingLongPipelinePageInactive, object: nil)
+        }
     }
 
     // MARK: - Content
@@ -173,6 +177,14 @@ struct IOSLongTermPipelinePage: View {
             loadError = userFriendlyError(error, context: "load pipeline data")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let selectedLabel = selectedMonth?.monthLabel ?? "none"
+        let selectedJobCount = selectedMonth?.jobs.count ?? 0
+        let context = "Page: Long-Term Pipeline; total months: \(timelineMonths.count); visible months: \(filteredTimelineMonths.count); AI warnings: \(aiWarnings.count); selected month: \(selectedLabel); selected month jobs: \(selectedJobCount); search active: \(!searchText.isEmpty); loading: \(isLoading); error visible: \(loadError != nil); read-only actions: summarize capacity utilization, warnings, and selected month details."
+        NotificationCenter.default.post(name: .schedulingLongPipelinePageActive, object: nil, userInfo: ["context": context])
     }
 }
 

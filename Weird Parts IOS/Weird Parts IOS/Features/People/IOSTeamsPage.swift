@@ -18,6 +18,14 @@ struct IOSTeamsPage: View {
 
     private enum TeamFilter {
         case all, active, mine
+
+        var aiContextLabel: String {
+            switch self {
+            case .all: return "all"
+            case .active: return "active"
+            case .mine: return "my teams"
+            }
+        }
     }
 
     private enum ActiveSheet: String, Identifiable {
@@ -33,6 +41,18 @@ struct IOSTeamsPage: View {
             .searchable(text: $searchText, prompt: "Search teams...")
             .refreshable { loadData() }
             .task { loadData() }
+            .onAppear {
+                NotificationCenter.default.post(
+                    name: .teamsPageActive,
+                    object: nil,
+                    userInfo: [
+                        "context": "Teams Page (READ-ONLY): total teams: \(teams.count), visible teams: \(filteredTeams.count), active teams: \(activeTeams.count), selected filter: \(filter.aiContextLabel), search active: \(!searchText.isEmpty), loading: \(isLoading), error shown: \(loadError != nil). Available read-only details: team names, descriptions, leader names, member counts."
+                    ]
+                )
+            }
+            .onDisappear {
+                NotificationCenter.default.post(name: .teamsPageInactive, object: nil)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .addTeam } label: {

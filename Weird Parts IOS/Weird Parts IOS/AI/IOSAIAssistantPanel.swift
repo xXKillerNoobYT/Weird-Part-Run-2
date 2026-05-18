@@ -78,10 +78,22 @@ struct IOSAIAssistantPanel: View {
     @State private var warehouseLeaderboardContext: String?
     @State private var dispatchContext: String?
     @State private var scheduleCalendarContext: String?
+    @State private var schedulingFlexPoolContext: String?
+    @State private var schedulingTimeOffContext: String?
+    @State private var schedulingTemplatesContext: String?
+    @State private var schedulingAvailabilityContext: String?
+    @State private var schedulingSubScheduleContext: String?
+    @State private var schedulingPipelineContext: String?
+    @State private var schedulingLongPipelineContext: String?
+    @State private var schedulingConfigContext: String?
     @State private var employeesContext: String?
     @State private var peopleDashboardContext: String?
     @State private var customersContext: String?
     @State private var contactsContext: String?
+    @State private var contractorsContext: String?
+    @State private var teamsContext: String?
+    @State private var hatsContext: String?
+    @State private var permissionsContext: String?
     @State private var officeDashboardContext: String?
     @State private var officeApprovalsContext: String?
     @State private var officeSpendingContext: String?
@@ -93,8 +105,23 @@ struct IOSAIAssistantPanel: View {
     @State private var reportsBookkeeperContext: String?
     @State private var reportsDailySummaryContext: String?
     @State private var vehiclesContext: String?
+    @State private var fleetDashboardContext: String?
+    @State private var fleetMaintenanceContext: String?
+    @State private var fleetMileageContext: String?
+    @State private var fleetFuelContext: String?
+    @State private var fleetTrailersContext: String?
+    @State private var fleetInspectionsContext: String?
+    @State private var fleetTelematicsContext: String?
+    @State private var fleetMyTruckContext: String?
     @State private var toolRegistryContext: String?
+    @State private var toolsDashboardContext: String?
+    @State private var toolCheckoutsContext: String?
+    @State private var toolKitsContext: String?
+    @State private var toolMaintenanceContext: String?
+    @State private var toolAdminContext: String?
     @State private var notebooksListContext: String?
+    @State private var notebookTemplatesContext: String?
+    @State private var jobNotebooksContext: String?
     @State private var settingsContext: String?
 
     /// Tracks which page the user is currently on, mapped to a HelpContentRegistry page ID.
@@ -308,6 +335,14 @@ struct IOSAIAssistantPanel: View {
             warehouseLeaderboardContext: $warehouseLeaderboardContext,
             dispatchContext: $dispatchContext,
             scheduleCalendarContext: $scheduleCalendarContext,
+            schedulingFlexPoolContext: $schedulingFlexPoolContext,
+            schedulingTimeOffContext: $schedulingTimeOffContext,
+            schedulingTemplatesContext: $schedulingTemplatesContext,
+            schedulingAvailabilityContext: $schedulingAvailabilityContext,
+            schedulingSubScheduleContext: $schedulingSubScheduleContext,
+            schedulingPipelineContext: $schedulingPipelineContext,
+            schedulingLongPipelineContext: $schedulingLongPipelineContext,
+            schedulingConfigContext: $schedulingConfigContext,
             employeesContext: $employeesContext,
             vehiclesContext: $vehiclesContext,
             toolRegistryContext: $toolRegistryContext,
@@ -318,6 +353,10 @@ struct IOSAIAssistantPanel: View {
             peopleDashboardContext: $peopleDashboardContext,
             customersContext: $customersContext,
             contactsContext: $contactsContext,
+            contractorsContext: $contractorsContext,
+            teamsContext: $teamsContext,
+            hatsContext: $hatsContext,
+            permissionsContext: $permissionsContext,
             officeDashboardContext: $officeDashboardContext,
             officeApprovalsContext: $officeApprovalsContext,
             officeSpendingContext: $officeSpendingContext,
@@ -328,6 +367,25 @@ struct IOSAIAssistantPanel: View {
             reportsPrebillingContext: $reportsPrebillingContext,
             reportsBookkeeperContext: $reportsBookkeeperContext,
             reportsDailySummaryContext: $reportsDailySummaryContext
+        ))
+        .modifier(FleetContextObservers(
+            fleetDashboardContext: $fleetDashboardContext,
+            fleetMaintenanceContext: $fleetMaintenanceContext,
+            fleetMileageContext: $fleetMileageContext,
+            fleetFuelContext: $fleetFuelContext,
+            fleetTrailersContext: $fleetTrailersContext,
+            fleetInspectionsContext: $fleetInspectionsContext,
+            fleetTelematicsContext: $fleetTelematicsContext,
+            fleetMyTruckContext: $fleetMyTruckContext
+        ))
+        .modifier(ToolsNotebooksTailContextObservers(
+            toolsDashboardContext: $toolsDashboardContext,
+            toolCheckoutsContext: $toolCheckoutsContext,
+            toolKitsContext: $toolKitsContext,
+            toolMaintenanceContext: $toolMaintenanceContext,
+            toolAdminContext: $toolAdminContext,
+            notebookTemplatesContext: $notebookTemplatesContext,
+            jobNotebooksContext: $jobNotebooksContext
         ))
         .modifier(ActivePageIdTracker(activePageId: $activePageId))
     }
@@ -699,6 +757,30 @@ struct IOSAIAssistantPanel: View {
             if let ctx = scheduleCalendarContext {
                 navContext += "\n\nSchedule Calendar Context: \(ctx)"
             }
+            if let ctx = schedulingFlexPoolContext {
+                navContext += "\n\nScheduling Flex Pool Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = schedulingTimeOffContext {
+                navContext += "\n\nScheduling Time Off Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = schedulingTemplatesContext {
+                navContext += "\n\nScheduling Templates Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = schedulingAvailabilityContext {
+                navContext += "\n\nScheduling Availability Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = schedulingSubScheduleContext {
+                navContext += "\n\nScheduling Sub Schedule Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = schedulingPipelineContext {
+                navContext += "\n\nScheduling Pipeline Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = schedulingLongPipelineContext {
+                navContext += "\n\nScheduling Long-Term Pipeline Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = schedulingConfigContext {
+                navContext += "\n\nScheduling Config Context (READ-ONLY): \(ctx)"
+            }
             if let ctx = employeesContext {
                 navContext += "\n\nEmployees Context: \(ctx)"
             }
@@ -710,6 +792,18 @@ struct IOSAIAssistantPanel: View {
             }
             if let ctx = contactsContext {
                 navContext += "\n\nContacts Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = contractorsContext {
+                navContext += "\n\nContractors Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = teamsContext {
+                navContext += "\n\nTeams Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = hatsContext {
+                navContext += "\n\nHats & Roles Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = permissionsContext {
+                navContext += "\n\nPermissions Context (READ-ONLY): \(ctx)"
             }
             if let ctx = officeDashboardContext {
                 navContext += "\n\nOffice Dashboard Context (READ-ONLY): \(ctx)"
@@ -744,11 +838,56 @@ struct IOSAIAssistantPanel: View {
             if let ctx = vehiclesContext {
                 navContext += "\n\nVehicles Context: \(ctx)"
             }
+            if let ctx = fleetDashboardContext {
+                navContext += "\n\nFleet Dashboard Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = fleetMaintenanceContext {
+                navContext += "\n\nFleet Maintenance Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = fleetMileageContext {
+                navContext += "\n\nFleet Mileage Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = fleetFuelContext {
+                navContext += "\n\nFleet Fuel Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = fleetTrailersContext {
+                navContext += "\n\nFleet Trailers Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = fleetInspectionsContext {
+                navContext += "\n\nFleet Inspections Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = fleetTelematicsContext {
+                navContext += "\n\nFleet Telematics Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = fleetMyTruckContext {
+                navContext += "\n\nMy Truck Context (READ-ONLY): \(ctx)"
+            }
             if let ctx = toolRegistryContext {
                 navContext += "\n\nTool Registry Context: \(ctx)"
             }
+            if let ctx = toolsDashboardContext {
+                navContext += "\n\nTools Dashboard Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = toolCheckoutsContext {
+                navContext += "\n\nTool Checkouts Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = toolKitsContext {
+                navContext += "\n\nTool Kits Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = toolMaintenanceContext {
+                navContext += "\n\nTool Maintenance Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = toolAdminContext {
+                navContext += "\n\nTool Admin Context (READ-ONLY): \(ctx)"
+            }
             if let ctx = notebooksListContext {
                 navContext += "\n\nNotebooks Context: \(ctx)"
+            }
+            if let ctx = notebookTemplatesContext {
+                navContext += "\n\nNotebook Templates Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = jobNotebooksContext {
+                navContext += "\n\nJob Notebooks Context (READ-ONLY): \(ctx)"
             }
             if let ctx = settingsContext {
                 navContext += "\n\nSettings Context: \(ctx)"
@@ -1128,6 +1267,14 @@ private struct FeaturePageContextObservers: ViewModifier {
     @Binding var warehouseLeaderboardContext: String?
     @Binding var dispatchContext: String?
     @Binding var scheduleCalendarContext: String?
+    @Binding var schedulingFlexPoolContext: String?
+    @Binding var schedulingTimeOffContext: String?
+    @Binding var schedulingTemplatesContext: String?
+    @Binding var schedulingAvailabilityContext: String?
+    @Binding var schedulingSubScheduleContext: String?
+    @Binding var schedulingPipelineContext: String?
+    @Binding var schedulingLongPipelineContext: String?
+    @Binding var schedulingConfigContext: String?
     @Binding var employeesContext: String?
     @Binding var vehiclesContext: String?
     @Binding var toolRegistryContext: String?
@@ -1144,6 +1291,16 @@ private struct FeaturePageContextObservers: ViewModifier {
                 purchaseOrdersContext: $purchaseOrdersContext,
                 inventoryGridContext: $inventoryGridContext,
                 dispatchContext: $dispatchContext
+            ))
+            .modifier(SchedulingLongTailContextObservers(
+                schedulingFlexPoolContext: $schedulingFlexPoolContext,
+                schedulingTimeOffContext: $schedulingTimeOffContext,
+                schedulingTemplatesContext: $schedulingTemplatesContext,
+                schedulingAvailabilityContext: $schedulingAvailabilityContext,
+                schedulingSubScheduleContext: $schedulingSubScheduleContext,
+                schedulingPipelineContext: $schedulingPipelineContext,
+                schedulingLongPipelineContext: $schedulingLongPipelineContext,
+                schedulingConfigContext: $schedulingConfigContext
             ))
             .modifier(FeaturePageContextObserversJobs(
                 jobDetailContext: $jobDetailContext,
@@ -1502,6 +1659,53 @@ private struct FeaturePageContextObserversGroupC: ViewModifier {
     }
 }
 
+private struct SchedulingLongTailContextObservers: ViewModifier {
+    @Binding var schedulingFlexPoolContext: String?
+    @Binding var schedulingTimeOffContext: String?
+    @Binding var schedulingTemplatesContext: String?
+    @Binding var schedulingAvailabilityContext: String?
+    @Binding var schedulingSubScheduleContext: String?
+    @Binding var schedulingPipelineContext: String?
+    @Binding var schedulingLongPipelineContext: String?
+    @Binding var schedulingConfigContext: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingFlexPoolPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { schedulingFlexPoolContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingFlexPoolPageInactive)) { _ in schedulingFlexPoolContext = nil }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingTimeOffPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { schedulingTimeOffContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingTimeOffPageInactive)) { _ in schedulingTimeOffContext = nil }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingTemplatesPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { schedulingTemplatesContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingTemplatesPageInactive)) { _ in schedulingTemplatesContext = nil }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingAvailabilityPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { schedulingAvailabilityContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingAvailabilityPageInactive)) { _ in schedulingAvailabilityContext = nil }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingSubSchedulePageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { schedulingSubScheduleContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingSubSchedulePageInactive)) { _ in schedulingSubScheduleContext = nil }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingPipelinePageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { schedulingPipelineContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingPipelinePageInactive)) { _ in schedulingPipelineContext = nil }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingLongPipelinePageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { schedulingLongPipelineContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingLongPipelinePageInactive)) { _ in schedulingLongPipelineContext = nil }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingConfigPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { schedulingConfigContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingConfigPageInactive)) { _ in schedulingConfigContext = nil }
+    }
+}
+
 /// Second group of feature page observers (Schedule, Employees, Vehicles, Tools, Notebooks, Settings).
 private struct FeaturePageContextObserversGroupB: ViewModifier {
     @Binding var scheduleCalendarContext: String?
@@ -1557,6 +1761,10 @@ private struct PeopleOfficeReportsContextObservers: ViewModifier {
     @Binding var peopleDashboardContext: String?
     @Binding var customersContext: String?
     @Binding var contactsContext: String?
+    @Binding var contractorsContext: String?
+    @Binding var teamsContext: String?
+    @Binding var hatsContext: String?
+    @Binding var permissionsContext: String?
     @Binding var officeDashboardContext: String?
     @Binding var officeApprovalsContext: String?
     @Binding var officeSpendingContext: String?
@@ -1574,6 +1782,10 @@ private struct PeopleOfficeReportsContextObservers: ViewModifier {
                 peopleDashboardContext: $peopleDashboardContext,
                 customersContext: $customersContext,
                 contactsContext: $contactsContext,
+                contractorsContext: $contractorsContext,
+                teamsContext: $teamsContext,
+                hatsContext: $hatsContext,
+                permissionsContext: $permissionsContext,
                 officeDashboardContext: $officeDashboardContext,
                 officeApprovalsContext: $officeApprovalsContext,
                 officeSpendingContext: $officeSpendingContext
@@ -1590,10 +1802,119 @@ private struct PeopleOfficeReportsContextObservers: ViewModifier {
     }
 }
 
+private struct FleetContextObservers: ViewModifier {
+    @Binding var fleetDashboardContext: String?
+    @Binding var fleetMaintenanceContext: String?
+    @Binding var fleetMileageContext: String?
+    @Binding var fleetFuelContext: String?
+    @Binding var fleetTrailersContext: String?
+    @Binding var fleetInspectionsContext: String?
+    @Binding var fleetTelematicsContext: String?
+    @Binding var fleetMyTruckContext: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .fleetDashboardPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { fleetDashboardContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetDashboardPageInactive)) { _ in
+                fleetDashboardContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMaintenancePageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { fleetMaintenanceContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMaintenancePageInactive)) { _ in
+                fleetMaintenanceContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMileagePageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { fleetMileageContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMileagePageInactive)) { _ in
+                fleetMileageContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetFuelPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { fleetFuelContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetFuelPageInactive)) { _ in
+                fleetFuelContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTrailersPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { fleetTrailersContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTrailersPageInactive)) { _ in
+                fleetTrailersContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetInspectionsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { fleetInspectionsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetInspectionsPageInactive)) { _ in
+                fleetInspectionsContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTelematicsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { fleetTelematicsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTelematicsPageInactive)) { _ in
+                fleetTelematicsContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMyTruckPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { fleetMyTruckContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMyTruckPageInactive)) { _ in
+                fleetMyTruckContext = nil
+            }
+    }
+}
+
+private struct ToolsNotebooksTailContextObservers: ViewModifier {
+    @Binding var toolsDashboardContext: String?
+    @Binding var toolCheckoutsContext: String?
+    @Binding var toolKitsContext: String?
+    @Binding var toolMaintenanceContext: String?
+    @Binding var toolAdminContext: String?
+    @Binding var notebookTemplatesContext: String?
+    @Binding var jobNotebooksContext: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .toolsDashboardPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { toolsDashboardContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toolsDashboardPageInactive)) { _ in toolsDashboardContext = nil }
+            .onReceive(NotificationCenter.default.publisher(for: .toolCheckoutsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { toolCheckoutsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toolCheckoutsPageInactive)) { _ in toolCheckoutsContext = nil }
+            .onReceive(NotificationCenter.default.publisher(for: .toolKitsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { toolKitsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toolKitsPageInactive)) { _ in toolKitsContext = nil }
+            .onReceive(NotificationCenter.default.publisher(for: .toolMaintenancePageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { toolMaintenanceContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toolMaintenancePageInactive)) { _ in toolMaintenanceContext = nil }
+            .onReceive(NotificationCenter.default.publisher(for: .toolAdminPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { toolAdminContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toolAdminPageInactive)) { _ in toolAdminContext = nil }
+            .onReceive(NotificationCenter.default.publisher(for: .notebookTemplatesPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { notebookTemplatesContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .notebookTemplatesPageInactive)) { _ in notebookTemplatesContext = nil }
+            .onReceive(NotificationCenter.default.publisher(for: .jobNotebooksPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { jobNotebooksContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .jobNotebooksPageInactive)) { _ in jobNotebooksContext = nil }
+    }
+}
+
 private struct PeopleOfficeContextObservers: ViewModifier {
     @Binding var peopleDashboardContext: String?
     @Binding var customersContext: String?
     @Binding var contactsContext: String?
+    @Binding var contractorsContext: String?
+    @Binding var teamsContext: String?
+    @Binding var hatsContext: String?
+    @Binding var permissionsContext: String?
     @Binding var officeDashboardContext: String?
     @Binding var officeApprovalsContext: String?
     @Binding var officeSpendingContext: String?
@@ -1618,6 +1939,68 @@ private struct PeopleOfficeContextObservers: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .contactsPageInactive)) { _ in
                 contactsContext = nil
             }
+            .modifier(PeopleLongTailContextObservers(
+                contractorsContext: $contractorsContext,
+                teamsContext: $teamsContext,
+                hatsContext: $hatsContext,
+                permissionsContext: $permissionsContext,
+                officeDashboardContext: $officeDashboardContext,
+                officeApprovalsContext: $officeApprovalsContext,
+                officeSpendingContext: $officeSpendingContext
+            ))
+    }
+}
+
+private struct PeopleLongTailContextObservers: ViewModifier {
+    @Binding var contractorsContext: String?
+    @Binding var teamsContext: String?
+    @Binding var hatsContext: String?
+    @Binding var permissionsContext: String?
+    @Binding var officeDashboardContext: String?
+    @Binding var officeApprovalsContext: String?
+    @Binding var officeSpendingContext: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .contractorsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { contractorsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .contractorsPageInactive)) { _ in
+                contractorsContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .teamsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { teamsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .teamsPageInactive)) { _ in
+                teamsContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .hatsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { hatsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .hatsPageInactive)) { _ in
+                hatsContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .permissionsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { permissionsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .permissionsPageInactive)) { _ in
+                permissionsContext = nil
+            }
+            .modifier(OfficeContextObservers(
+                officeDashboardContext: $officeDashboardContext,
+                officeApprovalsContext: $officeApprovalsContext,
+                officeSpendingContext: $officeSpendingContext
+            ))
+    }
+}
+
+private struct OfficeContextObservers: ViewModifier {
+    @Binding var officeDashboardContext: String?
+    @Binding var officeApprovalsContext: String?
+    @Binding var officeSpendingContext: String?
+
+    func body(content: Content) -> some View {
+        content
             .onReceive(NotificationCenter.default.publisher(for: .officeDashboardPageActive)) { notification in
                 if let ctx = notification.userInfo?["context"] as? String { officeDashboardContext = ctx }
             }
@@ -1907,6 +2290,38 @@ private struct ActivePageIdTrackerSchedulePeopleMore: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .dispatchPageInactive)) { _ in if activePageId == "scheduling-dispatch" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .scheduleCalendarPageActive)) { _ in activePageId = "scheduling-calendar" }
             .onReceive(NotificationCenter.default.publisher(for: .scheduleCalendarPageInactive)) { _ in if activePageId == "scheduling-calendar" { activePageId = nil } }
+            .modifier(ActivePageIdTrackerSchedulingTail(activePageId: $activePageId))
+    }
+}
+
+private struct ActivePageIdTrackerSchedulingTail: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingFlexPoolPageActive)) { _ in activePageId = "scheduling-flex-pool" }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingFlexPoolPageInactive)) { _ in if activePageId == "scheduling-flex-pool" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingTimeOffPageActive)) { _ in activePageId = "scheduling-time-off" }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingTimeOffPageInactive)) { _ in if activePageId == "scheduling-time-off" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingTemplatesPageActive)) { _ in activePageId = "scheduling-templates" }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingTemplatesPageInactive)) { _ in if activePageId == "scheduling-templates" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingAvailabilityPageActive)) { _ in activePageId = "scheduling-availability" }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingAvailabilityPageInactive)) { _ in if activePageId == "scheduling-availability" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingSubSchedulePageActive)) { _ in activePageId = "scheduling-sub-schedule" }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingSubSchedulePageInactive)) { _ in if activePageId == "scheduling-sub-schedule" { activePageId = nil } }
+            .modifier(ActivePageIdTrackerSchedulingTailB(activePageId: $activePageId))
+    }
+}
+
+private struct ActivePageIdTrackerSchedulingTailB: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingPipelinePageActive)) { _ in activePageId = "scheduling-pipeline" }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingPipelinePageInactive)) { _ in if activePageId == "scheduling-pipeline" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingLongPipelinePageActive)) { _ in activePageId = "scheduling-long-pipeline" }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingLongPipelinePageInactive)) { _ in if activePageId == "scheduling-long-pipeline" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingConfigPageActive)) { _ in activePageId = "scheduling-config" }
+            .onReceive(NotificationCenter.default.publisher(for: .schedulingConfigPageInactive)) { _ in if activePageId == "scheduling-config" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .employeesPageActive)) { _ in activePageId = "people-employees" }
             .onReceive(NotificationCenter.default.publisher(for: .employeesPageInactive)) { _ in if activePageId == "people-employees" { activePageId = nil } }
             .modifier(ActivePageIdTrackerFleetToolsNotebooks(activePageId: $activePageId))
@@ -1920,10 +2335,72 @@ private struct ActivePageIdTrackerFleetToolsNotebooks: ViewModifier {
         content
             .onReceive(NotificationCenter.default.publisher(for: .vehiclesPageActive)) { _ in activePageId = "fleet-vehicles" }
             .onReceive(NotificationCenter.default.publisher(for: .vehiclesPageInactive)) { _ in if activePageId == "fleet-vehicles" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetDashboardPageActive)) { _ in activePageId = "fleet-dashboard" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetDashboardPageInactive)) { _ in if activePageId == "fleet-dashboard" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMaintenancePageActive)) { _ in activePageId = "fleet-maintenance" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMaintenancePageInactive)) { _ in if activePageId == "fleet-maintenance" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMileagePageActive)) { _ in activePageId = "fleet-mileage" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMileagePageInactive)) { _ in if activePageId == "fleet-mileage" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetFuelPageActive)) { _ in activePageId = "fleet-fuel" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetFuelPageInactive)) { _ in if activePageId == "fleet-fuel" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTrailersPageActive)) { _ in activePageId = "fleet-trailers" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTrailersPageInactive)) { _ in if activePageId == "fleet-trailers" { activePageId = nil } }
+            .modifier(ActivePageIdTrackerFleetToolsNotebooksFleetTail(activePageId: $activePageId))
+    }
+}
+
+private struct ActivePageIdTrackerFleetToolsNotebooksFleetTail: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .fleetInspectionsPageActive)) { _ in activePageId = "fleet-inspections" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetInspectionsPageInactive)) { _ in if activePageId == "fleet-inspections" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTelematicsPageActive)) { _ in activePageId = "fleet-tracking" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTelematicsPageInactive)) { _ in if activePageId == "fleet-tracking" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMyTruckPageActive)) { _ in activePageId = "fleet-my-truck" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMyTruckPageInactive)) { _ in if activePageId == "fleet-my-truck" { activePageId = nil } }
+            .modifier(ActivePageIdTrackerFleetToolsNotebooksTail(activePageId: $activePageId))
+    }
+}
+
+private struct ActivePageIdTrackerFleetToolsNotebooksTail: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
             .onReceive(NotificationCenter.default.publisher(for: .toolRegistryPageActive)) { _ in activePageId = "tools-registry" }
             .onReceive(NotificationCenter.default.publisher(for: .toolRegistryPageInactive)) { _ in if activePageId == "tools-registry" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .toolsDashboardPageActive)) { _ in activePageId = "tools-dashboard" }
+            .onReceive(NotificationCenter.default.publisher(for: .toolsDashboardPageInactive)) { _ in if activePageId == "tools-dashboard" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .toolCheckoutsPageActive)) { _ in activePageId = "tools-checkouts" }
+            .onReceive(NotificationCenter.default.publisher(for: .toolCheckoutsPageInactive)) { _ in if activePageId == "tools-checkouts" { activePageId = nil } }
+            .modifier(ActivePageIdTrackerToolsTail(activePageId: $activePageId))
+    }
+}
+
+private struct ActivePageIdTrackerToolsTail: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .toolKitsPageActive)) { _ in activePageId = "tools-kits" }
+            .onReceive(NotificationCenter.default.publisher(for: .toolKitsPageInactive)) { _ in if activePageId == "tools-kits" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .toolMaintenancePageActive)) { _ in activePageId = "tools-maintenance" }
+            .onReceive(NotificationCenter.default.publisher(for: .toolMaintenancePageInactive)) { _ in if activePageId == "tools-maintenance" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .toolAdminPageActive)) { _ in activePageId = "tools-admin" }
+            .onReceive(NotificationCenter.default.publisher(for: .toolAdminPageInactive)) { _ in if activePageId == "tools-admin" { activePageId = nil } }
+            .modifier(ActivePageIdTrackerNotebooksSettings(activePageId: $activePageId))
+    }
+}
+
+private struct ActivePageIdTrackerNotebooksSettings: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
             .onReceive(NotificationCenter.default.publisher(for: .notebooksListPageActive)) { _ in activePageId = "notebooks-all" }
             .onReceive(NotificationCenter.default.publisher(for: .notebooksListPageInactive)) { _ in if activePageId == "notebooks-all" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .notebookTemplatesPageActive)) { _ in activePageId = "notebooks-templates" }
+            .onReceive(NotificationCenter.default.publisher(for: .notebookTemplatesPageInactive)) { _ in if activePageId == "notebooks-templates" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .jobNotebooksPageActive)) { _ in activePageId = "notebooks-job-notebooks" }
+            .onReceive(NotificationCenter.default.publisher(for: .jobNotebooksPageInactive)) { _ in if activePageId == "notebooks-job-notebooks" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .settingsPageActive)) { _ in activePageId = "settings-app-config" }
             .onReceive(NotificationCenter.default.publisher(for: .settingsPageInactive)) { _ in if activePageId == "settings-app-config" { activePageId = nil } }
     }
@@ -1939,6 +2416,22 @@ private struct ActivePageIdTrackerPeopleOfficeReports: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .customersPageInactive)) { _ in if activePageId == "people-customers" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .contactsPageActive)) { _ in activePageId = "people-contacts" }
             .onReceive(NotificationCenter.default.publisher(for: .contactsPageInactive)) { _ in if activePageId == "people-contacts" { activePageId = nil } }
+            .modifier(ActivePageIdTrackerPeopleTail(activePageId: $activePageId))
+    }
+}
+
+private struct ActivePageIdTrackerPeopleTail: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .contractorsPageActive)) { _ in activePageId = "people-contractors" }
+            .onReceive(NotificationCenter.default.publisher(for: .contractorsPageInactive)) { _ in if activePageId == "people-contractors" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .teamsPageActive)) { _ in activePageId = "people-teams" }
+            .onReceive(NotificationCenter.default.publisher(for: .teamsPageInactive)) { _ in if activePageId == "people-teams" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .hatsPageActive)) { _ in activePageId = "people-hats" }
+            .onReceive(NotificationCenter.default.publisher(for: .hatsPageInactive)) { _ in if activePageId == "people-hats" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .permissionsPageActive)) { _ in activePageId = "people-permissions" }
+            .onReceive(NotificationCenter.default.publisher(for: .permissionsPageInactive)) { _ in if activePageId == "people-permissions" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .officeDashboardPageActive)) { _ in activePageId = "office-dashboard" }
             .onReceive(NotificationCenter.default.publisher(for: .officeDashboardPageInactive)) { _ in if activePageId == "office-dashboard" { activePageId = nil } }
             .modifier(ActivePageIdTrackerOfficeReports(activePageId: $activePageId))

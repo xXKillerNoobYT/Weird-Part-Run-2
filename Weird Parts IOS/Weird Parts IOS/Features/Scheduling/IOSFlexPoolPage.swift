@@ -70,6 +70,10 @@ struct IOSFlexPoolPage: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .schedulingFlexPoolPageInactive, object: nil)
+        }
         .confirmationDialog(
             "Claim \(jobToClaim?.jobName ?? "job")?",
             isPresented: $showClaimConfirm,
@@ -231,5 +235,11 @@ struct IOSFlexPoolPage: View {
             loadError = userFriendlyError(error, context: "load flex pool")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let context = "Page: Flex Pool; total available jobs: \(flexJobs.count); loading: \(isLoading); error visible: \(loadError != nil); pending approval requests: \(pendingApprovalIds.count); recently claimed job id present: \(claimedJobId != nil); read-only actions: review available flex jobs, pending claim state, and claim guidance."
+        NotificationCenter.default.post(name: .schedulingFlexPoolPageActive, object: nil, userInfo: ["context": context])
     }
 }

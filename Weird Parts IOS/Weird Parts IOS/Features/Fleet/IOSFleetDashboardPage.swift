@@ -44,6 +44,16 @@ struct IOSFleetDashboardPage: View {
             loadData()
             appCore.onboardingManager?.markCompleted("fleet-dashboard-view")
         }
+        .onAppear {
+            NotificationCenter.default.post(
+                name: .fleetDashboardPageActive,
+                object: nil,
+                userInfo: ["context": fleetDashboardContext]
+            )
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .fleetDashboardPageInactive, object: nil)
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
@@ -68,6 +78,13 @@ struct IOSFleetDashboardPage: View {
     }
 
     // MARK: - Dashboard Content
+
+    private var fleetDashboardContext: String {
+        let stats = dashStats
+        return """
+        page=Fleet Dashboard; vehicles=\(vehicles.count); active_vehicles=\(stats?.activeVehicles ?? 0); maintenance_due=\(stats?.maintenanceDue ?? 0); overdue_inspections=\(stats?.overdueInspections ?? 0); trailers=\(stats?.totalTrailers ?? 0); upcoming_maintenance=\(upcomingMaintenance.count); recent_maintenance=\(recentMaintenance.count)
+        """
+    }
 
     @ViewBuilder
     private var dashboardContent: some View {

@@ -471,6 +471,54 @@ extension Notification.Name {
     /// Posted when the Schedule Calendar page disappears.
     static let scheduleCalendarPageInactive = Notification.Name("WiredPart.scheduleCalendarPageInactive")
 
+    /// Posted when the Flex Pool page appears, with read-only claimable job context for AI.
+    static let schedulingFlexPoolPageActive = Notification.Name("WiredPart.schedulingFlexPoolPageActive")
+
+    /// Posted when the Flex Pool page disappears.
+    static let schedulingFlexPoolPageInactive = Notification.Name("WiredPart.schedulingFlexPoolPageInactive")
+
+    /// Posted when the Time Off page appears, with read-only request/filter context for AI.
+    static let schedulingTimeOffPageActive = Notification.Name("WiredPart.schedulingTimeOffPageActive")
+
+    /// Posted when the Time Off page disappears.
+    static let schedulingTimeOffPageInactive = Notification.Name("WiredPart.schedulingTimeOffPageInactive")
+
+    /// Posted when the Dispatch Templates page appears, with read-only template context for AI.
+    static let schedulingTemplatesPageActive = Notification.Name("WiredPart.schedulingTemplatesPageActive")
+
+    /// Posted when the Dispatch Templates page disappears.
+    static let schedulingTemplatesPageInactive = Notification.Name("WiredPart.schedulingTemplatesPageInactive")
+
+    /// Posted when the Weekly Availability page appears, with read-only availability context for AI.
+    static let schedulingAvailabilityPageActive = Notification.Name("WiredPart.schedulingAvailabilityPageActive")
+
+    /// Posted when the Weekly Availability page disappears.
+    static let schedulingAvailabilityPageInactive = Notification.Name("WiredPart.schedulingAvailabilityPageInactive")
+
+    /// Posted when the Sub Schedule page appears, with read-only subcontractor assignment context for AI.
+    static let schedulingSubSchedulePageActive = Notification.Name("WiredPart.schedulingSubSchedulePageActive")
+
+    /// Posted when the Sub Schedule page disappears.
+    static let schedulingSubSchedulePageInactive = Notification.Name("WiredPart.schedulingSubSchedulePageInactive")
+
+    /// Posted when the Short-Term Pipeline page appears, with read-only pipeline context for AI.
+    static let schedulingPipelinePageActive = Notification.Name("WiredPart.schedulingPipelinePageActive")
+
+    /// Posted when the Short-Term Pipeline page disappears.
+    static let schedulingPipelinePageInactive = Notification.Name("WiredPart.schedulingPipelinePageInactive")
+
+    /// Posted when the Long-Term Pipeline page appears, with read-only capacity context for AI.
+    static let schedulingLongPipelinePageActive = Notification.Name("WiredPart.schedulingLongPipelinePageActive")
+
+    /// Posted when the Long-Term Pipeline page disappears.
+    static let schedulingLongPipelinePageInactive = Notification.Name("WiredPart.schedulingLongPipelinePageInactive")
+
+    /// Posted when the Schedule Config page appears, with read-only scheduling configuration context for AI.
+    static let schedulingConfigPageActive = Notification.Name("WiredPart.schedulingConfigPageActive")
+
+    /// Posted when the Schedule Config page disappears.
+    static let schedulingConfigPageInactive = Notification.Name("WiredPart.schedulingConfigPageInactive")
+
     // MARK: - People
 
     /// Posted when the Employees page appears, with employee count context for AI.
@@ -496,6 +544,30 @@ extension Notification.Name {
 
     /// Posted when the Contacts page disappears.
     static let contactsPageInactive = Notification.Name("WiredPart.contactsPageInactive")
+
+    /// Posted when the Contractors page appears, with contractor list context for AI.
+    static let contractorsPageActive = Notification.Name("WiredPart.contractorsPageActive")
+
+    /// Posted when the Contractors page disappears.
+    static let contractorsPageInactive = Notification.Name("WiredPart.contractorsPageInactive")
+
+    /// Posted when the Teams page appears, with team list/filter context for AI.
+    static let teamsPageActive = Notification.Name("WiredPart.teamsPageActive")
+
+    /// Posted when the Teams page disappears.
+    static let teamsPageInactive = Notification.Name("WiredPart.teamsPageInactive")
+
+    /// Posted when the Hats & Roles page appears, with role assignment context for AI.
+    static let hatsPageActive = Notification.Name("WiredPart.hatsPageActive")
+
+    /// Posted when the Hats & Roles page disappears.
+    static let hatsPageInactive = Notification.Name("WiredPart.hatsPageInactive")
+
+    /// Posted when the Permissions page appears, with permission matrix context for AI.
+    static let permissionsPageActive = Notification.Name("WiredPart.permissionsPageActive")
+
+    /// Posted when the Permissions page disappears.
+    static let permissionsPageInactive = Notification.Name("WiredPart.permissionsPageInactive")
 
     // MARK: - Office
 
@@ -569,6 +641,54 @@ extension Notification.Name {
     /// Posted when the Vehicles page disappears.
     static let vehiclesPageInactive = Notification.Name("WiredPart.vehiclesPageInactive")
 
+    /// Posted when the Fleet Dashboard page appears, with read-only fleet KPI context for AI.
+    static let fleetDashboardPageActive = Notification.Name("WiredPart.fleetDashboardPageActive")
+
+    /// Posted when the Fleet Dashboard page disappears.
+    static let fleetDashboardPageInactive = Notification.Name("WiredPart.fleetDashboardPageInactive")
+
+    /// Posted when the Fleet Maintenance page appears, with read-only maintenance context for AI.
+    static let fleetMaintenancePageActive = Notification.Name("WiredPart.fleetMaintenancePageActive")
+
+    /// Posted when the Fleet Maintenance page disappears.
+    static let fleetMaintenancePageInactive = Notification.Name("WiredPart.fleetMaintenancePageInactive")
+
+    /// Posted when the Fleet Mileage page appears, with read-only mileage context for AI.
+    static let fleetMileagePageActive = Notification.Name("WiredPart.fleetMileagePageActive")
+
+    /// Posted when the Fleet Mileage page disappears.
+    static let fleetMileagePageInactive = Notification.Name("WiredPart.fleetMileagePageInactive")
+
+    /// Posted when the Fleet Fuel page appears, with read-only fuel context for AI.
+    static let fleetFuelPageActive = Notification.Name("WiredPart.fleetFuelPageActive")
+
+    /// Posted when the Fleet Fuel page disappears.
+    static let fleetFuelPageInactive = Notification.Name("WiredPart.fleetFuelPageInactive")
+
+    /// Posted when the Fleet Trailers page appears, with read-only trailer context for AI.
+    static let fleetTrailersPageActive = Notification.Name("WiredPart.fleetTrailersPageActive")
+
+    /// Posted when the Fleet Trailers page disappears.
+    static let fleetTrailersPageInactive = Notification.Name("WiredPart.fleetTrailersPageInactive")
+
+    /// Posted when the Fleet Inspections page appears, with read-only inspection context for AI.
+    static let fleetInspectionsPageActive = Notification.Name("WiredPart.fleetInspectionsPageActive")
+
+    /// Posted when the Fleet Inspections page disappears.
+    static let fleetInspectionsPageInactive = Notification.Name("WiredPart.fleetInspectionsPageInactive")
+
+    /// Posted when the Fleet Telematics page appears, with read-only telematics context for AI.
+    static let fleetTelematicsPageActive = Notification.Name("WiredPart.fleetTelematicsPageActive")
+
+    /// Posted when the Fleet Telematics page disappears.
+    static let fleetTelematicsPageInactive = Notification.Name("WiredPart.fleetTelematicsPageInactive")
+
+    /// Posted when the My Truck page appears, with read-only driver vehicle context for AI.
+    static let fleetMyTruckPageActive = Notification.Name("WiredPart.fleetMyTruckPageActive")
+
+    /// Posted when the My Truck page disappears.
+    static let fleetMyTruckPageInactive = Notification.Name("WiredPart.fleetMyTruckPageInactive")
+
     // MARK: - Tools
 
     /// Posted when the Tool Registry page appears, with tool count context for AI.
@@ -577,6 +697,36 @@ extension Notification.Name {
     /// Posted when the Tool Registry page disappears.
     static let toolRegistryPageInactive = Notification.Name("WiredPart.toolRegistryPageInactive")
 
+    /// Posted when the Tools dashboard appears, with read-only tool health context for AI.
+    static let toolsDashboardPageActive = Notification.Name("WiredPart.toolsDashboardPageActive")
+
+    /// Posted when the Tools dashboard disappears.
+    static let toolsDashboardPageInactive = Notification.Name("WiredPart.toolsDashboardPageInactive")
+
+    /// Posted when the Tool Checkouts page appears, with read-only checkout context for AI.
+    static let toolCheckoutsPageActive = Notification.Name("WiredPart.toolCheckoutsPageActive")
+
+    /// Posted when the Tool Checkouts page disappears.
+    static let toolCheckoutsPageInactive = Notification.Name("WiredPart.toolCheckoutsPageInactive")
+
+    /// Posted when the Tool Kits page appears, with read-only kit context for AI.
+    static let toolKitsPageActive = Notification.Name("WiredPart.toolKitsPageActive")
+
+    /// Posted when the Tool Kits page disappears.
+    static let toolKitsPageInactive = Notification.Name("WiredPart.toolKitsPageInactive")
+
+    /// Posted when the Tool Maintenance page appears, with read-only maintenance context for AI.
+    static let toolMaintenancePageActive = Notification.Name("WiredPart.toolMaintenancePageActive")
+
+    /// Posted when the Tool Maintenance page disappears.
+    static let toolMaintenancePageInactive = Notification.Name("WiredPart.toolMaintenancePageInactive")
+
+    /// Posted when the Tool Admin page appears, with read-only admin context for AI.
+    static let toolAdminPageActive = Notification.Name("WiredPart.toolAdminPageActive")
+
+    /// Posted when the Tool Admin page disappears.
+    static let toolAdminPageInactive = Notification.Name("WiredPart.toolAdminPageInactive")
+
     // MARK: - Notebooks
 
     /// Posted when the Notebooks List page appears, with notebook count context for AI.
@@ -584,6 +734,18 @@ extension Notification.Name {
 
     /// Posted when the Notebooks List page disappears.
     static let notebooksListPageInactive = Notification.Name("WiredPart.notebooksListPageInactive")
+
+    /// Posted when the Notebook Templates page appears, with read-only template context for AI.
+    static let notebookTemplatesPageActive = Notification.Name("WiredPart.notebookTemplatesPageActive")
+
+    /// Posted when the Notebook Templates page disappears.
+    static let notebookTemplatesPageInactive = Notification.Name("WiredPart.notebookTemplatesPageInactive")
+
+    /// Posted when the Job Notebooks page appears, with read-only job notebook context for AI.
+    static let jobNotebooksPageActive = Notification.Name("WiredPart.jobNotebooksPageActive")
+
+    /// Posted when the Job Notebooks page disappears.
+    static let jobNotebooksPageInactive = Notification.Name("WiredPart.jobNotebooksPageInactive")
 
     // MARK: - Settings
 

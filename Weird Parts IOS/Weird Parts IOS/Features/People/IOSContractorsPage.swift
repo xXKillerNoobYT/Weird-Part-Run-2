@@ -50,6 +50,18 @@ struct IOSContractorsPage: View {
         .onChange(of: searchText) { _, _ in loadData() }
         .task { loadData() }
         .refreshable { loadData() }
+        .onAppear {
+            NotificationCenter.default.post(
+                name: .contractorsPageActive,
+                object: nil,
+                userInfo: [
+                    "context": "Contractors Page (READ-ONLY): visible contractors: \(contractors.count), search active: \(!searchText.isEmpty), loading: \(isLoading), error shown: \(loadError != nil). Available read-only details: company, contact name, phone, email, specialty notes, qualifications, ratings, job history."
+                ]
+            )
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .contractorsPageInactive, object: nil)
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .create } label: {
