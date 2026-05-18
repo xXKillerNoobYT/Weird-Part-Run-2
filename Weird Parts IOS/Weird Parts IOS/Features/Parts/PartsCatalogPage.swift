@@ -1177,7 +1177,10 @@ struct PartsCatalogPage: View {
     // MARK: - Cascade Price Cache
 
     private func loadCascadePriceCache() async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            await MainActor.run { actionError = "Parts service unavailable" }
+            return
+        }
         var cache: [Int64: PartsService.ResolvedCascadeCost] = [:]
         for part in parts {
             guard let colorId = part.colorId else { continue }

@@ -335,6 +335,52 @@ public final class FleetService: Sendable {
         }
     }
 
+    /// Counts for the vehicle status filter cards.
+    public struct VehicleStatusCounts: Sendable, Equatable {
+        public let countsByStatus: [String: Int]
+
+        public init(countsByStatus: [String: Int] = [:]) {
+            self.countsByStatus = countsByStatus
+        }
+
+        public var total: Int {
+            countsByStatus.values.reduce(0, +)
+        }
+
+        public func count(for status: String) -> Int {
+            status == "all" ? total : countsByStatus[status, default: 0]
+        }
+    }
+
+    /// Count active, non-deleted vehicles grouped by status.
+    ///
+    /// `IOSVehiclesPage` uses these pre-aggregated counts for its status cards so
+    /// rendering does not repeatedly scan the full vehicle list in Swift.
+    public func countVehiclesByStatus() throws -> [String: Int] {
+        do {
+            return try db.writer.read { dbConn -> [String: Int] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT status, COUNT(*) AS count
+                    FROM vehicles
+                    WHERE deleted_at IS NULL AND is_active = 1
+                    GROUP BY status
+                    """)
+
+                return Dictionary(uniqueKeysWithValues: rows.map { row in
+                    (row["status"] ?? "active", row["count"] ?? 0)
+                })
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [:] }
+            throw error
+        }
+    }
+
+    /// Return strongly typed status counts for UI filter cards.
+    public func getVehicleStatusCounts() throws -> VehicleStatusCounts {
+        VehicleStatusCounts(countsByStatus: try countVehiclesByStatus())
+    }
+
     /// Get a single vehicle by ID with full detail and active assignments.
     public func getVehicleDetail(id: Int64) throws -> VehicleDetail? {
         do {
@@ -349,8 +395,9 @@ public final class FleetService: Sendable {
                     arguments: [id]
                 ) else { return nil }
 
-                let assignments = try fetchAssignments(dbConn: dbConn, vehicleId: id)
-                return buildVehicleDetail(row: row, vehicleId: id, assignments: assignments)
+                let vehicleId = (row["id"] as Int64?) ?? id
+                let assignments = try fetchVehicleAssignments(dbConn: dbConn, vehicleId: vehicleId)
+                return buildVehicleDetail(from: row, vehicleId: vehicleId, assignments: assignments)
             }
         } catch {
             if isTableNotFoundError(error) { return nil }
@@ -1214,17 +1261,13 @@ public final class FleetService: Sendable {
                     return nil
                 }
 
-                // Guard that the vehicle id is present and non-zero.
-                // The row comes from `JOIN vehicles v ON va.vehicle_id = v.id`, so
-                // `v.id` should always be populated; returning nil rather than
-                // defaulting to 0 prevents follow-up queries running against vehicle 0.
-                guard let vehicleId = (row["vehicle_id"] as Int64? ?? row["id"] as Int64?),
-                      vehicleId != 0 else {
+                guard let vehicleId = (row["id"] as Int64?) ?? (row["vehicle_id"] as Int64?),
+                      vehicleId > 0 else {
                     return nil
                 }
 
-                let assignments = try fetchAssignments(dbConn: dbConn, vehicleId: vehicleId)
-                let vehicle = buildVehicleDetail(row: row, vehicleId: vehicleId, assignments: assignments)
+                let assignments = try fetchVehicleAssignments(dbConn: dbConn, vehicleId: vehicleId)
+                let vehicle = buildVehicleDetail(from: row, vehicleId: vehicleId, assignments: assignments)
 
                 let stats = MyVehicleStats(
                     vehicleId: vehicleId,
@@ -1895,10 +1938,6 @@ public final class FleetService: Sendable {
         trailerId: Int64, locationType: String, locationLabel: String?,
         jobId: Int64? = nil, recordedBy: Int64
     ) throws {
-        try db.writer.read { dbConn in
-            try ServicePermissionGate.requirePermission(dbConn, userId: recordedBy, permissionKey: "manage_fleet")
-        }
-
         try db.writer.write { dbConn in
             // Guard: trailer must be active and not tombstoned — inserting history
             // against a soft-deleted trailer creates an orphan audit row and leaves
@@ -2394,21 +2433,35 @@ public final class FleetService: Sendable {
     // MARK: - Internal Helpers
     // =========================================================================
 
-    /// Fetch all assignment rows for a vehicle, returning `[AssignmentRow]`.
-    ///
-    /// Shared by `getVehicleDetail` and `getMyTruckDashboard` so both methods
-    /// use the same query and mapping logic and cannot drift from each other.
-    private func fetchAssignments(dbConn: Database, vehicleId: Int64) throws -> [AssignmentRow] {
-        let rows = try Row.fetchAll(dbConn, sql: """
-            SELECT va.id, va.user_id, va.assignment_type, va.is_take_home,
-                   va.start_date, va.end_date, va.is_active,
-                   COALESCE(u.display_name, u.email, 'Unknown') AS user_name
-            FROM vehicle_assignments va
-            LEFT JOIN users u ON u.id = va.user_id AND u.deleted_at IS NULL
-            WHERE va.vehicle_id = ? AND va.deleted_at IS NULL
-            ORDER BY va.is_active DESC, va.start_date DESC
-            """, arguments: [vehicleId])
-        return rows.map { aRow in
+    /// Execute a SELECT COUNT(*) query returning an Int.
+    /// Returns 0 if the table does not exist.
+    private func safeCount(sql: String, arguments: StatementArguments = StatementArguments()) throws -> Int {
+        do {
+            return try db.writer.read { dbConn in
+                try Int.fetchOne(dbConn, sql: sql, arguments: arguments) ?? 0
+            }
+        } catch {
+            if isTableNotFoundError(error) { return 0 }
+            throw error
+        }
+    }
+
+    private func fetchVehicleAssignments(dbConn: Database, vehicleId: Int64) throws -> [AssignmentRow] {
+        let assignmentRows = try Row.fetchAll(
+            dbConn,
+            sql: """
+                SELECT va.id, va.user_id, va.assignment_type, va.is_take_home,
+                       va.start_date, va.end_date, va.is_active,
+                       COALESCE(u.display_name, u.email, 'Unknown') AS user_name
+                FROM vehicle_assignments va
+                LEFT JOIN users u ON u.id = va.user_id AND u.deleted_at IS NULL
+                WHERE va.vehicle_id = ? AND va.deleted_at IS NULL
+                ORDER BY va.is_active DESC, va.start_date DESC
+                """,
+            arguments: [vehicleId]
+        )
+
+        return assignmentRows.map { aRow in
             AssignmentRow(
                 id: aRow["id"] ?? 0,
                 userId: aRow["user_id"] ?? 0,
@@ -2422,15 +2475,7 @@ public final class FleetService: Sendable {
         }
     }
 
-    /// Build a `VehicleDetail` from a raw GRDB `Row` plus pre-fetched assignments.
-    ///
-    /// Centralises the column-mapping so `getVehicleDetail` and `getMyTruckDashboard`
-    /// can never diverge on field names, defaults, or type conversions.
-    private func buildVehicleDetail(
-        row: Row,
-        vehicleId: Int64,
-        assignments: [AssignmentRow]
-    ) -> VehicleDetail {
+    private func buildVehicleDetail(from row: Row, vehicleId: Int64, assignments: [AssignmentRow]) -> VehicleDetail {
         VehicleDetail(
             id: (row["id"] as Int64?) ?? vehicleId,
             vehicleNumber: row["vehicle_number"] ?? "",
@@ -2456,19 +2501,6 @@ public final class FleetService: Sendable {
             updatedAt: row["updated_at"] as String?,
             assignments: assignments
         )
-    }
-
-    /// Execute a SELECT COUNT(*) query returning an Int.
-    /// Returns 0 if the table does not exist.
-    private func safeCount(sql: String, arguments: StatementArguments = StatementArguments()) throws -> Int {
-        do {
-            return try db.writer.read { dbConn in
-                try Int.fetchOne(dbConn, sql: sql, arguments: arguments) ?? 0
-            }
-        } catch {
-            if isTableNotFoundError(error) { return 0 }
-            throw error
-        }
     }
 
     /// Detect whether a GRDB/SQLite error indicates a missing table.

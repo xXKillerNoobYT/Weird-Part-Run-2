@@ -235,7 +235,10 @@ private struct EditContactSheet: View {
     }
 
     private func loadContact() {
-        guard let service = appCore.peopleService else { return }
+        guard let service = appCore.peopleService else {
+            errorMessage = "People service unavailable"
+            return
+        }
         do {
             if let c = try service.getContact(id: contactId) {
                 firstName = c.firstName

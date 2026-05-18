@@ -175,6 +175,224 @@ struct OrdersServiceTests {
         #expect(demand.count >= 0)
     }
 
+    @Test("Procurement demand consolidates JPO, wishlist, and forecast demand for the same part")
+    func testProcurementDemandConsolidatesWishlistAndForecast() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try env.parts.createPart(
+            categoryId: catId,
+            name: "Consolidated Demand Wire",
+            minStockLevel: 5,
+            maxStockLevel: 6,
+            targetStockLevel: 12
+        )
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Demand Supplier")
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: supplierId, costPrice: 2.50)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-DEMAND-1", name: "Demand Job")
+        _ = try approvedJPOLine(env, jobId: jobId, partId: partId, quantity: 3)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 8)
+        _ = try insertWishlistItem(env, partId: partId, qty: 4, sourceType: "manual", status: "sent_to_procurement")
+        _ = try insertForecastTarget(env, partId: partId, minStock: 9, targetStock: 13, maxStock: 20, suggestedOrder: 5, certainty: 0.9)
+
+        let items = try env.orders.getProcurementDemand().filter { $0.partId == partId }
+        #expect(items.count == 1)
+        let item = try #require(items.first)
+        #expect(item.totalDemand == 12)
+        #expect(Set(item.sources.map(\.sourceType)) == Set(["jpo", "wishlist", "forecast"]))
+        #expect(item.sources.filter { $0.sourceType == "wishlist" }.count == 1)
+        #expect(item.sources.filter { $0.sourceType == "forecast" }.count == 1)
+    }
+
+    @Test("Procurement demand suppresses duplicate overstock-only row when part already has demand")
+    func testProcurementDemandDoesNotDuplicateOverstockDemandPart() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try env.parts.createPart(
+            categoryId: catId,
+            name: "Demand Overstock Fuse",
+            minStockLevel: 1,
+            maxStockLevel: 3,
+            targetStockLevel: 2
+        )
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OVER-DEMAND", name: "Over Demand")
+        _ = try approvedJPOLine(env, jobId: jobId, partId: partId, quantity: 2)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
+
+        let items = try env.orders.getProcurementDemand().filter { $0.partId == partId }
+        #expect(items.count == 1)
+        #expect(items.first?.urgency == "overstock")
+        #expect(items.first?.sources.contains { $0.sourceType == "overstock" } == false)
+    }
+
+    @Test("generatePOsFromProcurement marks selected wishlist demand drafted")
+    func testGeneratePOsFromProcurementMarksWishlistDrafted() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Wishlist Draft Part", categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Wishlist Supplier")
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: supplierId, costPrice: 3.00)
+        let wishlistId = try insertWishlistItem(env, partId: partId, qty: 6, sourceType: "manual", status: "sent_to_procurement")
+        let item = try #require(try env.orders.getProcurementDemand().first { $0.partId == partId })
+        let source = try #require(item.sources.first { $0.sourceType == "wishlist" })
+
+        let result = try env.orders.generatePOsFromProcurement(items: [
+            OrdersService.ProcurementGenerateItem(
+                partId: partId,
+                supplierId: supplierId,
+                quantity: source.quantity,
+                jpoLineIds: [],
+                wishlistItemIds: source.wishlistItemIds
+            )
+        ])
+
+        #expect(result.totalLineItems == 1)
+        let status: String? = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT status FROM wishlist_items WHERE id = ?", arguments: [wishlistId])
+        }
+        #expect(status == "drafted")
+        #expect(try env.orders.getProcurementDemand().allSatisfy { $0.partId != partId })
+    }
+
+    @Test("Generic procurement demand without prior PO has no supplier lock")
+    func testGenericProcurementDemandWithoutPriorLock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Generic Coupling", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-GEN-1", name: "Generic Job")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Open Supplier")
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: supplierId, costPrice: 1.25)
+        _ = try approvedJPOLine(env, jobId: jobId, partId: partId, quantity: 4)
+
+        let item = try #require(env.orders.getProcurementDemand().first { $0.partId == partId })
+        #expect(item.isGeneric)
+        #expect(item.lockedSupplierId == nil)
+        #expect(item.suppliers.contains { $0.id == supplierId })
+    }
+
+    @Test("Procurement demand SQL grouping preserves combined JPO quantity and line ids")
+    func testProcurementDemandSQLGroupingPreservesQuantityAndLineIds() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Grouped Generic Clamp", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-GROUP-1", name: "Grouped Job")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Grouped Supplier")
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: supplierId, costPrice: 2.75)
+
+        let jpoId: Int64 = try env.db.writer.write { db in
+            let orderNumber = "JPO-GROUP-\(UUID().uuidString)"
+            try db.execute(
+                sql: """
+                    INSERT INTO job_parts_orders
+                    (job_id, order_number, requested_by, status, priority, notes, created_at, updated_at)
+                    VALUES (?, ?, ?, 'approved', 'normal', NULL, datetime('now'), datetime('now'))
+                    """,
+                arguments: [jobId, orderNumber, env.adminUserId]
+            )
+            return db.lastInsertedRowID
+        }
+
+        let lineA: Int64 = try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO jpo_line_items
+                    (jpo_id, part_id, qty_requested, line_status, created_at)
+                    VALUES (?, ?, 2, 'approved', datetime('now'))
+                    """,
+                arguments: [jpoId, partId]
+            )
+            return db.lastInsertedRowID
+        }
+        let lineB: Int64 = try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO jpo_line_items
+                    (jpo_id, part_id, qty_requested, line_status, created_at)
+                    VALUES (?, ?, 3, 'approved', datetime('now'))
+                    """,
+                arguments: [jpoId, partId]
+            )
+            return db.lastInsertedRowID
+        }
+
+        let item = try #require(env.orders.getProcurementDemand().first { $0.partId == partId })
+        let source = try #require(item.sources.first { $0.sourceType == "jpo" && $0.sourceId == jpoId })
+
+        #expect(item.totalDemand == 5)
+        #expect(source.quantity == 5)
+        #expect(Set(source.lineIds) == Set([lineA, lineB]))
+    }
+
+    @Test("Generic procurement demand locks to prior supplier for the same job and part")
+    func testGenericProcurementDemandUsesPriorSupplierLock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Generic Strap", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-GEN-2", name: "Locked Generic Job")
+        let lockedSupplierId = try E2ETestHelpers.seedSupplier(env, name: "Locked Supplier")
+        let otherSupplierId = try E2ETestHelpers.seedSupplier(env, name: "Other Supplier")
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: lockedSupplierId, costPrice: 2.00)
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: otherSupplierId, costPrice: 1.00)
+        let priorLineId = try approvedJPOLine(env, jobId: jobId, partId: partId, quantity: 2)
+        _ = try env.orders.generatePOsFromProcurement(items: [
+            OrdersService.ProcurementGenerateItem(partId: partId, supplierId: lockedSupplierId, quantity: 2, jpoLineIds: [priorLineId])
+        ])
+        _ = try approvedJPOLine(env, jobId: jobId, partId: partId, quantity: 5)
+
+        let item = try #require(env.orders.getProcurementDemand().first { $0.partId == partId })
+        #expect(item.lockedSupplierId == lockedSupplierId)
+        #expect(item.lockedSupplierName == "Locked Supplier")
+        #expect(item.suppliers.map(\.id) == [lockedSupplierId])
+    }
+
+    @Test("Branded procurement demand remains freely selectable despite prior PO history")
+    func testBrandedProcurementDemandDoesNotLockToPriorSupplier() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let brandId = try E2ETestHelpers.seedBrand(env, name: "BrandCo")
+        let partId = try env.parts.createPart(categoryId: catId, name: "BrandCo Breaker", brandId: brandId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BRAND-1", name: "Branded Job")
+        let priorSupplierId = try E2ETestHelpers.seedSupplier(env, name: "Prior Supplier")
+        let otherSupplierId = try E2ETestHelpers.seedSupplier(env, name: "Other Supplier")
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: priorSupplierId, costPrice: 20.00)
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: otherSupplierId, costPrice: 18.00)
+        let priorLineId = try approvedJPOLine(env, jobId: jobId, partId: partId, quantity: 1)
+        _ = try env.orders.generatePOsFromProcurement(items: [
+            OrdersService.ProcurementGenerateItem(partId: partId, supplierId: priorSupplierId, quantity: 1, jpoLineIds: [priorLineId])
+        ])
+        _ = try approvedJPOLine(env, jobId: jobId, partId: partId, quantity: 3)
+
+        let item = try #require(env.orders.getProcurementDemand().first { $0.partId == partId })
+        #expect(!item.isGeneric)
+        #expect(item.lockedSupplierId == nil)
+        #expect(Set(item.suppliers.map(\.id)) == Set([priorSupplierId, otherSupplierId]))
+    }
+
+    @Test("Generic demand from two jobs with different prior suppliers stays split")
+    func testGenericProcurementDemandSplitsConflictingJobLocks() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Generic Connector", categoryId: catId)
+        let jobA = try E2ETestHelpers.seedJob(env, jobNumber: "J-LOCK-A", name: "Lock A")
+        let jobB = try E2ETestHelpers.seedJob(env, jobNumber: "J-LOCK-B", name: "Lock B")
+        let supplierA = try E2ETestHelpers.seedSupplier(env, name: "Supplier A")
+        let supplierB = try E2ETestHelpers.seedSupplier(env, name: "Supplier B")
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: supplierA, costPrice: 3.00)
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: supplierB, costPrice: 3.50)
+        let priorA = try approvedJPOLine(env, jobId: jobA, partId: partId, quantity: 1)
+        let priorB = try approvedJPOLine(env, jobId: jobB, partId: partId, quantity: 1)
+        _ = try env.orders.generatePOsFromProcurement(items: [
+            OrdersService.ProcurementGenerateItem(partId: partId, supplierId: supplierA, quantity: 1, jpoLineIds: [priorA]),
+            OrdersService.ProcurementGenerateItem(partId: partId, supplierId: supplierB, quantity: 1, jpoLineIds: [priorB])
+        ])
+        _ = try approvedJPOLine(env, jobId: jobA, partId: partId, quantity: 2)
+        _ = try approvedJPOLine(env, jobId: jobB, partId: partId, quantity: 4)
+
+        let items = try env.orders.getProcurementDemand().filter { $0.partId == partId }
+        #expect(items.count == 2)
+        #expect(Set(items.compactMap(\.lockedSupplierId)) == Set([supplierA, supplierB]))
+        #expect(Set(items.map(\.totalDemand)) == Set([2, 4]))
+    }
+
     // MARK: - Returns
 
     @Test("List returns empty on fresh DB")
@@ -919,6 +1137,272 @@ struct OrdersServiceTests {
         let result = try env.orders.generatePOsFromProcurement(items: [])
         #expect(result.createdPOs.isEmpty)
         #expect(result.totalLineItems == 0)
+    }
+
+    @Test("generatePOsFromProcurement creates one traceable PO line per selected JPO source")
+    func testGeneratePOsTraceEachJPOLine() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Shared Conduit", categoryId: catId)
+        let jobA = try E2ETestHelpers.seedJob(env, jobNumber: "J-TRACE-A", name: "Trace A")
+        let jobB = try E2ETestHelpers.seedJob(env, jobNumber: "J-TRACE-B", name: "Trace B")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Trace Supplier")
+        let lineA = try approvedJPOLine(env, jobId: jobA, partId: partId, quantity: 2)
+        let lineB = try approvedJPOLine(env, jobId: jobB, partId: partId, quantity: 3)
+
+        let result = try env.orders.generatePOsFromProcurement(items: [
+            OrdersService.ProcurementGenerateItem(
+                partId: partId,
+                supplierId: supplierId,
+                quantity: 5,
+                unitCost: 4.25,
+                jpoLineIds: [lineA, lineB]
+            )
+        ])
+
+        #expect(result.createdPOs.count == 1)
+        #expect(result.totalLineItems == 2)
+
+        try env.db.writer.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT jpo_line_id, qty_ordered
+                FROM po_line_items
+                WHERE po_id = ?
+                ORDER BY jpo_line_id
+            """, arguments: [result.createdPOs[0].poId])
+            #expect(rows.count == 2)
+            let linkedLineIds: [Int64] = rows.compactMap { row in row["jpo_line_id"] }
+            let quantities: [Int] = rows.map { row in row["qty_ordered"] }
+            #expect(Set(linkedLineIds) == Set([lineA, lineB]))
+            #expect(quantities.sorted() == [2, 3])
+
+            let linkedJPOs = try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM po_jpo_links WHERE po_id = ?
+                """, arguments: [result.createdPOs[0].poId])
+            #expect(linkedJPOs == 2)
+        }
+    }
+
+    @Test("generatePOsFromProcurement leaves unselected JPO lines approved")
+    func testGeneratePOsPartialLeavesUnselectedApproved() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Partial Strap", categoryId: catId)
+        let jobA = try E2ETestHelpers.seedJob(env, jobNumber: "J-PART-A", name: "Partial A")
+        let jobB = try E2ETestHelpers.seedJob(env, jobNumber: "J-PART-B", name: "Partial B")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Partial Supplier")
+        let selectedLine = try approvedJPOLine(env, jobId: jobA, partId: partId, quantity: 2)
+        let unselectedLine = try approvedJPOLine(env, jobId: jobB, partId: partId, quantity: 3)
+
+        _ = try env.orders.generatePOsFromProcurement(items: [
+            OrdersService.ProcurementGenerateItem(
+                partId: partId,
+                supplierId: supplierId,
+                quantity: 2,
+                jpoLineIds: [selectedLine]
+            )
+        ])
+
+        try env.db.writer.read { db in
+            let selectedStatus = try String.fetchOne(
+                db,
+                sql: "SELECT line_status FROM jpo_line_items WHERE id = ?",
+                arguments: [selectedLine]
+            )
+            let unselectedStatus = try String.fetchOne(
+                db,
+                sql: "SELECT line_status FROM jpo_line_items WHERE id = ?",
+                arguments: [unselectedLine]
+            )
+            #expect(selectedStatus == "in_procurement")
+            #expect(unselectedStatus == "approved")
+        }
+    }
+
+    @Test("procurement preview groups selected sources by supplier then job and supports exclusions")
+    func testProcurementPreviewGroupsBySupplierThenJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Preview Cable", categoryId: catId)
+        let jobA = try E2ETestHelpers.seedJob(env, jobNumber: "J-PREV-A", name: "Preview A")
+        let jobB = try E2ETestHelpers.seedJob(env, jobNumber: "J-PREV-B", name: "Preview B")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Preview Supplier")
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: supplierId, costPrice: 9.50)
+        let lineA = try approvedJPOLine(env, jobId: jobA, partId: partId, quantity: 2)
+        _ = try approvedJPOLine(env, jobId: jobB, partId: partId, quantity: 3)
+
+        let item = try #require(env.orders.getProcurementDemand().first { $0.partId == partId })
+        let groups = OrdersService.buildProcurementPreviewGroups(
+            items: [item],
+            selection: OrdersService.ProcurementPreviewSelection(
+                checkedPartIds: [item.id],
+                selectedSuppliers: [item.id: supplierId],
+                orderQuantities: [item.id: item.totalDemand]
+            )
+        )
+
+        #expect(groups.count == 1)
+        #expect(groups[0].supplierId == supplierId)
+        #expect(groups[0].jobs.count == 2)
+        #expect(groups[0].jobs.contains { $0.jobName.contains("Preview A") })
+        #expect(groups[0].jobs.contains { $0.jobName.contains("Preview B") })
+        #expect(Set(groups[0].jobs.flatMap(\.parts).flatMap(\.jpoLineIds)).contains(lineA))
+
+        let excludedKey = try #require(groups[0].jobs.first { $0.jobId == jobA }?.parts.first?.key)
+        let afterExclusion = OrdersService.buildProcurementPreviewGroups(
+            items: [item],
+            selection: OrdersService.ProcurementPreviewSelection(
+                checkedPartIds: [item.id],
+                selectedSuppliers: [item.id: supplierId],
+                orderQuantities: [item.id: item.totalDemand],
+                excludedLineKeys: [excludedKey]
+            )
+        )
+        #expect(afterExclusion[0].jobs.count == 1)
+        #expect(afterExclusion[0].jobs[0].jobName.contains("Preview B"))
+    }
+
+    @Test("procurement pull options cover above-target demand")
+    func testProcurementPullOptionsAboveTarget() {
+        let options = OrdersService.procurementPullOptions(
+            demandQty: 8,
+            shopStock: 12,
+            minStock: 4,
+            targetStock: 10
+        )
+
+        #expect(options.contains(.init(kind: .pullToTarget, pullQty: 2, orderQty: 6, isRecommended: true)))
+        #expect(options.contains(.init(kind: .pullAll, pullQty: 8, orderQty: 0, isRecommended: false)))
+        #expect(options.contains(.init(kind: .pullToMin, pullQty: 8, orderQty: 0, isRecommended: false)))
+        #expect(options.contains(.init(kind: .orderAll, pullQty: 0, orderQty: 8, isRecommended: false)))
+    }
+
+    @Test("procurement pull options cover between-min-target demand")
+    func testProcurementPullOptionsBetweenMinAndTarget() {
+        let options = OrdersService.procurementPullOptions(
+            demandQty: 6,
+            shopStock: 7,
+            minStock: 4,
+            targetStock: 10
+        )
+
+        #expect(!options.contains { $0.kind == .pullToTarget })
+        #expect(options.contains(.init(kind: .pullAll, pullQty: 6, orderQty: 0, isRecommended: true)))
+        #expect(options.contains(.init(kind: .pullToMin, pullQty: 3, orderQty: 3, isRecommended: false)))
+        #expect(options.contains(.init(kind: .orderAll, pullQty: 0, orderQty: 6, isRecommended: false)))
+    }
+
+    @Test("procurement pull options cover below-min demand")
+    func testProcurementPullOptionsBelowMin() {
+        let options = OrdersService.procurementPullOptions(
+            demandQty: 5,
+            shopStock: 2,
+            minStock: 4,
+            targetStock: 10
+        )
+
+        #expect(!options.contains { $0.kind == .pullToTarget })
+        #expect(options.contains(.init(kind: .pullAll, pullQty: 2, orderQty: 3, isRecommended: true)))
+        #expect(!options.contains { $0.kind == .pullToMin })
+        #expect(options.contains(.init(kind: .orderAll, pullQty: 0, orderQty: 5, isRecommended: false)))
+    }
+
+    @Test("procurement pull options cover above-max demand")
+    func testProcurementPullOptionsAboveMax() {
+        let options = OrdersService.procurementPullOptions(
+            demandQty: 4,
+            shopStock: 14,
+            minStock: 4,
+            targetStock: 10
+        )
+
+        #expect(options.contains(.init(kind: .pullToTarget, pullQty: 4, orderQty: 0, isRecommended: true)))
+        #expect(options.contains(.init(kind: .pullAll, pullQty: 4, orderQty: 0, isRecommended: false)))
+        #expect(options.contains(.init(kind: .orderAll, pullQty: 0, orderQty: 4, isRecommended: false)))
+    }
+
+    @Test("procurement pull uses real warehouse locations, persists staging, and blocks over-MAX generation")
+    func testProcurementPullPersistsAndOverMaxGenerationRequiresPull() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Over Max Pull Part", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OVER-MAX", name: "Over Max Job")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Over Max Supplier")
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: supplierId, costPrice: 4.25)
+        let lineId = try approvedJPOLine(env, jobId: jobId, partId: partId, quantity: 3)
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE parts SET min_stock_level = 2, target_stock_level = 8, max_stock_level = 10 WHERE id = ?",
+                arguments: [partId]
+            )
+        }
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 2, locationType: "warehouse", locationId: 3)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10, locationType: "warehouse", locationId: 7)
+
+        #expect(throws: OrdersService.OrdersError.overMaxPullRequired(partId: partId, overage: 2)) {
+            try env.orders.generatePOsFromProcurement(items: [
+                OrdersService.ProcurementGenerateItem(
+                    partId: partId,
+                    supplierId: supplierId,
+                    quantity: 3,
+                    jpoLineIds: [lineId]
+                )
+            ])
+        }
+
+        let demand = try #require(env.orders.getProcurementDemand().first { $0.partId == partId })
+        let pull = try env.orders.pullStockForProcurement(
+            demandItemId: demand.id,
+            partId: partId,
+            requestedPullQty: 2,
+            totalDemand: demand.totalDemand,
+            jpoLineIds: demand.sources.flatMap(\.lineIds),
+            performedBy: env.adminUserId
+        )
+        #expect(pull.pulledQty == 2)
+
+        let reloaded = try #require(env.orders.getProcurementDemand().first { $0.partId == partId })
+        #expect(reloaded.shopStock == 10)
+        #expect(reloaded.stagedPullQty == 2)
+
+        try env.db.writer.read { db in
+            let sourceQty = try Int.fetchOne(
+                db,
+                sql: "SELECT qty FROM stock WHERE part_id = ? AND location_type = 'warehouse' AND location_id = 7",
+                arguments: [partId]
+            )
+            let stagedQty = try Int.fetchOne(
+                db,
+                sql: "SELECT qty FROM stock WHERE part_id = ? AND location_type = 'pulled' AND location_id = ?",
+                arguments: [partId, abs(demand.id)]
+            )
+            let movementSource = try Int64.fetchOne(
+                db,
+                sql: "SELECT from_location_id FROM stock_movements WHERE part_id = ? AND reference_number = ? ORDER BY id DESC LIMIT 1",
+                arguments: [partId, "procurement-demand:\(demand.id)"]
+            )
+            #expect(sourceQty == 8)
+            #expect(stagedQty == 2)
+            #expect(movementSource == 7)
+        }
+
+        _ = try env.orders.pullStockForProcurement(
+            demandItemId: demand.id,
+            partId: partId,
+            requestedPullQty: 1,
+            totalDemand: demand.totalDemand,
+            jpoLineIds: [lineId],
+            performedBy: env.adminUserId
+        )
+        try env.db.writer.read { db in
+            let status = try String.fetchOne(
+                db,
+                sql: "SELECT line_status FROM jpo_line_items WHERE id = ?",
+                arguments: [lineId]
+            )
+            #expect(status == "staged")
+        }
     }
 
     // MARK: - addJPOLineItem General Mode (PE-COLORS Plan Test 5)
@@ -1733,6 +2217,78 @@ struct OrdersServiceTests {
         // Non-existent returnId should throw
         #expect(throws: OrdersService.OrdersError.returnNotFound(9999)) {
             try env.orders.updateReturnStatus(returnId: 9999, status: "completed")
+        }
+    }
+
+    private func approvedJPOLine(
+        _ env: E2ETestHelpers.TestEnvironment,
+        jobId: Int64,
+        partId: Int64,
+        quantity: Int
+    ) throws -> Int64 {
+        try env.db.writer.write { db in
+            let orderNumber = "JPO-TEST-\(jobId)-\(partId)-\(UUID().uuidString)"
+            try db.execute(
+                sql: """
+                    INSERT INTO job_parts_orders
+                    (job_id, order_number, requested_by, status, priority, notes, created_at, updated_at)
+                    VALUES (?, ?, ?, 'approved', 'normal', NULL, datetime('now'), datetime('now'))
+                    """,
+                arguments: [jobId, orderNumber, env.adminUserId]
+            )
+            let jpoId = db.lastInsertedRowID
+            try db.execute(
+                sql: """
+                    INSERT INTO jpo_line_items
+                    (jpo_id, part_id, qty_requested, line_status, created_at)
+                    VALUES (?, ?, ?, 'approved', datetime('now'))
+                    """,
+                arguments: [jpoId, partId, quantity]
+            )
+            return db.lastInsertedRowID
+        }
+    }
+
+    private func insertWishlistItem(
+        _ env: E2ETestHelpers.TestEnvironment,
+        partId: Int64,
+        qty: Int,
+        sourceType: String,
+        status: String,
+        certaintyScore: Double? = nil
+    ) throws -> Int64 {
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO wishlist_items
+                    (part_id, part_name, qty_suggested, priority, source_type, status, requested_by, approved_by, approved_at, certainty_score, created_at, updated_at)
+                    VALUES (?, 'Wishlist Demand Part', ?, 'normal', ?, ?, 'TestAdmin', 'TestAdmin', datetime('now'), ?, datetime('now'), datetime('now'))
+                    """,
+                arguments: [partId, qty, sourceType, status, certaintyScore]
+            )
+            return db.lastInsertedRowID
+        }
+    }
+
+    private func insertForecastTarget(
+        _ env: E2ETestHelpers.TestEnvironment,
+        partId: Int64,
+        minStock: Int,
+        targetStock: Int,
+        maxStock: Int,
+        suggestedOrder: Int,
+        certainty: Double
+    ) throws -> Int64 {
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO location_stock_targets
+                    (part_id, location_type, location_id, min_stock, target_stock, max_stock, forecast_suggested_order, certainty_rating, updated_at)
+                    VALUES (?, 'warehouse', 1, ?, ?, ?, ?, ?, datetime('now'))
+                    """,
+                arguments: [partId, minStock, targetStock, maxStock, suggestedOrder, certainty]
+            )
+            return db.lastInsertedRowID
         }
     }
 }

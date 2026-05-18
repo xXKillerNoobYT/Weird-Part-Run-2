@@ -124,6 +124,8 @@ extension AppDatabase {
         registerMigration085AuditSessionEvents(&migrator)
         registerMigration086PartAutoWishlistOptIn(&migrator)
         registerMigration087ServicePermissionGateBackfill(&migrator)
+        registerMigration088FleetInspectionDashboardLookupIndex(&migrator)
+        registerMigration089VehicleLocationLogs(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5167,6 +5169,47 @@ extension AppDatabase {
                         """, arguments: [grant.key, hatName])
                 }
             }
+        }
+    }
+
+    private static func registerMigration088FleetInspectionDashboardLookupIndex(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("088_fleet_inspection_dashboard_index") { db in
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_ir_vehicle_performed_at
+                ON inspection_records(vehicle_id, performed_at)
+                """)
+        }
+    }
+
+    private static func registerMigration089VehicleLocationLogs(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("089_vehicle_location_logs") { db in
+            try db.create(table: "vehicle_location_logs", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("vehicle_id", .integer).notNull()
+                    .references("vehicles", onDelete: .cascade)
+                t.column("user_id", .integer)
+                    .references("users")
+                t.column("latitude", .double)
+                t.column("longitude", .double)
+                t.column("speed", .double)
+                t.column("status", .text).notNull().defaults(to: "unknown")
+                t.column("recorded_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("deleted_at", .text)
+            }
+
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_vll_vehicle
+                ON vehicle_location_logs(vehicle_id)
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_vll_latest_active
+                ON vehicle_location_logs(vehicle_id, id)
+                WHERE deleted_at IS NULL
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_vll_recorded_at
+                ON vehicle_location_logs(recorded_at)
+                """)
         }
     }
 
