@@ -395,59 +395,9 @@ public final class FleetService: Sendable {
                     arguments: [id]
                 ) else { return nil }
 
-                // Fetch active assignments for this vehicle
-                let assignmentRows = try Row.fetchAll(
-                    dbConn,
-                    sql: """
-                        SELECT va.id, va.user_id, va.assignment_type, va.is_take_home,
-                               va.start_date, va.end_date, va.is_active,
-                               COALESCE(u.display_name, u.email, 'Unknown') AS user_name
-                        FROM vehicle_assignments va
-                        LEFT JOIN users u ON u.id = va.user_id AND u.deleted_at IS NULL
-                        WHERE va.vehicle_id = ? AND va.deleted_at IS NULL
-                        ORDER BY va.is_active DESC, va.start_date DESC
-                        """,
-                    arguments: [id]
-                )
-
-                let assignments = assignmentRows.map { aRow in
-                    AssignmentRow(
-                        id: aRow["id"] ?? 0,
-                        userId: aRow["user_id"] ?? 0,
-                        userName: aRow["user_name"] ?? "Unknown",
-                        assignmentType: aRow["assignment_type"] ?? "primary",
-                        isTakeHome: (aRow["is_take_home"] as Int?) == 1,
-                        startDate: aRow["start_date"] ?? "",
-                        endDate: aRow["end_date"] as String?,
-                        isActive: (aRow["is_active"] as Int?) == 1
-                    )
-                }
-
-                return VehicleDetail(
-                    id: row["id"] ?? 0,
-                    vehicleNumber: row["vehicle_number"] ?? "",
-                    vehicleName: row["vehicle_name"] ?? "",
-                    vehicleType: row["vehicle_type"] ?? "truck",
-                    status: row["status"] ?? "active",
-                    make: row["make"] as String?,
-                    model: row["model"] as String?,
-                    year: row["year"] as Int?,
-                    color: row["color"] as String?,
-                    vin: row["vin"] as String?,
-                    licensePlate: row["license_plate"] as String?,
-                    insurancePolicy: row["insurance_policy"] as String?,
-                    insuranceExpiry: row["insurance_expiry"] as String?,
-                    registrationExpiry: row["registration_expiry"] as String?,
-                    currentOdometer: row["current_odometer"] as Int?,
-                    ownerUserId: row["owner_user_id"] as Int64?,
-                    notes: row["notes"] as String?,
-                    photoPath: row["photo_path"] as String?,
-                    isActive: (row["is_active"] as Int?) ?? 0,
-                    deletedAt: row["deleted_at"] as String?,
-                    createdAt: row["created_at"] as String?,
-                    updatedAt: row["updated_at"] as String?,
-                    assignments: assignments
-                )
+                let vehicleId = (row["id"] as Int64?) ?? id
+                let assignments = try fetchVehicleAssignments(dbConn: dbConn, vehicleId: vehicleId)
+                return buildVehicleDetail(from: row, vehicleId: vehicleId, assignments: assignments)
             }
         } catch {
             if isTableNotFoundError(error) { return nil }
@@ -1311,56 +1261,13 @@ public final class FleetService: Sendable {
                     return nil
                 }
 
-                let vehicleId: Int64 = row["vehicle_id"] ?? row["id"] ?? 0
-
-                let assignmentRows = try Row.fetchAll(dbConn, sql: """
-                    SELECT va.id, va.user_id, va.assignment_type, va.is_take_home,
-                           va.start_date, va.end_date, va.is_active,
-                           COALESCE(u.display_name, u.email, 'Unknown') AS user_name
-                    FROM vehicle_assignments va
-                    LEFT JOIN users u ON u.id = va.user_id AND u.deleted_at IS NULL
-                    WHERE va.vehicle_id = ? AND va.deleted_at IS NULL
-                    ORDER BY va.is_active DESC, va.start_date DESC
-                    """, arguments: [vehicleId])
-
-                let assignments = assignmentRows.map { aRow in
-                    AssignmentRow(
-                        id: aRow["id"] ?? 0,
-                        userId: aRow["user_id"] ?? 0,
-                        userName: aRow["user_name"] ?? "Unknown",
-                        assignmentType: aRow["assignment_type"] ?? "primary",
-                        isTakeHome: (aRow["is_take_home"] as Int?) == 1,
-                        startDate: aRow["start_date"] ?? "",
-                        endDate: aRow["end_date"] as String?,
-                        isActive: (aRow["is_active"] as Int?) == 1
-                    )
+                guard let vehicleId = (row["id"] as Int64?) ?? (row["vehicle_id"] as Int64?),
+                      vehicleId > 0 else {
+                    return nil
                 }
 
-                let vehicle = VehicleDetail(
-                    id: row["id"] ?? vehicleId,
-                    vehicleNumber: row["vehicle_number"] ?? "",
-                    vehicleName: row["vehicle_name"] ?? "",
-                    vehicleType: row["vehicle_type"] ?? "truck",
-                    status: row["status"] ?? "active",
-                    make: row["make"] as String?,
-                    model: row["model"] as String?,
-                    year: row["year"] as Int?,
-                    color: row["color"] as String?,
-                    vin: row["vin"] as String?,
-                    licensePlate: row["license_plate"] as String?,
-                    insurancePolicy: row["insurance_policy"] as String?,
-                    insuranceExpiry: row["insurance_expiry"] as String?,
-                    registrationExpiry: row["registration_expiry"] as String?,
-                    currentOdometer: row["current_odometer"] as Int?,
-                    ownerUserId: row["owner_user_id"] as Int64?,
-                    notes: row["notes"] as String?,
-                    photoPath: row["photo_path"] as String?,
-                    isActive: (row["is_active"] as Int?) ?? 0,
-                    deletedAt: row["deleted_at"] as String?,
-                    createdAt: row["created_at"] as String?,
-                    updatedAt: row["updated_at"] as String?,
-                    assignments: assignments
-                )
+                let assignments = try fetchVehicleAssignments(dbConn: dbConn, vehicleId: vehicleId)
+                let vehicle = buildVehicleDetail(from: row, vehicleId: vehicleId, assignments: assignments)
 
                 let stats = MyVehicleStats(
                     vehicleId: vehicleId,
@@ -2537,6 +2444,63 @@ public final class FleetService: Sendable {
             if isTableNotFoundError(error) { return 0 }
             throw error
         }
+    }
+
+    private func fetchVehicleAssignments(dbConn: Database, vehicleId: Int64) throws -> [AssignmentRow] {
+        let assignmentRows = try Row.fetchAll(
+            dbConn,
+            sql: """
+                SELECT va.id, va.user_id, va.assignment_type, va.is_take_home,
+                       va.start_date, va.end_date, va.is_active,
+                       COALESCE(u.display_name, u.email, 'Unknown') AS user_name
+                FROM vehicle_assignments va
+                LEFT JOIN users u ON u.id = va.user_id AND u.deleted_at IS NULL
+                WHERE va.vehicle_id = ? AND va.deleted_at IS NULL
+                ORDER BY va.is_active DESC, va.start_date DESC
+                """,
+            arguments: [vehicleId]
+        )
+
+        return assignmentRows.map { aRow in
+            AssignmentRow(
+                id: aRow["id"] ?? 0,
+                userId: aRow["user_id"] ?? 0,
+                userName: aRow["user_name"] ?? "Unknown",
+                assignmentType: aRow["assignment_type"] ?? "primary",
+                isTakeHome: (aRow["is_take_home"] as Int?) == 1,
+                startDate: aRow["start_date"] ?? "",
+                endDate: aRow["end_date"] as String?,
+                isActive: (aRow["is_active"] as Int?) == 1
+            )
+        }
+    }
+
+    private func buildVehicleDetail(from row: Row, vehicleId: Int64, assignments: [AssignmentRow]) -> VehicleDetail {
+        VehicleDetail(
+            id: (row["id"] as Int64?) ?? vehicleId,
+            vehicleNumber: row["vehicle_number"] ?? "",
+            vehicleName: row["vehicle_name"] ?? "",
+            vehicleType: row["vehicle_type"] ?? "truck",
+            status: row["status"] ?? "active",
+            make: row["make"] as String?,
+            model: row["model"] as String?,
+            year: row["year"] as Int?,
+            color: row["color"] as String?,
+            vin: row["vin"] as String?,
+            licensePlate: row["license_plate"] as String?,
+            insurancePolicy: row["insurance_policy"] as String?,
+            insuranceExpiry: row["insurance_expiry"] as String?,
+            registrationExpiry: row["registration_expiry"] as String?,
+            currentOdometer: row["current_odometer"] as Int?,
+            ownerUserId: row["owner_user_id"] as Int64?,
+            notes: row["notes"] as String?,
+            photoPath: row["photo_path"] as String?,
+            isActive: (row["is_active"] as Int?) ?? 0,
+            deletedAt: row["deleted_at"] as String?,
+            createdAt: row["created_at"] as String?,
+            updatedAt: row["updated_at"] as String?,
+            assignments: assignments
+        )
     }
 
     /// Detect whether a GRDB/SQLite error indicates a missing table.
