@@ -64,10 +64,28 @@ struct AppDatabaseCipherTests {
     @Test("testSaltLoadOrCreate — generates 32-byte salt and is idempotent")
     func testSaltLoadOrCreate() throws {
         let manager = CipherKeyManager.shared
+        manager.deleteSalt()
+        defer { manager.deleteSalt() }
+
         let salt1 = try manager.loadOrCreateSalt()
         let salt2 = try manager.loadOrCreateSalt()
         #expect(salt1.count == 32)
         #expect(salt1 == salt2)  // idempotent — same salt on second call
+    }
+
+    @Test("testDeleteSaltClearsTestSalt — test runner salt reset avoids Keychain access")
+    func testDeleteSaltClearsTestSalt() throws {
+        let manager = CipherKeyManager.shared
+        manager.deleteSalt()
+        let salt1 = try manager.loadOrCreateSalt()
+
+        manager.deleteSalt()
+        let salt2 = try manager.loadOrCreateSalt()
+
+        #expect(salt1.count == 32)
+        #expect(salt2.count == 32)
+        #expect(salt1 != salt2, "deleteSalt should clear the process-local test salt")
+        manager.deleteSalt()
     }
 
     // MARK: - Option B Migration Tests

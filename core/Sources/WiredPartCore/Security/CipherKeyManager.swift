@@ -103,6 +103,11 @@ public final class CipherKeyManager: Sendable {
 
     /// Delete the persisted salt (use only during device wipe / factory reset).
     public func deleteSalt() {
+        if Self.isRunningUnderTestBundle {
+            Self.clearProcessLocalTestSalt()
+            return
+        }
+
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: Self.keychainService,
@@ -129,6 +134,12 @@ public final class CipherKeyManager: Sendable {
         let salt = try generateSalt()
         testSalt = salt
         return salt
+    }
+
+    private static func clearProcessLocalTestSalt() {
+        testSaltLock.lock()
+        defer { testSaltLock.unlock() }
+        testSalt = nil
     }
 
     private static func generateSalt() throws -> Data {
