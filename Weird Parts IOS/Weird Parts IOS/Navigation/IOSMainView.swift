@@ -676,7 +676,14 @@ struct ModuleHostView: View {
                     } label: {
                         subTabChip(tab: tab, selected: isSelected(tab), chipH: chipH)
                     }
-                    .buttonStyle(.glass)
+                    // Glass buttons inside a horizontally scrolling, narrow iPhone
+                    // sub-tab strip can report invalid accessibility activation
+                    // points to XCTest. Keep the chip styling in `subTabChip`, but
+                    // give automation a plain, explicitly-sized hit region.
+                    .buttonStyle(.plain)
+                    .contentShape(Rectangle())
+                    .accessibilityIdentifier("subtab_\(tab.id)")
+                    .accessibilityLabel(tab.label)
                 }
             }
             .padding(.horizontal, DS.Space.lg)
@@ -696,6 +703,7 @@ struct ModuleHostView: View {
         }
         .padding(.horizontal, chipH)
         .padding(.vertical, DS.Space.sm)
+        .frame(minWidth: 44, minHeight: 44)
         .background(
             Capsule()
                 .fill(selected ? Color.accentColor : Color.clear)
