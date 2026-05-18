@@ -158,6 +158,23 @@ struct FleetServiceTests {
 
     // MARK: - Fleet Stats & Dashboard
 
+    @Test("getMyTruckDashboard returns nil for user with no active assignment")
+    func testMyTruckDashboardReturnsNilForUnassignedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Create a vehicle but do NOT assign any driver
+        _ = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
+            vehicleNumber: "V-NOASSIGN",
+            vehicleName: "Unassigned Truck",
+            vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        // Use a brand-new user id that has no assignments
+        let unassignedUserId: Int64 = 99999
+        let dashboard = try env.fleet.getMyTruckDashboard(userId: unassignedUserId)
+        #expect(dashboard == nil, "Expected nil when the user has no active vehicle assignment")
+    }
+
     @Test("Fleet stats aggregates")
     func testFleetStats() throws {
         let env = try E2ETestHelpers.setUp()
