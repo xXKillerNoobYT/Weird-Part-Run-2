@@ -11,6 +11,7 @@ import WiredPartCore
 struct TypeBrandColorSection: View {
     let typeId: Int64
     let hierarchy: PartsService.HierarchyTree
+    @Binding var isGeneralLinked: Bool
     var onRefresh: () async -> Void
     var onAddColor: () -> Void
 
@@ -18,7 +19,6 @@ struct TypeBrandColorSection: View {
 
     @State private var allBrands: [Brand] = []
     @State private var linkedBrandIds: Set<Int64> = []
-    @State private var isGeneralLinked = true
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var expandedBrandId: Int64? = -1 // Which brand's color picker is open
@@ -88,15 +88,14 @@ struct TypeBrandColorSection: View {
         .alert("Remove Brand?", isPresented: Binding(
             get: { pendingBrandRemoval != nil },
             set: { if !$0 { pendingBrandRemoval = nil } }
-        )) {
+        ), presenting: pendingBrandRemoval) { removal in
             Button("Cancel", role: .cancel) { pendingBrandRemoval = nil }
             Button("Remove", role: .destructive) {
-                Task { await confirmPendingBrandRemoval() }
+                pendingBrandRemoval = nil
+                Task { await confirmPendingBrandRemoval(removal) }
             }
-        } message: {
-            if let removal = pendingBrandRemoval {
-                Text("Are you sure you want to remove brand \(removal.name) from this type? This may affect linked parts and colors.")
-            }
+        } message: { removal in
+            Text("Are you sure you want to remove brand \(removal.name) from this type? This may affect linked parts and colors.")
         }
     }
 
@@ -326,10 +325,7 @@ struct TypeBrandColorSection: View {
     // MARK: - Toggle Brand Link
 
     @MainActor
-    private func confirmPendingBrandRemoval() async {
-        guard let removal = pendingBrandRemoval else { return }
-        pendingBrandRemoval = nil
-
+    private func confirmPendingBrandRemoval(_ removal: PendingBrandRemoval) async {
         if let brandId = removal.brandId {
             await toggleBrand(brandId: brandId, isLinked: true)
         } else {
@@ -337,7 +333,6 @@ struct TypeBrandColorSection: View {
             if expandedBrandId == -1 {
                 expandedBrandId = nil
             }
-            await onRefresh()
         }
     }
 
