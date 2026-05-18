@@ -12,6 +12,7 @@ struct UserMenuSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var showLogoutConfirm: Bool
 
+    @AppStorage("onboarding_checklist_dismissed") private var checklistDismissed = false
     @State private var searchText = ""
 
     // MARK: - Section Definitions
@@ -215,6 +216,26 @@ struct UserMenuSheet: View {
             List {
                 // User profile header
                 userProfileSection
+
+                // Keep the dismissed first-launch setup checklist recoverable at
+                // the top of Settings. At very large Dynamic Type sizes, nested
+                // Settings > App Config can fall below the initial viewport; this
+                // direct action stays reachable and has an exact UI-test label.
+                Section {
+                    Button {
+                        checklistDismissed = false
+                        if let manager = appCore.onboardingManager {
+                            manager.resetProgress()
+                            manager.isOnboardingActive = true
+                        }
+                        dismiss()
+                    } label: {
+                        Label("Restart setup checklist", systemImage: "arrow.counterclockwise.circle.fill")
+                    }
+                    .accessibilityHint("Shows the Getting Started checklist on the dashboard again and restarts the guided app tour.")
+                } header: {
+                    Label("Getting Started", systemImage: "sparkles")
+                }
 
                 // Navigation style picker
                 Section {

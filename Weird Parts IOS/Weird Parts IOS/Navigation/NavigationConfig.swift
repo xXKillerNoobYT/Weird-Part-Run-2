@@ -50,7 +50,7 @@ struct AppModule: Identifiable, Hashable, Sendable {
 
 // MARK: - Module Definitions
 
-let officeAccessPermission = "manage_jobs"
+let officeAccessPermission = "approve_orders"
 let financialValuesPermission = "show_dollar_values"
 
 /// Complete ordered list of all application modules.
@@ -100,12 +100,13 @@ let appModules: [AppModule] = [
     // 5. Warehouse — movements, receiving, staging
     AppModule(id: "warehouse", label: "Warehouse", icon: "building.fill", tabs: [
         AppTab(id: "warehouse-dashboard", label: "Dashboard", icon: "chart.bar.fill", path: "/warehouse/dashboard"),
+        // Keep Audit near the front so 375pt iPhone QA can tap it without first scrolling the horizontal tab bar.
+        AppTab(id: "warehouse-audit", label: "Audit", icon: "checkmark.shield.fill", path: "/warehouse/audit", permission: "perform_audit"),
         AppTab(id: "warehouse-receiving", label: "Sorting", icon: "shippingbox.fill", path: "/warehouse/receiving"),
         AppTab(id: "warehouse-staging", label: "Staging", icon: "tray.2.fill", path: "/warehouse/staging"),
         AppTab(id: "warehouse-movements", label: "Movements", icon: "arrow.left.arrow.right", path: "/warehouse/movements"),
         AppTab(id: "warehouse-inventory", label: "Inventory", icon: "square.grid.3x3.fill", path: "/warehouse/inventory"),
         AppTab(id: "warehouse-locations", label: "Locations", icon: "map.fill", path: "/warehouse/locations"),
-        AppTab(id: "warehouse-audit", label: "Audit", icon: "checkmark.shield.fill", path: "/warehouse/audit", permission: "perform_audit"),
         AppTab(id: "warehouse-returns", label: "Returns", icon: "arrow.uturn.left", path: "/warehouse/returns"),
         AppTab(id: "warehouse-tools", label: "Tools", icon: "wrench.and.screwdriver.fill", path: "/warehouse/tools"),
         AppTab(id: "warehouse-leaderboard", label: "Leaderboard", icon: "trophy.fill", path: "/warehouse/leaderboard", permission: "manage_warehouse"),
@@ -177,16 +178,16 @@ let appModules: [AppModule] = [
     ], permission: "view_people"),
     // 12. Office — dashboard, approvals, pipeline, teams, reports
     AppModule(id: "office", label: "Office", icon: "briefcase.fill", tabs: [
-        AppTab(id: "office-dashboard", label: "Dashboard", icon: "gauge.with.dots.needle.50percent", path: "/office/dashboard", permission: "manage_jobs"),
-        AppTab(id: "office-approvals", label: "Approvals", icon: "checkmark.seal.fill", path: "/office/approvals", permission: "manage_jobs"),
+        AppTab(id: "office-dashboard", label: "Dashboard", icon: "gauge.with.dots.needle.50percent", path: "/office/dashboard", permission: officeAccessPermission),
+        AppTab(id: "office-approvals", label: "Approvals", icon: "checkmark.seal.fill", path: "/office/approvals", permission: officeAccessPermission),
         AppTab(id: "office-manage-jobs", label: "Manage Jobs", icon: "hammer.fill", path: "/office/manage-jobs", permission: "manage_jobs"),
         AppTab(id: "office-warehouse-exec", label: "Warehouse", icon: "building.fill", path: "/office/warehouse-exec", permission: "manage_warehouse"),
         AppTab(id: "office-estimation-settings", label: "Estimation", icon: "chart.bar.doc.horizontal", path: "/office/estimation-settings", permission: "manage_jobs"),
         AppTab(id: "office-pipeline", label: "Pipeline", icon: "chart.bar.xaxis", path: "/office/pipeline", permission: "manage_jobs"),
-        AppTab(id: "office-spending", label: "Spending", icon: "dollarsign.circle.fill", path: "/office/spending", permission: "show_dollar_values"),
+        AppTab(id: "office-spending", label: "Spending", icon: "dollarsign.circle.fill", path: "/office/spending", permission: financialValuesPermission),
         AppTab(id: "office-teams", label: "Teams", icon: "person.3.fill", path: "/office/teams"),
         AppTab(id: "office-reports", label: "Reports", icon: "chart.pie.fill", path: "/office/reports", permission: "view_reports"),
-    ], permission: "manage_jobs"),
+    ], permission: officeAccessPermission),
     // 13. Settings — app config, security
     AppModule(id: "settings", label: "Settings", icon: "gearshape.fill", tabs: [
         AppTab(id: "settings-themes", label: "Themes", icon: "paintpalette.fill", path: "/settings/themes"),
@@ -485,6 +486,54 @@ extension Notification.Name {
 
     /// Posted when the Vehicles page disappears.
     static let vehiclesPageInactive = Notification.Name("WiredPart.vehiclesPageInactive")
+
+    /// Posted when the Fleet Dashboard page appears, with dashboard summary context for AI.
+    static let fleetDashboardPageActive = Notification.Name("WiredPart.fleetDashboardPageActive")
+
+    /// Posted when the Fleet Dashboard page disappears.
+    static let fleetDashboardPageInactive = Notification.Name("WiredPart.fleetDashboardPageInactive")
+
+    /// Posted when the Trailers page appears, with trailer workflow context for AI.
+    static let fleetTrailersPageActive = Notification.Name("WiredPart.fleetTrailersPageActive")
+
+    /// Posted when the Trailers page disappears.
+    static let fleetTrailersPageInactive = Notification.Name("WiredPart.fleetTrailersPageInactive")
+
+    /// Posted when the Fleet Maintenance page appears, with maintenance workflow context for AI.
+    static let fleetMaintenancePageActive = Notification.Name("WiredPart.fleetMaintenancePageActive")
+
+    /// Posted when the Fleet Maintenance page disappears.
+    static let fleetMaintenancePageInactive = Notification.Name("WiredPart.fleetMaintenancePageInactive")
+
+    /// Posted when the Mileage page appears, with mileage workflow context for AI.
+    static let fleetMileagePageActive = Notification.Name("WiredPart.fleetMileagePageActive")
+
+    /// Posted when the Mileage page disappears.
+    static let fleetMileagePageInactive = Notification.Name("WiredPart.fleetMileagePageInactive")
+
+    /// Posted when the Fuel page appears, with fuel workflow context for AI.
+    static let fleetFuelPageActive = Notification.Name("WiredPart.fleetFuelPageActive")
+
+    /// Posted when the Fuel page disappears.
+    static let fleetFuelPageInactive = Notification.Name("WiredPart.fleetFuelPageInactive")
+
+    /// Posted when the Inspections page appears, with inspection workflow context for AI.
+    static let fleetInspectionsPageActive = Notification.Name("WiredPart.fleetInspectionsPageActive")
+
+    /// Posted when the Inspections page disappears.
+    static let fleetInspectionsPageInactive = Notification.Name("WiredPart.fleetInspectionsPageInactive")
+
+    /// Posted when the Fleet Tracking page appears, with telematics context for AI.
+    static let fleetTrackingPageActive = Notification.Name("WiredPart.fleetTrackingPageActive")
+
+    /// Posted when the Fleet Tracking page disappears.
+    static let fleetTrackingPageInactive = Notification.Name("WiredPart.fleetTrackingPageInactive")
+
+    /// Posted when the My Truck page appears, with driver vehicle context for AI.
+    static let fleetMyTruckPageActive = Notification.Name("WiredPart.fleetMyTruckPageActive")
+
+    /// Posted when the My Truck page disappears.
+    static let fleetMyTruckPageInactive = Notification.Name("WiredPart.fleetMyTruckPageInactive")
 
     // MARK: - Tools
 

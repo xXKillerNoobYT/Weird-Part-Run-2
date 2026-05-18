@@ -746,7 +746,10 @@ struct PartsPricingPage: View {
     }
 
     private func loadCascadeData() async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            await MainActor.run { loadError = "Parts service unavailable" }
+            return
+        }
         do {
             let allTypes = try service.listTypes()
             let allStyles = try service.listStyles()

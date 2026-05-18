@@ -85,6 +85,7 @@ struct DatabaseTests {
             // Wishlist & background tasks (057-058)
             "wishlist_items",    // 057
             "background_task_log", // 058
+            "vehicle_location_logs", // 089
             // Audit assignments & permissions (059-060)
         ]
 
@@ -96,9 +97,50 @@ struct DatabaseTests {
         }
     }
 
-    @Test("Schema version is 83")
+    @Test("Schema version is 89")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 83)
+        #expect(AppDatabase.schemaVersion == 89)
+    }
+
+    @Test("Migration 089 creates vehicle location logs table and latest-location indexes")
+    func testMigration089VehicleLocationLogsIndexes() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+
+        let result = try db.writer.read { db -> (tableExists: Bool, columns: [String], indexes: [String]) in
+            let tableExists = try db.tableExists("vehicle_location_logs")
+            let columns = tableExists ? try db.columns(in: "vehicle_location_logs").map(\.name) : []
+            let indexes = try Row.fetchAll(db, sql: "PRAGMA index_list('vehicle_location_logs')")
+                .map { row in row["name"] as String }
+            return (tableExists, columns, indexes)
+        }
+
+        #expect(result.tableExists, "vehicle_location_logs should be managed by migrations")
+        #expect(result.columns.contains("vehicle_id"))
+        #expect(result.columns.contains("user_id"))
+        #expect(result.columns.contains("latitude"))
+        #expect(result.columns.contains("longitude"))
+        #expect(result.columns.contains("recorded_at"))
+        #expect(result.columns.contains("deleted_at"))
+        #expect(result.indexes.contains("idx_vll_vehicle"))
+        #expect(result.indexes.contains("idx_vll_latest_active"))
+        #expect(result.indexes.contains("idx_vll_recorded_at"))
+    }
+
+    @Test("Migration 088 adds fleet inspection dashboard lookup index")
+    func testMigration088FleetInspectionDashboardLookupIndex() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+
+        let indexedColumns = try db.writer.read { db -> [String] in
+            let indexes = try Row.fetchAll(db, sql: "PRAGMA index_list('inspection_records')")
+            guard indexes.contains(where: { ($0["name"] as String) == "idx_ir_vehicle_performed_at" }) else {
+                return []
+            }
+
+            return try Row.fetchAll(db, sql: "PRAGMA index_info('idx_ir_vehicle_performed_at')")
+                .map { row in row["name"] as String }
+        }
+
+        #expect(indexedColumns == ["vehicle_id", "performed_at"])
     }
 
     @Test("Migration 082 adds structured estimation review columns")
@@ -112,6 +154,25 @@ struct DatabaseTests {
         #expect(columns.contains("unresolved_question_count"))
         #expect(columns.contains("crew_feedback"))
         #expect(columns.contains("gc_rating"))
+    }
+
+    @Test("Migration 087 creates vehicle location log table and latest-location indexes")
+    func testMigration087VehicleLocationLogsIndexes() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+
+        let result = try db.writer.read { db -> (tableExists: Bool, columns: [String], indexes: [String]) in
+            let tableExists = try db.tableExists("vehicle_location_logs")
+            let columns = tableExists ? try db.columns(in: "vehicle_location_logs").map(\.name) : []
+            let indexes = try Row.fetchAll(db, sql: "PRAGMA index_list('vehicle_location_logs')")
+                .map { row in row["name"] as String }
+            return (tableExists, columns, indexes)
+        }
+
+        #expect(result.tableExists, "vehicle_location_logs should be managed by migrations")
+        #expect(result.columns.contains("vehicle_id"))
+        #expect(result.columns.contains("deleted_at"))
+        #expect(result.indexes.contains("idx_vll_vehicle"))
+        #expect(result.indexes.contains("idx_vll_latest_active"))
     }
 
     @Test("Migration 073 adds grid_rows and grid_cols to warehouse_floor_plans")

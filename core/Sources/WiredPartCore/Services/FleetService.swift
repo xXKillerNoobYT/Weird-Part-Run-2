@@ -335,6 +335,52 @@ public final class FleetService: Sendable {
         }
     }
 
+    /// Counts for the vehicle status filter cards.
+    public struct VehicleStatusCounts: Sendable, Equatable {
+        public let countsByStatus: [String: Int]
+
+        public init(countsByStatus: [String: Int] = [:]) {
+            self.countsByStatus = countsByStatus
+        }
+
+        public var total: Int {
+            countsByStatus.values.reduce(0, +)
+        }
+
+        public func count(for status: String) -> Int {
+            status == "all" ? total : countsByStatus[status, default: 0]
+        }
+    }
+
+    /// Count active, non-deleted vehicles grouped by status.
+    ///
+    /// `IOSVehiclesPage` uses these pre-aggregated counts for its status cards so
+    /// rendering does not repeatedly scan the full vehicle list in Swift.
+    public func countVehiclesByStatus() throws -> [String: Int] {
+        do {
+            return try db.writer.read { dbConn -> [String: Int] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT status, COUNT(*) AS count
+                    FROM vehicles
+                    WHERE deleted_at IS NULL AND is_active = 1
+                    GROUP BY status
+                    """)
+
+                return Dictionary(uniqueKeysWithValues: rows.map { row in
+                    (row["status"] ?? "active", row["count"] ?? 0)
+                })
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [:] }
+            throw error
+        }
+    }
+
+    /// Return strongly typed status counts for UI filter cards.
+    public func getVehicleStatusCounts() throws -> VehicleStatusCounts {
+        VehicleStatusCounts(countsByStatus: try countVehiclesByStatus())
+    }
+
     /// Get a single vehicle by ID with full detail and active assignments.
     public func getVehicleDetail(id: Int64) throws -> VehicleDetail? {
         do {

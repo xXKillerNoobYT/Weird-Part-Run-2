@@ -47,12 +47,23 @@ struct JobsListPage: View {
     private enum ActiveSheet: Identifiable {
         case help
         case createJob
+
         var id: String {
             switch self {
             case .help: return "help"
             case .createJob: return "createJob"
             }
         }
+    }
+
+    private struct QuickStatusTarget: Identifiable {
+        let job: JobsService.JobListItem
+        var id: Int64 { job.id }
+    }
+
+    private struct CachedJobSummary {
+        let text: String
+        let generatedAt: Date
     }
 
     // MARK: - State
@@ -66,6 +77,8 @@ struct JobsListPage: View {
     @State private var statusFilter: JobStatusFilter = .active
     @State private var sortOption: JobSort = .recentActivity
     @State private var loadError: String?
+    @State private var quickStatusTarget: QuickStatusTarget?
+    @State private var jobSummaryCache: [Int64: CachedJobSummary] = [:]
     /// Global job stages list (Rough-in, Prep/Makeup, Trim-out). Loaded once.
     @State private var globalStages: [JobsService.JobStageStatus] = []
 
@@ -243,64 +256,230 @@ struct JobsListPage: View {
                     IOSJobDetailTabView(jobId: job.id)
                         .environmentObject(appCore)
                 } label: {
-                    jobRow(job)
+                    jobCard(job)
                 }
-                .opacity(job.jobType == "continuous" ? 0.7 : 1.0)
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button { } label: {
+                        Label("Status", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .tint(.blue)
+
+                    Button { } label: {
+                        Label("Detail", systemImage: "doc.text.magnifyingglass")
+                    }
+                    .tint(.indigo)
+                }
+                .listRowBackground(job.jobType == "continuous" || job.status == "continuous" ? Color(.systemGray6) : Color(.secondarySystemGroupedBackground))
             }
             .listStyle(.insetGrouped)
         }
     }
 
-    private func jobRow(_ job: JobsService.JobListItem) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(job.jobNumber)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                    priorityBadge(job.priority, dueDate: job.dueDate, status: job.status)
-                    if job.jobType == "continuous" {
-                        Text("Continuous")
-                            .font(.caption2)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Capsule().fill(.gray))
+    private func jobCard(_ job: JobsService.JobListItem) -> some View {
+        let isContinuous = job.jobType == "continuous" || job.status == "continuous"
+        let stageStatuses = stageStatuses(for: job)
+        let activeStage = activeStageName(stageStatuses, isContinuous: isContinuous)
+        let stageProgress = stageProgressFraction(stageStatuses, isContinuous: isContinuous)
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: statusIcon(for: job.status, isContinuous: isContinuous))
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(colorForStatus(job.status, isContinuous: isContinuous))
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(colorForStatus(job.status, isContinuous: isContinuous).opacity(0.12)))
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        Text(job.jobNumber)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        priorityBadge(job.priority, dueDate: job.dueDate, status: job.status)
+                        if isContinuous {
+                            Label("Continuous", systemImage: "arrow.clockwise")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.gray)
+                        }
                     }
-                }
-                Text(job.jobName)
-                    .fontWeight(.medium)
-                if let customer = job.customerName, !customer.isEmpty {
-                    Text(customer)
+
+                    Text(job.jobName)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+
+                    if let customer = job.customerName, !customer.isEmpty {
+                        Text(customer)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text(jobSummary(for: job, stageName: activeStage, progress: stageProgress, isContinuous: isContinuous))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .accessibilityLabel("AI summary: \(jobSummary(for: job, stageName: activeStage, progress: stageProgress, isContinuous: isContinuous))")
                 }
-                // Compact stage progression bar
-                if !globalStages.isEmpty {
-                    let stageStatuses = JobsService.computeStageStatuses(
-                        allStages: globalStages,
-                        currentStageId: job.currentStageId,
-                        jobStatus: job.status
-                    )
-                    JobStageProgressBar(stages: stageStatuses, compact: true)
+
+                Spacer(minLength: 8)
+
+                VStack(alignment: .trailing, spacing: 6) {
+                    jobStatusBadge(job.status)
+                    if job.teamCount > 0 {
+                        Label("\(job.teamCount)", systemImage: "person.2")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
-            Spacer()
+            if !isContinuous {
+                progressMetric(
+                    title: activeStage,
+                    valueText: "\(Int((stageProgress * 100).rounded()))%",
+                    fraction: stageProgress,
+                    tint: .blue
+                )
+                if !stageStatuses.isEmpty {
+                    JobStageProgressBar(stages: stageStatuses, compact: true)
+                }
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.clockwise")
+                    Text("Continuous service job — no stage progression")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
 
-            VStack(alignment: .trailing, spacing: 4) {
-                jobStatusBadge(job.status)
-                if job.teamCount > 0 {
-                    Label("\(job.teamCount)", systemImage: "person.2")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            HStack(spacing: 14) {
+                if let estimated = job.estimatedHours, estimated > 0 {
+                    progressMetric(
+                        title: "Hours",
+                        valueText: "\(formatNumber(job.laborHours))/\(formatNumber(estimated))h",
+                        fraction: min(job.laborHours / estimated, 1),
+                        tint: .orange
+                    )
+                }
+
+                if appCore.hasPermission("view_job_financials"), let budget = job.budgetLimit, budget > 0 {
+                    progressMetric(
+                        title: "Budget",
+                        valueText: currency(job.actualCost) + "/" + currency(budget),
+                        fraction: min(job.actualCost / budget, 1),
+                        tint: job.actualCost > budget ? .red : .green
+                    )
                 }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
         .accessibilityIdentifier("jobRow_\(job.id)")
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(job.jobName), \(job.jobNumber), status \(job.status), priority \(job.priority)")
+    }
+
+    private func progressMetric(title: String, valueText: String, fraction: Double, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(title)
+                    .font(.caption2.weight(.semibold))
+                Spacer(minLength: 6)
+                Text(valueText)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            ProgressView(value: max(0, min(fraction, 1)))
+                .tint(tint)
+        }
+    }
+
+    private func stageStatuses(for job: JobsService.JobListItem) -> [JobsService.JobStageStatus] {
+        guard !globalStages.isEmpty else { return [] }
+        return JobsService.computeStageStatuses(
+            allStages: globalStages,
+            currentStageId: job.currentStageId,
+            jobStatus: job.status
+        )
+    }
+
+    private func activeStageName(_ stages: [JobsService.JobStageStatus], isContinuous: Bool) -> String {
+        if isContinuous { return "Continuous" }
+        return stages.first(where: { $0.status == "in_progress" })?.name
+            ?? stages.last(where: { $0.status == "completed" })?.name
+            ?? "Not Started"
+    }
+
+    private func stageProgressFraction(_ stages: [JobsService.JobStageStatus], isContinuous: Bool) -> Double {
+        guard !isContinuous, !stages.isEmpty else { return 0 }
+        let completed = stages.filter { $0.status == "completed" }.count
+        let inProgressCredit = stages.contains { $0.status == "in_progress" } ? 0.5 : 0
+        return min((Double(completed) + inProgressCredit) / Double(stages.count), 1)
+    }
+
+    private func jobSummary(for job: JobsService.JobListItem, stageName: String, progress: Double, isContinuous: Bool) -> String {
+        if let cached = jobSummaryCache[job.id], Date().timeIntervalSince(cached.generatedAt) < 3600 {
+            return cached.text
+        }
+        return makeJobSummary(for: job, stageName: stageName, progress: progress, isContinuous: isContinuous)
+    }
+
+    private func makeJobSummary(for job: JobsService.JobListItem, stageName: String, progress: Double, isContinuous: Bool) -> String {
+        if isContinuous {
+            return "Continuous service route for \(job.customerName ?? job.jobName); recurring work stays outside stage tracking."
+        }
+        let percent = Int((progress * 100).rounded())
+        let teamText = job.teamCount > 0 ? ", \(job.teamCount) assigned" : ""
+        return "\(stageName) \(percent)% complete\(teamText); priority \(job.priority.lowercased())."
+    }
+
+    private func refreshJobSummaryCache() {
+        let now = Date()
+        var next = jobSummaryCache
+        for job in allJobs {
+            let isContinuous = job.jobType == "continuous" || job.status == "continuous"
+            let stages = stageStatuses(for: job)
+            let stageName = activeStageName(stages, isContinuous: isContinuous)
+            let progress = stageProgressFraction(stages, isContinuous: isContinuous)
+            if let cached = next[job.id], now.timeIntervalSince(cached.generatedAt) < 3600 { continue }
+            next[job.id] = CachedJobSummary(
+                text: makeJobSummary(for: job, stageName: stageName, progress: progress, isContinuous: isContinuous),
+                generatedAt: now
+            )
+        }
+        next = next.filter { id, _ in allJobs.contains { $0.id == id } }
+        jobSummaryCache = next
+    }
+
+    private func statusIcon(for status: String, isContinuous: Bool) -> String {
+        if isContinuous { return "arrow.clockwise.circle.fill" }
+        switch status {
+        case "active", "in_progress": return "hammer.circle.fill"
+        case "on_hold": return "pause.circle.fill"
+        case "payment_hold": return appCore.hasPermission("manage_jobs") ? "dollarsign.circle.fill" : "pause.circle.fill"
+        case "completed": return "checkmark.circle.fill"
+        case "cancelled": return "xmark.circle.fill"
+        case "warranty": return "shield.fill"
+        default: return "briefcase.circle.fill"
+        }
+    }
+
+    private func colorForStatus(_ status: String, isContinuous: Bool) -> Color {
+        if isContinuous { return .gray }
+        switch status {
+        case "active", "in_progress": return .green
+        case "on_hold": return .orange
+        case "payment_hold": return .red
+        case "completed": return .blue
+        case "cancelled": return .red.opacity(0.7)
+        case "warranty": return .purple
+        default: return .secondary
+        }
+    }
+
+    private func formatNumber(_ value: Double) -> String {
+        value.rounded() == value ? String(Int(value)) : String(format: "%.1f", value)
+    }
+
+    private func currency(_ value: Double) -> String {
+        value >= 1_000 ? String(format: "$%.1fk", value / 1_000) : String(format: "$%.0f", value)
     }
 
     // MARK: - Badges
@@ -391,6 +570,7 @@ struct JobsListPage: View {
                 counts[j.status, default: 0] += 1
             }
             statusCounts = counts
+            refreshJobSummaryCache()
             applyFilterAndSort()
         } catch {
             loadError = userFriendlyError(error, context: "load jobs")

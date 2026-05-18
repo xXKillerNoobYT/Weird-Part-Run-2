@@ -33,6 +33,8 @@ public final class CipherKeyManager: Sendable {
     private static let keychainAccount = "wp.dbcipher.salt"
     private static let keychainService = "com.wiredpart.dbcipher"
     private static let logger = Logger(subsystem: "com.wiredpart.core", category: "CipherKeyManager")
+    nonisolated(unsafe) private static var testSalt: Data?
+    private static let testSaltLock = NSLock()
 
     private init() {}
 
@@ -64,18 +66,20 @@ public final class CipherKeyManager: Sendable {
     /// - Returns: 32-byte `Data` value.
     /// - Throws: `CipherKeyError.keychainAccessFailed` on a hard Keychain failure.
     public func loadOrCreateSalt() throws -> Data {
+        // SwiftPM's command-line test runner can block indefinitely on macOS Keychain
+        // access when no GUI authorization session is available. Production app code
+        // still uses the Keychain path below; tests use a process-local stable salt so
+        // key derivation behavior remains deterministic without touching user Keychains.
+        if Self.isRunningUnderTestBundle {
+            return try Self.loadOrCreateProcessLocalTestSalt()
+        }
+
         // Attempt read first.
         if let existing = readSaltFromKeychain() {
             return existing
         }
 
-        // Generate 32 cryptographically-random bytes.
-        var bytes = [UInt8](repeating: 0, count: 32)
-        let rc = SecRandomCopyBytes(kSecRandomDefault, 32, &bytes)
-        guard rc == errSecSuccess else {
-            throw CipherKeyError.saltGenerationFailed(rc)
-        }
-        let salt = Data(bytes)
+        let salt = try Self.generateSalt()
 
         do {
             try writeSaltToKeychain(salt)
@@ -99,6 +103,11 @@ public final class CipherKeyManager: Sendable {
 
     /// Delete the persisted salt (use only during device wipe / factory reset).
     public func deleteSalt() {
+        if Self.isRunningUnderTestBundle {
+            Self.clearProcessLocalTestSalt()
+            return
+        }
+
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: Self.keychainService,
@@ -108,6 +117,39 @@ public final class CipherKeyManager: Sendable {
         if status != errSecSuccess && status != errSecItemNotFound {
             Self.logger.warning("CipherKeyManager: SecItemDelete returned \(status) — salt may persist")
         }
+    }
+
+    // MARK: - Private Test Helpers
+
+    private static var isRunningUnderTestBundle: Bool {
+        let executablePath = Bundle.main.executablePath ?? ""
+        return executablePath.contains(".xctest") ||
+            ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
+    private static func loadOrCreateProcessLocalTestSalt() throws -> Data {
+        testSaltLock.lock()
+        defer { testSaltLock.unlock() }
+        if let existing = testSalt { return existing }
+        let salt = try generateSalt()
+        testSalt = salt
+        return salt
+    }
+
+    private static func clearProcessLocalTestSalt() {
+        testSaltLock.lock()
+        defer { testSaltLock.unlock() }
+        testSalt = nil
+    }
+
+    private static func generateSalt() throws -> Data {
+        // Generate 32 cryptographically-random bytes.
+        var bytes = [UInt8](repeating: 0, count: 32)
+        let rc = SecRandomCopyBytes(kSecRandomDefault, 32, &bytes)
+        guard rc == errSecSuccess else {
+            throw CipherKeyError.saltGenerationFailed(rc)
+        }
+        return Data(bytes)
     }
 
     // MARK: - Private Keychain Helpers

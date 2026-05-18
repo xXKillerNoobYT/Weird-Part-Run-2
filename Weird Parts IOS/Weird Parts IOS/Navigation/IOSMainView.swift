@@ -17,7 +17,16 @@ struct IOSMainView: View {
     @State private var showLogoutConfirm = false
     @State private var showAIAssistant = false
     @State private var aiDisplayMode: AIDisplayMode = .sheet
-    @State private var showConflictReview = false
+    @State private var activeRootSheet: RootSheet?
+    @State private var moduleNavigationRequests: [String: ModuleNavigationRequest] = [:]
+    @State private var moreNavigationPath: [String] = []
+
+    enum RootSheet: Identifiable {
+        case conflictReview
+        case aiAssistant
+
+        var id: Self { self }
+    }
 
     // Full sidebar state
     @State private var expandedModuleId: String? = "dashboard"
@@ -29,13 +38,7 @@ struct IOSMainView: View {
         case tabEditor
         case aiAssistant
 
-        var id: String {
-            switch self {
-            case .userMenu: return "userMenu"
-            case .tabEditor: return "tabEditor"
-            case .aiAssistant: return "aiAssistant"
-            }
-        }
+        var id: Self { self }
     }
 
     @State private var activeSidebarSheet: SidebarSheet?
@@ -67,7 +70,7 @@ struct IOSMainView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SyncConflictBanner { showConflictReview = true }
+            SyncConflictBanner { activeRootSheet = .conflictReview }
                 .environmentObject(appCore)
 
             Group {
@@ -79,11 +82,19 @@ struct IOSMainView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .sheet(isPresented: $showConflictReview) {
-            SyncConflictReviewPage()
-                .environmentObject(appCore)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
+        .sheet(item: $activeRootSheet) { sheet in
+            switch sheet {
+            case .conflictReview:
+                SyncConflictReviewPage()
+                    .environmentObject(appCore)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            case .aiAssistant:
+                IOSAIAssistantPanel(displayMode: $aiDisplayMode, isVisible: $showAIAssistant)
+                    .environmentObject(appCore)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
         }
         .confirmationDialog("Log out?", isPresented: $showLogoutConfirm, titleVisibility: .visible) {
             Button("Log Out", role: .destructive) {
@@ -107,24 +118,59 @@ struct IOSMainView: View {
                 badgeManager.refresh()
             }
         }
+        .onChange(of: showAIAssistant) { _, isVisible in
+            syncAIAssistantPresentation(isVisible: isVisible, displayMode: aiDisplayMode)
+        }
+        .onChange(of: aiDisplayMode) { _, newMode in
+            syncAIAssistantPresentation(isVisible: showAIAssistant, displayMode: newMode)
+        }
+        .onChange(of: activeRootSheet) { _, newSheet in
+            guard tabPrefs.navigationStyle != .fullSidebar,
+                  aiDisplayMode == .sheet,
+                  showAIAssistant,
+                  !isAIAssistantRootSheet(newSheet)
+            else { return }
+
+            showAIAssistant = false
+        }
         // Safety: this .onReceive closure captures tabPrefs and appCore strongly, but that is fine.
         // IOSMainView is only shown when appCore.currentUser != nil (see WiredPartIOSApp.swift).
         // On logout, currentUser becomes nil and SwiftUI tears down this entire view, which
         // automatically cancels the Combine subscription. No manual deregistration needed.
         .onReceive(NotificationCenter.default.publisher(for: .navigateToModule)) { notification in
             if let moduleId = notification.userInfo?["moduleId"] as? String {
+                let requestedTabId = notification.userInfo?["tabId"] as? String
                 if tabPrefs.navigationStyle == .fullSidebar {
                     // Navigate within full sidebar
                     expandedModuleId = moduleId
-                    if let module = allModulesById[moduleId],
-                       let firstTab = visibleTabs(for: module, permissions: appCore.permissions).first {
-                        selectedTabPath = firstTab.path
+                    if let module = allModulesById[moduleId] {
+                        let tabs = visibleTabs(for: module, permissions: appCore.permissions)
+                        if let requestedTabId,
+                           let requestedTab = tabs.first(where: { $0.id == requestedTabId || $0.path == requestedTabId }) {
+                            selectedTabPath = requestedTab.path
+                        } else if let firstTab = tabs.first {
+                            selectedTabPath = firstTab.path
+                        }
                     }
                 } else {
-                    selectedModuleId = moduleId
+                    if let requestedTabId {
+                        moduleNavigationRequests[moduleId] = ModuleNavigationRequest(moduleId: moduleId, tabId: requestedTabId)
+                    }
+                    routeToModuleInTabLayout(moduleId)
                 }
             }
         }
+    }
+
+    private func routeToModuleInTabLayout(_ moduleId: String) {
+        if primaryModules.contains(where: { $0.id == moduleId }) {
+            selectedModuleId = moduleId
+            return
+        }
+
+        guard overflowModules.contains(where: { $0.id == moduleId }) else { return }
+        moreNavigationPath = [moduleId]
+        selectedModuleId = "__more__"
     }
 
     // MARK: - Tab View Layout (existing)
@@ -134,7 +180,11 @@ struct IOSMainView: View {
         TabView(selection: $selectedModuleId) {
             ForEach(primaryModules) { module in
                 NavigationStack {
-                    ModuleHostView(module: module, showLogoutConfirm: $showLogoutConfirm)
+                    ModuleHostView(
+                        module: module,
+                        showLogoutConfirm: $showLogoutConfirm,
+                        navigationRequest: moduleNavigationRequests[module.id]
+                    )
                         .environmentObject(appCore)
                         .environmentObject(tabPrefs)
                 }
@@ -157,12 +207,6 @@ struct IOSMainView: View {
             if !showAIAssistant || aiDisplayMode == .sheet {
                 aiFloatingButton(bottomPadding: 90)
             }
-        }
-        .sheet(isPresented: aiDisplayMode == .sheet ? $showAIAssistant : .constant(false)) {
-            IOSAIAssistantPanel(displayMode: $aiDisplayMode, isVisible: $showAIAssistant)
-                .environmentObject(appCore)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
         }
         .overlay(alignment: .bottomTrailing) {
             if showAIAssistant && aiDisplayMode == .overlay {
@@ -234,6 +278,53 @@ struct IOSMainView: View {
                     .padding(.bottom, DS.Space.xl)
             }
         }
+        .onChange(of: activeSidebarSheet) { _, newSheet in
+            guard tabPrefs.navigationStyle == .fullSidebar,
+                  aiDisplayMode == .sheet,
+                  showAIAssistant,
+                  !isAIAssistantSidebarSheet(newSheet)
+            else { return }
+
+            showAIAssistant = false
+        }
+    }
+
+    private func syncAIAssistantPresentation(isVisible: Bool, displayMode: AIDisplayMode) {
+        guard displayMode == .sheet else {
+            clearAIAssistantSheetHosts()
+            return
+        }
+
+        guard isVisible else {
+            clearAIAssistantSheetHosts()
+            return
+        }
+
+        if tabPrefs.navigationStyle == .fullSidebar {
+            activeSidebarSheet = .aiAssistant
+        } else {
+            activeRootSheet = .aiAssistant
+        }
+    }
+
+    private func clearAIAssistantSheetHosts() {
+        if isAIAssistantRootSheet(activeRootSheet) {
+            activeRootSheet = nil
+        }
+
+        if isAIAssistantSidebarSheet(activeSidebarSheet) {
+            activeSidebarSheet = nil
+        }
+    }
+
+    private func isAIAssistantRootSheet(_ sheet: RootSheet?) -> Bool {
+        guard case .aiAssistant = sheet else { return false }
+        return true
+    }
+
+    private func isAIAssistantSidebarSheet(_ sheet: SidebarSheet?) -> Bool {
+        guard case .aiAssistant = sheet else { return false }
+        return true
     }
 
     // MARK: - Full Sidebar View
@@ -446,6 +537,8 @@ struct IOSMainView: View {
             withAnimation(.easeInOut(duration: 0.25)) {
                 if tabPrefs.navigationStyle == .fullSidebar && aiDisplayMode == .sheet {
                     activeSidebarSheet = .aiAssistant
+                } else if aiDisplayMode == .sheet {
+                    activeRootSheet = .aiAssistant
                 }
                 showAIAssistant = true
             }
@@ -468,7 +561,7 @@ struct IOSMainView: View {
 
     @ViewBuilder
     private var moreTab: some View {
-        NavigationStack {
+        NavigationStack(path: $moreNavigationPath) {
             List {
                 // Overflow modules
                 if !overflowModules.isEmpty {
@@ -507,7 +600,11 @@ struct IOSMainView: View {
             }
             .navigationDestination(for: String.self) { moduleId in
                 if let module = allModulesById[moduleId] {
-                    ModuleHostView(module: module, showLogoutConfirm: $showLogoutConfirm)
+                    ModuleHostView(
+                        module: module,
+                        showLogoutConfirm: $showLogoutConfirm,
+                        navigationRequest: moduleNavigationRequests[module.id]
+                    )
                         .environmentObject(appCore)
                         .environmentObject(tabPrefs)
                 }
@@ -524,9 +621,16 @@ struct IOSMainView: View {
 /// **Important:** This view does NOT own a NavigationStack. The parent
 /// (primary tab or More tab) provides the navigation context. This avoids
 /// the double-nested NavigationStack bug that breaks "More" tab navigation.
+struct ModuleNavigationRequest: Equatable {
+    let moduleId: String
+    let tabId: String
+    private let token = UUID()
+}
+
 struct ModuleHostView: View {
     let module: AppModule
     @Binding var showLogoutConfirm: Bool
+    let navigationRequest: ModuleNavigationRequest?
     @EnvironmentObject private var appCore: AppCore
     @EnvironmentObject private var tabPrefs: TabBarPreferences
     @State private var selectedTabId: String = ""
@@ -569,9 +673,13 @@ struct ModuleHostView: View {
                 .presentationDragIndicator(.visible)
         }
         .onAppear {
+            applyNavigationRequest(navigationRequest)
             if selectedTabId.isEmpty, let first = visibleTabsList.first {
                 selectedTabId = first.id
             }
+        }
+        .onChange(of: navigationRequest) { _, request in
+            applyNavigationRequest(request)
         }
     }
 
@@ -579,6 +687,13 @@ struct ModuleHostView: View {
         visibleTabsList.first { $0.id == selectedTabId }?.path
             ?? visibleTabsList.first?.path
             ?? "/dashboard"
+    }
+
+    private func applyNavigationRequest(_ request: ModuleNavigationRequest?) {
+        guard request?.moduleId == module.id, let tabId = request?.tabId else { return }
+        if let requested = visibleTabsList.first(where: { $0.id == tabId || $0.path == tabId }) {
+            selectedTabId = requested.id
+        }
     }
 
     // MARK: - Top Tabs Layout (existing)
@@ -676,7 +791,14 @@ struct ModuleHostView: View {
                     } label: {
                         subTabChip(tab: tab, selected: isSelected(tab), chipH: chipH)
                     }
-                    .buttonStyle(.glass)
+                    // Glass buttons inside a horizontally scrolling, narrow iPhone
+                    // sub-tab strip can report invalid accessibility activation
+                    // points to XCTest. Keep the chip styling in `subTabChip`, but
+                    // give automation a plain, explicitly-sized hit region.
+                    .buttonStyle(.plain)
+                    .contentShape(Rectangle())
+                    .accessibilityIdentifier("subtab_\(tab.id)")
+                    .accessibilityLabel(tab.label)
                 }
             }
             .padding(.horizontal, DS.Space.lg)
@@ -696,6 +818,7 @@ struct ModuleHostView: View {
         }
         .padding(.horizontal, chipH)
         .padding(.vertical, DS.Space.sm)
+        .frame(minWidth: 44, minHeight: 44)
         .background(
             Capsule()
                 .fill(selected ? Color.accentColor : Color.clear)

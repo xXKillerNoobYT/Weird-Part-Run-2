@@ -278,7 +278,10 @@ struct WizardStepWalkingPath: View {
     }
 
     private func suggestPath() {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            stepError = "Warehouse service not available"
+            return
+        }
         do {
             previewStops = try service.suggestWalkingPath(floorPlanId: floorPlanId)
         } catch {
