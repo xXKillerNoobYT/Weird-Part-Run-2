@@ -115,6 +115,19 @@ private struct OfficePipelineView: View {
         }
         .listStyle(.insetGrouped)
         .navigationTitle("Pipeline")
+        .onAppear {
+            postAIContext()
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .officePipelinePageInactive, object: nil)
+        }
+    }
+
+    private func postAIContext() {
+        let context = """
+        Office Pipeline page. Visible entry points: Short-Term Pipeline, Long-Term Pipeline, Dispatch Board. Purpose: route office users to scheduling pipeline and dispatch workflows. Data state: hub page only; detailed counts load after choosing an entry point. Available read-only actions: explain which pipeline view to open, summarize available routing options, clarify that this page does not mutate schedules directly.
+        """
+        NotificationCenter.default.post(name: .officePipelinePageActive, object: nil, userInfo: ["context": context])
     }
 }
 

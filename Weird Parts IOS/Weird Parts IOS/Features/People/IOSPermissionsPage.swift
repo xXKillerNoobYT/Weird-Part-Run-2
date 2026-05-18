@@ -99,8 +99,12 @@ struct IOSPermissionsPage: View {
         }
         .refreshable { loadData() }
         .task { loadData(); loadLegacyPinCount() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .permissionsPageInactive, object: nil)
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             loadLegacyPinCount()
+            postAIContext()
         }
     }
 
@@ -210,6 +214,7 @@ struct IOSPermissionsPage: View {
     private func selectHat(_ hat: PeopleService.HatListItem) {
         selectedHat = hat
         loadHatPermissions(hatId: hat.id)
+        postAIContext()
     }
 
     private func loadHatPermissions(hatId: Int64) {
@@ -222,6 +227,7 @@ struct IOSPermissionsPage: View {
         } catch {
             loadError = userFriendlyError(error, context: "load permissions")
         }
+        postAIContext()
     }
 
     private func togglePermission(key: String, enabled: Bool) {
@@ -240,6 +246,7 @@ struct IOSPermissionsPage: View {
                 try auth.removeHatPermission(hatId: hat.id, permissionKey: key)
                 hatPermissions.removeAll { $0 == key }
             }
+            postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "update permission")
         }
@@ -247,6 +254,7 @@ struct IOSPermissionsPage: View {
 
     private func loadLegacyPinCount() {
         legacyPinCount = (try? appCore.authService?.getLegacyHashedUserCount()) ?? 0
+        postAIContext()
     }
 
     // MARK: - Data Loading
@@ -269,5 +277,17 @@ struct IOSPermissionsPage: View {
             loadError = userFriendlyError(error, context: "load permissions")
         }
         isLoading = false
+        postAIContext()
+    }
+
+    private func postAIContext() {
+        let permissionKeyCount = allPermissions.reduce(0) { $0 + $1.keys.count }
+        let selectedHatName = selectedHat?.name ?? "none"
+        let enabledCount = hatPermissions.count
+        let groupNames = allPermissions.map(\.name).joined(separator: ", ")
+        let context = """
+        Permissions page. Hats loaded: \(hats.count). Permission groups: \(allPermissions.count). Permission keys visible for selected hat: \(permissionKeyCount). Selected hat: \(selectedHatName). Enabled permissions for selected hat: \(enabledCount). Legacy PIN upgrades pending: \(legacyPinCount). Groups: \(groupNames). Available read-only actions: summarize selected hat access, explain permission groups, identify whether a hat is selected.
+        """
+        NotificationCenter.default.post(name: .permissionsPageActive, object: nil, userInfo: ["context": context])
     }
 }
