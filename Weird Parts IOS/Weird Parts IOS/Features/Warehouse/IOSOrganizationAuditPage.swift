@@ -292,6 +292,14 @@ struct IOSOrganizationAuditPage: View {
                         .onTapGesture {
                             activeSheet = .consolidationDetail(vote)
                         }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button {
+                                activeSheet = .managerOverride(vote)
+                            } label: {
+                                Label("Override", systemImage: "checkmark.seal")
+                            }
+                            .tint(.blue)
+                        }
                 }
             }
         }
@@ -397,8 +405,8 @@ struct IOSOrganizationAuditPage: View {
         isLoading = orgRatings.isEmpty
         loadError = nil
         do {
-            // Load all org ratings by querying directly
-            orgRatings = try loadAllOrgRatings(service: service)
+            _ = try service.generateConsolidationSuggestions()
+            orgRatings = try service.listOrganizationRatings()
             consolidationVotes = try service.getActiveConsolidationVotes()
             warehouseScore = try service.getWarehouseOverallScore()
             postAIContext()
@@ -422,32 +430,6 @@ struct IOSOrganizationAuditPage: View {
         )
     }
 
-    private func loadAllOrgRatings(service: WarehouseService) throws -> [OrganizationRating] {
-        // Load via the warehouse score — get all ratings that exist
-        // This uses a raw query since there's no "list all" method yet
-        // The service will handle this gracefully
-        var ratings: [OrganizationRating] = []
-        // Get areas from floor plans to seed org ratings
-        let plans = try service.listFloorPlans()
-        for plan in plans {
-            guard let planId = plan.id else { continue }
-            let units = try service.listStorageUnits(floorPlanId: planId)
-            for unit in units {
-                guard let unitId = unit.id else { continue }
-                let levels = try service.listLevelsForUnit(unitId: unitId)
-                for level in levels {
-                    guard let levelId = level.id else { continue }
-                    let areas = try service.listAreasForLevel(levelId: levelId)
-                    for area in areas {
-                        guard let areaId = area.id else { continue }
-                        let rating = try service.getOrganizationRating(areaId: areaId)
-                        ratings.append(rating)
-                    }
-                }
-            }
-        }
-        return ratings
-    }
 }
 
 // MARK: - Organization Checklist Sheet
@@ -500,6 +482,7 @@ private struct OrgChecklistSheet: View {
                         Text(error).foregroundStyle(.red).font(.caption)
                     }
                 }
+
             }
             .navigationTitle("Org Checklist")
             .navigationBarTitleDisplayMode(.inline)
@@ -631,6 +614,24 @@ private struct ConsolidationDetailSheet: View {
                         Text(error).foregroundStyle(.red).font(.caption)
                     }
                 }
+
+                Section {
+                    if vote.status == "decided" {
+                        Button {
+                            applyDecision()
+                        } label: {
+                            Label("Apply Decision", systemImage: "checkmark.circle.fill")
+                        }
+                        .disabled(isSaving)
+                    }
+
+                    Button(role: .destructive) {
+                        dismissSuggestion()
+                    } label: {
+                        Label("Dismiss Suggestion", systemImage: "xmark.circle")
+                    }
+                    .disabled(isSaving)
+                }
             }
             .navigationTitle("Vote to Consolidate")
             .navigationBarTitleDisplayMode(.inline)
@@ -676,6 +677,42 @@ private struct ConsolidationDetailSheet: View {
             onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "load audit")
+        }
+        isSaving = false
+    }
+
+    private func applyDecision() {
+        guard let service = appCore.warehouseService,
+              let voteId = vote.id else {
+            errorMessage = "Missing data"
+            return
+        }
+        isSaving = true
+        errorMessage = nil
+        do {
+            try service.applyConsolidation(voteId: voteId)
+            dismiss()
+            onSave()
+        } catch {
+            errorMessage = userFriendlyError(error, context: "update consolidation")
+        }
+        isSaving = false
+    }
+
+    private func dismissSuggestion() {
+        guard let service = appCore.warehouseService,
+              let voteId = vote.id else {
+            errorMessage = "Missing data"
+            return
+        }
+        isSaving = true
+        errorMessage = nil
+        do {
+            try service.dismissConsolidation(voteId: voteId, reason: "Dismissed from organization audit")
+            dismiss()
+            onSave()
+        } catch {
+            errorMessage = userFriendlyError(error, context: "update consolidation")
         }
         isSaving = false
     }

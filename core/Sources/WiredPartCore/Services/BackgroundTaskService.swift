@@ -93,6 +93,86 @@ public final class BackgroundTaskService: Sendable {
         }
     }
 
+    public enum OfficeStatus: String, Sendable {
+        case completed
+        case failed
+        case running
+        case neverRun
+        case unavailable
+    }
+
+    public struct OfficeStatusRow: Identifiable, Sendable {
+        public let id: String
+        public let title: String
+        public let status: OfficeStatus
+        public let statusLabel: String
+        public let detail: String
+        public let systemImage: String
+
+        public init(
+            id: String,
+            title: String,
+            status: OfficeStatus,
+            statusLabel: String,
+            detail: String,
+            systemImage: String
+        ) {
+            self.id = id
+            self.title = title
+            self.status = status
+            self.statusLabel = statusLabel
+            self.detail = detail
+            self.systemImage = systemImage
+        }
+
+        public static func unavailableRows() -> [OfficeStatusRow] {
+            BackgroundTaskService.officeTaskDefinitions.map {
+                OfficeStatusRow(
+                    id: $0.id,
+                    title: $0.title,
+                    status: .unavailable,
+                    statusLabel: "Unavailable",
+                    detail: "Task log unavailable on this device.",
+                    systemImage: $0.systemImage
+                )
+            }
+        }
+    }
+
+    private struct OfficeTaskDefinition: Sendable {
+        let id: String
+        let title: String
+        let taskTypes: [String]
+        let systemImage: String
+    }
+
+    private static let officeTaskDefinitions: [OfficeTaskDefinition] = [
+        OfficeTaskDefinition(
+            id: "forecast_recalculation",
+            title: "Forecast Recalculation",
+            taskTypes: ["forecast_recalculation", "forecast", "forecasting"],
+            systemImage: "chart.line.uptrend.xyaxis"
+        ),
+        OfficeTaskDefinition(
+            id: "companion_discovery",
+            title: "Companion Discovery",
+            taskTypes: ["companion_discovery"],
+            systemImage: "link"
+        ),
+        OfficeTaskDefinition(
+            id: "audit",
+            title: "Audit",
+            taskTypes: ["audit", "inventory_audit"],
+            systemImage: "checkmark.shield"
+        ),
+        OfficeTaskDefinition(
+            id: "sync",
+            title: "Sync",
+            taskTypes: ["sync", "remote_sync", "peer_sync"],
+            systemImage: "arrow.triangle.2.circlepath"
+        ),
+    ]
+
     // =========================================================================
     // MARK: - Task Lifecycle
     // =========================================================================
@@ -232,6 +312,39 @@ public final class BackgroundTaskService: Sendable {
         }
     }
 
+    /// Dashboard-ready status rows for office-visible background operations.
+    public func officeStatusRows() throws -> [OfficeStatusRow] {
+        do {
+            return try db.writer.read { dbConn in
+                try Self.officeTaskDefinitions.map { definition in
+                    guard let entry = try latestTask(dbConn, matchingTypes: definition.taskTypes) else {
+                        return OfficeStatusRow(
+                            id: definition.id,
+                            title: definition.title,
+                            status: .neverRun,
+                            statusLabel: "Never run",
+                            detail: "No \(definition.title.lowercased()) task has run on this device.",
+                            systemImage: definition.systemImage
+                        )
+                    }
+
+                    let status = officeStatus(for: entry.status)
+                    return OfficeStatusRow(
+                        id: definition.id,
+                        title: definition.title,
+                        status: status,
+                        statusLabel: officeStatusLabel(for: status),
+                        detail: officeStatusDetail(for: entry, status: status),
+                        systemImage: definition.systemImage
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return OfficeStatusRow.unavailableRows() }
+            throw error
+        }
+    }
+
     // =========================================================================
     // MARK: - Cleanup
     // =========================================================================
@@ -289,5 +402,54 @@ public final class BackgroundTaskService: Sendable {
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
         return message.contains("no such table") || message.contains("no such column")
+    }
+
+    private func latestTask(_ dbConn: Database, matchingTypes taskTypes: [String]) throws -> TaskLogEntry? {
+        guard !taskTypes.isEmpty else { return nil }
+        let placeholders = Array(repeating: "?", count: taskTypes.count).joined(separator: ", ")
+        return try TaskLogEntry.fetchOne(dbConn, sql: """
+            SELECT *
+            FROM background_task_log
+            WHERE task_type IN (\(placeholders))
+            ORDER BY started_at DESC, id DESC
+            LIMIT 1
+        """, arguments: StatementArguments(taskTypes))
+    }
+
+    private func officeStatus(for rawStatus: String) -> OfficeStatus {
+        switch rawStatus {
+        case "completed": return .completed
+        case "failed": return .failed
+        case "running": return .running
+        default: return .unavailable
+        }
+    }
+
+    private func officeStatusLabel(for status: OfficeStatus) -> String {
+        switch status {
+        case .completed: return "Completed"
+        case .failed: return "Failed"
+        case .running: return "Running"
+        case .neverRun: return "Never run"
+        case .unavailable: return "Unavailable"
+        }
+    }
+
+    private func officeStatusDetail(for entry: TaskLogEntry, status: OfficeStatus) -> String {
+        let timestamp = entry.completedAt ?? entry.startedAt
+        let timestampText = timestamp.formatted(date: .abbreviated, time: .shortened)
+        switch status {
+        case .completed:
+            let summary = entry.resultSummary ?? "Processed \(entry.itemsProcessed) item\(entry.itemsProcessed == 1 ? "" : "s")."
+            return "Last completed \(timestampText). \(summary)"
+        case .failed:
+            return "Last failed \(timestampText). \(entry.errorMessage ?? "No error details recorded.")"
+        case .running:
+            return "Started \(timestampText)."
+        case .neverRun:
+            return "No task has run on this device."
+        case .unavailable:
+            return "Latest status could not be read."
+        }
     }
 }

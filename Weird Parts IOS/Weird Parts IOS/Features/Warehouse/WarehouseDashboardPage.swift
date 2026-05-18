@@ -13,6 +13,8 @@ struct WarehouseDashboardPage: View {
 
     @State private var dashKPIs: WarehouseService.DashboardKPIs?
     @State private var auditSummary: WarehouseService.AuditSummary?
+    @State private var auditCards: WarehouseService.DashboardSmartCardSummary?
+    @State private var warehouseScore: WarehouseService.WarehouseOverallScore?
     @State private var recentMovements: [WarehouseService.MovementRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
@@ -21,9 +23,10 @@ struct WarehouseDashboardPage: View {
 
     private enum DashboardFilter: String, CaseIterable {
         case movements = "Movements Today"
-        case receiving = "Receiving Active"
         case auditDue = "Audit Due"
-        case staging = "Staging Ready"
+        case confidenceRisk = "Confidence Risk"
+        case activeAudits = "Active Audits"
+        case orgIssues = "Org Issues"
     }
 
     @State private var setupTier: WarehouseService.WarehouseSetupTier = .complete
@@ -82,6 +85,7 @@ struct WarehouseDashboardPage: View {
         .task {
             loadData()
             appCore.onboardingManager?.markCompleted("wh-dashboard-view")
+            appCore.onboardingManager?.markCompleted("wh-dashboard-audit-score")
             // Detect warehouse setup tier for dismissable banner
             if let service = appCore.warehouseService {
                 setupTier = (try? service.getSetupProgress()) ?? .none
@@ -120,9 +124,10 @@ struct WarehouseDashboardPage: View {
             PageHelpSheet(
                 title: "Warehouse Dashboard Help",
                 sections: [
-                    ("Overview", "Monitor warehouse operations at a glance. Smart cards show today's movements, active receiving sessions, audits due, and staging status."),
+                    ("Overview", "Monitor warehouse operations at a glance. Smart cards show today's movements, audits due, confidence risk, active audit sessions, and organization issues."),
+                    ("Warehouse Score", "The overall score combines part confidence, organization ratings, user ratings, shelf utilization, misplacements, label accuracy, audit response time, and stock health."),
                     ("Filters", "Tap a smart card to filter the activity feed to that category. Tap again to clear the filter."),
-                    ("Quick Actions", "Use the quick action buttons to start a new movement or scan QR codes for bin lookups.")
+                    ("Quick Actions", "Use quick actions to start a movement, scan QR codes, open setup, or jump to audit pages for count audit, speed mode, organization audit, ratings, and quick verification.")
                 ]
             )
         }
@@ -278,10 +283,11 @@ struct WarehouseDashboardPage: View {
 
     private var smartCardFilters: some View {
         let kpis = dashKPIs?.kpis
-        let movementsCount = kpis?.todayMovements ?? 0
-        let receivingCount = dashKPIs?.activeReceivingSessions ?? 0
-        let auditDueCount = auditSummary.map { $0.totalParts - $0.countedParts } ?? 0
-        let stagingCount = dashKPIs?.pendingStagingCount ?? 0
+        let movementsCount = auditCards?.movesToday ?? kpis?.todayMovements ?? 0
+        let auditDueCount = auditCards?.auditDue ?? auditSummary.map { $0.totalParts - $0.countedParts } ?? 0
+        let confidenceRiskCount = auditCards?.lowConfidenceAreas ?? 0
+        let activeAuditsCount = auditCards?.activeAuditSessions ?? 0
+        let orgIssueCount = auditCards?.organizationIssues ?? 0
 
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
@@ -292,22 +298,28 @@ struct WarehouseDashboardPage: View {
                     color: .purple
                 )
                 smartCard(
-                    filter: .receiving,
-                    count: receivingCount,
-                    icon: "arrow.down.circle",
-                    color: .green
-                )
-                smartCard(
                     filter: .auditDue,
                     count: max(0, auditDueCount),
                     icon: "clipboard.fill",
                     color: auditDueCount > 0 ? .orange : .green
                 )
                 smartCard(
-                    filter: .staging,
-                    count: stagingCount,
-                    icon: "shippingbox.and.arrow.backward",
-                    color: .blue
+                    filter: .confidenceRisk,
+                    count: confidenceRiskCount,
+                    icon: "exclamationmark.shield.fill",
+                    color: confidenceRiskCount > 0 ? .red : .green
+                )
+                smartCard(
+                    filter: .activeAudits,
+                    count: activeAuditsCount,
+                    icon: "checklist.checked",
+                    color: activeAuditsCount > 0 ? .blue : .green
+                )
+                smartCard(
+                    filter: .orgIssues,
+                    count: orgIssueCount,
+                    icon: "tag.slash.fill",
+                    color: orgIssueCount > 0 ? .orange : .green
                 )
             }
         }
@@ -361,6 +373,12 @@ struct WarehouseDashboardPage: View {
             GridItem(.flexible(), spacing: 12),
             GridItem(.flexible(), spacing: 12),
         ], spacing: 12) {
+            miniKPI(
+                title: "Audit Score",
+                value: "\(Int((warehouseScore?.score ?? 100).rounded()))%",
+                icon: "gauge.with.dots.needle.bottom.50percent",
+                color: scoreColor(warehouseScore?.score ?? 100)
+            )
             miniKPI(title: "Total Stock", value: "\(totalStock)", icon: "shippingbox.fill", color: .blue)
             miniKPI(
                 title: "Health",
@@ -470,6 +488,8 @@ struct WarehouseDashboardPage: View {
                 GridItem(.flexible(), spacing: 10),
             ], spacing: 10) {
                 subPageLink(title: "Audit", icon: "clipboard", color: .orange, moduleId: "warehouse-audit")
+                subPageLink(title: "Leaderboard", icon: "trophy.fill", color: .yellow, moduleId: "warehouse-leaderboard")
+                subPageLink(title: "Org Audit", icon: "tag", color: .red, moduleId: "warehouse-organization")
                 subPageLink(title: "Staging", icon: "shippingbox.and.arrow.backward", color: .blue, moduleId: "warehouse-staging")
                 subPageLink(title: "Receiving", icon: "arrow.down.circle", color: .green, moduleId: "warehouse-receiving")
                 subPageLink(title: "Inventory", icon: "square.grid.3x3", color: .purple, moduleId: "warehouse-inventory")
@@ -555,11 +575,11 @@ struct WarehouseDashboardPage: View {
         switch filter {
         case .movements:
             return recentMovements // Already today's movements from KPIs
-        case .receiving:
-            return recentMovements.filter { $0.movementType == "receive" }
         case .auditDue:
             return recentMovements.filter { $0.movementType == "adjustment" }
-        case .staging:
+        case .confidenceRisk, .activeAudits:
+            return recentMovements.filter { $0.movementType == "adjustment" || $0.movementType == "audit" }
+        case .orgIssues:
             return recentMovements.filter { $0.movementType == "transfer" }
         }
     }
@@ -624,6 +644,8 @@ struct WarehouseDashboardPage: View {
         do {
             dashKPIs = try service.getDashboardKPIs()
             auditSummary = try service.getAuditSummary()
+            auditCards = try service.getDashboardSmartCardSummary()
+            warehouseScore = try service.getWarehouseOverallScoreBreakdown()
             recentMovements = try service.listMovements(limit: 10)
             postAIContext()
         } catch {
@@ -643,8 +665,9 @@ struct WarehouseDashboardPage: View {
         Stock total: \(kpis?.totalStock ?? 0), health: \(kpis?.stockHealthPercent ?? 0)%, shortfalls: \(kpis?.shortfallCount ?? 0), movements today: \(kpis?.todayMovements ?? 0).
         Active receiving sessions: \(dashKPIs?.activeReceivingSessions ?? 0), pending staging: \(dashKPIs?.pendingStagingCount ?? 0), pending returns: \(dashKPIs?.pendingReturns ?? 0).
         Audit counted/total: \(auditSummary?.countedParts ?? 0)/\(auditSummary?.totalParts ?? 0), discrepancies: \(auditSummary?.discrepancies ?? 0), selected filter: \(selectedFilter?.rawValue ?? "none").
+        Warehouse audit score: \(Int((warehouseScore?.score ?? 100).rounded()))%, confidence risk areas: \(auditCards?.lowConfidenceAreas ?? 0), active audits: \(auditCards?.activeAuditSessions ?? 0), organization issues: \(auditCards?.organizationIssues ?? 0).
         Recent movement rows loaded: \(recentMovements.count), visible after filter: \(filteredMovements.count), movement types: \(movementCounts.isEmpty ? "none" : movementCounts).
-        Available read-only guidance: explain KPI cards, selected activity filter, quick action locations, and warehouse sub-page links. Do not create movements or launch scanners directly.
+        Available read-only guidance: explain KPI cards, audit score components, selected activity filter, quick action locations, and warehouse sub-page links. Do not create movements or launch scanners directly.
         """
         NotificationCenter.default.post(
             name: .warehouseDashboardPageActive,
@@ -675,6 +698,12 @@ struct WarehouseDashboardPage: View {
         case "adjustment": .gray
         default: .blue
         }
+    }
+
+    private func scoreColor(_ score: Double) -> Color {
+        if score >= 85 { return .green }
+        if score >= 70 { return .orange }
+        return .red
     }
 
     private func movementLabel(_ type: String) -> String {

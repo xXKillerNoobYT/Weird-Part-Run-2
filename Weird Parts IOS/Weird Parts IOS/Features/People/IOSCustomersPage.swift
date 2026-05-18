@@ -32,6 +32,10 @@ struct IOSCustomersPage: View {
             .onChange(of: searchText) { loadData() }
             .refreshable { loadData() }
             .task { loadData() }
+            .onAppear { postPageContext() }
+            .onDisappear {
+                NotificationCenter.default.post(name: .customersPageInactive, object: nil)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .addCustomer } label: {
@@ -153,6 +157,17 @@ struct IOSCustomersPage: View {
             loadError = userFriendlyError(error, context: "load customers")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        NotificationCenter.default.post(
+            name: .customersPageActive,
+            object: nil,
+            userInfo: [
+                "context": "Customers Page: \(customers.count) customers, \(filteredCustomers.count) visible, search active: \(!searchText.isEmpty)."
+            ]
+        )
     }
 }
 

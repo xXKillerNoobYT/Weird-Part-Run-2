@@ -57,6 +57,7 @@ let onboardingTaskRegistry: [String: [OnboardingTask]] = [
     // MARK: - Warehouse
     "warehouse-dashboard": [
         OnboardingTask(id: "wh-dashboard-view", title: "View Warehouse Dashboard", description: "See today's movements, receiving activity, and audit status.", requiredPermission: nil, isRequired: true),
+        OnboardingTask(id: "wh-dashboard-audit-score", title: "Check Audit Health", description: "Review the audit score, confidence risk, active audits, organization issues, and stock health cards.", requiredPermission: nil, isRequired: true),
     ],
     "warehouse-movements": [
         OnboardingTask(id: "wh-movements-view", title: "View Movements", description: "See recent stock movements — transfers, receives, returns.", requiredPermission: nil, isRequired: true),
@@ -73,6 +74,16 @@ let onboardingTaskRegistry: [String: [OnboardingTask]] = [
     ],
     "warehouse-audit": [
         OnboardingTask(id: "wh-audit-view", title: "View Audit Queue", description: "See which parts need counting based on confidence levels.", requiredPermission: nil, isRequired: true),
+        OnboardingTask(id: "wh-audit-count", title: "Run a Count Audit", description: "Count a part without seeing the system quantity, then review variance and confidence changes.", requiredPermission: nil, isRequired: true),
+        OnboardingTask(id: "wh-audit-speed-mode", title: "Try Speed Mode", description: "Use speed mode for familiar areas when you need faster counting with fewer taps.", requiredPermission: nil, isRequired: false),
+        OnboardingTask(id: "wh-audit-quick-verification", title: "Quick Verify a Move", description: "After a movement changes confidence, perform quick verification to confirm shelf quantity.", requiredPermission: nil, isRequired: false),
+    ],
+    "warehouse-organization": [
+        OnboardingTask(id: "wh-org-audit-view", title: "Review Organization Audit", description: "Check labels, part homes, duplicates, overcrowding, bin assignment, and consolidation guidance.", requiredPermission: "manage_warehouse", isRequired: false),
+    ],
+    "warehouse-leaderboard": [
+        OnboardingTask(id: "wh-leaderboard-view", title: "View Warehouse Leaderboard", description: "See user warehouse ratings by name and score.", requiredPermission: nil, isRequired: false),
+        OnboardingTask(id: "wh-leaderboard-training", title: "Review Training Guidance", description: "Managers can open a user score breakdown and see training guidance by weakest rating area.", requiredPermission: "manage_warehouse", isRequired: false),
     ],
     "warehouse-inventory": [
         OnboardingTask(id: "wh-inventory-view", title: "Browse Inventory", description: "See all parts with stock levels at your location.", requiredPermission: nil, isRequired: true),
@@ -178,10 +189,10 @@ let onboardingTaskRegistry: [String: [OnboardingTask]] = [
 
     // MARK: - Office
     "office-dashboard": [
-        OnboardingTask(id: "office-view", title: "View Office Dashboard", description: "See the daily briefing, attention items, and financial snapshot.", requiredPermission: "manage_jobs", isRequired: true),
+        OnboardingTask(id: "office-view", title: "View Office Dashboard", description: "See the daily briefing, attention items, and financial snapshot.", requiredPermission: officeAccessPermission, isRequired: true),
     ],
     "office-approvals": [
-        OnboardingTask(id: "approvals-view", title: "View Approvals Queue", description: "See all pending approvals — JPOs, deletions, tool edits, time-off.", requiredPermission: "manage_jobs", isRequired: true),
+        OnboardingTask(id: "approvals-view", title: "View Approvals Queue", description: "See all pending approvals — JPOs, deletions, tool edits, time-off.", requiredPermission: officeAccessPermission, isRequired: true),
     ],
 
     // MARK: - Reports

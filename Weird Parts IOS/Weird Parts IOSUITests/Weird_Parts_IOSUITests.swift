@@ -163,6 +163,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += [
             "-UITesting",
+            "-UITestingPreserveDatabase",
             "-UITestingWarehouseSetupWizard"
         ]
         if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" {
@@ -171,9 +172,82 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app.launch()
         logInAsUITestOwnerIfNeeded()
         openWarehouseSetupWizard()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'R2C2'")).firstMatch.waitForExistence(timeout: 10),
+        goToWizardStep(2)
+        if app.buttons["Confirm Grid"].waitForExistence(timeout: 3) {
+            app.buttons["Confirm Grid"].tap()
+            XCTAssertTrue(app.staticTexts["Zones"].waitForExistence(timeout: 10),
+                          "Resumed wizard should load the zone placement phase after confirming the grid")
+        } else {
+            XCTAssertTrue(app.staticTexts["Zones"].waitForExistence(timeout: 10),
+                          "Resumed wizard should allow returning to the zone placement phase")
+        }
+        captureWEI1185("06-storage-persisted-after-resume")
+        let persistedLocation = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'R2C2'")).firstMatch
+        let persistedZone = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS 'Storage' AND label CONTAINS 'starts at R2C2'")
+        ).firstMatch
+        XCTAssertTrue(persistedLocation.waitForExistence(timeout: 10) || persistedZone.waitForExistence(timeout: 10),
                       "Zone placement should persist after leaving and resuming the wizard")
         captureWEI1185("06-storage-persisted-after-resume")
+    }
+
+    @MainActor
+    func testWEI1211WarehouseWizardBreakpointZoneDrop() throws {
+        let artifactDirectory = wei1182ArtifactDirectory
+        try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
+
+        logInAsUITestOwnerIfNeeded()
+        openWarehouseSetupWizard()
+
+        let createContinue = app.buttons["Create & Continue"]
+        XCTAssertTrue(createContinue.waitForExistence(timeout: 10), "Fresh warehouse wizard should start at Step 1")
+        createContinue.tap()
+
+        if app.staticTexts["Phase 2 · Storage Units"].waitForExistence(timeout: 3) {
+            app.buttons["Back"].tap()
+        }
+        goToWizardStep(2)
+
+        XCTAssertTrue(app.staticTexts["Confirm Zone Grid"].waitForExistence(timeout: 10),
+                      "Step 2 should start with the zone-grid confirmation")
+
+        let confirmGrid = app.buttons["Confirm Grid"]
+        XCTAssertTrue(confirmGrid.waitForExistence(timeout: 5), "Confirm Grid should be available")
+        confirmGrid.tap()
+
+        let r1c1 = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'R1C1'")).firstMatch
+        let r1c3 = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'R1C3'")).firstMatch
+        XCTAssertTrue(r1c1.waitForExistence(timeout: 8), "Zone grid should include R1C1")
+        XCTAssertTrue(r1c3.waitForExistence(timeout: 5), "Zone grid should include R1C3")
+
+        let storage = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Drag Storage zone'")).firstMatch
+        XCTAssertTrue(storage.waitForExistence(timeout: 5), "Storage zone drag source should be present")
+        storage.press(forDuration: 0.7, thenDragTo: r1c1)
+
+        let receiving = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Drag Receiving zone'")).firstMatch
+        XCTAssertTrue(receiving.waitForExistence(timeout: 5), "Receiving zone drag source should be present")
+        receiving.press(forDuration: 0.7, thenDragTo: r1c3)
+
+        let placedStorage = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS 'Storage' AND label CONTAINS 'starts at R1C1'")
+        ).firstMatch
+        XCTAssertTrue(placedStorage.waitForExistence(timeout: 8), "Dropped Storage zone should render on the grid")
+        placedStorage.tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Storage at R1C1'")).firstMatch.waitForExistence(timeout: 5),
+                      "Tapping Storage should select the Storage zone before resizing")
+
+        let grow = app.buttons["Grow"]
+        XCTAssertTrue(grow.waitForExistence(timeout: 5), "Selected Storage zone should expose Grow")
+        grow.tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '2x2'")).firstMatch.waitForExistence(timeout: 5),
+                      "Resizing Storage should update selected-zone size text")
+
+        let receivingAtR1C3 = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS 'Receiving' AND label CONTAINS 'starts at R1C3'")
+        ).firstMatch
+        XCTAssertTrue(receivingAtR1C3.waitForExistence(timeout: 5),
+                      "Dropped Receiving zone should remain visible after resizing Storage")
+        captureWEI1182("wei-1211-two-zones-after-storage-resize")
     }
 
     @MainActor
@@ -226,7 +300,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             NSPredicate(format: "label CONTAINS 'Storage' AND label CONTAINS 'starts at R1C1'")
         ).firstMatch
         XCTAssertTrue(placedStorage.waitForExistence(timeout: 8), "Dropped Storage zone should render on the grid")
-        r1c1.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        placedStorage.tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Storage at R1C1'")).firstMatch.waitForExistence(timeout: 5),
                       "Tapping Storage should select the Storage zone before resizing")
 
@@ -248,7 +322,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         captureWEI1182("02-zone-placement-phase-b-two-zones-resized")
 
         app.buttons["Next"].tap()
-        XCTAssertTrue(app.staticTexts["Phase 2 · Storage Units"].waitForExistence(timeout: 10),
+        XCTAssertTrue(app.staticTexts["Phase 2 · Place Units"].waitForExistence(timeout: 10),
                       "Step 3 should load storage units")
 
         let addStorageUnit = app.buttons["Add Storage Unit"]
@@ -523,6 +597,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                 app.buttons["Configure Your Warehouse"].exists && app.buttons["Configure Your Warehouse"].isHittable ||
                 app.staticTexts["Warehouse Setup"].exists ||
                 app.staticTexts["Confirm Zone Grid"].exists ||
+                app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Step '")).firstMatch.exists ||
                 app.buttons["Create & Continue"].exists {
                 return
             }
@@ -537,6 +612,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                       app.buttons["Configure Your Warehouse"].exists ||
                       app.staticTexts["Warehouse Setup"].exists ||
                       app.staticTexts["Confirm Zone Grid"].exists ||
+                      app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Step '")).firstMatch.exists ||
                       app.buttons["Create & Continue"].exists,
                       "Login should reach the dashboard or warehouse shell before opening the wizard")
     }
@@ -546,6 +622,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
         if app.staticTexts["Confirm Zone Grid"].waitForExistence(timeout: 3) ||
             app.staticTexts["Warehouse Setup"].waitForExistence(timeout: 3) ||
+            app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Step '")).firstMatch.waitForExistence(timeout: 3) ||
             app.buttons["Create & Continue"].waitForExistence(timeout: 3) {
             return
         }

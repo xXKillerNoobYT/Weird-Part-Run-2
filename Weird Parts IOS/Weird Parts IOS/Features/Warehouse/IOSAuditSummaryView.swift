@@ -284,9 +284,13 @@ struct IOSAuditSummaryView: View {
             // Consensus / Resolve row
             HStack {
                 if partSummary.isResolved {
-                    Label("Resolved", systemImage: "checkmark.circle.fill")
+                    Label(partSummary.resolutionStatus == "overridden" ? "Manager override applied" : "Resolved", systemImage: "checkmark.circle.fill")
                         .font(.caption)
                         .foregroundStyle(.green)
+                } else if partSummary.resolutionStatus == "unresolved" {
+                    Label("Unresolved tie — manager override needed", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
                 } else if let consensus = partSummary.consensusQuantity {
                     Label("Consensus: \(consensus)", systemImage: "person.3.fill")
                         .font(.caption)
@@ -320,6 +324,8 @@ struct IOSAuditSummaryView: View {
         case "pending": return .orange
         case "counted": return .blue
         case "resolved": return .green
+        case "overridden": return .purple
+        case "unresolved": return .red
         default: return .secondary
         }
     }
