@@ -66,11 +66,7 @@ struct OnboardingCompleteView: View {
         .background(Color(.systemBackground))
         .navigationBarBackButtonHidden(true)
         .onAppear {
-            if reduceMotion {
-                showCheckmark = true
-            } else {
-                showCheckmark = true
-            }
+            showCheckmark = true
         }
     }
 }

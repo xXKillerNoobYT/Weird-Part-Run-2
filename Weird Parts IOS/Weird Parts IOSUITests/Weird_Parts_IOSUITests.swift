@@ -686,6 +686,27 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         try? screenshot.pngRepresentation.write(to: file, options: .atomic)
     }
 
+    private func relaunchForWEI1451(_ launchArguments: [String]) {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments += ["-UITesting"] + launchArguments
+        if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" {
+            XCUIDevice.shared.orientation = .landscapeLeft
+        }
+        app.launch()
+    }
+
+    private func captureWEI1451(_ name: String) {
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let file = wei1451ArtifactDirectory.appendingPathComponent("\(name).png")
+        try? screenshot.pngRepresentation.write(to: file, options: .atomic)
+    }
+
     private func currentWizardStepNumber(timeout: TimeInterval = 5) -> Int? {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {

@@ -26,7 +26,7 @@ struct OnboardingBanner: View {
                             Text("Required tour steps complete")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
-                            Text("\(completed.count)/\(tasks.count) dashboard steps done")
+                            Text("\(completed.count)/\(tasks.count) tour steps done")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -37,7 +37,7 @@ struct OnboardingBanner: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .padding(.horizontal)
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Required tour steps complete, \(completed.count) of \(tasks.count) dashboard steps done")
+                    .accessibilityLabel("Required tour steps complete, \(completed.count) of \(tasks.count) tour steps done")
                 } else {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {

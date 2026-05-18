@@ -61,6 +61,8 @@ struct DashboardView: View {
     @AppStorage("hasCompletedCompanySetup") private var hasCompletedCompanySetup = false
     @State private var warehouseHasFloorPlan = false
     @State private var showChecklistDismissToast = false
+    @State private var checklistDismissToastTask: Task<Void, Never>?
+    private let checklistDismissToastDurationSeconds: TimeInterval = 5
     // showCreateJobSheet and showCompanySetupWizard consolidated into ActiveSheet enum
 
     @State private var isLoading = true
@@ -130,6 +132,7 @@ struct DashboardView: View {
                 NotificationCenter.default.post(name: .dashboardPageInactive, object: nil)
                 refreshCancellable?.cancel()
                 clockCancellable?.cancel()
+                checklistDismissToastTask?.cancel()
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -161,6 +164,7 @@ struct DashboardView: View {
                         .font(.subheadline)
                     Spacer(minLength: DS.Space.sm)
                     Button("Undo") {
+                        checklistDismissToastTask?.cancel()
                         withAnimation {
                             checklistDismissed = false
                             showChecklistDismissToast = false
@@ -174,8 +178,7 @@ struct DashboardView: View {
                 .shadow(radius: 8, y: 3)
                 .padding(.horizontal, DS.Space.lg)
                 .padding(.bottom, DS.Space.lg)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Checklist dismissed. Undo")
+                .accessibilityElement(children: .contain)
             }
         }
         // Sheet placed OUTSIDE NavigationStack so @Environment(\.dismiss) in sheet content
@@ -230,12 +233,19 @@ struct DashboardView: View {
                         .fontWeight(.bold)
                     Spacer()
                     Button {
+                        checklistDismissToastTask?.cancel()
                         withAnimation {
                             checklistDismissed = true
                             showChecklistDismissToast = true
                         }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
-                            withAnimation { showChecklistDismissToast = false }
+                        checklistDismissToastTask = Task {
+                            try? await Task.sleep(for: .seconds(checklistDismissToastDurationSeconds))
+                            guard !Task.isCancelled else { return }
+                            await MainActor.run {
+                                withAnimation {
+                                    showChecklistDismissToast = false
+                                }
+                            }
                         }
                     } label: {
                         Image(systemName: "xmark.circle.fill")
@@ -1071,7 +1081,5 @@ private struct VehicleAlert: Sendable {
     let vehicleNumber: String
     let alertMessage: String
 }
-
-
 
 
