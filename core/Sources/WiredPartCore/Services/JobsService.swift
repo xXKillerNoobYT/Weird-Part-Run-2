@@ -52,12 +52,20 @@ public final class JobsService: Sendable {
         public let startDate: String?
         public let dueDate: String?
         public let currentStageId: Int64?
+        public let estimatedHours: Double?
+        public let budgetLimit: Double?
+        public let laborHours: Double
+        public let actualCost: Double
 
         public init(
             id: Int64, jobNumber: String, jobName: String, customerName: String?,
             status: String, priority: String, jobType: String = "service",
             teamCount: Int, startDate: String?, dueDate: String?,
-            currentStageId: Int64? = nil
+            currentStageId: Int64? = nil,
+            estimatedHours: Double? = nil,
+            budgetLimit: Double? = nil,
+            laborHours: Double = 0,
+            actualCost: Double = 0
         ) {
             self.id = id
             self.jobNumber = jobNumber
@@ -70,6 +78,10 @@ public final class JobsService: Sendable {
             self.startDate = startDate
             self.dueDate = dueDate
             self.currentStageId = currentStageId
+            self.estimatedHours = estimatedHours
+            self.budgetLimit = budgetLimit
+            self.laborHours = laborHours
+            self.actualCost = actualCost
         }
     }
 
@@ -410,9 +422,24 @@ public final class JobsService: Sendable {
                 let sql = """
                     SELECT j.id, j.job_number, j.job_name, j.customer_name,
                            j.status, j.priority, j.job_type, j.start_date, j.due_date,
-                           j.current_stage_id,
+                           j.current_stage_id, j.estimated_hours, j.budget_limit,
                            COALESCE((SELECT COUNT(*) FROM job_team_members jtm
-                                     WHERE jtm.job_id = j.id AND jtm.deleted_at IS NULL), 0) AS team_count
+                                     WHERE jtm.job_id = j.id AND jtm.deleted_at IS NULL), 0) AS team_count,
+                           COALESCE((SELECT SUM(le.regular_hours + le.overtime_hours)
+                                     FROM labor_entries le
+                                     WHERE le.job_id = j.id AND le.deleted_at IS NULL), 0) AS labor_hours,
+                           COALESCE((SELECT SUM(le.regular_hours * COALESCE(u.pay_rate, 0))
+                                     FROM labor_entries le
+                                     LEFT JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
+                                     WHERE le.job_id = j.id AND le.deleted_at IS NULL), 0)
+                           +
+                           COALESCE((SELECT SUM(po.total_cost)
+                                     FROM purchase_orders po
+                                     JOIN po_jpo_links pjl ON pjl.po_id = po.id
+                                     JOIN job_parts_orders jpo ON jpo.id = pjl.jpo_id
+                                     WHERE jpo.job_id = j.id
+                                       AND po.status NOT IN ('cancelled')
+                                       AND po.deleted_at IS NULL), 0) AS actual_cost
                     FROM jobs j
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY j.created_at DESC
@@ -432,7 +459,11 @@ public final class JobsService: Sendable {
                         teamCount: row["team_count"] ?? 0,
                         startDate: row["start_date"] as String?,
                         dueDate: row["due_date"] as String?,
-                        currentStageId: row["current_stage_id"] as Int64?
+                        currentStageId: row["current_stage_id"] as Int64?,
+                        estimatedHours: row["estimated_hours"] as Double?,
+                        budgetLimit: row["budget_limit"] as Double?,
+                        laborHours: row["labor_hours"] ?? 0,
+                        actualCost: row["actual_cost"] ?? 0
                     )
                 }
             }
