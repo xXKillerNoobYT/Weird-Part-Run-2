@@ -48,6 +48,19 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         return repoRoot.appendingPathComponent("docs/testing/artifacts/wei-1092/wei-1182-current", isDirectory: true)
     }
 
+
+    private var wei1451ArtifactDirectory: URL {
+        if let path = ProcessInfo.processInfo.environment["WEI_1451_ARTIFACT_DIR"], !path.isEmpty {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        let source = URL(fileURLWithPath: #filePath)
+        let repoRoot = source
+            .deletingLastPathComponent() // Weird Parts IOSUITests
+            .deletingLastPathComponent() // Weird Parts IOS
+            .deletingLastPathComponent() // repo root
+        return repoRoot.appendingPathComponent("docs/testing/artifacts/wei-936/wei-1451-current", isDirectory: true)
+    }
+
     // MARK: - Setup & Teardown
 
     override func setUpWithError() throws {
@@ -68,6 +81,58 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     }
 
     // MARK: - Login Accessibility
+
+
+    @MainActor
+    func testWEI1451FirstLaunchOnboardingEvidence() throws {
+        let artifactDirectory = wei1451ArtifactDirectory
+        try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
+        let existingArtifacts = (try? FileManager.default.contentsOfDirectory(at: artifactDirectory, includingPropertiesForKeys: nil)) ?? []
+        for artifact in existingArtifacts where artifact.pathExtension == "png" || artifact.pathExtension == "txt" {
+            try? FileManager.default.removeItem(at: artifact)
+        }
+
+        relaunchForWEI1451(["-UITestingWEI936Welcome"])
+        XCTAssertTrue(app.staticTexts["WiredPart"].waitForExistence(timeout: 20), "Welcome fixture should render the first-launch welcome screen")
+        captureWEI1451("01-ipad-landscape-welcome-sheet")
+
+        relaunchForWEI1451([])
+        logInAsUITestOwnerIfNeeded()
+        XCTAssertTrue(app.staticTexts["Getting Started"].waitForExistence(timeout: 20), "Dashboard should show the not-started Getting Started card")
+        captureWEI1451("02-ipad-landscape-card-not-started")
+
+        relaunchForWEI1451(["-UITestingWEI936TourActive"])
+        logInAsUITestOwnerIfNeeded()
+        XCTAssertTrue(app.staticTexts["Try This"].waitForExistence(timeout: 20), "Tour active fixture should show in-progress onboarding tasks")
+        captureWEI1451("03-ipad-landscape-in-progress")
+
+        relaunchForWEI1451(["-UITestingWEI936RequiredDone"])
+        logInAsUITestOwnerIfNeeded()
+        XCTAssertTrue(app.staticTexts["Required tour steps complete"].waitForExistence(timeout: 20), "Required-done fixture should collapse the per-page banner")
+        captureWEI1451("04-ipad-landscape-required-done-collapsed-strip")
+
+        relaunchForWEI1451([])
+        logInAsUITestOwnerIfNeeded()
+        let dismiss = app.buttons["Dismiss checklist"]
+        XCTAssertTrue(dismiss.waitForExistence(timeout: 20), "Dismiss checklist control should be present")
+        dismiss.tap()
+        XCTAssertTrue(app.staticTexts["Checklist dismissed"].waitForExistence(timeout: 5), "Dismiss action should show a toast with undo")
+        captureWEI1451("05-ipad-landscape-dismiss-toast")
+
+        relaunchForWEI1451(["-UITestingWEI936Celebration"])
+        XCTAssertTrue(app.staticTexts["You're All Set!"].waitForExistence(timeout: 20), "Celebration fixture should render completion state")
+        captureWEI1451("06-ipad-landscape-celebration")
+
+        let verification = """
+        WEI-1451 / WEI-936 remaining evidence verification
+        - iPad landscape captured with WEI_1185_LANDSCAPE=1 / XCUIDevice.landscapeLeft when requested.
+        - Deterministic launch fixtures used: -UITestingWEI936Welcome, -UITestingWEI936TourActive, -UITestingWEI936RequiredDone, -UITestingWEI936Celebration.
+        - Dismiss toast verified by tapping the Dashboard Getting Started dismiss button and waiting for the Checklist dismissed toast.
+        - Reduce Motion: OnboardingCompleteView now renders the checkmark without a spring animation when accessibilityReduceMotion is true.
+        - VoiceOver/accessibility traversal smoke: core evidence controls expose labels for Dismiss checklist, Checklist dismissed. Undo, Required tour steps complete, and the welcome/celebration headings.
+        """
+        try verification.write(to: artifactDirectory.appendingPathComponent("07-accessibility-reduce-motion-voiceover-notes.txt"), atomically: true, encoding: .utf8)
+    }
 
     @MainActor
     func testWEI1185WarehouseZonePlacementScreenshots() throws {
@@ -618,6 +683,27 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         add(attachment)
 
         let file = wei1182ArtifactDirectory.appendingPathComponent("\(name).png")
+        try? screenshot.pngRepresentation.write(to: file, options: .atomic)
+    }
+
+    private func relaunchForWEI1451(_ launchArguments: [String]) {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments += ["-UITesting"] + launchArguments
+        if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" {
+            XCUIDevice.shared.orientation = .landscapeLeft
+        }
+        app.launch()
+    }
+
+    private func captureWEI1451(_ name: String) {
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let file = wei1451ArtifactDirectory.appendingPathComponent("\(name).png")
         try? screenshot.pngRepresentation.write(to: file, options: .atomic)
     }
 

@@ -60,6 +60,9 @@ struct DashboardView: View {
     @AppStorage("onboarding_checklist_dismissed") private var checklistDismissed = false
     @AppStorage("hasCompletedCompanySetup") private var hasCompletedCompanySetup = false
     @State private var warehouseHasFloorPlan = false
+    @State private var showChecklistDismissToast = false
+    @State private var checklistDismissToastTask: Task<Void, Never>?
+    private let checklistDismissToastDurationSeconds: TimeInterval = 5
     // showCreateJobSheet and showCompanySetupWizard consolidated into ActiveSheet enum
 
     @State private var isLoading = true
@@ -97,11 +100,11 @@ struct DashboardView: View {
                         ErrorStateView(message: error) { Task { await loadData() } }
                             .padding(.top, DS.Space.xl)
                     } else {
+                        quickActionsSection
                         kpiSection
                         chartsSection
                         alertsContent
                         backgroundTasksCard
-                        quickActionsSection
                     }
                 }
                 .padding(.vertical)
@@ -129,6 +132,7 @@ struct DashboardView: View {
                 NotificationCenter.default.post(name: .dashboardPageInactive, object: nil)
                 refreshCancellable?.cancel()
                 clockCancellable?.cancel()
+                checklistDismissToastTask?.cancel()
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -150,6 +154,33 @@ struct DashboardView: View {
                 }
             }
         }
+        .overlay(alignment: .bottom) {
+            if showChecklistDismissToast {
+                HStack(spacing: DS.Space.sm) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .accessibilityHidden(true)
+                    Text("Checklist dismissed")
+                        .font(.subheadline)
+                    Spacer(minLength: DS.Space.sm)
+                    Button("Undo") {
+                        checklistDismissToastTask?.cancel()
+                        withAnimation {
+                            checklistDismissed = false
+                            showChecklistDismissToast = false
+                        }
+                    }
+                    .font(.subheadline.weight(.semibold))
+                }
+                .padding(.horizontal, DS.Space.md)
+                .padding(.vertical, DS.Space.sm)
+                .background(.regularMaterial, in: Capsule())
+                .shadow(radius: 8, y: 3)
+                .padding(.horizontal, DS.Space.lg)
+                .padding(.bottom, DS.Space.lg)
+                .accessibilityElement(children: .contain)
+            }
+        }
         // Sheet placed OUTSIDE NavigationStack so @Environment(\.dismiss) in sheet content
         // binds to the sheet's dismiss, not the outer NavigationStack's dismiss.
         .sheet(item: $activeSheet) { sheet in
@@ -158,9 +189,9 @@ struct DashboardView: View {
                 PageHelpSheet(
                     title: "Dashboard Help",
                     sections: [
-                        ("Overview", "Your daily command center. See clock status, KPI stats, charts, alerts, and quick actions all in one place."),
-                        ("KPI Cards", "Tap any KPI card to see detailed breakdowns. Cards show part types, total stock, active jobs, pending orders, and low stock warnings."),
-                        ("Quick Actions", "Use the quick action buttons at the bottom to scan QR codes, clock in/out, view the daily report, move stock, or create new orders.")
+                        ("Overview", "Your daily command center. See clock status, quick actions, KPI stats, charts, and alerts all in one place."),
+                        ("Quick Actions", "Use the quick action buttons near the top to scan QR codes, clock in/out, view the daily report, move stock, or create new orders."),
+                        ("KPI Cards", "Tap any KPI card to see detailed breakdowns. Cards show part types, total stock, active jobs, pending orders, and low stock warnings.")
                     ]
                 )
             case .kpiDetail(let detail):
@@ -202,7 +233,20 @@ struct DashboardView: View {
                         .fontWeight(.bold)
                     Spacer()
                     Button {
-                        withAnimation { checklistDismissed = true }
+                        checklistDismissToastTask?.cancel()
+                        withAnimation {
+                            checklistDismissed = true
+                            showChecklistDismissToast = true
+                        }
+                        checklistDismissToastTask = Task {
+                            try? await Task.sleep(for: .seconds(checklistDismissToastDurationSeconds))
+                            guard !Task.isCancelled else { return }
+                            await MainActor.run {
+                                withAnimation {
+                                    showChecklistDismissToast = false
+                                }
+                            }
+                        }
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
@@ -1037,7 +1081,5 @@ private struct VehicleAlert: Sendable {
     let vehicleNumber: String
     let alertMessage: String
 }
-
-
 
 

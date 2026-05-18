@@ -9,6 +9,10 @@ import WiredPartCore
 struct WarehouseDashboardPage: View {
     @EnvironmentObject private var appCore: AppCore
 
+    private var canPerformAudit: Bool {
+        appCore.hasPermission("perform_audit")
+    }
+
     // MARK: - State
 
     @State private var dashKPIs: WarehouseService.DashboardKPIs?
@@ -468,15 +472,17 @@ struct WarehouseDashboardPage: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("whAction_receiving")
 
-                Button { navigate(to: "warehouse-audit") } label: {
-                    quickActionButton(
-                        title: "Audit",
-                        icon: "clipboard.fill",
-                        color: .orange
-                    )
+                if canPerformAudit {
+                    Button { navigate(to: "warehouse-audit") } label: {
+                        quickActionButton(
+                            title: "Audit",
+                            icon: "clipboard.fill",
+                            color: .orange
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("whAction_audit")
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("whAction_audit")
             }
         }
     }
@@ -514,7 +520,9 @@ struct WarehouseDashboardPage: View {
                 subPageLink(title: "Receiving", icon: "arrow.down.circle", color: .green, moduleId: "warehouse-receiving")
                 subPageLink(title: "Staging", icon: "shippingbox.and.arrow.backward", color: .blue, moduleId: "warehouse-staging")
                 subPageLink(title: "Returns", icon: "arrow.uturn.left", color: .purple, moduleId: "warehouse-returns")
-                subPageLink(title: "Audit", icon: "clipboard", color: .orange, moduleId: "warehouse-audit")
+                if canPerformAudit {
+                    subPageLink(title: "Audit", icon: "clipboard", color: .orange, moduleId: "warehouse-audit")
+                }
                 subPageLink(title: "Inventory", icon: "square.grid.3x3", color: .purple, moduleId: "warehouse-inventory")
                 subPageLink(title: "Locations", icon: "mappin.and.ellipse", color: .teal, moduleId: "warehouse-locations")
                 subPageLink(title: "Floor Plan", icon: "map", color: .indigo, moduleId: "warehouse-locations")
