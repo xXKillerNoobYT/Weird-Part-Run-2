@@ -52,6 +52,10 @@ struct IOSJobDetailPage: View {
         }
     }
 
+    private var hasFinancialPermission: Bool {
+        appCore.hasPermission("view_job_financials")
+    }
+
     var body: some View {
         detailContent
             .navigationTitle(job?.jobName ?? "Job Detail")
@@ -240,13 +244,23 @@ struct IOSJobDetailPage: View {
                 icon: "clock.fill",
                 tint: .blue
             ) { selectedTab = .labor }
-            smartCard(
-                title: "Budget",
-                value: budgetValue(job),
-                subtitle: budgetSubtitle(job),
-                icon: "chart.pie.fill",
-                tint: .green
-            ) { selectedTab = .financial }
+            if hasFinancialPermission {
+                smartCard(
+                    title: "Budget",
+                    value: budgetValue(job),
+                    subtitle: budgetSubtitle(job),
+                    icon: "chart.pie.fill",
+                    tint: .green
+                ) { selectedTab = .financial }
+            } else {
+                smartCard(
+                    title: "Budget",
+                    value: "Locked",
+                    subtitle: "Requires financial permission",
+                    icon: "lock.fill",
+                    tint: .secondary
+                )
+            }
             smartCard(
                 title: "JPOs",
                 value: "—",
@@ -354,7 +368,11 @@ struct IOSJobDetailPage: View {
                 case .notes:
                     notesTab(job)
                 case .financial:
-                    financialTab(job)
+                    if hasFinancialPermission {
+                        financialTab(job)
+                    } else {
+                        financialLockedTab
+                    }
                 case .warranty:
                     warrantyTab(job)
                 }
@@ -433,6 +451,13 @@ struct IOSJobDetailPage: View {
         }
     }
 
+    private var financialLockedTab: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionHeader("Financial", systemImage: "lock.fill")
+            placeholderRow("You need the appropriate financial permission to view budget details for this job.", systemImage: "lock.fill")
+        }
+    }
+
     private func warrantyTab(_ job: JobsService.JobDetail) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionHeader("Warranty", systemImage: "shield.checkered")
@@ -493,36 +518,48 @@ struct IOSJobDetailPage: View {
         .background(RoundedRectangle(cornerRadius: 10).fill(Color(.tertiarySystemGroupedBackground)))
     }
 
-    private func smartCard(title: String, value: String, subtitle: String, icon: String, tint: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Image(systemName: icon)
-                        .foregroundStyle(tint)
-                    Spacer()
+    private func smartCard(title: String, value: String, subtitle: String, icon: String, tint: Color, action: (() -> Void)? = nil) -> some View {
+        Group {
+            if let action {
+                Button(action: action) {
+                    smartCardBody(title: title, value: value, subtitle: subtitle, icon: icon, tint: tint, showsChevron: true)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Switches to the \(title) detail tab")
+            } else {
+                smartCardBody(title: title, value: value, subtitle: subtitle, icon: icon, tint: tint, showsChevron: false)
+            }
+        }
+    }
+
+    private func smartCardBody(title: String, value: String, subtitle: String, icon: String, tint: Color, showsChevron: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: icon)
+                    .foregroundStyle(tint)
+                Spacer()
+                if showsChevron {
                     Image(systemName: "chevron.right")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
-                Text(value)
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.primary)
-                Text(title)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.primary)
-                Text(subtitle)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 14).fill(Color(.secondarySystemGroupedBackground)))
+            Text(value)
+                .font(.title3)
+                .fontWeight(.semibold)
+                .foregroundStyle(.primary)
+            Text(title)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(.primary)
+            Text(subtitle)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
-        .buttonStyle(.plain)
-        .accessibilityHint("Switches to the \(title) detail tab")
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color(.secondarySystemGroupedBackground)))
     }
 
     private func activityMetric(_ title: String, _ value: String) -> some View {
@@ -697,11 +734,11 @@ struct IOSJobDetailPage: View {
             job = try service.getJob(id: jobId)
             teamMembers = try service.getTeamMembers(jobId: jobId)
             laborSummary = try service.getLaborSummary(jobId: jobId)
-            activeTodos = (try? service.getActiveJobTodos(jobId: jobId)) ?? []
-            todoSummary = try? service.getJobTodoSummary(jobId: jobId)
-            stages = (try? service.listJobStages(forJobId: jobId)) ?? []
-            isPaymentHold = (try? service.isJobOnPaymentHold(jobId: jobId)) ?? false
-            warrantyDaysRemaining = try? service.warrantyDaysRemaining(jobId: jobId)
+            activeTodos = try service.getActiveJobTodos(jobId: jobId)
+            todoSummary = try service.getJobTodoSummary(jobId: jobId)
+            stages = try service.listJobStages(forJobId: jobId)
+            isPaymentHold = try service.isJobOnPaymentHold(jobId: jobId)
+            warrantyDaysRemaining = try service.warrantyDaysRemaining(jobId: jobId)
             if let job {
                 postAIContext(job)
             }
@@ -721,9 +758,9 @@ struct IOSJobDetailPage: View {
         Stage count: \(stages.count), current stage: \(stages.first(where: { $0.status == "in_progress" })?.name ?? "not set").
         Payment hold active: \(isPaymentHold). Active to-dos: \(activeTodos.count), todo summary: \(todoValue).
         Labor summary: regular \(String(format: "%.1f", labor?.totalRegularHours ?? 0)) hrs, overtime \(String(format: "%.1f", labor?.totalOvertimeHours ?? 0)) hrs, workers \(labor?.uniqueWorkers ?? 0), entries \(labor?.totalEntries ?? 0).
-        Budget: estimated hours \(String(format: "%.0f", job.estimatedHours ?? 0)), parts cost \(Formatters.formatCurrency(job.partsCost)), budget limit \(job.budgetLimit.map { Formatters.formatCurrency($0) } ?? "not set").
+        Budget: \(hasFinancialPermission ? "estimated hours \(String(format: "%.0f", job.estimatedHours ?? 0)), parts cost \(Formatters.formatCurrency(job.partsCost)), budget limit \(job.budgetLimit.map { Formatters.formatCurrency($0) } ?? "not set")" : "restricted for current user").
         Warranty: start \(job.warrantyStartDate ?? "not set"), end \(job.warrantyEndDate ?? "not set"), days remaining \(warrantyDaysRemaining.map { String($0) } ?? "not active").
-        Available guidance: explain job status, stage progress, smart cards, quick actions, tabs, payment hold restrictions, warranty, budget fields, and weekly review entry point. Do not edit the job directly.
+        Available guidance: explain job status, stage progress, smart cards, quick actions, tabs, payment hold restrictions, warranty, \(hasFinancialPermission ? "budget fields, and " : "")weekly review entry point. Do not edit the job directly.
         """
         NotificationCenter.default.post(
             name: .jobDetailPageActive,
