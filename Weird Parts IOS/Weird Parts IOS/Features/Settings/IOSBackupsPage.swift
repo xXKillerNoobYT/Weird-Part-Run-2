@@ -33,10 +33,10 @@ struct IOSBackupsPage: View {
             if canManageSettings {
                 backupsForm
             } else {
-                ContentUnavailableView(
-                    "Access Restricted",
-                    systemImage: "lock.shield",
-                    description: Text("You don't have permission to manage backups.")
+                EmptyStateView(
+                    icon: "lock.shield",
+                    title: "Access Restricted",
+                    message: "You don't have permission to manage backups."
                 )
             }
         }
