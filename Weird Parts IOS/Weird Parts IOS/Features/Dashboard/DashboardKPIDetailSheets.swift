@@ -94,9 +94,9 @@ private struct PartTypesDetailView: View {
                     .frame(maxWidth: .infinity)
                     .listRowSeparator(.hidden)
             } else if let error = loadError {
-                ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                dashboardErrorState(error)
             } else if categories.isEmpty {
-                ContentUnavailableView("No Parts", systemImage: "shippingbox", description: Text("No parts in catalog yet."))
+                dashboardEmptyState(icon: "shippingbox", title: "No Parts", message: "No parts in catalog yet.")
             } else {
                 ForEach(categories) { cat in
                     NavigationLink(value: cat) {
@@ -157,9 +157,9 @@ private struct CategoryPartsListView: View {
             if isLoading {
                 ProgressView().frame(maxWidth: .infinity).listRowSeparator(.hidden)
             } else if let error = loadError {
-                ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                dashboardErrorState(error)
             } else if parts.isEmpty {
-                ContentUnavailableView("No Parts", systemImage: "shippingbox", description: Text("No parts in this category."))
+                dashboardEmptyState(icon: "shippingbox", title: "No Parts", message: "No parts in this category.")
             } else {
                 ForEach(parts) { part in
                     VStack(alignment: .leading, spacing: DS.Space.xxs) {
@@ -220,9 +220,9 @@ private struct TotalStockDetailView: View {
             if isLoading {
                 ProgressView().frame(maxWidth: .infinity).listRowSeparator(.hidden)
             } else if let error = loadError {
-                ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                dashboardErrorState(error)
             } else if locationGroups.isEmpty {
-                ContentUnavailableView("No Stock", systemImage: "shippingbox", description: Text("No stock recorded yet."))
+                dashboardEmptyState(icon: "shippingbox", title: "No Stock", message: "No stock recorded yet.")
             } else {
                 ForEach(locationGroups) { group in
                     NavigationLink(value: group) {
@@ -297,9 +297,9 @@ private struct LocationTypeStockView: View {
             if isLoading {
                 ProgressView().frame(maxWidth: .infinity).listRowSeparator(.hidden)
             } else if let error = loadError {
-                ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                dashboardErrorState(error)
             } else if items.isEmpty {
-                ContentUnavailableView("No Stock", systemImage: "shippingbox", description: Text("No items at this location type."))
+                dashboardEmptyState(icon: "shippingbox", title: "No Stock", message: "No items at this location type.")
             } else {
                 ForEach(items) { item in
                     HStack {
@@ -372,9 +372,9 @@ private struct ActiveJobsDetailView: View {
             if isLoading {
                 ProgressView().frame(maxWidth: .infinity).listRowSeparator(.hidden)
             } else if let error = loadError {
-                ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                dashboardErrorState(error)
             } else if jobs.isEmpty {
-                ContentUnavailableView("No Active Jobs", systemImage: "hammer", description: Text("No jobs are currently active."))
+                dashboardEmptyState(icon: "hammer", title: "No Active Jobs", message: "No jobs are currently active.")
             } else {
                 ForEach(jobs) { job in
                     NavigationLink(value: job.id) {
@@ -450,7 +450,7 @@ private struct JobKPIDetailView: View {
             if isLoading {
                 ProgressView().frame(maxWidth: .infinity).listRowSeparator(.hidden)
             } else if let error = loadError {
-                ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                dashboardErrorState(error)
             } else if let detail {
                 Section("Overview") {
                     LabeledContent("Job Name", value: detail.jobName)
@@ -481,7 +481,7 @@ private struct JobKPIDetailView: View {
                     }
                 }
             } else {
-                ContentUnavailableView("Job Not Found", systemImage: "hammer", description: Text("Could not load job details."))
+                dashboardEmptyState(icon: "hammer", title: "Job Not Found", message: "Could not load job details.")
             }
         }
         .navigationTitle("Job Detail")
@@ -537,9 +537,9 @@ private struct PendingOrdersDetailView: View {
             if isLoading {
                 ProgressView().frame(maxWidth: .infinity).listRowSeparator(.hidden)
             } else if let error = loadError {
-                ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                dashboardErrorState(error)
             } else if orders.isEmpty {
-                ContentUnavailableView("No Pending Orders", systemImage: "cart", description: Text("No purchase orders pending."))
+                dashboardEmptyState(icon: "cart", title: "No Pending Orders", message: "No purchase orders pending.")
             } else {
                 ForEach(orders) { po in
                     NavigationLink(value: po.id) {
@@ -614,7 +614,7 @@ private struct POKPIDetailView: View {
             if isLoading {
                 ProgressView().frame(maxWidth: .infinity).listRowSeparator(.hidden)
             } else if let error = loadError {
-                ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                dashboardErrorState(error)
             } else if let po = poDetail {
                 Section("Order Info") {
                     LabeledContent("PO Number", value: po.poNumber)
@@ -651,7 +651,7 @@ private struct POKPIDetailView: View {
                     }
                 }
             } else {
-                ContentUnavailableView("Order Not Found", systemImage: "cart", description: Text("Could not load order details."))
+                dashboardEmptyState(icon: "cart", title: "Order Not Found", message: "Could not load order details.")
             }
         }
         .navigationTitle("Order Detail")
@@ -713,9 +713,9 @@ private struct LowStockDetailView: View {
             if isLoading {
                 ProgressView().frame(maxWidth: .infinity).listRowSeparator(.hidden)
             } else if let error = loadError {
-                ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                dashboardErrorState(error)
             } else if lowStockParts.isEmpty {
-                ContentUnavailableView("All Stocked", systemImage: "checkmark.circle", description: Text("No parts are below their minimum stock level."))
+                dashboardEmptyState(icon: "checkmark.circle", title: "All Stocked", message: "No parts are below their minimum stock level.")
             } else {
                 ForEach(lowStockParts) { part in
                     NavigationLink(value: part) {
@@ -798,7 +798,7 @@ private struct LowStockPartDetailView: View {
             if isLoading {
                 ProgressView().frame(maxWidth: .infinity).listRowSeparator(.hidden)
             } else if let error = loadError {
-                ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                dashboardErrorState(error)
             } else {
                 Section("Stock by Location") {
                     if stockLocations.isEmpty {
@@ -875,6 +875,25 @@ private struct LowStockPartDetailView: View {
                 isLoading = false
             }
         }
+    }
+}
+
+
+// MARK: - Dashboard Empty State Helpers
+
+@ViewBuilder
+private func dashboardErrorState(_ message: String) -> some View {
+    Section {
+        ErrorStateView(message: message)
+            .listRowSeparator(.hidden)
+    }
+}
+
+@ViewBuilder
+private func dashboardEmptyState(icon: String, title: String, message: String) -> some View {
+    Section {
+        EmptyStateView(icon: icon, title: title, message: message)
+            .listRowSeparator(.hidden)
     }
 }
 
