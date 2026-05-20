@@ -23,9 +23,11 @@ struct WarehouseBackorderReport: View {
                 Section { ProgressView("Loading...") }
             } else if backorderData.isEmpty {
                 Section {
-                    ContentUnavailableView("No Backorders",
-                        systemImage: "checkmark.circle",
-                        description: Text("All PO items are fully received."))
+                    EmptyStateView(
+                        icon: "checkmark.circle",
+                        title: "No Backorders",
+                        message: "All PO items are fully received."
+                    )
                 }
             } else {
                 Section("Summary") {
