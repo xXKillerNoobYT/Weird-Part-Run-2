@@ -34,10 +34,10 @@ struct IOSDataExportPage: View {
             if canExport {
                 exportForm
             } else {
-                ContentUnavailableView(
-                    "Access Restricted",
-                    systemImage: "lock.shield",
-                    description: Text("You don't have permission to export data.")
+                EmptyStateView(
+                    icon: "lock.shield",
+                    title: "Access Restricted",
+                    message: "You don't have permission to export data."
                 )
             }
         }
