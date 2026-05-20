@@ -65,11 +65,11 @@ struct IOSToolKitsPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { Task { await loadData() } }
         } else if filteredKits.isEmpty {
-            ContentUnavailableView {
-                Label("No Kits", systemImage: "bag")
-            } description: {
-                Text("No tool kits found.")
-            }
+            EmptyStateView(
+                icon: "bag",
+                title: "No Kits",
+                message: "No tool kits found."
+            )
         } else {
             List(filteredKits) { kit in
                 kitRow(kit)
