@@ -78,10 +78,10 @@ struct IOSLaborOverviewPage: View {
         // Fix #219: when there's genuinely no labor data, show a clear empty state
         // instead of a page full of "0.0 hrs" stat rows that implies something loaded.
         if totalHours == 0 && timesheetRows.isEmpty {
-            ContentUnavailableView(
-                "No Labor This Week",
-                systemImage: "clock.badge.questionmark",
-                description: Text("No time was clocked this week. Labor entries will appear here once employees start clocking in.")
+            EmptyStateView(
+                icon: "clock.badge.questionmark",
+                title: "No Labor This Week",
+                message: "No time was clocked this week. Labor entries will appear here once employees start clocking in."
             )
         } else {
             List {
