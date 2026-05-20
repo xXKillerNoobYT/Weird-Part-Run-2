@@ -159,11 +159,11 @@ struct WarehouseOnboardingWizard: View {
 
     @ViewBuilder
     private var incompleteStepView: some View {
-        ContentUnavailableView {
-            Label("Complete Step 1 First", systemImage: "1.circle")
-        } description: {
-            Text("Create a floor plan before setting up storage units.")
-        }
+        EmptyStateView(
+            icon: "1.circle",
+            title: "Complete Step 1 First",
+            message: "Create a floor plan before setting up storage units."
+        )
     }
 
     @ViewBuilder
