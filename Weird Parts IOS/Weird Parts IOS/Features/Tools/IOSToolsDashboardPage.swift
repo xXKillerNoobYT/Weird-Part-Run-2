@@ -74,11 +74,11 @@ struct IOSToolsDashboardPage: View {
                 .padding()
             }
         } else {
-            ContentUnavailableView {
-                Label("No Tools", systemImage: "wrench.and.screwdriver")
-            } description: {
-                Text("No tools data available.")
-            }
+            EmptyStateView(
+                icon: "wrench.and.screwdriver",
+                title: "No Tools",
+                message: "No tools data available."
+            )
         }
     }
 
