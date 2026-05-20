@@ -118,13 +118,13 @@ struct IOSDailyReportsPage: View {
             ProgressView("Loading reports...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
-            ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+            ErrorStateView(message: error) { loadData() }
         } else if reports.isEmpty {
-            ContentUnavailableView {
-                Label("No Activity", systemImage: "doc.plaintext")
-            } description: {
-                Text("No job activity was recorded for \(formattedDate(selectedDate)).")
-            }
+            EmptyStateView(
+                icon: "doc.plaintext",
+                title: "No Activity",
+                message: "No job activity was recorded for \(formattedDate(selectedDate))."
+            )
         } else {
             List {
                 // Summary header
