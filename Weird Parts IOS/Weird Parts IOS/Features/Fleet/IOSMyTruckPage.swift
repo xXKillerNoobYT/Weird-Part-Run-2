@@ -402,7 +402,11 @@ struct IOSMyTruckPage: View {
                 )
                 .environmentObject(appCore)
             } else {
-                ContentUnavailableView("No vehicle assigned", systemImage: "car.2", description: Text("Assign a vehicle before logging fuel."))
+                EmptyStateView(
+                    icon: "car.2",
+                    title: "No vehicle assigned",
+                    message: "Assign a vehicle before logging fuel."
+                )
             }
 
         case .reportIssue:
@@ -417,7 +421,11 @@ struct IOSMyTruckPage: View {
                 )
                 .environmentObject(appCore)
             } else {
-                ContentUnavailableView("No vehicle assigned", systemImage: "car.2", description: Text("Assign a vehicle before reporting an issue."))
+                EmptyStateView(
+                    icon: "car.2",
+                    title: "No vehicle assigned",
+                    message: "Assign a vehicle before reporting an issue."
+                )
             }
 
         case .addTransferItem:
@@ -431,7 +439,11 @@ struct IOSMyTruckPage: View {
                 )
                 .environmentObject(appCore)
             } else {
-                ContentUnavailableView("No vehicle assigned", systemImage: "car.2", description: Text("Assign a vehicle before transferring parts."))
+                EmptyStateView(
+                    icon: "car.2",
+                    title: "No vehicle assigned",
+                    message: "Assign a vehicle before transferring parts."
+                )
             }
 
         case .help:

@@ -84,11 +84,11 @@ struct IOSTrailersPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredTrailers.isEmpty {
-            ContentUnavailableView {
-                Label("No Trailers", systemImage: "shippingbox")
-            } description: {
-                Text("No trailers found.")
-            }
+            EmptyStateView(
+                icon: "shippingbox",
+                title: "No Trailers",
+                message: "No trailers found."
+            )
         } else {
             List(filteredTrailers, id: \.id) { trailer in
                 NavigationLink(destination: IOSTrailerDetailPage(trailerId: trailer.id)) {

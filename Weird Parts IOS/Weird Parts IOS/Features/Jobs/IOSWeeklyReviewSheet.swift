@@ -69,11 +69,7 @@ struct IOSWeeklyReviewSheet: View {
                     ProgressView("Loading week data...")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let error = loadError {
-                    ContentUnavailableView(
-                        "Error",
-                        systemImage: "exclamationmark.triangle",
-                        description: Text(error)
-                    )
+                    ErrorStateView(message: error)
                 } else {
                     formContent
                 }
