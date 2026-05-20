@@ -140,11 +140,11 @@ struct IOSJobDetailPage: View {
             }
             .background(Color(.systemGroupedBackground))
         } else {
-            ContentUnavailableView {
-                Label("Job Not Found", systemImage: "hammer")
-            } description: {
-                Text("The requested job could not be loaded.")
-            }
+            EmptyStateView(
+                icon: "hammer",
+                title: "Job Not Found",
+                message: "The requested job could not be loaded."
+            )
         }
     }
 
