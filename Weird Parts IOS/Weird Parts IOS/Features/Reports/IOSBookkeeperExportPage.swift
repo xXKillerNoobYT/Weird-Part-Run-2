@@ -99,11 +99,11 @@ struct IOSBookkeeperExportPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if laborRows.isEmpty && materialRows.isEmpty {
-            ContentUnavailableView {
-                Label("No Data", systemImage: "doc.richtext")
-            } description: {
-                Text("No labor or material data for the selected period.")
-            }
+            EmptyStateView(
+                icon: "doc.richtext",
+                title: "No Data",
+                message: "No labor or material data for the selected period."
+            )
         } else {
             List {
                 if !laborRows.isEmpty {
