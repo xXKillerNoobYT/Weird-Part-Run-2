@@ -55,11 +55,11 @@ struct IOSDispatchTemplatesPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredTemplates.isEmpty {
-            ContentUnavailableView {
-                Label("No Templates", systemImage: "doc.on.doc")
-            } description: {
-                Text("No dispatch templates found.")
-            }
+            EmptyStateView(
+                icon: "doc.on.doc",
+                title: "No Templates",
+                message: "No dispatch templates found."
+            )
         } else {
             List(filteredTemplates, id: \.id) { template in
                 templateRow(template)

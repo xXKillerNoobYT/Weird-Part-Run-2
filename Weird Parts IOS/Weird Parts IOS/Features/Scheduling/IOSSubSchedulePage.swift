@@ -104,11 +104,11 @@ struct IOSSubSchedulePage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if rows.isEmpty {
-            ContentUnavailableView {
-                Label("No Subs Scheduled", systemImage: "person.badge.clock")
-            } description: {
-                Text("No subcontractors scheduled for \(displayDate).")
-            }
+            EmptyStateView(
+                icon: "person.badge.clock",
+                title: "No Subs Scheduled",
+                message: "No subcontractors scheduled for \(displayDate)."
+            )
         } else {
             List(rows) { row in
                 subRow(row)
