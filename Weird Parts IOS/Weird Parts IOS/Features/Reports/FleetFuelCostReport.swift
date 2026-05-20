@@ -30,9 +30,11 @@ struct FleetFuelCostReport: View {
                 Section { ProgressView("Loading...") }
             } else if fuelData.isEmpty {
                 Section {
-                    ContentUnavailableView("No Fuel Data",
-                        systemImage: "fuelpump",
-                        description: Text("No fuel logs found for this period."))
+                    EmptyStateView(
+                        icon: "fuelpump",
+                        title: "No Fuel Data",
+                        message: "No fuel logs found for this period."
+                    )
                 }
             } else {
                 // Summary

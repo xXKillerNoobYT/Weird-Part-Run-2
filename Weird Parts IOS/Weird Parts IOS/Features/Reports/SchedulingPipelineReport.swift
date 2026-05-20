@@ -23,9 +23,11 @@ struct SchedulingPipelineReport: View {
                 Section { ProgressView("Loading...") }
             } else if pipelineData.isEmpty {
                 Section {
-                    ContentUnavailableView("No Pipeline Data",
-                        systemImage: "rectangle.stack",
-                        description: Text("No jobs found in the system."))
+                    EmptyStateView(
+                        icon: "rectangle.stack",
+                        title: "No Pipeline Data",
+                        message: "No jobs found in the system."
+                    )
                 }
             } else {
                 Section("Overview") {

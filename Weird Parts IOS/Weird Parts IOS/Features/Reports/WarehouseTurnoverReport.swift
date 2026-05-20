@@ -30,9 +30,11 @@ struct WarehouseTurnoverReport: View {
                 Section { ProgressView("Loading...") }
             } else if turnoverData.isEmpty {
                 Section {
-                    ContentUnavailableView("No Movement Data",
-                        systemImage: "arrow.left.arrow.right",
-                        description: Text("No stock movements found for this period."))
+                    EmptyStateView(
+                        icon: "arrow.left.arrow.right",
+                        title: "No Movement Data",
+                        message: "No stock movements found for this period."
+                    )
                 }
             } else {
                 Section("Summary") {
