@@ -150,13 +150,13 @@ struct IOSToolCheckoutsPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { Task { await loadData() } }
         } else if filteredCheckouts.isEmpty {
-            ContentUnavailableView {
-                Label("No Checkouts", systemImage: "arrow.up.right.circle")
-            } description: {
-                Text(showActiveOnly
+            EmptyStateView(
+                icon: "arrow.up.right.circle",
+                title: "No Checkouts",
+                message: showActiveOnly
                     ? "No tools are currently checked out."
-                    : "No checkout records found.")
-            }
+                    : "No checkout records found."
+            )
         } else {
             List(filteredCheckouts, id: \.id) { checkout in
                 checkoutRow(checkout)
