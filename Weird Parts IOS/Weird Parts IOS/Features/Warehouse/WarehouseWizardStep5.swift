@@ -25,11 +25,11 @@ struct WarehouseWizardStep5: View {
     var body: some View {
         VStack(spacing: 0) {
             if allAreas.isEmpty {
-                ContentUnavailableView {
-                    Label("No Areas Yet", systemImage: "number.circle.fill")
-                } description: {
-                    Text("Add storage units in Step 2 and assign parts in Step 4 first.")
-                }
+                EmptyStateView(
+                    icon: "number.circle.fill",
+                    title: "No Areas Yet",
+                    message: "Add storage units in Step 2 and assign parts in Step 4 first."
+                )
             } else if let area = currentArea {
                 areaContent(area)
             }

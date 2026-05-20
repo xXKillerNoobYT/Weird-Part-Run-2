@@ -889,30 +889,18 @@ struct IOSJobDetailTabView: View {
                         ProgressView("Loading job notebook...")
                             .frame(maxWidth: .infinity, alignment: .center)
                     } else {
-                        ContentUnavailableView {
-                            Label("This job does not have a notebook yet", systemImage: "note.text.badge.plus")
-                        } description: {
-                            Text("Create a job notebook for \(job.jobName), or retry loading if it was just created on another device.")
-                        } actions: {
-                            HStack(spacing: 12) {
-                                Button {
-                                    createMissingJobNotebook(for: job)
-                                } label: {
-                                    Label("Create job notebook", systemImage: "plus.circle")
-                                        .frame(minHeight: 44)
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .accessibilityIdentifier("jobNotebookCreateRecovery")
-
-                                Button {
-                                    loadJobNotebook()
-                                } label: {
-                                    Label("Retry", systemImage: "arrow.clockwise")
-                                        .frame(minHeight: 44)
-                                }
-                                .buttonStyle(.bordered)
-                            }
-                        }
+                        EmptyStateView(
+                            icon: "note.text.badge.plus",
+                            title: "This job does not have a notebook yet",
+                            message: "Create a job notebook for \(job.jobName), or retry loading if it was just created on another device.",
+                            actionLabel: "Create job notebook",
+                            actionIcon: "plus.circle",
+                            actionAccessibilityIdentifier: "jobNotebookCreateRecovery",
+                            secondaryActionLabel: "Retry",
+                            secondaryActionIcon: "arrow.clockwise",
+                            secondaryAction: { loadJobNotebook() },
+                            action: { createMissingJobNotebook(for: job) }
+                        )
                     }
                 }
                 .padding()

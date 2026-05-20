@@ -15,6 +15,7 @@ struct IOSTeamsPage: View {
     @State private var searchText = ""
     @State private var loadError: String?
     @State private var filter: TeamFilter = .all
+    @State private var showEmployeesPage = false
 
     private enum TeamFilter {
         case all, active, mine
@@ -46,6 +47,10 @@ struct IOSTeamsPage: View {
                     }
                     .accessibilityLabel("Help")
                 }
+            }
+            .navigationDestination(isPresented: $showEmployeesPage) {
+                IOSEmployeesPage()
+                    .environmentObject(appCore)
             }
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
@@ -154,15 +159,13 @@ struct IOSTeamsPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if teams.isEmpty {
-            ContentUnavailableView {
-                Label("No Teams Yet", systemImage: "person.3.fill")
-            } description: {
-                Text("Teams are built from employees. Create your employees first, then organize them into teams here.")
-            } actions: {
-                NavigationLink(destination: IOSEmployeesPage().environmentObject(appCore)) {
-                    Label("Go to Employees", systemImage: "person.badge.plus")
-                }
-                .buttonStyle(.borderedProminent)
+            EmptyStateView(
+                icon: "person.3.fill",
+                title: "No Teams Yet",
+                message: "Teams are built from employees. Create your employees first, then organize them into teams here.",
+                actionLabel: "Go to Employees"
+            ) {
+                showEmployeesPage = true
             }
         } else if filteredTeams.isEmpty {
             ContentUnavailableView.search(text: searchText)
