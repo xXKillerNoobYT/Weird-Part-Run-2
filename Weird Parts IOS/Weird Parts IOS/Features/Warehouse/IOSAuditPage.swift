@@ -689,11 +689,11 @@ struct IOSAuditPage: View {
 
                 if stopItems.isEmpty {
                     Section {
-                        ContentUnavailableView {
-                            Label("No parts here", systemImage: "tray")
-                        } description: {
-                            Text("Confirm empty or report count.")
-                        }
+                        EmptyStateView(
+                            icon: "tray",
+                            title: "No parts here",
+                            message: "Confirm empty or report count."
+                        )
 
                         Button {
                             recordWalkingPathEvent(type: "empty_confirmed", notes: "Confirmed empty walking-path stop")

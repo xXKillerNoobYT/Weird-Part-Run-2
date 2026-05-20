@@ -46,11 +46,11 @@ struct WarehouseWizardStep3: View {
             .padding(.horizontal)
 
             if allAreas.isEmpty {
-                ContentUnavailableView {
-                    Label("No Areas Yet", systemImage: "tag.fill")
-                } description: {
-                    Text("Add storage units in Step 2 first.")
-                }
+                EmptyStateView(
+                    icon: "tag.fill",
+                    title: "No Areas Yet",
+                    message: "Add storage units in Step 2 first."
+                )
             } else {
                 List {
                     ForEach(stickerGroups, id: \.unitName) { group in

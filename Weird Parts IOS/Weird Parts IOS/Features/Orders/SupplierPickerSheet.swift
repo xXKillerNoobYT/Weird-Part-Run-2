@@ -21,11 +21,11 @@ struct SupplierPickerSheet: View {
         NavigationStack {
             VStack(spacing: 0) {
                 if suppliers.isEmpty {
-                    ContentUnavailableView {
-                        Label("No Suppliers", systemImage: "building.2")
-                    } description: {
-                        Text("Add suppliers in the Parts section first.")
-                    }
+                    EmptyStateView(
+                        icon: "building.2",
+                        title: "No Suppliers",
+                        message: "Add suppliers in the Parts section first."
+                    )
                 } else {
                     List(filteredSuppliers, id: \.supplier.id) { item in
                         Button {
