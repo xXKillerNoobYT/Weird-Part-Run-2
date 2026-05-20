@@ -459,11 +459,7 @@ private struct SharedReportsView: View {
 
             if sharedReports.isEmpty {
                 Section {
-                    ContentUnavailableView {
-                        Label("No Shared Reports", systemImage: "person.2.fill")
-                    } description: {
-                        Text("Reports shared by team members will appear here. Create a custom report and share it to get started.")
-                    }
+                    compactSharedReportsEmptyState
                 }
             } else {
                 Section("Shared by Team") {
@@ -493,6 +489,26 @@ private struct SharedReportsView: View {
         }
         .listStyle(.insetGrouped)
         .task { loadSharedReports() }
+    }
+
+    private var compactSharedReportsEmptyState: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "person.2.fill")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .frame(width: 30)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("No Shared Reports")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Text("Reports shared by team members will appear here. Create a custom report and share it to get started.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
     }
 
     private func loadSharedReports() {
