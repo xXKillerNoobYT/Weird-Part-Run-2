@@ -459,11 +459,11 @@ private struct SharedReportsView: View {
 
             if sharedReports.isEmpty {
                 Section {
-                    ContentUnavailableView {
-                        Label("No Shared Reports", systemImage: "person.2.fill")
-                    } description: {
-                        Text("Reports shared by team members will appear here. Create a custom report and share it to get started.")
-                    }
+                    EmptyStateView(
+                        icon: "person.2.fill",
+                        title: "No Shared Reports",
+                        message: "Reports shared by team members will appear here. Create a custom report and share it to get started."
+                    )
                 }
             } else {
                 Section("Shared by Team") {
