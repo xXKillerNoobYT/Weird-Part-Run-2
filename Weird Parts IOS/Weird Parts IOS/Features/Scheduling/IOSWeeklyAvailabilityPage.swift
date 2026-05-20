@@ -123,11 +123,11 @@ struct IOSWeeklyAvailabilityPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if rows.isEmpty {
-            ContentUnavailableView {
-                Label("No Data", systemImage: "calendar.badge.exclamationmark")
-            } description: {
-                Text("No availability data for this week.")
-            }
+            EmptyStateView(
+                icon: "calendar.badge.exclamationmark",
+                title: "No Data",
+                message: "No availability data for this week."
+            )
         } else {
             List {
                 // Day header row

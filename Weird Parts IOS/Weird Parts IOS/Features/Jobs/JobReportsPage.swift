@@ -81,11 +81,11 @@ struct JobReportsPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadReports() }
         } else if reports.isEmpty {
-            ContentUnavailableView {
-                Label("No Reports", systemImage: "doc.plaintext")
-            } description: {
-                Text("Daily reports will appear here when generated.")
-            }
+            EmptyStateView(
+                icon: "doc.plaintext",
+                title: "No Reports",
+                message: "Daily reports will appear here when generated."
+            )
         } else {
             List(filteredReports, id: \.id) { report in
                 reportRow(report)

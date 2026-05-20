@@ -106,7 +106,7 @@ struct SettingsRouter: View {
     }
 
     private func comingSoonPage(_ title: String, icon: String) -> some View {
-        ContentUnavailableView(title, systemImage: icon, description: Text("This page is being built."))
+        EmptyStateView(icon: icon, title: title, message: "This page is being built.")
             .navigationTitle(title)
     }
 }

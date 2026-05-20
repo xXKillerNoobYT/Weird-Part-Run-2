@@ -57,7 +57,7 @@ struct IOSReportTemplatesPage: View {
                 ProgressView("Loading templates...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let loadError {
-                ContentUnavailableView("Unable to Load", systemImage: "exclamationmark.triangle", description: Text(loadError))
+                ErrorStateView(message: loadError)
             } else {
                 templateList
             }
@@ -123,7 +123,7 @@ struct IOSReportTemplatesPage: View {
             }
 
             if templates.isEmpty {
-                ContentUnavailableView("No Templates", systemImage: "doc.on.doc", description: Text("Tap + to create a report template."))
+                EmptyStateView(icon: "doc.on.doc", title: "No Templates", message: "Tap + to create a report template.")
             } else {
                 // My templates
                 let myTemplates = templates.filter { !$0.isShared }
