@@ -31,9 +31,11 @@ struct FleetUtilizationReport: View {
                 Section { ProgressView("Loading...") }
             } else if utilizationData.isEmpty {
                 Section {
-                    ContentUnavailableView("No Utilization Data",
-                        systemImage: "car.fill",
-                        description: Text("No vehicle activity found for this period."))
+                    EmptyStateView(
+                        icon: "car.fill",
+                        title: "No Utilization Data",
+                        message: "No vehicle activity found for this period."
+                    )
                 }
             } else {
                 Section("Summary") {
