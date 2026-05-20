@@ -23,9 +23,11 @@ struct WarehouseInventoryValueReport: View {
                 Section { ProgressView("Loading...") }
             } else if valueData.isEmpty {
                 Section {
-                    ContentUnavailableView("No Inventory Data",
-                        systemImage: "shippingbox",
-                        description: Text("No inventory categories found."))
+                    EmptyStateView(
+                        icon: "shippingbox",
+                        title: "No Inventory Data",
+                        message: "No inventory categories found."
+                    )
                 }
             } else {
                 Section("Total Value") {
