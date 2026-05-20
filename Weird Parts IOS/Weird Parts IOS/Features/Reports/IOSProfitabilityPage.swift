@@ -73,11 +73,11 @@ struct IOSProfitabilityPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredRows.isEmpty {
-            ContentUnavailableView {
-                Label("No Data", systemImage: "chart.line.uptrend.xyaxis")
-            } description: {
-                Text("No profitability data available.")
-            }
+            EmptyStateView(
+                icon: "chart.line.uptrend.xyaxis",
+                title: "No Data",
+                message: "No profitability data available."
+            )
         } else {
             List(filteredRows, id: \.id) { row in
                 profitRow(row)
