@@ -355,14 +355,12 @@ struct IOSContentRouter: View {
             OfficeRouter(tabId: tabId)
         } else {
             let hasOfficeAccess = appCore.hasPermission(officeAccessPermission)
-            ContentUnavailableView(
-                hasOfficeAccess ? "Permission required" : "Office access required",
-                systemImage: "lock.shield",
-                description: Text(
-                    hasOfficeAccess
-                        ? "You do not have the required permission to open this Office page."
-                        : "You do not have Office access."
-                )
+            EmptyStateView(
+                icon: "lock.shield",
+                title: hasOfficeAccess ? "Permission required" : "Office access required",
+                message: hasOfficeAccess
+                    ? "You do not have the required permission to open this Office page."
+                    : "You do not have Office access."
             )
         }
     }
