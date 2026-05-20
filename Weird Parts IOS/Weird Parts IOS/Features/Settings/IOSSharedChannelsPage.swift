@@ -15,11 +15,11 @@ struct IOSSharedChannelsPage: View {
             }
 
             Section("Channels") {
-                ContentUnavailableView {
-                    Label("No Shared Channels", systemImage: "bubble.left.and.bubble.right")
-                } description: {
-                    Text("Shared channels will be configured when multi-device sync is enabled.")
-                }
+                EmptyStateView(
+                    icon: "bubble.left.and.bubble.right",
+                    title: "No Shared Channels",
+                    message: "Shared channels will be configured when multi-device sync is enabled."
+                )
             }
 
             Section {

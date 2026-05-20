@@ -1830,10 +1830,10 @@ private struct TodoPickerSheet: View {
         NavigationStack {
             List {
                 if todos.isEmpty {
-                    ContentUnavailableView(
-                        "No To-Dos",
-                        systemImage: "checklist",
-                        description: Text("This job has no active to-dos. Add to-dos in the job's notebook.")
+                    EmptyStateView(
+                        icon: "checklist",
+                        title: "No To-Dos",
+                        message: "This job has no active to-dos. Add to-dos in the job's notebook."
                     )
                 } else {
                     ForEach(todos) { todo in

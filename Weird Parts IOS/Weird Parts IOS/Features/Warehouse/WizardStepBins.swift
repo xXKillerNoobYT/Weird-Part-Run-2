@@ -36,11 +36,11 @@ struct WizardStepBins: View {
             .padding()
 
             if allAreas.isEmpty {
-                ContentUnavailableView {
-                    Label("No Areas Yet", systemImage: "tray.fill")
-                } description: {
-                    Text("Create storage units with levels and areas in earlier steps first.")
-                }
+                EmptyStateView(
+                    icon: "tray.fill",
+                    title: "No Areas Yet",
+                    message: "Create storage units with levels and areas in earlier steps first."
+                )
             } else {
                 List {
                     ForEach(allAreas) { area in

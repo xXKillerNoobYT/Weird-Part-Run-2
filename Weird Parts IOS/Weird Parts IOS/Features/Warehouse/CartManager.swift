@@ -74,11 +74,11 @@ struct CartSheetView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 if cartManager.isEmpty {
-                    ContentUnavailableView {
-                        Label("Cart is Empty", systemImage: "cart")
-                    } description: {
-                        Text("Add parts or bins from any list to move them in bulk.")
-                    }
+                    EmptyStateView(
+                        icon: "cart",
+                        title: "Cart is Empty",
+                        message: "Add parts or bins from any list to move them in bulk."
+                    )
                 } else {
                     cartList
                     placeAllButton

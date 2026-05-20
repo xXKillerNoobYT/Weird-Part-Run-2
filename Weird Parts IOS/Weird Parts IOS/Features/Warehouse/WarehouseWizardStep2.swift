@@ -74,11 +74,11 @@ struct WarehouseWizardStep2: View {
                     Text("This storage unit will be permanently removed from the floor plan.")
                 }
             } else {
-                ContentUnavailableView {
-                    Label("No Storage Units", systemImage: "cabinet.fill")
-                } description: {
-                    Text("Tap the button above to add your first shelf, rack, or storage area.")
-                }
+                EmptyStateView(
+                    icon: "cabinet.fill",
+                    title: "No Storage Units",
+                    message: "Tap the button above to add your first shelf, rack, or storage area."
+                )
             }
         }
         .task { loadUnits() }

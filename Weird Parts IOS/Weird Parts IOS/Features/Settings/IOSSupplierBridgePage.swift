@@ -24,10 +24,10 @@ struct IOSSupplierBridgePage: View {
                 ProgressView("Loading supplier bridges...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if bridges.isEmpty {
-                ContentUnavailableView(
-                    "No Supplier Bridges",
-                    systemImage: "building.2",
-                    description: Text("No supplier communication bridges have been configured. Set these up from the desktop application.")
+                EmptyStateView(
+                    icon: "building.2",
+                    title: "No Supplier Bridges",
+                    message: "No supplier communication bridges have been configured. Set these up from the desktop application."
                 )
             } else {
                 Form {
