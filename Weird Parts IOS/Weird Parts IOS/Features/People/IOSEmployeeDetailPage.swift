@@ -502,10 +502,10 @@ struct IOSEmployeeDetailPage: View {
                 }
             } else if activity.isEmpty {
                 Section {
-                    ContentUnavailableView(
-                        "No recent activity",
-                        systemImage: "clock.badge.questionmark",
-                        description: Text("Recent job sessions will appear here after this employee clocks in.")
+                    EmptyStateView(
+                        icon: "clock.badge.questionmark",
+                        title: "No recent activity",
+                        message: "Recent job sessions will appear here after this employee clocks in."
                     )
                 }
             } else {
