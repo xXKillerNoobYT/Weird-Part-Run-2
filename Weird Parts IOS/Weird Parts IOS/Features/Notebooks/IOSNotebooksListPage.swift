@@ -137,11 +137,11 @@ struct IOSNotebooksListPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredNotebooks.isEmpty {
-            ContentUnavailableView {
-                Label("No Notebooks", systemImage: "book.closed")
-            } description: {
-                Text("No notebooks match your criteria.")
-            }
+            EmptyStateView(
+                icon: "book.closed",
+                title: "No Notebooks",
+                message: "No notebooks match your criteria."
+            )
         } else {
             List(filteredNotebooks, id: \.id) { notebook in
                 NavigationLink(destination: IOSNotebookDetailPage(notebookId: notebook.id).environmentObject(appCore)) {
