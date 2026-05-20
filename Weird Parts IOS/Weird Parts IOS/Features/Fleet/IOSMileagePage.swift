@@ -77,11 +77,11 @@ struct IOSMileagePage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredLogs.isEmpty {
-            ContentUnavailableView {
-                Label("No Mileage Logs", systemImage: "road.lanes")
-            } description: {
-                Text("No mileage logs found.")
-            }
+            EmptyStateView(
+                icon: "road.lanes",
+                title: "No Mileage Logs",
+                message: "No mileage logs found."
+            )
         } else {
             List(filteredLogs, id: \.id) { log in
                 mileageRow(log)
