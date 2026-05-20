@@ -74,11 +74,11 @@ struct IOSPreBillingPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if rows.isEmpty {
-            ContentUnavailableView {
-                Label("No Billing Data", systemImage: "doc.text")
-            } description: {
-                Text("No labor entries found for the selected period.")
-            }
+            EmptyStateView(
+                icon: "doc.text",
+                title: "No Billing Data",
+                message: "No labor entries found for the selected period."
+            )
         } else {
             List {
                 Section {
