@@ -5,11 +5,11 @@ import SwiftUI
 /// Use Job Orders → Create JPO instead.
 struct IOSUnifiedOrderPage: View {
     var body: some View {
-        ContentUnavailableView {
-            Label("Page Replaced", systemImage: "arrow.right.circle")
-        } description: {
-            Text("This page has been replaced. Use Job Orders → Create JPO.")
-        }
+        EmptyStateView(
+            icon: "arrow.right.circle",
+            title: "Page Replaced",
+            message: "This page has been replaced. Use Job Orders → Create JPO."
+        )
         .onAppear {
             NotificationCenter.default.post(
                 name: .unifiedOrderPageActive,

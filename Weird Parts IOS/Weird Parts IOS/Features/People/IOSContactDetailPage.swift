@@ -28,10 +28,10 @@ struct IOSContactDetailPage: View {
             } else if let contact {
                 contactDetail(contact)
             } else {
-                ContentUnavailableView(
-                    "Contact Not Found",
-                    systemImage: "person.crop.circle.badge.questionmark",
-                    description: Text("This contact may have been deleted.")
+                EmptyStateView(
+                    icon: "person.crop.circle.badge.questionmark",
+                    title: "Contact Not Found",
+                    message: "This contact may have been deleted."
                 )
             }
         }

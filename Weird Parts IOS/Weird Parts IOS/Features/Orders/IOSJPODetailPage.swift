@@ -1170,7 +1170,11 @@ private struct JPOMovementDetailContent: View {
                 ProgressView("Loading movement...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = loadError {
-                ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                EmptyStateView(
+                    icon: "exclamationmark.triangle",
+                    title: "Error",
+                    message: error
+                )
             } else if let m = movement {
                 List {
                     Section("Movement Info") {
@@ -1214,10 +1218,10 @@ private struct JPOMovementDetailContent: View {
                 }
                 .listStyle(.insetGrouped)
             } else {
-                ContentUnavailableView(
-                    "Movement Not Found",
-                    systemImage: "questionmark.circle",
-                    description: Text("Movement #\(movementId) could not be loaded.")
+                EmptyStateView(
+                    icon: "questionmark.circle",
+                    title: "Movement Not Found",
+                    message: "Movement #\(movementId) could not be loaded."
                 )
             }
         }

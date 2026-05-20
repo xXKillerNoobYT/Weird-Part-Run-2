@@ -74,11 +74,11 @@ struct IOSQuestionnairePage: View {
             ProgressView("Loading questions...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if questions.isEmpty && companionPolls.isEmpty {
-            ContentUnavailableView {
-                Label("No Questions", systemImage: "questionmark.circle")
-            } description: {
-                Text("No clock-out questions are configured. You can close this screen.")
-            }
+            EmptyStateView(
+                icon: "questionmark.circle",
+                title: "No Questions",
+                message: "No clock-out questions are configured. You can close this screen."
+            )
         } else {
             List {
                 // Error banner
