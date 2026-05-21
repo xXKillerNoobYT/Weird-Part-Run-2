@@ -17,6 +17,7 @@ build/
 # Swift Package Manager local state and generated dependencies
 .build/
 **/.build/
+**/.build*/
 .swiftpm/
 **/SourcePackages/checkouts/
 **/SourcePackages/repositories/
@@ -47,6 +48,7 @@ Thumbs.db
 
 # Paperclip runtime state
 .paperclip/
+.paperclip-sync/
 
 # Secrets — never commit these
 .env
