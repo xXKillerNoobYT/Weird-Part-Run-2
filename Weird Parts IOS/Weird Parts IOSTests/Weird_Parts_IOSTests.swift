@@ -59,6 +59,54 @@ struct Weird_Parts_IOSTests {
         #expect(keyHex.count == 64)
     }
 
+    @MainActor
+    @Test func bulkHoldSelectionCarriesAllSelectedRowsIntoSheetSnapshot() throws {
+        let first = OrdersService.JPOLineRow(
+            id: 101,
+            jpoId: 10,
+            partId: 201,
+            partName: "UITesting QA Switch",
+            description: nil,
+            quantity: 1,
+            unitPrice: nil,
+            notes: nil,
+            priority: "medium",
+            createdAt: nil
+        )
+        let second = OrdersService.JPOLineRow(
+            id: 102,
+            jpoId: 10,
+            partId: 202,
+            partName: "UITesting QA Breaker",
+            description: nil,
+            quantity: 2,
+            unitPrice: nil,
+            notes: nil,
+            priority: "medium",
+            createdAt: nil
+        )
+        let unselected = OrdersService.JPOLineRow(
+            id: 103,
+            jpoId: 10,
+            partId: 203,
+            partName: "UITesting QA Outlet",
+            description: nil,
+            quantity: 3,
+            unitPrice: nil,
+            notes: nil,
+            priority: "medium",
+            createdAt: nil
+        )
+
+        let selectedItems = IOSJPODetailBulkHoldSelection.selectedHoldItems(
+            from: [first, second, unselected],
+            selectedLineIds: [first.id, second.id]
+        )
+
+        #expect(selectedItems.map(\.id) == [first.id, second.id])
+        #expect(IOSJPODetailBulkHoldSelection.sheetIdentifier(for: selectedItems) == "bulkHold-101-102")
+    }
+
     @Test func uiTestingFixturesSeedJPOFlowDataForQASmoke() throws {
         let db = try AppDatabase.openInMemoryDatabase()
         let auth = AuthService(db: db)
