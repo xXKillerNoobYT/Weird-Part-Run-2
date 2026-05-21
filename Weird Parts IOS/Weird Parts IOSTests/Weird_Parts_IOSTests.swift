@@ -50,4 +50,11 @@ struct Weird_Parts_IOSTests {
 
         #expect(auditIndex <= 2)
     }
+
+    @Test func uiTestingLaunchUsesDeterministicDatabaseKey() throws {
+        let keyHex = try AppCore.deviceBootstrapKeyHex(processArguments: ["Weird Parts", "-UITesting"])
+
+        #expect(keyHex == "8f1df32f4be04d5fcde1e8e6ddf9187f53a4b68370d5aafc56f0d43f2e9732a1")
+        #expect(keyHex.count == 64)
+    }
 }
