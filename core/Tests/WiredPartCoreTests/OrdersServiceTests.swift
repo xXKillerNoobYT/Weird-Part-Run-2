@@ -1086,6 +1086,56 @@ struct OrdersServiceTests {
         #expect(role == "admin")
     }
 
+    @Test("bulkHoldJPOLinesWithChat creates a chat thread per selected line and is idempotent")
+    func testBulkHoldJPOLinesWithChatCreatesPerLineThreadsIdempotently() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partA = try E2ETestHelpers.seedPart(env, name: "Bulk Wire", categoryId: catId)
+        let partB = try E2ETestHelpers.seedPart(env, name: "Bulk Box", categoryId: catId)
+
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let lineA = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partA, quantity: 2, notes: nil)
+        let lineB = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partB, quantity: 4, notes: nil)
+
+        let firstChannels = try env.orders.bulkHoldJPOLinesWithChat(
+            lineIds: [lineA, lineB],
+            holdReason: "Bulk hold needs field answer",
+            userId: env.adminUserId
+        )
+        let repeatedChannels = try env.orders.bulkHoldJPOLinesWithChat(
+            lineIds: [lineA, lineB],
+            holdReason: "Bulk hold needs field answer",
+            userId: env.adminUserId
+        )
+
+        #expect(firstChannels.count == 2)
+        #expect(Set(firstChannels.keys) == Set([lineA, lineB]))
+        #expect(firstChannels == repeatedChannels)
+
+        try env.db.writer.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT id, line_status, hold_reason, chat_thread_id
+                FROM jpo_line_items
+                WHERE id IN (?, ?)
+                ORDER BY id
+            """, arguments: [lineA, lineB])
+            #expect(rows.count == 2)
+            for row in rows {
+                let lineId: Int64 = row["id"]
+                let chatThreadId: Int64? = row["chat_thread_id"]
+                #expect(row["line_status"] as String == "on_hold")
+                #expect(row["hold_reason"] as String == "Bulk hold needs field answer")
+                #expect(chatThreadId == firstChannels[lineId])
+            }
+
+            let channelCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM chat_channels WHERE channel_type = 'jpo_qa' AND deleted_at IS NULL") ?? 0
+            let messageCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM chat_messages WHERE content = ? AND deleted_at IS NULL", arguments: ["Bulk hold needs field answer"]) ?? 0
+            #expect(channelCount == 2)
+            #expect(messageCount == 2)
+        }
+    }
+
     // MARK: - generatePOsFromProcurement
 
     @Test("generatePOsFromProcurement groups items by supplier into separate POs")

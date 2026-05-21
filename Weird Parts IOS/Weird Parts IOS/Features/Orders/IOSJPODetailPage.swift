@@ -893,8 +893,8 @@ struct IOSJPODetailPage: View {
     }
 
     /// Apply the same hold reason to ALL items in bulkHoldItems, cancelling
-    /// any pending transfers first. Creates a hold+chat for the first item
-    /// and a status-only hold (with the shared reason) for the rest.
+    /// any pending transfers first. Creates an idempotent legacy hold chat for
+    /// every selected line and a typed hold thread for unified inbox visibility.
     @MainActor
     private func bulkHoldAllItems() async {
         guard let service = appCore.ordersService,
@@ -919,17 +919,31 @@ struct IOSJPODetailPage: View {
                         warehouseService: warehouseService
                     )
                 }
-
-                // Place on hold with the shared reason
-                try service.updateJPOLineStatus(
-                    lineId: item.id,
-                    status: "on_hold",
-                    reason: reason,
-                    updatedBy: userId
-                )
             } catch {
                 actionError = userFriendlyError(error, context: "process order")
             }
+        }
+
+        do {
+            _ = try service.bulkHoldJPOLinesWithChat(
+                lineIds: bulkHoldItems.map(\.id),
+                holdReason: reason,
+                userId: userId
+            )
+
+            if let chatService = appCore.chatService, let jpo {
+                for item in bulkHoldItems {
+                    let jpoNumber = "JPO #\(jpo.id) Line #\(item.id)"
+                    _ = try chatService.createJPOHoldThread(
+                        partName: item.partName ?? "Part",
+                        jpoNumber: jpoNumber,
+                        holdReason: reason,
+                        userId: userId
+                    )
+                }
+            }
+        } catch {
+            actionError = userFriendlyError(error, context: "process order")
         }
 
         // Clean up state

@@ -947,6 +947,74 @@ public final class OrdersService: Sendable {
         }
     }
 
+    /// Put multiple JPO lines on hold and create one legacy Q&A chat channel per line.
+    ///
+    /// This is intentionally idempotent for repeated bulk holds: if a selected line is
+    /// already on hold and already has a `chat_thread_id`, the existing channel ID is
+    /// returned instead of creating a duplicate channel/message.
+    public func bulkHoldJPOLinesWithChat(
+        lineIds: [Int64],
+        holdReason: String,
+        userId: Int64
+    ) throws -> [Int64: Int64] {
+        let trimmedReason = holdReason.trimmingCharacters(in: .whitespaces)
+        guard !trimmedReason.isEmpty else {
+            throw OrdersError.requiredFieldEmpty("holdReason")
+        }
+
+        let uniqueLineIds = Array(Set(lineIds)).sorted()
+        guard !uniqueLineIds.isEmpty else { return [:] }
+
+        try db.writer.read { dbConn in
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [userId]) ?? 0) > 0
+            guard userExists else { throw OrdersError.userNotFound(userId) }
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "manage_orders")
+        }
+
+        var channelIdsByLineId: [Int64: Int64] = [:]
+        for lineId in uniqueLineIds {
+            let line = try db.writer.read { dbConn -> (jpoId: Int64, partName: String, existingChannelId: Int64?) in
+                guard let row = try Row.fetchOne(dbConn, sql: """
+                    SELECT jl.jpo_id,
+                           COALESCE(p.name, 'Part') AS part_name,
+                           CASE
+                               WHEN jl.line_status = 'on_hold' THEN jl.chat_thread_id
+                               ELSE NULL
+                           END AS existing_channel_id
+                    FROM jpo_line_items jl
+                    LEFT JOIN parts p ON p.id = jl.part_id AND p.deleted_at IS NULL
+                    WHERE jl.id = ? AND jl.deleted_at IS NULL
+                    """, arguments: [lineId]) else {
+                    throw OrdersError.invalidStatus("JPO line #\(lineId) not found")
+                }
+
+                return (
+                    jpoId: row["jpo_id"] ?? 0,
+                    partName: row["part_name"] as String? ?? "Part",
+                    existingChannelId: row["existing_channel_id"] as Int64?
+                )
+            }
+
+            if let existingChannelId = line.existingChannelId {
+                channelIdsByLineId[lineId] = existingChannelId
+                continue
+            }
+
+            let channelId = try holdJPOLineWithChat(
+                lineId: lineId,
+                holdReason: trimmedReason,
+                userId: userId,
+                partName: line.partName,
+                jpoId: line.jpoId
+            )
+            channelIdsByLineId[lineId] = channelId
+        }
+
+        return channelIdsByLineId
+    }
+
     /// Derive the overall JPO status from its line items' per-line statuses.
     public func deriveJPOStatusFromLineStatuses(_ statuses: [String]) -> String {
         let unique = Set(statuses)
