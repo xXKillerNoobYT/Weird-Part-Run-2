@@ -69,10 +69,29 @@ struct Weird_Parts_IOSTests {
         let jobs = JobsService(db: db)
         let orders = OrdersService(db: db)
         let users = try auth.getActiveUsers()
-        let userId = try #require(users.first { $0.displayName == "UITest Owner" }?.id)
-        let job = try #require(try jobs.listJobs(status: "active").first { $0.jobNumber == "UITEST-JPO-001" })
-        let jpo = try #require(try orders.listJPOs(jobId: job.id, status: "draft").first { $0.orderNumber == "UITEST-JPO-001" })
-        let detail = try orders.getJPODetail(id: jpo.id)
+        var seededUserId: Int64?
+        for user in users where user.displayName == "UITest Owner" {
+            seededUserId = user.id
+            break
+        }
+        let userId = try #require(seededUserId)
+
+        let activeJobs = try jobs.listJobs(status: "active")
+        var seededJobId: Int64?
+        for job in activeJobs where job.jobNumber == "UITEST-JPO-001" {
+            seededJobId = job.id
+            break
+        }
+        let jobId = try #require(seededJobId)
+
+        let activeJPOs = try orders.listJPOs(jobId: jobId, status: "draft")
+        var seededJPOId: Int64?
+        for jpo in activeJPOs where jpo.status == "draft" {
+            seededJPOId = jpo.id
+            break
+        }
+        let jpoId = try #require(seededJPOId)
+        let detail = try orders.getJPODetail(id: jpoId)
 
         #expect(userId > 0)
         #expect(try parts.listCategories().contains { $0.name == "UITesting Electrical" })
