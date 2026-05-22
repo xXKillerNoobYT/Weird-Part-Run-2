@@ -511,9 +511,11 @@ public final class SchedulingService: Sendable {
         }
 
         let requiredPermission = "approve_time_off"
-        guard let approvedBy,
-              try auth.hasPermission(approvedBy, permissionKey: requiredPermission) else {
-            throw SchedulingError.insufficientPermissions(required: requiredPermission)
+        if status == "approved" || approvedBy != nil {
+            guard let approvedBy,
+                  try auth.hasPermission(approvedBy, permissionKey: requiredPermission) else {
+                throw SchedulingError.insufficientPermissions(required: requiredPermission)
+            }
         }
 
         try db.writer.write { dbConn in
