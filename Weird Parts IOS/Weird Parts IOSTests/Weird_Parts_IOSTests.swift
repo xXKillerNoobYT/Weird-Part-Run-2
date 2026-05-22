@@ -107,6 +107,57 @@ struct Weird_Parts_IOSTests {
         #expect(IOSJPODetailBulkHoldSelection.sheetIdentifier(for: selectedItems) == "bulkHold-101-102")
     }
 
+    @MainActor
+    @Test func bulkHoldExcludesLinesWhoseTransferCancellationFailed() throws {
+        let transferFailure = OrdersService.JPOLineRow(
+            id: 201,
+            jpoId: 20,
+            partId: 301,
+            partName: "UITesting Transfer Failure",
+            description: nil,
+            quantity: 1,
+            unitPrice: nil,
+            notes: nil,
+            priority: "medium",
+            createdAt: nil,
+            lineStatus: "transfer",
+            transferId: 9001
+        )
+        let transferSuccess = OrdersService.JPOLineRow(
+            id: 202,
+            jpoId: 20,
+            partId: 302,
+            partName: "UITesting Transfer Success",
+            description: nil,
+            quantity: 2,
+            unitPrice: nil,
+            notes: nil,
+            priority: "medium",
+            createdAt: nil,
+            lineStatus: "transfer",
+            transferId: 9002
+        )
+        let normalPendingLine = OrdersService.JPOLineRow(
+            id: 203,
+            jpoId: 20,
+            partId: 303,
+            partName: "UITesting Pending Line",
+            description: nil,
+            quantity: 3,
+            unitPrice: nil,
+            notes: nil,
+            priority: "medium",
+            createdAt: nil
+        )
+
+        let processableItems = IOSJPODetailBulkHoldSelection.processableHoldItems(
+            from: [transferFailure, transferSuccess, normalPendingLine],
+            failedTransferCancellationLineIds: [transferFailure.id]
+        )
+
+        #expect(processableItems.map(\.id) == [transferSuccess.id, normalPendingLine.id])
+    }
+
     @Test func uiTestingFixturesSeedJPOFlowDataForQASmoke() throws {
         let db = try AppDatabase.openInMemoryDatabase()
         let auth = AuthService(db: db)
