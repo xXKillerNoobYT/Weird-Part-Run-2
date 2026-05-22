@@ -296,6 +296,10 @@ final class AppCore: ObservableObject {
                 }
             }
         } catch {
+            let nsError = error as NSError
+            logger.error(
+                "[AppCore] bootstrap failed domain=\(nsError.domain, privacy: .public) code=\(nsError.code, privacy: .public) description=\(error.localizedDescription, privacy: .public)"
+            )
             loadError = userFriendlyError(error, context: "start app")
         }
     }
@@ -523,13 +527,17 @@ final class AppCore: ObservableObject {
         }
         let keyData = Data(keyBytes)
 
-        let addQuery: [CFString: Any] = [
+        var addQuery: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
             kSecAttrAccount: account,
-            kSecValueData: keyData,
-            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            kSecValueData: keyData
         ]
+        #if !targetEnvironment(macCatalyst)
+        // kSecAttrAccessible is an iOS-style accessibility class. On Catalyst
+        // this can fail with errSecParam on first launch, which blocks DB setup.
+        addQuery[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        #endif
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
         if addStatus == errSecDuplicateItem {
             // Another thread or launch already stored a bootstrap key — read and return it
@@ -540,11 +548,44 @@ final class AppCore: ObservableObject {
                 return data.map { String(format: "%02x", $0) }.joined()
             }
             throw CipherKeyError.keychainAccessFailed(rereadStatus)
+        } else if addStatus == errSecMissingEntitlement {
+            #if targetEnvironment(macCatalyst)
+            return try catalystFallbackBootstrapKeyHex()
+            #else
+            throw CipherKeyError.keychainAccessFailed(addStatus)
+            #endif
         } else if addStatus != errSecSuccess {
             throw CipherKeyError.keychainAccessFailed(addStatus)
         }
         return keyData.map { String(format: "%02x", $0) }.joined()
     }
+
+    #if targetEnvironment(macCatalyst)
+    /// Catalyst fallback when Keychain is unavailable (e.g. missing entitlement in local dev).
+    /// Stores a random device key inside the app container to keep DB encryption stable
+    /// across launches on the same machine/account.
+    nonisolated private static func catalystFallbackBootstrapKeyHex() throws -> String {
+        guard let supportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            throw AppCoreError.noDocumentsDirectory
+        }
+        let dir = supportURL.appendingPathComponent("WiredPart", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let keyURL = dir.appendingPathComponent("catalyst-bootstrap-key.bin")
+
+        if let data = try? Data(contentsOf: keyURL), data.count == 32 {
+            return data.map { String(format: "%02x", $0) }.joined()
+        }
+
+        var keyBytes = [UInt8](repeating: 0, count: 32)
+        let rc = SecRandomCopyBytes(kSecRandomDefault, 32, &keyBytes)
+        guard rc == errSecSuccess else {
+            throw CipherKeyError.bootstrapKeyGenerationFailed(rc)
+        }
+        let keyData = Data(keyBytes)
+        try keyData.write(to: keyURL, options: .atomic)
+        return keyData.map { String(format: "%02x", $0) }.joined()
+    }
+    #endif
 
     // MARK: - PIN Change
 
