@@ -45,10 +45,25 @@ struct IOSJPODetailPage: View {
         case viewChat(Int64)
         case viewPO(Int64)
         case viewMovement(Int64)
-        case bulkHold
+        case bulkHold([OrdersService.JPOLineRow])
         case help
 
-        var id: String { String(describing: self) }
+        var id: String {
+            switch self {
+            case .addLineItem:
+                "addLineItem"
+            case .viewChat(let channelId):
+                "viewChat-\(channelId)"
+            case .viewPO(let poId):
+                "viewPO-\(poId)"
+            case .viewMovement(let movementId):
+                "viewMovement-\(movementId)"
+            case .bulkHold(let items):
+                IOSJPODetailBulkHoldSelection.sheetIdentifier(for: items)
+            case .help:
+                "help"
+            }
+        }
     }
 
     var body: some View {
@@ -188,11 +203,11 @@ struct IOSJPODetailPage: View {
                         }
                     }
             }
-        case .bulkHold:
+        case .bulkHold(let items):
             NavigationStack {
                 Form {
-                    Section("Items to Hold (\(bulkHoldItems.count))") {
-                        ForEach(bulkHoldItems, id: \.id) { item in
+                    Section("Items to Hold (\(items.count))") {
+                        ForEach(items, id: \.id) { item in
                             HStack {
                                 Text(item.partName ?? "Unknown Part")
                                 Spacer()
@@ -883,13 +898,20 @@ struct IOSJPODetailPage: View {
     }
 
     private func holdSelected() {
-        // Collect ALL selected items and show the bulk hold sheet
+        // Collect ALL selected items and show the bulk hold sheet with the
+        // selected rows embedded in the sheet identity. This prevents SwiftUI
+        // from presenting a fresh `.bulkHold` sheet before the separate
+        // `bulkHoldItems` state write has rendered, which produced an empty
+        // "Items to Hold (0)" sheet while the action bar still said "2 selected".
         guard let jpo else { return }
-        let items = jpo.lines.filter { selectedLineIds.contains($0.id) }
+        let items = IOSJPODetailBulkHoldSelection.selectedHoldItems(
+            from: jpo.lines,
+            selectedLineIds: selectedLineIds
+        )
         guard !items.isEmpty else { return }
         bulkHoldItems = items
         bulkHoldReason = ""
-        activeSheet = .bulkHold
+        activeSheet = .bulkHold(items)
     }
 
     /// Apply the same hold reason to ALL items in bulkHoldItems, cancelling
