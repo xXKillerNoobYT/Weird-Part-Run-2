@@ -642,6 +642,17 @@ final class AppCore: ObservableObject {
         }
     }
 
+    enum UITestBootstrapError: LocalizedError {
+        case partCategoryMissing
+
+        var errorDescription: String? {
+            switch self {
+            case .partCategoryMissing:
+                "UI test bootstrap failed because the required active part category fixture is missing."
+            }
+        }
+    }
+
     /// Returns the path to the SQLite database file in the app's documents directory.
     /// On iOS this is the sandboxed Documents folder.
     nonisolated static func databasePath() throws -> String {
@@ -727,10 +738,12 @@ final class AppCore: ObservableObject {
                         WHERE name = 'UITesting Electrical'
                         """
                 )
-                let categoryId = try Int64.fetchOne(
+                guard let categoryId = try Int64.fetchOne(
                     dbConn,
-                    sql: "SELECT id FROM part_categories WHERE name = 'UITesting Electrical' AND deleted_at IS NULL"
-                )!
+                    sql: "SELECT id FROM part_categories WHERE name = 'UITesting Electrical' AND deleted_at IS NULL AND is_active = 1"
+                ) else {
+                    throw UITestBootstrapError.partCategoryMissing
+                }
 
                 let fixtureParts: [(code: String, name: String, description: String)] = [
                     ("UITEST-QA-CONDUIT", "UITesting QA Conduit", "Selectable conduit line for bulk JPO hold QA"),
