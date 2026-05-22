@@ -1714,6 +1714,8 @@ public final class WarehouseService: Sendable {
                 arguments: [partId, locationType, locationId]
             ) ?? 0
             let delta = newQty - currentQty
+            guard delta != 0 else { return }
+            let signedDelta = delta >= 0 ? "+\(delta)" : "\(delta)"
 
             // Update the stock record
             try dbConn.execute(

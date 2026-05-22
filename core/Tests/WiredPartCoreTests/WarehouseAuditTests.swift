@@ -853,7 +853,6 @@ struct WarehouseAuditTests {
         let catId = try E2ETestHelpers.seedCategory(env)
         let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
         _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
-
         try env.warehouse.adjustAuditCount(
             partId: partId,
             locationType: "warehouse",
