@@ -681,7 +681,7 @@ public final class NotebooksService: Sendable {
     /// Start warranty timer when a to-do is completed. Sets timer_start = now, timer_end = now + job warranty days.
     public func startWarrantyTimer(entryId: Int64, warrantyDurationDays: Int) throws {
         guard warrantyDurationDays > 0 else {
-            throw NotebooksError.invalidDuration(entryId)
+            throw NotebooksError.invalidDuration(Int64(warrantyDurationDays))
         }
         let now = Date()
         let end = Calendar.current.date(byAdding: .day, value: warrantyDurationDays, to: now) ?? now.addingTimeInterval(Double(warrantyDurationDays) * 86400)
