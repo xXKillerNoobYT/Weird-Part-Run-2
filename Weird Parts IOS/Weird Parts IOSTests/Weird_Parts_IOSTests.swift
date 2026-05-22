@@ -6,6 +6,7 @@
 //
 
 import Testing
+import WiredPartCore
 @testable import Weird_Parts
 
 
@@ -56,5 +57,94 @@ struct Weird_Parts_IOSTests {
 
         #expect(keyHex == "8f1df32f4be04d5fcde1e8e6ddf9187f53a4b68370d5aafc56f0d43f2e9732a1")
         #expect(keyHex.count == 64)
+    }
+
+    @MainActor
+    @Test func bulkHoldSelectionCarriesAllSelectedRowsIntoSheetSnapshot() throws {
+        let first = OrdersService.JPOLineRow(
+            id: 101,
+            jpoId: 10,
+            partId: 201,
+            partName: "UITesting QA Switch",
+            description: nil,
+            quantity: 1,
+            unitPrice: nil,
+            notes: nil,
+            priority: "medium",
+            createdAt: nil
+        )
+        let second = OrdersService.JPOLineRow(
+            id: 102,
+            jpoId: 10,
+            partId: 202,
+            partName: "UITesting QA Breaker",
+            description: nil,
+            quantity: 2,
+            unitPrice: nil,
+            notes: nil,
+            priority: "medium",
+            createdAt: nil
+        )
+        let unselected = OrdersService.JPOLineRow(
+            id: 103,
+            jpoId: 10,
+            partId: 203,
+            partName: "UITesting QA Outlet",
+            description: nil,
+            quantity: 3,
+            unitPrice: nil,
+            notes: nil,
+            priority: "medium",
+            createdAt: nil
+        )
+
+        let selectedItems = IOSJPODetailBulkHoldSelection.selectedHoldItems(
+            from: [first, second, unselected],
+            selectedLineIds: [first.id, second.id]
+        )
+
+        #expect(selectedItems.map(\.id) == [first.id, second.id])
+        #expect(IOSJPODetailBulkHoldSelection.sheetIdentifier(for: selectedItems) == "bulkHold-101-102")
+    }
+
+    @Test func uiTestingFixturesSeedJPOFlowDataForQASmoke() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let auth = AuthService(db: db)
+
+        try AppCore.seedUITestingFixtures(db: db, authService: auth)
+
+        let parts = PartsService(db: db, auth: auth)
+        let jobs = JobsService(db: db)
+        let orders = OrdersService(db: db)
+        let users = try auth.getActiveUsers()
+        var seededUserId: Int64?
+        for user in users where user.displayName == "UITest Owner" {
+            seededUserId = user.id
+            break
+        }
+        let userId = try #require(seededUserId)
+
+        let activeJobs = try jobs.listJobs(status: "active")
+        var seededJobId: Int64?
+        for job in activeJobs where job.jobNumber == "UITEST-JPO-001" {
+            seededJobId = job.id
+            break
+        }
+        let jobId = try #require(seededJobId)
+
+        let activeJPOs = try orders.listJPOs(jobId: jobId, status: "draft")
+        var seededJPOId: Int64?
+        for jpo in activeJPOs where jpo.status == "draft" {
+            seededJPOId = jpo.id
+            break
+        }
+        let jpoId = try #require(seededJPOId)
+        let detail = try orders.getJPODetail(id: jpoId)
+
+        #expect(userId > 0)
+        #expect(try parts.listCategories().contains { $0.name == "UITesting Electrical" })
+        #expect(try parts.listParts(search: "UITesting QA", limit: 10).count >= 2)
+        #expect(detail.lines.count >= 2)
+        #expect(detail.lines.allSatisfy { $0.partId != nil })
     }
 }
