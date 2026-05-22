@@ -642,6 +642,17 @@ final class AppCore: ObservableObject {
         }
     }
 
+    enum UITestBootstrapError: LocalizedError {
+        case partCategoryMissing
+
+        var errorDescription: String? {
+            switch self {
+            case .partCategoryMissing:
+                "UI test bootstrap failed because the required active part category fixture is missing."
+            }
+        }
+    }
+
     /// Returns the path to the SQLite database file in the app's documents directory.
     /// On iOS this is the sandboxed Documents folder.
     nonisolated static func databasePath() throws -> String {
@@ -668,7 +679,7 @@ final class AppCore: ObservableObject {
         }
     }
 
-    nonisolated private static func seedUITestingFixtures(db: AppDatabase, authService: AuthService) throws {
+    nonisolated static func seedUITestingFixtures(db: AppDatabase, authService: AuthService) throws {
         let seedResult = try authService.seedFirstAdmin(displayName: "UITest Owner", pin: "1234")
         let activeUsers = try authService.getActiveUsers()
         let fixtureUserId = seedResult.user?.id ??
@@ -707,6 +718,136 @@ final class AppCore: ObservableObject {
                     """,
                 arguments: ["parts", "2001", "unit_cost", "17.45", "21.90", "remote", "UITEST-LOCAL", "UITEST-REMOTE", now, now]
             )
+
+            // WEI-1752 / WEI-881 QA fixture: the -UITesting runtime must expose a
+            // selectable active job, at least one category, and a deterministic JPO
+            // with 2+ selectable line items so the bulk hold/chat smoke can run
+            // without manual simulator database surgery.
+            if let userId = fixtureUserId {
+                try dbConn.execute(
+                    sql: """
+                        INSERT OR IGNORE INTO part_categories
+                        (name, description, sort_order, is_active, created_at, updated_at)
+                        VALUES ('UITesting Electrical', 'Deterministic UI smoke fixture category', 0, 1, datetime('now'), datetime('now'))
+                        """
+                )
+                try dbConn.execute(
+                    sql: """
+                        UPDATE part_categories
+                        SET is_active = 1, deleted_at = NULL, updated_at = datetime('now')
+                        WHERE name = 'UITesting Electrical'
+                        """
+                )
+                guard let categoryId = try Int64.fetchOne(
+                    dbConn,
+                    sql: "SELECT id FROM part_categories WHERE name = 'UITesting Electrical' AND deleted_at IS NULL AND is_active = 1"
+                ) else {
+                    throw UITestBootstrapError.partCategoryMissing
+                }
+
+                let fixtureParts: [(code: String, name: String, description: String)] = [
+                    ("UITEST-QA-CONDUIT", "UITesting QA Conduit", "Selectable conduit line for bulk JPO hold QA"),
+                    ("UITEST-QA-WIRE", "UITesting QA Wire", "Selectable wire line for bulk JPO hold QA")
+                ]
+                for part in fixtureParts {
+                    try dbConn.execute(
+                        sql: """
+                            INSERT OR IGNORE INTO parts
+                            (category_id, part_type, code, name, description, unit_of_measure,
+                             company_cost_price, company_markup_percent, is_active, deleted_at,
+                             created_at, updated_at)
+                            VALUES (?, 'general', ?, ?, ?, 'each', 1.0, 0.0, 1, NULL, datetime('now'), datetime('now'))
+                            """,
+                        arguments: [categoryId, part.code, part.name, part.description]
+                    )
+                    try dbConn.execute(
+                        sql: """
+                            UPDATE parts
+                            SET category_id = ?, name = ?, description = ?, unit_of_measure = 'each',
+                                is_active = 1, deleted_at = NULL, updated_at = datetime('now')
+                            WHERE code = ?
+                            """,
+                        arguments: [categoryId, part.name, part.description, part.code]
+                    )
+                }
+
+                try dbConn.execute(
+                    sql: """
+                        INSERT OR IGNORE INTO jobs
+                        (job_number, job_name, customer_name, status, priority, job_type,
+                         lead_user_id, created_by, notes, created_at, updated_at)
+                        VALUES ('UITEST-JPO-001', 'UITesting JPO Smoke Job', 'UITesting Customer',
+                                'active', 'normal', 'service', ?, ?,
+                                'Deterministic active job for WEI-881 bulk hold smoke', datetime('now'), datetime('now'))
+                        """,
+                    arguments: [userId, userId]
+                )
+                try dbConn.execute(
+                    sql: """
+                        UPDATE jobs
+                        SET job_name = 'UITesting JPO Smoke Job', customer_name = 'UITesting Customer',
+                            status = 'active', priority = 'normal', job_type = 'service',
+                            lead_user_id = ?, created_by = ?, deleted_at = NULL, updated_at = datetime('now')
+                        WHERE job_number = 'UITEST-JPO-001'
+                        """,
+                    arguments: [userId, userId]
+                )
+                let jobId = try Int64.fetchOne(
+                    dbConn,
+                    sql: "SELECT id FROM jobs WHERE job_number = 'UITEST-JPO-001' AND deleted_at IS NULL"
+                )!
+
+                try dbConn.execute(
+                    sql: """
+                        INSERT OR IGNORE INTO job_parts_orders
+                        (job_id, order_number, status, priority, order_type, requested_by, notes,
+                         created_at, updated_at)
+                        VALUES (?, 'UITEST-JPO-001', 'draft', 'normal', 'job', ?,
+                                'Deterministic JPO with selectable lines for WEI-881 smoke', datetime('now'), datetime('now'))
+                        """,
+                    arguments: [jobId, userId]
+                )
+                try dbConn.execute(
+                    sql: """
+                        UPDATE job_parts_orders
+                        SET job_id = ?, status = 'draft', priority = 'normal', order_type = 'job',
+                            requested_by = ?, deleted_at = NULL, updated_at = datetime('now')
+                        WHERE order_number = 'UITEST-JPO-001'
+                        """,
+                    arguments: [jobId, userId]
+                )
+                let jpoId = try Int64.fetchOne(
+                    dbConn,
+                    sql: "SELECT id FROM job_parts_orders WHERE order_number = 'UITEST-JPO-001' AND deleted_at IS NULL"
+                )!
+
+                for partCode in fixtureParts.map(\.code) {
+                    let partId = try Int64.fetchOne(
+                        dbConn,
+                        sql: "SELECT id FROM parts WHERE code = ? AND deleted_at IS NULL",
+                        arguments: [partCode]
+                    )!
+                    let existingLineCount = try Int.fetchOne(
+                        dbConn,
+                        sql: """
+                            SELECT COUNT(*) FROM jpo_line_items
+                            WHERE jpo_id = ? AND part_id = ? AND deleted_at IS NULL
+                            """,
+                        arguments: [jpoId, partId]
+                    ) ?? 0
+                    if existingLineCount == 0 {
+                        try dbConn.execute(
+                            sql: """
+                                INSERT INTO jpo_line_items
+                                (jpo_id, part_id, qty_requested, qty_ordered, qty_received, priority,
+                                 notes, deleted_at, created_at)
+                                VALUES (?, ?, 2, 0, 0, 'normal', 'UITesting selectable bulk-hold line', NULL, datetime('now'))
+                                """,
+                            arguments: [jpoId, partId]
+                        )
+                    }
+                }
+            }
         }
 
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
