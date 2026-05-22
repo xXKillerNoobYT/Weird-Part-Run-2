@@ -144,7 +144,7 @@ COMMENT_BODY="$(
 
     def blocker_summary($issue):
       if (($issue.blockedByIssueIds // []) | length) == 0 then "none"
-      else (($issue.blockedByIssueIds // []) | join(", "))
+      else (($issue.blockedByIssueIds // []) | map(.identifier // .id // tostring) | join(", "))
       end;
 
     "# paperclip-tracker-sync:v1\n" +
