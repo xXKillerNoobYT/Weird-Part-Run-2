@@ -21,6 +21,18 @@ struct WarehouseAuditTests {
         return area.id!
     }
 
+    private func seedStorageAreas(_ env: E2ETestHelpers.TestEnvironment, count: Int) throws -> (floorPlanId: Int64, areas: [Int64]) {
+        let plan = try env.warehouse.createFloorPlan(name: "WH-\(UUID().uuidString.prefix(6))", widthInches: 200, lengthInches: 200)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "S1", unitType: "shelf")
+        let level = try env.warehouse.addStorageLevel(unitId: unit.id!, levelCode: "L1")
+        var areas: [Int64] = []
+        for index in 1...count {
+            let area = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: index)
+            areas.append(area.id!)
+        }
+        return (plan.id!, areas)
+    }
+
     // MARK: - Part Confidence
 
     @Test("Set and get part confidence")
@@ -71,7 +83,166 @@ struct WarehouseAuditTests {
         let areaId = try seedStorageArea(env)
 
         let factor = try env.warehouse.calculateMovementDecayFactor(partId: partId, areaId: areaId)
-        #expect(factor >= 0.0 && factor <= 1.0)
+        #expect(factor >= 1.0 && factor <= 3.0)
+    }
+
+    @Test("First clean audit promotes unverified 50 percent confidence to 100")
+    func testFirstCleanAuditDoubleCountBoost() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let areaId = try seedStorageArea(env)
+        let session = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+
+        try env.warehouse.setPartConfidence(partId: partId, areaId: areaId, percent: 50)
+        _ = try env.warehouse.recordAuditCount(
+            sessionId: session.id!,
+            partId: partId,
+            areaId: areaId,
+            systemCount: 10,
+            userCount: 10,
+            countedBy: env.adminUserId,
+            unitCostDollars: 1
+        )
+
+        let confidence = try #require(try env.warehouse.getPartConfidence(partId: partId, areaId: areaId))
+        #expect(confidence.confidencePercent == 100)
+        #expect(confidence.totalAuditCount == 1)
+        #expect(confidence.cleanAuditStreak == 1)
+        #expect(confidence.reliabilityLevel >= 3)
+    }
+
+    @Test("Audit variance outside value neutral zone applies confidence penalty")
+    func testAuditVariancePenalty() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let areaId = try seedStorageArea(env)
+        let session = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+
+        try env.warehouse.setPartConfidence(partId: partId, areaId: areaId, percent: 90)
+        _ = try env.warehouse.recordAuditCount(
+            sessionId: session.id!,
+            partId: partId,
+            areaId: areaId,
+            systemCount: 10,
+            userCount: 8,
+            countedBy: env.adminUserId,
+            unitCostDollars: 10
+        )
+
+        let confidence = try #require(try env.warehouse.getPartConfidence(partId: partId, areaId: areaId))
+        #expect(confidence.confidencePercent == 75)
+        #expect(confidence.cleanAuditStreak == 0)
+        #expect(confidence.totalVarianceDollars == 20)
+    }
+
+    @Test("Audit variance within 5 percent dollar value neutral zone preserves confidence")
+    func testAuditVarianceNeutralDollarThreshold() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let areaId = try seedStorageArea(env)
+        let session = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+
+        try env.warehouse.setPartConfidence(partId: partId, areaId: areaId, percent: 90)
+        _ = try env.warehouse.recordAuditCount(
+            sessionId: session.id!,
+            partId: partId,
+            areaId: areaId,
+            systemCount: 100,
+            userCount: 99,
+            countedBy: env.adminUserId,
+            unitCostDollars: 1
+        )
+
+        let confidence = try #require(try env.warehouse.getPartConfidence(partId: partId, areaId: areaId))
+        #expect(confidence.confidencePercent == 90)
+        #expect(confidence.cleanAuditStreak == 1)
+    }
+
+    @Test("Daily decay keeps counted parts above minimum confidence floor")
+    func testDailyDecayMinimumCountedFloor() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let areaId = try seedStorageArea(env)
+        let session = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+
+        _ = try env.warehouse.recordAuditCount(
+            sessionId: session.id!,
+            partId: partId,
+            areaId: areaId,
+            systemCount: 1,
+            userCount: 1,
+            countedBy: env.adminUserId
+        )
+        try env.warehouse.setPartConfidence(partId: partId, areaId: areaId, percent: 0.02)
+        try env.warehouse.decayAllConfidence()
+
+        let confidence = try #require(try env.warehouse.getPartConfidence(partId: partId, areaId: areaId))
+        #expect(confidence.confidencePercent == 0.01)
+    }
+
+    @Test("Movement updates decay factor and quick verification resets it")
+    func testMovementDecayAndQuickVerificationReset() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let areaId = try seedStorageArea(env)
+
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 5, locationType: "warehouse", locationId: areaId)
+        try env.warehouse.setPartConfidence(partId: partId, areaId: areaId, percent: 80)
+
+        _ = try env.warehouse.createMovement(
+            partId: partId,
+            qty: 1,
+            fromLocationType: "warehouse",
+            fromLocationId: areaId,
+            toLocationType: "job",
+            toLocationId: 42,
+            movementType: "pull",
+            performedBy: env.adminUserId
+        )
+
+        let moved = try #require(try env.warehouse.getPartConfidence(partId: partId, areaId: areaId))
+        #expect(moved.movementDecayFactor > 1.0)
+        #expect(try env.warehouse.shouldPromptQuickVerification(partId: partId, areaId: areaId))
+
+        let verified = try env.warehouse.recordQuickVerificationCount(
+            partId: partId,
+            areaId: areaId,
+            countedQuantity: 4,
+            verifiedBy: env.adminUserId
+        )
+        #expect(verified.confidencePercent == 100)
+        #expect(verified.movementDecayFactor == 1.0)
+    }
+
+    @Test("Audit queue orders by lowest confidence and includes walking path metadata")
+    func testAuditQueueOrderingAndWalkingPathMetadata() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let p1 = try E2ETestHelpers.seedPart(env, name: "High Priority", categoryId: catId)
+        let p2 = try E2ETestHelpers.seedPart(env, name: "Later Priority", categoryId: catId)
+        let fixture = try seedStorageAreas(env, count: 2)
+        let path = try env.warehouse.createWalkingPath(
+            floorPlanId: fixture.floorPlanId,
+            name: "Default Audit Walk",
+            userId: env.adminUserId
+        )
+        try env.warehouse.setWalkingPathStops(pathId: path.id!, areaIds: [fixture.areas[1], fixture.areas[0]])
+        try env.warehouse.setPartConfidence(partId: p1, areaId: fixture.areas[0], percent: 30)
+        try env.warehouse.setPartConfidence(partId: p2, areaId: fixture.areas[1], percent: 60)
+
+        let queue = try env.warehouse.getAuditQueue(floorPlanId: fixture.floorPlanId)
+
+        #expect(queue.map(\.partId) == [p1, p2])
+        #expect(queue[0].needsAudit)
+        #expect(queue[0].auditTriggerPercent == 80)
+        #expect(queue[0].walkingPathId == path.id)
+        #expect(queue[0].walkingPathStopIndex == 1)
+        #expect(queue[1].walkingPathStopIndex == 0)
     }
 
     @Test("Get parts at reliability level")
