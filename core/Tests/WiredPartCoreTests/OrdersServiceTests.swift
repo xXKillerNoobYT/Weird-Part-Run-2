@@ -236,8 +236,11 @@ struct OrdersServiceTests {
         let env = try E2ETestHelpers.setUp()
         let jobId = try E2ETestHelpers.seedJob(env)
         let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
 
         let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let jpoLineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 7, notes: nil)
         // Must follow valid transitions: draft → pending → approved (fixes #205 validation)
         try env.orders.updateJPOStatus(id: jpoId, status: "pending")
         try env.orders.updateJPOStatus(id: jpoId, status: "approved")
@@ -247,6 +250,18 @@ struct OrdersServiceTests {
 
         let pos = try env.orders.listPurchaseOrders()
         #expect(pos.contains(where: { $0.id == poId }))
+
+        let lineState = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT jli.line_status, jli.po_line_id, pli.id AS po_line_item_id, pli.qty_ordered
+                FROM jpo_line_items jli
+                LEFT JOIN po_line_items pli ON pli.id = jli.po_line_id
+                WHERE jli.id = ? AND jli.deleted_at IS NULL
+                """, arguments: [jpoLineId])
+        }
+        #expect(lineState?["line_status"] as String? == "in_procurement")
+        #expect(lineState?["po_line_id"] as Int64? == lineState?["po_line_item_id"] as Int64?)
+        #expect(lineState?["qty_ordered"] as Int? == 7)
     }
 
     // MARK: - Update Return Status
