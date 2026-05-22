@@ -771,10 +771,12 @@ public final class ChatService: Sendable {
         return message.contains("no such table") || message.contains("no such column")
     }
 
-    /// Enforce the same active-channel/current-member gate for writes that read-side
-    /// inbox/message queries already use. This closes the phantom-member write gap
-    /// where a removed or never-added user could still insert messages if they kept
-    /// or guessed a channel ID.
+    /// Enforce the active-channel/current-member gate for message writes.
+    ///
+    /// This closes the phantom-member write gap where a removed or never-added user
+    /// could still insert messages if they kept or guessed a channel ID. Read-side
+    /// membership enforcement is handled separately by the call sites that have a
+    /// requesting-user context.
     private func requireActiveChannelMembership(_ dbConn: Database, channelId: Int64, userId: Int64) throws {
         let channelExists = (try Int.fetchOne(dbConn, sql: """
             SELECT COUNT(*) FROM chat_channels
