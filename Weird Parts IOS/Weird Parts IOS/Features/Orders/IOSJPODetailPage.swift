@@ -847,7 +847,7 @@ struct IOSJPODetailPage: View {
             // Also create a jpo_hold typed thread in ChatService for
             // unified inbox visibility with HOLD badge
             if let chatService = appCore.chatService {
-                let jpoNumber = "JPO #\(jpo.id)"
+                let jpoNumber = "JPO #\(jpo.id) Line #\(lineId)"
                 _ = try chatService.createJPOHoldThread(
                     partName: holdingPartName ?? "Part",
                     jpoNumber: jpoNumber,
@@ -915,8 +915,8 @@ struct IOSJPODetailPage: View {
     }
 
     /// Apply the same hold reason to ALL items in bulkHoldItems, cancelling
-    /// any pending transfers first. Creates a hold+chat for the first item
-    /// and a status-only hold (with the shared reason) for the rest.
+    /// any pending transfers first. Creates an idempotent legacy hold chat for
+    /// every selected line and a typed hold thread for unified inbox visibility.
     @MainActor
     private func bulkHoldAllItems() async {
         guard let service = appCore.ordersService,
@@ -929,7 +929,9 @@ struct IOSJPODetailPage: View {
         guard !reason.isEmpty else { return }
 
         isBulkHolding = true
+        defer { isBulkHolding = false }
 
+        var failedTransferCancellationLineIds = Set<Int64>()
         for item in bulkHoldItems {
             do {
                 // If the line was in "transfer" status, cancel the pending movement first
@@ -941,24 +943,52 @@ struct IOSJPODetailPage: View {
                         warehouseService: warehouseService
                     )
                 }
-
-                // Place on hold with the shared reason
-                try service.updateJPOLineStatus(
-                    lineId: item.id,
-                    status: "on_hold",
-                    reason: reason,
-                    updatedBy: userId
-                )
             } catch {
-                actionError = userFriendlyError(error, context: "process order")
+                failedTransferCancellationLineIds.insert(item.id)
             }
+        }
+
+        let processableHoldItems = IOSJPODetailBulkHoldSelection.processableHoldItems(
+            from: bulkHoldItems,
+            failedTransferCancellationLineIds: failedTransferCancellationLineIds
+        )
+
+        do {
+            guard !processableHoldItems.isEmpty else {
+                actionError = "Unable to hold selected lines because transfer cancellation failed."
+                return
+            }
+
+            _ = try service.bulkHoldJPOLinesWithChat(
+                lineIds: processableHoldItems.map(\.id),
+                holdReason: reason,
+                userId: userId
+            )
+
+            if let chatService = appCore.chatService, let jpo {
+                for item in processableHoldItems {
+                    let jpoNumber = "JPO #\(jpo.id) Line #\(item.id)"
+                    _ = try chatService.createJPOHoldThread(
+                        partName: item.partName ?? "Part",
+                        jpoNumber: jpoNumber,
+                        holdReason: reason,
+                        userId: userId
+                    )
+                }
+            }
+
+            if !failedTransferCancellationLineIds.isEmpty {
+                let failedList = failedTransferCancellationLineIds.sorted().map(String.init).joined(separator: ", ")
+                actionError = "Some lines were not held because transfer cancellation failed (line IDs: \(failedList))."
+            }
+        } catch {
+            actionError = userFriendlyError(error, context: "process order")
         }
 
         // Clean up state
         selectedLineIds.removeAll()
         bulkHoldItems = []
         bulkHoldReason = ""
-        isBulkHolding = false
         activeSheet = nil
         loadData()
     }
