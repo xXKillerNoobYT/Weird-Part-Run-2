@@ -93,6 +93,8 @@ Each firing picks ONE sub-task based on rotation + throttles (except SA which al
 
 SA always runs. SB/SC/SD/SF run when their throttle windows have elapsed. SE runs inline when another sub-task surfaces a Copilot-eligible situation.
 
+Branch health follows the operating rule in `docs/branch-review-cadence.md`: unrelated new work may continue while open PRs wait, but branch/PR backlog must be reviewed on cadence and whenever stale blockers, conflicts, unresolved review conversations, missing checks, or obsolete merged branches appear. A green PR with auto-merge enabled is still blocked if GitHub reports `Merging is blocked: All comments must be resolved`; the sweep must surface review-thread resolution as the next action.
+
 ### @copilot trigger governance (CONSERVATIVE — key areas only)
 
 Copilot costs credits and is publicly visible on the repo. The default is **do not trigger**. Every potential trigger is filed as a Q&A in `docs/dev-qa.md` and waits for user APPROVE/DEFER/REJECT — with **one narrow exception** below.
