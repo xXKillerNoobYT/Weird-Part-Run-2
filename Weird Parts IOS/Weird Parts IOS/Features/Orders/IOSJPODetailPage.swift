@@ -847,7 +847,7 @@ struct IOSJPODetailPage: View {
             // Also create a jpo_hold typed thread in ChatService for
             // unified inbox visibility with HOLD badge
             if let chatService = appCore.chatService {
-                let jpoNumber = "JPO #\(jpo.id)"
+                let jpoNumber = "JPO #\(jpo.id) Line #\(lineId)"
                 _ = try chatService.createJPOHoldThread(
                     partName: holdingPartName ?? "Part",
                     jpoNumber: jpoNumber,
