@@ -24,6 +24,7 @@ struct IOSJobDetailPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
+    private var canViewJobFinancials: Bool { appCore.hasPermission("view_job_financials") }
 
     private enum DetailTab: String, CaseIterable, Identifiable {
         case todos = "To-Dos"
@@ -441,13 +442,17 @@ struct IOSJobDetailPage: View {
     private func financialTab(_ job: JobsService.JobDetail) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionHeader("Financial", systemImage: "dollarsign.circle")
-            labelRow("Billing Rate", value: job.billingRate.map { formatCurrency($0) } ?? "Not set", icon: "dollarsign.circle")
-            labelRow("Estimated Hours", value: job.estimatedHours.map { String(format: "%.0f hrs", $0) } ?? "Not set", icon: "clock")
-            labelRow("Parts Cost", value: formatCurrency(job.partsCost), icon: "shippingbox")
-            labelRow("Budget Limit", value: job.budgetLimit.map { formatCurrency($0) } ?? "Not set", icon: "creditcard")
-            Text("Labor cost, FIFO parts layers, subcontractor cost, and margin should remain hat-gated as those cost feeds are added.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if canViewJobFinancials {
+                labelRow("Billing Rate", value: job.billingRate.map { formatCurrency($0) } ?? "Not set", icon: "dollarsign.circle")
+                labelRow("Estimated Hours", value: job.estimatedHours.map { String(format: "%.0f hrs", $0) } ?? "Not set", icon: "clock")
+                labelRow("Parts Cost", value: formatCurrency(job.partsCost), icon: "shippingbox")
+                labelRow("Budget Limit", value: job.budgetLimit.map { formatCurrency($0) } ?? "Not set", icon: "creditcard")
+                Text("Labor cost, FIFO parts layers, subcontractor cost, and margin should remain hat-gated as those cost feeds are added.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                placeholderRow("You do not have permission to view job financial details.", systemImage: "lock.fill")
+            }
         }
     }
 
