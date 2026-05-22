@@ -458,8 +458,11 @@ struct OrdersServiceTests {
         let partId = try E2ETestHelpers.seedPart(env, name: "Generate PO Part", categoryId: catId)
 
         let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
-        let lineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 4, notes: nil)
-        try env.orders.updateJPOLineStatus(lineId: lineId, status: "approved", updatedBy: env.adminUserId)
+        let lineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 7, notes: nil)
+        // Follow aggregate-level transitions before procurement generation so this
+        // covers the same approved-JPO workflow users run in the app.
+        try env.orders.updateJPOStatus(id: jpoId, status: "pending")
+        try env.orders.updateJPOStatus(id: jpoId, status: "approved")
 
         let poId = try env.orders.generatePOFromJPO(jpoId: jpoId, supplierId: supplierId)
         #expect(poId > 0)
@@ -470,6 +473,7 @@ struct OrdersServiceTests {
         let poDetail = try env.orders.getPODetail(id: poId)
         #expect(poDetail.lines.count == 1)
         #expect(poDetail.lines.first?.jpoLineId == lineId)
+        #expect(poDetail.lines.first?.quantityOrdered == 7)
 
         let jpoDetail = try env.orders.getJPODetail(id: jpoId)
         let generatedLine = try #require(jpoDetail.lines.first(where: { $0.id == lineId }))
