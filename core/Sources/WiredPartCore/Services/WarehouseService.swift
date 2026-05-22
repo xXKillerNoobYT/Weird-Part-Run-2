@@ -411,9 +411,29 @@ public final class WarehouseService: Sendable {
         }
     }
 
+    /// Legacy sort order for movement list queries.
+    public enum MovementSortOrder: Sendable, Equatable {
+        case newestFirst
+        case oldestFirst
+
+        fileprivate var sql: String {
+            switch self {
+            case .newestFirst: return "DESC"
+            case .oldestFirst: return "ASC"
+            }
+        }
+    }
+
     public enum MovementSortDirection: Sendable, Equatable {
         case ascending
         case descending
+
+        fileprivate var sql: String {
+            switch self {
+            case .ascending: return "ASC"
+            case .descending: return "DESC"
+            }
+        }
     }
 
     public enum MovementCompletionFilter: Sendable, Equatable {
@@ -565,7 +585,7 @@ public final class WarehouseService: Sendable {
         movementTypes: [String] = [],
         startDate: Date? = nil,
         endDate: Date? = nil,
-        sortDirection: MovementSortDirection = .descending,
+        sortDirection: MovementSortDirection? = nil,
         completionFilter: MovementCompletionFilter = .all,
         limit: Int = 100,
         offset: Int = 0,
@@ -612,7 +632,7 @@ public final class WarehouseService: Sendable {
 
                 args.append(limit)
                 args.append(offset)
-                let orderDirection = sortDirection == .ascending ? "ASC" : "DESC"
+                let orderDirection = sortDirection?.sql ?? sortOrder.sql
 
                 let sql = """
                     SELECT sm.*,
@@ -1870,12 +1890,6 @@ public final class WarehouseService: Sendable {
         reason: String?,
         performedBy: Int64?
     ) throws {
-        if let performedBy {
-            try db.writer.read { dbConn in
-                try ServicePermissionGate.requirePermission(dbConn, userId: performedBy, permissionKey: "perform_audit")
-            }
-        }
-
         guard newQty >= 0 else { throw WarehouseError.invalidQuantity }
         try db.writer.write { dbConn in
             if let uid = performedBy {
@@ -1883,6 +1897,7 @@ public final class WarehouseService: Sendable {
                     SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
                     """, arguments: [uid]) ?? 0) > 0
                 guard userExists else { throw WarehouseError.userNotFound(uid) }
+                try ServicePermissionGate.requirePermission(dbConn, userId: uid, permissionKey: "perform_audit")
             }
             // Update the stock record
             try dbConn.execute(
