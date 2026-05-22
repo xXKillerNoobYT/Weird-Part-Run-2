@@ -931,8 +931,7 @@ struct IOSJPODetailPage: View {
         isBulkHolding = true
         defer { isBulkHolding = false }
 
-        var successfullyCancelledLineIds = Set<Int64>()
-        var cancelFailures: [Int64] = []
+        var failedTransferCancellationLineIds = Set<Int64>()
         for item in bulkHoldItems {
             do {
                 // If the line was in "transfer" status, cancel the pending movement first
@@ -944,27 +943,30 @@ struct IOSJPODetailPage: View {
                         warehouseService: warehouseService
                     )
                 }
-                successfullyCancelledLineIds.insert(item.id)
             } catch {
-                cancelFailures.append(item.id)
+                failedTransferCancellationLineIds.insert(item.id)
             }
         }
 
+        let processableHoldItems = IOSJPODetailBulkHoldSelection.processableHoldItems(
+            from: bulkHoldItems,
+            failedTransferCancellationLineIds: failedTransferCancellationLineIds
+        )
+
         do {
-            let holdableItems = bulkHoldItems.filter { successfullyCancelledLineIds.contains($0.id) }
-            guard !holdableItems.isEmpty else {
+            guard !processableHoldItems.isEmpty else {
                 actionError = "Unable to hold selected lines because transfer cancellation failed."
                 return
             }
 
             _ = try service.bulkHoldJPOLinesWithChat(
-                lineIds: holdableItems.map(\.id),
+                lineIds: processableHoldItems.map(\.id),
                 holdReason: reason,
                 userId: userId
             )
 
             if let chatService = appCore.chatService, let jpo {
-                for item in holdableItems {
+                for item in processableHoldItems {
                     let jpoNumber = "JPO #\(jpo.id) Line #\(item.id)"
                     _ = try chatService.createJPOHoldThread(
                         partName: item.partName ?? "Part",
@@ -975,8 +977,8 @@ struct IOSJPODetailPage: View {
                 }
             }
 
-            if !cancelFailures.isEmpty {
-                let failedList = cancelFailures.map(String.init).joined(separator: ", ")
+            if !failedTransferCancellationLineIds.isEmpty {
+                let failedList = failedTransferCancellationLineIds.sorted().map(String.init).joined(separator: ", ")
                 actionError = "Some lines were not held because transfer cancellation failed (line IDs: \(failedList))."
             }
         } catch {
