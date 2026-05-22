@@ -497,17 +497,18 @@ final class AppCore: ObservableObject {
         badgeCountService = nil
         db = nil
 
-        // 3. Delete the database file
-        try DeviceResetService.deleteDatabaseFile(atPath: dbPath)
+        // 3. Delete the database files and local backups
+        try DeviceResetService.deleteDatabaseStorage(atPath: dbPath)
 
-        // 4. Clear saved session and all onboarding UserDefaults flags so the
-        //    fresh DB is not skipped by stale "already completed" flags.
+        // 4. Clear saved session and app-scoped UserDefaults state so reset
+        //    cannot inherit drafts, sync flags, or onboarding progress.
         currentUser = nil
         currentToken = nil
         permissions = []
-        UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
-        UserDefaults.standard.removeObject(forKey: "hasCompletedCompanySetup")
-        UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        onboardingManager = nil
+        onboardAIRuntimeBootstrap = nil
+        badgeCountManager.setUserId(nil)
+        DeviceResetService.clearSavedAppState()
 
         // 5. Re-bootstrap — will detect no users/profile and set needsOnboarding = true
         isReady = false
