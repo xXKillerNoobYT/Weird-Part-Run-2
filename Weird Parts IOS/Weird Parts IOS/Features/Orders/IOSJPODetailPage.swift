@@ -929,7 +929,10 @@ struct IOSJPODetailPage: View {
         guard !reason.isEmpty else { return }
 
         isBulkHolding = true
+        defer { isBulkHolding = false }
 
+        var successfullyCancelledLineIds = Set<Int64>()
+        var cancelFailures: [Int64] = []
         for item in bulkHoldItems {
             do {
                 // If the line was in "transfer" status, cancel the pending movement first
@@ -941,20 +944,27 @@ struct IOSJPODetailPage: View {
                         warehouseService: warehouseService
                     )
                 }
+                successfullyCancelledLineIds.insert(item.id)
             } catch {
-                actionError = userFriendlyError(error, context: "process order")
+                cancelFailures.append(item.id)
             }
         }
 
         do {
+            let holdableItems = bulkHoldItems.filter { successfullyCancelledLineIds.contains($0.id) }
+            guard !holdableItems.isEmpty else {
+                actionError = "Unable to hold selected lines because transfer cancellation failed."
+                return
+            }
+
             _ = try service.bulkHoldJPOLinesWithChat(
-                lineIds: bulkHoldItems.map(\.id),
+                lineIds: holdableItems.map(\.id),
                 holdReason: reason,
                 userId: userId
             )
 
             if let chatService = appCore.chatService, let jpo {
-                for item in bulkHoldItems {
+                for item in holdableItems {
                     let jpoNumber = "JPO #\(jpo.id) Line #\(item.id)"
                     _ = try chatService.createJPOHoldThread(
                         partName: item.partName ?? "Part",
@@ -964,6 +974,11 @@ struct IOSJPODetailPage: View {
                     )
                 }
             }
+
+            if !cancelFailures.isEmpty {
+                let failedList = cancelFailures.map(String.init).joined(separator: ", ")
+                actionError = "Some lines were not held because transfer cancellation failed (line IDs: \(failedList))."
+            }
         } catch {
             actionError = userFriendlyError(error, context: "process order")
         }
@@ -972,7 +987,6 @@ struct IOSJPODetailPage: View {
         selectedLineIds.removeAll()
         bulkHoldItems = []
         bulkHoldReason = ""
-        isBulkHolding = false
         activeSheet = nil
         loadData()
     }

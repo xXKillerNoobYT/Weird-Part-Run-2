@@ -36,6 +36,7 @@ public final class OrdersService: Sendable {
         case overMaxPullRequired(partId: Int64, overage: Int)
         case invalidQuantity(Int)
         case requiredFieldEmpty(String)
+        case missingJPOReference(lineId: Int64)
 
         public var errorDescription: String? {
             switch self {
@@ -59,6 +60,7 @@ public final class OrdersService: Sendable {
                 "Part #\(partId) is still over MAX by \(overage). Pull the overage to staging before generating POs."
             case .invalidQuantity(let qty): "Quantity must be greater than zero (got \(qty))"
             case .requiredFieldEmpty(let field): "\(field) is required and cannot be empty"
+            case .missingJPOReference(let lineId): "JPO line #\(lineId) is missing a required jpo_id reference"
             }
         }
     }
@@ -876,6 +878,25 @@ public final class OrdersService: Sendable {
         }
 
         return try db.writer.write { dbConn -> Int64 in
+            try holdJPOLineWithChat(
+                dbConn: dbConn,
+                lineId: lineId,
+                holdReason: holdReason,
+                userId: userId,
+                partName: partName,
+                jpoId: jpoId
+            )
+        }
+    }
+
+    private func holdJPOLineWithChat(
+        dbConn: Database,
+        lineId: Int64,
+        holdReason: String,
+        userId: Int64,
+        partName: String,
+        jpoId: Int64
+    ) throws -> Int64 {
             // Create a chat channel for this Q&A
             let channelName = "JPO #\(jpoId) — \(partName)"
             try dbConn.execute(
@@ -944,7 +965,6 @@ public final class OrdersService: Sendable {
             )
 
             return channelId
-        }
     }
 
     /// Put multiple JPO lines on hold and create one legacy Q&A chat channel per line.
@@ -974,8 +994,8 @@ public final class OrdersService: Sendable {
         }
 
         var channelIdsByLineId: [Int64: Int64] = [:]
-        for lineId in uniqueLineIds {
-            let line = try db.writer.read { dbConn -> (jpoId: Int64, partName: String, existingChannelId: Int64?) in
+        try db.writer.write { dbConn in
+            for lineId in uniqueLineIds {
                 guard let row = try Row.fetchOne(dbConn, sql: """
                     SELECT jl.jpo_id,
                            COALESCE(p.name, 'Part') AS part_name,
@@ -990,26 +1010,28 @@ public final class OrdersService: Sendable {
                     throw OrdersError.invalidStatus("JPO line #\(lineId) not found")
                 }
 
-                return (
-                    jpoId: row["jpo_id"] ?? 0,
-                    partName: row["part_name"] as String? ?? "Part",
-                    existingChannelId: row["existing_channel_id"] as Int64?
+                let jpoId: Int64 = try {
+                    if let id = row["jpo_id"] as Int64? { return id }
+                    throw OrdersError.missingJPOReference(lineId: lineId)
+                }()
+                let partName = row["part_name"] as String? ?? "Part"
+                let existingChannelId = row["existing_channel_id"] as Int64?
+
+                if let existingChannelId {
+                    channelIdsByLineId[lineId] = existingChannelId
+                    continue
+                }
+
+                let channelId = try holdJPOLineWithChat(
+                    dbConn: dbConn,
+                    lineId: lineId,
+                    holdReason: trimmedReason,
+                    userId: userId,
+                    partName: partName,
+                    jpoId: jpoId
                 )
+                channelIdsByLineId[lineId] = channelId
             }
-
-            if let existingChannelId = line.existingChannelId {
-                channelIdsByLineId[lineId] = existingChannelId
-                continue
-            }
-
-            let channelId = try holdJPOLineWithChat(
-                lineId: lineId,
-                holdReason: trimmedReason,
-                userId: userId,
-                partName: line.partName,
-                jpoId: line.jpoId
-            )
-            channelIdsByLineId[lineId] = channelId
         }
 
         return channelIdsByLineId
