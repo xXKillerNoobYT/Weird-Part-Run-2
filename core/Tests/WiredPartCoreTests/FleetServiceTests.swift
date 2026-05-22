@@ -204,7 +204,7 @@ struct FleetServiceTests {
 
         let rows = try env.db.writer.read { db in
             try Row.fetchAll(db, sql: """
-                SELECT vehicle_id, is_active FROM vehicle_assignments
+                SELECT vehicle_id, is_active, end_date FROM vehicle_assignments
                 WHERE user_id = ? AND deleted_at IS NULL
                 ORDER BY id
                 """, arguments: [driverId])
@@ -214,6 +214,9 @@ struct FleetServiceTests {
         #expect(rows.count == 2)
         #expect(activeRows.count == 1, "A user must have only one active vehicle assignment")
         #expect(activeRows.first?["vehicle_id"] as Int64? == secondVehicleId)
+        let previousRow = rows.first { row in (row["vehicle_id"] as Int64?) == firstVehicleId }
+        #expect((previousRow?["is_active"] as Int64?) == 0, "Previous assignment must be inactive")
+        #expect((previousRow?["end_date"] as String?) != nil, "Previous assignment must have end_date set")
     }
 
     @Test("My vehicle stats")
