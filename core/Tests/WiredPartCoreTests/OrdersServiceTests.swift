@@ -393,6 +393,95 @@ struct OrdersServiceTests {
         #expect(Set(items.map(\.totalDemand)) == Set([2, 4]))
     }
 
+    @Test("Generate POs rejects generic procurement when supplier conflicts with prior lock")
+    func testGeneratePOsFromProcurementRejectsConflictingGenericSupplierLock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Generic Fuse", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LOCK-REJECT", name: "Lock Reject Job")
+        let lockedSupplierId = try E2ETestHelpers.seedSupplier(env, name: "Locked Supplier")
+        let otherSupplierId = try E2ETestHelpers.seedSupplier(env, name: "Other Supplier")
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: lockedSupplierId, costPrice: 5.00)
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: otherSupplierId, costPrice: 4.00)
+
+        let priorLineId = try approvedJPOLine(env, jobId: jobId, partId: partId, quantity: 1)
+        _ = try env.orders.generatePOsFromProcurement(items: [
+            OrdersService.ProcurementGenerateItem(partId: partId, supplierId: lockedSupplierId, quantity: 1, jpoLineIds: [priorLineId])
+        ])
+
+        let newLineId = try approvedJPOLine(env, jobId: jobId, partId: partId, quantity: 2)
+        do {
+            _ = try env.orders.generatePOsFromProcurement(items: [
+                OrdersService.ProcurementGenerateItem(partId: partId, supplierId: otherSupplierId, quantity: 2, jpoLineIds: [newLineId])
+            ])
+            #expect(Bool(false), "Expected genericSupplierLocked error")
+        } catch let error as OrdersService.OrdersError {
+            guard case let .genericSupplierLocked(
+                lockedPartId, _,
+                lockedJobId, _,
+                actualLockedSupplierId, _,
+                attemptedSupplierId, _
+            ) = error else {
+                #expect(Bool(false), "Unexpected OrdersError: \(error)")
+                return
+            }
+            #expect(lockedPartId == partId)
+            #expect(lockedJobId == jobId)
+            #expect(actualLockedSupplierId == lockedSupplierId)
+            #expect(attemptedSupplierId == otherSupplierId)
+        }
+    }
+
+    @Test("Generate POs allows generic procurement when supplier matches prior lock")
+    func testGeneratePOsFromProcurementAllowsMatchingGenericSupplierLock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Generic Relay", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LOCK-ALLOW", name: "Lock Allow Job")
+        let lockedSupplierId = try E2ETestHelpers.seedSupplier(env, name: "Locked Supplier")
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: lockedSupplierId, costPrice: 6.00)
+
+        let priorLineId = try approvedJPOLine(env, jobId: jobId, partId: partId, quantity: 1)
+        _ = try env.orders.generatePOsFromProcurement(items: [
+            OrdersService.ProcurementGenerateItem(partId: partId, supplierId: lockedSupplierId, quantity: 1, jpoLineIds: [priorLineId])
+        ])
+
+        let newLineId = try approvedJPOLine(env, jobId: jobId, partId: partId, quantity: 3)
+        let result = try env.orders.generatePOsFromProcurement(items: [
+            OrdersService.ProcurementGenerateItem(partId: partId, supplierId: lockedSupplierId, quantity: 3, jpoLineIds: [newLineId])
+        ])
+        #expect(result.createdPOs.count == 1)
+        #expect(result.totalLineItems == 1)
+    }
+
+    @Test("Generate POs rejects in-batch generic split suppliers for same job part")
+    func testGeneratePOsFromProcurementRejectsInBatchGenericSupplierConflict() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Generic Terminal", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LOCK-BATCH", name: "Lock Batch Job")
+        let supplierA = try E2ETestHelpers.seedSupplier(env, name: "Supplier A")
+        let supplierB = try E2ETestHelpers.seedSupplier(env, name: "Supplier B")
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: supplierA, costPrice: 1.00)
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: supplierB, costPrice: 1.20)
+
+        let lineA = try approvedJPOLine(env, jobId: jobId, partId: partId, quantity: 1)
+        let lineB = try approvedJPOLine(env, jobId: jobId, partId: partId, quantity: 2)
+
+        do {
+            _ = try env.orders.generatePOsFromProcurement(items: [
+                OrdersService.ProcurementGenerateItem(partId: partId, supplierId: supplierA, quantity: 1, jpoLineIds: [lineA]),
+                OrdersService.ProcurementGenerateItem(partId: partId, supplierId: supplierB, quantity: 2, jpoLineIds: [lineB])
+            ])
+            #expect(Bool(false), "Expected genericSupplierLocked error")
+        } catch let error as OrdersService.OrdersError {
+            guard case .genericSupplierLocked = error else {
+                #expect(Bool(false), "Unexpected OrdersError: \(error)")
+                return
+            }
+        }
+    }
+
     // MARK: - Returns
 
     @Test("List returns empty on fresh DB")
