@@ -299,6 +299,39 @@ struct PartsServiceAdvancedTests {
 
 
 
+    @Test("previewPartsImportCSV attaches source metadata for audit sessions")
+    func testPreviewPartsImportCSVAttachesSourceMetadata() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let preview = try env.parts.previewPartsImportCSV("""
+        name,code,category
+        Source Metadata Part,SRC-META-001,Audit Category
+        """)
+
+        let source = try #require(preview.source)
+        #expect(source.sourceKind == "csv")
+        #expect(source.filename == nil)
+        #expect(source.sourceHash?.hasPrefix("sha256:") == true)
+        #expect(source.sourceHash?.count == 71)
+    }
+
+    @Test("previewPartsImportXLSX attaches source metadata for audit sessions")
+    func testPreviewPartsImportXLSXAttachesSourceMetadata() throws {
+        let env = try E2ETestHelpers.setUp()
+        let xlsx = try makeMinimalXLSX(sheetName: "Audit", rows: [
+            ["name", "code", "category"],
+            ["XLSX Source Part", "XLSX-SRC-001", "Audit Category"]
+        ])
+
+        let preview = try env.parts.previewPartsImportXLSX(xlsx)
+
+        let source = try #require(preview.source)
+        #expect(source.sourceKind == "xlsx")
+        #expect(source.filename == nil)
+        #expect(source.sourceHash?.hasPrefix("sha256:") == true)
+        #expect(source.sourceHash?.count == 71)
+    }
+
     @Test("commitPartsImportCSV records durable import session and accepted row evidence")
     func testCommitPartsImportCSVRecordsAuditSessionEvidence() throws {
         let env = try E2ETestHelpers.setUp()
@@ -306,12 +339,8 @@ struct PartsServiceAdvancedTests {
         name,code,category,brand,cost_price
         Audited Part,AUD-001,Audit Category,Audit Brand,12.25
         """)
-        preview.source = PartsService.PartsImportSourceMetadata(
-            sourceKind: "csv",
-            filename: "parts.csv",
-            sourceHash: "sha256:testhash",
-            userId: env.adminUserId
-        )
+        preview.source?.filename = "parts.csv"
+        preview.source?.userId = env.adminUserId
 
         let result = try env.parts.commitPartsImportCSV(preview)
 
@@ -321,7 +350,7 @@ struct PartsServiceAdvancedTests {
         })
         #expect(session["source_kind"] as String == "csv")
         #expect(session["filename"] as String? == "parts.csv")
-        #expect(session["source_hash"] as String? == "sha256:testhash")
+        #expect((session["source_hash"] as String?)?.hasPrefix("sha256:") == true)
         #expect(session["user_id"] as Int64? == env.adminUserId)
         #expect(session["status"] as String == "committed")
         #expect(session["total_rows"] as Int == 1)
