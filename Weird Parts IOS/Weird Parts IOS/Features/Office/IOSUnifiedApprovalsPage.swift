@@ -379,6 +379,12 @@ struct IOSUnifiedApprovalsPage: View {
                 subtitle: "JPO #\(jpo.id) by \(jpo.requestedByName) - \(jpo.lineCount) lines"
             )
             HStack(spacing: 12) {
+                Text("Priority: \(jpo.priority.capitalized)")
+                    .font(.caption)
+                    .foregroundStyle(TimelinePriorityColor.color(priority: jpo.priority, dueDateString: jpo.dueDate))
+                Spacer()
+            }
+            HStack(spacing: 12) {
                 actionButton("Approve", icon: "checkmark.circle.fill", color: .green, processingKey: "jpo-\(jpo.id)") {
                     approveJPO(jpo.id)
                 }
@@ -537,6 +543,18 @@ struct IOSUnifiedApprovalsPage: View {
             .background(Capsule().fill(color.opacity(0.15)))
             .foregroundStyle(color)
     }
+
+    private func priorityBadge(_ priority: String, dueDate: String?) -> some View {
+        let color = TimelinePriorityColor.color(priority: priority, dueDateString: dueDate)
+        return Text(priority.capitalized)
+            .font(.system(.caption2, weight: .semibold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(color.opacity(0.15)))
+            .foregroundStyle(color)
+    }
+
+    // MARK: - JPO Actions
 
     private func approveJPO(_ id: Int64) {
         guard let service = appCore.ordersService else {

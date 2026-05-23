@@ -269,7 +269,7 @@ struct IOSRFIListPage: View {
                 )
                 StatusBadge(
                     text: thread.priority.capitalized,
-                    color: priorityColor(thread.priority)
+                    color: priorityColor(thread.priority, dueDate: thread.dueDate)
                 )
                 Spacer()
                 Text("Level: \(thread.currentLevel.capitalized)")
@@ -311,10 +311,8 @@ struct IOSRFIListPage: View {
         default: return .secondary
         }
     }
-
-    // TODO: When QAThreadRow gains a dueDate field, replace fallback with TimelinePriorityColor.color(priority:dueDateString:)
-    private func priorityColor(_ priority: String) -> Color {
-        return TimelinePriorityColor.fallbackColor(priority: priority)
+    private func priorityColor(_ priority: String, dueDate: String?) -> Color {
+        return TimelinePriorityColor.color(priority: priority, dueDateString: dueDate)
     }
 
     // MARK: - Data
