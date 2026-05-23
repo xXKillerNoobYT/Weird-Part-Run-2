@@ -1153,8 +1153,8 @@ struct IOSClockPage: View {
                 logger.info("Calling service.clockIn(userId: \(userId), jobId: \(jobId ?? 0))")
 
                 if isShop {
-                    // Clock in to Shop/Warehouse (jobId = 0 or a special "shop" job)
-                    try service.clockIn(userId: userId, jobId: jobId ?? 0, gpsLat: lat, gpsLng: lng)
+                    // Clock in to Shop/Warehouse through the internal warehouse time bucket.
+                    try service.clockInToWarehouse(userId: userId, gpsLat: lat, gpsLng: lng)
                     isShopClockIn = true
                     geofenceManager.stopMonitoring()
                 } else if let jid = jobId {

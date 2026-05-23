@@ -1899,22 +1899,46 @@ public final class WarehouseService: Sendable {
                 guard userExists else { throw WarehouseError.userNotFound(uid) }
                 try ServicePermissionGate.requirePermission(dbConn, userId: uid, permissionKey: "perform_audit")
             }
-            // Update the stock record
+            let currentQty = try Int.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT qty FROM stock
+                    WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [partId, locationType, locationId]
+            ) ?? 0
+            let delta = newQty - currentQty
+
+            // Update the stock record even when the counted quantity is unchanged,
+            // because a zero-delta audit still refreshes the count timestamp.
             try dbConn.execute(
                 sql: """
                     UPDATE stock SET qty = ?, last_counted = datetime('now'), updated_at = datetime('now')
                     WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL
-                    """,
+                """,
                 arguments: [newQty, partId, locationType, locationId]
             )
 
-            // Record the adjustment as a movement
+            guard delta != 0 else { return }
+            let signedDelta = delta >= 0 ? "+\(delta)" : "\(delta)"
+
+            // Record audit adjustments as the signed quantity delta, not the absolute new count.
             try dbConn.execute(
                 sql: """
                     INSERT INTO stock_movements (part_id, qty, from_location_type, from_location_id, to_location_type, to_location_id, movement_type, reason, notes, performed_by, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 'adjustment', ?, 'Audit count adjustment', ?, datetime('now'))
+                    VALUES (?, ?, ?, ?, ?, ?, 'adjustment', ?, ?, ?, datetime('now'))
                     """,
-                arguments: [partId, newQty, locationType, locationId, locationType, locationId, reason ?? "Audit adjustment", performedBy]
+                arguments: [
+                    partId,
+                    delta,
+                    locationType,
+                    locationId,
+                    locationType,
+                    locationId,
+                    reason ?? "Audit adjustment",
+                    "Audit count adjustment: \(currentQty) -> \(newQty) (\(signedDelta))",
+                    performedBy,
+                ]
             )
         }
     }
@@ -4893,17 +4917,16 @@ public final class WarehouseService: Sendable {
                 try conf.update(dbConn)
             }
 
-            // Update the latest active audit session if one exists. Use a subquery
-            // instead of UPDATE ... ORDER BY ... LIMIT because the bundled SQLite
-            // build used by tests does not enable UPDATE_LIMIT syntax.
+            // Update the most recently started active audit session for this user, if one exists.
+            // SQLite builds do not consistently allow ORDER BY/LIMIT directly on UPDATE,
+            // so select the target row in a subquery first.
             try dbConn.execute(sql: """
                 UPDATE audit_sessions_v2
                 SET misplaced_found = misplaced_found + 1
                 WHERE id = (
                     SELECT id FROM audit_sessions_v2
                     WHERE status = 'active' AND started_by = ?
-                    ORDER BY started_at DESC
-                    LIMIT 1
+                    ORDER BY started_at DESC LIMIT 1
                 )
                 """, arguments: [foundBy])
 

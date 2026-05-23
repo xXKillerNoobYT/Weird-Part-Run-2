@@ -73,12 +73,6 @@ struct IOSQuestionnairePage: View {
         if isLoading {
             ProgressView("Loading questions...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if questions.isEmpty && companionPolls.isEmpty {
-            EmptyStateView(
-                icon: "questionmark.circle",
-                title: "No Questions",
-                message: "No clock-out questions are configured. You can close this screen."
-            )
         } else {
             List {
                 // Error banner
@@ -92,9 +86,15 @@ struct IOSQuestionnairePage: View {
 
                 // Instructions
                 Section {
-                    Text("Please answer the following questions before clocking out.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    if questions.isEmpty && companionPolls.isEmpty {
+                        Label("No configured questions today. Submit after confirming your breaks.", systemImage: "questionmark.circle")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Please answer the following questions before clocking out.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 // Question list
