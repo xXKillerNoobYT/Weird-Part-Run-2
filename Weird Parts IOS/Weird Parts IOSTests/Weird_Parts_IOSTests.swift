@@ -182,6 +182,21 @@ struct Weird_Parts_IOSTests {
         #expect(!sheetSource.contains("\"cancelled\""), "Editing status to cancelled leaves deleted_at NULL; cancellation must use the explicit soft-delete action")
     }
 
+    @Test func qrScannerStartFailureIsSurfacedAndStreamFinished() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let scannerURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Scanning/IOSQRScanner.swift")
+        let scannerSource = try String(contentsOf: scannerURL, encoding: .utf8)
+
+        #expect(!scannerSource.contains("try? scanner.startScanning()"), "Startup failures from DataScannerViewController must not be swallowed")
+        #expect(scannerSource.contains("catch {"), "The modal scanner start path needs explicit do/catch error handling")
+        #expect(scannerSource.contains("activeContinuation?.yield(.error(errorMessage))"), "Startup failures should emit an actionable QRScanEvent error")
+        #expect(scannerSource.contains("activeContinuation?.finish()"), "Startup failures should finish the scan stream instead of leaving a dead sheet")
+    }
+
     @Test func uiTestingFixturesSeedJPOFlowDataForQASmoke() throws {
         let db = try AppDatabase.openInMemoryDatabase()
         let auth = AuthService(db: db)
