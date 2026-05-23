@@ -857,6 +857,28 @@ public final class PeopleService: Sendable {
         }
     }
 
+    /// List active team IDs for a user. Used by team list filters so "My Teams"
+    /// only shows teams where the signed-in user has an active membership.
+    public func listTeamIdsForUser(userId: Int64) throws -> Set<Int64> {
+        do {
+            return try db.writer.read { dbConn -> Set<Int64> in
+                let ids = try Int64.fetchAll(dbConn, sql: """
+                    SELECT tm.team_id
+                    FROM employee_team_members tm
+                    JOIN employee_teams t ON t.id = tm.team_id
+                    WHERE tm.user_id = ?
+                      AND tm.deleted_at IS NULL
+                      AND t.deleted_at IS NULL
+                      AND t.is_active = 1
+                    """, arguments: [userId])
+                return Set(ids)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
     // =========================================================================
     // MARK: - 6. Hats
     // =========================================================================

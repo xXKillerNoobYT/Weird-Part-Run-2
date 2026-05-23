@@ -15,6 +15,7 @@ struct IOSTeamsPage: View {
     @State private var searchText = ""
     @State private var loadError: String?
     @State private var filter: TeamFilter = .all
+    @State private var currentUserTeamIds: Set<Int64> = []
     @State private var showEmployeesPage = false
 
     private enum TeamFilter {
@@ -127,9 +128,7 @@ struct IOSTeamsPage: View {
     }
 
     private var myTeams: [PeopleService.TeamListItem] {
-        // For now, show all teams — would need current user's team membership to filter
-        // This is a placeholder; ideally we'd filter by current user's teams
-        teams
+        teams.filter { currentUserTeamIds.contains($0.id) }
     }
 
     private var filteredTeams: [PeopleService.TeamListItem] {
@@ -250,6 +249,11 @@ struct IOSTeamsPage: View {
         loadError = nil
         do {
             teams = try service.listTeams()
+            if let userId = appCore.currentUser?.id {
+                currentUserTeamIds = try service.listTeamIdsForUser(userId: userId)
+            } else {
+                currentUserTeamIds = []
+            }
         } catch {
             loadError = userFriendlyError(error, context: "load teams")
         }
