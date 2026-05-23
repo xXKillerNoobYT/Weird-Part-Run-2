@@ -3,8 +3,8 @@ import WiredPartCore
 
 /// Warehouse network status page showing device connectivity.
 ///
-/// Displays an honest placeholder for the network discovery feature,
-/// which will be available when sync infrastructure is implemented.
+/// Displays current local device status and an intentional unavailable state
+/// for multi-device discovery until sync infrastructure is implemented.
 struct IOSWarehouseNetworkPage: View {
     @EnvironmentObject private var appCore: AppCore
     @State private var activeSheet: ActiveSheet?
@@ -38,7 +38,6 @@ struct IOSWarehouseNetworkPage: View {
                 }
             }
 
-            // Network discovery placeholder
             Section("Connected Devices") {
                 VStack(spacing: 16) {
                     Image(systemName: "network")
@@ -46,7 +45,7 @@ struct IOSWarehouseNetworkPage: View {
                         .foregroundStyle(.secondary)
                     Text("Network Discovery")
                         .font(.headline)
-                    Text("Device network discovery will be available in a future update. This page will show connected shop computers, tablets, and phones on your local network.")
+                    Text("Device network discovery is not enabled yet. For now, this page confirms the local database is active; multi-device status will appear here after sync infrastructure is configured.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -55,8 +54,7 @@ struct IOSWarehouseNetworkPage: View {
                 .padding(.vertical, 20)
             }
 
-            // Planned features
-            Section("Planned Features") {
+            Section("Network Sync Roadmap") {
                 featureRow(icon: "wifi", label: "LAN HTTP Sync", description: "Sync with shop computer over Wi-Fi")
                 featureRow(icon: "dot.radiowaves.left.and.right", label: "Multipeer Connectivity", description: "Bluetooth and Wi-Fi P2P device pairing")
                 featureRow(icon: "lock.shield", label: "Encrypted Sync", description: "TLS transport with field-level encryption")
@@ -78,8 +76,8 @@ struct IOSWarehouseNetworkPage: View {
                 title: "Network Help",
                 sections: [
                     ("Overview", "View the network status of your device and connected shop computers, tablets, and phones."),
-                    ("Sync", "When network sync is available, this page will show real-time connectivity and sync status for all devices on your local network."),
-                    ("Planned", "Features coming soon include LAN HTTP sync, Bluetooth P2P pairing, encrypted sync, and conflict resolution.")
+                    ("Sync", "After network sync is configured, this page will show real-time connectivity and sync status for all devices on your local network."),
+                    ("Roadmap", "The next network milestones are LAN HTTP sync, Bluetooth P2P pairing, encrypted sync, and conflict resolution.")
                 ]
             )
         }
@@ -92,7 +90,7 @@ struct IOSWarehouseNetworkPage: View {
     private func postAIContext() {
         let context = """
         Warehouse Network page. Read-only context.
-        This device status: Online, local database active. Connected device discovery is a planned placeholder.
+        This device status: Online, local database active. Connected device discovery is intentionally unavailable until sync infrastructure is configured.
         Planned features shown: LAN HTTP Sync, Multipeer Connectivity, Encrypted Sync, Conflict Resolution.
         Available read-only guidance: explain current local status and planned network sync capabilities. Do not attempt pairing, discovery, or sync actions directly.
         """

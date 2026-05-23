@@ -171,6 +171,9 @@ struct PeopleServiceTests {
         #expect(teams.contains(where: { $0.name == "Alpha Team" }))
 
         try env.people.addTeamMember(teamId: teamId, userId: env.adminUserId, role: "lead")
+        let userTeamIds = try env.people.listTeamIdsForUser(userId: env.adminUserId)
+        #expect(userTeamIds == Set([teamId]))
+
         let members = try env.people.getTeamMembers(teamId: teamId)
         #expect(members.count == 1)
 
