@@ -178,19 +178,21 @@ struct IOSFuelPage: View {
             isInitialLoading = true
         }
 
-        defer {
-            hasLoadedOnce = true
-            isInitialLoading = false
-            isRefreshing = false
-        }
+        DispatchQueue.main.async {
+            defer {
+                self.hasLoadedOnce = true
+                self.isInitialLoading = false
+                self.isRefreshing = false
+            }
 
-        loadError = nil
-        do {
-            let startStr = Formatters.localDateFormatter.string(from: effectiveStart)
-            let endStr = Formatters.localDateFormatter.string(from: effectiveEnd)
-            fuelLogs = try service.listFuelLogs(start: startStr, end: endStr)
-        } catch {
-            loadError = userFriendlyError(error, context: "load fuel data")
+            self.loadError = nil
+            do {
+                let startStr = Formatters.localDateFormatter.string(from: self.effectiveStart)
+                let endStr = Formatters.localDateFormatter.string(from: self.effectiveEnd)
+                self.fuelLogs = try service.listFuelLogs(start: startStr, end: endStr)
+            } catch {
+                self.loadError = userFriendlyError(error, context: "load fuel data")
+            }
         }
     }
 }

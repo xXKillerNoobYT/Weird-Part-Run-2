@@ -184,19 +184,21 @@ struct IOSMaintenancePage: View {
             isInitialLoading = true
         }
 
-        defer {
-            hasLoadedOnce = true
-            isInitialLoading = false
-            isRefreshing = false
-        }
+        DispatchQueue.main.async {
+            defer {
+                self.hasLoadedOnce = true
+                self.isInitialLoading = false
+                self.isRefreshing = false
+            }
 
-        loadError = nil
-        do {
-            let startStr = Formatters.localDateFormatter.string(from: effectiveStart)
-            let endStr = Formatters.localDateFormatter.string(from: effectiveEnd)
-            records = try service.listMaintenanceRecords(start: startStr, end: endStr)
-        } catch {
-            loadError = userFriendlyError(error, context: "load maintenance data")
+            self.loadError = nil
+            do {
+                let startStr = Formatters.localDateFormatter.string(from: self.effectiveStart)
+                let endStr = Formatters.localDateFormatter.string(from: self.effectiveEnd)
+                self.records = try service.listMaintenanceRecords(start: startStr, end: endStr)
+            } catch {
+                self.loadError = userFriendlyError(error, context: "load maintenance data")
+            }
         }
     }
 }

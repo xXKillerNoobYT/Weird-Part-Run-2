@@ -294,18 +294,20 @@ struct IOSVehiclesPage: View {
             isInitialLoading = true
         }
 
-        defer {
-            hasLoadedOnce = true
-            isInitialLoading = false
-            isRefreshing = false
-        }
+        DispatchQueue.main.async {
+            defer {
+                self.hasLoadedOnce = true
+                self.isInitialLoading = false
+                self.isRefreshing = false
+            }
 
-        loadError = nil
-        do {
-            statusCounts = try service.getVehicleStatusCounts()
-            vehicles = try service.listVehicles(status: statusFilter == "all" ? nil : statusFilter)
-        } catch {
-            loadError = userFriendlyError(error, context: "load vehicles")
+            self.loadError = nil
+            do {
+                self.statusCounts = try service.getVehicleStatusCounts()
+                self.vehicles = try service.listVehicles(status: self.statusFilter == "all" ? nil : self.statusFilter)
+            } catch {
+                self.loadError = userFriendlyError(error, context: "load vehicles")
+            }
         }
     }
 }

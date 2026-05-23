@@ -169,19 +169,20 @@ struct IOSInspectionsPage: View {
             isInitialLoading = true
         }
 
-        defer {
-            hasLoadedOnce = true
-            isInitialLoading = false
-            isRefreshing = false
+        DispatchQueue.main.async {
+            defer {
+                self.hasLoadedOnce = true
+                self.isInitialLoading = false
+                self.isRefreshing = false
+            }
+
+            self.loadError = nil
+
+            do {
+                self.inspections = try service.listInspections()
+            } catch {
+                self.loadError = userFriendlyError(error, context: "load inspections")
+            }
         }
-
-        loadError = nil
-
-        do {
-            inspections = try service.listInspections()
-        } catch {
-            loadError = userFriendlyError(error, context: "load inspections")
-        }
-
     }
 }

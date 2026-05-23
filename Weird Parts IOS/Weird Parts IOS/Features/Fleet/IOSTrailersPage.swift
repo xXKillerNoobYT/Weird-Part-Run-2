@@ -208,17 +208,19 @@ struct IOSTrailersPage: View {
             isInitialLoading = true
         }
 
-        defer {
-            hasLoadedOnce = true
-            isInitialLoading = false
-            isRefreshing = false
-        }
+        DispatchQueue.main.async {
+            defer {
+                self.hasLoadedOnce = true
+                self.isInitialLoading = false
+                self.isRefreshing = false
+            }
 
-        loadError = nil
-        do {
-            trailers = try service.listTrailers()
-        } catch {
-            loadError = userFriendlyError(error, context: "load trailers")
+            self.loadError = nil
+            do {
+                self.trailers = try service.listTrailers()
+            } catch {
+                self.loadError = userFriendlyError(error, context: "load trailers")
+            }
         }
     }
 }
