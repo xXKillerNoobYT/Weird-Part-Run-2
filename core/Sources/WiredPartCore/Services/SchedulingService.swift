@@ -11,9 +11,11 @@ import GRDB
 /// Ported from: Scheduling & Dispatch feature area (Phases 10, 16)
 public final class SchedulingService: Sendable {
     private let db: AppDatabase
+    private let auth: AuthService
 
-    public init(db: AppDatabase) {
+    public init(db: AppDatabase, auth: AuthService? = nil) {
         self.db = db
+        self.auth = auth ?? AuthService(db: db)
     }
 
     // =========================================================================
@@ -35,6 +37,7 @@ public final class SchedulingService: Sendable {
         case requiredFieldEmpty
         case jobNotFound(Int64)
         case userNotFound(Int64)
+        case insufficientPermissions(required: String)
     }
 
     // =========================================================================
@@ -507,6 +510,15 @@ public final class SchedulingService: Sendable {
             throw SchedulingError.invalidStatus(status)
         }
 
+        let requiredPermission = "approve_time_off"
+        let requiresApprovalActor = status == "approved" || status == "denied"
+        if requiresApprovalActor || approvedBy != nil {
+            guard let approvedBy,
+                  try auth.hasPermission(approvedBy, permissionKey: requiredPermission) else {
+                throw SchedulingError.insufficientPermissions(required: requiredPermission)
+            }
+        }
+
         try db.writer.write { dbConn in
             // Verify the row exists and retrieve its request_group so we can
             // update every day in the same multi-day request atomically.
@@ -560,7 +572,7 @@ public final class SchedulingService: Sendable {
 
             // Build a WHERE clause that matches all days of the same request:
             // if request_group is set, target the whole group; otherwise just this row.
-            if status == "approved", let approvedBy {
+            if status == "approved" {
                 if let group = requestGroup {
                     try dbConn.execute(
                         sql: """
@@ -585,7 +597,7 @@ public final class SchedulingService: Sendable {
                     try dbConn.execute(
                         sql: """
                             UPDATE schedule_exceptions
-                            SET is_approved = ?
+                            SET is_approved = ?, approved_by = NULL, approved_at = NULL
                             WHERE request_group = ? AND exception_type = 'time_off' AND deleted_at IS NULL
                             """,
                         arguments: [isApproved, group]
@@ -594,7 +606,7 @@ public final class SchedulingService: Sendable {
                     try dbConn.execute(
                         sql: """
                             UPDATE schedule_exceptions
-                            SET is_approved = ?
+                            SET is_approved = ?, approved_by = NULL, approved_at = NULL
                             WHERE id = ? AND deleted_at IS NULL
                             """,
                         arguments: [isApproved, id]

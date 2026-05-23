@@ -36,10 +36,10 @@ struct AuditLogPage: View {
                 ProgressView("Loading audit log...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if entries.isEmpty {
-                ContentUnavailableView(
-                    "No Audit Entries",
-                    systemImage: "doc.text.magnifyingglass",
-                    description: Text("No recent changes have been recorded.")
+                EmptyStateView(
+                    icon: "doc.text.magnifyingglass",
+                    title: "No Audit Entries",
+                    message: "No recent changes have been recorded."
                 )
             } else {
                 List {

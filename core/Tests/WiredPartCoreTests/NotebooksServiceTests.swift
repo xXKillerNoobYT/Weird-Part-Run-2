@@ -119,7 +119,8 @@ struct NotebooksServiceTests {
         try env.notebooks.updateBlockEntry(
             entryId: entryId,
             content: "Revised content",
-            blockData: nil
+            blockData: nil,
+            updatedBy: env.adminUserId
         )
 
         // Verify through hierarchy
@@ -128,6 +129,133 @@ struct NotebooksServiceTests {
         let updated = entries.first { $0.id == entryId }
         #expect(updated != nil)
         #expect(updated?.content == "Revised content")
+    }
+
+    @Test("Editing a block entry updates title and records change history")
+    func testUpdateBlockEntryTitleAndHistory() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Editable Blocks",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId, groupId: nil, name: "Info"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "heading",
+            title: "Original heading",
+            content: nil,
+            createdBy: env.adminUserId
+        )
+
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId,
+            title: "Revised heading",
+            content: nil,
+            blockData: nil,
+            updatedBy: env.adminUserId
+        )
+
+        let hierarchy = try env.notebooks.getNotebookHierarchy(notebookId: nbId)
+        let updated = hierarchy.ungroupedSections.flatMap(\.entries).first { $0.id == entryId }
+        #expect(updated?.title == "Revised heading")
+
+        let historyRows = try env.db.writer.read { dbConn in
+            try Row.fetchAll(dbConn, sql: """
+                SELECT changed_fields, old_values
+                FROM _change_log
+                WHERE table_name = 'notebook_entries'
+                  AND record_id = ?
+                  AND operation = 'UPDATE'
+                ORDER BY id DESC
+                """, arguments: [entryId])
+        }
+        #expect(historyRows.count == 1)
+        let changedFieldsJSON = historyRows.first?["changed_fields"] as String?
+        let oldValuesJSON = historyRows.first?["old_values"] as String?
+        #expect(changedFieldsJSON?.contains("title") == true)
+        #expect(oldValuesJSON?.contains("Original heading") == true)
+
+        let changedFieldsData = try #require(changedFieldsJSON?.data(using: .utf8))
+        let oldValuesData = try #require(oldValuesJSON?.data(using: .utf8))
+        let changedFields = try #require(JSONSerialization.jsonObject(with: changedFieldsData) as? [String: Any])
+        let oldValues = try #require(JSONSerialization.jsonObject(with: oldValuesData) as? [String: Any])
+        #expect(changedFields["title"] as? String == "Revised heading")
+        #expect(oldValues["title"] as? String == "Original heading")
+    }
+
+    @Test("Creating checklist block entries stores checklist items in the canonical column")
+    func testCreateChecklistBlockEntryStoresChecklistItems() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Checklist Blocks",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId, groupId: nil, name: "Checklist"
+        )
+        let checklistJSON = """
+        [{"text":"Verify breaker labels","checked":"false"}]
+        """
+
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "checklist",
+            title: "Commissioning",
+            content: nil,
+            blockData: nil,
+            checklistItems: checklistJSON,
+            createdBy: env.adminUserId
+        )
+
+        let stored = try env.db.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: """
+                SELECT block_data, checklist_items
+                FROM notebook_entries
+                WHERE id = ?
+                """, arguments: [entryId])
+        }
+        #expect((stored?["block_data"] as String?) == nil)
+        #expect((stored?["checklist_items"] as String?) == checklistJSON)
+
+        let hierarchy = try env.notebooks.getNotebookHierarchy(notebookId: nbId)
+        let entry = hierarchy.ungroupedSections.flatMap(\.entries).first { $0.id == entryId }
+        #expect(entry?.checklistItems == checklistJSON)
+    }
+
+    @Test("Updating block entries requires manage_notebooks permission")
+    func testUpdateBlockEntryRequiresManageNotebooksPermission() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Permissioned Blocks",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId, groupId: nil, name: "Main"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "text",
+            title: "Protected",
+            content: "Original",
+            createdBy: env.adminUserId
+        )
+
+        #expect(throws: ServicePermissionGate.GateError.self) {
+            try env.notebooks.updateBlockEntry(
+                entryId: entryId,
+                content: "Unauthorized",
+                blockData: nil,
+                updatedBy: 999_999
+            )
+        }
     }
 
     // MARK: - 5. Delete Entry (Soft Delete)
@@ -725,6 +853,164 @@ struct NotebooksServiceTests {
         #expect(history.contains { $0.reason == "Customer reported pre-existing issue" })
         // One entry should have the warranty classification
         #expect(history.contains { $0.newClassification == "warranty" })
+    }
+
+
+    @Test("Classification mutations require explicit notebook classification permissions")
+    func testClassificationMutationsRequirePermissions() throws {
+        let env = try E2ETestHelpers.setUp()
+        let unauthorizedUserId = try env.auth.createUser(displayName: "NoNotebookPerms", pin: "2468")
+        let entryId = try createClassifiableEntry(env, title: "Unauthorized classification")
+
+        try expectInsufficientNotebookPermission("notebooks.classify_todo") {
+            try env.notebooks.classifyTodoWork(
+                entryId: entryId,
+                classification: "warranty",
+                classifiedBy: unauthorizedUserId
+            )
+        }
+
+        try env.notebooks.classifyTodoWork(
+            entryId: entryId,
+            classification: "regular",
+            classifiedBy: env.adminUserId
+        )
+
+        try expectInsufficientNotebookPermission("notebooks.review_classification") {
+            try env.notebooks.reviewClassification(
+                entryId: entryId,
+                reviewedBy: unauthorizedUserId,
+                approved: true,
+                newClassification: nil
+            )
+        }
+
+        try expectInsufficientNotebookPermission("notebooks.reclassify_todo") {
+            try env.notebooks.reclassifyTodoWork(
+                entryId: entryId,
+                newClassification: "warranty",
+                changedBy: unauthorizedUserId,
+                reason: "should be blocked"
+            )
+        }
+    }
+
+    @Test("Classification mutations reject soft-deleted entries without history leaks")
+    func testClassificationMutationsRejectSoftDeletedEntriesWithoutHistoryLeaks() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let classifyEntryId = try createClassifiableEntry(env, title: "Soft-deleted classify")
+        try softDeleteEntry(env, entryId: classifyEntryId)
+        try expectNotebookEntryNotFound(classifyEntryId) {
+            try env.notebooks.classifyTodoWork(
+                entryId: classifyEntryId,
+                classification: "warranty",
+                classifiedBy: env.adminUserId
+            )
+        }
+        #expect(try historyCount(env, entryId: classifyEntryId) == 0)
+
+        let reviewEntryId = try createClassifiableEntry(env, title: "Soft-deleted review")
+        try env.notebooks.classifyTodoWork(
+            entryId: reviewEntryId,
+            classification: "regular",
+            classifiedBy: env.adminUserId
+        )
+        let reviewHistoryBeforeDelete = try historyCount(env, entryId: reviewEntryId)
+        try softDeleteEntry(env, entryId: reviewEntryId)
+        try expectNotebookEntryNotFound(reviewEntryId) {
+            try env.notebooks.reviewClassification(
+                entryId: reviewEntryId,
+                reviewedBy: env.adminUserId,
+                approved: false,
+                newClassification: "warranty"
+            )
+        }
+        #expect(try historyCount(env, entryId: reviewEntryId) == reviewHistoryBeforeDelete)
+
+        let reclassifyEntryId = try createClassifiableEntry(env, title: "Soft-deleted reclassify")
+        try env.notebooks.classifyTodoWork(
+            entryId: reclassifyEntryId,
+            classification: "regular",
+            classifiedBy: env.adminUserId
+        )
+        let reclassifyHistoryBeforeDelete = try historyCount(env, entryId: reclassifyEntryId)
+        try softDeleteEntry(env, entryId: reclassifyEntryId)
+        try expectNotebookEntryNotFound(reclassifyEntryId) {
+            try env.notebooks.reclassifyTodoWork(
+                entryId: reclassifyEntryId,
+                newClassification: "warranty",
+                changedBy: env.adminUserId,
+                reason: "should not leak"
+            )
+        }
+        #expect(try historyCount(env, entryId: reclassifyEntryId) == reclassifyHistoryBeforeDelete)
+    }
+
+    private func createClassifiableEntry(
+        _ env: E2ETestHelpers.TestEnvironment,
+        title: String
+    ) throws -> Int64 {
+        let nbId = try env.notebooks.createNotebook(
+            title: "Classification Regression NB \(UUID().uuidString.prefix(8))",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId,
+            groupId: nil,
+            name: "Work"
+        )
+        return try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "text",
+            title: title,
+            content: "Regression coverage",
+            createdBy: env.adminUserId
+        )
+    }
+
+    private func softDeleteEntry(_ env: E2ETestHelpers.TestEnvironment, entryId: Int64) throws {
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE notebook_entries SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [entryId]
+            )
+        }
+    }
+
+    private func historyCount(_ env: E2ETestHelpers.TestEnvironment, entryId: Int64) throws -> Int {
+        try env.db.writer.read { dbConn in
+            try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COUNT(*) FROM classification_history WHERE entry_id = ?",
+                arguments: [entryId]
+            ) ?? 0
+        }
+    }
+
+    private func expectInsufficientNotebookPermission(
+        _ required: String,
+        operation: () throws -> Void
+    ) throws {
+        do {
+            try operation()
+            Issue.record("Expected insufficientPermissions(\(required))")
+        } catch NotebooksService.NotebooksError.insufficientPermissions(let actual) {
+            #expect(actual == required)
+        }
+    }
+
+    private func expectNotebookEntryNotFound(
+        _ entryId: Int64,
+        operation: () throws -> Void
+    ) throws {
+        do {
+            try operation()
+            Issue.record("Expected entryNotFound(\(entryId))")
+        } catch NotebooksService.NotebooksError.entryNotFound(let actual) {
+            #expect(actual == entryId)
+        }
     }
 
     // MARK: - 20. Ensure Warranty Section
@@ -1441,7 +1727,7 @@ struct NotebooksServiceTests {
         try env.db.writer.write { db in
             try db.execute(sql: "UPDATE notebook_entries SET deleted_at = datetime('now'), is_deleted = 1 WHERE id = ?", arguments: [entryId])
         }
-        try env.notebooks.updateBlockEntry(entryId: entryId, content: "MUTATED", blockData: nil)
+        try env.notebooks.updateBlockEntry(entryId: entryId, content: "MUTATED", blockData: nil, updatedBy: env.adminUserId)
         let content = try env.db.writer.read { db in
             try String.fetchOne(db, sql: "SELECT content FROM notebook_entries WHERE id = ?", arguments: [entryId])
         }

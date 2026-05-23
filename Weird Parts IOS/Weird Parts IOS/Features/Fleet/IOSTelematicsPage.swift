@@ -60,11 +60,11 @@ struct IOSTelematicsPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredLocations.isEmpty {
-            ContentUnavailableView {
-                Label("No GPS Data", systemImage: "location.slash")
-            } description: {
-                Text("Vehicle location data will appear here once drivers submit GPS updates from their mobile devices.")
-            }
+            EmptyStateView(
+                icon: "location.slash",
+                title: "No GPS Data",
+                message: "Vehicle location data will appear here once drivers submit GPS updates from their mobile devices."
+            )
         } else {
             List(filteredLocations, id: \.id) { location in
                 locationRow(location)

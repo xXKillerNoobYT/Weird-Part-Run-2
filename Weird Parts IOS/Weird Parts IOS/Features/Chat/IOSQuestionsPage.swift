@@ -164,11 +164,11 @@ struct IOSQuestionsPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredThreads.isEmpty {
-            ContentUnavailableView {
-                Label("No Questions", systemImage: "questionmark.circle")
-            } description: {
-                Text("No Q&A threads match your criteria.")
-            }
+            EmptyStateView(
+                icon: "questionmark.circle",
+                title: "No Questions",
+                message: "No Q&A threads match your criteria."
+            )
         } else {
             List(filteredThreads, id: \.id) { thread in
                 NavigationLink {

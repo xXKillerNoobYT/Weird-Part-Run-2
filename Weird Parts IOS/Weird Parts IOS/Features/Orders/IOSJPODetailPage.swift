@@ -45,10 +45,25 @@ struct IOSJPODetailPage: View {
         case viewChat(Int64)
         case viewPO(Int64)
         case viewMovement(Int64)
-        case bulkHold
+        case bulkHold([OrdersService.JPOLineRow])
         case help
 
-        var id: String { String(describing: self) }
+        var id: String {
+            switch self {
+            case .addLineItem:
+                "addLineItem"
+            case .viewChat(let channelId):
+                "viewChat-\(channelId)"
+            case .viewPO(let poId):
+                "viewPO-\(poId)"
+            case .viewMovement(let movementId):
+                "viewMovement-\(movementId)"
+            case .bulkHold(let items):
+                IOSJPODetailBulkHoldSelection.sheetIdentifier(for: items)
+            case .help:
+                "help"
+            }
+        }
     }
 
     var body: some View {
@@ -188,11 +203,11 @@ struct IOSJPODetailPage: View {
                         }
                     }
             }
-        case .bulkHold:
+        case .bulkHold(let items):
             NavigationStack {
                 Form {
-                    Section("Items to Hold (\(bulkHoldItems.count))") {
-                        ForEach(bulkHoldItems, id: \.id) { item in
+                    Section("Items to Hold (\(items.count))") {
+                        ForEach(items, id: \.id) { item in
                             HStack {
                                 Text(item.partName ?? "Unknown Part")
                                 Spacer()
@@ -738,7 +753,7 @@ struct IOSJPODetailPage: View {
                 fromLocationId: 1,
                 toLocationType: "pulled",
                 toLocationId: 1,
-                movementType: "transfer",
+                movementType: StockMovement.MovementType.transfer.rawValue,
                 reason: "JPO smart route — in stock",
                 notes: "Auto-transfer from JPO #\(line.jpoId), line #\(line.id)",
                 performedBy: userId
@@ -832,7 +847,7 @@ struct IOSJPODetailPage: View {
             // Also create a jpo_hold typed thread in ChatService for
             // unified inbox visibility with HOLD badge
             if let chatService = appCore.chatService {
-                let jpoNumber = "JPO #\(jpo.id)"
+                let jpoNumber = "JPO #\(jpo.id) Line #\(lineId)"
                 _ = try chatService.createJPOHoldThread(
                     partName: holdingPartName ?? "Part",
                     jpoNumber: jpoNumber,
@@ -883,18 +898,25 @@ struct IOSJPODetailPage: View {
     }
 
     private func holdSelected() {
-        // Collect ALL selected items and show the bulk hold sheet
+        // Collect ALL selected items and show the bulk hold sheet with the
+        // selected rows embedded in the sheet identity. This prevents SwiftUI
+        // from presenting a fresh `.bulkHold` sheet before the separate
+        // `bulkHoldItems` state write has rendered, which produced an empty
+        // "Items to Hold (0)" sheet while the action bar still said "2 selected".
         guard let jpo else { return }
-        let items = jpo.lines.filter { selectedLineIds.contains($0.id) }
+        let items = IOSJPODetailBulkHoldSelection.selectedHoldItems(
+            from: jpo.lines,
+            selectedLineIds: selectedLineIds
+        )
         guard !items.isEmpty else { return }
         bulkHoldItems = items
         bulkHoldReason = ""
-        activeSheet = .bulkHold
+        activeSheet = .bulkHold(items)
     }
 
     /// Apply the same hold reason to ALL items in bulkHoldItems, cancelling
-    /// any pending transfers first. Creates a hold+chat for the first item
-    /// and a status-only hold (with the shared reason) for the rest.
+    /// any pending transfers first. Creates an idempotent legacy hold chat for
+    /// every selected line and a typed hold thread for unified inbox visibility.
     @MainActor
     private func bulkHoldAllItems() async {
         guard let service = appCore.ordersService,
@@ -907,7 +929,9 @@ struct IOSJPODetailPage: View {
         guard !reason.isEmpty else { return }
 
         isBulkHolding = true
+        defer { isBulkHolding = false }
 
+        var failedTransferCancellationLineIds = Set<Int64>()
         for item in bulkHoldItems {
             do {
                 // If the line was in "transfer" status, cancel the pending movement first
@@ -919,24 +943,52 @@ struct IOSJPODetailPage: View {
                         warehouseService: warehouseService
                     )
                 }
-
-                // Place on hold with the shared reason
-                try service.updateJPOLineStatus(
-                    lineId: item.id,
-                    status: "on_hold",
-                    reason: reason,
-                    updatedBy: userId
-                )
             } catch {
-                actionError = userFriendlyError(error, context: "process order")
+                failedTransferCancellationLineIds.insert(item.id)
             }
+        }
+
+        let processableHoldItems = IOSJPODetailBulkHoldSelection.processableHoldItems(
+            from: bulkHoldItems,
+            failedTransferCancellationLineIds: failedTransferCancellationLineIds
+        )
+
+        do {
+            guard !processableHoldItems.isEmpty else {
+                actionError = "Unable to hold selected lines because transfer cancellation failed."
+                return
+            }
+
+            _ = try service.bulkHoldJPOLinesWithChat(
+                lineIds: processableHoldItems.map(\.id),
+                holdReason: reason,
+                userId: userId
+            )
+
+            if let chatService = appCore.chatService, let jpo {
+                for item in processableHoldItems {
+                    let jpoNumber = "JPO #\(jpo.id) Line #\(item.id)"
+                    _ = try chatService.createJPOHoldThread(
+                        partName: item.partName ?? "Part",
+                        jpoNumber: jpoNumber,
+                        holdReason: reason,
+                        userId: userId
+                    )
+                }
+            }
+
+            if !failedTransferCancellationLineIds.isEmpty {
+                let failedList = failedTransferCancellationLineIds.sorted().map(String.init).joined(separator: ", ")
+                actionError = "Some lines were not held because transfer cancellation failed (line IDs: \(failedList))."
+            }
+        } catch {
+            actionError = userFriendlyError(error, context: "process order")
         }
 
         // Clean up state
         selectedLineIds.removeAll()
         bulkHoldItems = []
         bulkHoldReason = ""
-        isBulkHolding = false
         activeSheet = nil
         loadData()
     }
@@ -1170,11 +1222,15 @@ private struct JPOMovementDetailContent: View {
                 ProgressView("Loading movement...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = loadError {
-                ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                EmptyStateView(
+                    icon: "exclamationmark.triangle",
+                    title: "Error",
+                    message: error
+                )
             } else if let m = movement {
                 List {
                     Section("Movement Info") {
-                        LabeledContent("Type", value: m.movementType.replacingOccurrences(of: "_", with: " ").capitalized)
+                        LabeledContent("Type", value: StockMovement.MovementType.displayName(forRawValue: m.movementType))
                         LabeledContent("Quantity", value: "\(m.qty)")
                         if let reason = m.reason, !reason.isEmpty {
                             LabeledContent("Reason", value: reason)
@@ -1214,10 +1270,10 @@ private struct JPOMovementDetailContent: View {
                 }
                 .listStyle(.insetGrouped)
             } else {
-                ContentUnavailableView(
-                    "Movement Not Found",
-                    systemImage: "questionmark.circle",
-                    description: Text("Movement #\(movementId) could not be loaded.")
+                EmptyStateView(
+                    icon: "questionmark.circle",
+                    title: "Movement Not Found",
+                    message: "Movement #\(movementId) could not be loaded."
                 )
             }
         }

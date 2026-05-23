@@ -30,9 +30,11 @@ struct FleetMileageSummaryReport: View {
                 Section { ProgressView("Loading...") }
             } else if mileageData.isEmpty {
                 Section {
-                    ContentUnavailableView("No Mileage Data",
-                        systemImage: "speedometer",
-                        description: Text("No mileage logs found for this period."))
+                    EmptyStateView(
+                        icon: "speedometer",
+                        title: "No Mileage Data",
+                        message: "No mileage logs found for this period."
+                    )
                 }
             } else {
                 Section("Summary") {

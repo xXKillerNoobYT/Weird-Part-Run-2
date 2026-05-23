@@ -1174,6 +1174,8 @@ public final class AuthService: Sendable {
                 "wishlist.auto_approve",
                 // Forecasting / recommendation pipeline
                 "forecasting.approve_recommendation", "forecasting.dismiss_recommendation",
+                // Notebook work classification audit controls
+                "notebooks.classify_todo", "notebooks.reclassify_todo", "notebooks.review_classification",
             ],
             "Manager": [
                 "view_parts_catalog", "edit_parts_catalog", "edit_pricing", "show_dollar_values",
@@ -1199,6 +1201,8 @@ public final class AuthService: Sendable {
                 "wishlist.auto_approve",
                 // Forecasting / recommendation pipeline
                 "forecasting.approve_recommendation", "forecasting.dismiss_recommendation",
+                // Notebook work classification audit controls
+                "notebooks.classify_todo", "notebooks.reclassify_todo", "notebooks.review_classification",
             ],
             "Office": [
                 "view_parts_catalog", "edit_parts_catalog", "show_dollar_values",
@@ -1224,6 +1228,8 @@ public final class AuthService: Sendable {
                 "view_job_reports", "manage_warehouse",
                 "self_assign_flex",
                 "companion_vote_power",
+                // Notebook work classification submission
+                "notebooks.classify_todo",
             ],
             "Worker": [
                 "view_parts_catalog", "view_warehouse", "view_trucks", "move_stock_truck",
@@ -1233,6 +1239,8 @@ public final class AuthService: Sendable {
                 // 39A expanded keys
                 "self_assign_ready_jobs", "self_assign_contact_jobs",
                 "self_assign_flex",
+                // Notebook work classification submission
+                "notebooks.classify_todo",
             ],
             "Apprentice": [
                 "view_parts_catalog", "view_trucks", "view_jobs", "clock_in_out", "view_labor",

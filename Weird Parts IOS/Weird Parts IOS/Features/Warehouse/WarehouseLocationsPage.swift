@@ -495,7 +495,10 @@ struct WarehouseLocationsPage: View {
 
     /// Moves a storage unit to a new grid position via drag-and-drop.
     private func moveUnit(unitId: Int64, toGridX gridX: Int, gridY: Int) -> Bool {
-        guard let service = appCore.warehouseService else { return false }
+        guard let service = appCore.warehouseService else {
+            loadError = "Warehouse service unavailable"
+            return false
+        }
         do {
             try service.updateStorageUnit(id: unitId, gridX: gridX, gridY: gridY)
             loadPlanData()

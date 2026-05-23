@@ -77,11 +77,11 @@ struct IOSFuelPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredLogs.isEmpty {
-            ContentUnavailableView {
-                Label("No Fuel Logs", systemImage: "fuelpump")
-            } description: {
-                Text("No fuel logs found.")
-            }
+            EmptyStateView(
+                icon: "fuelpump",
+                title: "No Fuel Logs",
+                message: "No fuel logs found."
+            )
         } else {
             List(filteredLogs, id: \.id) { log in
                 fuelRow(log)
@@ -153,10 +153,8 @@ struct IOSFuelPage: View {
         isLoading = fuelLogs.isEmpty
         loadError = nil
         do {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd"
-            let startStr = formatter.string(from: effectiveStart)
-            let endStr = formatter.string(from: effectiveEnd)
+            let startStr = Formatters.localDateFormatter.string(from: effectiveStart)
+            let endStr = Formatters.localDateFormatter.string(from: effectiveEnd)
             fuelLogs = try service.listFuelLogs(start: startStr, end: endStr)
         } catch {
             loadError = userFriendlyError(error, context: "load fuel data")

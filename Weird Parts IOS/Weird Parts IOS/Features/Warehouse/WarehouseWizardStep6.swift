@@ -59,11 +59,11 @@ struct WarehouseWizardStep6: View {
             .background(Color.blue.opacity(0.05))
 
             if assignedParts.isEmpty {
-                ContentUnavailableView {
-                    Label("No Parts to Configure", systemImage: "target")
-                } description: {
-                    Text("Assign parts to locations in Step 4 first.")
-                }
+                EmptyStateView(
+                    icon: "target",
+                    title: "No Parts to Configure",
+                    message: "Assign parts to locations in Step 4 first."
+                )
             } else {
                 partsList
 
