@@ -163,6 +163,88 @@ struct PartsServiceAdvancedTests {
         #expect(stats.totalCategories >= 0)
     }
 
+    // MARK: - Import preview and commit
+
+    @Test("previewPartsImportCSV classifies new rows, conflicts, and visible validation errors")
+    func testPreviewPartsImportCSVClassifiesRows() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "Existing Category")
+        _ = try env.parts.createPart(categoryId: catId, name: "Existing Part", code: "EX-001")
+
+        let csv = """
+        name,code,category,brand,cost_price,markup_percent,description
+        New Part,NP-001,Import Category,Acme,12.50,25,"quoted, description"
+        Existing Replacement,EX-001,Existing Category,Acme,9,10,
+        Missing Category,MC-001,,Acme,1,1,
+        Bad Cost,BC-001,Import Category,Acme,not-a-number,1,
+        """
+
+        let preview = try env.parts.previewPartsImportCSV(csv)
+
+        #expect(preview.totalRows == 4)
+        #expect(preview.newParts.count == 1)
+        #expect(preview.newParts.first?.name == "New Part")
+        #expect(preview.newParts.first?.fields["description"] == "quoted, description")
+        #expect(preview.conflicts.count == 1)
+        #expect(preview.conflicts.first?.existingPartCode == "EX-001")
+        #expect(preview.errors.count == 2)
+        #expect(preview.errors.map(\.rowNumber).contains(4))
+        #expect(preview.errors.map(\.rowNumber).contains(5))
+    }
+
+    @Test("commitPartsImportCSV rejects preview errors before writing partial state")
+    func testCommitPartsImportCSVRejectsErrorsWithoutPartialWrites() throws {
+        let env = try E2ETestHelpers.setUp()
+        let before = try env.parts.getImportExportStats()
+        let csv = """
+        name,code,category,brand,cost_price
+        Good Row,GOOD-001,Rollback Category,Acme,5
+        Bad Row,BAD-001,,Acme,6
+        """
+
+        let preview = try env.parts.previewPartsImportCSV(csv)
+        #expect(preview.newParts.count == 1)
+        #expect(preview.errors.count == 1)
+        do {
+            _ = try env.parts.commitPartsImportCSV(preview)
+            Issue.record("commitPartsImportCSV should reject previews with validation errors")
+        } catch {
+            let after = try env.parts.getImportExportStats()
+            #expect(after.totalParts == before.totalParts)
+            #expect(after.totalCategories == before.totalCategories)
+            #expect(try env.parts.findPartByCode("GOOD-001") == nil)
+        }
+    }
+
+    @Test("commitPartsImportCSV creates and updates rows atomically from a clean preview")
+    func testCommitPartsImportCSVCreatesAndUpdates() throws {
+        let env = try E2ETestHelpers.setUp()
+        let existingCategoryId = try E2ETestHelpers.seedCategory(env, name: "Existing Category")
+        let existingId = try env.parts.createPart(categoryId: existingCategoryId, name: "Existing Part", code: "EX-002")
+
+        var preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,brand,cost_price,markup_percent,unit_of_measure,shelf_location,bin_location
+        Created Part,NEW-002,Created Category,Created Brand,7.5,20,each,A1,B2
+        Updated Name,EX-002,Existing Category,Created Brand,8.5,30,box,C3,D4
+        """)
+        preview.conflicts = preview.conflicts.map { conflict in
+            var editable = conflict
+            editable.resolution = .update
+            return editable
+        }
+
+        let result = try env.parts.commitPartsImportCSV(preview)
+
+        #expect(result.created == 1)
+        #expect(result.updated == 1)
+        #expect(result.skipped == 0)
+        let created = try #require(try env.parts.findPartByCode("NEW-002"))
+        #expect(created.name == "Created Part")
+        let updated = try #require(try env.parts.findPartByCode("EX-002"))
+        #expect(updated.id == existingId)
+        #expect(updated.name == "Updated Name")
+    }
+
     // MARK: - approveScheduledDeletion
 
     @Test("approveScheduledDeletion soft-deletes the entity and marks schedule approved")

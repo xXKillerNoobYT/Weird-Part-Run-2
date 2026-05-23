@@ -5932,6 +5932,289 @@ public final class PartsService: Sendable {
         }
     }
 
+    /// One normalized CSV row from the parts importer.
+    public struct PartsImportParsedRow: Sendable {
+        public let rowNumber: Int
+        public let name: String
+        public let code: String?
+        public let category: String
+        public let brand: String?
+        public let fields: [String: String]
+    }
+
+    /// A validation error surfaced during import preview. The row number is 1-based
+    /// and includes the header row, matching spreadsheet line numbers.
+    public struct PartsImportError: Error, Sendable {
+        public let rowNumber: Int
+        public let message: String
+    }
+
+    public enum PartsImportConflictResolution: Sendable {
+        case ask
+        case update
+        case skip
+    }
+
+    /// A duplicate detected during import preview.
+    public struct PartsImportConflict: Sendable {
+        public let parsedRow: PartsImportParsedRow
+        public let existingPartId: Int64
+        public let existingPartName: String
+        public let existingPartCode: String?
+        public var resolution: PartsImportConflictResolution = .ask
+    }
+
+    /// Preview generated before any import writes occur.
+    public struct PartsImportPreview: Sendable {
+        public var newParts: [PartsImportParsedRow] = []
+        public var conflicts: [PartsImportConflict] = []
+        public var errors: [PartsImportError] = []
+        public var totalRows: Int = 0
+    }
+
+    /// Result of an atomic import commit.
+    public struct PartsImportCommitResult: Sendable {
+        public let created: Int
+        public let updated: Int
+        public let skipped: Int
+    }
+
+    /// Parse and validate a parts CSV without changing database state.
+    ///
+    /// Required columns: `name`, `category`.
+    /// Optional columns: `code`, `brand`, `cost_price`, `markup_percent`,
+    /// `description`, `unit_of_measure`, `shelf_location`, `bin_location`,
+    /// `part_type`.
+    public func previewPartsImportCSV(_ csv: String) throws -> PartsImportPreview {
+        let lines = csv.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard lines.count > 1 else {
+            throw PartsError.invalidInput("CSV file is empty or has no data rows.")
+        }
+
+        let headers = parseImportCSVLine(lines[0]).map { $0.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard let nameIdx = headers.firstIndex(of: "name") else {
+            throw PartsError.invalidInput("CSV must have a 'name' column.")
+        }
+        guard let categoryIdx = headers.firstIndex(of: "category") else {
+            throw PartsError.invalidInput("CSV must have a 'category' column.")
+        }
+        let codeIdx = headers.firstIndex(of: "code")
+        let brandIdx = headers.firstIndex(of: "brand")
+
+        var preview = PartsImportPreview(totalRows: lines.count - 1)
+        for lineIdx in 1..<lines.count {
+            let rowNumber = lineIdx + 1
+            let columns = parseImportCSVLine(lines[lineIdx])
+            func value(at index: Int?) -> String? {
+                guard let index, index < columns.count else { return nil }
+                let trimmed = columns[index].trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+
+            guard let name = value(at: nameIdx) else {
+                preview.errors.append(PartsImportError(rowNumber: rowNumber, message: "Missing required name"))
+                continue
+            }
+            guard let category = value(at: categoryIdx) else {
+                preview.errors.append(PartsImportError(rowNumber: rowNumber, message: "Missing required category"))
+                continue
+            }
+
+            var fields: [String: String] = [:]
+            for (index, header) in headers.enumerated() {
+                guard index < columns.count else { continue }
+                guard !["name", "code", "category", "brand"].contains(header) else { continue }
+                let trimmed = columns[index].trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { fields[header] = trimmed }
+            }
+
+            for numericHeader in ["cost_price", "markup_percent"] {
+                if let raw = fields[numericHeader] {
+                    guard let value = Double(raw) else {
+                        preview.errors.append(PartsImportError(rowNumber: rowNumber, message: "Invalid number for \(numericHeader): \(raw)"))
+                        continue
+                    }
+                    if value < 0 {
+                        preview.errors.append(PartsImportError(rowNumber: rowNumber, message: "\(numericHeader) cannot be negative"))
+                        continue
+                    }
+                }
+            }
+            if preview.errors.contains(where: { $0.rowNumber == rowNumber }) { continue }
+
+            let parsed = PartsImportParsedRow(
+                rowNumber: rowNumber,
+                name: name,
+                code: value(at: codeIdx),
+                category: category,
+                brand: value(at: brandIdx),
+                fields: fields
+            )
+
+            let existingPart = try db.writer.read { dbConn -> Part? in
+                if let code = parsed.code, !code.isEmpty,
+                   let byCode = try Part.fetchOne(dbConn, sql: "SELECT * FROM parts WHERE code = ? AND deleted_at IS NULL", arguments: [code]) {
+                    return byCode
+                }
+                return try Part.fetchOne(dbConn, sql: "SELECT * FROM parts WHERE LOWER(name) = LOWER(?) AND deleted_at IS NULL", arguments: [parsed.name])
+            }
+
+            if let existingPart, let id = existingPart.id {
+                preview.conflicts.append(PartsImportConflict(
+                    parsedRow: parsed,
+                    existingPartId: id,
+                    existingPartName: existingPart.name,
+                    existingPartCode: existingPart.code
+                ))
+            } else {
+                preview.newParts.append(parsed)
+            }
+        }
+        return preview
+    }
+
+    /// Commit a clean import preview atomically. If the preview has validation
+    /// errors, no writes are attempted. If any database write fails mid-import,
+    /// GRDB rolls back the entire transaction, preventing partial bad state.
+    public func commitPartsImportCSV(_ preview: PartsImportPreview) throws -> PartsImportCommitResult {
+        guard preview.errors.isEmpty else {
+            let first = preview.errors[0]
+            throw PartsError.invalidInput("Import has validation errors; first error row \(first.rowNumber): \(first.message)")
+        }
+
+        var created = 0
+        var updated = 0
+        var skipped = 0
+
+        try db.writer.write { dbConn in
+            func findOrCreateCategoryInTransaction(_ name: String) throws -> Int64 {
+                if let existing = try Row.fetchOne(dbConn, sql: "SELECT id FROM part_categories WHERE name = ? AND deleted_at IS NULL", arguments: [name]) {
+                    return existing["id"]
+                }
+                try Validators.requireName(name, field: "Category name")
+                try dbConn.execute(sql: """
+                    INSERT INTO part_categories (name, sort_order, is_active, created_at, updated_at)
+                    VALUES (?, 0, 1, datetime('now'), datetime('now'))
+                    """, arguments: [name])
+                return dbConn.lastInsertedRowID
+            }
+
+            func findOrCreateBrandInTransaction(_ name: String?) throws -> Int64? {
+                guard let name, !name.isEmpty else { return nil }
+                if let existing = try Row.fetchOne(dbConn, sql: "SELECT id FROM brands WHERE name = ? AND deleted_at IS NULL", arguments: [name]) {
+                    return existing["id"]
+                }
+                try Validators.requireName(name, field: "Brand name")
+                try dbConn.execute(sql: """
+                    INSERT INTO brands (name, is_active, created_at, updated_at)
+                    VALUES (?, 1, datetime('now'), datetime('now'))
+                    """, arguments: [name])
+                return dbConn.lastInsertedRowID
+            }
+
+            func create(_ row: PartsImportParsedRow) throws {
+                let categoryId = try findOrCreateCategoryInTransaction(row.category)
+                let brandId = try findOrCreateBrandInTransaction(row.brand)
+                let cost = row.fields["cost_price"].flatMap(Double.init) ?? 0
+                let markup = row.fields["markup_percent"].flatMap(Double.init) ?? 0
+                let partType = row.fields["part_type"] ?? "general"
+
+                try Validators.requireName(row.name, field: "Part name")
+                try Validators.requireText(row.code, field: "Part code", limit: Validators.Limits.code)
+                try Validators.requireNonNegative(cost, field: "Cost price")
+                try Validators.requireNonNegative(markup, field: "Markup percent")
+
+                try dbConn.execute(sql: """
+                    INSERT INTO parts (
+                        category_id, brand_id, part_type, code, name, description,
+                        unit_of_measure, company_cost_price, weighted_avg_cost,
+                        company_markup_percent, shelf_location, bin_location,
+                        auto_add_to_wishlist_when_low, is_deprecated, is_qr_tagged,
+                        is_active, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 1, datetime('now'), datetime('now'))
+                    """, arguments: [
+                        categoryId,
+                        brandId,
+                        partType,
+                        row.code,
+                        row.name,
+                        row.fields["description"],
+                        row.fields["unit_of_measure"],
+                        cost,
+                        cost,
+                        markup,
+                        row.fields["shelf_location"],
+                        row.fields["bin_location"]
+                    ])
+            }
+
+            func update(_ conflict: PartsImportConflict) throws {
+                let row = conflict.parsedRow
+                let categoryId = try findOrCreateCategoryInTransaction(row.category)
+                let brandId = try findOrCreateBrandInTransaction(row.brand)
+                let cost = row.fields["cost_price"].flatMap(Double.init)
+                let markup = row.fields["markup_percent"].flatMap(Double.init)
+
+                var clauses = [
+                    "name = ?",
+                    "code = ?",
+                    "category_id = ?",
+                    "brand_id = ?"
+                ]
+                var args: [DatabaseValueConvertible?] = [row.name, row.code, categoryId, brandId]
+
+                if let partType = row.fields["part_type"] { clauses.append("part_type = ?"); args.append(partType) }
+                if let description = row.fields["description"] { clauses.append("description = ?"); args.append(description) }
+                if let unit = row.fields["unit_of_measure"] { clauses.append("unit_of_measure = ?"); args.append(unit) }
+                if let cost { clauses.append("company_cost_price = ?"); args.append(cost); clauses.append("weighted_avg_cost = ?"); args.append(cost) }
+                if let markup { clauses.append("company_markup_percent = ?"); args.append(markup) }
+                if let shelf = row.fields["shelf_location"] { clauses.append("shelf_location = ?"); args.append(shelf) }
+                if let bin = row.fields["bin_location"] { clauses.append("bin_location = ?"); args.append(bin) }
+                clauses.append("updated_at = datetime('now')")
+                args.append(conflict.existingPartId)
+
+                try dbConn.execute(sql: "UPDATE parts SET \(clauses.joined(separator: ", ")) WHERE id = ? AND deleted_at IS NULL", arguments: StatementArguments(args))
+            }
+
+            for row in preview.newParts {
+                try create(row)
+                created += 1
+            }
+            for conflict in preview.conflicts {
+                switch conflict.resolution {
+                case .update:
+                    try update(conflict)
+                    updated += 1
+                case .skip, .ask:
+                    skipped += 1
+                }
+            }
+        }
+
+        return PartsImportCommitResult(created: created, updated: updated, skipped: skipped)
+    }
+
+    private func parseImportCSVLine(_ line: String) -> [String] {
+        var fields: [String] = []
+        var current = ""
+        var inQuotes = false
+        var iterator = line.makeIterator()
+        while let char = iterator.next() {
+            if char == "\"" {
+                inQuotes.toggle()
+            } else if char == "," && !inQuotes {
+                fields.append(current)
+                current = ""
+            } else {
+                current.append(char)
+            }
+        }
+        fields.append(current)
+        return fields
+    }
+
     // =========================================================================
     // MARK: - 11. Smart Delete
     // =========================================================================
