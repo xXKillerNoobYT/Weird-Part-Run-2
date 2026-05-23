@@ -918,6 +918,8 @@ public final class NotebooksService: Sendable {
         title: String? = nil,
         content: String? = nil,
         blockData: String? = nil,
+        headingLevel: Int? = nil,
+        checklistItems: String? = nil,
         createdBy: Int64,
         sortOrder: Int? = nil
     ) throws -> Int64 {
@@ -943,14 +945,18 @@ public final class NotebooksService: Sendable {
             try dbConn.execute(sql: """
                 INSERT INTO notebook_entries
                 (section_id, notebook_id, title, content, entry_type, block_type, block_data,
-                 field_required, is_deleted, is_completed, sort_order, created_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'note', ?, ?, 0, 0, 0, ?, ?, datetime('now'), datetime('now'))
-                """, arguments: [sectionId, notebookId, title ?? "", content, blockType, blockData, order, createdBy])
+                 heading_level, checklist_items, field_required, is_deleted, is_completed,
+                 sort_order, created_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'note', ?, ?, ?, ?, 0, 0, 0, ?, ?, datetime('now'), datetime('now'))
+                """, arguments: [
+                    sectionId, notebookId, title ?? "", content, blockType, blockData,
+                    headingLevel, checklistItems, order, createdBy
+                ])
             return dbConn.lastInsertedRowID
         }
     }
 
-    /// Update a block entry's editable fields and record a minimal audit/change-log entry.
+    /// Update a block entry's editable fields and record a sync-compatible change-log entry.
     public func updateBlockEntry(
         entryId: Int64,
         title: String? = nil,
@@ -958,9 +964,11 @@ public final class NotebooksService: Sendable {
         blockData: String?,
         headingLevel: Int? = nil,
         checklistItems: String? = nil,
-        updatedBy: Int64? = nil
+        updatedBy: Int64
     ) throws {
         try db.writer.write { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: updatedBy, permissionKey: "manage_notebooks")
+
             guard let existing = try Row.fetchOne(dbConn, sql: """
                 SELECT title, content, block_data, heading_level, checklist_items
                 FROM notebook_entries
@@ -981,12 +989,12 @@ public final class NotebooksService: Sendable {
                 WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [newTitle, content, blockData, headingLevel, checklistItems, updatedBy, entryId])
 
-            var changedFields: [String] = []
-            var oldValues: [String: Any?] = [:]
+            var changedFields: [String: Any] = [:]
+            var oldValues: [String: Any] = [:]
             func track<T: Equatable>(_ field: String, old: T?, new: T?) {
                 if old != new {
-                    changedFields.append(field)
-                    oldValues[field] = old
+                    changedFields[field] = new ?? NSNull()
+                    oldValues[field] = old ?? NSNull()
                 }
             }
             track("title", old: oldTitle, new: newTitle)
@@ -996,19 +1004,16 @@ public final class NotebooksService: Sendable {
             track("checklist_items", old: oldChecklistItems, new: checklistItems)
 
             if !changedFields.isEmpty {
-                let changedFieldsData = try JSONSerialization.data(withJSONObject: changedFields)
-                let oldValuesData = try JSONSerialization.data(
-                    withJSONObject: oldValues.mapValues { $0 ?? NSNull() }
-                )
+                let changedFieldsData = try JSONSerialization.data(withJSONObject: changedFields, options: [.sortedKeys])
+                let oldValuesData = try JSONSerialization.data(withJSONObject: oldValues, options: [.sortedKeys])
+                guard let changedFieldsJSON = String(data: changedFieldsData, encoding: .utf8),
+                      let oldValuesJSON = String(data: oldValuesData, encoding: .utf8) else { return }
+
                 try dbConn.execute(sql: """
                     INSERT INTO _change_log
                     (device_id, table_name, record_id, operation, changed_fields, old_values, timestamp)
                     VALUES ('local', 'notebook_entries', ?, 'UPDATE', ?, ?, datetime('now'))
-                    """, arguments: [
-                        entryId,
-                        String(data: changedFieldsData, encoding: .utf8),
-                        String(data: oldValuesData, encoding: .utf8)
-                    ])
+                    """, arguments: [entryId, changedFieldsJSON, oldValuesJSON])
             }
         }
     }

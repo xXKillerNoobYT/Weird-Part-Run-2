@@ -1179,6 +1179,10 @@ struct IOSNotebookDetailPage: View {
             loadError = "Service not available"
             return
         }
+        guard let userId = appCore.currentUser?.id else {
+            loadError = "Not logged in. Please log in and try again."
+            return
+        }
         guard let notebookId = notebook?.id else {
             loadError = "No notebook loaded"
             return
@@ -1192,15 +1196,16 @@ struct IOSNotebookDetailPage: View {
         do {
             if let existingEntryId = findPanelScheduleEntryId() {
                 // Update existing panel schedule entry
-                try service.updateBlockEntry(entryId: existingEntryId, content: nil, blockData: jsonString)
+                try service.updateBlockEntry(
+                    entryId: existingEntryId,
+                    content: nil,
+                    blockData: jsonString,
+                    updatedBy: userId
+                )
             } else {
                 // Create new panel_schedule block entry in the first available section
                 guard let sectionId = try findOrCreateDefaultSectionId(service: service, notebookId: notebookId) else {
                     loadError = "No section available for panel schedule"
-                    return
-                }
-                guard let userId = appCore.currentUser?.id else {
-                    loadError = "Not logged in. Please log in and try again."
                     return
                 }
                 _ = try service.createBlockEntry(
