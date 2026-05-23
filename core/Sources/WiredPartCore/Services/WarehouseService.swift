@@ -1908,10 +1908,9 @@ public final class WarehouseService: Sendable {
                 arguments: [partId, locationType, locationId]
             ) ?? 0
             let delta = newQty - currentQty
-            guard delta != 0 else { return }
-            let signedDelta = delta >= 0 ? "+\(delta)" : "\(delta)"
 
-            // Update the stock record
+            // Update the stock record even when the counted quantity is unchanged,
+            // because a zero-delta audit still refreshes the count timestamp.
             try dbConn.execute(
                 sql: """
                     UPDATE stock SET qty = ?, last_counted = datetime('now'), updated_at = datetime('now')
