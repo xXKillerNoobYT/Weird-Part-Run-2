@@ -127,6 +127,7 @@ extension AppDatabase {
         registerMigration088FleetInspectionDashboardLookupIndex(&migrator)
         registerMigration089VehicleLocationLogs(&migrator)
         registerMigration090NotebookClassificationPermissions(&migrator)
+        registerMigration091MultiUserAuditResolutionColumns(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5231,6 +5232,39 @@ extension AppDatabase {
                         """, arguments: [grant.key, hatName])
                 }
             }
+        }
+    }
+
+    private static func registerMigration091MultiUserAuditResolutionColumns(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("091_multi_user_audit_resolution_columns") { db in
+            // MultiUserAuditAssignment encodes these resolution fields when
+            // assignments are inserted or updated. Migration 059 created the
+            // table without them, so fresh and upgraded databases both need
+            // a guarded add-column pass before any assignment rows are saved.
+            try addColumnIfMissing(
+                db,
+                table: "multi_user_audit_assignments",
+                column: "resolved_quantity",
+                type: .integer
+            )
+            try addColumnIfMissing(
+                db,
+                table: "multi_user_audit_assignments",
+                column: "resolution_method",
+                type: .text
+            )
+            try addColumnIfMissing(
+                db,
+                table: "multi_user_audit_assignments",
+                column: "resolved_by",
+                type: .integer
+            )
+            try addColumnIfMissing(
+                db,
+                table: "multi_user_audit_assignments",
+                column: "resolved_at",
+                type: .text
+            )
         }
     }
 
