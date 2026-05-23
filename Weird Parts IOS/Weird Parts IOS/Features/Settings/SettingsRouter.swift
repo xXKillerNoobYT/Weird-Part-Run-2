@@ -106,6 +106,8 @@ struct SettingsRouter: View {
             IOSEstimationSettingsPage()
         case "settings-report-templates":
             IOSReportTemplatesPage()
+        case "settings-job-stage-templates":
+            IOSJobStageTemplatesSettingsPage()
         case "settings-payment-tracking":
             comingSoonPage("Payment Tracking", icon: "banknote.fill")
 

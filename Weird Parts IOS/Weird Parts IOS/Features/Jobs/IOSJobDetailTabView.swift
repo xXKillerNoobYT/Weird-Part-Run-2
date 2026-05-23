@@ -33,6 +33,13 @@ struct IOSJobDetailTabView: View {
     /// Job stages with computed statuses (Rough-in, Prep/Makeup, Trim-out).
     @State private var jobStages: [JobsService.JobStageStatus] = []
 
+    // Job notebook recovery/opening state
+    @State private var jobNotebook: NotebooksService.NotebookListItem?
+    @State private var jobNotebookTemplate: NotebooksService.NotebookTemplateItem?
+    @State private var isLoadingJobNotebook = false
+    @State private var isCreatingJobNotebook = false
+    @State private var jobNotebookError: String?
+
     // Flex Pool
     @State private var isInFlexPool = false
     @State private var showFlexPoolConfirm = false
@@ -1166,6 +1173,53 @@ struct IOSJobDetailTabView: View {
         } catch {
             tabError = userFriendlyError(error, context: "load job details")
         }
+    }
+
+    private func loadJobNotebook(for job: JobsService.JobDetail) {
+        guard let service = appCore.notebooksService else {
+            jobNotebookError = "Notebooks service not available"
+            return
+        }
+        isLoadingJobNotebook = true
+        jobNotebookError = nil
+        do {
+            jobNotebook = try service.listNotebooks(notebookType: "job", jobId: job.id).first
+            jobNotebookTemplate = try service.findBestJobTemplate(jobType: job.jobType)
+        } catch {
+            jobNotebookError = userFriendlyError(error, context: "load job notebook")
+        }
+        isLoadingJobNotebook = false
+    }
+
+    private func createMissingJobNotebook(for job: JobsService.JobDetail) {
+        guard let service = appCore.notebooksService,
+              let userId = appCore.currentUser?.id else {
+            jobNotebookError = "Notebooks service unavailable or user not logged in"
+            return
+        }
+        isCreatingJobNotebook = true
+        jobNotebookError = nil
+        do {
+            _ = try service.ensureJobNotebook(
+                jobId: job.id,
+                jobName: job.jobName,
+                jobType: job.jobType,
+                createdBy: userId
+            )
+            jobNotebook = try service.listNotebooks(notebookType: "job", jobId: job.id).first
+            jobNotebookTemplate = try service.findBestJobTemplate(jobType: job.jobType)
+        } catch {
+            jobNotebookError = userFriendlyError(error, context: "create job notebook")
+        }
+        isCreatingJobNotebook = false
+    }
+
+    private func formattedJobType(_ jobType: String) -> String {
+        jobType
+            .replacingOccurrences(of: "_", with: " ")
+            .split(separator: " ")
+            .map { $0.capitalized }
+            .joined(separator: " ")
     }
 
     private func loadJobQA() {
