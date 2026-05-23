@@ -72,7 +72,7 @@ struct PartsBrandsPage: View {
                     brand: nil,
                     onSave: { await loadData() },
                     onAddSuppliers: { brandId in
-                        pendingAddSuppliersBrandId = brandId
+                        presentAddSuppliersPicker(for: brandId)
                     }
                 )
                 .environmentObject(appCore)
@@ -120,6 +120,14 @@ struct PartsBrandsPage: View {
     }
 
     // MARK: - Filtered
+
+    private func presentAddSuppliersPicker(for brandId: Int64) {
+        if activeSheet == nil {
+            activeSheet = .addBrandSuppliers(brandId)
+        } else {
+            pendingAddSuppliersBrandId = brandId
+        }
+    }
 
     private var filteredBrands: [BrandListRow] {
         if searchText.isEmpty { return brands }

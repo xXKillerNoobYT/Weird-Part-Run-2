@@ -16,6 +16,14 @@ final class PartsBrandsPageRegressionTests: XCTestCase {
             source.contains("onAddSuppliers?(brandId)"),
             "The Add Suppliers prompt should call through to the parent instead of dismissing as a dead-end."
         )
+        XCTAssertTrue(
+            source.contains("presentAddSuppliersPicker(for: brandId)"),
+            "The parent callback should route post-create supplier linking through the guarded presenter."
+        )
+        XCTAssertTrue(
+            source.contains("if activeSheet == nil") && source.contains("activeSheet = .addBrandSuppliers(brandId)"),
+            "The guarded presenter should immediately show the supplier picker if the add-brand sheet has already dismissed."
+        )
     }
 
     private static func readPartsBrandsPageSource(
