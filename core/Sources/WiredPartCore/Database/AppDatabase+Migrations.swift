@@ -5135,8 +5135,47 @@ extension AppDatabase {
     }
 
 
-    private static func registerMigration087NotebookClassificationPermissions(_ migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("087_notebook_classification_permissions") { db in
+    private static func registerMigration087ServicePermissionGateBackfill(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("087_service_permission_gate_backfill") { db in
+            let permissionGrants: [(key: String, hats: [String])] = [
+                ("manage_chat", ["Admin", "Manager"]),
+                ("moderate_chat", ["Admin", "Manager", "Office"]),
+                ("send_rfi", ["Admin", "Manager", "Lead", "Office"]),
+                ("manage_orders", ["Admin", "Manager", "Office"]),
+                ("manage_notebooks", ["Admin", "Manager", "Lead", "Office"]),
+                ("manage_templates", ["Admin", "Manager", "Office"]),
+                ("view_job_reports", ["Admin", "Manager", "Lead", "Office"]),
+                ("view_jobs", ["Admin", "Manager", "Lead", "Office", "Worker"]),
+                ("manage_fleet", ["Admin", "Manager"]),
+                ("manage_people", ["Admin", "Manager", "Office"]),
+                ("view_reports", ["Admin", "Manager", "Office"]),
+                ("approve_time_off", ["Admin", "Manager", "Office"]),
+                ("move_stock_warehouse", ["Admin", "Manager", "Lead", "Worker"]),
+                ("perform_audit", ["Admin", "Manager", "Lead", "Worker"]),
+                ("manage_warehouse", ["Admin", "Manager", "Lead"]),
+                ("manage_tools", ["Admin", "Manager"]),
+                ("checkout_tools", ["Admin", "Manager", "Lead", "Worker"]),
+                ("maintain_tools", ["Admin", "Manager", "Lead"]),
+                ("create_jobs", ["Admin", "Manager", "Lead", "Office"]),
+                ("forecasting.approve_recommendation", ["Admin", "Manager"]),
+                ("forecasting.dismiss_recommendation", ["Admin", "Manager"]),
+                ("parts.manage_company_costs", ["Admin", "Manager"]),
+                ("parts.approve_scheduled_deletion", ["Admin", "Manager"]),
+            ]
+
+            for grant in permissionGrants {
+                for hatName in grant.hats {
+                    try db.execute(sql: """
+                        INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+                        SELECT id, ? FROM hats WHERE name = ?
+                        """, arguments: [grant.key, hatName])
+                }
+            }
+        }
+    }
+
+    private static func registerMigration090NotebookClassificationPermissions(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("090_notebook_classification_permissions") { db in
             let permissionGrants: [(key: String, hatNames: [String])] = [
                 ("notebooks.classify_todo", ["Admin", "Manager", "Lead", "Worker"]),
                 ("notebooks.reclassify_todo", ["Admin", "Manager"]),
