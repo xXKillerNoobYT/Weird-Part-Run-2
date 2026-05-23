@@ -49,7 +49,7 @@ struct E2ETestHelpers {
         let people = PeopleService(db: db)
         let scheduling = SchedulingService(db: db)
         let chat = ChatService(db: db)
-        let notebooks = NotebooksService(db: db)
+        let notebooks = NotebooksService(db: db, auth: auth)
         let reports = ReportsService(db: db)
         let tools = ToolsService(db: db)
 
