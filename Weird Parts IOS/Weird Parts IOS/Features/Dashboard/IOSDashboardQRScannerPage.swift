@@ -47,10 +47,6 @@ struct IOSDashboardQRScannerPage: View {
         }
     }
 
-    #if os(iOS) && !targetEnvironment(macCatalyst)
-    @State private var scanner: IOSQRScanner?
-    #endif
-
     var body: some View {
         VStack(spacing: 0) {
             OnboardingBanner(pageId: "dashboard-scanner")
@@ -138,7 +134,7 @@ struct IOSDashboardQRScannerPage: View {
         .onAppear {
             #if os(iOS) && !targetEnvironment(macCatalyst)
             if DataScannerViewController.isSupported {
-                startContinuousScanning()
+                isScanning = true
             }
             #endif
             // Load user's last known warehouse position for direction guidance
@@ -146,11 +142,7 @@ struct IOSDashboardQRScannerPage: View {
                 userPositionAreaId = try? service.getUserCurrentPosition(userId: userId)
             }
         }
-        .onDisappear {
-            #if os(iOS) && !targetEnvironment(macCatalyst)
-            scanner?.stopScanning()
-            #endif
-        }
+        .onDisappear { isScanning = false }
     }
 
     // MARK: - Camera Section
@@ -159,28 +151,28 @@ struct IOSDashboardQRScannerPage: View {
     @ViewBuilder
     private var cameraSection: some View {
         ZStack {
-            // Camera scanning surface. DataScannerViewController is presented by
-            // IOSQRScanner while this view keeps the live result controls visible.
-            Rectangle()
-                .fill(Color.black)
-                .overlay(
-                    VStack {
-                        if isLocked {
-                            HStack {
-                                Spacer()
-                                Label("Locked", systemImage: "lock.fill")
-                                    .font(.caption)
-                                    .fontWeight(.bold)
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(Capsule().fill(.orange))
-                                    .padding()
-                            }
-                        }
+            IOSQRScannerView(isScanning: isScanning && !isLocked) { event in
+                handleScannerEvent(event)
+            }
+            .background(Color.black)
+            .ignoresSafeArea(edges: .top)
+
+            VStack {
+                if isLocked {
+                    HStack {
                         Spacer()
+                        Label("Locked", systemImage: "lock.fill")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(.orange))
+                            .padding()
                     }
-                )
+                }
+                Spacer()
+            }
 
             // Scanning frame overlay
             if !isLocked {
@@ -487,18 +479,13 @@ struct IOSDashboardQRScannerPage: View {
             unlockAndResume()
         } else {
             isLocked = true
-            #if os(iOS) && !targetEnvironment(macCatalyst)
-            scanner?.stopScanning()
-            #endif
         }
     }
 
     private func unlockAndResume() {
         isLocked = false
         currentResult = nil
-        #if os(iOS) && !targetEnvironment(macCatalyst)
-        startContinuousScanning()
-        #endif
+        isScanning = true
     }
 
     private func autoLockAction(_ action: @escaping () -> Void) {
@@ -509,41 +496,18 @@ struct IOSDashboardQRScannerPage: View {
     // MARK: - Continuous Scanning
 
     #if os(iOS) && !targetEnvironment(macCatalyst)
-    private func startContinuousScanning() {
+    private func handleScannerEvent(_ event: QRScanEvent) {
         guard !isLocked else { return }
-        let newScanner = IOSQRScanner()
-        scanner = newScanner
 
-        guard newScanner.isAvailable else {
-            scanError = "Camera scanner not available."
-            return
-        }
-
-        isScanning = true
-        scanError = nil
-
-        Task {
-            do {
-                let stream = try await newScanner.startScanning()
-                for await event in stream {
-                    guard !isLocked else { continue }
-
-                    switch event {
-                    case .detected(let payload, _):
-                        // Don't stop scanning — process and update overlay
-                        await processCode(payload, autoLock: false)
-                    case .error(let msg):
-                        scanError = msg
-                    case .permissionDenied:
-                        scanError = "Camera permission denied. Enable in Settings."
-                        isScanning = false
-                        return
-                    }
-                }
-            } catch {
-                scanError = userFriendlyError(error, context: "scan item")
-                isScanning = false
-            }
+        switch event {
+        case .detected(let payload, _):
+            // Don't stop scanning — process and update overlay.
+            Task { await processCode(payload, autoLock: false) }
+        case .error(let msg):
+            scanError = msg
+        case .permissionDenied:
+            scanError = "Camera permission denied. Enable in Settings."
+            isScanning = false
         }
     }
     #endif
