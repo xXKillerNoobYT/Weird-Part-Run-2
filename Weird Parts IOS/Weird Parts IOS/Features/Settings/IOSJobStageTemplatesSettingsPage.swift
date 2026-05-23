@@ -385,23 +385,12 @@ struct IOSJobStageTemplatesSettingsPage: View {
         defer { isSaving = false }
 
         do {
-            let original = try service.listAllJobStages(templateId: selectedTemplateId)
-            let keptExistingIds = Set(cleaned.compactMap(\.existingId))
-            for stage in original where !keptExistingIds.contains(stage.id) {
-                try service.archiveJobStage(stageId: stage.id)
-            }
-
-            var orderedIds: [Int64] = []
-            for draft in cleaned {
-                if let id = draft.existingId {
-                    try service.renameJobStage(stageId: id, name: draft.name)
-                    orderedIds.append(id)
-                } else {
-                    let id = try service.addJobStage(templateId: selectedTemplateId, name: draft.name)
-                    orderedIds.append(id)
+            try service.applyJobStageTemplateDraft(
+                templateId: selectedTemplateId,
+                stages: cleaned.map { draft in
+                    JobsService.JobStageTemplateDraftStage(existingId: draft.existingId, name: draft.name)
                 }
-            }
-            try service.reorderJobStages(templateId: selectedTemplateId, orderedStageIds: orderedIds)
+            )
             successMessage = "Saved job stage workflow."
             errorMessage = nil
             loadTemplates(select: selectedTemplateId)

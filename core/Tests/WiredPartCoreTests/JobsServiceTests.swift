@@ -924,6 +924,55 @@ struct JobsServiceTests {
         }
     }
 
+    @Test("applying a stage template draft archives renames adds and reorders in one save")
+    func testApplyJobStageTemplateDraftPersistsFullDraft() throws {
+        let env = try E2ETestHelpers.setUp()
+        let templateId = try env.jobs.createJobStageTemplate(name: "Atomic Save", stageNames: ["Rough", "Trim", "Closeout"])
+        let original = try env.jobs.listAllJobStages(templateId: templateId)
+        let roughId = try #require(original.first(where: { $0.name == "Rough" })?.id)
+        let trimId = try #require(original.first(where: { $0.name == "Trim" })?.id)
+
+        try env.jobs.applyJobStageTemplateDraft(
+            templateId: templateId,
+            stages: [
+                JobsService.JobStageTemplateDraftStage(existingId: trimId, name: "Trim Final"),
+                JobsService.JobStageTemplateDraftStage(existingId: nil, name: "Inspection"),
+                JobsService.JobStageTemplateDraftStage(existingId: roughId, name: "Rough-In")
+            ]
+        )
+
+        let saved = try env.jobs.listAllJobStages(templateId: templateId)
+        #expect(saved.map(\.name) == ["Trim Final", "Inspection", "Rough-In"])
+        #expect(saved.map(\.sortOrder) == [1, 2, 3])
+        #expect(!saved.contains { $0.name == "Closeout" })
+    }
+
+    @Test("failed stage template draft save rolls back earlier stage changes")
+    func testApplyJobStageTemplateDraftRollsBackOnFailure() throws {
+        let env = try E2ETestHelpers.setUp()
+        let templateId = try env.jobs.createJobStageTemplate(name: "Atomic Rollback", stageNames: ["Rough", "Trim", "Closeout"])
+        let original = try env.jobs.listAllJobStages(templateId: templateId)
+        let roughId = try #require(original.first(where: { $0.name == "Rough" })?.id)
+        let trimId = try #require(original.first(where: { $0.name == "Trim" })?.id)
+
+        #expect(throws: JobsService.JobsError.invalidStageTemplate(templateId)) {
+            try env.jobs.applyJobStageTemplateDraft(
+                templateId: templateId,
+                stages: [
+                    JobsService.JobStageTemplateDraftStage(existingId: roughId, name: "Rough Renamed"),
+                    JobsService.JobStageTemplateDraftStage(existingId: nil, name: "Inspection"),
+                    JobsService.JobStageTemplateDraftStage(existingId: trimId, name: "Trim Renamed"),
+                    JobsService.JobStageTemplateDraftStage(existingId: trimId, name: "Trim Duplicate")
+                ]
+            )
+        }
+
+        let saved = try env.jobs.listAllJobStages(templateId: templateId)
+        #expect(saved.map(\.id) == original.map(\.id))
+        #expect(saved.map(\.name) == original.map(\.name))
+        #expect(saved.map(\.sortOrder) == original.map(\.sortOrder))
+    }
+
     // MARK: - Job Todo Summary
 
     @Test("getJobTodoSummary returns zeros when no notebook exists")

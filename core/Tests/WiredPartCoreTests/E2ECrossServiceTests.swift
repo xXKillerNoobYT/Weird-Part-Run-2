@@ -182,6 +182,10 @@ struct E2ECrossServiceTests {
         let env = try E2ETestHelpers.setUp()
         let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-800")
 
+        let existingJobNotebookCount = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM notebooks WHERE job_id = ?", arguments: [jobId])!
+        }
+
         // NotebooksService.createNotebook() references notebook_type which doesn't exist.
         // Use direct insert with correct schema.
         let nbId = try env.db.writer.write { db -> Int64 in
@@ -196,7 +200,7 @@ struct E2ECrossServiceTests {
         let jobNbCount = try env.db.writer.read { db in
             try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM notebooks WHERE job_id = ?", arguments: [jobId])!
         }
-        #expect(jobNbCount == 1)
+        #expect(jobNbCount == existingJobNotebookCount + 1)
     }
 
     // MARK: - Settings Affecting Behavior

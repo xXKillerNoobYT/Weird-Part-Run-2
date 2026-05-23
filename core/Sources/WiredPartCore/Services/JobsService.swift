@@ -146,6 +146,19 @@ public final class JobsService: Sendable {
         }
     }
 
+    /// One row from the staged job-stage template editor draft.
+    /// A nil existingId creates a new stage; non-nil keeps/renames that stage.
+    /// The array order supplied to applyJobStageTemplateDraft becomes sort_order.
+    public struct JobStageTemplateDraftStage: Sendable, Equatable {
+        public let existingId: Int64?
+        public let name: String
+
+        public init(existingId: Int64?, name: String) {
+            self.existingId = existingId
+            self.name = name
+        }
+    }
+
     /// Preview result for changing a job's stage template.
     public struct JobStageTemplateAssignmentPreview: Sendable {
         public let jobId: Int64
@@ -2785,6 +2798,86 @@ public final class JobsService: Sendable {
                     UPDATE job_stages SET sort_order = ?, updated_at = datetime('now')
                     WHERE id = ? AND template_id = ?
                     """, arguments: [index + 1, stageId, templateId])
+            }
+        }
+    }
+
+    /// Applies the complete staged editor draft for a job-stage template as a single atomic unit.
+    ///
+    /// The draft list is the desired final active stage list in display order. Existing stages not
+    /// present in the draft are archived, kept stages are renamed, nil-id rows are inserted, and the
+    /// final kept/new set is reordered. Any validation or database failure rolls back the whole save
+    /// so the UI's Save/Cancel model cannot leave partial archive/rename/add/reorder changes behind.
+    public func applyJobStageTemplateDraft(templateId: Int64, stages draftStages: [JobStageTemplateDraftStage]) throws {
+        let cleaned = draftStages.map { draft in
+            JobStageTemplateDraftStage(
+                existingId: draft.existingId,
+                name: draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        }
+        guard !cleaned.isEmpty else { throw JobsError.invalidStageTemplate(templateId) }
+        guard cleaned.allSatisfy({ !$0.name.isEmpty }) else { throw JobsError.requiredFieldEmpty }
+
+        try db.writer.write { dbConn in
+            guard try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM job_stage_templates WHERE id = ? AND archived_at IS NULL", arguments: [templateId]) ?? 0 > 0 else {
+                throw JobsError.templateNotFound(templateId)
+            }
+
+            let originalIds = try Int64.fetchAll(dbConn, sql: """
+                SELECT id FROM job_stages
+                WHERE template_id = ? AND deleted_at IS NULL
+                ORDER BY sort_order ASC, id ASC
+                """, arguments: [templateId])
+            let originalIdSet = Set(originalIds)
+            let keptExistingIds = cleaned.compactMap(\.existingId)
+            guard keptExistingIds.allSatisfy({ originalIdSet.contains($0) }) else {
+                throw JobsError.invalidStageTemplate(templateId)
+            }
+
+            let removedIds = originalIds.filter { !Set(keptExistingIds).contains($0) }
+            for stageId in removedIds {
+                let references = try Int.fetchOne(dbConn, sql: """
+                    SELECT
+                        (SELECT COUNT(*) FROM jobs WHERE current_stage_id = ? AND deleted_at IS NULL AND status NOT IN ('completed', 'cancelled')) +
+                        (SELECT COUNT(*) FROM jpo_line_items WHERE stage_id = ?) +
+                        (SELECT COUNT(*) FROM job_stage_category_map WHERE stage_id = ?)
+                    """, arguments: [stageId, stageId, stageId]) ?? 0
+                if references > 0 { throw JobsError.stageInUse(stageId) }
+                try dbConn.execute(sql: """
+                    UPDATE job_stages SET deleted_at = datetime('now'), updated_at = datetime('now')
+                    WHERE id = ? AND template_id = ? AND deleted_at IS NULL
+                    """, arguments: [stageId, templateId])
+                if dbConn.changesCount == 0 { throw JobsError.stageNotFound(stageId) }
+            }
+
+            var orderedIds: [Int64] = []
+            for (index, draft) in cleaned.enumerated() {
+                let stagedSortOrder = -100_000 - index
+                if let stageId = draft.existingId {
+                    try dbConn.execute(sql: """
+                        UPDATE job_stages SET name = ?, sort_order = ?, updated_at = datetime('now')
+                        WHERE id = ? AND template_id = ? AND deleted_at IS NULL
+                        """, arguments: [draft.name, stagedSortOrder, stageId, templateId])
+                    if dbConn.changesCount == 0 { throw JobsError.stageNotFound(stageId) }
+                    orderedIds.append(stageId)
+                } else {
+                    try dbConn.execute(sql: """
+                        INSERT INTO job_stages (template_id, name, sort_order, created_at, updated_at)
+                        VALUES (?, ?, ?, datetime('now'), datetime('now'))
+                        """, arguments: [templateId, draft.name, stagedSortOrder])
+                    orderedIds.append(dbConn.lastInsertedRowID)
+                }
+            }
+
+            guard Set(orderedIds).count == orderedIds.count else {
+                throw JobsError.invalidStageTemplate(templateId)
+            }
+            for (index, stageId) in orderedIds.enumerated() {
+                try dbConn.execute(sql: """
+                    UPDATE job_stages SET sort_order = ?, updated_at = datetime('now')
+                    WHERE id = ? AND template_id = ? AND deleted_at IS NULL
+                    """, arguments: [index + 1, stageId, templateId])
+                if dbConn.changesCount == 0 { throw JobsError.stageNotFound(stageId) }
             }
         }
     }
