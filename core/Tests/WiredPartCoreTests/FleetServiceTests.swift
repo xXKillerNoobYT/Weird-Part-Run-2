@@ -228,7 +228,70 @@ struct FleetServiceTests {
         #expect(stats != nil)
     }
 
+    @Test("My truck dashboard batches all page data")
+    func testMyTruckDashboardBatchesPageData() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
+            vehicleNumber: "V-MYBATCH",
+            vehicleName: "Batch Truck",
+            vehicleType: "truck",
+            make: "Ford",
+            model: "Transit",
+            year: 2026,
+            color: nil,
+            vin: nil,
+            licensePlate: nil,
+            notes: nil
+        )
+        try env.fleet.assignDriver(
+            actorId: env.adminUserId,
+            vehicleId: vehicleId,
+            userId: env.adminUserId,
+            assignmentType: "primary",
+            isTakeHome: true
+        )
+        try env.fleet.addVehicleStockItem(actorId: env.adminUserId, vehicleId: vehicleId, partName: "Wire Nuts", quantity: 12, stockType: "truck_stock")
+        try env.fleet.addVehicleStockItem(actorId: env.adminUserId, vehicleId: vehicleId, partName: "Transfer Box", quantity: 3, stockType: "transfer")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO mileage_logs (vehicle_id, user_id, log_date, total_miles, purpose)
+                VALUES (?, ?, '2026-05-01', 42.0, 'Install run')
+                """, arguments: [vehicleId, env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO fuel_logs (vehicle_id, user_id, log_date, gallons, total_cost, station)
+                VALUES (?, ?, '2026-05-02', 10.5, 39.25, 'Depot')
+                """, arguments: [vehicleId, env.adminUserId])
+        }
+
+        let dashboard = try env.fleet.getMyTruckDashboard(userId: env.adminUserId, recentLimit: 5)
+
+        #expect(dashboard?.vehicle.vehicleName == "Batch Truck")
+        #expect(dashboard?.stats.vehicleId == vehicleId)
+        #expect(dashboard?.truckStock.map(\.partName) == ["Wire Nuts"])
+        #expect(dashboard?.transferItems.map(\.partName) == ["Transfer Box"])
+        #expect(dashboard?.recentMileage.first?.purpose == "Install run")
+        #expect(dashboard?.recentFuel.first?.station == "Depot")
+    }
+
     // MARK: - Fleet Stats & Dashboard
+
+    @Test("getMyTruckDashboard returns nil for user with no active assignment")
+    func testMyTruckDashboardReturnsNilForUnassignedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Create a vehicle but do NOT assign any driver
+        _ = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
+            vehicleNumber: "V-NOASSIGN",
+            vehicleName: "Unassigned Truck",
+            vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        // Use a brand-new user id that has no assignments
+        let unassignedUserId: Int64 = 99999
+        let dashboard = try env.fleet.getMyTruckDashboard(userId: unassignedUserId)
+        #expect(dashboard == nil, "Expected nil when the user has no active vehicle assignment")
+    }
 
     @Test("Fleet stats aggregates")
     func testFleetStats() throws {
