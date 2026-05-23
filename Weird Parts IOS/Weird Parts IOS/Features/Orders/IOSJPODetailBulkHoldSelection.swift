@@ -17,4 +17,11 @@ enum IOSJPODetailBulkHoldSelection {
     static func sheetIdentifier(for items: [OrdersService.JPOLineRow]) -> String {
         "bulkHold-" + items.map { String($0.id) }.joined(separator: "-")
     }
+
+    static func processableHoldItems(
+        from items: [OrdersService.JPOLineRow],
+        failedTransferCancellationLineIds: Set<Int64>
+    ) -> [OrdersService.JPOLineRow] {
+        items.filter { !failedTransferCancellationLineIds.contains($0.id) }
+    }
 }
