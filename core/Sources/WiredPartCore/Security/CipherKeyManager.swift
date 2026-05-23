@@ -78,6 +78,13 @@ public final class CipherKeyManager: Sendable {
         if let existing = readSaltFromKeychain() {
             return existing
         }
+        #if targetEnvironment(macCatalyst)
+        // Local Catalyst builds can run without keychain entitlements.
+        // Reuse a sandbox-stored salt so derived keys remain stable per install.
+        if let fallback = try readCatalystFallbackSalt() {
+            return fallback
+        }
+        #endif
 
         let salt = try Self.generateSalt()
 
@@ -95,6 +102,12 @@ public final class CipherKeyManager: Sendable {
             Self.logger.error("CipherKeyManager: salt write raced (errSecDuplicateItem) and re-read also failed")
             throw CipherKeyError.keychainAccessFailed(errSecDuplicateItem)
         } catch {
+            #if targetEnvironment(macCatalyst)
+            if case CipherKeyError.keychainAccessFailed(errSecMissingEntitlement) = error {
+                try writeCatalystFallbackSalt(salt)
+                return salt
+            }
+            #endif
             // Any other write failure (e.g. errSecNotAvailable, errSecAuthFailed) — surface
             // the original error directly so callers get the real failure reason.
             throw error
@@ -171,13 +184,16 @@ public final class CipherKeyManager: Sendable {
     }
 
     private func writeSaltToKeychain(_ salt: Data) throws {
-        let addQuery: [CFString: Any] = [
+        var addQuery: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: Self.keychainService,
             kSecAttrAccount: Self.keychainAccount,
-            kSecValueData: salt,
-            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            kSecValueData: salt
         ]
+        #if !targetEnvironment(macCatalyst)
+        // Catalyst keychain can reject iOS accessibility classes with errSecParam.
+        addQuery[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        #endif
         let status = SecItemAdd(addQuery as CFDictionary, nil)
         guard status == errSecSuccess || status == errSecDuplicateItem else {
             throw CipherKeyError.keychainAccessFailed(status)
@@ -190,6 +206,30 @@ public final class CipherKeyManager: Sendable {
             throw CipherKeyError.keychainAccessFailed(status)
         }
     }
+
+    #if targetEnvironment(macCatalyst)
+    private func catalystFallbackSaltURL() throws -> URL {
+        guard let supportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            throw CipherKeyError.keychainAccessFailed(errSecParam)
+        }
+        let dir = supportURL.appendingPathComponent("WiredPart", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("catalyst-dbcipher-salt.bin")
+    }
+
+    private func readCatalystFallbackSalt() throws -> Data? {
+        let url = try catalystFallbackSaltURL()
+        guard let data = try? Data(contentsOf: url), data.count == 32 else {
+            return nil
+        }
+        return data
+    }
+
+    private func writeCatalystFallbackSalt(_ salt: Data) throws {
+        let url = try catalystFallbackSaltURL()
+        try salt.write(to: url, options: .atomic)
+    }
+    #endif
 }
 
 // MARK: - CipherKeyError
