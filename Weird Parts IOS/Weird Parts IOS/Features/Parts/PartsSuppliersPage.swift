@@ -1291,15 +1291,20 @@ private struct LinkSupplierBrandsSheet: View {
                                 selectedBrandIds.insert(brand.id)
                             }
                         } label: {
+                            let isSelected = selectedBrandIds.contains(brand.id)
                             HStack {
                                 Label(brand.name, systemImage: "tag.fill")
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                if selectedBrandIds.contains(brand.id) {
+                                if isSelected {
                                     Image(systemName: "checkmark.circle.fill")
                                         .foregroundStyle(Color.accentColor)
                                 }
                             }
                             .frame(minHeight: 44)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(brand.name)
+                            .accessibilityValue(isSelected ? "Selected" : "Not selected")
+                            .accessibilityHint("Double tap to toggle this brand for linking")
                         }
                         .buttonStyle(.plain)
                     }
@@ -1356,9 +1361,12 @@ private struct LinkSupplierBrandsSheet: View {
                 isSaving = false
                 return
             }
-            for brandId in selectedBrandIds {
-                try service.linkBrandToSupplier(brandId: brandId, supplierId: supplierId)
-            }
+            let existingBrandIds = try service.getSupplierBrandRows(supplierId: supplierId)
+                .map(\.brandId)
+            try service.setSupplierBrands(
+                supplierId: supplierId,
+                brandIds: Set(existingBrandIds).union(selectedBrandIds)
+            )
             dismiss()
             await onSave()
         } catch {

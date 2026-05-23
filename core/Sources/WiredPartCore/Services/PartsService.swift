@@ -2083,13 +2083,21 @@ public final class PartsService: Sendable {
                        COUNT(DISTINCT ps.part_id) AS part_count,
                        COALESCE(bsl.carry_status, 'carry_on_shelf') AS carry_status
                 FROM brand_supplier_links bsl
-                JOIN brands b ON b.id = bsl.brand_id AND b.deleted_at IS NULL
-                LEFT JOIN parts p ON p.brand_id = b.id AND p.deleted_at IS NULL
+                JOIN brands b
+                  ON b.id = bsl.brand_id
+                 AND b.is_active = 1
+                 AND b.deleted_at IS NULL
+                LEFT JOIN parts p
+                  ON p.brand_id = b.id
+                 AND p.is_active = 1
+                 AND p.deleted_at IS NULL
                 LEFT JOIN part_supplier_links ps
                     ON ps.part_id = p.id
                    AND ps.supplier_id = bsl.supplier_id
                    AND ps.deleted_at IS NULL
-                WHERE bsl.supplier_id = ? AND bsl.deleted_at IS NULL
+                WHERE bsl.supplier_id = ?
+                  AND bsl.is_active = 1
+                  AND bsl.deleted_at IS NULL
                 GROUP BY b.id, b.name, bsl.carry_status
                 ORDER BY b.name ASC
                 """, arguments: [supplierId])
@@ -2111,12 +2119,14 @@ public final class PartsService: Sendable {
             try Brand.fetchAll(dbConn, sql: """
                 SELECT b.*
                 FROM brands b
-                WHERE b.deleted_at IS NULL
+                WHERE b.is_active = 1
+                  AND b.deleted_at IS NULL
                   AND NOT EXISTS (
                     SELECT 1
                     FROM brand_supplier_links bsl
                     WHERE bsl.brand_id = b.id
                       AND bsl.supplier_id = ?
+                      AND bsl.is_active = 1
                       AND bsl.deleted_at IS NULL
                   )
                 ORDER BY b.name ASC
@@ -2127,15 +2137,91 @@ public final class PartsService: Sendable {
     /// Set the complete list of brands for a supplier.
     /// Links brands in `brandIds`, unlinks any not in the list.
     public func setSupplierBrands(supplierId: Int64, brandIds: Set<Int64>) throws {
-        let currentRows = try getSupplierBrandRows(supplierId: supplierId)
-        let currentIds = Set(currentRows.map(\.brandId))
+        try db.writer.write { dbConn in
+            let supplierExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM suppliers
+                WHERE id = ? AND is_active = 1 AND deleted_at IS NULL
+                """, arguments: [supplierId]) ?? 0) > 0
+            guard supplierExists else { throw PartsError.supplierNotFound(supplierId) }
 
-        for brandId in brandIds.subtracting(currentIds) {
-            try linkBrandToSupplier(brandId: brandId, supplierId: supplierId)
-        }
+            if !brandIds.isEmpty {
+                let placeholders = Array(repeating: "?", count: brandIds.count).joined(separator: ",")
+                let activeBrandCount = try Int.fetchOne(
+                    dbConn,
+                    sql: """
+                        SELECT COUNT(*) FROM brands
+                        WHERE id IN (\(placeholders))
+                          AND is_active = 1
+                          AND deleted_at IS NULL
+                        """,
+                    arguments: StatementArguments(brandIds.sorted())
+                ) ?? 0
+                guard activeBrandCount == brandIds.count else {
+                    let validBrandIds = try Int64.fetchAll(
+                        dbConn,
+                        sql: """
+                            SELECT id FROM brands
+                            WHERE id IN (\(placeholders))
+                              AND is_active = 1
+                              AND deleted_at IS NULL
+                            """,
+                        arguments: StatementArguments(brandIds.sorted())
+                    )
+                    let missingBrandId = brandIds.subtracting(validBrandIds).sorted().first ?? 0
+                    throw PartsError.brandNotFound(missingBrandId)
+                }
+            }
 
-        for brandId in currentIds.subtracting(brandIds) {
-            try unlinkBrandFromSupplier(brandId: brandId, supplierId: supplierId)
+            let currentIds = Set(try Int64.fetchAll(dbConn, sql: """
+                SELECT brand_id FROM brand_supplier_links
+                WHERE supplier_id = ?
+                  AND is_active = 1
+                  AND deleted_at IS NULL
+                """, arguments: [supplierId]))
+
+            for brandId in brandIds.subtracting(currentIds).sorted() {
+                if let existing = try Row.fetchOne(
+                    dbConn,
+                    sql: """
+                        SELECT id FROM brand_supplier_links
+                        WHERE brand_id = ? AND supplier_id = ?
+                        """,
+                    arguments: [brandId, supplierId]
+                ) {
+                    let linkId: Int64 = existing["id"]
+                    try dbConn.execute(
+                        sql: """
+                            UPDATE brand_supplier_links
+                            SET deleted_at = NULL,
+                                is_active = 1,
+                                carry_status = COALESCE(carry_status, 'carry_on_shelf')
+                            WHERE id = ?
+                            """,
+                        arguments: [linkId]
+                    )
+                } else {
+                    try dbConn.execute(
+                        sql: """
+                            INSERT INTO brand_supplier_links (brand_id, supplier_id, is_active, created_at)
+                            VALUES (?, ?, 1, datetime('now'))
+                            """,
+                        arguments: [brandId, supplierId]
+                    )
+                }
+            }
+
+            for brandId in currentIds.subtracting(brandIds).sorted() {
+                try dbConn.execute(
+                    sql: """
+                        UPDATE brand_supplier_links
+                        SET deleted_at = datetime('now'), is_active = 0
+                        WHERE brand_id = ?
+                          AND supplier_id = ?
+                          AND deleted_at IS NULL
+                        """,
+                    arguments: [brandId, supplierId]
+                )
+            }
         }
     }
 

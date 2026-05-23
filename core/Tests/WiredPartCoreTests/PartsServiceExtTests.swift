@@ -236,16 +236,27 @@ struct PartsServiceExtTests {
         let linkedBrandId = try env.parts.createBrand(name: "Already Linked")
         let availableBrandId = try env.parts.createBrand(name: "Available Brand")
         let deletedBrandId = try env.parts.createBrand(name: "Deleted Brand")
+        let inactiveBrandId = try env.parts.createBrand(name: "Inactive Brand")
+        let inactiveLinkBrandId = try env.parts.createBrand(name: "Inactive Link Brand")
         try env.parts.linkBrandToSupplier(brandId: linkedBrandId, supplierId: supplierId)
+        try env.parts.linkBrandToSupplier(brandId: inactiveLinkBrandId, supplierId: supplierId)
         try env.db.writer.write { db in
             try db.execute(
                 sql: "UPDATE brands SET deleted_at = datetime('now') WHERE id = ?",
                 arguments: [deletedBrandId]
             )
+            try db.execute(
+                sql: "UPDATE brands SET is_active = 0 WHERE id = ?",
+                arguments: [inactiveBrandId]
+            )
+            try db.execute(
+                sql: "UPDATE brand_supplier_links SET is_active = 0 WHERE brand_id = ? AND supplier_id = ?",
+                arguments: [inactiveLinkBrandId, supplierId]
+            )
         }
 
         let availableBrands = try env.parts.listBrandsAvailableForSupplier(supplierId: supplierId)
-        #expect(availableBrands.map(\.id) == [availableBrandId])
+        #expect(availableBrands.compactMap(\.id) == [availableBrandId, inactiveLinkBrandId])
     }
 
     @Test("Part-supplier link")
