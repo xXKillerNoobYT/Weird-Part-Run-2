@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import CryptoKit
 
 /// Parts & Inventory Service — full CRUD for the parts hierarchy, catalog,
 /// brands, suppliers, pricing, stock, forecasting, companions, and alternatives.
@@ -6019,7 +6020,12 @@ public final class PartsService: Sendable {
                     columns: parseImportCSVLine(trimmed)
                 )
             }
-        return try previewPartsImportRows(rows, emptyDescription: "CSV file is empty or has no data rows.")
+        var preview = try previewPartsImportRows(rows, emptyDescription: "CSV file is empty or has no data rows.")
+        preview.source = PartsImportSourceMetadata(
+            sourceKind: "csv",
+            sourceHash: importSourceHash(Data(csv.utf8))
+        )
+        return preview
     }
 
     func previewPartsImportRows(_ rows: [PartsImportTabularRow], emptyDescription: String) throws -> PartsImportPreview {
@@ -6306,6 +6312,12 @@ public final class PartsService: Sendable {
             return "{}"
         }
         return json
+    }
+
+    func importSourceHash(_ data: Data) -> String {
+        let digest = SHA256.hash(data: data)
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        return "sha256:\(hex)"
     }
 
     private func parseImportCSVLine(_ line: String) -> [String] {
