@@ -1037,4 +1037,62 @@ struct ChatServiceTests {
         }
         #expect(stored == msg2, "markRead must not move the read pointer backwards")
     }
+
+    // MARK: - Supplier channel membership security
+
+    @Test("listSupplierChannels hides supplier channels after membership is removed")
+    func testListSupplierChannelsRequiresActiveMembership() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Hidden Supplier Membership")
+        let memberId = try env.auth.createUser(displayName: "Removed Supplier Member", pin: "6789", email: "removed-supplier@test.com")
+        let channelId = try env.chat.createSupplierChannel(
+            name: "Hidden Supplier Channel",
+            supplierId: supplierId,
+            supplierDisplayName: "Hidden Supplier Membership",
+            contactId: nil,
+            role: nil,
+            createdBy: env.adminUserId
+        )
+
+        try env.chat.addUserToSupplierChannel(channelId: channelId, userId: memberId)
+        #expect(try env.chat.listSupplierChannels(userId: memberId).contains { $0.channelId == channelId })
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE chat_channel_members
+                SET left_at = datetime('now')
+                WHERE channel_id = ? AND user_id = ?
+                """, arguments: [channelId, memberId])
+        }
+
+        let channelsAfterRemoval = try env.chat.listSupplierChannels(userId: memberId)
+        #expect(channelsAfterRemoval.contains { $0.channelId == channelId } == false,
+                "Supplier channel lists must not expose channels to users whose membership has ended")
+    }
+
+    @Test("listSupplierChannelsForJob requires active channel membership")
+    func testListSupplierChannelsForJobRequiresActiveMembership() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SUP-MEMBERSHIP")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Job Supplier Membership")
+        let outsiderId = try env.auth.createUser(displayName: "Supplier Job Outsider", pin: "7890", email: "supplier-outsider@test.com")
+        let channelId = try env.chat.createSupplierChannel(
+            name: "Job Supplier Private Thread",
+            supplierId: supplierId,
+            supplierDisplayName: "Job Supplier Membership",
+            contactId: nil,
+            role: nil,
+            createdBy: env.adminUserId,
+            jobId: jobId
+        )
+        _ = try env.chat.sendSupplierMessage(channelId: channelId, senderId: env.adminUserId, content: "Private job supplier note", direction: "outbound")
+
+        let outsiderChannels = try env.chat.listSupplierChannelsForJob(jobId: jobId, userId: outsiderId)
+        #expect(outsiderChannels.contains { $0.channelId == channelId } == false,
+                "Job supplier channel lists must not leak private channel rows or unread counts to non-members")
+
+        let adminChannels = try env.chat.listSupplierChannelsForJob(jobId: jobId, userId: env.adminUserId)
+        #expect(adminChannels.contains { $0.channelId == channelId },
+                "Active members should still see their job-linked supplier channels")
+    }
 }

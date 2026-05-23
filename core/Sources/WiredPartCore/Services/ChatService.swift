@@ -106,7 +106,9 @@ public final class ChatService: Sendable {
                         WHERE cm.deleted_at IS NULL
                           AND cm.id > COALESCE(
                             (SELECT crr.last_read_message_id FROM chat_read_receipts crr
-                             WHERE crr.channel_id = cm.channel_id AND crr.user_id = ?),
+                             WHERE crr.channel_id = cm.channel_id
+                               AND crr.user_id = ?
+                               AND crr.deleted_at IS NULL),
                             0
                           )
                         GROUP BY cm.channel_id
@@ -159,7 +161,9 @@ public final class ChatService: Sendable {
                     WHERE cm.deleted_at IS NULL
                       AND cm.id > COALESCE(
                         (SELECT crr.last_read_message_id FROM chat_read_receipts crr
-                         WHERE crr.channel_id = cm.channel_id AND crr.user_id = ?),
+                         WHERE crr.channel_id = cm.channel_id
+                           AND crr.user_id = ?
+                           AND crr.deleted_at IS NULL),
                         0
                       )
                     """, arguments: [userId, userId])
@@ -1399,14 +1403,24 @@ public final class ChatService: Sendable {
                        (SELECT MAX(created_at) FROM chat_messages WHERE channel_id = cc.id AND deleted_at IS NULL) AS last_message_at,
                        (SELECT COUNT(*) FROM chat_messages cm
                         WHERE cm.channel_id = cc.id AND cm.deleted_at IS NULL
-                        AND cm.created_at > COALESCE(
-                            (SELECT read_at FROM chat_read_receipts WHERE channel_id = cc.id AND user_id = ?), '1970-01-01'
-                        )) AS unread_count
+                          AND cm.id > COALESCE(
+                              (SELECT crr.last_read_message_id
+                               FROM chat_read_receipts crr
+                               WHERE crr.channel_id = cc.id
+                                 AND crr.user_id = ?
+                                 AND crr.deleted_at IS NULL), 0
+                          )) AS unread_count
                 FROM chat_channels cc
-                JOIN chat_channel_members ccm ON ccm.channel_id = cc.id AND ccm.user_id = ?
+                JOIN chat_channel_members ccm
+                    ON ccm.channel_id = cc.id
+                   AND ccm.user_id = ?
+                   AND ccm.left_at IS NULL
+                   AND ccm.deleted_at IS NULL
                 JOIN supplier_channel_bridges scb ON scb.channel_id = cc.id AND scb.deleted_at IS NULL
                 JOIN suppliers s ON s.id = scb.supplier_id AND s.deleted_at IS NULL
-                WHERE cc.channel_type = 'supplier' AND cc.deleted_at IS NULL
+                WHERE cc.channel_type = 'supplier'
+                  AND cc.is_active = 1
+                  AND cc.deleted_at IS NULL
                 ORDER BY last_message_at DESC NULLS LAST
                 """, arguments: [userId, userId])
 
@@ -1491,15 +1505,27 @@ public final class ChatService: Sendable {
                        (SELECT MAX(created_at) FROM chat_messages WHERE channel_id = cc.id AND deleted_at IS NULL) AS last_message_at,
                        (SELECT COUNT(*) FROM chat_messages cm
                         WHERE cm.channel_id = cc.id AND cm.deleted_at IS NULL
-                        AND cm.created_at > COALESCE(
-                            (SELECT read_at FROM chat_read_receipts WHERE channel_id = cc.id AND user_id = ?), '1970-01-01'
-                        )) AS unread_count
+                          AND cm.id > COALESCE(
+                              (SELECT crr.last_read_message_id
+                               FROM chat_read_receipts crr
+                               WHERE crr.channel_id = cc.id
+                                 AND crr.user_id = ?
+                                 AND crr.deleted_at IS NULL), 0
+                          )) AS unread_count
                 FROM chat_channels cc
+                JOIN chat_channel_members ccm
+                    ON ccm.channel_id = cc.id
+                   AND ccm.user_id = ?
+                   AND ccm.left_at IS NULL
+                   AND ccm.deleted_at IS NULL
                 JOIN supplier_channel_bridges scb ON scb.channel_id = cc.id AND scb.deleted_at IS NULL
                 JOIN suppliers s ON s.id = scb.supplier_id AND s.deleted_at IS NULL
-                WHERE cc.channel_type = 'supplier' AND cc.job_id = ? AND cc.deleted_at IS NULL
+                WHERE cc.channel_type = 'supplier'
+                  AND cc.job_id = ?
+                  AND cc.is_active = 1
+                  AND cc.deleted_at IS NULL
                 ORDER BY last_message_at DESC NULLS LAST
-                """, arguments: [userId, jobId])
+                """, arguments: [userId, userId, jobId])
 
             return rows.map { row in
                 SupplierChannelRow(
