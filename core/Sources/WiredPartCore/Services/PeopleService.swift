@@ -1814,6 +1814,9 @@ public final class PeopleService: Sendable {
                 SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [createdBy]) ?? 0) > 0
             guard userExists else { throw PeopleError.userNotFound(createdBy) }
+            // Intentionally validate parent/user tombstones before permission gating so
+            // this write path preserves the PeopleError semantics covered by the
+            // service tests; do not reorder without updating those API guarantees.
             try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_people")
             try dbConn.execute(sql: """
                 INSERT INTO customer_communications (customer_id, comm_type, content, created_by)
@@ -1939,6 +1942,9 @@ public final class PeopleService: Sendable {
                 SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [createdBy]) ?? 0) > 0
             guard userExists else { throw PeopleError.userNotFound(createdBy) }
+            // Intentionally validate parent/user tombstones before permission gating so
+            // this write path preserves the PeopleError semantics covered by the
+            // service tests; do not reorder without updating those API guarantees.
             try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_people")
             try dbConn.execute(sql: """
                 INSERT INTO contractor_notes (contractor_id, content, created_by)
