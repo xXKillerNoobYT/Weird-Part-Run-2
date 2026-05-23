@@ -1599,6 +1599,43 @@ struct SchedulingServiceTests {
         #expect(deletedAt != nil)
     }
 
+    @Test("cancelSubcontractorSchedule frees the job, subcontractor, and date for rescheduling")
+    func testCancelSubcontractorScheduleAllowsRescheduleSameSlot() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let gcId = try seedSchedulingContractor(env, contactName: "Reusable Sub", companyName: "Reusable Co")
+        let cancelledScheduleId = try env.scheduling.createSubcontractorSchedule(
+            jobId: jobId,
+            gcId: gcId,
+            scheduledDate: "2026-09-15",
+            arrivalTime: nil,
+            departureTime: nil,
+            scopeOfWork: nil,
+            status: "scheduled",
+            notes: nil,
+            createdBy: nil
+        )
+
+        try env.scheduling.cancelSubcontractorSchedule(id: cancelledScheduleId)
+
+        let newScheduleId = try env.scheduling.createSubcontractorSchedule(
+            jobId: jobId,
+            gcId: gcId,
+            scheduledDate: "2026-09-15",
+            arrivalTime: "10:00",
+            departureTime: nil,
+            scopeOfWork: "Rescheduled work",
+            status: "scheduled",
+            notes: nil,
+            createdBy: env.adminUserId
+        )
+
+        #expect(newScheduleId != cancelledScheduleId)
+        let visibleRows = try env.scheduling.getSubSchedule(date: "2026-09-15")
+        #expect(visibleRows.map(\.id) == [newScheduleId])
+        #expect(visibleRows[0].arrivalTime == "10:00")
+    }
+
     private func seedSchedulingContractor(_ env: E2ETestHelpers.TestEnvironment, contactName: String, companyName: String) throws -> Int64 {
         try env.db.writer.write { db -> Int64 in
             try db.execute(sql: """
