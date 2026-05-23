@@ -52,6 +52,55 @@ struct SchedulingServiceTests {
         #expect(schedule[0].userName == "TestAdmin")
     }
 
+    @Test("getJobDayAssignmentDetail separates selected-job crew, other-job crew, and time-off workers")
+    func testGetJobDayAssignmentDetail() throws {
+        let env = try E2ETestHelpers.setUp()
+        let targetJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-DETAIL-01", name: "Target Detail Job")
+        let otherJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-DETAIL-02", name: "Other Detail Job")
+        let otherUserId = try env.auth.createUser(displayName: "OtherWorker", pin: "1234")
+        let timeOffUserId = try env.auth.createUser(displayName: "TimeOffWorker", pin: "1234")
+
+        _ = try env.scheduling.createScheduleEntry(
+            userId: env.adminUserId,
+            jobId: targetJobId,
+            date: "2026-06-15",
+            startTime: "08:00",
+            endTime: "17:00",
+            notes: "target crew",
+            timeSlot: "full"
+        )
+        _ = try env.scheduling.createScheduleEntry(
+            userId: otherUserId,
+            jobId: otherJobId,
+            date: "2026-06-15",
+            startTime: "08:00",
+            endTime: "12:00",
+            notes: "already booked elsewhere",
+            timeSlot: "am"
+        )
+        let requestId = try env.scheduling.createTimeOffRequest(
+            userId: timeOffUserId,
+            startDate: "2026-06-15",
+            endDate: "2026-06-15",
+            reason: "Vacation"
+        )
+        try env.scheduling.updateTimeOffStatus(
+            id: requestId,
+            status: "approved",
+            approvedBy: env.adminUserId
+        )
+
+        let detail = try env.scheduling.getJobDayAssignmentDetail(jobId: targetJobId, date: "2026-06-15")
+
+        #expect(detail.date == "2026-06-15")
+        #expect(detail.jobId == targetJobId)
+        #expect(detail.assignedToJob.map(\.userName) == ["TestAdmin"])
+        #expect(detail.assignedToOtherJobs.map(\.userName) == ["OtherWorker"])
+        #expect(detail.assignedToOtherJobs.first?.jobName == "Other Detail Job")
+        #expect(detail.timeOffWorkers.map(\.userName) == ["TimeOffWorker"])
+        #expect(detail.timeOffWorkers.first?.reason == "Vacation")
+    }
+
     // MARK: - 2. Submit Time-Off Request
 
     @Test("createTimeOffRequest inserts a pending time-off entry")

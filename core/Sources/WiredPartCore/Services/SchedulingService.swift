@@ -100,6 +100,74 @@ public final class SchedulingService: Sendable {
         }
     }
 
+    /// One worker's scheduling state for a specific job/date detail view.
+    public struct JobDayAssignmentRow: Sendable, Identifiable {
+        public let id: Int64
+        public let userName: String
+        public let jobName: String
+        public let timeSlot: String
+        public let startTime: String?
+        public let endTime: String?
+        public let status: String
+        public let notes: String?
+
+        public init(
+            id: Int64,
+            userName: String,
+            jobName: String,
+            timeSlot: String,
+            startTime: String?,
+            endTime: String?,
+            status: String,
+            notes: String?
+        ) {
+            self.id = id
+            self.userName = userName
+            self.jobName = jobName
+            self.timeSlot = timeSlot
+            self.startTime = startTime
+            self.endTime = endTime
+            self.status = status
+            self.notes = notes
+        }
+    }
+
+    /// Approved time-off row included in a job/date detail view.
+    public struct JobDayTimeOffRow: Sendable, Identifiable {
+        public let id: Int64
+        public let userName: String
+        public let reason: String?
+
+        public init(id: Int64, userName: String, reason: String?) {
+            self.id = id
+            self.userName = userName
+            self.reason = reason
+        }
+    }
+
+    /// Day-by-day scheduling context for a selected job.
+    public struct JobDayAssignmentDetail: Sendable {
+        public let jobId: Int64
+        public let date: String
+        public let assignedToJob: [JobDayAssignmentRow]
+        public let assignedToOtherJobs: [JobDayAssignmentRow]
+        public let timeOffWorkers: [JobDayTimeOffRow]
+
+        public init(
+            jobId: Int64,
+            date: String,
+            assignedToJob: [JobDayAssignmentRow],
+            assignedToOtherJobs: [JobDayAssignmentRow],
+            timeOffWorkers: [JobDayTimeOffRow]
+        ) {
+            self.jobId = jobId
+            self.date = date
+            self.assignedToJob = assignedToJob
+            self.assignedToOtherJobs = assignedToOtherJobs
+            self.timeOffWorkers = timeOffWorkers
+        }
+    }
+
     /// A flex-pool dispatch assignment waiting on manager approval.
     public struct ScheduleChangeApproval: Sendable, Identifiable {
         public let id: Int64
@@ -363,6 +431,101 @@ public final class SchedulingService: Sendable {
             if isTableNotFoundError(error) { return [] }
             throw error
         }
+    }
+
+    /// Get day-by-day crew context for one job/date.
+    ///
+    /// Used by scheduling UI opened from a pipeline job's calendar action so the
+    /// dispatcher can see who is already assigned to this job, who is already
+    /// committed to another job, and who has approved time off for that day.
+    public func getJobDayAssignmentDetail(jobId: Int64, date: String) throws -> JobDayAssignmentDetail {
+        do {
+            return try db.writer.read { dbConn -> JobDayAssignmentDetail in
+                let dispatchSQL = """
+                    SELECT jd.id, jd.shift_start AS start_time, jd.shift_end AS end_time,
+                           jd.status, jd.notes, COALESCE(jd.time_slot, 'full') AS time_slot,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS user_name,
+                           COALESCE(j.job_name, 'Unassigned') AS job_name
+                    FROM job_dispatch jd
+                    LEFT JOIN users u ON u.id = jd.user_id AND u.deleted_at IS NULL
+                    LEFT JOIN jobs j ON j.id = jd.job_id AND j.deleted_at IS NULL
+                    WHERE jd.dispatch_date = ?
+                      AND jd.job_id = ?
+                      AND jd.deleted_at IS NULL
+                    ORDER BY u.display_name ASC, jd.shift_start ASC
+                    """
+                let assignedToJob = try Row.fetchAll(dbConn, sql: dispatchSQL, arguments: [date, jobId])
+                    .map(Self.makeJobDayAssignmentRow)
+
+                let otherDispatchSQL = """
+                    SELECT jd.id, jd.shift_start AS start_time, jd.shift_end AS end_time,
+                           jd.status, jd.notes, COALESCE(jd.time_slot, 'full') AS time_slot,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS user_name,
+                           COALESCE(j.job_name, 'Unassigned') AS job_name
+                    FROM job_dispatch jd
+                    LEFT JOIN users u ON u.id = jd.user_id AND u.deleted_at IS NULL
+                    LEFT JOIN jobs j ON j.id = jd.job_id AND j.deleted_at IS NULL
+                    WHERE jd.dispatch_date = ?
+                      AND jd.job_id != ?
+                      AND jd.deleted_at IS NULL
+                    ORDER BY u.display_name ASC, jd.shift_start ASC
+                    """
+                let assignedToOtherJobs = try Row.fetchAll(dbConn, sql: otherDispatchSQL, arguments: [date, jobId])
+                    .map(Self.makeJobDayAssignmentRow)
+
+                let timeOffSQL = """
+                    SELECT se.id, se.reason,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS user_name
+                    FROM schedule_exceptions se
+                    LEFT JOIN users u ON u.id = se.user_id AND u.deleted_at IS NULL
+                    WHERE se.exception_type = 'time_off'
+                      AND se.exception_date = ?
+                      AND se.is_approved = 1
+                      AND se.deleted_at IS NULL
+                    ORDER BY user_name ASC
+                    """
+                let timeOffWorkers = try Row.fetchAll(dbConn, sql: timeOffSQL, arguments: [date])
+                    .map { row in
+                        JobDayTimeOffRow(
+                            id: row["id"] ?? 0,
+                            userName: row["user_name"] ?? "Unknown",
+                            reason: row["reason"] as String?
+                        )
+                    }
+
+                return JobDayAssignmentDetail(
+                    jobId: jobId,
+                    date: date,
+                    assignedToJob: assignedToJob,
+                    assignedToOtherJobs: assignedToOtherJobs,
+                    timeOffWorkers: timeOffWorkers
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) {
+                return JobDayAssignmentDetail(
+                    jobId: jobId,
+                    date: date,
+                    assignedToJob: [],
+                    assignedToOtherJobs: [],
+                    timeOffWorkers: []
+                )
+            }
+            throw error
+        }
+    }
+
+    private static func makeJobDayAssignmentRow(_ row: Row) -> JobDayAssignmentRow {
+        JobDayAssignmentRow(
+            id: row["id"] ?? 0,
+            userName: row["user_name"] ?? "Unknown",
+            jobName: row["job_name"] ?? "Unassigned",
+            timeSlot: row["time_slot"] ?? "full",
+            startTime: row["start_time"] as String?,
+            endTime: row["end_time"] as String?,
+            status: row["status"] ?? "scheduled",
+            notes: row["notes"] as String?
+        )
     }
 
     // =========================================================================
