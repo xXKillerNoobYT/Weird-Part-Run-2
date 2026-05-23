@@ -23,6 +23,87 @@ private func insertPoweredVote(
     }
 }
 
+// MARK: - Helper: Build a minimal XLSX workbook for import tests
+
+private func makeMinimalXLSX(sheetName: String, rows: [[String]]) throws -> Data {
+    func escapeXML(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&apos;")
+    }
+
+    func columnName(_ index: Int) -> String {
+        var number = index + 1
+        var result = ""
+        while number > 0 {
+            let remainder = (number - 1) % 26
+            result.insert(Character(UnicodeScalar(65 + remainder)!), at: result.startIndex)
+            number = (number - 1) / 26
+        }
+        return result
+    }
+
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("xlsx-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    let xlDirectory = temporaryDirectory.appendingPathComponent("xl", isDirectory: true)
+    let worksheetsDirectory = xlDirectory.appendingPathComponent("worksheets", isDirectory: true)
+    let relationshipsDirectory = xlDirectory.appendingPathComponent("_rels", isDirectory: true)
+    try FileManager.default.createDirectory(at: worksheetsDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: relationshipsDirectory, withIntermediateDirectories: true)
+
+    try """
+    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+      <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+      <Default Extension="xml" ContentType="application/xml"/>
+      <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+      <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+    </Types>
+    """.write(to: temporaryDirectory.appendingPathComponent("[Content_Types].xml"), atomically: true, encoding: .utf8)
+
+    try """
+    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+      <sheets><sheet name="\(escapeXML(sheetName))" sheetId="1" r:id="rId1"/></sheets>
+    </workbook>
+    """.write(to: xlDirectory.appendingPathComponent("workbook.xml"), atomically: true, encoding: .utf8)
+
+    try """
+    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+      <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+    </Relationships>
+    """.write(to: relationshipsDirectory.appendingPathComponent("workbook.xml.rels"), atomically: true, encoding: .utf8)
+
+    let rowXML: String = rows.enumerated().map { rowIndex, values in
+        let cells: String = values.enumerated().map { columnIndex, value in
+            "<c r=\"\(columnName(columnIndex))\(rowIndex + 1)\" t=\"inlineStr\"><is><t>\(escapeXML(value))</t></is></c>"
+        }.joined()
+        return "<row r=\"\(rowIndex + 1)\">\(cells)</row>"
+    }.joined()
+    try """
+    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+      <sheetData>\(rowXML)</sheetData>
+    </worksheet>
+    """.write(to: worksheetsDirectory.appendingPathComponent("sheet1.xml"), atomically: true, encoding: .utf8)
+
+    let zipURL = temporaryDirectory.appendingPathComponent("workbook.xlsx")
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+    process.arguments = ["-q", "-r", zipURL.path, "[Content_Types].xml", "xl"]
+    process.currentDirectoryURL = temporaryDirectory
+    try process.run()
+    process.waitUntilExit()
+    #expect(process.terminationStatus == 0)
+    return try Data(contentsOf: zipURL)
+}
+
 // MARK: - Helper: Seed a qualified co_occurrence_pairs row
 
 private func seedCoOccurrencePair(
@@ -243,6 +324,69 @@ struct PartsServiceAdvancedTests {
         let updated = try #require(try env.parts.findPartByCode("EX-002"))
         #expect(updated.id == existingId)
         #expect(updated.name == "Updated Name")
+    }
+
+    @Test("previewPartsImportXLSX parses first worksheet through shared import pipeline")
+    func testPreviewPartsImportXLSXClassifiesRows() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "Existing Category")
+        _ = try env.parts.createPart(categoryId: catId, name: "Existing Part", code: "XLS-EX-001")
+
+        let xlsx = try makeMinimalXLSX(sheetName: "Import Sheet", rows: [
+            ["name", "code", "category", "brand", "cost_price", "markup_percent", "description", "unit_of_measure", "shelf_location", "bin_location", "part_type"],
+            ["XLSX New Part", "XLS-N-001", "XLS Category", "XLS Brand", "12.50", "25", "xlsx description", "each", "S1", "B1", "material"],
+            ["Existing Replacement", "XLS-EX-001", "Existing Category", "XLS Brand", "9", "10", "", "box", "S2", "B2", "tool"]
+        ])
+
+        var preview = try env.parts.previewPartsImportXLSX(xlsx)
+        #expect(preview.totalRows == 2)
+        #expect(preview.newParts.count == 1)
+        #expect(preview.newParts.first?.name == "XLSX New Part")
+        #expect(preview.newParts.first?.fields["description"] == "xlsx description")
+        #expect(preview.newParts.first?.fields["unit_of_measure"] == "each")
+        #expect(preview.conflicts.count == 1)
+        #expect(preview.conflicts.first?.existingPartCode == "XLS-EX-001")
+        preview.conflicts = preview.conflicts.map { conflict in
+            var editable = conflict
+            editable.resolution = .update
+            return editable
+        }
+
+        let result = try env.parts.commitPartsImportCSV(preview)
+        #expect(result.created == 1)
+        #expect(result.updated == 1)
+        #expect(try env.parts.findPartByCode("XLS-N-001")?.name == "XLSX New Part")
+    }
+
+    @Test("previewPartsImportXLSX reports sheet and spreadsheet row evidence for invalid cells")
+    func testPreviewPartsImportXLSXReportsSheetRowErrors() throws {
+        let env = try E2ETestHelpers.setUp()
+        let xlsx = try makeMinimalXLSX(sheetName: "Bad Numbers", rows: [
+            ["name", "code", "category", "cost_price"],
+            ["Bad Cost", "BC-XLS", "XLS Category", "not-a-number"]
+        ])
+
+        let preview = try env.parts.previewPartsImportXLSX(xlsx)
+
+        #expect(preview.errors.count == 1)
+        #expect(preview.errors.first?.rowNumber == 2)
+        #expect(preview.errors.first?.message.contains("Bad Numbers") == true)
+        #expect(preview.errors.first?.message.contains("row 2") == true)
+        #expect(preview.errors.first?.message.contains("Invalid number for cost_price") == true)
+    }
+
+    @Test("previewPartsImportXLSX rejects missing required headers before writes")
+    func testPreviewPartsImportXLSXRejectsMissingHeaders() throws {
+        let env = try E2ETestHelpers.setUp()
+        let xlsx = try makeMinimalXLSX(sheetName: "Missing Headers", rows: [
+            ["code", "category"],
+            ["NO-NAME", "XLS Category"]
+        ])
+
+        #expect(throws: (any Error).self) {
+            _ = try env.parts.previewPartsImportXLSX(xlsx)
+        }
+        #expect(try env.parts.findPartByCode("NO-NAME") == nil)
     }
 
     // MARK: - approveScheduledDeletion
