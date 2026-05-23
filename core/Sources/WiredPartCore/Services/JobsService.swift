@@ -596,6 +596,10 @@ public final class JobsService: Sendable {
     ) throws -> Int64 {
         guard !jobName.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
         guard !jobNumber.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
+        let notebooks = NotebooksService(db: db)
+        if let createdBy, try notebooks.getTemplates(templateType: "job").isEmpty {
+            try notebooks.seedDefaultTemplates(createdBy: createdBy)
+        }
         return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
@@ -624,7 +628,27 @@ public final class JobsService: Sendable {
                     jobClassification
                 ]
             )
-            return dbConn.lastInsertedRowID
+            let jobId = dbConn.lastInsertedRowID
+            let notebookCreatorId: Int64?
+            if let createdBy {
+                notebookCreatorId = createdBy
+            } else {
+                notebookCreatorId = try Int64.fetchOne(dbConn, sql: """
+                    SELECT id FROM users
+                    WHERE deleted_at IS NULL
+                    ORDER BY id ASC LIMIT 1
+                    """)
+            }
+            if let notebookCreatorId {
+                _ = try notebooks.ensureJobNotebook(
+                    dbConn: dbConn,
+                    jobId: jobId,
+                    jobName: jobName,
+                    jobType: jobType,
+                    createdBy: notebookCreatorId
+                )
+            }
+            return jobId
         }
     }
 

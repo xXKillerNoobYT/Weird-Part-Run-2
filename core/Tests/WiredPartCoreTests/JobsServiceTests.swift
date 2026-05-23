@@ -24,6 +24,23 @@ struct JobsServiceTests {
         #expect(jobs.contains(where: { $0.jobNumber == "J-TEST" }))
     }
 
+    @Test("createJob creates a linked job notebook")
+    func testCreateJobCreatesLinkedNotebook() throws {
+        let env = try E2ETestHelpers.setUp()
+        try env.notebooks.seedDefaultTemplates(createdBy: env.adminUserId)
+
+        let jobId = try env.jobs.createJob(
+            jobNumber: "JN-AUTO-NB",
+            jobName: "Auto Notebook Job",
+            jobType: "residential",
+            createdBy: env.adminUserId
+        )
+
+        let notebooks = try env.notebooks.listNotebooks(notebookType: "job", jobId: jobId)
+        #expect(notebooks.count == 1)
+        #expect(notebooks[0].title.contains("Auto Notebook Job"))
+    }
+
     @Test("listJobs aggregates completed labor and job-linked PO line costs without duplication")
     func testListJobsAggregatesCompletedLaborAndPOLineCosts() throws {
         let env = try E2ETestHelpers.setUp()

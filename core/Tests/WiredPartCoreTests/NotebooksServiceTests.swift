@@ -401,6 +401,84 @@ struct NotebooksServiceTests {
         #expect(noMatch.isEmpty)
     }
 
+    @Test("findBestJobTemplate matches normalized job type category")
+    func testFindBestJobTemplateMatchesJobType() throws {
+        let env = try E2ETestHelpers.setUp()
+        try env.notebooks.seedDefaultTemplates(createdBy: env.adminUserId)
+
+        let template = try env.notebooks.findBestJobTemplate(jobType: "Commercial")
+
+        #expect(template?.name == "Commercial Job")
+        #expect(template?.category == "commercial")
+    }
+
+    @Test("findBestJobTemplate falls back to service template")
+    func testFindBestJobTemplateFallsBackToService() throws {
+        let env = try E2ETestHelpers.setUp()
+        try env.notebooks.seedDefaultTemplates(createdBy: env.adminUserId)
+
+        let template = try env.notebooks.findBestJobTemplate(jobType: "unknown-special")
+
+        #expect(template?.name == "Service Call")
+        #expect(template?.category == "service")
+    }
+
+    @Test("ensureJobNotebook creates one linked notebook with matching template")
+    func testEnsureJobNotebookCreatesFromTemplate() throws {
+        let env = try E2ETestHelpers.setUp()
+        try env.notebooks.seedDefaultTemplates(createdBy: env.adminUserId)
+        let jobId = try env.jobs.createJob(
+            jobNumber: "J-NB-COMMERCIAL",
+            jobName: "Office Buildout",
+            jobType: "commercial",
+            createdBy: env.adminUserId
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: "DELETE FROM notebooks WHERE job_id = ?", arguments: [jobId])
+        }
+
+        let notebookId = try env.notebooks.ensureJobNotebook(
+            jobId: jobId,
+            jobName: "Office Buildout",
+            jobType: "commercial",
+            createdBy: env.adminUserId
+        )
+
+        let detail = try env.notebooks.getNotebookDetail(id: notebookId)
+        #expect(detail.jobId == jobId)
+        #expect(detail.notebookType == "job")
+
+        let templates = try env.notebooks.getTemplates(templateType: "job")
+        let commercial = try #require(templates.first { $0.category == "commercial" })
+        let templateId = try env.db.writer.read { db in
+            try Int64.fetchOne(db, sql: "SELECT template_id FROM notebooks WHERE id = ?", arguments: [notebookId])
+        }
+        #expect(templateId == commercial.id)
+
+        let hierarchy = try env.notebooks.getNotebookHierarchy(notebookId: notebookId)
+        #expect(!hierarchy.groups.isEmpty || !hierarchy.ungroupedSections.isEmpty)
+    }
+
+    @Test("ensureJobNotebook returns existing linked notebook without duplicate")
+    func testEnsureJobNotebookNoDuplicate() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try env.jobs.createJob(
+            jobNumber: "J-NB-DEDUP",
+            jobName: "Job A",
+            jobType: "service",
+            createdBy: env.adminUserId
+        )
+
+        let first = try env.notebooks.ensureJobNotebook(jobId: jobId, jobName: "Job A", jobType: "service", createdBy: env.adminUserId)
+        let second = try env.notebooks.ensureJobNotebook(jobId: jobId, jobName: "Job A", jobType: "service", createdBy: env.adminUserId)
+
+        #expect(first == second)
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM notebooks WHERE job_id = ? AND deleted_at IS NULL", arguments: [jobId]) ?? 0
+        }
+        #expect(count == 1)
+    }
+
     // MARK: - 9. Create From Template (Apply Job Template)
 
     @Test("Apply job template creates groups, sections, and entries")
@@ -531,12 +609,14 @@ struct NotebooksServiceTests {
         )
 
         let job1Notebooks = try env.notebooks.listNotebooks(jobId: job1)
-        #expect(job1Notebooks.count == 1)
-        #expect(job1Notebooks[0].title == "NB for Job 1")
+        #expect(job1Notebooks.count == 2)
+        #expect(job1Notebooks.contains { $0.title == "Job Alpha Notebook" })
+        #expect(job1Notebooks.contains { $0.title == "NB for Job 1" })
 
         let job2Notebooks = try env.notebooks.listNotebooks(jobId: job2)
-        #expect(job2Notebooks.count == 1)
-        #expect(job2Notebooks[0].title == "NB for Job 2")
+        #expect(job2Notebooks.count == 2)
+        #expect(job2Notebooks.contains { $0.title == "Job Beta Notebook" })
+        #expect(job2Notebooks.contains { $0.title == "NB for Job 2" })
     }
 
     // MARK: - 13. Notebook Not Found Throws
