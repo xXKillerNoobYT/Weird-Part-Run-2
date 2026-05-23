@@ -311,13 +311,17 @@ struct IOSAIAssistantPanel: View {
             notebooksListContext: $notebooksListContext,
             settingsContext: $settingsContext
         ))
-        .modifier(FleetPageContextObservers(
+        .modifier(FleetPageContextObserversPrimary(
             fleetDashboardContext: $fleetDashboardContext,
             fleetTrailersContext: $fleetTrailersContext,
-            fleetMaintenanceContext: $fleetMaintenanceContext,
+            fleetMaintenanceContext: $fleetMaintenanceContext
+        ))
+        .modifier(FleetPageContextObserversOps(
             fleetMileageContext: $fleetMileageContext,
             fleetFuelContext: $fleetFuelContext,
-            fleetInspectionsContext: $fleetInspectionsContext,
+            fleetInspectionsContext: $fleetInspectionsContext
+        ))
+        .modifier(FleetPageContextObserversTracking(
             fleetTrackingContext: $fleetTrackingContext,
             fleetTelematicsContext: $fleetTelematicsContext,
             fleetMyTruckContext: $fleetMyTruckContext
@@ -1541,16 +1545,11 @@ private struct FeaturePageContextObserversGroupB: ViewModifier {
 
 
 /// Fleet page observers added for WEI-1112 coverage slices beyond Vehicles.
-private struct FleetPageContextObservers: ViewModifier {
+/// Split into smaller modifiers to keep SwiftUI type-checking bounded.
+private struct FleetPageContextObserversPrimary: ViewModifier {
     @Binding var fleetDashboardContext: String?
     @Binding var fleetTrailersContext: String?
     @Binding var fleetMaintenanceContext: String?
-    @Binding var fleetMileageContext: String?
-    @Binding var fleetFuelContext: String?
-    @Binding var fleetInspectionsContext: String?
-    @Binding var fleetTrackingContext: String?
-    @Binding var fleetTelematicsContext: String?
-    @Binding var fleetMyTruckContext: String?
 
     func body(content: Content) -> some View {
         content
@@ -1566,6 +1565,16 @@ private struct FleetPageContextObservers: ViewModifier {
                 if let ctx = notification.userInfo?["context"] as? String { fleetMaintenanceContext = ctx }
             }
             .onReceive(NotificationCenter.default.publisher(for: .fleetMaintenancePageInactive)) { _ in fleetMaintenanceContext = nil }
+    }
+}
+
+private struct FleetPageContextObserversOps: ViewModifier {
+    @Binding var fleetMileageContext: String?
+    @Binding var fleetFuelContext: String?
+    @Binding var fleetInspectionsContext: String?
+
+    func body(content: Content) -> some View {
+        content
             .onReceive(NotificationCenter.default.publisher(for: .fleetMileagePageActive)) { notification in
                 if let ctx = notification.userInfo?["context"] as? String { fleetMileageContext = ctx }
             }
@@ -1578,6 +1587,16 @@ private struct FleetPageContextObservers: ViewModifier {
                 if let ctx = notification.userInfo?["context"] as? String { fleetInspectionsContext = ctx }
             }
             .onReceive(NotificationCenter.default.publisher(for: .fleetInspectionsPageInactive)) { _ in fleetInspectionsContext = nil }
+    }
+}
+
+private struct FleetPageContextObserversTracking: ViewModifier {
+    @Binding var fleetTrackingContext: String?
+    @Binding var fleetTelematicsContext: String?
+    @Binding var fleetMyTruckContext: String?
+
+    func body(content: Content) -> some View {
+        content
             .onReceive(NotificationCenter.default.publisher(for: .fleetTrackingPageActive)) { notification in
                 if let ctx = notification.userInfo?["context"] as? String { fleetTrackingContext = ctx }
             }
