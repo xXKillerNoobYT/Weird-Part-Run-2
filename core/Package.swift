@@ -22,12 +22,14 @@ let package = Package(
         // `swift test` with "cannot find 'strcmp' in scope" in Swift 6 strict-module mode.
         // Package.resolved is committed to pin every environment to this exact revision.
         .package(url: "https://github.com/duckduckgo/GRDB.swift", exact: "2.4.2-1"),
+        .package(url: "https://github.com/weichsel/ZIPFoundation", from: "0.9.19"),
     ],
     targets: [
         .target(
             name: "WiredPartCore",
             dependencies: [
                 .product(name: "GRDB", package: "GRDB.swift"),
+                .product(name: "ZIPFoundation", package: "ZIPFoundation"),
             ]
         ),
         .testTarget(

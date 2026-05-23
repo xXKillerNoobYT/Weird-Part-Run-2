@@ -5986,15 +5986,31 @@ public final class PartsService: Sendable {
     /// Optional columns: `code`, `brand`, `cost_price`, `markup_percent`,
     /// `description`, `unit_of_measure`, `shelf_location`, `bin_location`,
     /// `part_type`.
+    struct PartsImportTabularRow {
+        let rowNumber: Int
+        let columns: [String]
+    }
+
     public func previewPartsImportCSV(_ csv: String) throws -> PartsImportPreview {
-        let lines = csv.components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        guard lines.count > 1 else {
-            throw PartsError.invalidInput("CSV file is empty or has no data rows.")
+        let rows = csv.components(separatedBy: .newlines)
+            .enumerated()
+            .compactMap { offset, line -> PartsImportTabularRow? in
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return nil }
+                return PartsImportTabularRow(
+                    rowNumber: offset + 1,
+                    columns: parseImportCSVLine(trimmed)
+                )
+            }
+        return try previewPartsImportRows(rows, emptyDescription: "CSV file is empty or has no data rows.")
+    }
+
+    func previewPartsImportRows(_ rows: [PartsImportTabularRow], emptyDescription: String) throws -> PartsImportPreview {
+        guard rows.count > 1 else {
+            throw PartsError.invalidInput(emptyDescription)
         }
 
-        let headers = parseImportCSVLine(lines[0]).map { $0.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) }
+        let headers = rows[0].columns.map { $0.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) }
         guard let nameIdx = headers.firstIndex(of: "name") else {
             throw PartsError.invalidInput("CSV must have a 'name' column.")
         }
@@ -6004,10 +6020,10 @@ public final class PartsService: Sendable {
         let codeIdx = headers.firstIndex(of: "code")
         let brandIdx = headers.firstIndex(of: "brand")
 
-        var preview = PartsImportPreview(totalRows: lines.count - 1)
-        for lineIdx in 1..<lines.count {
-            let rowNumber = lineIdx + 1
-            let columns = parseImportCSVLine(lines[lineIdx])
+        var preview = PartsImportPreview(totalRows: rows.count - 1)
+        for row in rows.dropFirst() {
+            let rowNumber = row.rowNumber
+            let columns = row.columns
             func value(at index: Int?) -> String? {
                 guard let index, index < columns.count else { return nil }
                 let trimmed = columns[index].trimmingCharacters(in: .whitespacesAndNewlines)
