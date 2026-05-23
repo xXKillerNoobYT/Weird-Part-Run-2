@@ -41,8 +41,12 @@ public struct StockMovement: Codable, FetchableRecord, MutablePersistableRecord,
             .consume, .pull, .usage, .jobPull
         ]
 
+        /// SQL literal list for static movement-type `IN (...)` clauses.
+        /// Empty input deliberately produces a no-match list instead of invalid
+        /// `IN ()` SQL so callers can safely compose from filtered type arrays.
         public static func sqlList(_ types: [MovementType]) -> String {
-            "(" + types.map { "'\($0.rawValue)'" }.joined(separator: ", ") + ")"
+            guard !types.isEmpty else { return "(NULL)" }
+            return "(" + types.map { "'\($0.rawValue)'" }.joined(separator: ", ") + ")"
         }
     }
     public var id: Int64?

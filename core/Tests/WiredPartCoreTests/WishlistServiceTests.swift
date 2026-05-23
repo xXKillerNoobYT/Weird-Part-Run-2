@@ -543,7 +543,11 @@ struct WishlistServiceTests {
                 WHERE part_id = ? AND vehicle_id = ? AND stock_type = 'truck_stock'
                 """, arguments: [partId, vehicleId]) ?? 0
             let wishlistCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM wishlist_items WHERE part_id = ?", arguments: [partId]) ?? 0
-            let movementCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM stock_movements WHERE part_id = ? AND movement_type = '\(StockMovement.MovementType.restockFromShop.rawValue)'", arguments: [partId]) ?? 0
+            let movementCount = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM stock_movements WHERE part_id = ? AND movement_type = ?",
+                arguments: [partId, StockMovement.MovementType.restockFromShop.rawValue]
+            ) ?? 0
             return (shopQty, warehouseQty, truckStockQty, truckQty, wishlistCount, movementCount)
         }
 

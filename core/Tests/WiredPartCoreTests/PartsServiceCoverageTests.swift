@@ -747,21 +747,21 @@ struct PartsServiceCoverageTests {
         let env = try E2ETestHelpers.setUp()
         let catId = try E2ETestHelpers.seedCategory(env, name: "ForecastMovementTypes")
         let partId = try E2ETestHelpers.seedPart(env, name: "Forecast Movement Type Part", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-FORECAST", name: "Forecast Regression Job")
         _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 100)
 
-        try env.db.writer.write { db in
-            try db.execute(sql: """
-                INSERT INTO stock_movements
-                    (part_id, qty, from_location_type, from_location_id,
-                     to_location_type, to_location_id, movement_type,
-                     reason, performed_by, created_at)
-                VALUES (?, 12, 'warehouse', 1, 'job', 1, ?, 'Forecast regression', ?, datetime('now'))
-                """, arguments: [
-                    partId,
-                    StockMovement.MovementType.jobPull.rawValue,
-                    env.adminUserId
-                ])
-        }
+        try env.warehouse.createMovement(
+            partId: partId,
+            qty: 12,
+            fromLocationType: "warehouse",
+            fromLocationId: 1,
+            toLocationType: "job",
+            toLocationId: jobId,
+            movementType: StockMovement.MovementType.jobPull.rawValue,
+            reason: "Forecast regression",
+            performedBy: env.adminUserId,
+            jobId: jobId
+        )
 
         try env.parts.recalculateForecasts()
 
