@@ -30,6 +30,7 @@ extension PartsService {
         }
         preview.source = PartsImportSourceMetadata(
             sourceKind: "xlsx",
+            sheetName: workbook.sheetName,
             sourceHash: importSourceHash(data)
         )
         return preview

@@ -5970,12 +5970,14 @@ public final class PartsService: Sendable {
     public struct PartsImportSourceMetadata: Sendable {
         public var sourceKind: String
         public var filename: String?
+        public var sheetName: String?
         public var sourceHash: String?
         public var userId: Int64?
 
-        public init(sourceKind: String, filename: String? = nil, sourceHash: String? = nil, userId: Int64? = nil) {
+        public init(sourceKind: String, filename: String? = nil, sheetName: String? = nil, sourceHash: String? = nil, userId: Int64? = nil) {
             self.sourceKind = sourceKind
             self.filename = filename
+            self.sheetName = sheetName
             self.sourceHash = sourceHash
             self.userId = userId
         }
@@ -5988,6 +5990,20 @@ public final class PartsService: Sendable {
         public var errors: [PartsImportError] = []
         public var totalRows: Int = 0
         public var source: PartsImportSourceMetadata?
+
+        public init(
+            newParts: [PartsImportParsedRow] = [],
+            conflicts: [PartsImportConflict] = [],
+            errors: [PartsImportError] = [],
+            totalRows: Int = 0,
+            source: PartsImportSourceMetadata? = nil
+        ) {
+            self.newParts = newParts
+            self.conflicts = conflicts
+            self.errors = errors
+            self.totalRows = totalRows
+            self.source = source
+        }
     }
 
     /// Result of an atomic import commit.

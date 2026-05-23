@@ -69,7 +69,7 @@ struct PartsImportExportPage: View {
         }
         .fileImporter(
             isPresented: $showFileImporter,
-            allowedContentTypes: [.commaSeparatedText, .plainText],
+            allowedContentTypes: importAllowedContentTypes,
             allowsMultipleSelection: false
         ) { result in
             switch result {
@@ -87,6 +87,7 @@ struct PartsImportExportPage: View {
                 ImportPreviewSheet(
                     preview: $importPreview,
                     onConfirm: { Task { await executeImport() } },
+                    onApplyMapping: { reapplyImportMapping($0) },
                     onCancel: {
                         importPreview = nil
                         activeSheet = nil
@@ -288,10 +289,10 @@ struct PartsImportExportPage: View {
                         .foregroundStyle(.orange)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Import Parts from CSV")
+                        Text("Import Parts from CSV or Excel")
                             .font(.subheadline)
                             .fontWeight(.medium)
-                        Text("Import parts with duplicate detection and conflict resolution.")
+                        Text("Choose CSV/XLSX, review detected mappings, then resolve duplicates before commit.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -303,12 +304,25 @@ struct PartsImportExportPage: View {
                     Button {
                         showFileImporter = true
                     } label: {
-                        Label("Choose CSV File", systemImage: "doc.badge.plus")
+                        Label("Choose CSV or XLSX File", systemImage: "doc.badge.plus")
                             .fontWeight(.semibold)
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
                     .frame(minHeight: 44)
+
+                    HStack(spacing: 8) {
+                        Image(systemName: "doc.richtext")
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        Text("PDF import is planned and will unlock after the PDF/OCR backend lands.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(10)
+                    .background(Color.secondary.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
 
                 case .importing:
                     ProgressView("Importing...")
@@ -360,7 +374,7 @@ struct PartsImportExportPage: View {
     @ViewBuilder
     private var infoSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("CSV Format")
+            Text("CSV/XLSX Format")
                 .font(.headline)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -399,6 +413,16 @@ struct PartsImportExportPage: View {
         .padding()
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    // MARK: - Import Types
+
+    private var importAllowedContentTypes: [UTType] {
+        var types: [UTType] = [.commaSeparatedText, .plainText]
+        if let xlsx = UTType(filenameExtension: "xlsx") {
+            types.append(xlsx)
+        }
+        return types
     }
 
     // MARK: - Data Loading
@@ -455,7 +479,7 @@ struct PartsImportExportPage: View {
             await MainActor.run { exportStatus = .idle }
         } catch {
             await MainActor.run {
-                exportStatus = .error(userFriendlyError(error, context: "import parts"))
+                exportStatus = .error(userFriendlyError(error, context: "export parts"))
             }
         }
     }
@@ -465,84 +489,61 @@ struct PartsImportExportPage: View {
     private func parseImportFile(url: URL) async {
         importStatus = .importing
         do {
+            guard let service = appCore.partsService else {
+                await MainActor.run { importStatus = .error("Validation error: parts service is not available.") }
+                return
+            }
+
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
+            let filename = url.lastPathComponent
+            let ext = url.pathExtension.lowercased()
+            if ext == "xlsx" {
+                let data = try Data(contentsOf: url)
+                var servicePreview = try service.previewPartsImportXLSX(data)
+                servicePreview.source?.filename = filename
+                let preview = ImportPreview(
+                    servicePreview: servicePreview,
+                    sourceKind: .xlsx,
+                    filename: filename,
+                    sheetName: servicePreview.source?.sheetName,
+                    sourceColumns: canonicalColumns(from: servicePreview),
+                    columnMappings: canonicalColumns(from: servicePreview).map { ColumnMapping(sourceColumn: $0, target: ColumnMappingTarget(rawValue: $0) ?? .ignore, confidence: .exact) },
+                    sourceRows: [],
+                    mappingError: nil
+                )
+                await MainActor.run {
+                    self.importPreview = preview
+                    self.activeSheet = .importPreview
+                    self.importStatus = .idle
+                }
+                return
+            }
+
+            guard ext == "csv" || ext == "txt" || ext.isEmpty else {
+                await MainActor.run { importStatus = .error("Parse error: choose a CSV or XLSX file. PDF import is planned but not available yet.") }
+                return
+            }
+
             let content = try String(contentsOf: url, encoding: .utf8)
-            let lines = content.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-            guard lines.count > 1 else {
-                await MainActor.run { importStatus = .error("CSV file is empty or has no data rows.") }
+            let sourceRows = parseCSVRows(content)
+            guard sourceRows.count > 1 else {
+                await MainActor.run { importStatus = .error("Parse error: CSV file is empty or has no data rows.") }
                 return
             }
-
-            let headers = parseCSVLine(lines[0]).map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
-            guard let nameIdx = headers.firstIndex(of: "name") else {
-                await MainActor.run { importStatus = .error("CSV must have a 'name' column.") }
-                return
-            }
-
-            let codeIdx = headers.firstIndex(of: "code")
-            let catIdx = headers.firstIndex(of: "category")
-            let brandIdx = headers.firstIndex(of: "brand")
-
-            guard let service = appCore.partsService else {
-                loadError = "Parts service not available"
-                await MainActor.run { importStatus = .error("Parts service not available") }
-                return
-            }
-
-            var preview = ImportPreview(totalRows: lines.count - 1)
-
-            for lineIdx in 1..<lines.count {
-                let fields = parseCSVLine(lines[lineIdx])
-                guard fields.count > nameIdx else {
-                    preview.errors.append(ImportError(rowNumber: lineIdx + 1, message: "Not enough columns"))
-                    continue
-                }
-
-                let partName = fields[nameIdx].trimmingCharacters(in: .whitespaces)
-                guard !partName.isEmpty else {
-                    preview.errors.append(ImportError(rowNumber: lineIdx + 1, message: "Empty name"))
-                    continue
-                }
-
-                let code = codeIdx.flatMap { $0 < fields.count ? fields[$0].trimmingCharacters(in: .whitespaces) : nil }
-                let category = catIdx.flatMap { $0 < fields.count ? fields[$0].trimmingCharacters(in: .whitespaces) : nil }
-                let brand = brandIdx.flatMap { $0 < fields.count ? fields[$0].trimmingCharacters(in: .whitespaces) : nil }
-
-                // Build fields map for all other columns
-                var fieldsMap: [String: String] = [:]
-                for (i, header) in headers.enumerated() {
-                    guard i < fields.count else { break }
-                    if header != "name" && header != "code" && header != "category" && header != "brand" {
-                        let val = fields[i].trimmingCharacters(in: .whitespaces)
-                        if !val.isEmpty { fieldsMap[header] = val }
-                    }
-                }
-
-                let parsed = ParsedRow(name: partName, code: code, category: category, brand: brand, fields: fieldsMap)
-
-                // Duplicate detection: by code first, then by name
-                var existingPart: Part?
-                do {
-                    if let c = code, !c.isEmpty {
-                        existingPart = try service.findPartByCode(c)
-                    }
-                    if existingPart == nil {
-                        existingPart = try service.findPartByName(partName)
-                    }
-                } catch {
-                    preview.errors.append(ImportError(rowNumber: lineIdx + 1, message: "Duplicate check failed: \(error.localizedDescription)"))
-                    continue
-                }
-
-                if let existing = existingPart {
-                    preview.conflicts.append(ConflictRow(parsedRow: parsed, existingPart: existing))
-                } else {
-                    preview.newParts.append(parsed)
-                }
-            }
-
+            let sourceColumns = sourceRows[0].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            var preview = ImportPreview(
+                servicePreview: PartsService.PartsImportPreview(totalRows: sourceRows.count - 1),
+                sourceKind: .csv,
+                filename: filename,
+                sheetName: nil,
+                sourceColumns: sourceColumns,
+                columnMappings: inferColumnMappings(sourceColumns),
+                sourceRows: sourceRows,
+                mappingError: nil
+            )
+            try applyMapping(to: &preview, service: service)
             await MainActor.run {
                 self.importPreview = preview
                 self.activeSheet = .importPreview
@@ -550,12 +551,92 @@ struct PartsImportExportPage: View {
             }
         } catch {
             await MainActor.run {
-                importStatus = .error(userFriendlyError(error, context: "read file"))
+                importStatus = .error("Parse error: \(userFriendlyError(error, context: "read import file"))")
             }
         }
     }
 
-    // MARK: - Import Execution
+    private func applyMapping(to preview: inout ImportPreview, service: PartsService) throws {
+        guard preview.sourceKind == .csv else { return }
+        let selectedTargets = preview.columnMappings.filter { $0.target != .ignore }.map(\.target)
+        let missingRequired = ColumnMappingTarget.required.filter { !selectedTargets.contains($0) }
+        guard missingRequired.isEmpty else {
+            preview.mappingError = "Mapping error: map a source column to \(missingRequired.map(\.displayName).joined(separator: " and "))."
+            preview.servicePreview = PartsService.PartsImportPreview(totalRows: max(0, preview.sourceRows.count - 1))
+            return
+        }
+
+        let duplicateTargets = Dictionary(grouping: selectedTargets, by: { $0 }).filter { $0.value.count > 1 }.map(\.key)
+        guard duplicateTargets.isEmpty else {
+            preview.mappingError = "Mapping error: each canonical field can only be mapped once (duplicate: \(duplicateTargets.map(\.displayName).joined(separator: ", ")))."
+            preview.servicePreview = PartsService.PartsImportPreview(totalRows: max(0, preview.sourceRows.count - 1))
+            return
+        }
+
+        preview.mappingError = nil
+        let selectedMappings = preview.columnMappings.filter { $0.target != .ignore }
+        let header = selectedMappings.map { $0.target.rawValue }
+        let rows = preview.sourceRows.dropFirst().map { row in
+            selectedMappings.map { mapping -> String in
+                guard let sourceIndex = preview.sourceColumns.firstIndex(of: mapping.sourceColumn), sourceIndex < row.count else { return "" }
+                return row[sourceIndex]
+            }
+        }
+        var csv = encodeCSVRow(header)
+        for row in rows {
+            csv += "\n" + encodeCSVRow(row)
+        }
+        var servicePreview = try service.previewPartsImportCSV(csv)
+        servicePreview.source?.filename = preview.filename
+        preview.servicePreview = servicePreview
+    }
+
+    private func reapplyImportMapping(_ updatedPreview: ImportPreview) {
+        guard let service = appCore.partsService else {
+            importPreview?.mappingError = "Validation error: parts service is not available."
+            return
+        }
+        var preview = updatedPreview
+        do {
+            try applyMapping(to: &preview, service: service)
+        } catch {
+            preview.mappingError = "Validation error: \(userFriendlyError(error, context: "preview mapped import"))"
+        }
+        importPreview = preview
+    }
+
+    private func canonicalColumns(from preview: PartsService.PartsImportPreview) -> [String] {
+        var columns: [String] = ["name", "category"]
+        for row in preview.newParts {
+            if row.code != nil { columns.append("code") }
+            if row.brand != nil { columns.append("brand") }
+            columns.append(contentsOf: row.fields.keys)
+        }
+        for conflict in preview.conflicts {
+            let row = conflict.parsedRow
+            if row.code != nil { columns.append("code") }
+            if row.brand != nil { columns.append("brand") }
+            columns.append(contentsOf: row.fields.keys)
+        }
+        return Array(Set(columns)).sorted()
+    }
+
+    private func inferColumnMappings(_ columns: [String]) -> [ColumnMapping] {
+        columns.map { column in
+            let normalized = normalizeColumn(column)
+            if let exact = ColumnMappingTarget.allCases.first(where: { normalizeColumn($0.rawValue) == normalized }) {
+                return ColumnMapping(sourceColumn: column, target: exact, confidence: .exact)
+            }
+            if let alias = ColumnMappingTarget.allCases.first(where: { $0.aliases.map(normalizeColumn).contains(normalized) }) {
+                return ColumnMapping(sourceColumn: column, target: alias, confidence: .alias)
+            }
+            return ColumnMapping(sourceColumn: column, target: .ignore, confidence: .unmapped)
+        }
+    }
+
+    private func normalizeColumn(_ value: String) -> String {
+        value.lowercased().filter { $0.isLetter || $0.isNumber }
+    }
 
     private func executeImport() async {
         guard let preview = importPreview,
@@ -564,110 +645,74 @@ struct PartsImportExportPage: View {
             activeSheet = nil
             importStatus = .importing
         }
-        var created = 0, updated = 0, skipped = 0, errors = 0
-
-        // Create new parts
-        for row in preview.newParts {
-            do {
-                let catId = try service.findOrCreateCategory(name: row.category ?? "Uncategorized")
-                var brandId: Int64? = nil
-                if let bName = row.brand, !bName.isEmpty {
-                    brandId = try service.findOrCreateBrand(name: bName)
-                }
-
-                let cost = row.fields["cost_price"].flatMap(Double.init) ?? 0
-                let markup = row.fields["markup_percent"].flatMap(Double.init) ?? 0
-                let partType = row.fields["part_type"] ?? "general"
-                let desc = row.fields["description"]
-                let uom = row.fields["unit_of_measure"]
-                let shelf = row.fields["shelf_location"]
-                let bin = row.fields["bin_location"]
-
-                _ = try service.createPart(
-                    categoryId: catId,
-                    name: row.name,
-                    partType: partType,
-                    code: row.code,
-                    description: desc,
-                    brandId: brandId,
-                    unitOfMeasure: uom,
-                    companyCostPrice: cost,
-                    companyMarkupPercent: markup,
-                    shelfLocation: shelf,
-                    binLocation: bin
-                )
-                created += 1
-            } catch {
-                errors += 1
+        do {
+            guard preview.mappingError == nil else {
+                await MainActor.run { importStatus = .error(preview.mappingError ?? "Mapping error: review source column mappings.") }
+                return
+            }
+            guard preview.servicePreview.errors.isEmpty else {
+                let first = preview.servicePreview.errors[0]
+                await MainActor.run { importStatus = .error("Validation error: row \(first.rowNumber): \(first.message)") }
+                return
+            }
+            let result = try service.commitPartsImportCSV(preview.servicePreview)
+            await MainActor.run {
+                importPreview = nil
+                var msg = "Created \(result.created)"
+                if result.updated > 0 { msg += ", Updated \(result.updated)" }
+                if result.skipped > 0 { msg += ", Skipped \(result.skipped)" }
+                importStatus = .success(msg)
+            }
+            await loadStats()
+        } catch {
+            await MainActor.run {
+                importStatus = .error("Conflict/import error: \(userFriendlyError(error, context: "commit parts import"))")
             }
         }
-
-        // Update conflicts marked as "update"
-        for conflict in preview.conflicts where conflict.resolution == .update {
-            do {
-                guard let existingId = conflict.existingPart.id else { continue }
-                let row = conflict.parsedRow
-
-                var catId: Int64? = nil
-                if let catName = row.category, !catName.isEmpty {
-                    catId = try service.findOrCreateCategory(name: catName)
-                }
-                var brandId: Int64? = nil
-                if let bName = row.brand, !bName.isEmpty {
-                    brandId = try service.findOrCreateBrand(name: bName)
-                }
-
-                try service.updatePart(
-                    id: existingId,
-                    name: row.name,
-                    code: row.code,
-                    categoryId: catId,
-                    brandId: brandId,
-                    unitOfMeasure: row.fields["unit_of_measure"],
-                    companyCostPrice: row.fields["cost_price"].flatMap(Double.init),
-                    companyMarkupPercent: row.fields["markup_percent"].flatMap(Double.init),
-                    shelfLocation: row.fields["shelf_location"],
-                    binLocation: row.fields["bin_location"]
-                )
-                updated += 1
-            } catch {
-                errors += 1
-            }
-        }
-
-        skipped = preview.conflicts.filter { $0.resolution == .skip || $0.resolution == .ask }.count
-
-        await MainActor.run {
-            importPreview = nil
-            var msg = "Created \(created)"
-            if updated > 0 { msg += ", Updated \(updated)" }
-            if skipped > 0 { msg += ", Skipped \(skipped)" }
-            if errors > 0 { msg += ", \(errors) error(s)" }
-            importStatus = .success(msg)
-        }
-        await loadStats()
     }
 
     // MARK: - CSV Helpers
 
-    private func parseCSVLine(_ line: String) -> [String] {
-        var fields: [String] = []
-        var current = ""
+    private func parseCSVRows(_ text: String) -> [[String]] {
+        var rows: [[String]] = []
+        var row: [String] = []
+        var field = ""
         var inQuotes = false
-
-        for char in line {
+        var iterator = text.makeIterator()
+        while let char = iterator.next() {
             if char == "\"" {
                 inQuotes.toggle()
             } else if char == "," && !inQuotes {
-                fields.append(current)
-                current = ""
-            } else {
-                current.append(char)
+                row.append(field)
+                field = ""
+            } else if char == "\n" && !inQuotes {
+                row.append(field)
+                if row.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                    rows.append(row)
+                }
+                row = []
+                field = ""
+            } else if char != "\r" || inQuotes {
+                field.append(char)
             }
         }
-        fields.append(current)
-        return fields
+        row.append(field)
+        if row.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+            rows.append(row)
+        }
+        return rows
     }
+
+    private func encodeCSVRow(_ fields: [String]) -> String {
+        fields.map { value in
+            let escaped = value.replacingOccurrences(of: "\"", with: "\"\"")
+            if escaped.contains(",") || escaped.contains("\"") || escaped.contains("\n") {
+                return "\"\(escaped)\""
+            }
+            return escaped
+        }.joined(separator: ",")
+    }
+
 }
 
 // MARK: - Export Field Group Display Names
@@ -694,49 +739,111 @@ private enum ImportStatus {
     case idle, importing, success(String), error(String)
 }
 
-private struct ParsedRow {
-    let name: String
-    let code: String?
-    let category: String?
-    let brand: String?
-    let fields: [String: String]
+private enum ImportSourceKind: String {
+    case csv
+    case xlsx
+
+    var displayName: String { rawValue.uppercased() }
+}
+
+private enum ColumnMappingTarget: String, CaseIterable, Identifiable {
+    case ignore
+    case name
+    case category
+    case code
+    case brand
+    case costPrice = "cost_price"
+    case markupPercent = "markup_percent"
+    case partType = "part_type"
+    case description
+    case unitOfMeasure = "unit_of_measure"
+    case shelfLocation = "shelf_location"
+    case binLocation = "bin_location"
+
+    var id: String { rawValue }
+
+    static let required: [ColumnMappingTarget] = [.name, .category]
+
+    var displayName: String {
+        switch self {
+        case .ignore: return "Ignore"
+        case .name: return "Part name"
+        case .category: return "Category"
+        case .code: return "Code"
+        case .brand: return "Brand"
+        case .costPrice: return "Cost price"
+        case .markupPercent: return "Markup percent"
+        case .partType: return "Part type"
+        case .description: return "Description"
+        case .unitOfMeasure: return "Unit of measure"
+        case .shelfLocation: return "Shelf location"
+        case .binLocation: return "Bin location"
+        }
+    }
+
+    var aliases: [String] {
+        switch self {
+        case .ignore: return []
+        case .name: return ["part name", "item", "item name", "description name"]
+        case .category: return ["category name", "group", "class"]
+        case .code: return ["part code", "sku", "item code", "part number", "part_no"]
+        case .brand: return ["manufacturer", "make", "vendor brand"]
+        case .costPrice: return ["cost", "unit cost", "company cost", "price"]
+        case .markupPercent: return ["markup", "markup %", "margin"]
+        case .partType: return ["type", "kind"]
+        case .description: return ["notes", "details"]
+        case .unitOfMeasure: return ["uom", "unit", "units"]
+        case .shelfLocation: return ["shelf", "shelf loc"]
+        case .binLocation: return ["bin", "bin loc"]
+        }
+    }
+}
+
+private enum ColumnMappingConfidence: String {
+    case exact
+    case alias
+    case unmapped
+
+    var label: String {
+        switch self {
+        case .exact: return "exact"
+        case .alias: return "suggested"
+        case .unmapped: return "unmapped"
+        }
+    }
+}
+
+private struct ColumnMapping: Identifiable {
+    let id = UUID()
+    let sourceColumn: String
+    var target: ColumnMappingTarget
+    var confidence: ColumnMappingConfidence
 }
 
 private struct ImportPreview {
-    var newParts: [ParsedRow] = []
-    var conflicts: [ConflictRow] = []
-    var errors: [ImportError] = []
-    var totalRows: Int = 0
-}
+    var servicePreview: PartsService.PartsImportPreview
+    var sourceKind: ImportSourceKind
+    var filename: String
+    var sheetName: String?
+    var sourceColumns: [String]
+    var columnMappings: [ColumnMapping]
+    var sourceRows: [[String]]
+    var mappingError: String?
 
-private struct ConflictRow: Identifiable {
-    let id = UUID()
-    let parsedRow: ParsedRow
-    let existingPart: Part
-    var resolution: ConflictResolution = .ask
-}
-
-private enum ConflictResolution {
-    case ask, update, skip
-}
-
-private struct ImportError: Identifiable {
-    let id = UUID()
-    let rowNumber: Int
-    let message: String
+    var totalRows: Int { servicePreview.totalRows }
 }
 
 // MARK: - Import Preview Sheet
 
 private struct ImportPreviewSheet: View {
-    @EnvironmentObject private var appCore: AppCore
     @Binding var preview: ImportPreview?
     let onConfirm: () -> Void
+    let onApplyMapping: (ImportPreview) -> Void
     let onCancel: () -> Void
 
     private var previewBinding: Binding<ImportPreview> {
         Binding(
-            get: { preview ?? ImportPreview() },
+            get: { preview ?? ImportPreview(servicePreview: PartsService.PartsImportPreview(), sourceKind: .csv, filename: "", sheetName: nil, sourceColumns: [], columnMappings: [], sourceRows: [], mappingError: nil) },
             set: { preview = $0 }
         )
     }
@@ -745,7 +852,7 @@ private struct ImportPreviewSheet: View {
         NavigationStack {
             Group {
                 if preview != nil {
-                    ImportPreviewContent(preview: previewBinding, onConfirm: onConfirm)
+                    ImportPreviewContent(preview: previewBinding, onConfirm: onConfirm, onApplyMapping: onApplyMapping)
                 } else {
                     ProgressView()
                 }
@@ -764,13 +871,14 @@ private struct ImportPreviewSheet: View {
 private struct ImportPreviewContent: View {
     @Binding var preview: ImportPreview
     let onConfirm: () -> Void
+    let onApplyMapping: (ImportPreview) -> Void
 
     private var updateCount: Int {
-        preview.conflicts.filter { $0.resolution == .update }.count
+        preview.servicePreview.conflicts.filter { $0.resolution == .update }.count
     }
 
     private var confirmLabel: String {
-        let newCount = preview.newParts.count
+        let newCount = preview.servicePreview.newParts.count
         let updCount = updateCount
         if updCount > 0 {
             return "Import \(newCount) New + \(updCount) Updates"
@@ -780,122 +888,192 @@ private struct ImportPreviewContent: View {
 
     var body: some View {
         List {
-            // Summary
-            Section {
-                HStack {
-                    Label("\(preview.newParts.count) new", systemImage: "plus.circle.fill")
-                        .foregroundStyle(.green)
-                    Spacer()
-                    Label("\(preview.conflicts.count) conflicts", systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    Spacer()
-                    Label("\(preview.errors.count) errors", systemImage: "xmark.circle.fill")
-                        .foregroundStyle(.red)
-                }
-                .font(.subheadline)
-            } header: {
-                Text("Summary — \(preview.totalRows) rows")
-            }
+            sourceMetadataSection
+            mappingSection
+            summarySection
+            newPartsSection
+            conflictsSection
+            errorsSection
+            confirmSection
+        }
+    }
 
-            // New parts
-            if !preview.newParts.isEmpty {
-                Section {
-                    ForEach(Array(preview.newParts.prefix(20).enumerated()), id: \.offset) { _, row in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(row.name)
+    private var sourceMetadataSection: some View {
+        Section {
+            LabeledContent("Source", value: preview.sourceKind.displayName)
+            LabeledContent("Filename", value: preview.filename)
+            if let sheetName = preview.sheetName, !sheetName.isEmpty {
+                LabeledContent("Sheet", value: sheetName)
+            }
+            LabeledContent("Rows", value: "\(preview.totalRows)")
+        } header: {
+            Text("Source")
+        }
+    }
+
+    private var mappingSection: some View {
+        Section {
+            if preview.columnMappings.isEmpty {
+                Text("Using canonical \(preview.sourceKind.displayName) headers from the backend preview.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach($preview.columnMappings) { $mapping in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(mapping.sourceColumn)
                                 .font(.subheadline)
                                 .fontWeight(.medium)
-                            HStack(spacing: 8) {
-                                if let code = row.code, !code.isEmpty {
-                                    Text(code).font(.caption).foregroundStyle(.secondary)
-                                }
-                                if let cat = row.category {
-                                    Text(cat).font(.caption).foregroundStyle(.blue)
-                                }
-                                if let brand = row.brand {
-                                    Text(brand).font(.caption).foregroundStyle(.purple)
-                                }
+                            Spacer()
+                            Text(mapping.confidence.label)
+                                .font(.caption2)
+                                .foregroundStyle(mapping.confidence == .unmapped ? .orange : .secondary)
+                        }
+                        Picker("Canonical field", selection: $mapping.target) {
+                            ForEach(ColumnMappingTarget.allCases) { target in
+                                Text(target.displayName).tag(target)
                             }
                         }
+                        .pickerStyle(.menu)
                     }
-                    if preview.newParts.count > 20 {
-                        Text("+ \(preview.newParts.count - 20) more...")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                } header: {
-                    Text("New Parts")
                 }
-            }
-
-            // Conflicts
-            if !preview.conflicts.isEmpty {
-                Section {
-                    // Bulk actions
-                    HStack {
-                        Button("Update All") {
-                            for i in preview.conflicts.indices {
-                                preview.conflicts[i].resolution = .update
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.orange)
-
-                        Button("Skip All") {
-                            for i in preview.conflicts.indices {
-                                preview.conflicts[i].resolution = .skip
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-
-                    ForEach($preview.conflicts) { $conflict in
-                        conflictRow(conflict: $conflict)
-                    }
-                } header: {
-                    Text("Conflicts — Duplicates Found")
+                Button("Apply Mapping Preview") {
+                    onApplyMapping(preview)
                 }
+                .buttonStyle(.bordered)
             }
-
-            // Errors
-            if !preview.errors.isEmpty {
-                Section {
-                    ForEach(preview.errors) { err in
-                        HStack {
-                            Text("Row \(err.rowNumber)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 60, alignment: .leading)
-                            Text(err.message)
-                                .font(.caption)
-                                .foregroundStyle(.red)
-                        }
-                    }
-                } header: {
-                    Text("Errors (will be skipped)")
-                }
+            if let mappingError = preview.mappingError {
+                Text(mappingError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
             }
+        } header: {
+            Text("Column Mapping")
+        } footer: {
+            Text("Map source columns to canonical parts fields before validation. Ambiguous or unmapped columns can be corrected here; ignored columns are not imported.")
+        }
+    }
 
-            // Confirm button
+    private var summarySection: some View {
+        Section {
+            HStack {
+                Label("\(preview.servicePreview.newParts.count) new", systemImage: "plus.circle.fill")
+                    .foregroundStyle(.green)
+                Spacer()
+                Label("\(preview.servicePreview.conflicts.count) conflicts", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Spacer()
+                Label("\(preview.servicePreview.errors.count) errors", systemImage: "xmark.circle.fill")
+                    .foregroundStyle(.red)
+            }
+            .font(.subheadline)
+        } header: {
+            Text("Summary — \(preview.totalRows) rows")
+        }
+    }
+
+    @ViewBuilder
+    private var newPartsSection: some View {
+        if !preview.servicePreview.newParts.isEmpty {
             Section {
-                Button(action: onConfirm) {
-                    Text(confirmLabel)
-                        .fontWeight(.semibold)
-                        .frame(maxWidth: .infinity)
+                ForEach(Array(preview.servicePreview.newParts.prefix(20).enumerated()), id: \.offset) { _, row in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(row.name)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        HStack(spacing: 8) {
+                            if let code = row.code, !code.isEmpty {
+                                Text(code).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Text(row.category).font(.caption).foregroundStyle(.blue)
+                            if let brand = row.brand {
+                                Text(brand).font(.caption).foregroundStyle(.purple)
+                            }
+                        }
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .frame(minHeight: 44)
-                .disabled(preview.newParts.isEmpty && updateCount == 0)
+                if preview.servicePreview.newParts.count > 20 {
+                    Text("+ \(preview.servicePreview.newParts.count - 20) more...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("New Parts")
             }
         }
     }
 
     @ViewBuilder
-    private func conflictRow(conflict: Binding<ConflictRow>) -> some View {
+    private var conflictsSection: some View {
+        if !preview.servicePreview.conflicts.isEmpty {
+            Section {
+                HStack {
+                    Button("Update All") {
+                        for i in preview.servicePreview.conflicts.indices {
+                            preview.servicePreview.conflicts[i].resolution = .update
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.orange)
+
+                    Button("Skip All") {
+                        for i in preview.servicePreview.conflicts.indices {
+                            preview.servicePreview.conflicts[i].resolution = .skip
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+
+                ForEach($preview.servicePreview.conflicts, id: \.existingPartId) { $conflict in
+                    conflictRow(conflict: $conflict)
+                }
+            } header: {
+                Text("Conflicts — Duplicates Found")
+            } footer: {
+                Text("Conflict errors are handled separately from parse, mapping, and validation errors. Choose update or skip before committing.")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var errorsSection: some View {
+        if !preview.servicePreview.errors.isEmpty {
+            Section {
+                ForEach(Array(preview.servicePreview.errors.enumerated()), id: \.offset) { _, err in
+                    HStack {
+                        Text("Row \(err.rowNumber)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 60, alignment: .leading)
+                        Text(err.message)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+            } header: {
+                Text("Validation Errors (will be skipped)")
+            }
+        }
+    }
+
+    private var confirmSection: some View {
+        Section {
+            Button(action: onConfirm) {
+                Text(confirmLabel)
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .frame(minHeight: 44)
+            .disabled(preview.mappingError != nil || !preview.servicePreview.errors.isEmpty || (preview.servicePreview.newParts.isEmpty && updateCount == 0))
+        }
+    }
+
+    @ViewBuilder
+    private func conflictRow(conflict: Binding<PartsService.PartsImportConflict>) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Part name + code
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(conflict.wrappedValue.parsedRow.name)
@@ -911,15 +1089,14 @@ private struct ImportPreviewContent: View {
                 resolutionBadge(conflict.wrappedValue.resolution)
             }
 
-            // Side-by-side comparison
             HStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Current")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                    Text(conflict.wrappedValue.existingPart.name)
+                    Text(conflict.wrappedValue.existingPartName)
                         .font(.caption)
-                    Text(conflict.wrappedValue.existingPart.code ?? "—")
+                    Text(conflict.wrappedValue.existingPartCode ?? "—")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -931,7 +1108,7 @@ private struct ImportPreviewContent: View {
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("CSV")
+                    Text(preview.sourceKind.displayName)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                     Text(conflict.wrappedValue.parsedRow.name)
@@ -943,7 +1120,6 @@ private struct ImportPreviewContent: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            // Action buttons
             HStack(spacing: 12) {
                 Button("Update") {
                     conflict.wrappedValue.resolution = .update
@@ -964,7 +1140,7 @@ private struct ImportPreviewContent: View {
     }
 
     @ViewBuilder
-    private func resolutionBadge(_ resolution: ConflictResolution) -> some View {
+    private func resolutionBadge(_ resolution: PartsService.PartsImportConflictResolution) -> some View {
         switch resolution {
         case .ask:
             Text("UNRESOLVED")
