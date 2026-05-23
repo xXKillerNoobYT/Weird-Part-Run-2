@@ -1140,7 +1140,7 @@ public final class OrdersService: Sendable {
                     fromLocationId: 1,
                     toLocationType: "warehouse",
                     toLocationId: 1,
-                    movementType: "transfer",
+                    movementType: StockMovement.MovementType.transfer.rawValue,
                     reason: "JPO line hold — reversing transfer",
                     notes: "Reversed transfer for JPO line #\(lineId)",
                     performedBy: reversedBy
@@ -2686,6 +2686,17 @@ public final class OrdersService: Sendable {
                         VALUES (?, ?, ?, ?, datetime('now'))
                         """,
                     arguments: [poId, jpoLineId, partId, qty]
+                )
+                let poLineId = dbConn.lastInsertedRowID
+                try dbConn.execute(
+                    sql: """
+                        UPDATE jpo_line_items
+                        SET line_status = 'in_procurement',
+                            po_line_id = ?,
+                            status_updated_at = datetime('now')
+                        WHERE id = ? AND deleted_at IS NULL
+                        """,
+                    arguments: [poLineId, jpoLineId]
                 )
             }
 

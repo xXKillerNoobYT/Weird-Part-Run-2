@@ -144,7 +144,7 @@ public final class WarehouseService: Sendable {
         let pendingReturns = try safeCount(
             sql: """
                 SELECT COUNT(*) FROM stock_movements
-                WHERE movement_type IN ('return', 'return_to_supplier')
+                WHERE movement_type IN ('\(StockMovement.MovementType.stockReturn.rawValue)', '\(StockMovement.MovementType.returnToSupplier.rawValue)')
                   AND date(created_at) = date('now')
                   AND deleted_at IS NULL
                 """
@@ -214,7 +214,7 @@ public final class WarehouseService: Sendable {
                 return rows.map { row in
                     let partName = (row["part_name"] as String?) ?? "Unknown Part"
                     let qty: Int = row["qty"] ?? 0
-                    let moveType = (row["movement_type"] as String?) ?? "transfer"
+                    let moveType = (row["movement_type"] as String?) ?? StockMovement.MovementType.transfer.rawValue
                     let fromType = (row["from_location_type"] as String?) ?? ""
                     let toType = (row["to_location_type"] as String?) ?? ""
                     let desc = "\(moveType.capitalized): \(qty)× \(partName) (\(fromType) → \(toType))"
@@ -1559,7 +1559,7 @@ public final class WarehouseService: Sendable {
                         INSERT INTO stock_movements
                         (part_id, qty, to_location_type, to_location_id,
                          movement_type, reason, performed_by, unit_cost_at_move, created_at)
-                        VALUES (?, ?, 'warehouse', 1, 'receiving', 'PO receiving', ?, ?, datetime('now'))
+                        VALUES (?, ?, 'warehouse', 1, '\(StockMovement.MovementType.receiving.rawValue)', 'PO receiving', ?, ?, datetime('now'))
                         """,
                     arguments: [partId, receivedQty, completedBy, unitCost]
                 )
@@ -1617,7 +1617,7 @@ public final class WarehouseService: Sendable {
                         FROM stock_movements sm
                         LEFT JOIN parts p ON p.id = sm.part_id AND p.deleted_at IS NULL
                         LEFT JOIN users u ON u.id = sm.performed_by AND u.deleted_at IS NULL
-                        WHERE sm.movement_type = 'return' AND sm.deleted_at IS NULL
+                        WHERE sm.movement_type = '\(StockMovement.MovementType.stockReturn.rawValue)' AND sm.deleted_at IS NULL
                         ORDER BY sm.created_at DESC
                         LIMIT ?
                         """,
@@ -1669,7 +1669,7 @@ public final class WarehouseService: Sendable {
             fromLocationId: fromLocationId,
             toLocationType: toLocationType,
             toLocationId: toLocationId,
-            movementType: "return",
+            movementType: StockMovement.MovementType.stockReturn.rawValue,
             reason: isDamaged ? "damaged" : (reason ?? "return"),
             notes: notes,
             performedBy: performedBy
@@ -1926,7 +1926,7 @@ public final class WarehouseService: Sendable {
             try dbConn.execute(
                 sql: """
                     INSERT INTO stock_movements (part_id, qty, from_location_type, from_location_id, to_location_type, to_location_id, movement_type, reason, notes, performed_by, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 'adjustment', ?, ?, ?, datetime('now'))
+                    VALUES (?, ?, ?, ?, ?, ?, '\(StockMovement.MovementType.adjustment.rawValue)', ?, ?, ?, datetime('now'))
                     """,
                 arguments: [
                     partId,
@@ -2640,7 +2640,7 @@ public final class WarehouseService: Sendable {
             fromLocationId: nil,
             toLocationType: "pulled",
             toLocationId: jobId,
-            movementType: "receiving_staged",
+            movementType: StockMovement.MovementType.receivingStaged.rawValue,
             reason: "Received and staged for job",
             notes: notes,
             performedBy: performedBy,
@@ -2664,7 +2664,7 @@ public final class WarehouseService: Sendable {
             fromLocationId: nil,
             toLocationType: nil,
             toLocationId: nil,
-            movementType: "write_off",
+            movementType: StockMovement.MovementType.writeOff.rawValue,
             reason: reason,
             notes: notes,
             performedBy: performedBy
@@ -2687,7 +2687,7 @@ public final class WarehouseService: Sendable {
             fromLocationId: nil,
             toLocationType: nil,
             toLocationId: nil,
-            movementType: "return_to_supplier",
+            movementType: StockMovement.MovementType.returnToSupplier.rawValue,
             reason: "Damaged: \(returnType)",
             notes: notes,
             performedBy: performedBy
@@ -2844,12 +2844,12 @@ public final class WarehouseService: Sendable {
     /// Determine the movement_type based on from/to location types.
     private static func determineMovementType(from: String, to: String) -> String {
         if to == "warehouse" && (from == "truck" || from == "trailer") {
-            return "return"
+            return StockMovement.MovementType.stockReturn.rawValue
         }
         if from == "job" {
-            return "return"
+            return StockMovement.MovementType.stockReturn.rawValue
         }
-        return "transfer"
+        return StockMovement.MovementType.transfer.rawValue
     }
 
     /// Build a human-readable display name for a location.
@@ -5545,7 +5545,7 @@ public final class WarehouseService: Sendable {
                     INSERT INTO stock_movements
                     (part_id, qty, from_location_type, to_location_type,
                      movement_type, reason, notes, performed_by, created_at)
-                    VALUES (?, ?, 'warehouse', 'warehouse', 'adjustment',
+                    VALUES (?, ?, 'warehouse', 'warehouse', '\(StockMovement.MovementType.adjustment.rawValue)',
                             'Multi-user audit consensus', ?, ?, datetime('now'))
                     """, arguments: [
                         partId, finalQty,
