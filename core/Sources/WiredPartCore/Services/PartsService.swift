@@ -7511,6 +7511,23 @@ public final class PartsService: Sendable {
         }
     }
 
+    /// Fetch all active SKUs for a type across all brands in one read.
+    public func getColorBrandSKUsForType(typeId: Int64) throws -> [ColorBrandSKU] {
+        do {
+            return try db.writer.read { dbConn in
+                try Row.fetchAll(dbConn, sql: """
+                    SELECT * FROM color_brand_skus
+                    WHERE type_id = ? AND deleted_at IS NULL
+                    ORDER BY color_id, brand_id, created_at ASC
+                    """, arguments: [typeId])
+                    .map(colorBrandSKUFromRow)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
     /// Fetch all active SKUs for a given color (across all types and brands).
     public func getSKUsForColor(colorId: Int64) throws -> [ColorBrandSKU] {
         do {
@@ -7530,13 +7547,17 @@ public final class PartsService: Sendable {
 
     /// Create or update a SKU for a (color, brand, type) triple.
     /// If a row already exists (even soft-deleted), reactivates and updates it.
+    /// Pass `clearPartNumber`/`clearUnitCost` when a nil value should clear the stored nullable field.
     @discardableResult
     public func upsertColorBrandSKU(
         colorId: Int64,
         brandId: Int64,
         typeId: Int64,
         partNumber: String? = nil,
-        unitCost: Double? = nil
+        unitCost: Double? = nil,
+        stockQty: Int? = nil,
+        clearPartNumber: Bool = false,
+        clearUnitCost: Bool = false
     ) throws -> Int64 {
         do {
             return try db.writer.write { dbConn in
@@ -7548,20 +7569,21 @@ public final class PartsService: Sendable {
                     let skuId: Int64 = existing["id"]
                     try dbConn.execute(sql: """
                         UPDATE color_brand_skus
-                        SET part_number = COALESCE(?, part_number),
-                            unit_cost = COALESCE(?, unit_cost),
+                        SET part_number = CASE WHEN ? THEN NULL ELSE COALESCE(?, part_number) END,
+                            unit_cost = CASE WHEN ? THEN NULL ELSE COALESCE(?, unit_cost) END,
+                            stock_qty = COALESCE(?, stock_qty),
                             is_active = 1, deleted_at = NULL,
                             updated_at = datetime('now')
                         WHERE id = ?
-                        """, arguments: [partNumber, unitCost, skuId])
+                        """, arguments: [clearPartNumber ? 1 : 0, partNumber, clearUnitCost ? 1 : 0, unitCost, stockQty, skuId])
                     return skuId
                 }
                 // Insert new row
                 try dbConn.execute(sql: """
                     INSERT INTO color_brand_skus
-                        (color_id, brand_id, type_id, part_number, unit_cost)
-                    VALUES (?, ?, ?, ?, ?)
-                    """, arguments: [colorId, brandId, typeId, partNumber, unitCost])
+                        (color_id, brand_id, type_id, part_number, unit_cost, stock_qty)
+                    VALUES (?, ?, ?, ?, ?, COALESCE(?, 0))
+                    """, arguments: [colorId, brandId, typeId, partNumber, unitCost, stockQty])
                 return dbConn.lastInsertedRowID
             }
         } catch {
@@ -7574,7 +7596,8 @@ public final class PartsService: Sendable {
     public func updateColorBrandSKU(
         skuId: Int64,
         partNumber: String? = nil,
-        unitCost: Double? = nil
+        unitCost: Double? = nil,
+        stockQty: Int? = nil
     ) throws {
         do {
             try db.writer.write { dbConn in
@@ -7582,9 +7605,10 @@ public final class PartsService: Sendable {
                     UPDATE color_brand_skus
                     SET part_number = COALESCE(?, part_number),
                         unit_cost = COALESCE(?, unit_cost),
+                        stock_qty = COALESCE(?, stock_qty),
                         updated_at = datetime('now')
                     WHERE id = ? AND deleted_at IS NULL
-                    """, arguments: [partNumber, unitCost, skuId])
+                    """, arguments: [partNumber, unitCost, stockQty, skuId])
             }
         } catch {
             if isTableNotFoundError(error) { return }
