@@ -918,6 +918,8 @@ public final class NotebooksService: Sendable {
         title: String? = nil,
         content: String? = nil,
         blockData: String? = nil,
+        headingLevel: Int? = nil,
+        checklistItems: String? = nil,
         createdBy: Int64,
         sortOrder: Int? = nil
     ) throws -> Int64 {
@@ -943,20 +945,76 @@ public final class NotebooksService: Sendable {
             try dbConn.execute(sql: """
                 INSERT INTO notebook_entries
                 (section_id, notebook_id, title, content, entry_type, block_type, block_data,
-                 field_required, is_deleted, is_completed, sort_order, created_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'note', ?, ?, 0, 0, 0, ?, ?, datetime('now'), datetime('now'))
-                """, arguments: [sectionId, notebookId, title ?? "", content, blockType, blockData, order, createdBy])
+                 heading_level, checklist_items, field_required, is_deleted, is_completed,
+                 sort_order, created_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'note', ?, ?, ?, ?, 0, 0, 0, ?, ?, datetime('now'), datetime('now'))
+                """, arguments: [
+                    sectionId, notebookId, title ?? "", content, blockType, blockData,
+                    headingLevel, checklistItems, order, createdBy
+                ])
             return dbConn.lastInsertedRowID
         }
     }
 
-    /// Update a block entry's content and/or block data.
-    public func updateBlockEntry(entryId: Int64, content: String?, blockData: String?) throws {
+    /// Update a block entry's editable fields and record a sync-compatible change-log entry.
+    public func updateBlockEntry(
+        entryId: Int64,
+        title: String? = nil,
+        content: String?,
+        blockData: String?,
+        headingLevel: Int? = nil,
+        checklistItems: String? = nil,
+        updatedBy: Int64
+    ) throws {
         try db.writer.write { dbConn in
-            try dbConn.execute(sql: """
-                UPDATE notebook_entries SET content = ?, block_data = ?, updated_at = datetime('now')
+            try ServicePermissionGate.requirePermission(dbConn, userId: updatedBy, permissionKey: "manage_notebooks")
+
+            guard let existing = try Row.fetchOne(dbConn, sql: """
+                SELECT title, content, block_data, heading_level, checklist_items
+                FROM notebook_entries
                 WHERE id = ? AND deleted_at IS NULL
-                """, arguments: [content, blockData, entryId])
+                """, arguments: [entryId]) else { return }
+
+            let newTitle = title ?? (existing["title"] as String? ?? "")
+            let oldTitle = existing["title"] as String? ?? ""
+            let oldContent = existing["content"] as String?
+            let oldBlockData = existing["block_data"] as String?
+            let oldHeadingLevel = existing["heading_level"] as Int?
+            let oldChecklistItems = existing["checklist_items"] as String?
+
+            try dbConn.execute(sql: """
+                UPDATE notebook_entries
+                SET title = ?, content = ?, block_data = ?, heading_level = ?, checklist_items = ?,
+                    updated_by = ?, updated_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [newTitle, content, blockData, headingLevel, checklistItems, updatedBy, entryId])
+
+            var changedFields: [String: Any] = [:]
+            var oldValues: [String: Any] = [:]
+            func track<T: Equatable>(_ field: String, old: T?, new: T?) {
+                if old != new {
+                    changedFields[field] = new ?? NSNull()
+                    oldValues[field] = old ?? NSNull()
+                }
+            }
+            track("title", old: oldTitle, new: newTitle)
+            track("content", old: oldContent, new: content)
+            track("block_data", old: oldBlockData, new: blockData)
+            track("heading_level", old: oldHeadingLevel, new: headingLevel)
+            track("checklist_items", old: oldChecklistItems, new: checklistItems)
+
+            if !changedFields.isEmpty {
+                let changedFieldsData = try JSONSerialization.data(withJSONObject: changedFields, options: [.sortedKeys])
+                let oldValuesData = try JSONSerialization.data(withJSONObject: oldValues, options: [.sortedKeys])
+                guard let changedFieldsJSON = String(data: changedFieldsData, encoding: .utf8),
+                      let oldValuesJSON = String(data: oldValuesData, encoding: .utf8) else { return }
+
+                try dbConn.execute(sql: """
+                    INSERT INTO _change_log
+                    (device_id, table_name, record_id, operation, changed_fields, old_values, timestamp)
+                    VALUES ('local', 'notebook_entries', ?, 'UPDATE', ?, ?, datetime('now'))
+                    """, arguments: [entryId, changedFieldsJSON, oldValuesJSON])
+            }
         }
     }
 

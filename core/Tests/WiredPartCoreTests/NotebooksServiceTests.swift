@@ -119,7 +119,8 @@ struct NotebooksServiceTests {
         try env.notebooks.updateBlockEntry(
             entryId: entryId,
             content: "Revised content",
-            blockData: nil
+            blockData: nil,
+            updatedBy: env.adminUserId
         )
 
         // Verify through hierarchy
@@ -128,6 +129,62 @@ struct NotebooksServiceTests {
         let updated = entries.first { $0.id == entryId }
         #expect(updated != nil)
         #expect(updated?.content == "Revised content")
+    }
+
+    @Test("Editing a block entry updates title and records change history")
+    func testUpdateBlockEntryTitleAndHistory() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Editable Blocks",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId, groupId: nil, name: "Info"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "heading",
+            title: "Original heading",
+            content: nil,
+            createdBy: env.adminUserId
+        )
+
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId,
+            title: "Revised heading",
+            content: nil,
+            blockData: nil,
+            updatedBy: env.adminUserId
+        )
+
+        let hierarchy = try env.notebooks.getNotebookHierarchy(notebookId: nbId)
+        let updated = hierarchy.ungroupedSections.flatMap(\.entries).first { $0.id == entryId }
+        #expect(updated?.title == "Revised heading")
+
+        let historyRows = try env.db.writer.read { dbConn in
+            try Row.fetchAll(dbConn, sql: """
+                SELECT changed_fields, old_values
+                FROM _change_log
+                WHERE table_name = 'notebook_entries'
+                  AND record_id = ?
+                  AND operation = 'UPDATE'
+                ORDER BY id DESC
+                """, arguments: [entryId])
+        }
+        #expect(historyRows.count == 1)
+        let changedFieldsJSON = historyRows.first?["changed_fields"] as String?
+        let oldValuesJSON = historyRows.first?["old_values"] as String?
+        #expect(changedFieldsJSON?.contains("title") == true)
+        #expect(oldValuesJSON?.contains("Original heading") == true)
+
+        let changedFieldsData = try #require(changedFieldsJSON?.data(using: .utf8))
+        let oldValuesData = try #require(oldValuesJSON?.data(using: .utf8))
+        let changedFields = try #require(JSONSerialization.jsonObject(with: changedFieldsData) as? [String: Any])
+        let oldValues = try #require(JSONSerialization.jsonObject(with: oldValuesData) as? [String: Any])
+        #expect(changedFields["title"] as? String == "Revised heading")
+        #expect(oldValues["title"] as? String == "Original heading")
     }
 
     // MARK: - 5. Delete Entry (Soft Delete)
@@ -1599,7 +1656,7 @@ struct NotebooksServiceTests {
         try env.db.writer.write { db in
             try db.execute(sql: "UPDATE notebook_entries SET deleted_at = datetime('now'), is_deleted = 1 WHERE id = ?", arguments: [entryId])
         }
-        try env.notebooks.updateBlockEntry(entryId: entryId, content: "MUTATED", blockData: nil)
+        try env.notebooks.updateBlockEntry(entryId: entryId, content: "MUTATED", blockData: nil, updatedBy: env.adminUserId)
         let content = try env.db.writer.read { db in
             try String.fetchOne(db, sql: "SELECT content FROM notebook_entries WHERE id = ?", arguments: [entryId])
         }
