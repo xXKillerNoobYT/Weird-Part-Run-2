@@ -22,6 +22,7 @@ Memory is organized by topic, not chronologically. Each entry includes when it w
 - **Hardcoded user ID `1` is an anti-pattern** (see `feedback_hardcoded_user_ids.md`). Always flow real `userId` from session for `created_by`/`updated_by`/`started_by`.
 - **Plans are the source of truth for design** (`docs/plans/`). If code diverges from plan, plan wins — unless I file a Q&A and the user decides otherwise.
 - **GitHub issues are the single source of truth for unfixed problems** (per CLAUDE.md). Anything unfixable gets filed.
+- **GitHub repos are personal-account owned for now** (`xXKillerNoobYT`), not organization-owned. Verify repo owner context before applying GitHub admin instructions; treat org-only settings as not applicable unless the user moves repos to an organization. See `docs/github-account-context.md`.
 
 ## Things I know about the user's working style
 

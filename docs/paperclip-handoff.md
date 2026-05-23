@@ -61,6 +61,7 @@ Operational implications:
 - **Reports as dashboards.** Tables, checklists, dashboards. Concrete numbers. Avoid prose walls.
 - **Budget-conscious + time-respectful.** Don't burn tokens on speculative exploration. Be efficient. Cheap models for mechanical work; Opus only for judgment work. (See `docs/auto-go-soul.md` "Opus manages, sub-agents specialize.")
 - **The user is the designer.** When something is ambiguous, the user's intent is authoritative even when expressed imperfectly. Interpret the spirit of the request. When you can't, file a Q&A entry in `docs/dev-qa.md` per the per-POV workflow — don't guess silently.
+- **GitHub is personal-account owned for now.** Current repos are under the user's personal GitHub account, not an organization. Verify owner context before applying GitHub admin instructions; org-only settings should be treated as not applicable unless the user moves repos into an organization. See `docs/github-account-context.md`.
 - **Spelling and shorthand are fine.** The user uses voice-to-text and shorthand sometimes. "approve all", "lests get them aserd", "go" — all valid. Decode and execute.
 - **Owner answers via AskUserQuestion picker.** When there are choices, present them via AskUserQuestion with proposed answers + Keep/Adjust/Different options. Batch by cluster (max 4 per call). (See `feedback_qa_workflow.md`.)
 - **Pin chat reuse.** The user pins chats to come back to. Memory files persist across sessions; lean on them.
