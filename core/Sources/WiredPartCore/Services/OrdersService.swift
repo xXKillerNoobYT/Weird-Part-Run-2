@@ -205,17 +205,30 @@ public final class OrdersService: Sendable {
             wishlistItemIds: [Int64],
             forecastTargetIds: [Int64]
         ) -> String {
-            let payload = [
+            let sourceIdComponent = String(sourceId ?? 0)
+            let quantityComponent = String(quantity)
+            let jobIdComponent = String(jobId ?? 0)
+            let lockedSupplierIdComponent = String(lockedSupplierId ?? 0)
+            let lineIdsComponent = joinedIDComponent(lineIds)
+            let wishlistItemIdsComponent = joinedIDComponent(wishlistItemIds)
+            let forecastTargetIdsComponent = joinedIDComponent(forecastTargetIds)
+
+            let payloadComponents: [String] = [
                 sourceType,
-                String(sourceId ?? 0),
-                String(quantity),
-                String(jobId ?? 0),
-                String(lockedSupplierId ?? 0),
-                lineIds.map(String.init).joined(separator: ","),
-                wishlistItemIds.map(String.init).joined(separator: ","),
-                forecastTargetIds.map(String.init).joined(separator: ",")
-            ].joined(separator: "|")
-            return "src-\(sourceType)-\(sourceId ?? 0)-\(stableHash(payload))"
+                sourceIdComponent,
+                quantityComponent,
+                jobIdComponent,
+                lockedSupplierIdComponent,
+                lineIdsComponent,
+                wishlistItemIdsComponent,
+                forecastTargetIdsComponent
+            ]
+            let payload = payloadComponents.joined(separator: "|")
+            return "src-\(sourceType)-\(sourceIdComponent)-\(stableHash(payload))"
+        }
+
+        private static func joinedIDComponent(_ ids: [Int64]) -> String {
+            ids.map { String($0) }.joined(separator: ",")
         }
 
         private static func stableHash(_ text: String) -> String {
