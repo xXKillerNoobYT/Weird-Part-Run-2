@@ -86,9 +86,7 @@ struct TypeBrandColorSection: View {
             }
         }
         .task { await loadSKUData() }
-        .sheet(item: $activeSheet, onDismiss: {
-            Task { await loadSKUData(); await onRefresh() }
-        }) { sheet in
+        .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .create:
                 ColorBrandSKUEditorSheet(
@@ -298,7 +296,7 @@ struct TypeBrandColorSection: View {
     // MARK: - Data Loading
 
     private func loadSKUData() async {
-        guard let service = appCore.partsService else {
+        guard let service = await MainActor.run(body: { appCore.partsService }) else {
             await MainActor.run {
                 loadError = "Parts service not available"
                 isLoading = false
@@ -314,15 +312,18 @@ struct TypeBrandColorSection: View {
         do {
             let brands = try service.listBrands().map(\.brand)
             let colors = try service.listColors()
-            var rows: [ColorBrandSKUDisplayRow] = []
-
-            for brand in brands {
-                guard let brandId = brand.id else { continue }
-                let skus = try service.getColorBrandSKUs(typeId: typeId, brandId: brandId)
-                for sku in skus {
-                    guard let color = colors.first(where: { $0.id == sku.colorId }) else { continue }
-                    rows.append(ColorBrandSKUDisplayRow(sku: sku, color: color, brand: brand))
-                }
+            let skus = try service.getColorBrandSKUsForType(typeId: typeId)
+            let colorsById = Dictionary(uniqueKeysWithValues: colors.compactMap { color -> (Int64, PartColor)? in
+                guard let id = color.id else { return nil }
+                return (id, color)
+            })
+            let brandsById = Dictionary(uniqueKeysWithValues: brands.compactMap { brand -> (Int64, Brand)? in
+                guard let id = brand.id else { return nil }
+                return (id, brand)
+            })
+            let rows = skus.compactMap { sku -> ColorBrandSKUDisplayRow? in
+                guard let color = colorsById[sku.colorId], let brand = brandsById[sku.brandId] else { return nil }
+                return ColorBrandSKUDisplayRow(sku: sku, color: color, brand: brand)
             }
 
             await MainActor.run {
@@ -339,9 +340,8 @@ struct TypeBrandColorSection: View {
         }
     }
 
-    @MainActor
     private func handleSKUSave(_ draft: ColorBrandSKUEditorSheet.Draft) async throws {
-        guard let service = appCore.partsService else {
+        guard let service = await MainActor.run(body: { appCore.partsService }) else {
             throw NSError(domain: "TypeBrandColorSection", code: 1, userInfo: [NSLocalizedDescriptionKey: "Parts service not available"])
         }
 
@@ -353,7 +353,9 @@ struct TypeBrandColorSection: View {
             brandId: draft.brandId,
             typeId: typeId,
             partNumber: draft.normalizedPartNumber,
-            unitCost: draft.normalizedUnitCost
+            unitCost: draft.normalizedUnitCost,
+            clearPartNumber: draft.shouldClearPartNumber,
+            clearUnitCost: draft.shouldClearUnitCost
         )
 
         if let original = draft.originalSKU, original.id != skuId,
@@ -366,7 +368,7 @@ struct TypeBrandColorSection: View {
     }
 
     private func deleteSKU(_ row: ColorBrandSKUDisplayRow) async {
-        guard let service = appCore.partsService else {
+        guard let service = await MainActor.run(body: { appCore.partsService }) else {
             await MainActor.run { loadError = "Parts service not available" }
             return
         }
@@ -423,7 +425,15 @@ private struct ColorBrandSKUEditorSheet: View {
 
         var normalizedUnitCost: Double? {
             let trimmed = unitCostText.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : Double(trimmed)
+            return trimmed.isEmpty ? nil : parseLocalizedDecimal(trimmed)
+        }
+
+        var shouldClearPartNumber: Bool {
+            originalSKU?.partNumber != nil && normalizedPartNumber == nil
+        }
+
+        var shouldClearUnitCost: Bool {
+            originalSKU?.unitCost != nil && normalizedUnitCost == nil
         }
     }
 
@@ -451,15 +461,15 @@ private struct ColorBrandSKUEditorSheet: View {
 
         switch mode {
         case .create:
-            _selectedColorId = State(initialValue: colors.first?.id ?? 0)
-            _selectedBrandId = State(initialValue: brands.first?.id ?? 0)
+            _selectedColorId = State(initialValue: colors.first(where: { $0.id != nil })?.id ?? 0)
+            _selectedBrandId = State(initialValue: brands.first(where: { $0.id != nil })?.id ?? 0)
             _partNumber = State(initialValue: "")
             _unitCostText = State(initialValue: "")
         case .edit(let row):
             _selectedColorId = State(initialValue: row.sku.colorId)
             _selectedBrandId = State(initialValue: row.sku.brandId)
             _partNumber = State(initialValue: row.sku.partNumber ?? "")
-            _unitCostText = State(initialValue: row.sku.unitCost.map { String($0) } ?? "")
+            _unitCostText = State(initialValue: row.sku.unitCost.map(formatLocalizedDecimal) ?? "")
         }
     }
 
@@ -468,17 +478,17 @@ private struct ColorBrandSKUEditorSheet: View {
             Form {
                 Section("Variant") {
                     Picker("Variant", selection: $selectedColorId) {
-                        ForEach(colors, id: \.id) { color in
+                        ForEach(selectableColors, id: \.id) { color in
                             HStack {
                                 Text(color.name)
                                 if let partNumber = color.partNumber, !partNumber.isEmpty {
                                     Text(partNumber).foregroundStyle(.secondary)
                                 }
                             }
-                            .tag(color.id ?? 0)
+                            .tag(color.id!)
                         }
                     }
-                    .disabled(colors.isEmpty)
+                    .disabled(selectableColors.isEmpty)
 
                     if let selectedColor {
                         HStack(spacing: DS.Space.sm) {
@@ -492,11 +502,11 @@ private struct ColorBrandSKUEditorSheet: View {
 
                 Section("Brand") {
                     Picker("Brand", selection: $selectedBrandId) {
-                        ForEach(brands, id: \.id) { brand in
-                            Text(brand.name).tag(brand.id ?? 0)
+                        ForEach(selectableBrands, id: \.id) { brand in
+                            Text(brand.name).tag(brand.id!)
                         }
                     }
-                    .disabled(brands.isEmpty)
+                    .disabled(selectableBrands.isEmpty)
                 }
 
                 Section("SKU Details") {
@@ -541,13 +551,21 @@ private struct ColorBrandSKUEditorSheet: View {
         return nil
     }
 
+    private var selectableColors: [PartColor] {
+        colors.filter { $0.id != nil }
+    }
+
+    private var selectableBrands: [Brand] {
+        brands.filter { $0.id != nil }
+    }
+
     private var selectedColor: PartColor? {
         colors.first { $0.id == selectedColorId }
     }
 
     private var unitCostIsValid: Bool {
         let trimmed = unitCostText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty || Double(trimmed) != nil
+        return trimmed.isEmpty || parseLocalizedDecimal(trimmed) != nil
     }
 
     @ViewBuilder
@@ -588,6 +606,22 @@ private struct ColorBrandSKUEditorSheet: View {
         }
         isSaving = false
     }
+}
+
+private func parseLocalizedDecimal(_ text: String) -> Double? {
+    let formatter = NumberFormatter()
+    formatter.numberStyle = .decimal
+    formatter.locale = .current
+    return formatter.number(from: text.trimmingCharacters(in: .whitespacesAndNewlines))?.doubleValue
+}
+
+private func formatLocalizedDecimal(_ value: Double) -> String {
+    let formatter = NumberFormatter()
+    formatter.numberStyle = .decimal
+    formatter.locale = .current
+    formatter.maximumFractionDigits = 2
+    formatter.minimumFractionDigits = 0
+    return formatter.string(from: NSNumber(value: value)) ?? String(value)
 }
 
 // MARK: - BrandFlowLayout (wrapping horizontal layout)

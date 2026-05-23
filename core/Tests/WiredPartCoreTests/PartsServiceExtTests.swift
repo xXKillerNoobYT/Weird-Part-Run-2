@@ -797,6 +797,54 @@ struct PartsServiceExtTests {
         #expect(reactivated[0].isActive == true)
     }
 
+    @Test("upsertColorBrandSKU can explicitly clear nullable SKU fields")
+    func testUpsertColorBrandSKUCanClearNullableFields() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let colorId = try env.parts.createColor(name: "Clearable", hexCode: "#112233")
+        let brandId = try E2ETestHelpers.seedBrand(env)
+
+        try env.parts.upsertColorBrandSKU(
+            colorId: colorId,
+            brandId: brandId,
+            typeId: typeId,
+            partNumber: "CLEAR-ME",
+            unitCost: 12.34
+        )
+        try env.parts.upsertColorBrandSKU(
+            colorId: colorId,
+            brandId: brandId,
+            typeId: typeId,
+            partNumber: nil,
+            unitCost: nil,
+            clearPartNumber: true,
+            clearUnitCost: true
+        )
+
+        let skus = try env.parts.getColorBrandSKUs(typeId: typeId, brandId: brandId)
+        #expect(skus.count == 1)
+        #expect(skus[0].partNumber == nil)
+        #expect(skus[0].unitCost == nil)
+    }
+
+    @Test("getColorBrandSKUsForType returns active SKU rows across brands in one query")
+    func testGetColorBrandSKUsForType() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let colorId1 = try env.parts.createColor(name: "Batch Red", hexCode: "#FF0000")
+        let colorId2 = try env.parts.createColor(name: "Batch Blue", hexCode: "#0000FF")
+        let brandId1 = try E2ETestHelpers.seedBrand(env, name: "Batch Brand A")
+        let brandId2 = try E2ETestHelpers.seedBrand(env, name: "Batch Brand B")
+
+        try env.parts.upsertColorBrandSKU(colorId: colorId1, brandId: brandId1, typeId: typeId, partNumber: "A-RED")
+        try env.parts.upsertColorBrandSKU(colorId: colorId2, brandId: brandId2, typeId: typeId, partNumber: "B-BLUE")
+
+        let skus = try env.parts.getColorBrandSKUsForType(typeId: typeId)
+        #expect(skus.count == 2)
+        #expect(Set(skus.map(\.brandId)) == Set([brandId1, brandId2]))
+        #expect(Set(skus.map(\.colorId)) == Set([colorId1, colorId2]))
+    }
+
     @Test("getSKUsForColor returns all active SKUs across brands and types")
     func testGetSKUsForColor() throws {
         let env = try E2ETestHelpers.setUp()
