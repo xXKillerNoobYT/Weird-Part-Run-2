@@ -35,6 +35,10 @@ public final class JobsService: Sendable {
         case invalidAmount(Int64)
         case invalidDuration(Int64)
         case requiredFieldEmpty
+        case templateNotFound(Int64)
+        case stageNotFound(Int64)
+        case stageInUse(Int64)
+        case invalidStageTemplate(Int64)
     }
 
     // =========================================================================
@@ -103,6 +107,77 @@ public final class JobsService: Sendable {
         }
     }
 
+    /// Stage template metadata for configurable job workflows (GH #625 / WEI-2068).
+    public struct JobStageTemplate: Sendable, Identifiable {
+        public let id: Int64
+        public let name: String
+        public let isDefault: Bool
+        public let archivedAt: String?
+        public let stageCount: Int
+        /// Active, non-cancelled/non-completed jobs currently assigned to this template.
+        public let activeJobCount: Int
+
+        public init(id: Int64, name: String, isDefault: Bool, archivedAt: String?, stageCount: Int, activeJobCount: Int = 0) {
+            self.id = id
+            self.name = name
+            self.isDefault = isDefault
+            self.archivedAt = archivedAt
+            self.stageCount = stageCount
+            self.activeJobCount = activeJobCount
+        }
+    }
+
+    /// Part-category automatic stage routing scoped to a stage template.
+    public struct JobStageCategoryMapping: Sendable, Identifiable {
+        public let id: Int64
+        public let templateId: Int64
+        public let categoryId: Int64
+        public let categoryName: String
+        public let stageId: Int64?
+        public let stageName: String?
+
+        public init(id: Int64, templateId: Int64, categoryId: Int64, categoryName: String, stageId: Int64?, stageName: String?) {
+            self.id = id
+            self.templateId = templateId
+            self.categoryId = categoryId
+            self.categoryName = categoryName
+            self.stageId = stageId
+            self.stageName = stageName
+        }
+    }
+
+    /// One row from the staged job-stage template editor draft.
+    /// A nil existingId creates a new stage; non-nil keeps/renames that stage.
+    /// The array order supplied to applyJobStageTemplateDraft becomes sort_order.
+    public struct JobStageTemplateDraftStage: Sendable, Equatable {
+        public let existingId: Int64?
+        public let name: String
+
+        public init(existingId: Int64?, name: String) {
+            self.existingId = existingId
+            self.name = name
+        }
+    }
+
+    /// Preview result for changing a job's stage template.
+    public struct JobStageTemplateAssignmentPreview: Sendable {
+        public let jobId: Int64
+        public let currentTemplateId: Int64?
+        public let nextTemplateId: Int64
+        public let currentStageId: Int64?
+        public let replacementStageId: Int64?
+        public let preservesCurrentStage: Bool
+
+        public init(jobId: Int64, currentTemplateId: Int64?, nextTemplateId: Int64, currentStageId: Int64?, replacementStageId: Int64?, preservesCurrentStage: Bool) {
+            self.jobId = jobId
+            self.currentTemplateId = currentTemplateId
+            self.nextTemplateId = nextTemplateId
+            self.currentStageId = currentStageId
+            self.replacementStageId = replacementStageId
+            self.preservesCurrentStage = preservesCurrentStage
+        }
+    }
+
     /// Full job detail with aggregated data.
     public struct JobDetail: Sendable {
         public let id: Int64
@@ -140,6 +215,7 @@ public final class JobsService: Sendable {
         public let teamCount: Int
         public let partsCost: Double
         public let laborHours: Double
+        public let stageTemplateId: Int64?
 
         public init(
             id: Int64, jobNumber: String, jobName: String, customerName: String?,
@@ -152,7 +228,7 @@ public final class JobsService: Sendable {
             startDate: String?, dueDate: String?, completedDate: String?,
             notes: String?, budgetLimit: Double?, budgetAlertPercent: Double?,
             createdBy: Int64?, deletedAt: String?, createdAt: String?, updatedAt: String?,
-            teamCount: Int, partsCost: Double, laborHours: Double
+            teamCount: Int, partsCost: Double, laborHours: Double, stageTemplateId: Int64? = nil
         ) {
             self.id = id
             self.jobNumber = jobNumber
@@ -189,6 +265,7 @@ public final class JobsService: Sendable {
             self.teamCount = teamCount
             self.partsCost = partsCost
             self.laborHours = laborHours
+            self.stageTemplateId = stageTemplateId
         }
     }
 
@@ -556,7 +633,8 @@ public final class JobsService: Sendable {
                 updatedAt: row["updated_at"] as String?,
                 teamCount: row["team_count"] ?? 0,
                 partsCost: row["parts_cost"] ?? 0.0,
-                laborHours: row["labor_hours"] ?? 0.0
+                laborHours: row["labor_hours"] ?? 0.0,
+                stageTemplateId: row["stage_template_id"] as Int64?
             )
         }
         guard let result else { throw JobsError.jobNotFound(id) }
@@ -596,6 +674,7 @@ public final class JobsService: Sendable {
     ) throws -> Int64 {
         guard !jobName.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
         guard !jobNumber.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
+        let notebooks = NotebooksService(db: db)
         return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
@@ -624,7 +703,34 @@ public final class JobsService: Sendable {
                     jobClassification
                 ]
             )
-            return dbConn.lastInsertedRowID
+            let jobId = dbConn.lastInsertedRowID
+            if let defaultTemplateId = try Int64.fetchOne(dbConn, sql: """
+                SELECT id FROM job_stage_templates
+                WHERE is_default = 1 AND archived_at IS NULL
+                ORDER BY id ASC LIMIT 1
+                """) {
+                try dbConn.execute(sql: "UPDATE jobs SET stage_template_id = ? WHERE id = ?", arguments: [defaultTemplateId, jobId])
+            }
+            let notebookCreatorId: Int64?
+            if let createdBy {
+                notebookCreatorId = createdBy
+            } else {
+                notebookCreatorId = try Int64.fetchOne(dbConn, sql: """
+                    SELECT id FROM users
+                    WHERE deleted_at IS NULL
+                    ORDER BY id ASC LIMIT 1
+                    """)
+            }
+            if let notebookCreatorId {
+                _ = try notebooks.ensureJobNotebook(
+                    dbConn: dbConn,
+                    jobId: jobId,
+                    jobName: jobName,
+                    jobType: jobType,
+                    createdBy: notebookCreatorId
+                )
+            }
+            return jobId
         }
     }
 
@@ -2397,22 +2503,32 @@ public final class JobsService: Sendable {
     public func listJobStages(forJobId jobId: Int64) throws -> [JobStageStatus] {
         do {
             return try db.writer.read { dbConn -> [JobStageStatus] in
-                // Get the job's current_stage_id and status
+                // Get the job's assigned template, current_stage_id, and status.
                 guard let jobRow = try Row.fetchOne(dbConn, sql: """
-                    SELECT current_stage_id, status FROM jobs WHERE id = ? AND deleted_at IS NULL
+                    SELECT current_stage_id, stage_template_id, status FROM jobs WHERE id = ? AND deleted_at IS NULL
                     """, arguments: [jobId]) else {
                     return []
                 }
 
                 let currentStageId: Int64? = jobRow["current_stage_id"]
+                let templateId: Int64? = jobRow["stage_template_id"]
                 let jobStatus: String = jobRow["status"] ?? "active"
 
-                // Get all stages
-                let stageRows = try Row.fetchAll(dbConn, sql: """
-                    SELECT id, name, sort_order FROM job_stages
-                    WHERE deleted_at IS NULL
-                    ORDER BY sort_order ASC
-                    """)
+                // Get stages for the assigned template. Older databases without templates fall back to global stages.
+                let stageRows: [Row]
+                if let templateId {
+                    stageRows = try Row.fetchAll(dbConn, sql: """
+                        SELECT id, name, sort_order FROM job_stages
+                        WHERE deleted_at IS NULL AND template_id = ?
+                        ORDER BY sort_order ASC, id ASC
+                        """, arguments: [templateId])
+                } else {
+                    stageRows = try Row.fetchAll(dbConn, sql: """
+                        SELECT id, name, sort_order FROM job_stages
+                        WHERE deleted_at IS NULL
+                        ORDER BY sort_order ASC, id ASC
+                        """)
+                }
 
                 guard !stageRows.isEmpty else { return [] }
 
@@ -2470,16 +2586,25 @@ public final class JobsService: Sendable {
         }
     }
 
-    /// Get all job stages (global list) without job-specific status.
+    /// Get job stages without job-specific status. Pass a template to avoid cross-template leakage.
     /// Returns stages ordered by sort_order.
-    public func listAllJobStages() throws -> [JobStageStatus] {
+    public func listAllJobStages(templateId: Int64? = nil) throws -> [JobStageStatus] {
         do {
             return try db.writer.read { dbConn -> [JobStageStatus] in
-                let rows = try Row.fetchAll(dbConn, sql: """
-                    SELECT id, name, sort_order FROM job_stages
-                    WHERE deleted_at IS NULL
-                    ORDER BY sort_order ASC
-                    """)
+                let rows: [Row]
+                if let templateId {
+                    rows = try Row.fetchAll(dbConn, sql: """
+                        SELECT id, name, sort_order FROM job_stages
+                        WHERE deleted_at IS NULL AND template_id = ?
+                        ORDER BY sort_order ASC, id ASC
+                        """, arguments: [templateId])
+                } else {
+                    rows = try Row.fetchAll(dbConn, sql: """
+                        SELECT id, name, sort_order FROM job_stages
+                        WHERE deleted_at IS NULL
+                        ORDER BY sort_order ASC, id ASC
+                        """)
+                }
                 return rows.map { row in
                     JobStageStatus(
                         id: row["id"] ?? 0,
@@ -2490,8 +2615,391 @@ public final class JobsService: Sendable {
                 }
             }
         } catch {
+            if isTableNotFoundError(error) || isColumnNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    public func listJobStageTemplates(includeArchived: Bool = false) throws -> [JobStageTemplate] {
+        do {
+            return try db.writer.read { dbConn in
+                let archivedClause = includeArchived ? "" : "WHERE t.archived_at IS NULL"
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT t.id, t.name, t.is_default, t.archived_at,
+                           COUNT(DISTINCT s.id) AS stage_count,
+                           COUNT(DISTINCT CASE
+                               WHEN j.deleted_at IS NULL AND j.status NOT IN ('completed', 'cancelled') THEN j.id
+                           END) AS active_job_count
+                    FROM job_stage_templates t
+                    LEFT JOIN job_stages s ON s.template_id = t.id AND s.deleted_at IS NULL
+                    LEFT JOIN jobs j ON j.stage_template_id = t.id
+                    \(archivedClause)
+                    GROUP BY t.id, t.name, t.is_default, t.archived_at
+                    ORDER BY t.is_default DESC, t.name COLLATE NOCASE ASC
+                    """)
+                return rows.map { row in
+                    JobStageTemplate(
+                        id: row["id"] ?? 0,
+                        name: row["name"] ?? "",
+                        isDefault: ((row["is_default"] as Int?) ?? 0) != 0,
+                        archivedAt: row["archived_at"],
+                        stageCount: row["stage_count"] ?? 0,
+                        activeJobCount: row["active_job_count"] ?? 0
+                    )
+                }
+            }
+        } catch {
             if isTableNotFoundError(error) { return [] }
             throw error
+        }
+    }
+
+    @discardableResult
+    public func createJobStageTemplate(name: String, stageNames: [String]) throws -> Int64 {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw JobsError.requiredFieldEmpty }
+        let cleanStageNames = stageNames.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard cleanStageNames.allSatisfy({ !$0.isEmpty }) else { throw JobsError.requiredFieldEmpty }
+
+        return try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO job_stage_templates (name, is_default, created_at, updated_at)
+                VALUES (?, 0, datetime('now'), datetime('now'))
+                """, arguments: [trimmed])
+            let templateId = dbConn.lastInsertedRowID
+            for (index, stageName) in cleanStageNames.enumerated() {
+                try dbConn.execute(sql: """
+                    INSERT INTO job_stages (template_id, name, sort_order, created_at, updated_at)
+                    VALUES (?, ?, ?, datetime('now'), datetime('now'))
+                    """, arguments: [templateId, stageName, index + 1])
+            }
+            return templateId
+        }
+    }
+
+    public func renameJobStageTemplate(templateId: Int64, name: String) throws {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw JobsError.requiredFieldEmpty }
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE job_stage_templates SET name = ?, updated_at = datetime('now')
+                WHERE id = ? AND archived_at IS NULL
+                """, arguments: [trimmed, templateId])
+            if dbConn.changesCount == 0 { throw JobsError.templateNotFound(templateId) }
+        }
+    }
+
+    public func archiveJobStageTemplate(templateId: Int64) throws {
+        try db.writer.write { dbConn in
+            let activeJobs = try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM jobs
+                WHERE stage_template_id = ? AND deleted_at IS NULL AND status NOT IN ('completed', 'cancelled')
+                """, arguments: [templateId]) ?? 0
+            if activeJobs > 0 { throw JobsError.invalidStageTemplate(templateId) }
+            try dbConn.execute(sql: """
+                UPDATE job_stage_templates SET archived_at = datetime('now'), updated_at = datetime('now')
+                WHERE id = ? AND is_default = 0 AND archived_at IS NULL
+                """, arguments: [templateId])
+            if dbConn.changesCount == 0 { throw JobsError.templateNotFound(templateId) }
+        }
+    }
+
+    @discardableResult
+    public func duplicateJobStageTemplate(templateId: Int64, name: String) throws -> Int64 {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw JobsError.requiredFieldEmpty }
+        return try db.writer.write { dbConn in
+            guard try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM job_stage_templates WHERE id = ? AND archived_at IS NULL", arguments: [templateId]) ?? 0 > 0 else {
+                throw JobsError.templateNotFound(templateId)
+            }
+            try dbConn.execute(sql: """
+                INSERT INTO job_stage_templates (name, is_default, created_at, updated_at)
+                VALUES (?, 0, datetime('now'), datetime('now'))
+                """, arguments: [trimmed])
+            let newTemplateId = dbConn.lastInsertedRowID
+            try dbConn.execute(sql: """
+                INSERT INTO job_stages (template_id, name, sort_order, created_at, updated_at)
+                SELECT ?, name, sort_order, datetime('now'), datetime('now')
+                FROM job_stages
+                WHERE template_id = ? AND deleted_at IS NULL
+                ORDER BY sort_order ASC, id ASC
+                """, arguments: [newTemplateId, templateId])
+            return newTemplateId
+        }
+    }
+
+    @discardableResult
+    public func addJobStage(templateId: Int64, name: String) throws -> Int64 {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw JobsError.requiredFieldEmpty }
+        return try db.writer.write { dbConn in
+            guard try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM job_stage_templates WHERE id = ? AND archived_at IS NULL", arguments: [templateId]) ?? 0 > 0 else {
+                throw JobsError.templateNotFound(templateId)
+            }
+            let nextSort = (try Int.fetchOne(dbConn, sql: "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM job_stages WHERE template_id = ? AND deleted_at IS NULL", arguments: [templateId]) ?? 1)
+            try dbConn.execute(sql: """
+                INSERT INTO job_stages (template_id, name, sort_order, created_at, updated_at)
+                VALUES (?, ?, ?, datetime('now'), datetime('now'))
+                """, arguments: [templateId, trimmed, nextSort])
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    public func renameJobStage(stageId: Int64, name: String) throws {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw JobsError.requiredFieldEmpty }
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE job_stages SET name = ?, updated_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [trimmed, stageId])
+            if dbConn.changesCount == 0 { throw JobsError.stageNotFound(stageId) }
+        }
+    }
+
+    public func archiveJobStage(stageId: Int64) throws {
+        try db.writer.write { dbConn in
+            let references = try Int.fetchOne(dbConn, sql: """
+                SELECT
+                    (SELECT COUNT(*) FROM jobs WHERE current_stage_id = ? AND deleted_at IS NULL AND status NOT IN ('completed', 'cancelled')) +
+                    (SELECT COUNT(*) FROM jpo_line_items WHERE stage_id = ?) +
+                    (SELECT COUNT(*) FROM job_stage_category_map WHERE stage_id = ?)
+                """, arguments: [stageId, stageId, stageId]) ?? 0
+            if references > 0 { throw JobsError.stageInUse(stageId) }
+            try dbConn.execute(sql: """
+                UPDATE job_stages SET deleted_at = datetime('now'), updated_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [stageId])
+            if dbConn.changesCount == 0 { throw JobsError.stageNotFound(stageId) }
+        }
+    }
+
+    public func reorderJobStages(templateId: Int64, orderedStageIds: [Int64]) throws {
+        try db.writer.write { dbConn in
+            guard try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM job_stage_templates WHERE id = ? AND archived_at IS NULL", arguments: [templateId]) ?? 0 > 0 else {
+                throw JobsError.templateNotFound(templateId)
+            }
+            let existingIds = try Int64.fetchAll(dbConn, sql: """
+                SELECT id FROM job_stages
+                WHERE template_id = ? AND deleted_at IS NULL
+                ORDER BY sort_order ASC, id ASC
+                """, arguments: [templateId])
+            guard Set(existingIds) == Set(orderedStageIds), existingIds.count == orderedStageIds.count else {
+                throw JobsError.invalidStageTemplate(templateId)
+            }
+            for (index, stageId) in orderedStageIds.enumerated() {
+                try dbConn.execute(sql: """
+                    UPDATE job_stages SET sort_order = ?, updated_at = datetime('now')
+                    WHERE id = ? AND template_id = ?
+                    """, arguments: [-(index + 1), stageId, templateId])
+            }
+            for (index, stageId) in orderedStageIds.enumerated() {
+                try dbConn.execute(sql: """
+                    UPDATE job_stages SET sort_order = ?, updated_at = datetime('now')
+                    WHERE id = ? AND template_id = ?
+                    """, arguments: [index + 1, stageId, templateId])
+            }
+        }
+    }
+
+    /// Applies the complete staged editor draft for a job-stage template as a single atomic unit.
+    ///
+    /// The draft list is the desired final active stage list in display order. Existing stages not
+    /// present in the draft are archived, kept stages are renamed, nil-id rows are inserted, and the
+    /// final kept/new set is reordered. Any validation or database failure rolls back the whole save
+    /// so the UI's Save/Cancel model cannot leave partial archive/rename/add/reorder changes behind.
+    public func applyJobStageTemplateDraft(templateId: Int64, stages draftStages: [JobStageTemplateDraftStage]) throws {
+        let cleaned = draftStages.map { draft in
+            JobStageTemplateDraftStage(
+                existingId: draft.existingId,
+                name: draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        }
+        guard !cleaned.isEmpty else { throw JobsError.invalidStageTemplate(templateId) }
+        guard cleaned.allSatisfy({ !$0.name.isEmpty }) else { throw JobsError.requiredFieldEmpty }
+
+        try db.writer.write { dbConn in
+            guard try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM job_stage_templates WHERE id = ? AND archived_at IS NULL", arguments: [templateId]) ?? 0 > 0 else {
+                throw JobsError.templateNotFound(templateId)
+            }
+
+            let originalIds = try Int64.fetchAll(dbConn, sql: """
+                SELECT id FROM job_stages
+                WHERE template_id = ? AND deleted_at IS NULL
+                ORDER BY sort_order ASC, id ASC
+                """, arguments: [templateId])
+            let originalIdSet = Set(originalIds)
+            let keptExistingIds = cleaned.compactMap(\.existingId)
+            guard keptExistingIds.allSatisfy({ originalIdSet.contains($0) }) else {
+                throw JobsError.invalidStageTemplate(templateId)
+            }
+
+            let removedIds = originalIds.filter { !Set(keptExistingIds).contains($0) }
+            for stageId in removedIds {
+                let references = try Int.fetchOne(dbConn, sql: """
+                    SELECT
+                        (SELECT COUNT(*) FROM jobs WHERE current_stage_id = ? AND deleted_at IS NULL AND status NOT IN ('completed', 'cancelled')) +
+                        (SELECT COUNT(*) FROM jpo_line_items WHERE stage_id = ?) +
+                        (SELECT COUNT(*) FROM job_stage_category_map WHERE stage_id = ?)
+                    """, arguments: [stageId, stageId, stageId]) ?? 0
+                if references > 0 { throw JobsError.stageInUse(stageId) }
+                try dbConn.execute(sql: """
+                    UPDATE job_stages SET deleted_at = datetime('now'), updated_at = datetime('now')
+                    WHERE id = ? AND template_id = ? AND deleted_at IS NULL
+                    """, arguments: [stageId, templateId])
+                if dbConn.changesCount == 0 { throw JobsError.stageNotFound(stageId) }
+            }
+
+            var orderedIds: [Int64] = []
+            for (index, draft) in cleaned.enumerated() {
+                let stagedSortOrder = -100_000 - index
+                if let stageId = draft.existingId {
+                    try dbConn.execute(sql: """
+                        UPDATE job_stages SET name = ?, sort_order = ?, updated_at = datetime('now')
+                        WHERE id = ? AND template_id = ? AND deleted_at IS NULL
+                        """, arguments: [draft.name, stagedSortOrder, stageId, templateId])
+                    if dbConn.changesCount == 0 { throw JobsError.stageNotFound(stageId) }
+                    orderedIds.append(stageId)
+                } else {
+                    try dbConn.execute(sql: """
+                        INSERT INTO job_stages (template_id, name, sort_order, created_at, updated_at)
+                        VALUES (?, ?, ?, datetime('now'), datetime('now'))
+                        """, arguments: [templateId, draft.name, stagedSortOrder])
+                    orderedIds.append(dbConn.lastInsertedRowID)
+                }
+            }
+
+            guard Set(orderedIds).count == orderedIds.count else {
+                throw JobsError.invalidStageTemplate(templateId)
+            }
+            for (index, stageId) in orderedIds.enumerated() {
+                try dbConn.execute(sql: """
+                    UPDATE job_stages SET sort_order = ?, updated_at = datetime('now')
+                    WHERE id = ? AND template_id = ? AND deleted_at IS NULL
+                    """, arguments: [index + 1, stageId, templateId])
+                if dbConn.changesCount == 0 { throw JobsError.stageNotFound(stageId) }
+            }
+        }
+    }
+
+    public func previewJobStageTemplateAssignment(jobId: Int64, templateId: Int64) throws -> JobStageTemplateAssignmentPreview {
+        try db.writer.read { dbConn in
+            guard let jobRow = try Row.fetchOne(dbConn, sql: "SELECT stage_template_id, current_stage_id FROM jobs WHERE id = ? AND deleted_at IS NULL", arguments: [jobId]) else {
+                throw JobsError.jobNotFound(jobId)
+            }
+            guard try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM job_stage_templates WHERE id = ? AND archived_at IS NULL", arguments: [templateId]) ?? 0 > 0 else {
+                throw JobsError.templateNotFound(templateId)
+            }
+            guard try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM job_stages WHERE template_id = ? AND deleted_at IS NULL", arguments: [templateId]) ?? 0 > 0 else {
+                throw JobsError.invalidStageTemplate(templateId)
+            }
+            let currentTemplateId: Int64? = jobRow["stage_template_id"]
+            let currentStageId: Int64? = jobRow["current_stage_id"]
+            let stageStillBelongs: Int
+            if let currentStageId {
+                stageStillBelongs = try Int.fetchOne(
+                    dbConn,
+                    sql: "SELECT COUNT(*) FROM job_stages WHERE id = ? AND template_id = ? AND deleted_at IS NULL",
+                    arguments: [currentStageId, templateId]
+                ) ?? 0
+            } else {
+                stageStillBelongs = 0
+            }
+            let replacementStageId: Int64?
+            let preservesCurrentStage = stageStillBelongs > 0
+            if preservesCurrentStage {
+                replacementStageId = currentStageId
+            } else {
+                replacementStageId = try Int64.fetchOne(dbConn, sql: """
+                    SELECT id FROM job_stages
+                    WHERE template_id = ? AND deleted_at IS NULL
+                    ORDER BY sort_order ASC, id ASC LIMIT 1
+                    """, arguments: [templateId])
+            }
+            return JobStageTemplateAssignmentPreview(
+                jobId: jobId,
+                currentTemplateId: currentTemplateId,
+                nextTemplateId: templateId,
+                currentStageId: currentStageId,
+                replacementStageId: replacementStageId,
+                preservesCurrentStage: preservesCurrentStage
+            )
+        }
+    }
+
+    public func assignJobStageTemplate(jobId: Int64, templateId: Int64, currentStageId: Int64? = nil) throws {
+        try db.writer.write { dbConn in
+            guard try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL", arguments: [jobId]) ?? 0 > 0 else {
+                throw JobsError.jobNotFound(jobId)
+            }
+            guard try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM job_stage_templates WHERE id = ? AND archived_at IS NULL", arguments: [templateId]) ?? 0 > 0 else {
+                throw JobsError.templateNotFound(templateId)
+            }
+            let assignedStageId: Int64
+            if let currentStageId {
+                guard try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM job_stages WHERE id = ? AND template_id = ? AND deleted_at IS NULL", arguments: [currentStageId, templateId]) ?? 0 > 0 else {
+                    throw JobsError.stageNotFound(currentStageId)
+                }
+                assignedStageId = currentStageId
+            } else if let firstStageId = try Int64.fetchOne(dbConn, sql: "SELECT id FROM job_stages WHERE template_id = ? AND deleted_at IS NULL ORDER BY sort_order ASC, id ASC LIMIT 1", arguments: [templateId]) {
+                assignedStageId = firstStageId
+            } else {
+                throw JobsError.invalidStageTemplate(templateId)
+            }
+            try dbConn.execute(sql: """
+                UPDATE jobs
+                SET stage_template_id = ?, current_stage_id = ?, updated_at = datetime('now')
+                WHERE id = ?
+                """, arguments: [templateId, assignedStageId, jobId])
+        }
+    }
+
+    public func setJobStageCategoryMapping(templateId: Int64, categoryId: Int64, stageId: Int64?) throws {
+        try db.writer.write { dbConn in
+            guard try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM job_stage_templates WHERE id = ? AND archived_at IS NULL", arguments: [templateId]) ?? 0 > 0 else {
+                throw JobsError.templateNotFound(templateId)
+            }
+            if let stageId {
+                guard try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM job_stages WHERE id = ? AND template_id = ? AND deleted_at IS NULL", arguments: [stageId, templateId]) ?? 0 > 0 else {
+                    throw JobsError.stageNotFound(stageId)
+                }
+                try dbConn.execute(sql: """
+                    INSERT INTO job_stage_category_map (template_id, stage_id, category_id, created_at, updated_at)
+                    VALUES (?, ?, ?, datetime('now'), datetime('now'))
+                    ON CONFLICT(template_id, category_id) DO UPDATE SET
+                        stage_id = excluded.stage_id,
+                        updated_at = datetime('now')
+                    """, arguments: [templateId, stageId, categoryId])
+            } else {
+                try dbConn.execute(sql: "DELETE FROM job_stage_category_map WHERE template_id = ? AND category_id = ?", arguments: [templateId, categoryId])
+            }
+        }
+    }
+
+    public func listJobStageCategoryMappings(templateId: Int64) throws -> [JobStageCategoryMapping] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT pc.id AS category_id, pc.name AS category_name,
+                       jscm.id AS mapping_id, jscm.stage_id, js.name AS stage_name
+                FROM part_categories pc
+                LEFT JOIN job_stage_category_map jscm
+                    ON jscm.category_id = pc.id AND jscm.template_id = ?
+                LEFT JOIN job_stages js
+                    ON js.id = jscm.stage_id AND js.deleted_at IS NULL
+                WHERE pc.deleted_at IS NULL
+                ORDER BY pc.name COLLATE NOCASE ASC, pc.id ASC
+                """, arguments: [templateId])
+            return rows.map { row in
+                let categoryId: Int64 = row["category_id"] ?? 0
+                return JobStageCategoryMapping(
+                    id: row["mapping_id"] ?? -categoryId,
+                    templateId: templateId,
+                    categoryId: categoryId,
+                    categoryName: row["category_name"] ?? "",
+                    stageId: row["stage_id"],
+                    stageName: row["stage_name"]
+                )
+            }
         }
     }
 

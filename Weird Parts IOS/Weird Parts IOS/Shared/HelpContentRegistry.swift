@@ -839,6 +839,19 @@ struct HelpContentRegistry {
             ]
         ),
 
+        // ── SETTINGS ──────────────────────────────────────────────────────
+
+        HelpEntry(
+            pageId: "settings-app-config",
+            title: "App Config Help",
+            sections: [
+                ("What This Page Does", "General application configuration including auto-lock timeout, stale data warnings, archive retention, warranty defaults, payment tracking settings, and app tour reset."),
+                ("How to Use It", "Adjust the editable values, review the payment tracking controls if enabled, then tap Save Configuration to persist changes. Auto-lock controls how long before the app locks. Stale data warning triggers when sync data is old. Archive and warranty values control default retention and coverage windows."),
+                ("Payment Tracking", "Enable payment tracking to monitor invoices and payments per customer. Configure payment terms, overdue warning timing, and whether overdue customers should be placed on automatic payment hold."),
+                ("Tips", "Use Restart App Tour when a user needs onboarding again. Invalid or empty numeric settings keep Save Configuration disabled until corrected."),
+            ]
+        ),
+
         // ── OFFICE ────────────────────────────────────────────────────────
 
         HelpEntry(

@@ -794,22 +794,23 @@ struct OrdersServiceTests {
     func testUpdateCategoryStageMapping() throws {
         let env = try E2ETestHelpers.setUp()
         let catId = try E2ETestHelpers.seedCategory(env, name: "MappedCat")
-
-        // Seed a job stage
-        let stageId = try env.db.writer.write { db -> Int64 in
-            try db.execute(sql: """
-                INSERT INTO job_stages (name, sort_order, created_at)
-                VALUES ('Rough', 1, datetime('now'))
-                """)
-            return db.lastInsertedRowID
-        }
+        let stageId = try #require(try env.jobs.listAllJobStages().first?.id)
 
         try env.orders.updateCategoryStageMapping(categoryId: catId, stageId: stageId)
         let mappings = try env.orders.getCategoryStageMappings()
         let mapped = mappings.first(where: { $0.categoryId == catId })
         #expect(mapped != nil)
         #expect(mapped?.stageId == stageId)
-        #expect(mapped?.stageName == "Rough")
+    }
+
+    @Test("updateCategoryStageMapping rejects missing or deleted stages")
+    func testUpdateCategoryStageMappingRejectsMissingStage() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "MissingStageCat")
+
+        #expect(throws: OrdersService.OrdersError.stageNotFound(999_999)) {
+            try env.orders.updateCategoryStageMapping(categoryId: catId, stageId: 999_999)
+        }
     }
 
     // MARK: - Job Stage Parts
@@ -1047,22 +1048,9 @@ struct OrdersServiceTests {
     @Test("markStageComplete advances job to the next stage")
     func testMarkStageComplete() throws {
         let env = try E2ETestHelpers.setUp()
-
-        // Seed two consecutive stages
-        let stage1Id = try env.db.writer.write { db -> Int64 in
-            try db.execute(sql: """
-                INSERT INTO job_stages (name, sort_order, created_at)
-                VALUES ('Stage One', 10, datetime('now'))
-                """)
-            return db.lastInsertedRowID
-        }
-        let stage2Id = try env.db.writer.write { db -> Int64 in
-            try db.execute(sql: """
-                INSERT INTO job_stages (name, sort_order, created_at)
-                VALUES ('Stage Two', 20, datetime('now'))
-                """)
-            return db.lastInsertedRowID
-        }
+        let stages = try env.jobs.listAllJobStages()
+        let stage1Id = try #require(stages.first?.id)
+        let stage2Id = try #require(stages.dropFirst().first?.id)
 
         // Create a job at stage 1
         let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-MS-01", name: "Stage Complete Job")
@@ -1078,6 +1066,18 @@ struct OrdersServiceTests {
             try Int64.fetchOne(db, sql: "SELECT current_stage_id FROM jobs WHERE id = ?", arguments: [jobId])
         }
         #expect(currentStageId == stage2Id)
+    }
+
+    @Test("markStageComplete rejects a stage outside the job's assigned template")
+    func testMarkStageCompleteRejectsStageTemplateMismatch() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-MS-MISMATCH", name: "Stage Mismatch Job")
+        let otherTemplateId = try env.jobs.createJobStageTemplate(name: "Other Template", stageNames: ["Other Rough", "Other Trim"])
+        let otherStageId = try #require(try env.jobs.listAllJobStages(templateId: otherTemplateId).first?.id)
+
+        #expect(throws: OrdersService.OrdersError.stageTemplateMismatch(stageId: otherStageId, jobId: jobId)) {
+            try env.orders.markStageComplete(jobId: jobId, stageId: otherStageId)
+        }
     }
 
     // MARK: - cancelJPOLineTransfer
@@ -1138,15 +1138,7 @@ struct OrdersServiceTests {
     @Test("markStageComplete stays on current stage when it is the last stage")
     func testMarkStageCompleteLastStage() throws {
         let env = try E2ETestHelpers.setUp()
-
-        // Single final stage (highest sort_order)
-        let finalStageId = try env.db.writer.write { db -> Int64 in
-            try db.execute(sql: """
-                INSERT INTO job_stages (name, sort_order, created_at)
-                VALUES ('Final Stage', 999, datetime('now'))
-                """)
-            return db.lastInsertedRowID
-        }
+        let finalStageId = try #require(try env.jobs.listAllJobStages().last?.id)
 
         let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-MS-02", name: "Final Stage Job")
         try env.db.writer.write { db in
