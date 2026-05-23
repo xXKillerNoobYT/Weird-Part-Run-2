@@ -64,6 +64,16 @@ public final class WarehouseService: Sendable {
         public let pendingReturns: Int
     }
 
+    /// Smart-card counts and alert/warning totals for the dashboard.
+    public struct DashboardSmartCardSummary: Sendable {
+        public let movesToday: Int
+        public let activeReceiving: Int
+        public let auditDue: Int
+        public let lowConfidenceAreas: Int
+        public let stagedReady: Int
+        public let lowStockWarnings: Int
+    }
+
     /// A single recent activity entry for the dashboard feed.
     public struct ActivityEntry: Sendable {
         public let id: Int64
@@ -145,6 +155,37 @@ public final class WarehouseService: Sendable {
             pendingStagingCount: pendingStaging,
             activeReceivingSessions: activeReceiving,
             pendingReturns: pendingReturns
+        )
+    }
+
+    /// Fetch dashboard smart-card counts and warnings through one service call.
+    public func getDashboardSmartCardSummary(auditThreshold: Double = 80.0) throws -> DashboardSmartCardSummary {
+        let kpis = try getWarehouseKPIs()
+        let activeReceiving = try safeCount(
+            sql: "SELECT COUNT(*) FROM receiving_sessions WHERE status = 'in_progress' AND deleted_at IS NULL"
+        )
+        let stagedReady = try safeCount(
+            sql: "SELECT COUNT(*) FROM pulled_staging_tags WHERE deleted_at IS NULL"
+        )
+        let auditDue = try safeCount(
+            sql: "SELECT COUNT(*) FROM part_confidence WHERE confidence_percent < ?",
+            arguments: StatementArguments([auditThreshold])
+        )
+        let lowConfidenceAreas = try safeCount(
+            sql: """
+                SELECT COUNT(DISTINCT area_id) FROM part_confidence
+                WHERE confidence_percent < ?
+                """,
+            arguments: StatementArguments([auditThreshold])
+        )
+
+        return DashboardSmartCardSummary(
+            movesToday: kpis.todayMovements,
+            activeReceiving: activeReceiving,
+            auditDue: auditDue,
+            lowConfidenceAreas: lowConfidenceAreas,
+            stagedReady: stagedReady,
+            lowStockWarnings: kpis.shortfallCount
         )
     }
 
@@ -334,6 +375,10 @@ public final class WarehouseService: Sendable {
         public let notes: String?
         public let performedBy: Int64
         public let performedByName: String?
+        public let verifiedBy: Int64?
+        public let scanConfirmed: Bool
+        public let gpsLat: Double?
+        public let gpsLng: Double?
         public let createdAt: String?
 
         public init(
@@ -341,7 +386,9 @@ public final class WarehouseService: Sendable {
             fromLocationType: String?, fromLocationId: Int64?,
             toLocationType: String?, toLocationId: Int64?,
             movementType: String, reason: String?, notes: String?,
-            performedBy: Int64, performedByName: String?, createdAt: String?
+            performedBy: Int64, performedByName: String?, verifiedBy: Int64? = nil,
+            scanConfirmed: Bool = false, gpsLat: Double? = nil, gpsLng: Double? = nil,
+            createdAt: String?
         ) {
             self.id = id
             self.partId = partId
@@ -356,21 +403,92 @@ public final class WarehouseService: Sendable {
             self.notes = notes
             self.performedBy = performedBy
             self.performedByName = performedByName
+            self.verifiedBy = verifiedBy
+            self.scanConfirmed = scanConfirmed
+            self.gpsLat = gpsLat
+            self.gpsLng = gpsLng
             self.createdAt = createdAt
         }
     }
 
-    /// Sort order for movement list queries.
-    public enum MovementSortOrder: Sendable {
+    /// Legacy sort order for movement list queries.
+    public enum MovementSortOrder: Sendable, Equatable {
         case newestFirst
         case oldestFirst
 
         fileprivate var sql: String {
             switch self {
-            case .newestFirst: "DESC"
-            case .oldestFirst: "ASC"
+            case .newestFirst: return "DESC"
+            case .oldestFirst: return "ASC"
             }
         }
+    }
+
+    public enum MovementSortDirection: Sendable, Equatable {
+        case ascending
+        case descending
+
+        fileprivate var sql: String {
+            switch self {
+            case .ascending: return "ASC"
+            case .descending: return "DESC"
+            }
+        }
+    }
+
+    public enum MovementCompletionFilter: Sendable, Equatable {
+        case all
+        case active
+        case completed
+    }
+
+    public enum MovementType: String, Sendable, CaseIterable {
+        case transfer
+        case receive
+        case consume
+        case returnToSupplier = "return_to_supplier"
+        case adjustment
+
+        public var aliases: [String] {
+            switch self {
+            case .transfer:
+                return ["transfer"]
+            case .receive:
+                return ["receive", "received", "receipt"]
+            case .consume:
+                return ["consume", "consumed", "consumption", "pull", "usage", "job_pull"]
+            case .returnToSupplier:
+                return ["return_to_supplier", "return", "returned"]
+            case .adjustment:
+                return ["adjustment", "adjust", "add_stock", "write_off"]
+            }
+        }
+    }
+
+    public static func normalizeMovementType(_ movementType: String) -> String {
+        let normalized = movementType
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+        for type in MovementType.allCases where type.aliases.contains(normalized) {
+            return type.rawValue
+        }
+        return normalized
+    }
+
+    private static func movementTypeAliases(for movementType: String) -> [String] {
+        let canonical = normalizeMovementType(movementType)
+        guard let type = MovementType(rawValue: canonical) else { return [canonical] }
+        return type.aliases
+    }
+
+    private static func sqliteDateString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter.string(from: date)
     }
 
     /// Movement validation result.
@@ -464,6 +582,11 @@ public final class WarehouseService: Sendable {
     public func listMovements(
         search: String? = nil,
         movementType: String? = nil,
+        movementTypes: [String] = [],
+        startDate: Date? = nil,
+        endDate: Date? = nil,
+        sortDirection: MovementSortDirection? = nil,
+        completionFilter: MovementCompletionFilter = .all,
         limit: Int = 100,
         offset: Int = 0,
         sortOrder: MovementSortOrder = .newestFirst
@@ -480,12 +603,36 @@ public final class WarehouseService: Sendable {
                     args.append(pattern)
                 }
                 if let movementType, !movementType.isEmpty {
-                    whereClauses.append("sm.movement_type = ?")
-                    args.append(movementType)
+                    let aliases = Self.movementTypeAliases(for: movementType)
+                    whereClauses.append("sm.movement_type IN (\(aliases.map { _ in "?" }.joined(separator: ", ")))")
+                    args.append(contentsOf: aliases.map { $0 as DatabaseValueConvertible? })
+                } else if !movementTypes.isEmpty {
+                    let aliases = movementTypes.flatMap { Self.movementTypeAliases(for: $0) }
+                    if !aliases.isEmpty {
+                        whereClauses.append("sm.movement_type IN (\(aliases.map { _ in "?" }.joined(separator: ", ")))")
+                        args.append(contentsOf: aliases.map { $0 as DatabaseValueConvertible? })
+                    }
+                }
+                if let startDate {
+                    whereClauses.append("datetime(sm.created_at) >= datetime(?)")
+                    args.append(Self.sqliteDateString(startDate))
+                }
+                if let endDate {
+                    whereClauses.append("datetime(sm.created_at) <= datetime(?)")
+                    args.append(Self.sqliteDateString(endDate))
+                }
+                switch completionFilter {
+                case .all:
+                    break
+                case .active:
+                    whereClauses.append("sm.movement_type IN ('receiving_staged')")
+                case .completed:
+                    whereClauses.append("sm.movement_type NOT IN ('receiving_staged')")
                 }
 
                 args.append(limit)
                 args.append(offset)
+                let orderDirection = sortDirection?.sql ?? sortOrder.sql
 
                 let sql = """
                     SELECT sm.*,
@@ -495,7 +642,7 @@ public final class WarehouseService: Sendable {
                     LEFT JOIN parts p ON p.id = sm.part_id AND p.deleted_at IS NULL
                     LEFT JOIN users u ON u.id = sm.performed_by AND u.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
-                    ORDER BY sm.created_at \(sortOrder.sql)
+                    ORDER BY sm.created_at \(orderDirection), sm.id \(orderDirection)
                     LIMIT ? OFFSET ?
                     """
 
@@ -515,6 +662,10 @@ public final class WarehouseService: Sendable {
                         notes: row["notes"] as String?,
                         performedBy: row["performed_by"] as Int64,
                         performedByName: row["performed_by_name"] as String?,
+                        verifiedBy: row["verified_by"] as Int64?,
+                        scanConfirmed: ((row["scan_confirmed"] as Int?) ?? 0) == 1,
+                        gpsLat: row["gps_lat"] as Double?,
+                        gpsLng: row["gps_lng"] as Double?,
                         createdAt: row["created_at"] as String?
                     )
                 }
@@ -554,6 +705,10 @@ public final class WarehouseService: Sendable {
                 notes: row["notes"] as String?,
                 performedBy: row["performed_by"] as Int64,
                 performedByName: row["performed_by_name"] as String?,
+                verifiedBy: row["verified_by"] as Int64?,
+                scanConfirmed: ((row["scan_confirmed"] as Int?) ?? 0) == 1,
+                gpsLat: row["gps_lat"] as Double?,
+                gpsLng: row["gps_lng"] as Double?,
                 createdAt: row["created_at"] as String?
             )
         }
@@ -578,7 +733,12 @@ public final class WarehouseService: Sendable {
         photoPath: String? = nil,
         referenceNumber: String? = nil,
         unitCostAtMove: Double? = nil,
-        unitSellAtMove: Double? = nil
+        unitSellAtMove: Double? = nil,
+        occurredAt: Date? = nil,
+        verifiedBy: Int64? = nil,
+        scanConfirmed: Bool = false,
+        gpsLat: Double? = nil,
+        gpsLng: Double? = nil
     ) throws -> Int64 {
         try db.writer.read { dbConn in
             try ServicePermissionGate.requirePermission(dbConn, userId: performedBy, permissionKey: "move_stock_warehouse")
@@ -620,13 +780,15 @@ public final class WarehouseService: Sendable {
                      to_location_type, to_location_id, movement_type,
                      reason, notes, performed_by, job_id, photo_path,
                      reference_number, unit_cost_at_move, unit_sell_at_move,
-                     created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                     verified_by, scan_confirmed, gps_lat, gps_lng, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                 arguments: [partId, qty, fromLocationType, fromLocationId,
                             toLocationType, toLocationId, movementType,
                             reason, notes, performedBy, jobId, photoPath,
-                            referenceNumber, unitCostAtMove, unitSellAtMove]
+                            referenceNumber, unitCostAtMove, unitSellAtMove,
+                            verifiedBy, scanConfirmed ? 1 : 0, gpsLat, gpsLng,
+                            occurredAt.map(Self.sqliteDateString) ?? Self.sqliteDateString(Date())]
             )
             let movementId = dbConn.lastInsertedRowID
 
@@ -686,6 +848,43 @@ public final class WarehouseService: Sendable {
 
             return movementId
         }
+    }
+
+    @discardableResult
+    public func createQuickLogMovement(
+        partId: Int64,
+        qty: Int,
+        movementType: String,
+        occurredAt: Date,
+        fromLocationType: String? = nil,
+        fromLocationId: Int64? = nil,
+        toLocationType: String? = nil,
+        toLocationId: Int64? = nil,
+        reason: String? = nil,
+        notes: String? = nil,
+        performedBy: Int64,
+        verifiedBy: Int64? = nil,
+        scanConfirmed: Bool = false,
+        gpsLat: Double? = nil,
+        gpsLng: Double? = nil
+    ) throws -> Int64 {
+        try createMovement(
+            partId: partId,
+            qty: qty,
+            fromLocationType: fromLocationType,
+            fromLocationId: fromLocationId,
+            toLocationType: toLocationType,
+            toLocationId: toLocationId,
+            movementType: Self.normalizeMovementType(movementType),
+            reason: reason,
+            notes: notes,
+            performedBy: performedBy,
+            occurredAt: occurredAt,
+            verifiedBy: verifiedBy,
+            scanConfirmed: scanConfirmed,
+            gpsLat: gpsLat,
+            gpsLng: gpsLng
+        )
     }
 
     /// Input spec for a single movement in a batch. Mirrors `createMovement` parameters
@@ -1691,12 +1890,6 @@ public final class WarehouseService: Sendable {
         reason: String?,
         performedBy: Int64?
     ) throws {
-        if let performedBy {
-            try db.writer.read { dbConn in
-                try ServicePermissionGate.requirePermission(dbConn, userId: performedBy, permissionKey: "perform_audit")
-            }
-        }
-
         guard newQty >= 0 else { throw WarehouseError.invalidQuantity }
         try db.writer.write { dbConn in
             if let uid = performedBy {
@@ -1704,23 +1897,48 @@ public final class WarehouseService: Sendable {
                     SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
                     """, arguments: [uid]) ?? 0) > 0
                 guard userExists else { throw WarehouseError.userNotFound(uid) }
+                try ServicePermissionGate.requirePermission(dbConn, userId: uid, permissionKey: "perform_audit")
             }
-            // Update the stock record
+            let currentQty = try Int.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT qty FROM stock
+                    WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [partId, locationType, locationId]
+            ) ?? 0
+            let delta = newQty - currentQty
+
+            // Update the stock record even when the counted quantity is unchanged,
+            // because a zero-delta audit still refreshes the count timestamp.
             try dbConn.execute(
                 sql: """
                     UPDATE stock SET qty = ?, last_counted = datetime('now'), updated_at = datetime('now')
                     WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL
-                    """,
+                """,
                 arguments: [newQty, partId, locationType, locationId]
             )
 
-            // Record the adjustment as a movement
+            guard delta != 0 else { return }
+            let signedDelta = delta >= 0 ? "+\(delta)" : "\(delta)"
+
+            // Record audit adjustments as the signed quantity delta, not the absolute new count.
             try dbConn.execute(
                 sql: """
                     INSERT INTO stock_movements (part_id, qty, from_location_type, from_location_id, to_location_type, to_location_id, movement_type, reason, notes, performed_by, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 'adjustment', ?, 'Audit count adjustment', ?, datetime('now'))
+                    VALUES (?, ?, ?, ?, ?, ?, 'adjustment', ?, ?, ?, datetime('now'))
                     """,
-                arguments: [partId, newQty, locationType, locationId, locationType, locationId, reason ?? "Audit adjustment", performedBy]
+                arguments: [
+                    partId,
+                    delta,
+                    locationType,
+                    locationId,
+                    locationType,
+                    locationId,
+                    reason ?? "Audit adjustment",
+                    "Audit count adjustment: \(currentQty) -> \(newQty) (\(signedDelta))",
+                    performedBy,
+                ]
             )
         }
     }
@@ -4699,17 +4917,16 @@ public final class WarehouseService: Sendable {
                 try conf.update(dbConn)
             }
 
-            // Update the latest active audit session if one exists. Use a subquery
-            // instead of UPDATE ... ORDER BY ... LIMIT because the bundled SQLite
-            // build used by tests does not enable UPDATE_LIMIT syntax.
+            // Update the most recently started active audit session for this user, if one exists.
+            // SQLite builds do not consistently allow ORDER BY/LIMIT directly on UPDATE,
+            // so select the target row in a subquery first.
             try dbConn.execute(sql: """
                 UPDATE audit_sessions_v2
                 SET misplaced_found = misplaced_found + 1
                 WHERE id = (
                     SELECT id FROM audit_sessions_v2
                     WHERE status = 'active' AND started_by = ?
-                    ORDER BY started_at DESC
-                    LIMIT 1
+                    ORDER BY started_at DESC LIMIT 1
                 )
                 """, arguments: [foundBy])
 

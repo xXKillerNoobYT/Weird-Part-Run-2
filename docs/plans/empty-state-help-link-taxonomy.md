@@ -127,9 +127,11 @@ taxonomy instead of flagging every site without help-link parameters.
 2. **Optional UX enhancement (separate ticket):** Add deep-link buttons to
    Category C modal pickers (e.g., `SupplierPickerSheet` → "Open Parts →
    Suppliers"). Low priority.
-3. **Scanner update:** The QA scan that produced the WEI-1201 list should be
-   updated to:
-   - Skip files matching `*Wizard*.swift`, `*WizardStep*.swift`,
+3. **Scanner update:** The QA scan that produced the WEI-1201 list is now
+   codified in `scripts/qa-empty-state-help-scan.py` and should be run with:
+   `scripts/qa-empty-state-help-scan.py`.
+   The scanner:
+   - Skips files matching `*Wizard*.swift`, `*WizardStep*.swift`,
      `*PickerSheet.swift`, `CartManager.swift` (Categories B/C/D).
    - For Category A files, verify the host view has both an
      `EmptyStateView` and a toolbar `Button` whose label contains
