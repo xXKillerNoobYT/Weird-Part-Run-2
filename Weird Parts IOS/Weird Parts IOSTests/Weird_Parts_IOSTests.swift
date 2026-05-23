@@ -5,6 +5,7 @@
 //  Created by Isaac Aznoe on 3/15/26.
 //
 
+import Foundation
 import Testing
 import WiredPartCore
 @testable import Weird_Parts
@@ -162,6 +163,23 @@ struct Weird_Parts_IOSTests {
     @Test func receivingRoutingShowsActionableErrorForUnknownPartRoutes() throws {
         #expect(ReceivingRoutingValidation.missingLinkedPartError(partId: nil) == "This receiving item is no longer linked to an active part. Mark it as a wrong part or fix the PO line before routing damaged or used inventory.")
         #expect(ReceivingRoutingValidation.missingLinkedPartError(partId: 6) == nil)
+    }
+
+    @Test func subSchedulePageExposesExplicitSoftDeleteCancellationAction() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let pageURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Scheduling/IOSSubSchedulePage.swift")
+        let sheetURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Scheduling/CreateSubcontractorScheduleSheet.swift")
+        let pageSource = try String(contentsOf: pageURL, encoding: .utf8)
+        let sheetSource = try String(contentsOf: sheetURL, encoding: .utf8)
+
+        #expect(pageSource.contains("cancelSubcontractorSchedule"), "Sub schedule rows need an explicit cancel action wired to the service soft-delete API")
+        #expect(pageSource.contains("Cancel Schedule"), "The destructive UI should be labelled as cancellation, not hidden behind edit/status changes")
+        #expect(!sheetSource.contains("\"cancelled\""), "Editing status to cancelled leaves deleted_at NULL; cancellation must use the explicit soft-delete action")
     }
 
     @Test func uiTestingFixturesSeedJPOFlowDataForQASmoke() throws {
