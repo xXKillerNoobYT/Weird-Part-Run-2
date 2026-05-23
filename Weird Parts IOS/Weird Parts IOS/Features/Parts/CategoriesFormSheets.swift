@@ -363,7 +363,7 @@ struct ColorFormSheet: View {
                     Toggle("Has a visible color", isOn: $hasColor.animation())
                 } footer: {
                     if !hasColor {
-                        Text("Use \"None\" for items that don't have color options — like raw materials, hardware, or unpainted parts.")
+                        Text("Named-only variants save without a hex value — use this for ratings, materials, sizes, raw hardware, or unpainted parts.")
                     }
                 }
 
@@ -422,10 +422,10 @@ struct ColorFormSheet: View {
                                     .foregroundStyle(.secondary)
                             }
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(name.isEmpty ? "No Color" : name)
+                                Text(name.isEmpty ? "Named-only variant" : name)
                                     .font(.headline)
                                     .foregroundStyle(name.isEmpty ? .secondary : .primary)
-                                Text("No hex value")
+                                Text("Named-only · no hex value")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -562,11 +562,11 @@ struct ColorFormSheet: View {
         let hex: String? = hasColor ? hexStringFromColor(selectedColor) : nil
         let trimmedPN = partNumber.trimmingCharacters(in: .whitespaces)
         if let existing = color, let id = existing.id {
-            // Always pass partNumber: empty string clears to NULL, non-empty sets it
+            // Pass empty hex to clear visible colors back to a named-only variant.
             try service.updateColor(id: id, name: trimmedName, hexCode: hex ?? "", partNumber: trimmedPN.isEmpty ? "" : trimmedPN, sortOrder: sortOrder)
         } else {
             let pn: String? = trimmedPN.isEmpty ? nil : trimmedPN
-            try service.createColor(name: trimmedName, hexCode: hex ?? "", partNumber: pn, sortOrder: sortOrder)
+            try service.createColor(name: trimmedName, hexCode: hex, partNumber: pn, sortOrder: sortOrder)
         }
     }
 }
