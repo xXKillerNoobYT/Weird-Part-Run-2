@@ -132,6 +132,7 @@ extension AppDatabase {
         registerMigration093DailyReportClockOutQuestion(&migrator)
         registerMigration094ShortTermPipelineCategoryOverride(&migrator)
         registerMigration095JobStageTemplates(&migrator)
+        registerMigration096SubcontractorScheduleSoftDeleteUniqueness(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -1838,8 +1839,12 @@ extension AppDatabase {
                 t.column("deleted_at", .text)
                 t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
-                t.uniqueKey(["job_id", "gc_id", "scheduled_date"])
             }
+            try db.execute(sql: """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_subcontractor_schedules_active_slot
+                ON subcontractor_schedules(job_id, gc_id, scheduled_date)
+                WHERE deleted_at IS NULL
+                """)
         }
     }
 }
@@ -5507,6 +5512,51 @@ extension AppDatabase {
                 ON job_stage_category_map(template_id, category_id)
                 """)
             try db.execute(sql: "CREATE INDEX idx_jscm_template ON job_stage_category_map(template_id)")
+        }
+    }
+
+    // MARK: - Migration 096: Subcontractor schedule active-slot uniqueness
+
+    private static func registerMigration096SubcontractorScheduleSoftDeleteUniqueness(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("096_subcontractor_schedule_soft_delete_uniqueness") { db in
+            // GH #612: cancelled subcontractor schedules are soft-deleted and must
+            // not keep blocking the same job/sub/date from being scheduled again.
+            // The original table-level UNIQUE(job_id, gc_id, scheduled_date) still
+            // applied to deleted rows, so rebuild the table without that constraint
+            // and replace it with a partial unique index on active rows only.
+            try db.execute(sql: "DROP INDEX IF EXISTS idx_subcontractor_schedules_active_slot")
+            try db.execute(sql: "ALTER TABLE subcontractor_schedules RENAME TO subcontractor_schedules_old")
+            try db.create(table: "subcontractor_schedules") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("job_id", .integer).notNull()
+                    .references("jobs", onDelete: .cascade)
+                t.column("gc_id", .integer).notNull()
+                    .references("general_contractors", onDelete: .cascade)
+                t.column("scheduled_date", .text).notNull()
+                t.column("arrival_time", .text)
+                t.column("departure_time", .text)
+                t.column("scope_of_work", .text)
+                t.column("status", .text).defaults(to: "scheduled")
+                t.column("notes", .text)
+                t.column("created_by", .integer).references("users")
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
+            }
+            try db.execute(sql: """
+                INSERT INTO subcontractor_schedules
+                    (id, job_id, gc_id, scheduled_date, arrival_time, departure_time,
+                     scope_of_work, status, notes, created_by, deleted_at, created_at, updated_at)
+                SELECT id, job_id, gc_id, scheduled_date, arrival_time, departure_time,
+                       scope_of_work, status, notes, created_by, deleted_at, created_at, updated_at
+                FROM subcontractor_schedules_old
+                """)
+            try db.drop(table: "subcontractor_schedules_old")
+            try db.execute(sql: """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_subcontractor_schedules_active_slot
+                ON subcontractor_schedules(job_id, gc_id, scheduled_date)
+                WHERE deleted_at IS NULL
+                """)
         }
     }
 }

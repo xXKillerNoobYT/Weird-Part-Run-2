@@ -26,7 +26,7 @@ struct CreateSubcontractorScheduleSheet: View {
     @State private var isSaving = false
     @State private var saveError: String?
 
-    private let statuses = ["scheduled", "confirmed", "completed", "cancelled"]
+    private let statuses = ["scheduled", "confirmed", "completed"]
 
     init(
         initialDate: Date,
