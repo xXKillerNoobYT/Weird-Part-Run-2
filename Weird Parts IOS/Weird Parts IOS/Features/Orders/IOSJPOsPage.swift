@@ -227,7 +227,7 @@ struct IOSJPOsPage: View {
                     Text("JPO #\(jpo.id)")
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
-                    priorityBadge(jpo.priority)
+                    priorityBadge(jpo.priority, dueDate: jpo.dueDate)
                 }
                 Text(jpo.jobName)
                     .fontWeight(.medium)
@@ -278,9 +278,10 @@ struct IOSJPOsPage: View {
             .foregroundStyle(color)
     }
 
-    // TODO: When JPOListItem gains a dueDate field, replace fallback with TimelinePriorityColor.color(priority:dueDateString:)
-    private func priorityBadge(_ priority: String) -> some View {
-        let color = TimelinePriorityColor.fallbackColor(priority: priority)
+    private func priorityBadge(_ priority: String, dueDate: String?) -> some View {
+        let color: Color = dueDate != nil
+            ? TimelinePriorityColor.color(priority: priority, dueDateString: dueDate)
+            : TimelinePriorityColor.fallbackColor(priority: priority)
         return Text(priority.capitalized)
             .font(.caption2)
             .foregroundStyle(color)
