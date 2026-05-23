@@ -19,8 +19,16 @@ struct IOSSubSchedulePage: View {
     @State private var activeSheet: ActiveSheet?
 
     private enum ActiveSheet: Identifiable {
+        case create
+        case edit(SchedulingService.SubScheduleRow)
         case help
-        var id: String { "help" }
+        var id: String {
+            switch self {
+            case .create: return "create"
+            case .edit(let row): return "edit-\(row.id)"
+            case .help: return "help"
+            }
+        }
     }
 
     private var dateString: String {
@@ -40,19 +48,34 @@ struct IOSSubSchedulePage: View {
         .searchable(text: $searchText, prompt: "Search subs...")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .create } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Add subcontractor schedule")
+            }
+            ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityLabel("Help")
             }
         }
-        .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Sub Schedule Help", sections: [
-                ("What This Page Does", "The Sub Schedule page shows all subcontractor assignments for a given date. Each row displays the subcontractor's name, their company, the job they are assigned to, and their current status."),
-                ("How to Use It", "Use the date picker or arrow buttons to navigate between days. The list updates automatically when you change dates. Pull down to refresh the current day's data."),
-                ("Status Badges", "Green 'Confirmed' means the sub has acknowledged the assignment. Orange 'Pending' means they have not confirmed yet. Blue 'Completed' means the work is done. Red 'Cancelled' means the assignment was removed."),
-                ("Tips", "Check this page each morning to confirm all subs are accounted for. Follow up on any 'Pending' status items to make sure subs know where to go.")
-            ])
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .create:
+                CreateSubcontractorScheduleSheet(initialDate: selectedDate, onSave: { loadData() })
+                    .environmentObject(appCore)
+            case .edit(let row):
+                CreateSubcontractorScheduleSheet(initialDate: selectedDate, existing: row, onSave: { loadData() })
+                    .environmentObject(appCore)
+            case .help:
+                PageHelpSheet(title: "Sub Schedule Help", sections: [
+                    ("What This Page Does", "The Sub Schedule page shows all subcontractor assignments for a given date, including exact scheduled arrival date plus optional arrival/departure times, scope of work, and notes when recorded."),
+                    ("How to Use It", "Use the + button to add the date a subcontractor will show up. Use the date picker or arrow buttons to navigate between days. Tap a row to edit its scheduled date, times, scope, status, or notes."),
+                    ("Status Badges", "Green 'Confirmed' means the sub has acknowledged the assignment. Orange 'Pending' means they have not confirmed yet. Blue 'Completed' means the work is done. Red 'Cancelled' means the assignment was removed."),
+                    ("Tips", "Check this page each morning to confirm all subs are accounted for. Follow up on any 'Pending' status items to make sure subs know where to go.")
+                ])
+            }
         }
         .refreshable { loadData() }
         .task { loadData() }
@@ -112,6 +135,12 @@ struct IOSSubSchedulePage: View {
         } else {
             List(rows) { row in
                 subRow(row)
+                    .contentShape(Rectangle())
+                    .onTapGesture { activeSheet = .edit(row) }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button("Edit") { activeSheet = .edit(row) }
+                            .tint(.blue)
+                    }
             }
             .listStyle(.insetGrouped)
         }
