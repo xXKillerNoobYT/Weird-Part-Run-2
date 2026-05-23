@@ -482,6 +482,23 @@ struct FleetServiceTests {
         #expect(data.isEmpty)
     }
 
+    @Test("Vehicle location logs table has latest lookup index")
+    func testVehicleLocationLogsLatestLookupIndexExists() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (tableExists, indexNames) = try env.db.writer.read { db -> (Bool, Set<String>) in
+            let exists = try db.tableExists("vehicle_location_logs")
+            let rows = try Row.fetchAll(db, sql: "PRAGMA index_list('vehicle_location_logs')")
+            let names = Set(rows.compactMap { row in row["name"] as String? })
+            return (exists, names)
+        }
+
+        #expect(tableExists, "vehicle_location_logs should be created by migrations")
+        #expect(
+            indexNames.contains("idx_vll_vehicle_deleted_id"),
+            "listTelematicsData latest-per-vehicle lookup needs an index on vehicle_id/deleted_at/id"
+        )
+    }
+
     // MARK: - Vehicle Tools
 
     @Test("Get vehicle tools returns empty when no assignments or checkouts exist")

@@ -128,6 +128,7 @@ extension AppDatabase {
         registerMigration089VehicleLocationLogs(&migrator)
         registerMigration090NotebookClassificationPermissions(&migrator)
         registerMigration091MultiUserAuditResolutionColumns(&migrator)
+        registerMigration092VehicleLocationLatestLookupIndex(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5265,6 +5266,19 @@ extension AppDatabase {
                 column: "resolved_at",
                 type: .text
             )
+        }
+    }
+
+    private static func registerMigration092VehicleLocationLatestLookupIndex(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("092_vehicle_location_latest_lookup_index") { db in
+            // FleetService.listTelematicsData reads the latest non-deleted GPS row per vehicle.
+            // Migration 089 creates the table and basic indexes; this covering partial index
+            // preserves the intended PR #535 lookup performance on current main without
+            // reusing the stale 083 migration slot from the old stacked branch.
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_vll_vehicle_deleted_id
+                ON vehicle_location_logs(vehicle_id, deleted_at, id)
+                """)
         }
     }
 
