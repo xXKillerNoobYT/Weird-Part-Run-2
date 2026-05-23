@@ -141,12 +141,12 @@ extension PartsService {
             let lines = normalizedOCRLines(page.text)
             guard !lines.isEmpty else { continue }
 
+            var chunkNumber = 1
             var startIndex = 0
             while startIndex < lines.count {
                 let endIndex = min(startIndex + chunkLineLimit, lines.count)
                 let chunkLines = Array(lines[startIndex..<endIndex])
                 let text = chunkLines.joined(separator: "\n")
-                let chunkNumber = chunks.filter { $0.pageNumber == page.pageNumber }.count + 1
                 let id = "p\(page.pageNumber)-c\(chunkNumber)"
                 chunks.append(PartsOCRImportChunk(
                     id: id,
@@ -154,6 +154,7 @@ extension PartsService {
                     text: text,
                     snippet: makeOCRSnippet(from: text)
                 ))
+                chunkNumber += 1
                 startIndex = endIndex
             }
         }
@@ -166,9 +167,14 @@ extension PartsService {
         var candidates: [PartsOCRImportCandidate] = []
         var errors: [PartsOCRImportError] = []
         var activeHeader: OCRPartsHeader?
+        var activePageNumber: Int?
         var rowNumber = 1
 
         for chunk in chunks {
+            if activePageNumber != chunk.pageNumber {
+                activePageNumber = chunk.pageNumber
+                activeHeader = nil
+            }
             for line in normalizedOCRLines(chunk.text) {
                 let cells = splitOCRTableLine(line)
                 guard cells.count >= 2 else { continue }
@@ -190,8 +196,14 @@ extension PartsService {
                     rowErrors.append("Missing required category")
                 }
                 for numericHeader in ["cost_price", "markup_percent"] {
-                    if let raw = normalized.fields[numericHeader], Double(raw) == nil {
-                        rowErrors.append("Invalid number for \(numericHeader): \(raw)")
+                    if let raw = normalized.fields[numericHeader] {
+                        guard let value = Double(raw) else {
+                            rowErrors.append("Invalid number for \(numericHeader): \(raw)")
+                            continue
+                        }
+                        if value < 0 {
+                            rowErrors.append("\(numericHeader) cannot be negative")
+                        }
                     }
                 }
 

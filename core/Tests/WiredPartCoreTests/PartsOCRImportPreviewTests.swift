@@ -91,4 +91,39 @@ struct PartsOCRImportPreviewTests {
         #expect(preview.errors.contains { $0.message.contains("category") })
         #expect(preview.errors.contains { $0.message.contains("cost_price") })
     }
+
+    @Test("previewPartsImportOCR does not carry headers between pages")
+    func previewPartsImportOCRDoesNotCarryHeadersAcrossPages() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let preview = try env.parts.previewPartsImportOCR(pages: [
+            .init(pageNumber: 1, text: """
+            Code | Name | Category
+            A-1 | First Page Row | Wire
+            """),
+            .init(pageNumber: 2, text: """
+            B-2 | Second Page Without Header | Conduit
+            """)
+        ])
+
+        #expect(preview.candidates.count == 1)
+        #expect(preview.candidates.first?.code == "A-1")
+    }
+
+    @Test("previewPartsImportOCR rejects negative cost and markup values")
+    func previewPartsImportOCRRejectsNegativeNumericValues() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let preview = try env.parts.previewPartsImportOCR(pages: [
+            .init(pageNumber: 5, text: """
+            Code | Name | Category | Cost | Markup
+            NEG-1 | Negative Cost | Wire | -1 | 10
+            NEG-2 | Negative Markup | Wire | 5 | -10
+            """)
+        ])
+
+        #expect(preview.candidates.isEmpty)
+        #expect(preview.errors.contains { $0.message == "cost_price cannot be negative" })
+        #expect(preview.errors.contains { $0.message == "markup_percent cannot be negative" })
+    }
 }
