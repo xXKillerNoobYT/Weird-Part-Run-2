@@ -549,7 +549,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                       "Progress bar should report \"Step 6 of 10\" after the 9→10 dot expansion.")
     }
 
-    // MARK: - WEI-1193: Step 8 Phase-Header Screenshot for WEI-1190
+    // MARK: - WEI-1190: Step 8 Phase-Header Screenshot
 
     /// Captures the wizard section-header screenshot acceptance for [WEI-1190]:
     /// open the warehouse onboarding wizard, reach Step 8 (Walking Path), confirm
@@ -574,14 +574,19 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         }()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        func capture(_ name: String) {
+        func capture(_ name: String) throws {
             let screenshot = XCUIScreen.main.screenshot()
             let attachment = XCTAttachment(screenshot: screenshot)
             attachment.name = name
             attachment.lifetime = .keepAlways
             add(attachment)
             let file = directory.appendingPathComponent("\(name).png")
-            try? screenshot.pngRepresentation.write(to: file, options: .atomic)
+            do {
+                try screenshot.pngRepresentation.write(to: file, options: .atomic)
+            } catch {
+                XCTFail("Failed to write WEI-1190 screenshot artifact \(file.path): \(error)")
+                throw error
+            }
         }
 
         logInAsUITestOwnerIfNeeded()
@@ -594,7 +599,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             createContinue.tap()
         }
 
-        capture("00-wizard-entry-step")
+        try capture("00-wizard-entry-step")
 
         // Adaptive navigation to Step 8: while the wizard reports a step less
         // than 8, tap Skip (or Next as fallback) and wait for the step counter
@@ -614,7 +619,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         var lastSeen: Int? = nil
         for navHop in 1...14 {
             guard let step = currentStepNumber(timeout: 8) else {
-                capture("error-step-counter-missing-hop-\(navHop)")
+                try capture("error-step-counter-missing-hop-\(navHop)")
                 XCTFail("Could not read \"Step N of 10\" from the wizard progress bar (hop \(navHop)).")
                 return
             }
@@ -628,7 +633,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                 } else if next.exists && next.isHittable {
                     next.tap()
                 } else {
-                    capture("error-no-forward-button-step-\(step)")
+                    try capture("error-no-forward-button-step-\(step)")
                     XCTFail("Wizard step \(step) exposed neither Skip nor Next.")
                     return
                 }
@@ -637,7 +642,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                 if back.exists && back.isHittable {
                     back.tap()
                 } else {
-                    capture("error-no-back-button-step-\(step)")
+                    try capture("error-no-back-button-step-\(step)")
                     XCTFail("Wizard step \(step) exposed no Back button.")
                     return
                 }
@@ -651,7 +656,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
         // Capture immediately so we have the artifact regardless of which
         // predicate matches the exact phase-prefix copy.
-        capture("01-step8-phase4-walking-path-header")
+        try capture("01-step8-phase4-walking-path-header")
 
         // The Plan §4 phase prefix renders in two places at Step 8:
         //   1. The navigation bar title ("Phase 4 · Walking Path").
@@ -659,23 +664,32 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         // Use CONTAINS so we tolerate any whitespace nuance between the
         // SF Symbols middle dot ("·" U+00B7) and surrounding spacing.
         let phasePredicate = NSPredicate(format: "label CONTAINS 'Phase 4' AND label CONTAINS 'Walking Path'")
-        let phaseLabel = app.staticTexts.matching(phasePredicate).firstMatch
+        let navigationPhaseTitle = app.navigationBars.staticTexts.matching(phasePredicate).firstMatch
+        let matchingPhaseLabels = app.staticTexts.matching(phasePredicate)
         let stepIndicator = app.staticTexts["Step 8 of 10"]
 
-        let phaseFound = phaseLabel.waitForExistence(timeout: 10)
+        let navigationPhaseFound = navigationPhaseTitle.waitForExistence(timeout: 10)
+        let progressPhaseDeadline = Date().addingTimeInterval(10)
+        while matchingPhaseLabels.count < 2 && Date() < progressPhaseDeadline {
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        let phaseLabelCount = matchingPhaseLabels.count
+        let progressPhaseFound = phaseLabelCount >= 2
         let stepFound = stepIndicator.waitForExistence(timeout: 5)
 
-        if !phaseFound || !stepFound {
+        if !navigationPhaseFound || !progressPhaseFound || !stepFound {
             // Dump every visible static text to the xcresult so a human can
             // see what XCUI actually exposed at Step 8.
             for text in app.staticTexts.allElementsBoundByIndex.prefix(40) {
-                NSLog("[WEI-1193] staticText label=\(text.label)")
+                NSLog("[WEI-1190] staticText label=\(text.label)")
             }
-            capture("error-step8-labels-missing")
+            try capture("error-step8-labels-missing")
         }
 
-        XCTAssertTrue(phaseFound,
-                      "Step 8 should render a static text containing the Plan §4 phase prefix \"Phase 4 … Walking Path\".")
+        XCTAssertTrue(navigationPhaseFound,
+                      "Step 8 navigation bar should render the Plan §4 phase prefix \"Phase 4 … Walking Path\".")
+        XCTAssertTrue(progressPhaseFound,
+                      "Step 8 progress caption should render a second Plan §4 phase prefix \"Phase 4 … Walking Path\" (found \(phaseLabelCount) matching label(s)).")
         XCTAssertTrue(stepFound,
                       "Progress bar should report \"Step 8 of 10\" after the 9→10 dot expansion.")
     }
