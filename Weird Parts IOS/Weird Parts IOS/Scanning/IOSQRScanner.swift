@@ -98,7 +98,7 @@ struct IOSQRScannerView: UIViewControllerRepresentable {
     final class Coordinator: NSObject {
         var onEvent: (QRScanEvent) -> Void
         weak var scanner: DataScannerViewController?
-        var delegate: ScannerDelegate?
+        fileprivate var delegate: ScannerDelegate?
         var isScanning = false
 
         init(onEvent: @escaping (QRScanEvent) -> Void) {
@@ -168,13 +168,35 @@ final class IOSQRScanner: QRScannerAdapter {
 
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let rootVC = windowScene.windows.first?.rootViewController else {
-            continuation?.yield(.error("Unable to present scanner"))
+            finishPresentedScanner(scanner, errorMessage: "Unable to present scanner")
             return
         }
 
-        rootVC.present(scanner, animated: true) {
-            try? scanner.startScanning()
+        rootVC.present(scanner, animated: true) { [weak self, weak scanner] in
+            guard let self, let scanner else { return }
+
+            do {
+                try scanner.startScanning()
+            } catch {
+                self.finishPresentedScanner(
+                    scanner,
+                    errorMessage: userFriendlyError(error, context: "scan item")
+                )
+            }
         }
+    }
+
+    private func finishPresentedScanner(_ scanner: DataScannerViewController, errorMessage: String) {
+        let activeContinuation = continuation
+        activeContinuation?.yield(.error(errorMessage))
+
+        scanner.stopScanning()
+        scanner.dismiss(animated: true)
+
+        scannerVC = nil
+        delegate = nil
+        continuation = nil
+        activeContinuation?.finish()
     }
 }
 
