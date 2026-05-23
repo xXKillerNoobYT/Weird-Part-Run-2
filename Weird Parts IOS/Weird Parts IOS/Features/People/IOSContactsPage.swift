@@ -45,6 +45,10 @@ struct IOSContactsPage: View {
         .onChange(of: sortOption) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .contactsPageInactive, object: nil)
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 12) {
@@ -277,6 +281,17 @@ struct IOSContactsPage: View {
             loadError = userFriendlyError(error, context: "load contacts")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        NotificationCenter.default.post(
+            name: .contactsPageActive,
+            object: nil,
+            userInfo: [
+                "context": "Contacts Page: \(activeContacts.count) active, \(inactiveContacts.count) inactive, filter: \(displayName(typeFilter)), sort: \(sortOption.rawValue), search active: \(!searchText.isEmpty)."
+            ]
+        )
     }
 }
 

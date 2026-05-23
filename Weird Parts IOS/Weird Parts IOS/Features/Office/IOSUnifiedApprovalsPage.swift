@@ -199,13 +199,8 @@ struct IOSUnifiedApprovalsPage: View {
             loadData()
             appCore.onboardingManager?.markCompleted("approvals-view")
         }
-        .onAppear {
-            NotificationCenter.default.post(
-                name: .officeApprovalsPageActive,
-                object: nil,
-                userInfo: ["context": approvalsPageContext]
-            )
-        }
+        .onAppear { postPageContext() }
+
         .onDisappear {
             NotificationCenter.default.post(name: .officeApprovalsPageInactive, object: nil)
         }
@@ -785,5 +780,17 @@ struct IOSUnifiedApprovalsPage: View {
         }
 
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let filterLabel = activeFilter?.label ?? "All"
+        NotificationCenter.default.post(
+            name: .officeApprovalsPageActive,
+            object: nil,
+            userInfo: [
+                "context": "Office Approvals: \(totalCount) pending, \(filteredItems.count) visible, filter: \(filterLabel), search active: \(!searchText.isEmpty)."
+            ]
+        )
     }
 }

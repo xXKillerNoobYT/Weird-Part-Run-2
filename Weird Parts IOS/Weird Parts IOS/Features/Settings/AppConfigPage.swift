@@ -129,6 +129,9 @@ struct AppConfigPage: View {
             ])
         }
         .task { loadConfig() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .settingsPageInactive, object: nil)
+        }
         .alert("Error", isPresented: Binding(get: { loadError != nil || actionError != nil }, set: { if !$0 { loadError = nil; actionError = nil } })) {
             Button("OK") { loadError = nil; actionError = nil }
         } message: {
@@ -161,6 +164,7 @@ struct AppConfigPage: View {
                 overdueWarningDays = paySettings?.warningDays ?? 7
                 autoPaymentHold = paySettings?.autoHold ?? false
             }
+            postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load settings")
         }
@@ -189,6 +193,7 @@ struct AppConfigPage: View {
                 )
             }
             saved = true
+            postAIContext()
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(2))
                 saved = false
@@ -196,5 +201,20 @@ struct AppConfigPage: View {
         } catch {
             actionError = userFriendlyError(error, context: "complete action")
         }
+    }
+
+    private func postAIContext() {
+        let context = """
+        App Config settings page. Read-only context.
+        Auto-lock minutes: \(autoLockMinutes), stale data warning hours: \(staleDataHours), archive completed jobs days: \(archiveDays), default warranty days: \(warrantyDays).
+        Payment tracking enabled: \(paymentTrackingEnabled), payment terms days: \(paymentTermsDays), overdue warning days: \(overdueWarningDays), auto payment hold: \(autoPaymentHold).
+        Form valid: \(isFormValid), saved confirmation visible: \(saved), load error present: \(loadError != nil), action error present: \(actionError != nil).
+        Available read-only guidance: explain each setting, current visible values, validation state, payment tracking options, and where Save/Restart App Tour/help controls are located. Do not save or change settings directly.
+        """
+        NotificationCenter.default.post(
+            name: .settingsPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 }

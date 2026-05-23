@@ -58,6 +58,10 @@ struct IOSProfitabilityPage: View {
             .searchable(text: $searchText, prompt: "Search jobs...")
             .refreshable { loadData() }
             .task { loadData() }
+            .onAppear { postPageContext() }
+            .onDisappear {
+                NotificationCenter.default.post(name: .reportsProfitabilityPageInactive, object: nil)
+            }
             .onChange(of: dateRange) { loadData() }
             .onChange(of: customStart) { loadData() }
             .onChange(of: customEnd) { loadData() }
@@ -171,5 +175,17 @@ struct IOSProfitabilityPage: View {
             loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let totalProfit = rows.reduce(0) { $0 + $1.profit }
+        NotificationCenter.default.post(
+            name: .reportsProfitabilityPageActive,
+            object: nil,
+            userInfo: [
+                "context": "Profitability Report: range \(dateRange.rawValue), \(rows.count) jobs, \(filteredRows.count) visible, total profit \(formatCurrency(totalProfit)), search active: \(!searchText.isEmpty)."
+            ]
+        )
     }
 }

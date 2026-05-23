@@ -13,7 +13,7 @@ struct IOSOfficeDashboardPage: View {
     @State private var attentionItems: [DashboardService.AttentionItem] = []
     @State private var todaySchedule: [DashboardService.ScheduleItem] = []
     @State private var financialSnapshot: DashboardService.FinancialSnapshot?
-    @State private var backgroundTaskStatuses: [BackgroundTaskService.OfficeStatusRow] = []
+    @State private var backgroundTaskStatuses: [OfficeBackgroundStatusRow] = []
     @State private var loadError: String?
     @State private var isLoading = true
     @State private var activeSheet: ActiveSheet?
@@ -27,6 +27,58 @@ struct IOSOfficeDashboardPage: View {
             case .help: "help"
             case .attentionDetail(let item): "attention-\(item.id)"
             }
+        }
+    }
+
+    private enum OfficeBackgroundStatus {
+        case completed
+        case running
+        case failed
+        case unavailable
+
+        init(statusString: String) {
+            switch statusString {
+            case "completed": self = .completed
+            case "running": self = .running
+            case "failed": self = .failed
+            default: self = .unavailable
+            }
+        }
+    }
+
+    private struct OfficeBackgroundStatusRow: Identifiable {
+        let id: String
+        let title: String
+        let detail: String
+        let status: OfficeBackgroundStatus
+        let systemImage: String
+        let statusLabel: String
+
+        static func rows(from entries: [BackgroundTaskService.TaskLogEntry]) -> [OfficeBackgroundStatusRow] {
+            entries.prefix(4).map { entry in
+                let status = OfficeBackgroundStatus(statusString: entry.status)
+                return OfficeBackgroundStatusRow(
+                    id: entry.id.map(String.init) ?? "\(entry.taskName)-\(entry.startedAt.timeIntervalSince1970)",
+                    title: entry.taskName,
+                    detail: entry.resultSummary ?? entry.errorMessage ?? entry.taskType,
+                    status: status,
+                    systemImage: entry.statusIcon,
+                    statusLabel: entry.status.replacingOccurrences(of: "_", with: " ").capitalized
+                )
+            }
+        }
+
+        static func unavailableRows() -> [OfficeBackgroundStatusRow] {
+            [
+                OfficeBackgroundStatusRow(
+                    id: "background-unavailable",
+                    title: "Background Tasks",
+                    detail: "Background task status is not available.",
+                    status: .unavailable,
+                    systemImage: "clock.badge.questionmark",
+                    statusLabel: "Unavailable"
+                )
+            ]
         }
     }
 
@@ -117,6 +169,10 @@ struct IOSOfficeDashboardPage: View {
         .task {
             appCore.onboardingManager?.markCompleted("office-view")
             loadData()
+        }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .officeDashboardPageInactive, object: nil)
         }
     }
 
@@ -487,12 +543,12 @@ struct IOSOfficeDashboardPage: View {
         }
     }
 
-    private func colorForBackgroundStatus(_ status: BackgroundTaskService.OfficeStatus) -> Color {
+    private func colorForBackgroundStatus(_ status: OfficeBackgroundStatus) -> Color {
         switch status {
         case .completed: return .green
         case .running: return .blue
         case .failed: return .red
-        case .neverRun, .unavailable: return .secondary
+        case .unavailable: return .secondary
         }
     }
 
@@ -519,7 +575,14 @@ struct IOSOfficeDashboardPage: View {
 
             attentionItems = try service.getAttentionItems()
             todaySchedule = try service.getTodaySchedule()
-            backgroundTaskStatuses = try appCore.backgroundTaskService?.officeStatusRows() ?? BackgroundTaskService.OfficeStatusRow.unavailableRows()
+            if let backgroundTaskService = appCore.backgroundTaskService {
+                backgroundTaskStatuses = try OfficeBackgroundStatusRow.rows(from: backgroundTaskService.recentTasks(limit: 4))
+                if backgroundTaskStatuses.isEmpty {
+                    backgroundTaskStatuses = OfficeBackgroundStatusRow.unavailableRows()
+                }
+            } else {
+                backgroundTaskStatuses = OfficeBackgroundStatusRow.unavailableRows()
+            }
 
             if appCore.hasPermission(financialValuesPermission) {
                 financialSnapshot = try service.getFinancialSnapshot()
@@ -531,6 +594,17 @@ struct IOSOfficeDashboardPage: View {
         }
 
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        NotificationCenter.default.post(
+            name: .officeDashboardPageActive,
+            object: nil,
+            userInfo: [
+                "context": "Office Dashboard: \(smartCards.count) smart cards, \(attentionItems.count) attention items, \(todaySchedule.count) schedule items, financial snapshot visible: \(financialSnapshot != nil), background rows: \(backgroundTaskStatuses.count)."
+            ]
+        )
     }
 
     private func scheduleDailyBriefingNotificationIfAllowed() {

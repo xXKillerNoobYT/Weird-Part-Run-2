@@ -69,6 +69,10 @@ struct IOSDailyReportsSummaryPage: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .reportsDailySummaryPageInactive, object: nil)
+        }
         .onChange(of: dateRange) { loadData() }
         .onChange(of: customStart) { loadData() }
         .onChange(of: customEnd) { loadData() }
@@ -236,5 +240,18 @@ struct IOSDailyReportsSummaryPage: View {
             loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let workerCount = rows.reduce(0) { $0 + $1.workerCount }
+        let totalHours = rows.reduce(0) { $0 + $1.totalHours }
+        NotificationCenter.default.post(
+            name: .reportsDailySummaryPageActive,
+            object: nil,
+            userInfo: [
+                "context": "Daily Reports Summary: date \(dateString), \(rows.count) jobs, \(filteredRows.count) visible, \(workerCount) workers, \(String(format: "%.1f", totalHours)) hours."
+            ]
+        )
     }
 }
