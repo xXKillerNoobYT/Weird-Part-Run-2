@@ -128,10 +128,22 @@ struct AppConfigPage: View {
                 ("How to Use It", "Adjust values for each setting and tap Save. Auto-lock controls how long before the app locks. Stale data warning triggers when sync data is old. Payment tracking enables invoice and payment monitoring per customer."),
             ])
         }
-        .task { loadConfig() }
+        .task {
+            loadConfig()
+            postAIContext()
+        }
+        .onAppear { postAIContext() }
         .onDisappear {
             NotificationCenter.default.post(name: .settingsPageInactive, object: nil)
         }
+        .onChange(of: autoLockMinutes) { _, _ in postAIContext() }
+        .onChange(of: staleDataHours) { _, _ in postAIContext() }
+        .onChange(of: archiveDays) { _, _ in postAIContext() }
+        .onChange(of: warrantyDays) { _, _ in postAIContext() }
+        .onChange(of: paymentTrackingEnabled) { _, _ in postAIContext() }
+        .onChange(of: paymentTermsDays) { _, _ in postAIContext() }
+        .onChange(of: overdueWarningDays) { _, _ in postAIContext() }
+        .onChange(of: autoPaymentHold) { _, _ in postAIContext() }
         .alert("Error", isPresented: Binding(get: { loadError != nil || actionError != nil }, set: { if !$0 { loadError = nil; actionError = nil } })) {
             Button("OK") { loadError = nil; actionError = nil }
         } message: {
