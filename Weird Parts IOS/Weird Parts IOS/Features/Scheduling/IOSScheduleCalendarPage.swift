@@ -12,13 +12,14 @@ struct IOSScheduleCalendarPage: View {
     // MARK: - Calendar Mode
 
     enum CalendarMode: String, CaseIterable {
+        case twoWeeks = "14 Days"
         case week = "Week"
         case month = "Month"
     }
 
     // MARK: - State
 
-    @State private var calendarMode: CalendarMode = .week
+    @State private var calendarMode: CalendarMode = .twoWeeks
     @State private var entries: [SchedulingService.ScheduleEntry] = []
     @State private var monthScheduleData: [String: SchedulingService.DayScheduleSummary] = [:]
     @State private var dayEntries: [SchedulingService.ScheduleEntry] = []
@@ -36,18 +37,31 @@ struct IOSScheduleCalendarPage: View {
 
     private let calendar = Calendar.current
 
-    /// The date range for the current week view.
-    private var weekStartDate: Date {
-        calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: selectedDate)) ?? selectedDate
+    /// The date range for the selected list mode.
+    ///
+    /// GH #610 asks for a rolling 14-day preview that starts on the selected
+    /// day/current day, not the calendar week boundary. The old Week mode remains
+    /// available for users who prefer Sunday/Monday week grouping.
+    private var listRangeStartDate: Date {
+        switch calendarMode {
+        case .twoWeeks:
+            calendar.startOfDay(for: selectedDate)
+        case .week, .month:
+            calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: selectedDate)) ?? selectedDate
+        }
     }
 
-    private var weekStart: String {
-        Formatters.iso8601DateOnly.string(from: weekStartDate)
+    private var listRangeEndDate: Date {
+        let days = calendarMode == .twoWeeks ? 13 : 6
+        return calendar.date(byAdding: .day, value: days, to: listRangeStartDate) ?? listRangeStartDate
     }
 
-    private var weekEnd: String {
-        let end = calendar.date(byAdding: .day, value: 6, to: weekStartDate) ?? weekStartDate
-        return Formatters.iso8601DateOnly.string(from: end)
+    private var listRangeStart: String {
+        Formatters.iso8601DateOnly.string(from: listRangeStartDate)
+    }
+
+    private var listRangeEnd: String {
+        Formatters.iso8601DateOnly.string(from: listRangeEndDate)
     }
 
     var body: some View {
@@ -72,7 +86,7 @@ struct IOSScheduleCalendarPage: View {
                 monthView
                 dayDetailSection
             } else {
-                weekNavigator
+                listNavigator
                 scheduleList
             }
         }
@@ -99,10 +113,10 @@ struct IOSScheduleCalendarPage: View {
                     .environmentObject(appCore)
             case .help:
                 PageHelpSheet(title: "Schedule Calendar Help", sections: [
-                    ("What This Page Does", "The Schedule Calendar shows your work assignments in either a week list or a month grid. Month view uses colored dots to indicate AM (blue), PM (green), full-day (orange), and time-off (red) entries for each day."),
-                    ("How to Use It", "Toggle between Week and Month views using the segmented control at the top. In month view, tap any day to see its detail below the calendar. In week view, scroll through the list of assignments. Use the + button to create a new schedule entry."),
+                    ("What This Page Does", "The Schedule Calendar shows your work assignments in a rolling 14-day preview, a week list, or a month grid. Month view uses colored dots to indicate AM (blue), PM (green), full-day (orange), and time-off (red) entries for each day."),
+                    ("How to Use It", "Use 14 Days for fast two-week planning from the selected date, Week for calendar-week grouping, or Month for the grid. In month view, tap any day to see its detail below the calendar. Use the + button to create a new schedule entry."),
                     ("Color Coding", "Blue dots and badges mean AM shifts, green means PM, orange means full day. Red dots indicate someone has time off that day."),
-                    ("Tips", "Pull down to refresh the schedule. Use the search bar to filter entries by job name or notes. Navigate between weeks or months using the arrow buttons.")
+                    ("Tips", "Pull down to refresh the schedule. Use the search bar to filter entries by job name or notes. Navigate between 14-day windows, weeks, or months using the arrow buttons.")
                 ])
             }
         }
@@ -299,33 +313,42 @@ struct IOSScheduleCalendarPage: View {
         }
     }
 
-    // MARK: - Week View (existing)
+    // MARK: - List View Navigator
 
-    private var weekNavigator: some View {
-        HStack {
+    private var listNavigator: some View {
+        let stepDays = calendarMode == .twoWeeks ? 14 : 7
+        let previousLabel = calendarMode == .twoWeeks ? "Previous 14 days" : "Previous week"
+        let nextLabel = calendarMode == .twoWeeks ? "Next 14 days" : "Next week"
+
+        return HStack {
             Button {
-                selectedDate = calendar.date(byAdding: .weekOfYear, value: -1, to: selectedDate) ?? selectedDate
+                selectedDate = calendar.date(byAdding: .day, value: -stepDays, to: selectedDate) ?? selectedDate
                 loadData()
             } label: {
                 Image(systemName: "chevron.left")
             }
-            .accessibilityLabel("Previous week")
+            .accessibilityLabel(previousLabel)
 
             Spacer()
 
-            Text("\(weekStart) - \(weekEnd)")
-                .font(.subheadline)
-                .fontWeight(.medium)
+            VStack(spacing: 2) {
+                Text(calendarMode == .twoWeeks ? "Next 14 Days" : "Week")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("\(listRangeStart) - \(listRangeEnd)")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+            }
 
             Spacer()
 
             Button {
-                selectedDate = calendar.date(byAdding: .weekOfYear, value: 1, to: selectedDate) ?? selectedDate
+                selectedDate = calendar.date(byAdding: .day, value: stepDays, to: selectedDate) ?? selectedDate
                 loadData()
             } label: {
                 Image(systemName: "chevron.right")
             }
-            .accessibilityLabel("Next week")
+            .accessibilityLabel(nextLabel)
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
@@ -344,7 +367,7 @@ struct IOSScheduleCalendarPage: View {
             EmptyStateView(
                 icon: "calendar",
                 title: "No Schedule",
-                message: "No schedule entries for this week."
+                message: calendarMode == .twoWeeks ? "No schedule entries for the next 14 days." : "No schedule entries for this week."
             )
         } else {
             List(filteredEntries, id: \.id) { entry in
@@ -479,8 +502,8 @@ struct IOSScheduleCalendarPage: View {
             } else {
                 entries = try service.getMySchedule(
                     userId: userId,
-                    startDate: weekStart,
-                    endDate: weekEnd
+                    startDate: listRangeStart,
+                    endDate: listRangeEnd
                 )
             }
         } catch {

@@ -141,6 +141,23 @@ struct IOSSubSchedulePage: View {
                 Label(formatDate(row.scheduleDate), systemImage: "calendar")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
+                if let timeSummary = subTimeSummary(row) {
+                    Label(timeSummary, systemImage: "clock")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                if let scope = row.scopeOfWork, !scope.isEmpty {
+                    Label(scope, systemImage: "list.clipboard")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                if let notes = row.notes, !notes.isEmpty {
+                    Text(notes)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(2)
+                }
             }
 
             Spacer()
@@ -175,6 +192,15 @@ struct IOSSubSchedulePage: View {
             return String(dateString.prefix(10))
         }
         return Formatters.shortDateDisplayFormatter.string(from: date)
+    }
+
+    private func subTimeSummary(_ row: SchedulingService.SubScheduleRow) -> String? {
+        let arrival = row.arrivalTime?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let departure = row.departureTime?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !arrival.isEmpty && !departure.isEmpty { return "\(arrival) - \(departure)" }
+        if !arrival.isEmpty { return "Arrives \(arrival)" }
+        if !departure.isEmpty { return "Leaves \(departure)" }
+        return nil
     }
 
     // MARK: - Data Loading
