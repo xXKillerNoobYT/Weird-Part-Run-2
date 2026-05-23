@@ -151,7 +151,7 @@ final class AppCore: ObservableObject {
                     people: PeopleService(db: database),
                     scheduling: SchedulingService(db: database),
                     chat: ChatService(db: database),
-                    notebooks: NotebooksService(db: database),
+                    notebooks: NotebooksService(db: database, auth: auth),
                     reports: ReportsService(db: database),
                     tools: ToolsService(db: database),
                     dashboard: DashboardService(db: database),
@@ -850,6 +850,10 @@ final class AppCore: ObservableObject {
             }
         }
 
+        if ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard") {
+            try seedDispatchBoardUITestingFixtures(db: db)
+        }
+
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
         UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
@@ -884,5 +888,94 @@ final class AppCore: ObservableObject {
         if args.contains("-UITestingWEI936DismissedChecklist") {
             UserDefaults.standard.set(true, forKey: "onboarding_checklist_dismissed")
         }
+    }
+
+    nonisolated private static func seedDispatchBoardUITestingFixtures(db: AppDatabase) throws {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+
+        let calendar = Calendar.current
+        let today = Date()
+        let weekStart = calendar.date(
+            from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)
+        ) ?? today
+        let sourceDate = formatter.string(from: weekStart)
+        let targetDate = formatter.string(from: calendar.date(byAdding: .day, value: 1, to: weekStart) ?? today)
+        let conflictDate = formatter.string(from: calendar.date(byAdding: .day, value: 2, to: weekStart) ?? today)
+
+        try db.writer.write { dbConn in
+            let ownerId = try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM users WHERE display_name = ? AND deleted_at IS NULL LIMIT 1",
+                arguments: ["UITest Owner"]
+            ) ?? 1
+
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO users (display_name, pin_hash, pin_salt, is_active, created_at, updated_at)
+                    SELECT ?, ?, ?, 1, datetime('now'), datetime('now')
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM users WHERE display_name = ? AND deleted_at IS NULL
+                    )
+                    """,
+                arguments: ["UITest Spare Worker", "uitest-hash", "uitest-salt", "UITest Spare Worker"]
+            )
+
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO jobs (job_number, job_name, status, priority, job_type, created_by, created_at, updated_at)
+                    VALUES (?, ?, 'active', 'normal', 'service', ?, datetime('now'), datetime('now'))
+                    ON CONFLICT(job_number) DO UPDATE SET
+                        job_name = excluded.job_name,
+                        status = 'active',
+                        deleted_at = NULL,
+                        updated_at = datetime('now')
+                    """,
+                arguments: ["UITEST-DISPATCH-A", "UITest Source Dispatch Job", ownerId]
+            )
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO jobs (job_number, job_name, status, priority, job_type, created_by, created_at, updated_at)
+                    VALUES (?, ?, 'active', 'normal', 'service', ?, datetime('now'), datetime('now'))
+                    ON CONFLICT(job_number) DO UPDATE SET
+                        job_name = excluded.job_name,
+                        status = 'active',
+                        deleted_at = NULL,
+                        updated_at = datetime('now')
+                    """,
+                arguments: ["UITEST-DISPATCH-B", "UITest Target Dispatch Job", ownerId]
+            )
+
+            let sourceJobId = try Int64.fetchOne(dbConn, sql: "SELECT id FROM jobs WHERE job_number = ?", arguments: ["UITEST-DISPATCH-A"]) ?? 0
+            let targetJobId = try Int64.fetchOne(dbConn, sql: "SELECT id FROM jobs WHERE job_number = ?", arguments: ["UITEST-DISPATCH-B"]) ?? 0
+
+            try dbConn.execute(
+                sql: "DELETE FROM job_dispatch WHERE job_id IN (?, ?) OR user_id = ?",
+                arguments: [sourceJobId, targetJobId, ownerId]
+            )
+            try dbConn.execute(
+                sql: "DELETE FROM schedule_exceptions WHERE user_id = ?",
+                arguments: [ownerId]
+            )
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO job_dispatch
+                    (job_id, user_id, dispatch_date, role_on_job, status, dispatched_by, time_slot, created_at, updated_at)
+                    VALUES (?, ?, ?, 'worker', 'scheduled', ?, 'am', datetime('now'), datetime('now'))
+                    """,
+                arguments: [sourceJobId, ownerId, sourceDate, ownerId]
+            )
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO schedule_exceptions
+                    (user_id, exception_date, exception_type, reason, is_approved, created_at)
+                    VALUES (?, ?, 'time_off', 'UITest approved PTO', 1, datetime('now'))
+                    """,
+                arguments: [ownerId, conflictDate]
+            )
+        }
+        UserDefaults.standard.set(targetDate, forKey: "uiTestingDispatchTargetDate")
     }
 }
