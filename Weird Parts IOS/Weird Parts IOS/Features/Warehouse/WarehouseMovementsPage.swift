@@ -309,7 +309,11 @@ struct WarehouseMovementsPage: View {
                         .background(movementColor(movement.movementType).opacity(0.1))
                         .clipShape(Capsule())
 
-                    if let from = movement.fromLocationType, let to = movement.toLocationType {
+                    if let auditSummary = auditSummaryText(for: movement) {
+                        Text(auditSummary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if let from = movement.fromLocationType, let to = movement.toLocationType {
                         Text("\(from.capitalized) → \(to.capitalized)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -320,7 +324,7 @@ struct WarehouseMovementsPage: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 3) {
-                Text("×\(movement.qty)")
+                Text(quantityLabel(for: movement))
                     .font(.subheadline)
                     .fontWeight(.semibold)
                 Text(formatDate(movement.createdAt))
@@ -421,6 +425,19 @@ struct WarehouseMovementsPage: View {
         case "adjustment": "Adjustment"
         default: type.capitalized
         }
+    }
+
+    private func auditSummaryText(for movement: WarehouseService.MovementRow) -> String? {
+        guard movement.movementType == "adjustment",
+              let notes = movement.notes,
+              notes.hasPrefix("Audit count adjustment:") else { return nil }
+        return notes.replacingOccurrences(of: "Audit count adjustment:", with: "Audit:")
+    }
+
+    private func quantityLabel(for movement: WarehouseService.MovementRow) -> String {
+        guard movement.movementType == "adjustment",
+              auditSummaryText(for: movement) != nil else { return "×\(movement.qty)" }
+        return movement.qty >= 0 ? "+\(movement.qty)" : "\(movement.qty)"
     }
 
     private func formatDate(_ dateStr: String?) -> String {
