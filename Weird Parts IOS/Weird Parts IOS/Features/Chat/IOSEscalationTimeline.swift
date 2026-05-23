@@ -298,7 +298,10 @@ struct IOSEscalationTimeline: View {
         }
     }
     private func priorityColor(_ priority: String, dueDate: String?) -> Color {
-        return TimelinePriorityColor.color(priority: priority, dueDateString: dueDate)
+        if dueDate != nil {
+            return TimelinePriorityColor.color(priority: priority, dueDateString: dueDate)
+        }
+        return TimelinePriorityColor.fallbackColor(priority: priority)
     }
 }
 

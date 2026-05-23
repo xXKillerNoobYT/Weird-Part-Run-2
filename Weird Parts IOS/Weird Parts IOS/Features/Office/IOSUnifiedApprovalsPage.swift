@@ -379,9 +379,12 @@ struct IOSUnifiedApprovalsPage: View {
                 subtitle: "JPO #\(jpo.id) by \(jpo.requestedByName) - \(jpo.lineCount) lines"
             )
             HStack(spacing: 12) {
+                let priorityColor: Color = jpo.dueDate != nil
+                    ? TimelinePriorityColor.color(priority: jpo.priority, dueDateString: jpo.dueDate)
+                    : TimelinePriorityColor.fallbackColor(priority: jpo.priority)
                 Text("Priority: \(jpo.priority.capitalized)")
                     .font(.caption)
-                    .foregroundStyle(TimelinePriorityColor.color(priority: jpo.priority, dueDateString: jpo.dueDate))
+                    .foregroundStyle(priorityColor)
                 Spacer()
             }
             HStack(spacing: 12) {
@@ -537,16 +540,6 @@ struct IOSUnifiedApprovalsPage: View {
 
     private func statusBadge(_ status: String, color: Color) -> some View {
         Text(status.capitalized)
-            .font(.system(.caption2, weight: .semibold))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Capsule().fill(color.opacity(0.15)))
-            .foregroundStyle(color)
-    }
-
-    private func priorityBadge(_ priority: String, dueDate: String?) -> some View {
-        let color = TimelinePriorityColor.color(priority: priority, dueDateString: dueDate)
-        return Text(priority.capitalized)
             .font(.system(.caption2, weight: .semibold))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
