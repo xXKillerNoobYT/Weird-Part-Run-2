@@ -65,11 +65,11 @@ struct WizardStepWalkingPath: View {
         List {
             Section {
                 if displayedStops.isEmpty {
-                    ContentUnavailableView {
-                        Label("No Walking Path", systemImage: "figure.walk")
-                    } description: {
-                        Text("Add stops or preview a suggested path before saving.")
-                    }
+                    EmptyStateView(
+                        icon: "figure.walk",
+                        title: "No Walking Path",
+                        message: "Add stops or preview a suggested path before saving."
+                    )
                 } else {
                     ForEach(Array(displayedStops.enumerated()), id: \.element) { index, areaId in
                         stopRow(areaId: areaId, index: index)
@@ -170,7 +170,11 @@ struct WizardStepWalkingPath: View {
             } else if let first = displayedStops.first, let area = areaById[first] {
                 areaPreview(area)
             } else {
-                ContentUnavailableView("Select a Stop", systemImage: "rectangle.dashed", description: Text("Tap a stop to preview its location."))
+                EmptyStateView(
+                    icon: "rectangle.dashed",
+                    title: "Select a Stop",
+                    message: "Tap a stop to preview its location."
+                )
             }
             Spacer()
         }
@@ -278,7 +282,10 @@ struct WizardStepWalkingPath: View {
     }
 
     private func suggestPath() {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            stepError = "Warehouse service not available"
+            return
+        }
         do {
             previewStops = try service.suggestWalkingPath(floorPlanId: floorPlanId)
         } catch {

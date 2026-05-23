@@ -41,8 +41,11 @@ struct IOSTeamDetailPage: View {
             } else if let team = team {
                 teamContent(team)
             } else {
-                ContentUnavailableView("Team Not Found", systemImage: "person.3.fill",
-                                       description: Text("This team may have been deleted."))
+                EmptyStateView(
+                    icon: "person.3.fill",
+                    title: "Team Not Found",
+                    message: "This team may have been deleted."
+                )
             }
         }
         .navigationTitle(team?.name ?? "Team")
@@ -394,10 +397,10 @@ private struct AddMemberSheet: View {
                 if isLoading {
                     ProgressView("Loading employees...")
                 } else if filteredEmployees.isEmpty {
-                    ContentUnavailableView(
-                        "No Available Employees",
-                        systemImage: "person.badge.plus",
-                        description: Text("All employees are already members of this team.")
+                    EmptyStateView(
+                        icon: "person.badge.plus",
+                        title: "No Available Employees",
+                        message: "All employees are already members of this team."
                     )
                 } else {
                     List(filteredEmployees) { employee in

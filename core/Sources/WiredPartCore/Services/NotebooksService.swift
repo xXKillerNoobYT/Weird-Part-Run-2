@@ -363,6 +363,10 @@ public final class NotebooksService: Sendable {
         jobId: Int64? = nil,
         createdBy: Int64
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_notebooks")
+        }
+
         guard !title.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw NotebooksError.requiredFieldEmpty
         }
@@ -393,6 +397,10 @@ public final class NotebooksService: Sendable {
         entryType: String = "note",
         createdBy: Int64
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_notebooks")
+        }
+
         guard !title.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw NotebooksError.requiredFieldEmpty
         }
@@ -913,7 +921,11 @@ public final class NotebooksService: Sendable {
         createdBy: Int64,
         sortOrder: Int? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_notebooks")
+        }
+
+        return try db.writer.write { dbConn in
             let order: Int
             if let so = sortOrder {
                 order = so
@@ -1207,6 +1219,10 @@ public final class NotebooksService: Sendable {
         templateData: NotebookTemplateData,
         createdBy: Int64
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_templates")
+        }
+
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw NotebooksError.requiredFieldEmpty
         }
@@ -1223,6 +1239,10 @@ public final class NotebooksService: Sendable {
 
     /// Apply a job template to a notebook — creates groups, sections, and entries.
     public func applyJobTemplate(templateId: Int64, notebookId: Int64, createdBy: Int64) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_templates")
+        }
+
         let templateRow = try db.writer.read { dbConn in
             try Row.fetchOne(dbConn, sql: "SELECT template_data FROM notebook_templates WHERE id = ?", arguments: [templateId])
         }
@@ -1278,6 +1298,10 @@ public final class NotebooksService: Sendable {
 
     /// Apply a page template to a section — creates entries.
     public func applyPageTemplate(templateId: Int64, sectionId: Int64, createdBy: Int64) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_templates")
+        }
+
         let templateRow = try db.writer.read { dbConn in
             try Row.fetchOne(dbConn, sql: "SELECT template_data FROM notebook_templates WHERE id = ?", arguments: [templateId])
         }
@@ -1320,6 +1344,10 @@ public final class NotebooksService: Sendable {
 
     /// Seed default templates if none exist.
     public func seedDefaultTemplates(createdBy: Int64) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_templates")
+        }
+
         let count = try db.writer.read { dbConn -> Int in
             try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM notebook_templates WHERE is_default = 1") ?? 0
         }

@@ -1,0 +1,22 @@
+name: Artifact Guard
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+
+jobs:
+  tracked-artifacts:
+    name: Tracked artifact guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify guard catches representative artifacts
+        run: python3 scripts/guard-tracked-artifacts.py --self-test
+
+      - name: Fail on tracked local runtime artifacts
+        run: python3 scripts/guard-tracked-artifacts.py

@@ -77,11 +77,11 @@ struct IOSMileagePage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredLogs.isEmpty {
-            ContentUnavailableView {
-                Label("No Mileage Logs", systemImage: "road.lanes")
-            } description: {
-                Text("No mileage logs found.")
-            }
+            EmptyStateView(
+                icon: "road.lanes",
+                title: "No Mileage Logs",
+                message: "No mileage logs found."
+            )
         } else {
             List(filteredLogs, id: \.id) { log in
                 mileageRow(log)
@@ -151,10 +151,8 @@ struct IOSMileagePage: View {
         isLoading = mileageLogs.isEmpty
         loadError = nil
         do {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd"
-            let startStr = formatter.string(from: effectiveStart)
-            let endStr = formatter.string(from: effectiveEnd)
+            let startStr = Formatters.localDateFormatter.string(from: effectiveStart)
+            let endStr = Formatters.localDateFormatter.string(from: effectiveEnd)
             mileageLogs = try service.listMileageLogs(start: startStr, end: endStr)
         } catch {
             loadError = userFriendlyError(error, context: "load mileage data")
