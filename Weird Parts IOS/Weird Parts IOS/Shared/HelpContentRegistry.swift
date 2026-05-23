@@ -144,8 +144,8 @@ struct HelpContentRegistry {
         "WiredPart.fleetFuelPageActive": "fleet-fuel",
         "WiredPart.fleetInspectionsPageActive": "fleet-inspections",
         "WiredPart.fleetTrackingPageActive": "fleet-tracking",
+        "WiredPart.fleetTelematicsPageActive": "fleet-telematics",
         "WiredPart.fleetMyTruckPageActive": "fleet-my-truck",
-        "WiredPart.officeApprovalsPageActive": "office-approvals",
         "WiredPart.toolRegistryPageActive": "tools-registry",
         "WiredPart.notebooksListPageActive": "notebooks-all",
         "WiredPart.settingsPageActive": "settings-app-config",
@@ -731,6 +731,83 @@ struct HelpContentRegistry {
                 ("Searching", "Use the search bar to filter by vehicle name, maintenance type, or technician name. This helps you quickly find service history for a specific truck."),
                 ("Reading Entries", "The orange wrench icon marks each record. Vehicle name and maintenance type appear on the left. Cost and mileage appear on the right."),
                 ("Tips", "Regular maintenance keeps trucks on the road. Check this page to verify completed services and track spending. The Fleet Dashboard also highlights upcoming and overdue maintenance items."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "fleet-trailers",
+            title: "Trailers Help",
+            sections: [
+                ("Overview", "The Trailers page tracks every trailer, its assigned truck or job, current location, status, capacity, and registration/inspection dates."),
+                ("Searching", "Use search to find a trailer by number, name, type, status, or assignment. The AI context includes visible trailer counts so help reflects the current filtered list."),
+                ("Assignments", "Rows show whether a trailer is assigned, available, out of service, or waiting for inspection. Tap a row for details before changing assignments."),
+                ("Tips", "Check inspection and registration badges before dispatch. Out-of-service trailers should stay off active jobs until maintenance clears them."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "fleet-mileage",
+            title: "Mileage Help",
+            sections: [
+                ("Overview", "The Mileage page shows odometer readings and trip logs so you can verify usage trends and catch missing mileage entries."),
+                ("Searching", "Filter by vehicle, driver, or notes to find recent readings. The visible count in AI context updates with search state."),
+                ("Reading Entries", "Compare current mileage, last reading, and trip distance to spot unusual jumps before reports or maintenance schedules use the data."),
+                ("Tips", "Review mileage after route-heavy days and before scheduled maintenance so odometer-based reminders stay accurate."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "fleet-fuel",
+            title: "Fuel Help",
+            sections: [
+                ("Overview", "The Fuel page tracks fuel purchases by vehicle, driver, gallons, price, station, and mileage so office and field teams can review fuel spend."),
+                ("Searching", "Use the search bar to narrow fuel logs by vehicle, driver, station, or notes. The assistant context reports whether search is active and how many rows are visible."),
+                ("Reading Entries", "Each fuel row combines cost, gallons, and vehicle context. Look for missing mileage or unusually high cost before exporting spend reports."),
+                ("Tips", "Keep fuel logs current so Fleet cost cards and reporting pages reflect true month-to-date spend."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "fleet-inspections",
+            title: "Inspections Help",
+            sections: [
+                ("Overview", "The Inspections page lists pre-trip and safety inspection records for fleet assets, including completion status, vehicle, driver, and issues found."),
+                ("Searching", "Search by vehicle, driver, status, or notes to focus on open inspection concerns. AI help uses the current visible count."),
+                ("Inspection Status", "Open or failed inspections should be reviewed before dispatch. Completed inspections provide an audit trail for compliance."),
+                ("Tips", "Use this page at the start of the day to confirm required checks are complete and at the end of the day to follow up on reported defects."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "fleet-tracking",
+            title: "Fleet Tracking Help",
+            sections: [
+                ("Overview", "Fleet Tracking summarizes current asset tracking and location signals so dispatch can reason about where vehicles and trailers are."),
+                ("Filtering", "Search and filters narrow the tracking list by asset, status, or location. The assistant context includes the active filter and visible rows."),
+                ("Using Tracking Data", "Treat tracking information as read-only operational context. Verify stale or missing location signals with the driver before making dispatch decisions."),
+                ("Tips", "Use tracking with Fleet Dashboard and Dispatch rather than as the only source of truth for safety-critical routing."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "fleet-telematics",
+            title: "Telematics Help",
+            sections: [
+                ("Overview", "The Telematics page summarizes connected vehicle signals such as device status, last update, alerts, and high-level health."),
+                ("Reading Signals", "Use status and freshness indicators to spot vehicles whose device data may be stale before relying on the telemetry for dispatch decisions."),
+                ("Context", "AI help is read-only and should explain current telematics health, visible rows, and stale-signal risk without changing device assignments."),
+                ("Tips", "Pair telematics with driver confirmation for safety-critical decisions, especially when a device has not reported recently."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "fleet-my-truck",
+            title: "My Truck Help",
+            sections: [
+                ("Overview", "My Truck is the driver-focused view for the currently assigned vehicle, including assignment, inspection, mileage, and maintenance reminders."),
+                ("Daily Workflow", "Start by confirming the assigned truck, then complete required inspections and review any open maintenance warnings before heading out."),
+                ("Context", "The assistant context is read-only and should explain current assignment, checklist, and reminders without changing vehicle or inspection data."),
+                ("Tips", "If the assigned vehicle looks wrong, contact dispatch or a manager instead of editing historical logs from this page."),
             ]
         ),
 

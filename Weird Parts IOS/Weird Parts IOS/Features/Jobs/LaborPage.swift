@@ -112,6 +112,8 @@ struct LaborPage: View {
             .onDisappear {
                 NotificationCenter.default.post(name: .laborPageInactive, object: nil)
             }
+            .onChange(of: searchText) { _, _ in postAIContext() }
+            .onChange(of: activeSheet?.id) { _, _ in postAIContext() }
     }
 
     // MARK: - Content

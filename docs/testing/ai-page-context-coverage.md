@@ -1,7 +1,7 @@
 # AI Page Context Coverage Inventory
 
-Issue: WEI-1112 / WEI-1194 / GitHub #86 T1-19
-Updated: 2026-05-15
+Issue: WEI-1112 / WEI-1194 / GitHub #86 T1-19 / GH #650 / WEI-1995
+Updated: 2026-05-23
 
 ## Success Condition
 
@@ -10,11 +10,18 @@ Complete the 87-page page-context coverage set by adding read-only page-active/p
 ## Current Coverage
 
 Implemented page-context notifications observed by `IOSAIAssistantPanel`: 60+ page contexts, including People/Office/Reports and Fleet recovery slices.
-
-Help registry mappings are maintained for recovered page IDs where dedicated help entries exist; Fleet tabs beyond Dashboard and Maintenance still need dedicated help-entry extraction.
-
+Help registry mappings are maintained for every observed active-page tracker ID, including the recovered Fleet tab entries.
 
 Known gap: none in the currently observed AI page-context set. Remaining work is additional unobserved functional pages, not broken mappings.
+
+## GH #650 Representative Coverage Table
+
+| Related issue | Representative page(s) | HelpContentRegistry result | Page-context freshness result | Evidence |
+| --- | --- | --- | --- | --- |
+| #571 Settings registry gap | Settings / App Config | `settingsPageActive` maps to `settings-app-config`, and `settings-app-config` has a dedicated `HelpEntry`. | Context is reposted from `SettingsRouter` on appear and reflects selected settings navigation. | Static guard passes; coverage table row for Settings. |
+| #582 Fleet registry gaps | Fleet Dashboard, Vehicles, Trailers, Maintenance, Mileage, Fuel, Inspections, Tracking, My Truck | All mapped Fleet page IDs now have dedicated help entries, including the six previously missing secondary Fleet pages. | Fleet pages already post active/inactive context on appear/disappear; visible-count/search/filter freshness is covered by their page context payloads where available. | `scripts/verify-ai-help-context-coverage.py`; Fleet rows below. |
+| #569 Jobs/Warehouse stale contexts | Job Reports, Labor, Warehouse Movements, Receiving, Staging, Returns, Tools | Existing Jobs/Warehouse page IDs continue to resolve to help entries. | Search/filter/tab/selection/sheet state included in context now reposts via `.onChange` on the representative stale-state pages called out by #569. | Source-level `.onChange` guards plus xcodebuild validation. |
+| #554 Clock-out questionnaire stale context | Clock-Out Questionnaire | `questionnairePageActive` maps to `jobs-questionnaire`, which has dedicated help. | Answers, Daily Report text, break verification, missed breaks, companion votes, and submitting state now repost context when edited. | `IOSQuestionnairePage` `.onChange` guards plus xcodebuild validation. |
 
 ## Covered Pages
 
@@ -84,6 +91,7 @@ Known gap: none in the currently observed AI page-context set. Remaining work is
 | Fleet | Fuel | `fleetFuelPageActive` | `fleet-fuel` |
 | Fleet | Inspections | `fleetInspectionsPageActive` | `fleet-inspections` |
 | Fleet | Tracking | `fleetTrackingPageActive` | `fleet-tracking` |
+| Fleet | Telematics | `fleetTelematicsPageActive` | `fleet-telematics` |
 | Fleet | My Truck | `fleetMyTruckPageActive` | `fleet-my-truck` |
 | Tools | Tool Registry | `toolRegistryPageActive` | `tools-registry` |
 | Notebooks | Notebooks List | `notebooksListPageActive` | `notebooks-all` |
