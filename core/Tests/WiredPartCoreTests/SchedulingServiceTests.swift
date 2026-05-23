@@ -1269,6 +1269,72 @@ struct SchedulingServiceTests {
         #expect(subs.count == 1)
         #expect(subs[0].scheduleDate == "2026-09-15")
         #expect(subs[0].subName == "Trimmed Sub")
+        #expect(subs[0].arrivalTime == "08:00")
+        #expect(subs[0].departureTime == "12:00")
+        #expect(subs[0].scopeOfWork == "Rough-in")
+        #expect(subs[0].notes == "Use side gate")
+    }
+
+    @Test("updateSubcontractorSchedule edits the date, timing, status, scope, and notes")
+    func testUpdateSubcontractorScheduleEditsAllFormFields() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let gcId = try seedSchedulingContractor(env, contactName: "Edit Sub", companyName: "Edit Co")
+        let scheduleId = try env.scheduling.createSubcontractorSchedule(
+            jobId: jobId,
+            gcId: gcId,
+            scheduledDate: "2026-09-15",
+            arrivalTime: "08:00",
+            departureTime: "12:00",
+            scopeOfWork: "Old scope",
+            status: "scheduled",
+            notes: "Old notes",
+            createdBy: env.adminUserId
+        )
+
+        try env.scheduling.updateSubcontractorSchedule(
+            id: scheduleId,
+            jobId: jobId,
+            gcId: gcId,
+            scheduledDate: " 2026-09-16 ",
+            arrivalTime: "09:15",
+            departureTime: "14:45",
+            scopeOfWork: "Install trim",
+            status: "confirmed",
+            notes: "Bring ladder"
+        )
+
+        #expect(try env.scheduling.getSubSchedule(date: "2026-09-15").isEmpty)
+        let edited = try env.scheduling.getSubSchedule(date: "2026-09-16")
+        #expect(edited.count == 1)
+        #expect(edited[0].id == scheduleId)
+        #expect(edited[0].scheduleDate == "2026-09-16")
+        #expect(edited[0].arrivalTime == "09:15")
+        #expect(edited[0].departureTime == "14:45")
+        #expect(edited[0].scopeOfWork == "Install trim")
+        #expect(edited[0].status == "confirmed")
+        #expect(edited[0].notes == "Bring ladder")
+    }
+
+    @Test("subcontractor schedule rejects departure before arrival")
+    func testSubcontractorScheduleRejectsDepartureBeforeArrival() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let gcId = try seedSchedulingContractor(env, contactName: "Bad Time Sub", companyName: "Bad Time Co")
+
+        #expect(throws: SchedulingService.SchedulingError.invalidDateRange(start: "17:00", end: "08:00")) {
+            _ = try env.scheduling.createSubcontractorSchedule(
+                jobId: jobId,
+                gcId: gcId,
+                scheduledDate: "2026-09-15",
+                arrivalTime: "17:00",
+                departureTime: "08:00",
+                scopeOfWork: nil,
+                status: "scheduled",
+                notes: nil,
+                createdBy: nil
+            )
+        }
     }
 
     @Test("subcontractor schedule date validation rejects timestamps instead of shifting days")

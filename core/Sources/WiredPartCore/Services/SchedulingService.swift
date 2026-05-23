@@ -172,7 +172,7 @@ public final class SchedulingService: Sendable {
         }
     }
 
-    /// A subcontractor schedule row for the sub-schedule list.
+    /// A subcontractor schedule row for the sub-schedule list and add/edit forms.
     public struct SubScheduleRow: Sendable, Identifiable {
         public let id: Int64
         public let subName: String
@@ -180,10 +180,22 @@ public final class SchedulingService: Sendable {
         public let jobName: String
         public let scheduleDate: String
         public let status: String
+        public let arrivalTime: String?
+        public let departureTime: String?
+        public let scopeOfWork: String?
+        public let notes: String?
 
         public init(
-            id: Int64, subName: String, companyName: String,
-            jobName: String, scheduleDate: String, status: String
+            id: Int64,
+            subName: String,
+            companyName: String,
+            jobName: String,
+            scheduleDate: String,
+            status: String,
+            arrivalTime: String? = nil,
+            departureTime: String? = nil,
+            scopeOfWork: String? = nil,
+            notes: String? = nil
         ) {
             self.id = id
             self.subName = subName
@@ -191,6 +203,10 @@ public final class SchedulingService: Sendable {
             self.jobName = jobName
             self.scheduleDate = scheduleDate
             self.status = status
+            self.arrivalTime = arrivalTime
+            self.departureTime = departureTime
+            self.scopeOfWork = scopeOfWork
+            self.notes = notes
         }
     }
 
@@ -666,7 +682,11 @@ public final class SchedulingService: Sendable {
                            COALESCE(gc.company_name, '') AS company_name,
                            COALESCE(j.job_name, 'Unknown Job') AS job_name,
                            ss.scheduled_date AS schedule_date,
-                           COALESCE(ss.status, 'scheduled') AS status
+                           COALESCE(ss.status, 'scheduled') AS status,
+                           ss.arrival_time,
+                           ss.departure_time,
+                           ss.scope_of_work,
+                           ss.notes
                     FROM subcontractor_schedules ss
                     LEFT JOIN general_contractors gc ON gc.id = ss.gc_id AND gc.deleted_at IS NULL
                     LEFT JOIN jobs j ON j.id = ss.job_id AND j.deleted_at IS NULL
@@ -682,7 +702,11 @@ public final class SchedulingService: Sendable {
                         companyName: row["company_name"] ?? "",
                         jobName: row["job_name"] ?? "Unknown Job",
                         scheduleDate: row["schedule_date"] ?? normalizedDate,
-                        status: row["status"] ?? "scheduled"
+                        status: row["status"] ?? "scheduled",
+                        arrivalTime: row["arrival_time"],
+                        departureTime: row["departure_time"],
+                        scopeOfWork: row["scope_of_work"],
+                        notes: row["notes"]
                     )
                 }
             }
@@ -707,6 +731,11 @@ public final class SchedulingService: Sendable {
     ) throws -> Int64 {
         let normalizedDate = try Self.normalizeScheduleDateOnly(scheduledDate)
         let normalizedStatus = try Self.normalizeSubcontractorScheduleStatus(status)
+        let normalizedArrivalTime = Self.normalizeOptionalSubcontractorScheduleText(arrivalTime)
+        let normalizedDepartureTime = Self.normalizeOptionalSubcontractorScheduleText(departureTime)
+        try Self.validateSubcontractorScheduleTimeRange(arrivalTime: normalizedArrivalTime, departureTime: normalizedDepartureTime)
+        let normalizedScopeOfWork = Self.normalizeOptionalSubcontractorScheduleText(scopeOfWork)
+        let normalizedNotes = Self.normalizeOptionalSubcontractorScheduleText(notes)
 
         return try db.writer.write { dbConn in
             try validateSubcontractorScheduleParents(dbConn, jobId: jobId, gcId: gcId)
@@ -718,13 +747,79 @@ public final class SchedulingService: Sendable {
                     (job_id, gc_id, scheduled_date, arrival_time, departure_time, scope_of_work, status, notes, created_by, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                     """,
-                arguments: [jobId, gcId, normalizedDate, arrivalTime, departureTime, scopeOfWork, normalizedStatus, notes, createdBy]
+                arguments: [jobId, gcId, normalizedDate, normalizedArrivalTime, normalizedDepartureTime, normalizedScopeOfWork, normalizedStatus, normalizedNotes, createdBy]
             )
             return dbConn.lastInsertedRowID
         }
     }
 
-    /// Correct the scheduled date for a non-deleted subcontractor schedule.
+    /// Update all editable subcontractor schedule fields used by the add/edit flow.
+    public func updateSubcontractorSchedule(
+        id: Int64,
+        jobId: Int64,
+        gcId: Int64,
+        scheduledDate: String,
+        arrivalTime: String? = nil,
+        departureTime: String? = nil,
+        scopeOfWork: String? = nil,
+        status: String = "scheduled",
+        notes: String? = nil
+    ) throws {
+        let normalizedDate = try Self.normalizeScheduleDateOnly(scheduledDate)
+        let normalizedStatus = try Self.normalizeSubcontractorScheduleStatus(status)
+        let normalizedArrivalTime = Self.normalizeOptionalSubcontractorScheduleText(arrivalTime)
+        let normalizedDepartureTime = Self.normalizeOptionalSubcontractorScheduleText(departureTime)
+        try Self.validateSubcontractorScheduleTimeRange(arrivalTime: normalizedArrivalTime, departureTime: normalizedDepartureTime)
+        let normalizedScopeOfWork = Self.normalizeOptionalSubcontractorScheduleText(scopeOfWork)
+        let normalizedNotes = Self.normalizeOptionalSubcontractorScheduleText(notes)
+
+        try db.writer.write { dbConn in
+            let scheduleExists = (try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COUNT(*) FROM subcontractor_schedules WHERE id = ? AND deleted_at IS NULL",
+                arguments: [id]
+            ) ?? 0) > 0
+            guard scheduleExists else { throw SchedulingError.subcontractorScheduleNotFound(id) }
+
+            try validateSubcontractorScheduleParents(dbConn, jobId: jobId, gcId: gcId)
+
+            let conflictCount = try Int.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT COUNT(*)
+                    FROM subcontractor_schedules
+                    WHERE job_id = ?
+                      AND gc_id = ?
+                      AND scheduled_date = ?
+                      AND deleted_at IS NULL
+                      AND id <> ?
+                    """,
+                arguments: [jobId, gcId, normalizedDate, id]
+            ) ?? 0
+            if conflictCount > 0 {
+                throw SchedulingError.subcontractorScheduleConflict(jobId: jobId, gcId: gcId, date: normalizedDate)
+            }
+
+            try dbConn.execute(
+                sql: """
+                    UPDATE subcontractor_schedules
+                    SET job_id = ?,
+                        gc_id = ?,
+                        scheduled_date = ?,
+                        arrival_time = ?,
+                        departure_time = ?,
+                        scope_of_work = ?,
+                        status = ?,
+                        notes = ?,
+                        updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [jobId, gcId, normalizedDate, normalizedArrivalTime, normalizedDepartureTime, normalizedScopeOfWork, normalizedStatus, normalizedNotes, id]
+            )
+        }
+    }
+
+    /// Backwards-compatible date-only correction helper for existing callers.
     public func updateSubcontractorScheduleDate(id: Int64, scheduledDate: String) throws {
         let normalizedDate = try Self.normalizeScheduleDateOnly(scheduledDate)
 
@@ -2376,6 +2471,41 @@ public final class SchedulingService: Sendable {
         }
 
         return value
+    }
+
+    private static func normalizeOptionalSubcontractorScheduleText(_ rawValue: String?) -> String? {
+        guard let rawValue else { return nil }
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    private static func validateSubcontractorScheduleTimeRange(arrivalTime: String?, departureTime: String?) throws {
+        guard let arrivalTime, let departureTime else { return }
+        let arrivalComparable = minutesSinceMidnight(arrivalTime) ?? -1
+        let departureComparable = minutesSinceMidnight(departureTime) ?? -1
+        let isOrdered: Bool
+        if arrivalComparable >= 0 && departureComparable >= 0 {
+            isOrdered = departureComparable > arrivalComparable
+        } else {
+            // Preserve compatibility for legacy/custom time labels while still enforcing
+            // the edit-flow rule when both values are comparable strings.
+            isOrdered = departureTime > arrivalTime
+        }
+        guard isOrdered else {
+            throw SchedulingError.invalidDateRange(start: arrivalTime, end: departureTime)
+        }
+    }
+
+    private static func minutesSinceMidnight(_ time: String) -> Int? {
+        let parts = time.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              let hour = Int(parts[0]),
+              let minute = Int(parts[1]),
+              (0...23).contains(hour),
+              (0...59).contains(minute) else {
+            return nil
+        }
+        return hour * 60 + minute
     }
 
     private static func normalizeSubcontractorScheduleStatus(_ rawStatus: String) throws -> String {
