@@ -40,10 +40,10 @@ struct WarehouseMovementsPage: View {
             }
         }
 
-        var movementType: String? {
+        var movementTypes: Set<String>? {
             switch self {
             case .all: nil
-            case .type(let type): type.rawValue
+            case .type(let type): type.primaryUIFilterRawValues
             }
         }
 
@@ -180,7 +180,11 @@ struct WarehouseMovementsPage: View {
                 ForEach(MovementFilter.allCases, id: \.self) { filter in
                     filterCard(
                         filter,
-                        count: filter.movementType.map { countsByType[$0, default: 0] } ?? dateFilteredMovements.count
+                        count: filter.movementTypes.map { rawValues in
+                            rawValues.reduce(0) { total, rawValue in
+                                total + countsByType[rawValue, default: 0]
+                            }
+                        } ?? dateFilteredMovements.count
                     )
                 }
             }
@@ -220,8 +224,8 @@ struct WarehouseMovementsPage: View {
 
     private var filteredMovements: [WarehouseService.MovementRow] {
         var result = dateFilteredMovements
-        if let filter = selectedFilter, let movementType = filter.movementType {
-            result = result.filter { $0.movementType == movementType }
+        if let filter = selectedFilter, let movementTypes = filter.movementTypes {
+            result = result.filter { movementTypes.contains($0.movementType) }
         }
         if !searchText.isEmpty {
             let query = searchText.lowercased()

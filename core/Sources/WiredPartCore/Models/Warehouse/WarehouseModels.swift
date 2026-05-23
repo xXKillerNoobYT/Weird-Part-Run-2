@@ -48,6 +48,36 @@ public struct StockMovement: Codable, FetchableRecord, MutablePersistableRecord,
             .transfer, .receive, .consume, .returnToSupplier, .adjustment
         ]
 
+        /// Persisted raw movement types represented by this top-level UI filter.
+        ///
+        /// Some legacy/current writers store semantically equivalent movement
+        /// values (`pull`, `usage`, `job_pull`) while the UI intentionally shows
+        /// one worker-facing category ("Consumed"). Filter chips must count and
+        /// select every raw value in the category so their totals match the rows
+        /// rendered with the same canonical label/icon.
+        public var primaryUIFilterTypes: [MovementType] {
+            switch self {
+            case .transfer:
+                return [.transfer]
+            case .receive:
+                return [.receive, .receiving, .receipt]
+            case .consume:
+                return [.consume, .pull, .usage, .jobPull]
+            case .returnToSupplier:
+                return [.stockReturn, .returnToSupplier]
+            case .adjustment:
+                return [.adjustment]
+            case .receiving, .receivingStaged, .receipt,
+                 .stockReturn, .addStock, .writeOff,
+                 .pull, .usage, .jobPull, .restockFromShop:
+                return [self]
+            }
+        }
+
+        public var primaryUIFilterRawValues: Set<String> {
+            Set(primaryUIFilterTypes.map(\.rawValue))
+        }
+
         public var displayName: String {
             switch self {
             case .transfer:

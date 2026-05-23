@@ -14,6 +14,15 @@ struct StockMovementTypeContractTests {
         #expect(filterTypes.map(\.systemImageName) == ["arrow.left.arrow.right", "arrow.down.circle", "flame", "arrow.uturn.left", "plus.forwardslash.minus"])
     }
 
+    @Test("Primary UI filters include every raw movement value rendered with the same label")
+    func primaryUIFiltersIncludeGroupedRawValues() {
+        #expect(StockMovement.MovementType.transfer.primaryUIFilterRawValues == Set(["transfer"]))
+        #expect(StockMovement.MovementType.receive.primaryUIFilterRawValues == Set(["receive", "receiving", "receipt"]))
+        #expect(StockMovement.MovementType.consume.primaryUIFilterRawValues == Set(["consume", "pull", "usage", "job_pull"]))
+        #expect(StockMovement.MovementType.returnToSupplier.primaryUIFilterRawValues == Set(["return", "return_to_supplier"]))
+        #expect(StockMovement.MovementType.adjustment.primaryUIFilterRawValues == Set(["adjustment"]))
+    }
+
     @Test("Movement type display fallback normalizes raw persisted values")
     func displayFallbackNormalizesRawPersistedValues() {
         #expect(StockMovement.MovementType.displayName(forRawValue: "return_to_supplier") == "Returned")
