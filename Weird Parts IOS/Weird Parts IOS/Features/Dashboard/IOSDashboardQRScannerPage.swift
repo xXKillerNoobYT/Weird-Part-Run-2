@@ -26,6 +26,7 @@ struct IOSDashboardQRScannerPage: View {
     @State private var lastResult: ScanResultData? // Remembered
     @State private var scanError: String?
     @State private var isProcessing = false
+    @State private var activeScanTask: Task<Void, Never>?
 
     // Location navigation state
     @State private var currentLocationInfo: WarehouseService.LocationScanInfo?
@@ -142,7 +143,11 @@ struct IOSDashboardQRScannerPage: View {
                 userPositionAreaId = try? service.getUserCurrentPosition(userId: userId)
             }
         }
-        .onDisappear { isScanning = false }
+        .onDisappear {
+            isScanning = false
+            activeScanTask?.cancel()
+            activeScanTask = nil
+        }
     }
 
     // MARK: - Camera Section
@@ -501,10 +506,16 @@ struct IOSDashboardQRScannerPage: View {
 
         switch event {
         case .detected(let payload, _):
-            // Don't stop scanning — process and update overlay.
-            Task { await processCode(payload, autoLock: false) }
+            // Keep scanning live, but only allow one lookup task at a time so
+            // repeated camera detections cannot race UI state updates.
+            guard activeScanTask == nil else { return }
+            activeScanTask = Task {
+                await processCode(payload, autoLock: false)
+                await MainActor.run { activeScanTask = nil }
+            }
         case .error(let msg):
             scanError = msg
+            isScanning = false
         case .permissionDenied:
             scanError = "Camera permission denied. Enable in Settings."
             isScanning = false

@@ -40,6 +40,12 @@ struct IOSQRScannerView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> DataScannerViewController {
         let scanner = makeQRDataScannerViewController()
         let scanDelegate = ScannerDelegate { event in
+            switch event {
+            case .error, .permissionDenied:
+                context.coordinator.isScanning = false
+            case .detected:
+                break
+            }
             context.coordinator.onEvent(event)
         }
         scanner.delegate = scanDelegate
