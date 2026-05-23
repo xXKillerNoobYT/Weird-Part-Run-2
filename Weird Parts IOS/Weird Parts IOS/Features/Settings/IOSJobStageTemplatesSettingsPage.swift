@@ -1,0 +1,424 @@
+import SwiftUI
+import WiredPartCore
+
+/// Settings UI for reusable job stage workflows.
+///
+/// Operators can create, duplicate, rename, archive, and edit the ordered stages
+/// that power job progress bars and job create/edit workflow pickers.
+struct IOSJobStageTemplatesSettingsPage: View {
+    @EnvironmentObject private var appCore: AppCore
+
+    @State private var templates: [JobsService.JobStageTemplate] = []
+    @State private var selectedTemplateId: Int64?
+    @State private var draftStages: [StageDraft] = []
+    @State private var isLoading = true
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+    @State private var successMessage: String?
+
+    @State private var newTemplateName = ""
+    @State private var duplicateTemplateName = ""
+    @State private var renameTemplateName = ""
+    @State private var newStageName = ""
+
+    @State private var showingCreateTemplate = false
+    @State private var showingDuplicateTemplate = false
+    @State private var showingRenameTemplate = false
+    @State private var showingArchiveConfirmation = false
+    @State private var showingHelp = false
+
+    private var selectedTemplate: JobsService.JobStageTemplate? {
+        templates.first(where: { $0.id == selectedTemplateId })
+    }
+
+    var body: some View {
+        Group {
+            if isLoading {
+                ProgressView("Loading job stage templates...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if templates.isEmpty {
+                emptyState
+            } else {
+                settingsForm
+            }
+        }
+        .navigationTitle("Job Stage Templates")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button { showingHelp = true } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .accessibilityLabel("Help")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { prepareCreateTemplate() } label: {
+                    Label("New Template", systemImage: "plus")
+                }
+            }
+        }
+        .sheet(isPresented: $showingHelp) {
+            PageHelpSheet(title: "Job Stage Templates Help", sections: [
+                ("What This Page Does", "Build reusable job workflows such as Rough-In → Trim → Final or longer custom templates. Jobs use the selected template for progress bars and stage routing."),
+                ("Safe Editing", "Changes are staged locally until Save. Cancel reloads the template from the database. Stages in use by active jobs or order lines may be protected from archive."),
+                ("Archiving", "Templates assigned to active jobs cannot be archived. Duplicate a live template first when you need to create a revised workflow.")
+            ])
+        }
+        .alert("Create Template", isPresented: $showingCreateTemplate) {
+            TextField("Template name", text: $newTemplateName)
+            Button("Create") { createTemplate() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Creates a workflow with three starter stages. Rename, add, remove, or reorder stages after it is created.")
+        }
+        .alert("Duplicate Template", isPresented: $showingDuplicateTemplate) {
+            TextField("New template name", text: $duplicateTemplateName)
+            Button("Duplicate") { duplicateTemplate() }
+            Button("Cancel", role: .cancel) { }
+        }
+        .alert("Rename Template", isPresented: $showingRenameTemplate) {
+            TextField("Template name", text: $renameTemplateName)
+            Button("Rename") { renameTemplate() }
+            Button("Cancel", role: .cancel) { }
+        }
+        .confirmationDialog(
+            "Archive this template?",
+            isPresented: $showingArchiveConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Archive Template", role: .destructive) { archiveTemplate() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Archived templates disappear from job create/edit pickers. Templates with active jobs are protected.")
+        }
+        .task { loadTemplates() }
+    }
+
+    private var emptyState: some View {
+        EmptyStateView(
+            icon: "list.bullet.rectangle.portrait",
+            title: "No job stage templates",
+            message: "Create a workflow template to power job progress bars and stage pickers.",
+            actionLabel: "Create Template",
+            actionIcon: "plus.circle.fill",
+            action: { prepareCreateTemplate() }
+        )
+        .padding()
+    }
+
+    private var settingsForm: some View {
+        Form {
+            if let errorMessage {
+                Section {
+                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
+            if let successMessage {
+                Section {
+                    Label(successMessage, systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                }
+            }
+
+            templatePickerSection
+            stageEditorSection
+            templateActionsSection
+        }
+        .scrollDismissesKeyboard(.interactively)
+    }
+
+    private var templatePickerSection: some View {
+        Section {
+            Picker("Template", selection: Binding(
+                get: { selectedTemplateId ?? templates.first?.id ?? 0 },
+                set: { templateId in
+                    selectedTemplateId = templateId
+                    loadStages(for: templateId)
+                }
+            )) {
+                ForEach(templates) { template in
+                    Text(template.name).tag(template.id)
+                }
+            }
+
+            if let selectedTemplate {
+                LabeledContent("Stages", value: "\(selectedTemplate.stageCount)")
+                LabeledContent("Active jobs", value: "\(selectedTemplate.activeJobCount)")
+                if selectedTemplate.isDefault {
+                    Label("Default workflow", systemImage: "star.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+        } header: {
+            Label("Workflow", systemImage: "rectangle.stack")
+        }
+    }
+
+    private var stageEditorSection: some View {
+        Section {
+            if draftStages.isEmpty {
+                Text("Add at least one stage before saving this template.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach($draftStages) { $stage in
+                    HStack(spacing: 8) {
+                        Image(systemName: "line.3.horizontal")
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        TextField("Stage name", text: $stage.name)
+                            .textInputAutocapitalization(.words)
+                    }
+                }
+                .onMove(perform: moveStage)
+                .onDelete(perform: deleteStage)
+            }
+
+            HStack {
+                TextField("New stage name", text: $newStageName)
+                    .textInputAutocapitalization(.words)
+                Button { addDraftStage() } label: {
+                    Image(systemName: "plus.circle.fill")
+                }
+                .disabled(newStageName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityLabel("Add stage")
+            }
+
+            HStack {
+                Button("Cancel Changes", role: .cancel) { reloadSelectedStages() }
+                Spacer()
+                Button { saveStages() } label: {
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Label("Save Stages", systemImage: "checkmark.circle.fill")
+                    }
+                }
+                .disabled(isSaving || selectedTemplateId == nil || draftStages.isEmpty)
+            }
+        } header: {
+            Label("Stages", systemImage: "list.number")
+        } footer: {
+            Text("Drag stages to reorder. Swipe a stage to remove it; protected stages will remain if they are already referenced by live work.")
+        }
+    }
+
+    private var templateActionsSection: some View {
+        Section {
+            Button { prepareRenameTemplate() } label: {
+                Label("Rename Template", systemImage: "pencil")
+            }
+            .disabled(selectedTemplateId == nil)
+
+            Button { prepareDuplicateTemplate() } label: {
+                Label("Duplicate Template", systemImage: "plus.square.on.square")
+            }
+            .disabled(selectedTemplateId == nil)
+
+            Button(role: .destructive) { showingArchiveConfirmation = true } label: {
+                Label("Archive Template", systemImage: "archivebox")
+            }
+            .disabled(selectedTemplate?.isDefault == true || selectedTemplate == nil)
+        } header: {
+            Label("Template Actions", systemImage: "slider.horizontal.3")
+        }
+    }
+
+    // MARK: - Loading
+
+    private func loadTemplates(select templateId: Int64? = nil) {
+        guard let service = appCore.jobsService else {
+            errorMessage = "Jobs service unavailable"
+            isLoading = false
+            return
+        }
+
+        do {
+            templates = try service.listJobStageTemplates()
+            let nextSelection = templateId ?? selectedTemplateId ?? templates.first(where: { $0.isDefault })?.id ?? templates.first?.id
+            selectedTemplateId = nextSelection
+            if let nextSelection {
+                loadStages(for: nextSelection)
+            } else {
+                draftStages = []
+            }
+            isLoading = false
+        } catch {
+            errorMessage = userFriendlyError(error, context: "load job stage templates")
+            isLoading = false
+        }
+    }
+
+    private func loadStages(for templateId: Int64) {
+        guard let service = appCore.jobsService else { return }
+        do {
+            draftStages = try service.listAllJobStages(templateId: templateId).map {
+                StageDraft(existingId: $0.id, name: $0.name, sortOrder: $0.sortOrder)
+            }
+            errorMessage = nil
+        } catch {
+            errorMessage = userFriendlyError(error, context: "load template stages")
+            draftStages = []
+        }
+    }
+
+    private func reloadSelectedStages() {
+        guard let selectedTemplateId else { return }
+        newStageName = ""
+        loadStages(for: selectedTemplateId)
+    }
+
+    // MARK: - Template Actions
+
+    private func prepareCreateTemplate() {
+        newTemplateName = ""
+        showingCreateTemplate = true
+    }
+
+    private func createTemplate() {
+        guard let service = appCore.jobsService else { return }
+        do {
+            let templateId = try service.createJobStageTemplate(
+                name: newTemplateName,
+                stageNames: ["Rough-In", "Trim", "Final"]
+            )
+            successMessage = "Created \(newTemplateName.trimmingCharacters(in: .whitespacesAndNewlines))."
+            errorMessage = nil
+            loadTemplates(select: templateId)
+        } catch {
+            errorMessage = userFriendlyError(error, context: "create job stage template")
+        }
+    }
+
+    private func prepareRenameTemplate() {
+        renameTemplateName = selectedTemplate?.name ?? ""
+        showingRenameTemplate = true
+    }
+
+    private func renameTemplate() {
+        guard let service = appCore.jobsService, let selectedTemplateId else { return }
+        do {
+            try service.renameJobStageTemplate(templateId: selectedTemplateId, name: renameTemplateName)
+            successMessage = "Renamed template."
+            errorMessage = nil
+            loadTemplates(select: selectedTemplateId)
+        } catch {
+            errorMessage = userFriendlyError(error, context: "rename job stage template")
+        }
+    }
+
+    private func prepareDuplicateTemplate() {
+        duplicateTemplateName = "Copy of \(selectedTemplate?.name ?? "Template")"
+        showingDuplicateTemplate = true
+    }
+
+    private func duplicateTemplate() {
+        guard let service = appCore.jobsService, let selectedTemplateId else { return }
+        do {
+            let newId = try service.duplicateJobStageTemplate(templateId: selectedTemplateId, name: duplicateTemplateName)
+            successMessage = "Duplicated template."
+            errorMessage = nil
+            loadTemplates(select: newId)
+        } catch {
+            errorMessage = userFriendlyError(error, context: "duplicate job stage template")
+        }
+    }
+
+    private func archiveTemplate() {
+        guard let service = appCore.jobsService, let selectedTemplateId else { return }
+        do {
+            try service.archiveJobStageTemplate(templateId: selectedTemplateId)
+            successMessage = "Archived template."
+            errorMessage = nil
+            self.selectedTemplateId = nil
+            loadTemplates()
+        } catch {
+            errorMessage = userFriendlyError(error, context: "archive job stage template")
+        }
+    }
+
+    // MARK: - Stage Actions
+
+    private func addDraftStage() {
+        let trimmed = newStageName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let nextOrder = (draftStages.map(\.sortOrder).max() ?? 0) + 1
+        draftStages.append(StageDraft(existingId: nil, name: trimmed, sortOrder: nextOrder))
+        newStageName = ""
+    }
+
+    private func moveStage(from source: IndexSet, to destination: Int) {
+        draftStages.move(fromOffsets: source, toOffset: destination)
+        renumberDraftStages()
+    }
+
+    private func deleteStage(at offsets: IndexSet) {
+        draftStages.remove(atOffsets: offsets)
+        renumberDraftStages()
+    }
+
+    private func renumberDraftStages() {
+        for index in draftStages.indices {
+            draftStages[index].sortOrder = index + 1
+        }
+    }
+
+    private func saveStages() {
+        guard let service = appCore.jobsService, let selectedTemplateId else { return }
+        let cleaned = draftStages.map { draft in
+            StageDraft(
+                existingId: draft.existingId,
+                name: draft.name.trimmingCharacters(in: .whitespacesAndNewlines),
+                sortOrder: draft.sortOrder
+            )
+        }
+        guard cleaned.allSatisfy({ !$0.name.isEmpty }) else {
+            errorMessage = "Every stage needs a name."
+            return
+        }
+
+        isSaving = true
+        defer { isSaving = false }
+
+        do {
+            let original = try service.listAllJobStages(templateId: selectedTemplateId)
+            let keptExistingIds = Set(cleaned.compactMap(\.existingId))
+            for stage in original where !keptExistingIds.contains(stage.id) {
+                try service.archiveJobStage(stageId: stage.id)
+            }
+
+            var orderedIds: [Int64] = []
+            for draft in cleaned {
+                if let id = draft.existingId {
+                    try service.renameJobStage(stageId: id, name: draft.name)
+                    orderedIds.append(id)
+                } else {
+                    let id = try service.addJobStage(templateId: selectedTemplateId, name: draft.name)
+                    orderedIds.append(id)
+                }
+            }
+            try service.reorderJobStages(templateId: selectedTemplateId, orderedStageIds: orderedIds)
+            successMessage = "Saved job stage workflow."
+            errorMessage = nil
+            loadTemplates(select: selectedTemplateId)
+        } catch {
+            errorMessage = userFriendlyError(error, context: "save job stage workflow")
+        }
+    }
+}
+
+private struct StageDraft: Identifiable, Equatable {
+    let existingId: Int64?
+    var name: String
+    var sortOrder: Int
+    private let localId = UUID()
+
+    var id: String {
+        if let existingId { return "existing-\(existingId)" }
+        return "new-\(localId.uuidString)"
+    }
+}
