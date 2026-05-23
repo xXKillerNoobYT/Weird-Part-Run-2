@@ -34,11 +34,11 @@ struct WizardStepShelves: View {
             .padding()
 
             if units.isEmpty {
-                ContentUnavailableView {
-                    Label("No Storage Units", systemImage: "cabinet.fill")
-                } description: {
-                    Text("Add storage units in Step 3 first.")
-                }
+                EmptyStateView(
+                    icon: "cabinet.fill",
+                    title: "No Storage Units",
+                    message: "Add storage units in Step 3 first."
+                )
             } else {
                 List {
                     ForEach(units, id: \.id) { unit in

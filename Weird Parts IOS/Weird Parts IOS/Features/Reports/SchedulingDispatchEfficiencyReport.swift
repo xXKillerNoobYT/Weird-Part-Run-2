@@ -30,9 +30,11 @@ struct SchedulingDispatchEfficiencyReport: View {
                 Section { ProgressView("Loading...") }
             } else if efficiencyData.isEmpty {
                 Section {
-                    ContentUnavailableView("No Dispatch Data",
-                        systemImage: "paperplane",
-                        description: Text("No dispatch entries found for this period."))
+                    EmptyStateView(
+                        icon: "paperplane",
+                        title: "No Dispatch Data",
+                        message: "No dispatch entries found for this period."
+                    )
                 }
             } else {
                 Section("Summary") {

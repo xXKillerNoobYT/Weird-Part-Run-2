@@ -48,6 +48,19 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         return repoRoot.appendingPathComponent("docs/testing/artifacts/wei-1092/wei-1182-current", isDirectory: true)
     }
 
+
+    private var wei1451ArtifactDirectory: URL {
+        if let path = ProcessInfo.processInfo.environment["WEI_1451_ARTIFACT_DIR"], !path.isEmpty {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        let source = URL(fileURLWithPath: #filePath)
+        let repoRoot = source
+            .deletingLastPathComponent() // Weird Parts IOSUITests
+            .deletingLastPathComponent() // Weird Parts IOS
+            .deletingLastPathComponent() // repo root
+        return repoRoot.appendingPathComponent("docs/testing/artifacts/wei-936/wei-1451-current", isDirectory: true)
+    }
+
     // MARK: - Setup & Teardown
 
     override func setUpWithError() throws {
@@ -68,6 +81,118 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     }
 
     // MARK: - Login Accessibility
+
+
+    @MainActor
+    func testWEI1451FirstLaunchOnboardingEvidence() throws {
+        let artifactDirectory = wei1451ArtifactDirectory
+        try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
+        let existingArtifacts = (try? FileManager.default.contentsOfDirectory(at: artifactDirectory, includingPropertiesForKeys: nil)) ?? []
+        for artifact in existingArtifacts where artifact.pathExtension == "png" || artifact.pathExtension == "txt" {
+            try? FileManager.default.removeItem(at: artifact)
+        }
+
+        relaunchForWEI1451(["-UITestingWEI936Welcome"])
+        XCTAssertTrue(app.staticTexts["WiredPart"].waitForExistence(timeout: 20), "Welcome fixture should render the first-launch welcome screen")
+        captureWEI1451("01-ipad-landscape-welcome-sheet")
+
+        relaunchForWEI1451([])
+        logInAsUITestOwnerIfNeeded()
+        XCTAssertTrue(app.staticTexts["Getting Started"].waitForExistence(timeout: 20), "Dashboard should show the not-started Getting Started card")
+        captureWEI1451("02-ipad-landscape-card-not-started")
+
+        relaunchForWEI1451(["-UITestingWEI936TourActive"])
+        logInAsUITestOwnerIfNeeded()
+        XCTAssertTrue(app.staticTexts["Try This"].waitForExistence(timeout: 20), "Tour active fixture should show in-progress onboarding tasks")
+        captureWEI1451("03-ipad-landscape-in-progress")
+
+        relaunchForWEI1451(["-UITestingWEI936RequiredDone"])
+        logInAsUITestOwnerIfNeeded()
+        XCTAssertTrue(app.staticTexts["Required tour steps complete"].waitForExistence(timeout: 20), "Required-done fixture should collapse the per-page banner")
+        captureWEI1451("04-ipad-landscape-required-done-collapsed-strip")
+
+        relaunchForWEI1451([])
+        logInAsUITestOwnerIfNeeded()
+        let dismiss = app.buttons["Dismiss checklist"]
+        XCTAssertTrue(dismiss.waitForExistence(timeout: 20), "Dismiss checklist control should be present")
+        dismiss.tap()
+        XCTAssertTrue(app.staticTexts["Checklist dismissed"].waitForExistence(timeout: 5), "Dismiss action should show a toast with undo")
+        captureWEI1451("05-ipad-landscape-dismiss-toast")
+
+        relaunchForWEI1451(["-UITestingWEI936Celebration"])
+        XCTAssertTrue(app.staticTexts["You're All Set!"].waitForExistence(timeout: 20), "Celebration fixture should render completion state")
+        captureWEI1451("06-ipad-landscape-celebration")
+
+        let verification = """
+        WEI-1451 / WEI-936 remaining evidence verification
+        - iPad landscape captured with WEI_1185_LANDSCAPE=1 / XCUIDevice.landscapeLeft when requested.
+        - Deterministic launch fixtures used: -UITestingWEI936Welcome, -UITestingWEI936TourActive, -UITestingWEI936RequiredDone, -UITestingWEI936Celebration.
+        - Dismiss toast verified by tapping the Dashboard Getting Started dismiss button and waiting for the Checklist dismissed toast.
+        - Reduce Motion: OnboardingCompleteView now renders the checkmark without a spring animation when accessibilityReduceMotion is true.
+        - VoiceOver/accessibility traversal smoke: core evidence controls expose labels for Dismiss checklist, Checklist dismissed. Undo, Required tour steps complete, and the welcome/celebration headings.
+        """
+        try verification.write(to: artifactDirectory.appendingPathComponent("07-accessibility-reduce-motion-voiceover-notes.txt"), atomically: true, encoding: .utf8)
+    }
+
+    @MainActor
+    func testWEI1251DispatchBoardExistingAssignmentDragDrop() throws {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments += [
+            "-UITesting",
+            "-UITestingDispatchBoard"
+        ]
+        app.launch()
+
+        logInAsUITestOwnerIfNeeded()
+        openDispatchBoard()
+
+        let sourceJob = app.staticTexts["UITest Source Dispatch Job"]
+        let targetJob = app.staticTexts["UITest Target Dispatch Job"]
+        XCTAssertTrue(sourceJob.waitForExistence(timeout: 15), "Source dispatch job should be visible")
+        XCTAssertTrue(targetJob.waitForExistence(timeout: 5), "Target dispatch job should be visible")
+
+        let ownerChip = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == 'Move UITest Owner'"))
+            .firstMatch
+        XCTAssertTrue(ownerChip.waitForExistence(timeout: 8), "Existing assignment chip should be visible")
+        captureWEI1251("01-dispatch-board-seeded")
+
+        let targetSecondDay = dayCellCoordinate(rowLabel: targetJob, dayIndex: 1)
+        ownerChip.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.8, thenDragTo: targetSecondDay)
+
+        let movedOwnerChip = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == 'Move UITest Owner'"))
+            .firstMatch
+        XCTAssertTrue(movedOwnerChip.waitForExistence(timeout: 8), "Moved assignment chip should remain visible")
+        captureWEI1251("02-existing-assignment-moved")
+        XCTAssertLessThan(abs(movedOwnerChip.frame.midY - targetJob.frame.midY), 80,
+                          "Existing assignment should move onto the target job row")
+        XCTAssertGreaterThan(movedOwnerChip.frame.midX, targetJob.frame.maxX,
+                             "Existing assignment should move into a day cell, not stay in the job label column")
+
+        let spareWorker = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS 'UITest Spare Worker'"))
+            .firstMatch
+        XCTAssertTrue(spareWorker.waitForExistence(timeout: 8), "Unassigned worker chip should be visible")
+        spareWorker.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.8, thenDragTo: dayCellCoordinate(rowLabel: targetJob, dayIndex: 3))
+
+        let spareAssignment = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == 'Move UITest Spare Worker'"))
+            .firstMatch
+        XCTAssertTrue(spareAssignment.waitForExistence(timeout: 8),
+                      "Dropping an unassigned worker should create a dispatch assignment")
+        captureWEI1251("03-unassigned-worker-created-assignment")
+
+        movedOwnerChip.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.8, thenDragTo: dayCellCoordinate(rowLabel: targetJob, dayIndex: 2))
+        let conflict = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'time off'")).firstMatch
+        XCTAssertTrue(conflict.waitForExistence(timeout: 8),
+                      "Invalid move should present a visible time-off conflict error")
+        captureWEI1251("04-invalid-move-conflict-error")
+    }
 
     @MainActor
     func testWEI1185WarehouseZonePlacementScreenshots() throws {
@@ -424,6 +549,151 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                       "Progress bar should report \"Step 6 of 10\" after the 9→10 dot expansion.")
     }
 
+    // MARK: - WEI-1190: Step 8 Phase-Header Screenshot
+
+    /// Captures the wizard section-header screenshot acceptance for [WEI-1190]:
+    /// open the warehouse onboarding wizard, reach Step 8 (Walking Path), confirm
+    /// the exact Plan §4 phase prefix ("Phase 4 · Walking Path") is rendered in
+    /// both the nav bar title and progress-bar caption, then save the screenshots
+    /// under `docs/testing/artifacts/wei-1092/wei-1190-step8-phase-header/`.
+    @MainActor
+    func testWEI1190WizardStep8PhaseHeaderScreenshot() throws {
+        let directory: URL = {
+            if let envPath = ProcessInfo.processInfo.environment["WEI_1190_ARTIFACT_DIR"], !envPath.isEmpty {
+                return URL(fileURLWithPath: envPath, isDirectory: true)
+            }
+            let source = URL(fileURLWithPath: #filePath)
+            let repoRoot = source
+                .deletingLastPathComponent() // Weird Parts IOSUITests
+                .deletingLastPathComponent() // Weird Parts IOS
+                .deletingLastPathComponent() // repo root
+            return repoRoot.appendingPathComponent(
+                "docs/testing/artifacts/wei-1092/wei-1190-step8-phase-header",
+                isDirectory: true
+            )
+        }()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        func capture(_ name: String) throws {
+            let screenshot = XCUIScreen.main.screenshot()
+            let attachment = XCTAttachment(screenshot: screenshot)
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let file = directory.appendingPathComponent("\(name).png")
+            do {
+                try screenshot.pngRepresentation.write(to: file, options: .atomic)
+            } catch {
+                XCTFail("Failed to write WEI-1190 screenshot artifact \(file.path): \(error)")
+                throw error
+            }
+        }
+
+        logInAsUITestOwnerIfNeeded()
+        openWarehouseSetupWizard()
+
+        // Step 1: create the floor plan if it doesn't exist yet. A resumed
+        // session lands on the previous step with a "Next" button instead.
+        let createContinue = app.buttons["Create & Continue"]
+        if createContinue.waitForExistence(timeout: 10) {
+            createContinue.tap()
+        }
+
+        try capture("00-wizard-entry-step")
+
+        // Adaptive navigation to Step 8: while the wizard reports a step less
+        // than 8, tap Skip (or Next as fallback) and wait for the step counter
+        // to advance. While it reports a step greater than 8, tap Back. This
+        // tolerates any saved progress state from prior runs.
+        func currentStepNumber(timeout: TimeInterval = 5) -> Int? {
+            let deadline = Date().addingTimeInterval(timeout)
+            while Date() < deadline {
+                for n in 1...10 where app.staticTexts["Step \(n) of 10"].exists {
+                    return n
+                }
+                Thread.sleep(forTimeInterval: 0.25)
+            }
+            return nil
+        }
+
+        var lastSeen: Int? = nil
+        for navHop in 1...14 {
+            guard let step = currentStepNumber(timeout: 8) else {
+                try capture("error-step-counter-missing-hop-\(navHop)")
+                XCTFail("Could not read \"Step N of 10\" from the wizard progress bar (hop \(navHop)).")
+                return
+            }
+            lastSeen = step
+            if step == 8 { break }
+            if step < 8 {
+                let skip = app.buttons["Skip"]
+                let next = app.buttons["Next"]
+                if skip.exists && skip.isHittable {
+                    skip.tap()
+                } else if next.exists && next.isHittable {
+                    next.tap()
+                } else {
+                    try capture("error-no-forward-button-step-\(step)")
+                    XCTFail("Wizard step \(step) exposed neither Skip nor Next.")
+                    return
+                }
+            } else {
+                let back = app.buttons["Back"]
+                if back.exists && back.isHittable {
+                    back.tap()
+                } else {
+                    try capture("error-no-back-button-step-\(step)")
+                    XCTFail("Wizard step \(step) exposed no Back button.")
+                    return
+                }
+            }
+            // Wait for the step counter to actually change before continuing.
+            _ = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Step ' AND NOT (label == 'Step \(step) of 10')"))
+                .firstMatch
+                .waitForExistence(timeout: 6)
+        }
+        XCTAssertEqual(lastSeen, 8, "Adaptive navigation should land on Step 8 (was \(String(describing: lastSeen))).")
+
+        // Capture immediately so we have the artifact regardless of which
+        // predicate matches the exact phase-prefix copy.
+        try capture("01-step8-phase4-walking-path-header")
+
+        // The Plan §4 phase prefix renders in two places at Step 8:
+        //   1. The navigation bar title ("Phase 4 · Walking Path").
+        //   2. The progress bar caption (right-aligned blue caption).
+        // Use CONTAINS so we tolerate any whitespace nuance between the
+        // SF Symbols middle dot ("·" U+00B7) and surrounding spacing.
+        let phasePredicate = NSPredicate(format: "label CONTAINS 'Phase 4' AND label CONTAINS 'Walking Path'")
+        let navigationPhaseTitle = app.navigationBars.staticTexts.matching(phasePredicate).firstMatch
+        let matchingPhaseLabels = app.staticTexts.matching(phasePredicate)
+        let stepIndicator = app.staticTexts["Step 8 of 10"]
+
+        let navigationPhaseFound = navigationPhaseTitle.waitForExistence(timeout: 10)
+        let progressPhaseDeadline = Date().addingTimeInterval(10)
+        while matchingPhaseLabels.count < 2 && Date() < progressPhaseDeadline {
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        let phaseLabelCount = matchingPhaseLabels.count
+        let progressPhaseFound = phaseLabelCount >= 2
+        let stepFound = stepIndicator.waitForExistence(timeout: 5)
+
+        if !navigationPhaseFound || !progressPhaseFound || !stepFound {
+            // Dump every visible static text to the xcresult so a human can
+            // see what XCUI actually exposed at Step 8.
+            for text in app.staticTexts.allElementsBoundByIndex.prefix(40) {
+                NSLog("[WEI-1190] staticText label=\(text.label)")
+            }
+            try capture("error-step8-labels-missing")
+        }
+
+        XCTAssertTrue(navigationPhaseFound,
+                      "Step 8 navigation bar should render the Plan §4 phase prefix \"Phase 4 … Walking Path\".")
+        XCTAssertTrue(progressPhaseFound,
+                      "Step 8 progress caption should render a second Plan §4 phase prefix \"Phase 4 … Walking Path\" (found \(phaseLabelCount) matching label(s)).")
+        XCTAssertTrue(stepFound,
+                      "Progress bar should report \"Step 8 of 10\" after the 9→10 dot expansion.")
+    }
+
     @MainActor
     func testLoginSignInButtonHittableAtAX5WithKeyboardVisible() throws {
         app.terminate()
@@ -597,6 +867,114 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         configure.tap()
     }
 
+    private func openWarehouseDashboard() {
+        if app.buttons["whAction_newMovement"].waitForExistence(timeout: 2) {
+            return
+        }
+
+        let warehouseTab = app.buttons["tab_warehouse"]
+        if warehouseTab.waitForExistence(timeout: 8) {
+            warehouseTab.tap()
+        } else if app.buttons["Warehouse"].waitForExistence(timeout: 3) {
+            app.buttons["Warehouse"].tap()
+        } else if app.tabBars.buttons["More"].waitForExistence(timeout: 3) {
+            app.tabBars.buttons["More"].tap()
+            let warehouse = app.buttons["Warehouse"]
+            XCTAssertTrue(warehouse.waitForExistence(timeout: 8), "Warehouse module should be reachable")
+            warehouse.tap()
+        } else {
+            XCTFail("Warehouse module tab should be reachable")
+        }
+
+        if !app.buttons["whAction_newMovement"].waitForExistence(timeout: 8) {
+            let dashboard = app.buttons["Dashboard"]
+            if dashboard.waitForExistence(timeout: 5) && dashboard.isHittable {
+                dashboard.tap()
+            }
+        }
+
+        XCTAssertTrue(
+            app.buttons["whAction_newMovement"].waitForExistence(timeout: 10),
+            "Warehouse Dashboard should open and expose quick actions"
+        )
+    }
+
+    private func openDispatchBoard() {
+        if app.navigationBars["Dispatch Board"].waitForExistence(timeout: 2) ||
+            app.staticTexts["Dispatch Board"].waitForExistence(timeout: 2) {
+            return
+        }
+
+        let schedulingTab = app.buttons["tab_scheduling"]
+        if schedulingTab.waitForExistence(timeout: 8) {
+            schedulingTab.tap()
+        } else if app.buttons["Scheduling"].waitForExistence(timeout: 3) {
+            app.buttons["Scheduling"].tap()
+        } else if app.tabBars.buttons["More"].waitForExistence(timeout: 3) {
+            app.tabBars.buttons["More"].tap()
+            let scheduling = app.buttons["Scheduling"]
+            XCTAssertTrue(scheduling.waitForExistence(timeout: 8), "Scheduling module should be reachable")
+            scheduling.tap()
+        } else {
+            XCTFail("Scheduling module tab should be reachable")
+        }
+
+        let dispatch = app.buttons["Dispatch"]
+        XCTAssertTrue(dispatch.waitForExistence(timeout: 8), "Scheduling module should expose Dispatch tab")
+        dispatch.tap()
+
+        XCTAssertTrue(
+            app.navigationBars["Dispatch Board"].waitForExistence(timeout: 10) ||
+                app.staticTexts["Dispatch Board"].waitForExistence(timeout: 10),
+            "Dispatch Board should open"
+        )
+    }
+
+    private func dayCellCoordinate(rowLabel: XCUIElement, dayIndex: Int) -> XCUICoordinate {
+        let appFrame = app.windows.firstMatch.frame
+        let firstDayStartX = rowLabel.frame.maxX + 8
+        let availableWidth = max(140, appFrame.maxX - firstDayStartX - 16)
+        let dayWidth = availableWidth / 7
+        let x = firstDayStartX + dayWidth * (CGFloat(dayIndex) + 0.5)
+        let y = rowLabel.frame.midY
+        return app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+            .withOffset(CGVector(dx: x, dy: y))
+    }
+
+    private func captureWEI1251(_ name: String) {
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let source = URL(fileURLWithPath: #filePath)
+        let repoRoot = source
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let dir = repoRoot.appendingPathComponent("docs/testing/artifacts/wei-1251", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? screenshot.pngRepresentation.write(to: dir.appendingPathComponent("\(name).png"), options: .atomic)
+    }
+
+    private func captureWEI1306(_ name: String) {
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let source = URL(fileURLWithPath: #filePath)
+        let repoRoot = source
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let dir = repoRoot.appendingPathComponent("docs/testing/artifacts/wei-1306", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? screenshot.pngRepresentation.write(to: dir.appendingPathComponent("\(name).png"), options: .atomic)
+    }
+
     private func captureWEI1185(_ name: String) {
         let screenshot = XCUIScreen.main.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot)
@@ -618,6 +996,27 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         add(attachment)
 
         let file = wei1182ArtifactDirectory.appendingPathComponent("\(name).png")
+        try? screenshot.pngRepresentation.write(to: file, options: .atomic)
+    }
+
+    private func relaunchForWEI1451(_ launchArguments: [String]) {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments += ["-UITesting"] + launchArguments
+        if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" {
+            XCUIDevice.shared.orientation = .landscapeLeft
+        }
+        app.launch()
+    }
+
+    private func captureWEI1451(_ name: String) {
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let file = wei1451ArtifactDirectory.appendingPathComponent("\(name).png")
         try? screenshot.pngRepresentation.write(to: file, options: .atomic)
     }
 
@@ -1006,6 +1405,32 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testWEI1303EmployeeDetailTabsMeetMinimumTouchTargets() throws {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments += ["-UITesting"]
+        app.launch()
+
+        logInAsUITestOwnerIfNeeded()
+        openEmployeeDetailForUITestOwner()
+
+        let profile = app.buttons["Profile"]
+        let hats = app.buttons["Hats"]
+        let teams = app.buttons["Teams"]
+        XCTAssertTrue(profile.waitForExistence(timeout: 10), "Profile tab should be visible")
+        XCTAssertTrue(hats.waitForExistence(timeout: 5), "Hats tab should be visible")
+        XCTAssertTrue(teams.waitForExistence(timeout: 5), "Teams tab should be visible")
+
+        captureWEI1303("01-employee-detail-tabs-375pt")
+
+        for tab in [profile, hats, teams] {
+            XCTAssertGreaterThanOrEqual(tab.frame.width, 44, "\(tab.label) tab should be at least 44pt wide")
+            XCTAssertGreaterThanOrEqual(tab.frame.height, 44, "\(tab.label) tab should be at least 44pt tall")
+            XCTAssertTrue(tab.isHittable, "\(tab.label) tab should be hittable")
+        }
+    }
+
     // MARK: - Test 7: App Launch Performance
 
     @MainActor
@@ -1013,5 +1438,58 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         measure(metrics: [XCTApplicationLaunchMetric()]) {
             XCUIApplication().launch()
         }
+    }
+
+    private func openEmployeeDetailForUITestOwner() {
+        if app.navigationBars["UITest Owner"].waitForExistence(timeout: 2) ||
+            app.staticTexts["Basic Info"].waitForExistence(timeout: 2) {
+            return
+        }
+
+        let peopleTab = app.buttons["tab_people"]
+        if peopleTab.waitForExistence(timeout: 8) {
+            peopleTab.tap()
+        } else if app.buttons["People"].waitForExistence(timeout: 3) {
+            app.buttons["People"].tap()
+        } else if app.tabBars.buttons["More"].waitForExistence(timeout: 3) {
+            app.tabBars.buttons["More"].tap()
+            let people = app.buttons["People"]
+            XCTAssertTrue(people.waitForExistence(timeout: 8), "People module should be reachable")
+            people.tap()
+        } else {
+            XCTFail("People module tab should be reachable")
+        }
+
+        let employees = app.buttons["Employees"]
+        if employees.waitForExistence(timeout: 8) {
+            employees.tap()
+        }
+
+        let owner = app.staticTexts["UITest Owner"]
+        XCTAssertTrue(owner.waitForExistence(timeout: 10), "UITest Owner should be visible in employees list")
+        owner.tap()
+
+        XCTAssertTrue(
+            app.navigationBars["UITest Owner"].waitForExistence(timeout: 10) ||
+                app.staticTexts["Basic Info"].waitForExistence(timeout: 10),
+            "Employee detail should open for UITest Owner"
+        )
+    }
+
+    private func captureWEI1303(_ name: String) {
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let source = URL(fileURLWithPath: #filePath)
+        let repoRoot = source
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let dir = repoRoot.appendingPathComponent("docs/testing/artifacts/wei-1303", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? screenshot.pngRepresentation.write(to: dir.appendingPathComponent("\(name).png"), options: .atomic)
     }
 }

@@ -24,10 +24,10 @@ struct IOSBootstrapAdminPage: View {
                 ProgressView("Loading devices...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if bootstrapDevices.isEmpty {
-                ContentUnavailableView(
-                    "No Bootstrap Devices",
-                    systemImage: "iphone.and.arrow.forward",
-                    description: Text("No devices have been registered through the bootstrap process yet.")
+                EmptyStateView(
+                    icon: "iphone.and.arrow.forward",
+                    title: "No Bootstrap Devices",
+                    message: "No devices have been registered through the bootstrap process yet."
                 )
             } else {
                 List {

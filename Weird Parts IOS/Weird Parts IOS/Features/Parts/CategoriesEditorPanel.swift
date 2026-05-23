@@ -6,6 +6,7 @@ import WiredPartCore
 struct CategoriesEditorPanel: View {
     let selection: TreeSelection?
     let hierarchy: PartsService.HierarchyTree
+    @Binding var generalBrandSelectionByType: [Int64: Bool]
     var onRefresh: () async -> Void
 
     @EnvironmentObject private var appCore: AppCore
@@ -331,6 +332,10 @@ struct CategoriesEditorPanel: View {
                 TypeBrandColorSection(
                     typeId: typeId,
                     hierarchy: hierarchy,
+                    isGeneralLinked: Binding(
+                        get: { generalBrandSelectionByType[typeId] ?? true },
+                        set: { generalBrandSelectionByType[typeId] = $0 }
+                    ),
                     onRefresh: onRefresh,
                     onAddColor: { activeSheet = .addColor }
                 )
@@ -688,12 +693,18 @@ struct ColorSupplierPartNumbersSection: View {
     @State private var supplierParts: [(supplierId: Int64, supplierName: String, supplierPartNumber: String?)] = []
     @State private var isExpanded = false
     @State private var isLoading = false
+    @State private var supplierPartsError: String?
 
     var body: some View {
         DisclosureGroup("Supplier Part Numbers", isExpanded: $isExpanded) {
             if isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, DS.Space.sm)
+            } else if let supplierPartsError {
+                Label(supplierPartsError, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
                     .padding(.vertical, DS.Space.sm)
             } else if supplierParts.isEmpty {
                 Text("No suppliers linked to parts with this color.")
@@ -737,18 +748,26 @@ struct ColorSupplierPartNumbersSection: View {
     }
 
     private func loadSupplierParts() {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            supplierPartsError = "Parts service unavailable"
+            return
+        }
         isLoading = true
+        supplierPartsError = nil
         Task.detached {
-            let results: [(supplierId: Int64, supplierName: String, supplierPartNumber: String?)]
             do {
-                results = try service.getColorSupplierPartNumbers(colorId: colorId)
+                let results = try service.getColorSupplierPartNumbers(colorId: colorId)
+                await MainActor.run {
+                    supplierParts = results
+                    supplierPartsError = nil
+                    isLoading = false
+                }
             } catch {
-                results = [] // Non-critical: supplier part numbers may not be configured
-            }
-            await MainActor.run {
-                supplierParts = results
-                isLoading = false
+                await MainActor.run {
+                    supplierParts = []
+                    supplierPartsError = "Failed to load supplier part numbers"
+                    isLoading = false
+                }
             }
         }
     }

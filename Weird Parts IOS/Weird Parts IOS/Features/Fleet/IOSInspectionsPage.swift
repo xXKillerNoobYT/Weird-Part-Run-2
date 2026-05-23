@@ -4,7 +4,7 @@ import WiredPartCore
 /// Vehicle inspections list page for iOS.
 ///
 /// Displays a searchable list of inspection records with vehicle name,
-/// inspector, date, and result badge (pass=green, fail=red).
+/// inspector, date, and semantic result badge.
 /// Uses FleetService.listInspections() for data access.
 struct IOSInspectionsPage: View {
     @EnvironmentObject private var appCore: AppCore
@@ -44,7 +44,7 @@ struct IOSInspectionsPage: View {
                 PageHelpSheet(
                     title: "Inspections Help",
                     sections: [
-                        ("Overview", "This page shows all vehicle inspection records. Each entry lists the vehicle, inspector, date, odometer reading, and the result — Pass (green), Fail (red), or Conditional (orange)."),
+                        ("Overview", "This page shows all vehicle inspection records. Each entry lists the vehicle, inspector, date, odometer reading, and the result — Pass, Fail, or Conditional."),
                         ("Results Explained", "Pass means all items checked out fine. Conditional means non-critical issues were found — the vehicle can operate but needs attention. Fail means a critical safety item failed — the vehicle should not be driven until repaired."),
                         ("Searching", "Use the search bar to filter by vehicle name, inspector name, or result status. For example, type 'fail' to see all failed inspections."),
                         ("Tips", "Pre-trip inspections should be completed every day before driving. Start an inspection from the vehicle detail page under the Inspections tab. The Fleet Dashboard shows which vehicles are missing today's inspection.")
@@ -63,11 +63,11 @@ struct IOSInspectionsPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredInspections.isEmpty {
-            ContentUnavailableView {
-                Label("No Inspections", systemImage: "checklist")
-            } description: {
-                Text("No vehicle inspections have been recorded yet.")
-            }
+            EmptyStateView(
+                icon: "checklist",
+                title: "No Inspections",
+                message: "No vehicle inspections have been recorded yet."
+            )
         } else {
             List(filteredInspections, id: \.id) { inspection in
                 inspectionRow(inspection)
@@ -124,17 +124,12 @@ struct IOSInspectionsPage: View {
     // MARK: - Helpers
 
     private func resultBadge(_ result: String) -> some View {
-        let color: Color = switch result.lowercased() {
-        case "pass", "passed": .green
-        case "fail", "failed": .red
-        case "conditional": .orange
-        default: .gray
-        }
+        let color = DS.SemanticColor.inspectionResult(result)
         return Text(result.capitalized)
             .font(.system(.caption2, weight: .semibold))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(Capsule().fill(color.opacity(0.15)))
+            .background(Capsule().fill(DS.SemanticColor.tint(color)))
             .foregroundStyle(color)
     }
 

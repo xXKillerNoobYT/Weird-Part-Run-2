@@ -298,7 +298,7 @@ struct ReportsServiceTests {
             partId: partId, qty: 3,
             fromLocationType: "warehouse", fromLocationId: 1,
             toLocationType: nil, toLocationId: nil,
-            movementType: "pull",
+            movementType: StockMovement.MovementType.pull.rawValue,
             performedBy: env.adminUserId,
             unitCostAtMove: 5.0
         )
