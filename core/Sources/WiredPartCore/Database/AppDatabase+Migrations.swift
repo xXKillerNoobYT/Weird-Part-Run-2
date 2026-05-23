@@ -126,6 +126,7 @@ extension AppDatabase {
         registerMigration087ServicePermissionGateBackfill(&migrator)
         registerMigration088FleetInspectionDashboardLookupIndex(&migrator)
         registerMigration089VehicleLocationLogs(&migrator)
+        registerMigration090NotebookClassificationPermissions(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5133,6 +5134,7 @@ extension AppDatabase {
         }
     }
 
+
     private static func registerMigration087ServicePermissionGateBackfill(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("087_service_permission_gate_backfill") { db in
             let permissionGrants: [(key: String, hats: [String])] = [
@@ -5210,6 +5212,25 @@ extension AppDatabase {
                 CREATE INDEX IF NOT EXISTS idx_vll_recorded_at
                 ON vehicle_location_logs(recorded_at)
                 """)
+        }
+    }
+
+    private static func registerMigration090NotebookClassificationPermissions(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("090_notebook_classification_permissions") { db in
+            let permissionGrants: [(key: String, hatNames: [String])] = [
+                ("notebooks.classify_todo", ["Admin", "Manager", "Lead", "Worker"]),
+                ("notebooks.reclassify_todo", ["Admin", "Manager"]),
+                ("notebooks.review_classification", ["Admin", "Manager"]),
+            ]
+
+            for grant in permissionGrants {
+                for hatName in grant.hatNames {
+                    try db.execute(sql: """
+                        INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+                        SELECT id, ? FROM hats WHERE name = ?
+                        """, arguments: [grant.key, hatName])
+                }
+            }
         }
     }
 
