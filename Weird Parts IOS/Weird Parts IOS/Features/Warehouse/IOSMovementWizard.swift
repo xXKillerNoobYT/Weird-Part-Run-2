@@ -54,9 +54,9 @@ struct IOSMovementWizard: View {
     // Derived
     private var movementType: String {
         switch (fromLocationType, toLocationType) {
-        case ("job", _): return "return_to_supplier"
-        case (_, "job"): return "consume"
-        default: return "transfer"
+        case ("job", _): return StockMovement.MovementType.returnToSupplier.rawValue
+        case (_, "job"): return StockMovement.MovementType.consume.rawValue
+        default: return StockMovement.MovementType.transfer.rawValue
         }
     }
 
