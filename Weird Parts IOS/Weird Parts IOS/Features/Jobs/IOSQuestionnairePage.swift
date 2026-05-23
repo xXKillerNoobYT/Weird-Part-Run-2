@@ -64,6 +64,12 @@ struct IOSQuestionnairePage: View {
                 .onDisappear {
                     NotificationCenter.default.post(name: .questionnairePageInactive, object: nil)
                 }
+                .onChange(of: answers) { _, _ in postAIContext() }
+                .onChange(of: dailyReportText) { _, _ in postAIContext() }
+                .onChange(of: breakVerification) { _, _ in postAIContext() }
+                .onChange(of: missedBreaks) { _, _ in postAIContext() }
+                .onChange(of: companionVotes) { _, _ in postAIContext() }
+                .onChange(of: isSubmitting) { _, _ in postAIContext() }
         }
     }
 
@@ -496,7 +502,7 @@ struct IOSQuestionnairePage: View {
         let context = """
         Clock-Out Questionnaire page. Read-only context.
         Labor entry id: \(laborEntryId), questions loaded: \(questions.count), required questions: \(requiredCount), answered fields: \(answeredCount), unanswered required: \(hasUnansweredRequired).
-        Answer types: \(answerTypes.isEmpty ? "none" : answerTypes), companion polls: \(companionPolls.count), break verification: \(breakVerification.rawValue), missed break selections: \(missedBreaks.count), daily report characters: \(dailyReportText.trimmingCharacters(in: .whitespacesAndNewlines).count), submitting: \(isSubmitting).
+        Answer types: \(answerTypes.isEmpty ? "none" : answerTypes), companion polls: \(companionPolls.count), companion votes pending: \(companionVotes.count), break verification: \(breakVerification.rawValue), missed break selections: \(missedBreaks.count), daily report characters: \(dailyReportText.trimmingCharacters(in: .whitespacesAndNewlines).count), submitting: \(isSubmitting).
         Available read-only guidance: explain required questions, answer types, break verification, Daily Report field, companion poll section, and submit/skip availability. Do not submit or change answers directly.
         """
         NotificationCenter.default.post(

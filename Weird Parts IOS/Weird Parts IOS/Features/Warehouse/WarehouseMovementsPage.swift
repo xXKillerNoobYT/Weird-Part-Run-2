@@ -132,6 +132,9 @@ struct WarehouseMovementsPage: View {
         .onDisappear {
             NotificationCenter.default.post(name: .warehouseMovementsPageInactive, object: nil)
         }
+        .onChange(of: searchText) { _, _ in postAIContext() }
+        .onChange(of: selectedFilter) { _, _ in postAIContext() }
+        .onChange(of: activeSheet?.id) { _, _ in postAIContext() }
         .onChange(of: dateRange) { loadData() }
         .onChange(of: customStart) { loadData() }
         .onChange(of: customEnd) { loadData() }
