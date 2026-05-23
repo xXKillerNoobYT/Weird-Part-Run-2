@@ -1685,6 +1685,127 @@ public final class JobsService: Sendable {
     // MARK: - 5. Daily Reports
     // =========================================================================
 
+    /// Save the clock-out Daily Report answer into the job's Daily Report notebook.
+    ///
+    /// Blank answers are ignored so optional/accidental whitespace does not create empty reports.
+    /// The notebook is scoped to the labor entry's job and worker so reports remain tied to the
+    /// job that was just clocked out.
+    @discardableResult
+    public func saveClockOutDailyReport(laborEntryId: Int64, dailyReport: String) throws -> Int64? {
+        let trimmedReport = dailyReport.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedReport.isEmpty else { return nil }
+
+        return try db.writer.write { dbConn in
+            guard let labor = try Row.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT le.job_id, le.user_id, le.clock_in,
+                           COALESCE(j.job_name, j.job_number, 'Shop / Warehouse') AS job_name
+                    FROM labor_entries le
+                    LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
+                    WHERE le.id = ? AND le.deleted_at IS NULL
+                    """,
+                arguments: [laborEntryId]
+            ) else {
+                throw JobsError.laborEntryNotFound(laborEntryId)
+            }
+
+            let jobId: Int64 = labor["job_id"] ?? 0
+            let userId: Int64 = labor["user_id"] ?? 0
+            let jobName: String = labor["job_name"] ?? "Shop / Warehouse"
+            let clockIn: String = labor["clock_in"] ?? ""
+            let clockDate = String(clockIn.prefix(10))
+            let reportDate = clockDate.isEmpty ? Self.localDateString() : clockDate
+
+            var notebookId = try Int64.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT id FROM notebooks
+                    WHERE notebook_type = 'daily-report'
+                      AND job_id = ?
+                      AND created_by = ?
+                      AND deleted_at IS NULL
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                arguments: [jobId, userId]
+            )
+
+            if notebookId == nil {
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO notebooks
+                            (title, description, job_id, created_by, notebook_type, status, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, 'daily-report', 'active', datetime('now'), datetime('now'))
+                        """,
+                    arguments: ["Daily Reports — \(jobName)", "Clock-out daily reports captured from the end-of-day questionnaire.", jobId, userId]
+                )
+                notebookId = dbConn.lastInsertedRowID
+            }
+
+            guard let nbId = notebookId else { return nil }
+
+            var sectionId = try Int64.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT id FROM notebook_sections
+                    WHERE notebook_id = ? AND name = 'Reports' AND deleted_at IS NULL
+                    ORDER BY sort_order ASC, id ASC
+                    LIMIT 1
+                    """,
+                arguments: [nbId]
+            )
+
+            if sectionId == nil {
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO notebook_sections (notebook_id, name, section_type, sort_order, created_at)
+                        VALUES (?, 'Reports', 'notes', 0, datetime('now'))
+                        """,
+                    arguments: [nbId]
+                )
+                sectionId = dbConn.lastInsertedRowID
+            }
+
+            guard let secId = sectionId else { return nil }
+
+            let content = """
+                ## Daily Report — \(reportDate)
+
+                ### Job
+                \(jobName)
+
+                ### Clock-Out Daily Report
+                \(trimmedReport)
+
+                _Captured at clock-out from labor entry #\(laborEntryId)._
+                """
+
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO notebook_entries
+                        (section_id, title, content, entry_type, created_by, updated_by, sort_order, created_at, updated_at)
+                    VALUES (?, ?, ?, 'daily-report', ?, ?, 0, datetime('now'), datetime('now'))
+                    """,
+                arguments: [secId, "Daily Report — \(reportDate)", content, userId, userId]
+            )
+            let entryId = dbConn.lastInsertedRowID
+
+            try dbConn.execute(
+                sql: "UPDATE notebooks SET updated_at = datetime('now') WHERE id = ?",
+                arguments: [nbId]
+            )
+
+            return entryId
+        }
+    }
+
+    private static func localDateString() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Date())
+    }
+
     /// List daily reports, optionally filtered by job.
     public func listReports(jobId: Int64? = nil, limit: Int = 50) throws -> [DailyReportRow] {
         do {

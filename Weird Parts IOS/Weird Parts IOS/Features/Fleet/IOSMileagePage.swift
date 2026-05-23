@@ -13,7 +13,9 @@ struct IOSMileagePage: View {
     // MARK: - State
 
     @State private var mileageLogs: [FleetService.MileageRow] = []
-    @State private var isLoading = true
+    @State private var isInitialLoading = true
+    @State private var isRefreshing = false
+    @State private var hasLoadedOnce = false
     @State private var searchText = ""
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
@@ -46,6 +48,16 @@ struct IOSMileagePage: View {
             .onChange(of: dateRange) { loadData() }
             .onChange(of: customStart) { loadData() }
             .onChange(of: customEnd) { loadData() }
+            .onAppear {
+                NotificationCenter.default.post(
+                    name: .fleetMileagePageActive,
+                    object: nil,
+                    userInfo: ["context": fleetMileageContext]
+                )
+            }
+            .onDisappear {
+                NotificationCenter.default.post(name: .fleetMileagePageInactive, object: nil)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
@@ -69,24 +81,46 @@ struct IOSMileagePage: View {
 
     // MARK: - Mileage List
 
+    private var fleetMileageContext: String {
+        let searchState = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "none" : "active"
+        return "page=Fleet Mileage; total_logs=\(mileageLogs.count); visible_logs=\(filteredLogs.count); date_range=\(dateRange.rawValue); search=\(searchState)"
+    }
+
     @ViewBuilder
     private var mileageList: some View {
-        if isLoading {
-            ProgressView("Loading mileage logs...")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error = loadError {
-            ErrorStateView(message: error) { loadData() }
-        } else if filteredLogs.isEmpty {
-            EmptyStateView(
-                icon: "road.lanes",
-                title: "No Mileage Logs",
-                message: "No mileage logs found."
-            )
-        } else {
-            List(filteredLogs, id: \.id) { log in
-                mileageRow(log)
+        Group {
+            if isInitialLoading {
+                ProgressView("Loading mileage logs...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ErrorStateView(message: error) { loadData() }
+            } else if filteredLogs.isEmpty {
+                EmptyStateView(
+                    icon: "road.lanes",
+                    title: "No Mileage Logs",
+                    message: "No mileage logs found."
+                )
+            } else {
+                List(filteredLogs, id: \.id) { log in
+                    mileageRow(log)
+                }
+                .listStyle(.insetGrouped)
             }
-            .listStyle(.insetGrouped)
+        }
+        .overlay(alignment: .top) {
+            refreshingOverlay
+        }
+    }
+
+    @ViewBuilder
+    private var refreshingOverlay: some View {
+        if isRefreshing {
+            ProgressView()
+                .progressViewStyle(.linear)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .transition(.opacity)
+                .accessibilityLabel("Refreshing mileage logs")
         }
     }
 
@@ -145,18 +179,33 @@ struct IOSMileagePage: View {
     private func loadData() {
         guard let service = appCore.fleetService else {
             loadError = "Fleet service not available"
-            isLoading = false
+            hasLoadedOnce = true
+            isInitialLoading = false
+            isRefreshing = false
             return
         }
-        isLoading = mileageLogs.isEmpty
-        loadError = nil
-        do {
-            let startStr = Formatters.localDateFormatter.string(from: effectiveStart)
-            let endStr = Formatters.localDateFormatter.string(from: effectiveEnd)
-            mileageLogs = try service.listMileageLogs(start: startStr, end: endStr)
-        } catch {
-            loadError = userFriendlyError(error, context: "load mileage data")
+
+        if hasLoadedOnce {
+            isRefreshing = true
+        } else {
+            isInitialLoading = true
         }
-        isLoading = false
+
+        DispatchQueue.main.async {
+            defer {
+                self.hasLoadedOnce = true
+                self.isInitialLoading = false
+                self.isRefreshing = false
+            }
+
+            self.loadError = nil
+            do {
+                let startStr = Formatters.localDateFormatter.string(from: self.effectiveStart)
+                let endStr = Formatters.localDateFormatter.string(from: self.effectiveEnd)
+                self.mileageLogs = try service.listMileageLogs(start: startStr, end: endStr)
+            } catch {
+                self.loadError = userFriendlyError(error, context: "load mileage data")
+            }
+        }
     }
 }

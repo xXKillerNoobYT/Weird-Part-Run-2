@@ -9,9 +9,10 @@ Complete the 87-page page-context coverage set by adding read-only page-active/p
 
 ## Current Coverage
 
-Implemented page-context notifications observed by `IOSAIAssistantPanel`: 60 page contexts.
+Implemented page-context notifications observed by `IOSAIAssistantPanel`: 60+ page contexts, including People/Office/Reports and Fleet recovery slices.
 
-Help registry mappings with matching help entries: 60 page contexts.
+Help registry mappings are maintained for recovered page IDs where dedicated help entries exist; Fleet tabs beyond Dashboard and Maintenance still need dedicated help-entry extraction.
+
 
 Known gap: none in the currently observed AI page-context set. Remaining work is additional unobserved functional pages, not broken mappings.
 
@@ -177,6 +178,38 @@ The payload is a read-only summary of visible settings and validation state. It 
 
 1. People/Office/Reports tail: contractors, teams, hats, permissions, office manage-jobs, warehouse exec, estimation settings, pipeline, teams, reports router, and specialized fleet/scheduling/warehouse report pages.
 
+## WEI-1112 Productivity Restart Slice
+
+Added the two missing active/inactive context posts required to bring declared page-active notifications to full feature-page emission coverage:
+
+- `IOSUnifiedApprovalsPage`: `officeApprovalsPageActive` / `officeApprovalsPageInactive` with read-only summary of total/visible pending approvals, selected filter, search state, and pending counts by approval type.
+- `SettingsRouter`: `settingsPageActive` / `settingsPageInactive` with read-only summary of selected settings tab and sync scope classification.
+
+All payloads remain read-only summaries and avoid mutating commands, IDs for write actions, or workflow state changes.
+
+## WEI-1112 Fleet Primary Tabs Slice
+
+Added the next high-traffic Fleet coverage slice across the primary Fleet tabs:
+
+- `IOSFleetDashboardPage`: `fleetDashboardPageActive` / `fleetDashboardPageInactive` with read-only KPI, maintenance, and trailer summary counts.
+- `IOSMaintenancePage`: `fleetMaintenancePageActive` / `fleetMaintenancePageInactive` with total/visible records, date range, and search state.
+- `IOSMileagePage`: `fleetMileagePageActive` / `fleetMileagePageInactive` with total/visible logs, date range, and search state.
+- `IOSFuelPage`: `fleetFuelPageActive` / `fleetFuelPageInactive` with total/visible logs, date range, and search state.
+- `IOSTrailersPage`: `fleetTrailersPageActive` / `fleetTrailersPageInactive` with total/visible trailers and search state.
+- `IOSInspectionsPage`: `fleetInspectionsPageActive` / `fleetInspectionsPageInactive` with total/visible inspections and search state.
+- `IOSTelematicsPage`: `fleetTelematicsPageActive` / `fleetTelematicsPageInactive` with total/visible locations and search state.
+- `IOSMyTruckPage`: `fleetMyTruckPageActive` / `fleetMyTruckPageInactive` with assigned vehicle, selected inventory tab, and read-only count summaries.
+
+Also wired these notifications through `IOSAIAssistantPanel` context observers/navigation-context prompt assembly and active page tracker IDs. Existing `fleetTrackingPageActive` router-tab context remains supported for the FleetRouter tracking tab.
+
+All payloads remain read-only summaries and avoid mutating commands, write action IDs, or workflow state changes.
+
+## Next Highest-Traffic Remaining Slices
+
+1. Fleet secondary pages and deep links: trailer locations, truck tools, and detail-heavy flows still need explicit inventory decisions (context post vs N/A).
+2. People area long-tail pages: contractors, teams, hats, permissions, and detail flows require the same explicit inventory/mapping treatment.
+3. Settings help parity: add missing `settings-app-config` help entry before mapping settings context to help content.
+
 ## Validation
 
 Validated in the shared workspace on 2026-05-13:
@@ -216,6 +249,20 @@ Validated Settings gap closure slice in the clean WEI-1112 settings worktree on 
 - Help registry mapping check returned no missing mapped page IDs.
 - First build exposed a recovered-branch compile issue in `IOSOfficeDashboardPage` background task status rows; the page now uses existing `BackgroundTaskService.TaskLogEntry` data instead of unavailable types.
 - `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was pre-existing warnings only.
+
+Validated WEI-1112 productivity restart slice in the shared workspace on 2026-05-17:
+
+- Static inventory check confirms parity: declared page-active notifications = 60, pages posting page-active notifications = 60, missing = 0.
+- `rg` confirmation shows new posts in `IOSUnifiedApprovalsPage` and `SettingsRouter`.
+- `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was warnings only.
+
+Validated WEI-1112 Fleet primary tabs slice in the shared workspace on 2026-05-17:
+
+- Static parity checks on the recovered main-based branch reported declared page-active notifications = 57 and AI panel observers = 57, with no undeclared references or missing observers. One router-tab notification (`fleetTrackingPageActive`) is emitted through `FleetRouter` indirection rather than a literal `post(name: .fleetTrackingPageActive)` call.
+- Fleet notification names are declared, posted by their pages, observed by `IOSAIAssistantPanel`, and tracked for active page selection.
+- Help mapping is limited to help entries that currently exist; dedicated help-entry extraction remains for Fleet tabs beyond Dashboard and Maintenance.
+- First build attempt hit Swift type-checker complexity in `IOSAIAssistantPanel` active-page tracker; resolved by splitting/consolidating Fleet tracker observers.
+- `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed after the split. Remaining output was warnings only.
 
 Static validation:
 

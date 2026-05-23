@@ -104,11 +104,19 @@ public final class OrdersService: Sendable {
     ]
 
     /// Valid PO status transitions.
+    ///
+    /// PO lifecycle is documented in the iOS purchase-order plan as:
+    /// draft → submitted → ordered → partial → received, with cancellation
+    /// available before final receipt. `complete` is retained for legacy callers
+    /// that close a received PO after warehouse reconciliation.
     private static let validPOTransitions: [String: Set<String>] = [
-        "draft":    ["ordered"],
-        "ordered":  ["partial", "received"],
-        "partial":  ["received"],
-        "received": ["complete"],
+        "draft":     ["submitted", "ordered", "cancelled"],
+        "submitted": ["ordered", "cancelled"],
+        "ordered":   ["partial", "received", "cancelled"],
+        "partial":   ["received", "cancelled"],
+        "received":  ["complete"],
+        "complete":  [],
+        "cancelled": [],
     ]
 
     // =========================================================================

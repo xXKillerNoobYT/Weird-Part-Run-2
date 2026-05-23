@@ -29,6 +29,16 @@ struct IOSTelematicsPage: View {
             .searchable(text: $searchText, prompt: "Search vehicles...")
             .refreshable { loadData() }
             .task { loadData() }
+            .onAppear {
+                NotificationCenter.default.post(
+                    name: .fleetTelematicsPageActive,
+                    object: nil,
+                    userInfo: ["context": fleetTelematicsContext]
+                )
+            }
+            .onDisappear {
+                NotificationCenter.default.post(name: .fleetTelematicsPageInactive, object: nil)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
@@ -51,6 +61,11 @@ struct IOSTelematicsPage: View {
     }
 
     // MARK: - Location List
+
+    private var fleetTelematicsContext: String {
+        let searchState = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "none" : "active"
+        return "page=Fleet Telematics; total_locations=\(locations.count); visible_locations=\(filteredLocations.count); search=\(searchState)"
+    }
 
     @ViewBuilder
     private var locationList: some View {
