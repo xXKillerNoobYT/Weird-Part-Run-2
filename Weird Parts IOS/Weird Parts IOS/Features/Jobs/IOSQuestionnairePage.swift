@@ -99,7 +99,7 @@ struct IOSQuestionnairePage: View {
                 }
 
                 // Question list
-                ForEach(questions, id: \.questionId) { question in
+                ForEach(displayedQuestions, id: \.questionId) { question in
                     Section {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack(alignment: .top, spacing: 6) {
@@ -177,6 +177,12 @@ struct IOSQuestionnairePage: View {
                             .font(.subheadline)
                             .fontWeight(.medium)
 
+                        if isDailyReportRequired {
+                            Text("*")
+                                .foregroundStyle(.red)
+                                .fontWeight(.bold)
+                        }
+
                         Text("Add the work summary, progress, blockers, or notes the office needs from today.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -185,6 +191,12 @@ struct IOSQuestionnairePage: View {
                             .lineLimit(3...8)
                             .textFieldStyle(.roundedBorder)
                             .font(.subheadline)
+
+                        if isDailyReportRequired && dailyReportAnswer.isEmpty {
+                            Label("This question is required", systemImage: "exclamationmark.circle")
+                                .font(.caption2)
+                                .foregroundStyle(.red)
+                        }
                     }
                     .padding(.vertical, 4)
                 } header: {
@@ -300,14 +312,35 @@ struct IOSQuestionnairePage: View {
 
     /// True when at least one required question has no answer yet.
     private var hasUnansweredRequired: Bool {
-        questions.contains { question in
+        let hasUnansweredConfiguredQuestion = displayedQuestions.contains { question in
             question.isRequired &&
             (answers[question.questionId] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
+        return hasUnansweredConfiguredQuestion || (isDailyReportRequired && dailyReportAnswer.isEmpty)
     }
 
     private var allRequiredAnswered: Bool {
         !hasUnansweredRequired
+    }
+
+    private var displayedQuestions: [JobsService.QuestionnaireItem] {
+        questions.filter { !isDailyReportQuestion($0) }
+    }
+
+    private var dailyReportQuestions: [JobsService.QuestionnaireItem] {
+        questions.filter(isDailyReportQuestion)
+    }
+
+    private var isDailyReportRequired: Bool {
+        dailyReportQuestions.contains { $0.isRequired }
+    }
+
+    private var dailyReportAnswer: String {
+        dailyReportText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func isDailyReportQuestion(_ question: JobsService.QuestionnaireItem) -> Bool {
+        question.questionText.localizedCaseInsensitiveContains("daily report")
     }
 
     // MARK: - Actions
@@ -321,15 +354,9 @@ struct IOSQuestionnairePage: View {
         errorMessage = nil
 
         let responses: [(questionId: Int64, answer: String)] = questions.map { q in
-            (questionId: q.questionId, answer: answers[q.questionId] ?? "")
+            (questionId: q.questionId, answer: isDailyReportQuestion(q) ? dailyReportAnswer : (answers[q.questionId] ?? ""))
         }
-        let configuredDailyReportAnswers = questions
-            .filter { $0.questionText.localizedCaseInsensitiveContains("daily report") }
-            .compactMap { answers[$0.questionId]?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        let dailyReportBody = ([dailyReportText.trimmingCharacters(in: .whitespacesAndNewlines)] + configuredDailyReportAnswers)
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n\n")
+        let dailyReportBody = dailyReportAnswer
 
         do {
             try service.saveClockOutResponses(
