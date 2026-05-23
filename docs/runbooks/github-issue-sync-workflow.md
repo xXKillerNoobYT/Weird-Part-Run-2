@@ -72,9 +72,11 @@ If automated sync fails, use the existing snapshot path:
 ```bash
 scripts/github-issue-sync.sh --repo xXKillerNoobYT/Weird-Part-Run-2 --state all
 ```
-Artifacts:
-- `docs/github-issue-sync/<UTC timestamp>/issues.json`
-- `docs/github-issue-sync/latest-sync.md`
+Artifacts (local only, ignored by git):
+- `.tmp/github-issue-sync/<UTC timestamp>/issues.json`
+- `.tmp/github-issue-sync/latest-sync.md`
+
+Do not commit generated snapshot artifacts; they are regenerated operational evidence, not project source.
 
 Rollback:
 1. Disable `.github/workflows/paperclip-tracker-sync.yml` (or remove required secrets).
