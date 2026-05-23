@@ -27,6 +27,7 @@ public final class NotebooksService: Sendable {
         case entryNotFound(Int64)
         case requiredFieldEmpty
         case invalidDuration(Int64)
+        case invalidData(String)
         case insufficientPermissions(required: String)
 
         public var errorDescription: String? {
@@ -41,6 +42,8 @@ public final class NotebooksService: Sendable {
                 return "A required field is empty."
             case .invalidDuration(let duration):
                 return "Invalid duration: \(duration)."
+            case .invalidData(let message):
+                return message
             }
         }
     }
@@ -942,6 +945,9 @@ public final class NotebooksService: Sendable {
                 SELECT notebook_id FROM notebook_sections WHERE id = ?
                 """, arguments: [sectionId])
 
+            let storedBlockData = blockType == "checklist" ? nil : blockData
+            let storedChecklistItems = checklistItems ?? (blockType == "checklist" ? blockData : nil)
+
             try dbConn.execute(sql: """
                 INSERT INTO notebook_entries
                 (section_id, notebook_id, title, content, entry_type, block_type, block_data,
@@ -949,8 +955,8 @@ public final class NotebooksService: Sendable {
                  sort_order, created_by, created_at, updated_at)
                 VALUES (?, ?, ?, ?, 'note', ?, ?, ?, ?, 0, 0, 0, ?, ?, datetime('now'), datetime('now'))
                 """, arguments: [
-                    sectionId, notebookId, title ?? "", content, blockType, blockData,
-                    headingLevel, checklistItems, order, createdBy
+                    sectionId, notebookId, title ?? "", content, blockType, storedBlockData,
+                    headingLevel, storedChecklistItems, order, createdBy
                 ])
             return dbConn.lastInsertedRowID
         }
@@ -991,23 +997,31 @@ public final class NotebooksService: Sendable {
 
             var changedFields: [String: Any] = [:]
             var oldValues: [String: Any] = [:]
-            func track<T: Equatable>(_ field: String, old: T?, new: T?) {
+            func trackString(_ field: String, old: String?, new: String?) {
                 if old != new {
                     changedFields[field] = new ?? NSNull()
                     oldValues[field] = old ?? NSNull()
                 }
             }
-            track("title", old: oldTitle, new: newTitle)
-            track("content", old: oldContent, new: content)
-            track("block_data", old: oldBlockData, new: blockData)
-            track("heading_level", old: oldHeadingLevel, new: headingLevel)
-            track("checklist_items", old: oldChecklistItems, new: checklistItems)
+            func trackInt(_ field: String, old: Int?, new: Int?) {
+                if old != new {
+                    changedFields[field] = new ?? NSNull()
+                    oldValues[field] = old ?? NSNull()
+                }
+            }
+            trackString("title", old: oldTitle, new: newTitle)
+            trackString("content", old: oldContent, new: content)
+            trackString("block_data", old: oldBlockData, new: blockData)
+            trackInt("heading_level", old: oldHeadingLevel, new: headingLevel)
+            trackString("checklist_items", old: oldChecklistItems, new: checklistItems)
 
             if !changedFields.isEmpty {
                 let changedFieldsData = try JSONSerialization.data(withJSONObject: changedFields, options: [.sortedKeys])
                 let oldValuesData = try JSONSerialization.data(withJSONObject: oldValues, options: [.sortedKeys])
                 guard let changedFieldsJSON = String(data: changedFieldsData, encoding: .utf8),
-                      let oldValuesJSON = String(data: oldValuesData, encoding: .utf8) else { return }
+                      let oldValuesJSON = String(data: oldValuesData, encoding: .utf8) else {
+                    throw NotebooksError.invalidData("Unable to encode notebook change history")
+                }
 
                 try dbConn.execute(sql: """
                     INSERT INTO _change_log
