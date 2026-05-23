@@ -387,6 +387,53 @@ struct SchedulingServiceTests {
         #expect(entries.isEmpty)
     }
 
+    @Test("getTimeOffCountsByDate returns grouped counts for an inclusive range")
+    func testGetTimeOffCountsByDate() throws {
+        let env = try E2ETestHelpers.setUp()
+        let secondUserId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO users (display_name, pin_hash, is_active)
+                VALUES ('Worker Beta', 'hash777', 1)
+                """)
+            return db.lastInsertedRowID
+        }
+
+        _ = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2026-07-10",
+            endDate: "2026-07-10",
+            reason: "Admin off"
+        )
+        _ = try env.scheduling.createTimeOffRequest(
+            userId: secondUserId,
+            startDate: "2026-07-10",
+            endDate: "2026-07-10",
+            reason: "Worker off"
+        )
+        _ = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2026-07-12",
+            endDate: "2026-07-12",
+            reason: "Follow-up off"
+        )
+        _ = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2026-07-20",
+            endDate: "2026-07-20",
+            reason: "Outside range"
+        )
+
+        let counts = try env.scheduling.getTimeOffCountsByDate(
+            startDate: "2026-07-10",
+            endDate: "2026-07-16"
+        )
+
+        #expect(counts["2026-07-10"] == 2)
+        #expect(counts["2026-07-12"] == 1)
+        #expect(counts["2026-07-20"] == nil)
+        #expect(counts["2026-07-11"] == nil)
+    }
+
     // MARK: - 8. Get Dispatch Board for Date
 
     @Test("getDispatchBoard returns empty array when no dispatches exist")

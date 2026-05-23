@@ -80,7 +80,8 @@ struct IOSNotebookTemplatesPage: View {
                 PageHelpSheet(title: "Notebook Templates Help", sections: [
                     ("What This Page Does", "Displays available notebook templates grouped by category. Templates provide pre-built structures so you can create new notebooks with sections and entries already laid out, saving time on repetitive documentation."),
                     ("How to Use It", "Browse templates by category. Tap any template or swipe right and tap 'Use' to create a new notebook from that template. Use the search bar to filter templates by name, description, or category."),
-                    ("Template Types", "Job templates are designed for job-site documentation with sections like scope of work, materials, and punch lists. General templates cover everyday needs like meeting notes or inspections."),
+                    ("Job Starter Templates", "These templates are automatically applied when a new job is created. The template category maps to the job type, so a Commercial job gets the Commercial Job starter template, Residential gets Residential Job, and unknown types fall back to Service Call."),
+                    ("Recovery", "If an older job is missing its notebook, open the job's Notebooks tab and tap Create Job Notebook. The app uses the same job-type matching rules."),
                     ("Refreshing Defaults", "Tap the refresh button in the toolbar to re-seed the default templates. This is useful if defaults were deleted or if new built-in templates have been added in an update."),
                     ("Deleting Templates", "Swipe left on any non-default template to delete it. Default templates cannot be deleted to ensure a baseline set is always available.")
                 ])
@@ -132,6 +133,18 @@ struct IOSNotebookTemplatesPage: View {
         filteredTemplates.filter { ($0.category ?? "general") == category }
     }
 
+    private func jobTypeLabel(for template: NotebooksService.NotebookTemplateItem) -> String? {
+        guard template.templateType == "job" else { return nil }
+        let rawCategory = (template.category ?? "service")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = rawCategory.isEmpty ? "service" : rawCategory
+        return normalized
+            .replacingOccurrences(of: "_", with: " ")
+            .split(separator: " ")
+            .map { $0.capitalized }
+            .joined(separator: " ")
+    }
+
     private func templateRow(_ template: NotebooksService.NotebookTemplateItem) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
@@ -141,12 +154,22 @@ struct IOSNotebookTemplatesPage: View {
                 Text(template.name).font(.headline)
                 Spacer()
                 HStack(spacing: 4) {
-                    Text(template.templateType.capitalized)
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.blue.opacity(0.1))
-                        .clipShape(Capsule())
+                    if template.templateType == "job" {
+                        Text("Job Starter")
+                            .font(.caption2)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.orange)
+                            .clipShape(Capsule())
+                    } else {
+                        Text(template.templateType.capitalized)
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.blue.opacity(0.1))
+                            .clipShape(Capsule())
+                    }
                     if template.isDefault {
                         Text("Default")
                             .font(.caption2)
@@ -157,6 +180,12 @@ struct IOSNotebookTemplatesPage: View {
                             .clipShape(Capsule())
                     }
                 }
+            }
+            if let jobType = jobTypeLabel(for: template) {
+                Label("Job Type: \(jobType)", systemImage: "tag.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Job Type: \(jobType)")
             }
             if let desc = template.description {
                 Text(desc)

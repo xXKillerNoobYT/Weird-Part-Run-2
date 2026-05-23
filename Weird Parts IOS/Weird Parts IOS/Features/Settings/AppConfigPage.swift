@@ -19,6 +19,7 @@ struct AppConfigPage: View {
     @State private var saved = false
     @State private var loadError: String?
     @State private var actionError: String?
+    @State private var didLoadConfig = false
 
     /// Fix #150: input validity gate for the Save button — all numeric text fields must be non-empty positive integers.
     private var isFormValid: Bool {
@@ -128,10 +129,20 @@ struct AppConfigPage: View {
                 ("How to Use It", "Adjust values for each setting and tap Save. Auto-lock controls how long before the app locks. Stale data warning triggers when sync data is old. Payment tracking enables invoice and payment monitoring per customer."),
             ])
         }
-        .task { loadConfig() }
+        .task {
+            loadConfig()
+        }
         .onDisappear {
             NotificationCenter.default.post(name: .settingsPageInactive, object: nil)
         }
+        .onChange(of: autoLockMinutes) { _, _ in postAIContextIfLoaded() }
+        .onChange(of: staleDataHours) { _, _ in postAIContextIfLoaded() }
+        .onChange(of: archiveDays) { _, _ in postAIContextIfLoaded() }
+        .onChange(of: warrantyDays) { _, _ in postAIContextIfLoaded() }
+        .onChange(of: paymentTrackingEnabled) { _, _ in postAIContextIfLoaded() }
+        .onChange(of: paymentTermsDays) { _, _ in postAIContextIfLoaded() }
+        .onChange(of: overdueWarningDays) { _, _ in postAIContextIfLoaded() }
+        .onChange(of: autoPaymentHold) { _, _ in postAIContextIfLoaded() }
         .alert("Error", isPresented: Binding(get: { loadError != nil || actionError != nil }, set: { if !$0 { loadError = nil; actionError = nil } })) {
             Button("OK") { loadError = nil; actionError = nil }
         } message: {
@@ -145,8 +156,11 @@ struct AppConfigPage: View {
     }
 
     private func loadConfig() {
+        didLoadConfig = false
         guard let service = appCore.settingsService else {
             loadError = "Settings service unavailable"
+            didLoadConfig = true
+            postAIContext()
             return
         }
         do {
@@ -164,9 +178,12 @@ struct AppConfigPage: View {
                 overdueWarningDays = paySettings?.warningDays ?? 7
                 autoPaymentHold = paySettings?.autoHold ?? false
             }
+            didLoadConfig = true
             postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load settings")
+            didLoadConfig = true
+            postAIContext()
         }
     }
 
@@ -201,6 +218,11 @@ struct AppConfigPage: View {
         } catch {
             actionError = userFriendlyError(error, context: "complete action")
         }
+    }
+
+    private func postAIContextIfLoaded() {
+        guard didLoadConfig else { return }
+        postAIContext()
     }
 
     private func postAIContext() {

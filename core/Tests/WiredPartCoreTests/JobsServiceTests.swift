@@ -24,6 +24,59 @@ struct JobsServiceTests {
         #expect(jobs.contains(where: { $0.jobNumber == "J-TEST" }))
     }
 
+    @Test("createJob creates a linked job notebook")
+    func testCreateJobCreatesLinkedNotebook() throws {
+        let env = try E2ETestHelpers.setUp()
+        try env.notebooks.seedDefaultTemplates(createdBy: env.adminUserId)
+
+        let jobId = try env.jobs.createJob(
+            jobNumber: "JN-AUTO-NB",
+            jobName: "Auto Notebook Job",
+            jobType: "residential",
+            createdBy: env.adminUserId
+        )
+
+        let notebooks = try env.notebooks.listNotebooks(notebookType: "job", jobId: jobId)
+        #expect(notebooks.count == 1)
+        #expect(notebooks[0].title.contains("Auto Notebook Job"))
+    }
+
+    @Test("createJob internally seeds templates for create-job user without manage_templates")
+    func testCreateJobSeedsTemplatesWithoutManageTemplatesPermission() throws {
+        let env = try E2ETestHelpers.setUp()
+        let officeUserId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO users (display_name, pin_hash, is_active, created_at, updated_at)
+                VALUES ('Office Create Jobs Only', 'test-hash', 1, datetime('now'), datetime('now'))
+                """)
+            let userId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO user_hats (user_id, hat_id, is_active)
+                SELECT ?, id, 1 FROM hats WHERE name = 'Lead'
+                """, arguments: [userId])
+            return userId
+        }
+        #expect(try env.auth.hasPermission(officeUserId, permissionKey: "create_jobs"))
+        #expect(!(try env.auth.hasPermission(officeUserId, permissionKey: "manage_templates")))
+        try env.db.writer.write { db in
+            try db.execute(sql: "DELETE FROM notebook_templates")
+        }
+
+        let jobId = try env.jobs.createJob(
+            jobNumber: "JN-NO-MANAGE-TEMPLATES",
+            jobName: "Create Only Job",
+            jobType: "service",
+            createdBy: officeUserId
+        )
+
+        let notebooks = try env.notebooks.listNotebooks(notebookType: "job", jobId: jobId)
+        let templateCount = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM notebook_templates WHERE template_type = 'job' AND deleted_at IS NULL") ?? 0
+        }
+        #expect(notebooks.count == 1)
+        #expect(templateCount >= 3)
+    }
+
     @Test("listJobs aggregates completed labor and job-linked PO line costs without duplication")
     func testListJobsAggregatesCompletedLaborAndPOLineCosts() throws {
         let env = try E2ETestHelpers.setUp()
@@ -782,14 +835,142 @@ struct JobsServiceTests {
     @Test("listAllJobStages returns global stage definitions")
     func testListAllJobStages() throws {
         let env = try E2ETestHelpers.setUp()
-        // May be empty on fresh DB; should not throw
         let stages = try env.jobs.listAllJobStages()
-        #expect(stages.count >= 0)
-        // If stages exist, they should have valid IDs and names
-        for stage in stages {
-            #expect(stage.id > 0)
-            #expect(!stage.name.isEmpty)
+        #expect(!stages.isEmpty)
+        #expect(stages.map(\.name).contains("Rough-in"))
+    }
+
+    @Test("job stage templates seed default template and new jobs inherit it")
+    func testJobStageTemplateDefaultSeedAndNewJobAssignment() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        let templates = try env.jobs.listJobStageTemplates()
+        #expect(templates.count == 1)
+        #expect(templates[0].name == "Default")
+        #expect(templates[0].isDefault)
+        #expect(templates[0].stageCount == 3)
+
+        let assignedTemplateId: Int64? = try env.db.writer.read { db in
+            try Int64.fetchOne(db, sql: "SELECT stage_template_id FROM jobs WHERE id = ?", arguments: [jobId])
         }
+        #expect(assignedTemplateId == templates[0].id)
+
+        let stages = try env.jobs.listAllJobStages(templateId: templates[0].id)
+        #expect(stages.map(\.name) == ["Rough-in", "Prep/Makeup", "Trim-out"])
+    }
+
+    @Test("job stage templates report active job impact count")
+    func testJobStageTemplateActiveJobImpactCount() throws {
+        let env = try E2ETestHelpers.setUp()
+        _ = try E2ETestHelpers.seedJob(env)
+
+        let defaultTemplate = try #require(try env.jobs.listJobStageTemplates().first(where: { $0.isDefault }))
+
+        #expect(defaultTemplate.activeJobCount == 1)
+    }
+
+    @Test("reordering a template preserves current stage by ID")
+    func testReorderTemplateStagesPreservesCurrentStageById() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let templateId = try env.jobs.createJobStageTemplate(name: "Commercial", stageNames: ["Underground", "Rough", "Trim"])
+        let stages = try env.jobs.listAllJobStages(templateId: templateId)
+        let trimId = try #require(stages.first(where: { $0.name == "Trim" })?.id)
+
+        try env.jobs.assignJobStageTemplate(jobId: jobId, templateId: templateId, currentStageId: trimId)
+        try env.jobs.reorderJobStages(templateId: templateId, orderedStageIds: [trimId, stages[0].id, stages[1].id])
+
+        let statuses = try env.jobs.listJobStages(forJobId: jobId)
+        #expect(statuses.map(\.id) == [trimId, stages[0].id, stages[1].id])
+        #expect(statuses[0].status == "in_progress")
+        #expect(statuses[1].status == "pending")
+        #expect(statuses[2].status == "pending")
+
+        let currentStageId: Int64? = try env.db.writer.read { db in
+            try Int64.fetchOne(db, sql: "SELECT current_stage_id FROM jobs WHERE id = ?", arguments: [jobId])
+        }
+        #expect(currentStageId == trimId)
+    }
+
+    @Test("category mappings are scoped per template")
+    func testStageCategoryMappingsAreTemplateScoped() throws {
+        let env = try E2ETestHelpers.setUp()
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Switchgear")
+        let templateA = try env.jobs.createJobStageTemplate(name: "Residential", stageNames: ["Rough", "Trim"])
+        let templateB = try env.jobs.createJobStageTemplate(name: "Service", stageNames: ["Pickup", "Install"])
+        let roughId = try #require(try env.jobs.listAllJobStages(templateId: templateA).first?.id)
+        let pickupId = try #require(try env.jobs.listAllJobStages(templateId: templateB).first?.id)
+
+        try env.jobs.setJobStageCategoryMapping(templateId: templateA, categoryId: categoryId, stageId: roughId)
+        try env.jobs.setJobStageCategoryMapping(templateId: templateB, categoryId: categoryId, stageId: pickupId)
+
+        let mappingsA = try env.jobs.listJobStageCategoryMappings(templateId: templateA)
+        let mappingsB = try env.jobs.listJobStageCategoryMappings(templateId: templateB)
+        #expect(mappingsA.first?.stageId == roughId)
+        #expect(mappingsB.first?.stageId == pickupId)
+    }
+
+    @Test("archiving a referenced stage is blocked")
+    func testArchiveReferencedStageIsBlocked() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let templateId = try env.jobs.createJobStageTemplate(name: "Blocked Stage", stageNames: ["Rough", "Trim"])
+        let roughId = try #require(try env.jobs.listAllJobStages(templateId: templateId).first?.id)
+        try env.jobs.assignJobStageTemplate(jobId: jobId, templateId: templateId, currentStageId: roughId)
+
+        #expect(throws: JobsService.JobsError.stageInUse(roughId)) {
+            try env.jobs.archiveJobStage(stageId: roughId)
+        }
+    }
+
+    @Test("applying a stage template draft archives renames adds and reorders in one save")
+    func testApplyJobStageTemplateDraftPersistsFullDraft() throws {
+        let env = try E2ETestHelpers.setUp()
+        let templateId = try env.jobs.createJobStageTemplate(name: "Atomic Save", stageNames: ["Rough", "Trim", "Closeout"])
+        let original = try env.jobs.listAllJobStages(templateId: templateId)
+        let roughId = try #require(original.first(where: { $0.name == "Rough" })?.id)
+        let trimId = try #require(original.first(where: { $0.name == "Trim" })?.id)
+
+        try env.jobs.applyJobStageTemplateDraft(
+            templateId: templateId,
+            stages: [
+                JobsService.JobStageTemplateDraftStage(existingId: trimId, name: "Trim Final"),
+                JobsService.JobStageTemplateDraftStage(existingId: nil, name: "Inspection"),
+                JobsService.JobStageTemplateDraftStage(existingId: roughId, name: "Rough-In")
+            ]
+        )
+
+        let saved = try env.jobs.listAllJobStages(templateId: templateId)
+        #expect(saved.map(\.name) == ["Trim Final", "Inspection", "Rough-In"])
+        #expect(saved.map(\.sortOrder) == [1, 2, 3])
+        #expect(!saved.contains { $0.name == "Closeout" })
+    }
+
+    @Test("failed stage template draft save rolls back earlier stage changes")
+    func testApplyJobStageTemplateDraftRollsBackOnFailure() throws {
+        let env = try E2ETestHelpers.setUp()
+        let templateId = try env.jobs.createJobStageTemplate(name: "Atomic Rollback", stageNames: ["Rough", "Trim", "Closeout"])
+        let original = try env.jobs.listAllJobStages(templateId: templateId)
+        let roughId = try #require(original.first(where: { $0.name == "Rough" })?.id)
+        let trimId = try #require(original.first(where: { $0.name == "Trim" })?.id)
+
+        #expect(throws: JobsService.JobsError.invalidStageTemplate(templateId)) {
+            try env.jobs.applyJobStageTemplateDraft(
+                templateId: templateId,
+                stages: [
+                    JobsService.JobStageTemplateDraftStage(existingId: roughId, name: "Rough Renamed"),
+                    JobsService.JobStageTemplateDraftStage(existingId: nil, name: "Inspection"),
+                    JobsService.JobStageTemplateDraftStage(existingId: trimId, name: "Trim Renamed"),
+                    JobsService.JobStageTemplateDraftStage(existingId: trimId, name: "Trim Duplicate")
+                ]
+            )
+        }
+
+        let saved = try env.jobs.listAllJobStages(templateId: templateId)
+        #expect(saved.map(\.id) == original.map(\.id))
+        #expect(saved.map(\.name) == original.map(\.name))
+        #expect(saved.map(\.sortOrder) == original.map(\.sortOrder))
     }
 
     // MARK: - Job Todo Summary
