@@ -17,7 +17,7 @@ struct WarehouseDashboardPage: View {
     @State private var dashKPIs: WarehouseService.DashboardKPIs?
     @State private var auditSummary: WarehouseService.AuditSummary?
     @State private var auditCards: WarehouseService.DashboardSmartCardSummary?
-    @State private var warehouseScore: WarehouseService.WarehouseOverallScore?
+    @State private var warehouseScore: Double?
     @State private var recentMovements: [WarehouseService.MovementRow] = []
     @State private var activeReceivingSessions: [WarehouseService.ReceivingSessionInfo] = []
     @State private var auditQueue: [WarehouseService.AuditQueueItem] = []
@@ -56,7 +56,9 @@ struct WarehouseDashboardPage: View {
         let color: Color
         let identifier: String
         let moduleId: String?
+        let tabId: String?
         let sheet: ActiveSheet?
+        let requiredPermission: String?
 
         var id: String { identifier }
     }
@@ -271,8 +273,9 @@ struct WarehouseDashboardPage: View {
 
     @ViewBuilder
     private var alertsWarningsBanner: some View {
-        let auditDue = auditCards?.auditDue ?? auditQueue.count
-        let lowConfidenceAreas = auditCards?.lowConfidenceAreas ?? 0
+        let canPerformAudit = appCore.hasPermission("perform_audit")
+        let auditDue = canPerformAudit ? (auditCards?.auditDue ?? auditQueue.count) : 0
+        let lowConfidenceAreas = canPerformAudit ? (auditCards?.lowConfidenceAreas ?? 0) : 0
         let lowStockWarnings = auditCards?.lowStockWarnings ?? dashKPIs?.kpis.shortfallCount ?? 0
         let activeReceiving = auditCards?.activeReceiving ?? activeReceivingSessions.count
 
@@ -487,9 +490,9 @@ struct WarehouseDashboardPage: View {
         ], spacing: 12) {
             miniKPI(
                 title: "Audit Score",
-                value: "\(Int((warehouseScore?.score ?? 100).rounded()))%",
+                value: "\(Int(warehouseScorePercent.rounded()))%",
                 icon: "gauge.with.dots.needle.bottom.50percent",
-                color: scoreColor(warehouseScore?.score ?? 100)
+                color: scoreColor(warehouseScorePercent)
             )
             miniKPI(title: "Total Stock", value: "\(totalStock)", icon: "shippingbox.fill", color: .blue)
             miniKPI(
@@ -574,7 +577,9 @@ struct WarehouseDashboardPage: View {
                 color: .blue,
                 identifier: "whAction_newMovement",
                 moduleId: nil,
-                sheet: .newMovement
+                tabId: nil,
+                sheet: .newMovement,
+                requiredPermission: nil
             ),
             WarehouseQuickAction(
                 title: "Scan QR",
@@ -582,23 +587,29 @@ struct WarehouseDashboardPage: View {
                 color: .orange,
                 identifier: "whAction_scanQR",
                 moduleId: nil,
-                sheet: .qrScanner
+                tabId: nil,
+                sheet: .qrScanner,
+                requiredPermission: nil
             ),
             WarehouseQuickAction(
                 title: "Receiving",
                 icon: "arrow.down.circle",
                 color: .green,
                 identifier: "whAction_receiving",
-                moduleId: "warehouse-receiving",
-                sheet: nil
+                moduleId: "warehouse",
+                tabId: "warehouse-receiving",
+                sheet: nil,
+                requiredPermission: nil
             ),
             WarehouseQuickAction(
                 title: "Audit Queue",
                 icon: "clipboard.fill",
                 color: .orange,
                 identifier: "whAction_auditQueue",
-                moduleId: "warehouse-audit",
-                sheet: nil
+                moduleId: "warehouse",
+                tabId: "warehouse-audit",
+                sheet: nil,
+                requiredPermission: "perform_audit"
             ),
         ]
     }
@@ -609,29 +620,36 @@ struct WarehouseDashboardPage: View {
         }
     }
 
+    @ViewBuilder
     private func quickActionTile(_ action: WarehouseQuickAction) -> some View {
-        Button { performQuickAction(action) } label: {
-            quickActionButton(
-                title: action.title,
-                icon: action.icon,
-                color: action.color
-            )
+        let tile = Button { performQuickAction(action) } label: {
+            quickActionButton(title: action.title, icon: action.icon, color: action.color)
         }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(action.title)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityIdentifier(action.identifier)
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(action.title)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier(action.identifier)
+
+        if let requiredPermission = action.requiredPermission {
+            tile.hideWithoutPermission(requiredPermission)
+        } else {
+            tile
+        }
     }
 
     private func performQuickAction(_ action: WarehouseQuickAction) {
         if let sheet = action.sheet {
             activeSheet = sheet
         } else if let moduleId = action.moduleId {
+            var userInfo: [String: Any] = ["moduleId": moduleId]
+            if let tabId = action.tabId {
+                userInfo["tabId"] = tabId
+            }
             NotificationCenter.default.post(
                 name: .navigateToModule,
                 object: nil,
-                userInfo: ["moduleId": moduleId]
+                userInfo: userInfo
             )
         }
     }
@@ -673,12 +691,12 @@ struct WarehouseDashboardPage: View {
                 subPageLink(title: "Inventory", icon: "square.grid.3x3.fill", color: .purple, tabId: "warehouse-inventory")
                 subPageLink(title: "Locations", icon: "map.fill", color: .mint, tabId: "warehouse-locations")
                 subPageLink(title: "Audit", icon: "checkmark.shield.fill", color: .orange, tabId: "warehouse-audit")
+                    .hideWithoutPermission("perform_audit")
                 subPageLink(title: "Returns", icon: "arrow.uturn.left", color: .indigo, tabId: "warehouse-returns")
                 subPageLink(title: "Tools", icon: "wrench.and.screwdriver.fill", color: .brown, tabId: "warehouse-tools")
                 subPageLink(title: "Leaderboard", icon: "trophy.fill", color: .yellow, tabId: "warehouse-leaderboard")
                 subPageLink(title: "Network", icon: "antenna.radiowaves.left.and.right", color: .cyan, tabId: "warehouse-network")
                 subPageLink(title: "Settings", icon: "gearshape.fill", color: .gray, tabId: "warehouse-settings")
-                subPageLink(title: "Org Audit", icon: "tag.fill", color: .red, tabId: "warehouse-organization")
             }
         }
     }
@@ -1038,7 +1056,7 @@ struct WarehouseDashboardPage: View {
             dashKPIs = try service.getDashboardKPIs()
             auditSummary = try service.getAuditSummary()
             auditCards = try service.getDashboardSmartCardSummary()
-            warehouseScore = try service.getWarehouseOverallScoreBreakdown()
+            warehouseScore = try service.getWarehouseOverallScore()
             recentMovements = try service.listMovements(limit: 10)
             activeReceivingSessions = try service.getActiveSessions()
             auditQueue = try service.getAuditQueue(limit: 10)
@@ -1061,7 +1079,7 @@ struct WarehouseDashboardPage: View {
         Stock total: \(kpis?.totalStock ?? 0), health: \(kpis?.stockHealthPercent ?? 0)%, shortfalls: \(kpis?.shortfallCount ?? 0), movements today: \(kpis?.todayMovements ?? 0).
         Active receiving sessions: \(dashKPIs?.activeReceivingSessions ?? 0), pending staging: \(dashKPIs?.pendingStagingCount ?? 0), pending returns: \(dashKPIs?.pendingReturns ?? 0).
         Audit counted/total: \(auditSummary?.countedParts ?? 0)/\(auditSummary?.totalParts ?? 0), discrepancies: \(auditSummary?.discrepancies ?? 0), selected filter: \(selectedFilter?.rawValue ?? "none").
-        Warehouse audit score: \(Int((warehouseScore?.score ?? 100).rounded()))%, confidence risk areas: \(auditCards?.lowConfidenceAreas ?? 0), active audits: \(auditCards?.activeAuditSessions ?? 0), organization issues: \(auditCards?.organizationIssues ?? 0).
+        Warehouse audit score: \(Int(warehouseScorePercent.rounded()))%, confidence risk areas: \(auditCards?.lowConfidenceAreas ?? 0), audit due: \(auditCards?.auditDue ?? 0), low-stock warnings: \(auditCards?.lowStockWarnings ?? 0).
         Dashboard queues loaded: \(todaysMovements.count) moves today, \(activeReceivingSessions.count) receiving active, \(auditQueue.count) audit due, \(stagedItems.count) staged ready. Movement types: \(movementCounts.isEmpty ? "none" : movementCounts).
         Available read-only guidance: explain KPI cards, audit score components, selected activity filter, quick action locations, and warehouse sub-page links. Do not create movements or launch scanners directly.
         """
@@ -1100,6 +1118,10 @@ struct WarehouseDashboardPage: View {
         if score >= 85 { return .green }
         if score >= 70 { return .orange }
         return .red
+    }
+
+    private var warehouseScorePercent: Double {
+        max(0, min(100, (warehouseScore ?? 10.0) * 10.0))
     }
 
     private func movementLabel(_ type: String) -> String {

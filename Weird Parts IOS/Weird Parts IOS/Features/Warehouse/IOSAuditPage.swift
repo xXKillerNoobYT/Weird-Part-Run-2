@@ -1420,8 +1420,6 @@ private struct QueueSendForVerificationSheet: View {
             )
             onSent()
             dismiss()
-        } catch WarehouseService.WarehouseError.invalidQuantity {
-            errorMessage = "Expected quantity must be 0 or greater."
         } catch {
             errorMessage = userFriendlyError(error, context: "send for multi-user verification")
         }
@@ -1454,7 +1452,7 @@ private struct MisplacedPartSheet: View {
                 Section("Misplaced Part") {
                     Picker("Part", selection: $selectedPartId) {
                         Text("Select Part").tag(Int64?.none)
-                        ForEach(candidates, id: \.partId) { item in
+                        ForEach(uniqueParts, id: \.partId) { item in
                             Text(item.partCode.map { "\(item.partName) (\($0))" } ?? item.partName)
                                 .tag(Int64?.some(item.partId))
                         }
@@ -1509,6 +1507,15 @@ private struct MisplacedPartSheet: View {
         }
     }
 
+    private var uniqueParts: [IOSAuditPage.CountingItem] {
+        var seen: Set<Int64> = []
+        return candidates.filter { item in
+            guard !seen.contains(item.partId) else { return false }
+            seen.insert(item.partId)
+            return true
+        }
+    }
+
     private var uniqueAreas: [(id: Int64, label: String)] {
         var seen: Set<Int64> = []
         return candidates.compactMap { item in
@@ -1532,10 +1539,12 @@ private struct MisplacedPartSheet: View {
 
     private func saveMisplaced() {
         guard let service = appCore.warehouseService,
-              let userId = appCore.currentUser?.id,
-              let partId = selectedPartId,
-              let foundAtAreaId else {
-            errorMessage = "Service unavailable"
+              let userId = appCore.currentUser?.id else {
+            errorMessage = "Service or user unavailable."
+            return
+        }
+        guard let partId = selectedPartId, let foundAtAreaId else {
+            errorMessage = "Select a part and found-at area before saving."
             return
         }
         isSaving = true
@@ -1549,8 +1558,13 @@ private struct MisplacedPartSheet: View {
                 foundBy: userId
             )
             if resolution != "sort_later" {
+                guard let logId = log.id else {
+                    errorMessage = "Misplaced-part log was saved without an ID. Refresh and try again."
+                    isSaving = false
+                    return
+                }
                 try service.resolveMisplacedPart(
-                    logId: log.id!,
+                    logId: logId,
                     resolution: resolution,
                     resolvedBy: userId
                 )
