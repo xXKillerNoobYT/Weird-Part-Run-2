@@ -1008,6 +1008,27 @@ struct PartsServiceExtTests {
                 "unitCost must be preserved when updateColorBrandSKU is called with nil unitCost")
     }
 
+    @Test("updateColorBrandSKU updates stock quantity for editor panel")
+    func testUpdateColorBrandSKU_updatesStockQty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let colorId = try env.parts.createColor(name: "Green", hexCode: "#00FF00")
+        let brandId = try E2ETestHelpers.seedBrand(env)
+
+        let skuId = try env.parts.upsertColorBrandSKU(
+            colorId: colorId, brandId: brandId, typeId: typeId,
+            partNumber: "GREEN-001", unitCost: 4.25, stockQty: 3
+        )
+
+        try env.parts.updateColorBrandSKU(skuId: skuId, stockQty: 9)
+
+        let skus = try env.parts.getColorBrandSKUs(typeId: typeId, brandId: brandId)
+        #expect(skus[0].stockQty == 9,
+                "Categories editor must be able to persist color_brand_skus.stock_qty changes")
+        #expect(skus[0].partNumber == "GREEN-001")
+        #expect(skus[0].unitCost == 4.25)
+    }
+
     @Test("upsertColorBrandSKU reactivation preserves existing data when nil passed")
     func testUpsertColorBrandSKUReactivate_preservesDataWhenNilPassed() throws {
         let env = try E2ETestHelpers.setUp()
