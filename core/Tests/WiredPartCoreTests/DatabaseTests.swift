@@ -96,9 +96,18 @@ struct DatabaseTests {
         }
     }
 
-    @Test("Schema version is 83")
+    @Test("Schema version is 84")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 83)
+        #expect(AppDatabase.schemaVersion == 84)
+    }
+
+    @Test("Migration 084 adds warehouse onboarding completed steps")
+    func testMigration084WarehouseOnboardingCompletedSteps() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let columns = try db.writer.read { db in
+            try db.columns(in: "warehouse_onboarding_progress").map(\.name)
+        }
+        #expect(columns.contains("completed_steps"))
     }
 
     @Test("Migration 082 adds structured estimation review columns")
