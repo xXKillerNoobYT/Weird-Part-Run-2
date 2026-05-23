@@ -86,7 +86,7 @@ These are not all new bugs. They are the concrete page groups that should be ope
 1. Clock in/out and daily work loop
    - Pages: `IOSClockPage`, `DashboardDailyReportPage`, `IOSDailyReportsPage`, clock-out questions/settings.
    - Why: GitHub #599 “Clock in and out” is open; #600 “Daily Report” is open; the clock page is large and central.
-   - Verify: clock in, switch todo, start/end break, clock out, daily report generation, stale AI context, unsaved form behavior, no silent errors.
+   - Verify: clock in, switch to a todo, start/end break, clock out, daily report generation, stale AI context, unsaved form behavior, no silent errors.
    - Recommended engineering tasks: close/triage #599 and #600 with direct reproduction evidence.
 
 2. Receiving / JPO / PO / procurement flow
