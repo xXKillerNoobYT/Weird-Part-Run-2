@@ -10,7 +10,7 @@ Usage:
 Examples:
   scripts/github-issue-sync.sh
   scripts/github-issue-sync.sh --repo xXKillerNoobYT/Weird-Part-Run-2 --state all
-  scripts/github-issue-sync.sh xXKillerNoobYT/Weird-Part-Run-2 docs/github-issue-sync
+  scripts/github-issue-sync.sh xXKillerNoobYT/Weird-Part-Run-2 .tmp/github-issue-sync
 EOF
 }
 
@@ -67,7 +67,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 REPO="${REPO_ARG:-${POSITIONAL[0]:-${GITHUB_REPO:-xXKillerNoobYT/Weird-Part-Run-2}}}"
-OUT_DIR="${OUT_DIR_ARG:-${POSITIONAL[1]:-docs/github-issue-sync}}"
+OUT_DIR="${OUT_DIR_ARG:-${POSITIONAL[1]:-.tmp/github-issue-sync}}"
 ISSUE_STATE="${STATE_ARG:-${GITHUB_ISSUE_SYNC_STATE:-all}}"
 STAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 STAMP_DIR="${STAMP//:/-}"

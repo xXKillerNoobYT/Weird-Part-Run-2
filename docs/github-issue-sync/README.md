@@ -14,17 +14,20 @@ scripts/github-issue-sync.sh --state all
 
 The default state is `all`, so the snapshot validates both open and closed GitHub issue paths. Use `--state open` or `--state closed` only for targeted diagnostics.
 
-## Canonical Consumer Artifacts
-- `docs/github-issue-sync/latest-sync.md`
-- `docs/github-issue-sync/latest-sync.json`
+## Output Location
+Generated snapshots are local, ignored run artifacts under `.tmp/github-issue-sync/` by default. They should not be committed.
 
-## Per-run Archive
-- `docs/github-issue-sync/<UTC timestamp>/summary.md`
-- `docs/github-issue-sync/<UTC timestamp>/issues.json`
+## Canonical Local Artifacts
+- `.tmp/github-issue-sync/latest-sync.md`
+- `.tmp/github-issue-sync/latest-sync.json`
+
+## Per-run Local Archive
+- `.tmp/github-issue-sync/<UTC timestamp>/summary.md`
+- `.tmp/github-issue-sync/<UTC timestamp>/issues.json`
 
 ## Verification
 ```bash
-test -s docs/github-issue-sync/latest-sync.md && test -s docs/github-issue-sync/latest-sync.json
+test -s .tmp/github-issue-sync/latest-sync.md && test -s .tmp/github-issue-sync/latest-sync.json
 ```
 
 If either canonical artifact is missing/empty, the run is considered failed.
