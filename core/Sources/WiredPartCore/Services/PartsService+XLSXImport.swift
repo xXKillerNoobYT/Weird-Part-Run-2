@@ -12,12 +12,12 @@ extension PartsService {
             throw PartsError.invalidInput("XLSX sheet '\(workbook.sheetName)' is empty or has no data rows.")
         }
 
-        let csv = workbook.rows
-            .map { row in row.map(Self.escapeImportCSVField).joined(separator: ",") }
-            .joined(separator: "\n")
         var preview: PartsImportPreview
         do {
-            preview = try previewPartsImportCSV(csv)
+            preview = try previewPartsImportRows(
+                workbook.rows.map { PartsImportTabularRow(rowNumber: $0.rowNumber, columns: $0.columns) },
+                emptyDescription: "XLSX sheet '\(workbook.sheetName)' is empty or has no data rows."
+            )
         } catch PartsError.invalidInput(let message) {
             throw PartsError.invalidInput("XLSX sheet '\(workbook.sheetName)' row 1: \(message)")
         }
@@ -31,20 +31,23 @@ extension PartsService {
         return preview
     }
 
-    private static func escapeImportCSVField(_ field: String) -> String {
-        if field.contains(",") || field.contains("\"") || field.contains("\n") || field.contains("\r") {
-            return "\"\(field.replacingOccurrences(of: "\"", with: "\"\""))\""
-        }
-        return field
-    }
 }
 
 private struct PartsImportXLSXWorksheet {
     let sheetName: String
-    let rows: [[String]]
+    let rows: [PartsImportXLSXRow]
+}
+
+private struct PartsImportXLSXRow {
+    let rowNumber: Int
+    let columns: [String]
 }
 
 private struct PartsImportXLSXReader {
+    private static let maxArchiveEntries = 2_048
+    private static let maxEntrySize = 5 * 1024 * 1024
+    private static let maxTotalExtractedSize = 25 * 1024 * 1024
+
     let entries: [String: Data]
 
     init(data: Data) throws {
@@ -54,15 +57,75 @@ private struct PartsImportXLSXReader {
         } catch {
             throw PartsService.PartsError.invalidInput("Unsupported XLSX file: unable to open workbook archive.")
         }
+
+        var extracted = try Self.extractEntries(
+            from: archive,
+            wantedPaths: ["xl/workbook.xml", "xl/_rels/workbook.xml.rels"]
+        )
+        guard let workbookData = extracted["xl/workbook.xml"],
+              let workbookXML = String(data: workbookData, encoding: .utf8) else {
+            throw PartsService.PartsError.invalidInput("Unsupported XLSX file: missing workbook metadata at xl/workbook.xml.")
+        }
+        let firstSheet = workbookXML.xmlElements(named: "sheet").first
+        let relationshipId = firstSheet?.xmlAttribute("r:id") ?? firstSheet?.xmlAttribute("id")
+        let relationshipXML = extracted["xl/_rels/workbook.xml.rels"].flatMap { String(data: $0, encoding: .utf8) }
+        let worksheetPath = Self.resolveWorksheetPath(relationshipId: relationshipId, relationshipsXML: relationshipXML)
+
+        let sheetEntries = try Self.extractEntries(
+            from: archive,
+            wantedPaths: [worksheetPath, "xl/sharedStrings.xml"]
+        )
+        for (path, data) in sheetEntries {
+            extracted[path] = data
+        }
+        self.entries = extracted
+    }
+
+    private static func extractEntries(from archive: Archive, wantedPaths: Set<String>) throws -> [String: Data] {
         var extracted: [String: Data] = [:]
+        var scannedEntryCount = 0
+        var totalExtractedSize = 0
         for entry in archive {
+            scannedEntryCount += 1
+            guard scannedEntryCount <= maxArchiveEntries else {
+                throw PartsService.PartsError.invalidInput("Unsupported XLSX file: workbook archive has too many entries.")
+            }
+            guard wantedPaths.contains(entry.path) else { continue }
+            let advertisedSize = Int(entry.uncompressedSize)
+            guard advertisedSize <= maxEntrySize else {
+                throw PartsService.PartsError.invalidInput("Unsupported XLSX file: entry \(entry.path) is too large.")
+            }
+            totalExtractedSize += advertisedSize
+            guard totalExtractedSize <= maxTotalExtractedSize else {
+                throw PartsService.PartsError.invalidInput("Unsupported XLSX file: extracted workbook data is too large.")
+            }
+
             var entryData = Data()
             _ = try archive.extract(entry) { chunk in
                 entryData.append(chunk)
             }
+            guard entryData.count <= maxEntrySize else {
+                throw PartsService.PartsError.invalidInput("Unsupported XLSX file: entry \(entry.path) is too large.")
+            }
             extracted[entry.path] = entryData
         }
-        self.entries = extracted
+        return extracted
+    }
+
+    private static func resolveWorksheetPath(relationshipId: String?, relationshipsXML: String?) -> String {
+        guard let relationshipId, let relationshipsXML else {
+            return "xl/worksheets/sheet1.xml"
+        }
+        for relationship in relationshipsXML.xmlElements(named: "Relationship") {
+            guard relationship.xmlAttribute("Id") == relationshipId,
+                  var target = relationship.xmlAttribute("Target") else { continue }
+            if target.hasPrefix("/") {
+                target.removeFirst()
+                return target
+            }
+            return "xl/\(target)".replacingOccurrences(of: "//", with: "/")
+        }
+        return "xl/worksheets/sheet1.xml"
     }
 
     func readFirstWorksheet() throws -> PartsImportXLSXWorksheet {
@@ -111,18 +174,25 @@ private struct PartsImportXLSXReader {
         }
     }
 
-    private func parseRows(from worksheetXML: String, sharedStrings: [String]) throws -> [[String]] {
+    private func parseRows(from worksheetXML: String, sharedStrings: [String]) throws -> [PartsImportXLSXRow] {
         let rowElements = worksheetXML.xmlElements(named: "row")
-        return rowElements.compactMap { rowElement in
+        return rowElements.enumerated().compactMap { offset, rowElement in
             var cellsByColumn: [Int: String] = [:]
             var maxColumn = -1
+            var spreadsheetRowNumber = rowElement.xmlAttribute("r").flatMap(Int.init) ?? offset + 1
             for cell in rowElement.xmlElements(named: "c") {
                 guard let reference = cell.xmlAttribute("r"), let column = Self.columnIndex(from: reference) else { continue }
+                if let cellRowNumber = Self.rowNumber(from: reference) {
+                    spreadsheetRowNumber = cellRowNumber
+                }
                 maxColumn = max(maxColumn, column)
                 cellsByColumn[column] = value(for: cell, sharedStrings: sharedStrings)
             }
             guard maxColumn >= 0 else { return nil }
-            return (0...maxColumn).map { cellsByColumn[$0] ?? "" }
+            return PartsImportXLSXRow(
+                rowNumber: spreadsheetRowNumber,
+                columns: (0...maxColumn).map { cellsByColumn[$0] ?? "" }
+            )
         }
     }
 
@@ -154,6 +224,12 @@ private struct PartsImportXLSXReader {
             value = value * 26 + Int(scalar.value - 64)
         }
         return value - 1
+    }
+
+    private static func rowNumber(from cellReference: String) -> Int? {
+        let digits = cellReference.drop { $0.isLetter }
+        guard !digits.isEmpty else { return nil }
+        return Int(digits)
     }
 }
 
@@ -190,14 +266,52 @@ private extension String {
     }
 
     func xmlAttribute(_ name: String) -> String? {
-        let escaped = NSRegularExpression.escapedPattern(for: name)
-        let pattern = #"\b\#(escaped)\s*=\s*(["'])(.*?)\1"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return nil }
-        let range = NSRange(startIndex..<endIndex, in: self)
-        guard let match = regex.firstMatch(in: self, options: [], range: range),
-              match.numberOfRanges >= 3,
-              let valueRange = Range(match.range(at: 2), in: self) else { return nil }
-        return String(self[valueRange]).xmlUnescaped
+        let tagEnd = firstIndex(of: ">") ?? endIndex
+        var cursor = startIndex
+
+        func advancePastWhitespace() {
+            while cursor < tagEnd, self[cursor].isWhitespace {
+                cursor = index(after: cursor)
+            }
+        }
+
+        while cursor < tagEnd {
+            advancePastWhitespace()
+            guard cursor < tagEnd else { break }
+            if self[cursor] == "<" || self[cursor] == "/" {
+                cursor = index(after: cursor)
+                continue
+            }
+
+            let keyStart = cursor
+            while cursor < tagEnd,
+                  !self[cursor].isWhitespace,
+                  self[cursor] != "=",
+                  self[cursor] != "/",
+                  self[cursor] != ">" {
+                cursor = index(after: cursor)
+            }
+            let key = String(self[keyStart..<cursor])
+            advancePastWhitespace()
+            guard cursor < tagEnd, self[cursor] == "=" else { continue }
+            cursor = index(after: cursor)
+            advancePastWhitespace()
+            guard cursor < tagEnd, self[cursor] == "\"" || self[cursor] == "'" else { continue }
+
+            let quote = self[cursor]
+            let valueStart = index(after: cursor)
+            cursor = valueStart
+            while cursor < tagEnd, self[cursor] != quote {
+                cursor = index(after: cursor)
+            }
+            guard cursor < tagEnd else { break }
+            let value = String(self[valueStart..<cursor])
+            cursor = index(after: cursor)
+            if key == name {
+                return value.xmlUnescaped
+            }
+        }
+        return nil
     }
 
     func xmlInnerText() -> String {
