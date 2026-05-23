@@ -134,7 +134,7 @@ struct E2ETestHelpers {
             fromLocationId: nil,
             toLocationType: locationType,
             toLocationId: locationId,
-            movementType: "receive",
+            movementType: StockMovement.MovementType.receive.rawValue,
             reason: "Initial stock",
             performedBy: env.adminUserId
         )

@@ -809,6 +809,9 @@ struct WarehouseAuditTests {
         let qty = try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1)
         #expect(qty == 7)
 
+        let movements = try env.warehouse.listMovements(movementType: StockMovement.MovementType.adjustment.rawValue)
+        #expect(movements.contains { $0.partId == partId })
+
         let movement = try env.db.writer.read { db in
             try Row.fetchOne(db, sql: """
                 SELECT qty, notes FROM stock_movements
