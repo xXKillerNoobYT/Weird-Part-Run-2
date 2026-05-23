@@ -20,6 +20,7 @@ jobs:
       PAPERCLIP_WEB_URL: ${{ vars.PAPERCLIP_WEB_URL }}
       GITHUB_REPO: ${{ github.repository }}
       GITHUB_TRACKER_ISSUE: "372"
+      GH_TOKEN: ${{ github.token }}
 
     steps:
       - name: Checkout

@@ -1,6 +1,6 @@
 # GitHub Issue Sync Contract
 
-Owner: `CTO`  
+Owner: `CTO`
 Backup owner: `CodexEngineer1`
 
 ## Cadence
