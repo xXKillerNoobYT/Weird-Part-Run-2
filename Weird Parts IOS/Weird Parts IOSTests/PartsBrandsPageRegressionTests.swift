@@ -51,9 +51,44 @@ final class PartsBrandsPageRegressionTests: XCTestCase {
         )
     }
 
+    func testNewSupplierFormCanLinkExistingBrandsDuringCreation() throws {
+        let source = try Self.readPartsSuppliersPageSource()
+
+        XCTAssertTrue(
+            source.contains("@State private var availableBrandsForNewSupplier"),
+            "New supplier flow should load existing brands so the user can choose what the supplier carries while creating it."
+        )
+        XCTAssertTrue(
+            source.contains("Text(\"Brands Carried\")"),
+            "Supplier creation should visibly ask which existing brands this supplier carries."
+        )
+        XCTAssertTrue(
+            source.contains("selectedBrandIdsForNewSupplier"),
+            "Supplier creation should keep an explicit selected-brand set for existing brand links."
+        )
+        XCTAssertTrue(
+            source.contains("initialBrandIds: selectedBrandIdsForNewSupplier"),
+            "Supplier creation should pass selected brand ids into an atomic create/link service call."
+        )
+        XCTAssertTrue(
+            source.contains("Task.detached(priority: .userInitiated)") && source.contains("row.brand.isActive == 1"),
+            "Brand loading should stay off the main actor and expose only active, non-deleted brands to the picker."
+        )
+    }
+
     private static func readPartsBrandsPageSource(
         file: StaticString = #filePath
     ) throws -> String {
+        try readPartsPageSource(named: "PartsBrandsPage.swift", file: file)
+    }
+
+    private static func readPartsSuppliersPageSource(
+        file: StaticString = #filePath
+    ) throws -> String {
+        try readPartsPageSource(named: "PartsSuppliersPage.swift", file: file)
+    }
+
+    private static func readPartsPageSource(named filename: String, file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL
             .deletingLastPathComponent() // Weird Parts IOSTests
@@ -62,7 +97,7 @@ final class PartsBrandsPageRegressionTests: XCTestCase {
             .appendingPathComponent("Weird Parts IOS")
             .appendingPathComponent("Features")
             .appendingPathComponent("Parts")
-            .appendingPathComponent("PartsBrandsPage.swift")
+            .appendingPathComponent(filename)
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }
