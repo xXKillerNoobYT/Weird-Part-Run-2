@@ -177,6 +177,18 @@ struct JobsServiceTests {
         #expect(afterClockOut.first?.clockOut != nil)
     }
 
+    @Test("Warehouse clock in creates current shop entry")
+    func testWarehouseClockInCreatesCurrentShopEntry() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let laborEntryId = try env.jobs.clockInToWarehouse(userId: env.adminUserId)
+        let active = try env.jobs.getActiveClockEntry(userId: env.adminUserId)
+
+        #expect(laborEntryId > 0)
+        #expect(active?.id == laborEntryId)
+        #expect(active?.jobName == "Shop / Warehouse")
+    }
+
     @Test("Labor summary after clock in/out")
     func testLaborSummary() throws {
         let env = try E2ETestHelpers.setUp()
