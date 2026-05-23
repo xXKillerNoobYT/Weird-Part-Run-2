@@ -158,6 +158,12 @@ struct Weird_Parts_IOSTests {
         #expect(processableItems.map(\.id) == [transferSuccess.id, normalPendingLine.id])
     }
 
+    @MainActor
+    @Test func receivingRoutingShowsActionableErrorForUnknownPartRoutes() throws {
+        #expect(ReceivingRoutingValidation.missingLinkedPartError(partId: nil) == "This receiving item is no longer linked to an active part. Mark it as a wrong part or fix the PO line before routing damaged or used inventory.")
+        #expect(ReceivingRoutingValidation.missingLinkedPartError(partId: 6) == nil)
+    }
+
     @Test func uiTestingFixturesSeedJPOFlowDataForQASmoke() throws {
         let db = try AppDatabase.openInMemoryDatabase()
         let auth = AuthService(db: db)
