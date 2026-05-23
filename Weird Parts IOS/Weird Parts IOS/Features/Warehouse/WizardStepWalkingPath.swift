@@ -283,7 +283,7 @@ struct WizardStepWalkingPath: View {
 
     private func suggestPath() {
         guard let service = appCore.warehouseService else {
-            stepError = "Warehouse service not available"
+            stepError = "Warehouse service unavailable"
             return
         }
         do {
