@@ -1093,24 +1093,23 @@ struct WarehouseDashboardPage: View {
     // MARK: - Helpers
 
     private func movementIcon(_ type: String) -> String {
-        switch type {
-        case "transfer": "arrow.left.arrow.right"
-        case "receive": "arrow.down.circle"
-        case "consume": "flame"
-        case "return_to_supplier": "arrow.uturn.left"
-        case "adjustment": "plus.forwardslash.minus"
-        default: "arrow.left.arrow.right"
-        }
+        StockMovement.MovementType.systemImageName(forRawValue: type)
     }
 
     private func movementColor(_ type: String) -> Color {
-        switch type {
-        case "transfer": .blue
-        case "receive": .green
-        case "consume": .orange
-        case "return_to_supplier": .purple
-        case "adjustment": .gray
-        default: .blue
+        switch StockMovement.MovementType(rawValue: type) {
+        case .transfer, .restockFromShop:
+            return .blue
+        case .receive, .receiving, .receivingStaged, .receipt:
+            return .green
+        case .consume, .pull, .usage, .jobPull:
+            return .orange
+        case .stockReturn, .returnToSupplier:
+            return .purple
+        case .adjustment, .addStock, .writeOff:
+            return .gray
+        case nil:
+            return .blue
         }
     }
 
@@ -1125,14 +1124,7 @@ struct WarehouseDashboardPage: View {
     }
 
     private func movementLabel(_ type: String) -> String {
-        switch type {
-        case "transfer": "Transfer"
-        case "receive": "Received"
-        case "consume": "Consumed"
-        case "return_to_supplier": "Returned"
-        case "adjustment": "Adjustment"
-        default: type.capitalized
-        }
+        StockMovement.MovementType.displayName(forRawValue: type)
     }
 
     private func auditSummaryText(for movement: WarehouseService.MovementRow) -> String? {

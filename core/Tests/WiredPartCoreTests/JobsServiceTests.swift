@@ -311,6 +311,20 @@ struct JobsServiceTests {
         #expect(questions.count >= 0) // May have default questions
     }
 
+    @Test("Default clock-out questions include daily report prompt")
+    func testDefaultClockOutQuestionsIncludeDailyReportPrompt() throws {
+        let env = try E2ETestHelpers.setUp()
+        let questions = try env.jobs.getActiveQuestions()
+
+        let dailyReportQuestion = questions.first { question in
+            question.questionText.localizedCaseInsensitiveContains("daily report")
+        }
+
+        #expect(dailyReportQuestion != nil)
+        #expect(dailyReportQuestion?.answerType == "text")
+        #expect(dailyReportQuestion?.isRequired == true)
+    }
+
     @Test("Create one-time question")
     func testOneTimeQuestion() throws {
         let env = try E2ETestHelpers.setUp()
@@ -604,17 +618,66 @@ struct JobsServiceTests {
             sortOrder: 1
         )
 
+        let dailyReportQuestionId = try #require(try env.jobs.getActiveQuestions().first { question in
+            question.questionText.localizedCaseInsensitiveContains("daily report")
+        }?.questionId)
+
         try env.jobs.saveClockOutResponses(
             laborEntryId: laborEntryId,
-            responses: [(questionId: qId, answer: "No issues")]
+            responses: [
+                (questionId: qId, answer: "No issues"),
+                (questionId: dailyReportQuestionId, answer: "Completed panel labeling and staged tomorrow's materials")
+            ]
         )
 
         let responses = try env.jobs.getResponsesForEntry(laborEntryId: laborEntryId)
-        #expect(responses.count == 1)
-        #expect(responses[0].answer == "No issues")
-        #expect(responses[0].questionText == "Any safety concerns?")
+        #expect(responses.count == 2)
+        let safetyResponse = responses.first { $0.questionId == qId }
+        #expect(safetyResponse?.answer == "No issues")
+        #expect(safetyResponse?.questionText == "Any safety concerns?")
 
         try env.jobs.clockOut(laborEntryId: laborEntryId)
+    }
+
+    @Test("saveClockOutDailyReport creates a job-scoped daily report notebook entry")
+    func testSaveClockOutDailyReportCreatesNotebookEntry() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-DR-CLOCK", name: "Clockout Daily Report Job")
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+
+        let entryId = try #require(try env.jobs.saveClockOutDailyReport(
+            laborEntryId: laborEntryId,
+            dailyReport: "  Pulled feeder wire, finished panel labeling, and staged tomorrow's materials.  "
+        ))
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT ne.title, ne.content, ne.entry_type, nb.notebook_type, nb.job_id, nb.created_by
+                FROM notebook_entries ne
+                JOIN notebook_sections ns ON ns.id = ne.section_id
+                JOIN notebooks nb ON nb.id = ns.notebook_id
+                WHERE ne.id = ?
+                """, arguments: [entryId])
+        }
+
+        #expect(row?["entry_type"] as String? == "daily-report")
+        #expect(row?["notebook_type"] as String? == "daily-report")
+        #expect(row?["job_id"] as Int64? == jobId)
+        #expect(row?["created_by"] as Int64? == env.adminUserId)
+        let title = row?["title"] as String? ?? ""
+        let content = row?["content"] as String? ?? ""
+        #expect(title.contains("Daily Report"))
+        #expect(content.contains("Pulled feeder wire, finished panel labeling, and staged tomorrow's materials."))
+    }
+
+    @Test("saveClockOutDailyReport ignores blank clock-out daily report text")
+    func testSaveClockOutDailyReportIgnoresBlankText() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+
+        let entryId = try env.jobs.saveClockOutDailyReport(laborEntryId: laborEntryId, dailyReport: "  \n\t  ")
+        #expect(entryId == nil)
     }
 
     // MARK: - One-Time Questions
@@ -1618,8 +1681,15 @@ struct JobsServiceTests {
         try env.db.writer.write { db in
             try db.execute(sql: "UPDATE clock_out_questions SET is_active = 0 WHERE id = ?", arguments: [qId])
         }
-        // Should succeed because inactive questions are not enforced
-        try env.jobs.saveClockOutResponses(laborEntryId: laborEntryId, responses: [])
+        let dailyReportQuestionId = try #require(try env.jobs.getActiveQuestions().first { question in
+            question.questionText.localizedCaseInsensitiveContains("daily report")
+        }?.questionId)
+        // Should succeed because the inactive custom question is not enforced; the default Daily Report
+        // prompt remains active/required and must still be answered.
+        try env.jobs.saveClockOutResponses(
+            laborEntryId: laborEntryId,
+            responses: [(questionId: dailyReportQuestionId, answer: "Finished rough-in notes")]
+        )
     }
 
     @Test("setPaymentHold throws invalidAmount for zero amount")

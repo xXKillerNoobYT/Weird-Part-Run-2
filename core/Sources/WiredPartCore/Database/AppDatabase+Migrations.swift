@@ -129,6 +129,7 @@ extension AppDatabase {
         registerMigration090NotebookClassificationPermissions(&migrator)
         registerMigration091MultiUserAuditResolutionColumns(&migrator)
         registerMigration092VehicleLocationLatestLookupIndex(&migrator)
+        registerMigration093DailyReportClockOutQuestion(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5342,6 +5343,37 @@ extension AppDatabase {
                     )
                 }
             }
+        }
+    }
+
+    // MARK: - Migration 093: Daily Report clock-out prompt
+
+    private static func registerMigration093DailyReportClockOutQuestion(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("093_daily_report_clock_out_question") { db in
+            let existingCount = try Int.fetchOne(
+                db,
+                sql: """
+                    SELECT COUNT(*)
+                    FROM clock_out_questions
+                    WHERE lower(question_text) LIKE '%daily report%'
+                      AND is_active = 1
+                    """
+            ) ?? 0
+            guard existingCount == 0 else { return }
+
+            let nextSortOrder = (try Int.fetchOne(
+                db,
+                sql: "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM clock_out_questions"
+            ) ?? 1)
+
+            try db.execute(
+                sql: """
+                    INSERT INTO clock_out_questions
+                        (question_text, answer_type, is_required, sort_order, is_active, created_at, updated_at)
+                    VALUES (?, 'text', 1, ?, 1, datetime('now'), datetime('now'))
+                    """,
+                arguments: ["Daily Report: What did you accomplish today, and what should the office know for tomorrow?", nextSortOrder]
+            )
         }
     }
 }
