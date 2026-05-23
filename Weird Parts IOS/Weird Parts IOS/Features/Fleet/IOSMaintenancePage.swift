@@ -50,6 +50,16 @@ struct IOSMaintenancePage: View {
             .onChange(of: dateRange) { loadData() }
             .onChange(of: customStart) { loadData() }
             .onChange(of: customEnd) { loadData() }
+            .onAppear {
+                NotificationCenter.default.post(
+                    name: .fleetMaintenancePageActive,
+                    object: nil,
+                    userInfo: ["context": fleetMaintenanceContext]
+                )
+            }
+            .onDisappear {
+                NotificationCenter.default.post(name: .fleetMaintenancePageInactive, object: nil)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
@@ -72,6 +82,11 @@ struct IOSMaintenancePage: View {
     }
 
     // MARK: - Maintenance List
+
+    private var fleetMaintenanceContext: String {
+        let searchState = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "none" : "active"
+        return "page=Fleet Maintenance; total_records=\(records.count); visible_records=\(filteredRecords.count); date_range=\(dateRange.rawValue); search=\(searchState)"
+    }
 
     @ViewBuilder
     private var maintenanceList: some View {

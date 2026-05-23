@@ -40,6 +40,16 @@ struct IOSTrailersPage: View {
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { loadData() }
             }
+            .onAppear {
+                NotificationCenter.default.post(
+                    name: .fleetTrailersPageActive,
+                    object: nil,
+                    userInfo: ["context": fleetTrailersContext]
+                )
+            }
+            .onDisappear {
+                NotificationCenter.default.post(name: .fleetTrailersPageInactive, object: nil)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -77,6 +87,11 @@ struct IOSTrailersPage: View {
     }
 
     // MARK: - Trailer List
+
+    private var fleetTrailersContext: String {
+        let searchState = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "none" : "active"
+        return "page=Fleet Trailers; total_trailers=\(trailers.count); visible_trailers=\(filteredTrailers.count); search=\(searchState)"
+    }
 
     @ViewBuilder
     private var trailerList: some View {

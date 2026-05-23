@@ -535,6 +535,12 @@ extension Notification.Name {
     /// Posted when the My Truck page disappears.
     static let fleetMyTruckPageInactive = Notification.Name("WiredPart.fleetMyTruckPageInactive")
 
+    /// Posted when the Fleet Telematics page appears, with read-only telematics context for AI.
+    static let fleetTelematicsPageActive = Notification.Name("WiredPart.fleetTelematicsPageActive")
+
+    /// Posted when the Fleet Telematics page disappears.
+    static let fleetTelematicsPageInactive = Notification.Name("WiredPart.fleetTelematicsPageInactive")
+
     // MARK: - Tools
 
     /// Posted when the Tool Registry page appears, with tool count context for AI.
@@ -550,6 +556,14 @@ extension Notification.Name {
 
     /// Posted when the Notebooks List page disappears.
     static let notebooksListPageInactive = Notification.Name("WiredPart.notebooksListPageInactive")
+
+    // MARK: - Office
+
+    /// Posted when the Office Approvals page appears, with read-only approval context for AI.
+    static let officeApprovalsPageActive = Notification.Name("WiredPart.officeApprovalsPageActive")
+
+    /// Posted when the Office Approvals page disappears.
+    static let officeApprovalsPageInactive = Notification.Name("WiredPart.officeApprovalsPageInactive")
 
     // MARK: - Settings
 

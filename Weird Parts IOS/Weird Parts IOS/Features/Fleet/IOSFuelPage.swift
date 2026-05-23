@@ -48,6 +48,16 @@ struct IOSFuelPage: View {
             .onChange(of: dateRange) { loadData() }
             .onChange(of: customStart) { loadData() }
             .onChange(of: customEnd) { loadData() }
+            .onAppear {
+                NotificationCenter.default.post(
+                    name: .fleetFuelPageActive,
+                    object: nil,
+                    userInfo: ["context": fleetFuelContext]
+                )
+            }
+            .onDisappear {
+                NotificationCenter.default.post(name: .fleetFuelPageInactive, object: nil)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
@@ -70,6 +80,11 @@ struct IOSFuelPage: View {
     }
 
     // MARK: - Fuel List
+
+    private var fleetFuelContext: String {
+        let searchState = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "none" : "active"
+        return "page=Fleet Fuel; total_logs=\(fuelLogs.count); visible_logs=\(filteredLogs.count); date_range=\(dateRange.rawValue); search=\(searchState)"
+    }
 
     @ViewBuilder
     private var fuelList: some View {

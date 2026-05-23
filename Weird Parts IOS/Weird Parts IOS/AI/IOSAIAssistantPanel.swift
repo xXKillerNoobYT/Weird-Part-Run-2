@@ -87,7 +87,9 @@ struct IOSAIAssistantPanel: View {
     @State private var fleetFuelContext: String?
     @State private var fleetInspectionsContext: String?
     @State private var fleetTrackingContext: String?
+    @State private var fleetTelematicsContext: String?
     @State private var fleetMyTruckContext: String?
+    @State private var officeApprovalsContext: String?
     @State private var toolRegistryContext: String?
     @State private var notebooksListContext: String?
     @State private var settingsContext: String?
@@ -309,15 +311,23 @@ struct IOSAIAssistantPanel: View {
             notebooksListContext: $notebooksListContext,
             settingsContext: $settingsContext
         ))
-        .modifier(FleetPageContextObservers(
+        .modifier(FleetPageContextObserversPrimary(
             fleetDashboardContext: $fleetDashboardContext,
             fleetTrailersContext: $fleetTrailersContext,
-            fleetMaintenanceContext: $fleetMaintenanceContext,
+            fleetMaintenanceContext: $fleetMaintenanceContext
+        ))
+        .modifier(FleetPageContextObserversOps(
             fleetMileageContext: $fleetMileageContext,
             fleetFuelContext: $fleetFuelContext,
-            fleetInspectionsContext: $fleetInspectionsContext,
+            fleetInspectionsContext: $fleetInspectionsContext
+        ))
+        .modifier(FleetPageContextObserversTracking(
             fleetTrackingContext: $fleetTrackingContext,
+            fleetTelematicsContext: $fleetTelematicsContext,
             fleetMyTruckContext: $fleetMyTruckContext
+        ))
+        .modifier(OfficePageContextObservers(
+            officeApprovalsContext: $officeApprovalsContext
         ))
         .modifier(ActivePageIdTracker(activePageId: $activePageId))
     }
@@ -694,6 +704,36 @@ struct IOSAIAssistantPanel: View {
             }
             if let ctx = vehiclesContext {
                 navContext += "\n\nVehicles Context: \(ctx)"
+            }
+            if let ctx = fleetDashboardContext {
+                navContext += "\n\nFleet Dashboard Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = fleetMaintenanceContext {
+                navContext += "\n\nFleet Maintenance Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = fleetMileageContext {
+                navContext += "\n\nFleet Mileage Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = fleetFuelContext {
+                navContext += "\n\nFleet Fuel Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = fleetTrailersContext {
+                navContext += "\n\nFleet Trailers Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = fleetInspectionsContext {
+                navContext += "\n\nFleet Inspections Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = fleetTrackingContext {
+                navContext += "\n\nFleet Tracking Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = fleetTelematicsContext {
+                navContext += "\n\nFleet Telematics Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = fleetMyTruckContext {
+                navContext += "\n\nMy Truck Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = officeApprovalsContext {
+                navContext += "\n\nOffice Approvals Context (READ-ONLY): \(ctx)"
             }
             if let ctx = toolRegistryContext {
                 navContext += "\n\nTool Registry Context: \(ctx)"
@@ -1505,65 +1545,83 @@ private struct FeaturePageContextObserversGroupB: ViewModifier {
 
 
 /// Fleet page observers added for WEI-1112 coverage slices beyond Vehicles.
-private struct FleetPageContextObservers: ViewModifier {
+/// Split into smaller modifiers to keep SwiftUI type-checking bounded.
+private struct FleetPageContextObserversPrimary: ViewModifier {
     @Binding var fleetDashboardContext: String?
     @Binding var fleetTrailersContext: String?
     @Binding var fleetMaintenanceContext: String?
-    @Binding var fleetMileageContext: String?
-    @Binding var fleetFuelContext: String?
-    @Binding var fleetInspectionsContext: String?
-    @Binding var fleetTrackingContext: String?
-    @Binding var fleetMyTruckContext: String?
 
     func body(content: Content) -> some View {
         content
             .onReceive(NotificationCenter.default.publisher(for: .fleetDashboardPageActive)) { notification in
                 if let ctx = notification.userInfo?["context"] as? String { fleetDashboardContext = ctx }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .fleetDashboardPageInactive)) { _ in
-                fleetDashboardContext = nil
-            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetDashboardPageInactive)) { _ in fleetDashboardContext = nil }
             .onReceive(NotificationCenter.default.publisher(for: .fleetTrailersPageActive)) { notification in
                 if let ctx = notification.userInfo?["context"] as? String { fleetTrailersContext = ctx }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .fleetTrailersPageInactive)) { _ in
-                fleetTrailersContext = nil
-            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTrailersPageInactive)) { _ in fleetTrailersContext = nil }
             .onReceive(NotificationCenter.default.publisher(for: .fleetMaintenancePageActive)) { notification in
                 if let ctx = notification.userInfo?["context"] as? String { fleetMaintenanceContext = ctx }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .fleetMaintenancePageInactive)) { _ in
-                fleetMaintenanceContext = nil
-            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMaintenancePageInactive)) { _ in fleetMaintenanceContext = nil }
+    }
+}
+
+private struct FleetPageContextObserversOps: ViewModifier {
+    @Binding var fleetMileageContext: String?
+    @Binding var fleetFuelContext: String?
+    @Binding var fleetInspectionsContext: String?
+
+    func body(content: Content) -> some View {
+        content
             .onReceive(NotificationCenter.default.publisher(for: .fleetMileagePageActive)) { notification in
                 if let ctx = notification.userInfo?["context"] as? String { fleetMileageContext = ctx }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .fleetMileagePageInactive)) { _ in
-                fleetMileageContext = nil
-            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMileagePageInactive)) { _ in fleetMileageContext = nil }
             .onReceive(NotificationCenter.default.publisher(for: .fleetFuelPageActive)) { notification in
                 if let ctx = notification.userInfo?["context"] as? String { fleetFuelContext = ctx }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .fleetFuelPageInactive)) { _ in
-                fleetFuelContext = nil
-            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetFuelPageInactive)) { _ in fleetFuelContext = nil }
             .onReceive(NotificationCenter.default.publisher(for: .fleetInspectionsPageActive)) { notification in
                 if let ctx = notification.userInfo?["context"] as? String { fleetInspectionsContext = ctx }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .fleetInspectionsPageInactive)) { _ in
-                fleetInspectionsContext = nil
-            }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetInspectionsPageInactive)) { _ in fleetInspectionsContext = nil }
+    }
+}
+
+private struct FleetPageContextObserversTracking: ViewModifier {
+    @Binding var fleetTrackingContext: String?
+    @Binding var fleetTelematicsContext: String?
+    @Binding var fleetMyTruckContext: String?
+
+    func body(content: Content) -> some View {
+        content
             .onReceive(NotificationCenter.default.publisher(for: .fleetTrackingPageActive)) { notification in
                 if let ctx = notification.userInfo?["context"] as? String { fleetTrackingContext = ctx }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .fleetTrackingPageInactive)) { _ in
-                fleetTrackingContext = nil
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTrackingPageInactive)) { _ in fleetTrackingContext = nil }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTelematicsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { fleetTelematicsContext = ctx }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTelematicsPageInactive)) { _ in fleetTelematicsContext = nil }
             .onReceive(NotificationCenter.default.publisher(for: .fleetMyTruckPageActive)) { notification in
                 if let ctx = notification.userInfo?["context"] as? String { fleetMyTruckContext = ctx }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .fleetMyTruckPageInactive)) { _ in
-                fleetMyTruckContext = nil
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMyTruckPageInactive)) { _ in fleetMyTruckContext = nil }
+    }
+}
+
+private struct OfficePageContextObservers: ViewModifier {
+    @Binding var officeApprovalsContext: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .officeApprovalsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { officeApprovalsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .officeApprovalsPageInactive)) { _ in
+                officeApprovalsContext = nil
             }
     }
 }
@@ -1778,6 +1836,38 @@ private struct ActivePageIdTrackerFleetToolsNotebooks: ViewModifier {
         content
             .onReceive(NotificationCenter.default.publisher(for: .vehiclesPageActive)) { _ in activePageId = "fleet-vehicles" }
             .onReceive(NotificationCenter.default.publisher(for: .vehiclesPageInactive)) { _ in if activePageId == "fleet-vehicles" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetDashboardPageActive)) { _ in activePageId = "fleet-dashboard" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetDashboardPageInactive)) { _ in if activePageId == "fleet-dashboard" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMaintenancePageActive)) { _ in activePageId = "fleet-maintenance" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMaintenancePageInactive)) { _ in if activePageId == "fleet-maintenance" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMileagePageActive)) { _ in activePageId = "fleet-mileage" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMileagePageInactive)) { _ in if activePageId == "fleet-mileage" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetFuelPageActive)) { _ in activePageId = "fleet-fuel" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetFuelPageInactive)) { _ in if activePageId == "fleet-fuel" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTrailersPageActive)) { _ in activePageId = "fleet-trailers" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTrailersPageInactive)) { _ in if activePageId == "fleet-trailers" { activePageId = nil } }
+            .modifier(ActivePageIdTrackerFleetToolsNotebooksFleetTail(activePageId: $activePageId))
+    }
+}
+
+private struct ActivePageIdTrackerFleetToolsNotebooksFleetTail: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .fleetInspectionsPageActive)) { _ in activePageId = "fleet-inspections" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetInspectionsPageInactive)) { _ in if activePageId == "fleet-inspections" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTelematicsPageActive)) { _ in activePageId = "fleet-tracking" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetTelematicsPageInactive)) { _ in if activePageId == "fleet-tracking" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMyTruckPageActive)) { _ in activePageId = "fleet-my-truck" }
+            .onReceive(NotificationCenter.default.publisher(for: .fleetMyTruckPageInactive)) { _ in if activePageId == "fleet-my-truck" { activePageId = nil } }
+            .modifier(ActivePageIdTrackerFleetToolsNotebooksTail(activePageId: $activePageId))
+    }
+}
+
+private struct ActivePageIdTrackerFleetToolsNotebooksTail: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
             .onReceive(NotificationCenter.default.publisher(for: .toolRegistryPageActive)) { _ in activePageId = "tools-registry" }
             .onReceive(NotificationCenter.default.publisher(for: .toolRegistryPageInactive)) { _ in if activePageId == "tools-registry" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .notebooksListPageActive)) { _ in activePageId = "notebooks-all" }
