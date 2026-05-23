@@ -1268,6 +1268,8 @@ struct SchedulingServiceTests {
         let subs = try env.scheduling.getSubSchedule(date: "2026-09-15")
         #expect(subs.count == 1)
         #expect(subs[0].scheduleDate == "2026-09-15")
+        #expect(subs[0].jobId == jobId)
+        #expect(subs[0].gcId == gcId)
         #expect(subs[0].subName == "Trimmed Sub")
         #expect(subs[0].arrivalTime == "08:00")
         #expect(subs[0].departureTime == "12:00")

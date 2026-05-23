@@ -175,6 +175,8 @@ public final class SchedulingService: Sendable {
     /// A subcontractor schedule row for the sub-schedule list and add/edit forms.
     public struct SubScheduleRow: Sendable, Identifiable {
         public let id: Int64
+        public let jobId: Int64
+        public let gcId: Int64
         public let subName: String
         public let companyName: String
         public let jobName: String
@@ -187,6 +189,8 @@ public final class SchedulingService: Sendable {
 
         public init(
             id: Int64,
+            jobId: Int64 = 0,
+            gcId: Int64 = 0,
             subName: String,
             companyName: String,
             jobName: String,
@@ -198,6 +202,8 @@ public final class SchedulingService: Sendable {
             notes: String? = nil
         ) {
             self.id = id
+            self.jobId = jobId
+            self.gcId = gcId
             self.subName = subName
             self.companyName = companyName
             self.jobName = jobName
@@ -678,6 +684,8 @@ public final class SchedulingService: Sendable {
             return try db.writer.read { dbConn -> [SubScheduleRow] in
                 let sql = """
                     SELECT ss.id,
+                           ss.job_id,
+                           ss.gc_id,
                            COALESCE(gc.contact_name, gc.company_name, 'Unknown') AS sub_name,
                            COALESCE(gc.company_name, '') AS company_name,
                            COALESCE(j.job_name, 'Unknown Job') AS job_name,
@@ -698,6 +706,8 @@ public final class SchedulingService: Sendable {
                 return rows.map { row in
                     SubScheduleRow(
                         id: row["id"] ?? 0,
+                        jobId: row["job_id"] ?? 0,
+                        gcId: row["gc_id"] ?? 0,
                         subName: row["sub_name"] ?? "Unknown",
                         companyName: row["company_name"] ?? "",
                         jobName: row["job_name"] ?? "Unknown Job",
