@@ -5174,25 +5174,6 @@ extension AppDatabase {
         }
     }
 
-    private static func registerMigration090NotebookClassificationPermissions(_ migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("090_notebook_classification_permissions") { db in
-            let permissionGrants: [(key: String, hatNames: [String])] = [
-                ("notebooks.classify_todo", ["Admin", "Manager", "Lead", "Worker"]),
-                ("notebooks.reclassify_todo", ["Admin", "Manager"]),
-                ("notebooks.review_classification", ["Admin", "Manager"]),
-            ]
-
-            for grant in permissionGrants {
-                for hatName in grant.hatNames {
-                    try db.execute(sql: """
-                        INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
-                        SELECT id, ? FROM hats WHERE name = ?
-                        """, arguments: [grant.key, hatName])
-                }
-            }
-        }
-    }
-
     private static func registerMigration088FleetInspectionDashboardLookupIndex(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("088_fleet_inspection_dashboard_index") { db in
             try db.execute(sql: """
