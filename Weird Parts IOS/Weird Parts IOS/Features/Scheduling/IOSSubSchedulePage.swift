@@ -17,6 +17,8 @@ struct IOSSubSchedulePage: View {
     @State private var selectedDate = Date()
     @State private var searchText = ""
     @State private var activeSheet: ActiveSheet?
+    @State private var rowPendingCancellation: SchedulingService.SubScheduleRow?
+    @State private var isCancelling = false
 
     private enum ActiveSheet: Identifiable {
         case create
@@ -79,6 +81,12 @@ struct IOSSubSchedulePage: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .alert("Cancel Schedule?", isPresented: cancellationAlertBinding, presenting: rowPendingCancellation) { row in
+            Button("Cancel Schedule", role: .destructive) { cancelSubSchedule(row) }
+            Button("Keep Schedule", role: .cancel) { rowPendingCancellation = nil }
+        } message: { row in
+            Text("This removes \(row.subName) from \(formatDate(row.scheduleDate)) and frees the job/sub/date slot for rescheduling.")
+        }
     }
 
     // MARK: - Date Navigator
@@ -142,6 +150,8 @@ struct IOSSubSchedulePage: View {
                     .contentShape(Rectangle())
                     .onTapGesture { activeSheet = .edit(row) }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button("Cancel Schedule", role: .destructive) { rowPendingCancellation = row }
+                            .disabled(isCancelling)
                         Button("Edit") { activeSheet = .edit(row) }
                             .tint(.blue)
                     }
@@ -220,6 +230,15 @@ struct IOSSubSchedulePage: View {
 
     // MARK: - Helpers
 
+    private var cancellationAlertBinding: Binding<Bool> {
+        Binding(
+            get: { rowPendingCancellation != nil },
+            set: { isPresented in
+                if !isPresented { rowPendingCancellation = nil }
+            }
+        )
+    }
+
     private func formatDate(_ dateString: String) -> String {
         guard let date = Formatters.localDateFormatter.date(from: String(dateString.prefix(10))) else {
             return String(dateString.prefix(10))
@@ -252,5 +271,25 @@ struct IOSSubSchedulePage: View {
             loadError = userFriendlyError(error, context: "load sub schedule")
         }
         isLoading = false
+    }
+
+    private func cancelSubSchedule(_ row: SchedulingService.SubScheduleRow) {
+        guard let service = appCore.schedulingService else {
+            loadError = "Service not available"
+            rowPendingCancellation = nil
+            return
+        }
+
+        isCancelling = true
+        loadError = nil
+        do {
+            try service.cancelSubcontractorSchedule(id: row.id)
+            rowPendingCancellation = nil
+            loadData()
+        } catch {
+            loadError = userFriendlyError(error, context: "cancel sub schedule")
+            rowPendingCancellation = nil
+        }
+        isCancelling = false
     }
 }
