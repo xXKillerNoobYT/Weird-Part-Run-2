@@ -12,18 +12,19 @@ struct IOSScheduleCalendarPage: View {
     // MARK: - Calendar Mode
 
     enum CalendarMode: String, CaseIterable {
-        case twoWeeks = "14 Days"
+        case fourteenDays = "14 Days"
         case week = "Week"
         case month = "Month"
     }
 
     // MARK: - State
 
-    @State private var calendarMode: CalendarMode = .twoWeeks
+    @State private var calendarMode: CalendarMode = .fourteenDays
     @State private var entries: [SchedulingService.ScheduleEntry] = []
     @State private var monthScheduleData: [String: SchedulingService.DayScheduleSummary] = [:]
     @State private var dayEntries: [SchedulingService.ScheduleEntry] = []
     @State private var timeOffEntries: [SchedulingService.TimeOffEntry] = []
+    @State private var rangeTimeOffCounts: [String: Int] = [:]
     @State private var isLoading = true
     @State private var selectedDate = Date()
     @State private var searchText = ""
@@ -44,7 +45,7 @@ struct IOSScheduleCalendarPage: View {
     /// available for users who prefer Sunday/Monday week grouping.
     private var listRangeStartDate: Date {
         switch calendarMode {
-        case .twoWeeks:
+        case .fourteenDays:
             calendar.startOfDay(for: selectedDate)
         case .week, .month:
             calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: selectedDate)) ?? selectedDate
@@ -52,7 +53,7 @@ struct IOSScheduleCalendarPage: View {
     }
 
     private var listRangeEndDate: Date {
-        let days = calendarMode == .twoWeeks ? 13 : 6
+        let days = calendarMode == .fourteenDays ? 13 : 6
         return calendar.date(byAdding: .day, value: days, to: listRangeStartDate) ?? listRangeStartDate
     }
 
@@ -62,6 +63,13 @@ struct IOSScheduleCalendarPage: View {
 
     private var listRangeEnd: String {
         Formatters.iso8601DateOnly.string(from: listRangeEndDate)
+    }
+
+    private var listRangeDates: [Date] {
+        let dayCount = calendar.dateComponents([.day], from: listRangeStartDate, to: listRangeEndDate).day ?? 0
+        return (0...max(dayCount, 0)).compactMap { offset in
+            calendar.date(byAdding: .day, value: offset, to: listRangeStartDate)
+        }
     }
 
     var body: some View {
@@ -129,7 +137,7 @@ struct IOSScheduleCalendarPage: View {
                 name: .scheduleCalendarPageActive,
                 object: nil,
                 userInfo: [
-                    "context": "Schedule Calendar: mode \(calendarMode.rawValue), selected date \(dateStr), \(entries.count) entries this week, \(timeOffEntries.count) time-off entries."
+                    "context": "Schedule Calendar: mode \(calendarMode.rawValue), selected date \(dateStr), \(entries.count) entries in range, \(timeOffEntries.count) time-off entries."
                 ]
             )
         }
@@ -316,9 +324,9 @@ struct IOSScheduleCalendarPage: View {
     // MARK: - List View Navigator
 
     private var listNavigator: some View {
-        let stepDays = calendarMode == .twoWeeks ? 14 : 7
-        let previousLabel = calendarMode == .twoWeeks ? "Previous 14 days" : "Previous week"
-        let nextLabel = calendarMode == .twoWeeks ? "Next 14 days" : "Next week"
+        let stepDays = calendarMode == .fourteenDays ? 14 : 7
+        let previousLabel = calendarMode == .fourteenDays ? "Previous 14 days" : "Previous week"
+        let nextLabel = calendarMode == .fourteenDays ? "Next 14 days" : "Next week"
 
         return HStack {
             Button {
@@ -331,13 +339,21 @@ struct IOSScheduleCalendarPage: View {
 
             Spacer()
 
-            VStack(spacing: 2) {
-                Text(calendarMode == .twoWeeks ? "Next 14 Days" : "Week")
+            VStack(spacing: 6) {
+                Text(calendarMode == .fourteenDays ? "Next 14 Days" : "Week")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Text("\(listRangeStart) - \(listRangeEnd)")
                     .font(.subheadline)
                     .fontWeight(.medium)
+                Button("Today") {
+                    selectedDate = Date()
+                    loadData()
+                }
+                .font(.caption)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel(calendarMode == .fourteenDays ? "Return to today 14-day window" : "Return to current week")
             }
 
             Spacer()
@@ -363,15 +379,39 @@ struct IOSScheduleCalendarPage: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
-        } else if filteredEntries.isEmpty {
-            EmptyStateView(
-                icon: "calendar",
-                title: "No Schedule",
-                message: calendarMode == .twoWeeks ? "No schedule entries for the next 14 days." : "No schedule entries for this week."
-            )
         } else {
-            List(filteredEntries, id: \.id) { entry in
-                weekScheduleRow(entry)
+            List {
+                ForEach(listRangeDates, id: \.self) { date in
+                    let dateString = Formatters.iso8601DateOnly.string(from: date)
+                    let dayEntries = filteredEntriesByDate[dateString] ?? []
+                    let timeOffCount = rangeTimeOffCounts[dateString] ?? 0
+
+                    Section {
+                        if dayEntries.isEmpty && timeOffCount == 0 {
+                            emptyPlanningDayRow
+                        } else {
+                            ForEach(dayEntries, id: \.id) { entry in
+                                weekScheduleRow(entry)
+                            }
+                            if timeOffCount > 0 {
+                                timeOffCountRow(count: timeOffCount)
+                            }
+                        }
+                    } header: {
+                        HStack {
+                            Text(date, format: .dateTime.weekday(.abbreviated).month().day())
+                            if calendar.isDateInToday(date) {
+                                Text("Today")
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Capsule().fill(Color.blue.opacity(0.15)))
+                                    .foregroundStyle(.blue)
+                            }
+                        }
+                    }
+                }
             }
             .listStyle(.insetGrouped)
         }
@@ -384,6 +424,23 @@ struct IOSScheduleCalendarPage: View {
             $0.jobName.lowercased().contains(query) ||
             ($0.notes?.lowercased().contains(query) ?? false)
         }
+    }
+
+    private var filteredEntriesByDate: [String: [SchedulingService.ScheduleEntry]] {
+        Dictionary(grouping: filteredEntries, by: \.date)
+    }
+
+    private var emptyPlanningDayRow: some View {
+        Label("No scheduled work", systemImage: "calendar.badge.clock")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .padding(.vertical, 4)
+    }
+
+    private func timeOffCountRow(count: Int) -> some View {
+        Label("\(count) time-off \(count == 1 ? "entry" : "entries")", systemImage: "moon.fill")
+            .font(.caption)
+            .foregroundStyle(.orange)
     }
 
     private func weekScheduleRow(_ entry: SchedulingService.ScheduleEntry) -> some View {
@@ -502,6 +559,10 @@ struct IOSScheduleCalendarPage: View {
             } else {
                 entries = try service.getMySchedule(
                     userId: userId,
+                    startDate: listRangeStart,
+                    endDate: listRangeEnd
+                )
+                rangeTimeOffCounts = try service.getTimeOffCountsByDate(
                     startDate: listRangeStart,
                     endDate: listRangeEnd
                 )

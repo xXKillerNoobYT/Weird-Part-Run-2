@@ -1581,6 +1581,35 @@ public final class SchedulingService: Sendable {
         }
     }
 
+    /// Get time-off counts grouped by date for an inclusive date range.
+    ///
+    /// This is the range-oriented counterpart to `getTimeOffForDate(date:)` for
+    /// list and preview screens. It keeps rolling multi-day calendar loads to a
+    /// single database read instead of issuing one read per day in the range.
+    public func getTimeOffCountsByDate(startDate: String, endDate: String) throws -> [String: Int] {
+        do {
+            return try db.writer.read { dbConn -> [String: Int] in
+                let sql = """
+                    SELECT se.exception_date AS date, COUNT(*) AS count
+                    FROM schedule_exceptions se
+                    WHERE se.exception_date BETWEEN ? AND ?
+                      AND se.exception_type = 'time_off'
+                      AND se.deleted_at IS NULL
+                    GROUP BY se.exception_date
+                    """
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [startDate, endDate])
+                return Dictionary(uniqueKeysWithValues: rows.map { row in
+                    let date: String = row["date"] ?? ""
+                    let count: Int = row["count"] ?? 0
+                    return (date, count)
+                }.filter { !$0.0.isEmpty })
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [:] }
+            throw error
+        }
+    }
+
     // =========================================================================
     // MARK: - 10. Scheduling Stats
     // =========================================================================
