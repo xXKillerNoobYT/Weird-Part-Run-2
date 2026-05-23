@@ -151,7 +151,7 @@ final class AppCore: ObservableObject {
                     people: PeopleService(db: database),
                     scheduling: SchedulingService(db: database),
                     chat: ChatService(db: database),
-                    notebooks: NotebooksService(db: database),
+                    notebooks: NotebooksService(db: database, auth: auth),
                     reports: ReportsService(db: database),
                     tools: ToolsService(db: database),
                     dashboard: DashboardService(db: database),
