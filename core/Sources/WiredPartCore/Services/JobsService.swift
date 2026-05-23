@@ -1506,7 +1506,6 @@ public final class JobsService: Sendable {
         }
     }
 
-
     /// Get responses for a specific labor entry with question text.
     public func getResponsesForEntry(laborEntryId: Int64) throws -> [QuestionnaireItem] {
         do {

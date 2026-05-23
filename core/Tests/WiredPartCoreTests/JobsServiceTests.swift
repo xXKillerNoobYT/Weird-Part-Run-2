@@ -325,8 +325,6 @@ struct JobsServiceTests {
         #expect(dailyReportQuestion?.isRequired == true)
     }
 
-    // MARK: - One-Time Questions
-
     @Test("Create one-time question")
     func testOneTimeQuestion() throws {
         let env = try E2ETestHelpers.setUp()
