@@ -112,9 +112,11 @@ struct IOSShortTermPipelinePage: View {
                     })
                 }
             case .schedule:
-                if selectedItem != nil {
+                if let item = selectedItem {
                     CreateScheduleEntrySheet(
                         date: todayString,
+                        initialJobId: item.jobId,
+                        initialJobName: item.jobName,
                         onSave: { loadData() }
                     )
                     .environmentObject(appCore)
@@ -122,7 +124,7 @@ struct IOSShortTermPipelinePage: View {
             case .help:
                 PageHelpSheet(title: "Short-Term Pipeline Help", sections: [
                     ("What This Page Does", "The Short-Term Pipeline shows jobs that are ready or nearly ready to be scheduled. Jobs are grouped into categories: Start Anytime, Schedule Needed, Favorite GC, and Small Jobs. Each category has a target count to keep your pipeline healthy."),
-                    ("How to Use It", "Review the target cards at the top to see if your pipeline is balanced. Green checkmarks mean you are at or above target; red means you need more jobs in that category. Tap the calendar icon on any job to schedule it. Tap the phone icon on callbacks to handle them."),
+                    ("How to Use It", "Review the target cards at the top to see if your pipeline is balanced. Green checkmarks mean you are at or above target; red means you need more jobs in that category. Tap the calendar icon on any job to open a scheduling sheet already tied to that job. Tap the phone icon on callbacks to handle them."),
                     ("Callbacks", "When a callback is due, it appears in the Callbacks Due section. You can mark it complete with notes, or snooze it for 1 day, 3 days, or 1 week."),
                     ("Tips", "Keep each category at or above its target number for a healthy pipeline. 'Start Anytime' jobs are your safety net for crew that finishes early. Small Jobs are great gap fillers between bigger projects.")
                 ])
