@@ -3,15 +3,24 @@ import WiredPartCore
 
 /// Warehouse network status page showing device connectivity.
 ///
-/// Displays current local device status and an intentional unavailable state
-/// for multi-device discovery until sync infrastructure is implemented.
+/// Displays current local device status, sync state, and connected-device
+/// discovery actions backed by the shared iOS sync manager.
 struct IOSWarehouseNetworkPage: View {
     @EnvironmentObject private var appCore: AppCore
     @State private var activeSheet: ActiveSheet?
 
+    private var syncManager: IOSSyncManager { appCore.syncManager }
+
     private enum ActiveSheet: Identifiable {
         case help
-        var id: String { "help" }
+        case peerBrowser
+
+        var id: String {
+            switch self {
+            case .help: return "help"
+            case .peerBrowser: return "peerBrowser"
+            }
+        }
     }
 
     var body: some View {
@@ -39,22 +48,51 @@ struct IOSWarehouseNetworkPage: View {
             }
 
             Section("Connected Devices") {
-                VStack(spacing: 16) {
-                    Image(systemName: "network")
-                        .font(.largeTitle)
-                        .foregroundStyle(.secondary)
-                    Text("Network Discovery")
-                        .font(.headline)
-                    Text("Device network discovery is not enabled yet. For now, this page confirms the local database is active; multi-device status will appear here after sync infrastructure is configured.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "network")
+                            .font(.title2)
+                            .foregroundStyle(syncManager.isSyncAvailable ? Color.blue : Color.secondary)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(connectedDevicesSummary)
+                                .fontWeight(.medium)
+                            Text(syncManager.isSyncAvailable ? discoveryDetailText : syncSetupDetailText)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+
+                    HStack(spacing: 10) {
+                        Button {
+                            activeSheet = .peerBrowser
+                        } label: {
+                            Label("Browse Nearby Devices", systemImage: "antenna.radiowaves.left.and.right")
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        Button {
+                            syncManager.startPeerDiscovery()
+                        } label: {
+                            Label(syncManager.isScanning ? "Scanning" : "Scan", systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(syncManager.isScanning)
+                    }
+                    .labelStyle(.titleAndIcon)
+
+                    if let errorMessage = syncManager.errorMessage {
+                        Label(errorMessage, systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                            .accessibilityIdentifier("warehouseNetwork_syncNotice")
+                    }
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 20)
+                .padding(.vertical, 4)
             }
 
-            Section("Network Sync Roadmap") {
+            Section("Network Sync Capabilities") {
                 featureRow(icon: "wifi", label: "LAN HTTP Sync", description: "Sync with shop computer over Wi-Fi")
                 featureRow(icon: "dot.radiowaves.left.and.right", label: "Multipeer Connectivity", description: "Bluetooth and Wi-Fi P2P device pairing")
                 featureRow(icon: "lock.shield", label: "Encrypted Sync", description: "TLS transport with field-level encryption")
@@ -71,15 +109,21 @@ struct IOSWarehouseNetworkPage: View {
                 .accessibilityLabel("Help")
             }
         }
-        .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(
-                title: "Network Help",
-                sections: [
-                    ("Overview", "View the network status of your device and connected shop computers, tablets, and phones."),
-                    ("Sync", "After network sync is configured, this page will show real-time connectivity and sync status for all devices on your local network."),
-                    ("Roadmap", "The next network milestones are LAN HTTP sync, Bluetooth P2P pairing, encrypted sync, and conflict resolution.")
-                ]
-            )
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .help:
+                PageHelpSheet(
+                    title: "Network Help",
+                    sections: [
+                        ("Overview", "View this device's local database status, sync health, and nearby shop computers, tablets, and phones."),
+                        ("Browse Devices", "Use Browse Nearby Devices or Scan to open the live discovery flow backed by LAN and Bluetooth sync settings."),
+                        ("Capabilities", "Supported network milestones are LAN HTTP sync, Bluetooth P2P pairing, encrypted sync, and conflict resolution.")
+                    ]
+                )
+            case .peerBrowser:
+                IOSPeerBrowser()
+                    .environmentObject(appCore)
+            }
         }
         .onAppear { postAIContext() }
         .onDisappear {
@@ -90,15 +134,47 @@ struct IOSWarehouseNetworkPage: View {
     private func postAIContext() {
         let context = """
         Warehouse Network page. Read-only context.
-        This device status: Online, local database active. Connected device discovery is intentionally unavailable until sync infrastructure is configured.
-        Planned features shown: LAN HTTP Sync, Multipeer Connectivity, Encrypted Sync, Conflict Resolution.
-        Available read-only guidance: explain current local status and planned network sync capabilities. Do not attempt pairing, discovery, or sync actions directly.
+        This device status: Online, local database active. Sync status: \(syncStatusLabel); pending changes: \(syncManager.pendingChanges); discovered devices: \(syncManager.discoveredPeers.count).
+        Available actions: Browse Nearby Devices opens the live peer browser; Scan starts peer discovery through IOSSyncManager; Help explains network capabilities.
+        Network sync capabilities shown: LAN HTTP Sync, Multipeer Connectivity, Encrypted Sync, Conflict Resolution.
         """
         NotificationCenter.default.post(
             name: .warehouseNetworkPageActive,
             object: nil,
             userInfo: ["context": context]
         )
+    }
+
+    private var connectedDevicesSummary: String {
+        if syncManager.isScanning {
+            return "Scanning for nearby devices"
+        }
+        let count = syncManager.discoveredPeers.count
+        if count == 0 {
+            return "No nearby devices discovered"
+        }
+        return count == 1 ? "1 nearby device discovered" : "\(count) nearby devices discovered"
+    }
+
+    private var discoveryDetailText: String {
+        if syncManager.discoveredPeers.isEmpty {
+            return "Browse or scan for configured LAN/Bluetooth peers on the shop network."
+        }
+        return "Open the browser to review discovered peers and start a sync."
+    }
+
+    private var syncSetupDetailText: String {
+        "Configure Bluetooth sync or a shop server address in Settings, then scan from here."
+    }
+
+    private var syncStatusLabel: String {
+        switch syncManager.syncStatus {
+        case .idle: return "Idle"
+        case .syncing: return "Syncing"
+        case .synced: return "Synced"
+        case .error: return "Error"
+        case .offline: return "Offline"
+        }
     }
 
     private func featureRow(icon: String, label: String, description: String) -> some View {
