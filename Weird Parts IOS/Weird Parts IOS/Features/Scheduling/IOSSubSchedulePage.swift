@@ -130,8 +130,12 @@ struct IOSSubSchedulePage: View {
             EmptyStateView(
                 icon: "person.badge.clock",
                 title: "No Subs Scheduled",
-                message: "No subcontractors scheduled for \(displayDate)."
-            )
+                message: "No subcontractors scheduled for \(displayDate).",
+                actionLabel: "Add subcontractor schedule for \(displayDate)",
+                actionIcon: "plus"
+            ) {
+                activeSheet = .create
+            }
         } else {
             List(rows) { row in
                 subRow(row)
