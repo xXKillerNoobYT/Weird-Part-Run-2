@@ -479,6 +479,11 @@ private struct SupplierFormSheet: View {
     // Notes
     @State private var notes = ""
 
+    // Brand links for new suppliers
+    @State private var availableBrandsForNewSupplier: [(id: Int64, name: String)] = []
+    @State private var selectedBrandIdsForNewSupplier: Set<Int64> = []
+    @State private var brandLoadError: String?
+
     // Save state
     @State private var saveError: String?
     @State private var isSaving = false
@@ -503,6 +508,45 @@ private struct SupplierFormSheet: View {
                         .frame(minHeight: 44)
                     if supplier != nil {
                         Toggle("Active", isOn: $isActive)
+                    }
+                }
+
+                if supplier == nil {
+                    Section {
+                        if let error = brandLoadError {
+                            Label(error, systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                                .font(.caption)
+                        } else if availableBrandsForNewSupplier.isEmpty {
+                            Text("No existing brands yet. You can link brands after creating this supplier.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(availableBrandsForNewSupplier, id: \.id) { brand in
+                                Button {
+                                    toggleNewSupplierBrandSelection(brand.id)
+                                } label: {
+                                    HStack {
+                                        Label(brand.name, systemImage: "tag.fill")
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                        if selectedBrandIdsForNewSupplier.contains(brand.id) {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundStyle(Color.accentColor)
+                                        }
+                                    }
+                                    .frame(minHeight: 44)
+                                    .accessibilityElement(children: .ignore)
+                                    .accessibilityLabel(brand.name)
+                                    .accessibilityValue(selectedBrandIdsForNewSupplier.contains(brand.id) ? "Selected" : "Not selected")
+                                    .accessibilityHint("Double tap to toggle whether this supplier carries this brand")
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    } header: {
+                        Text("Brands Carried")
+                    } footer: {
+                        Text("Select any existing brands this supplier carries now, or manage brand links later from the supplier detail page.")
                     }
                 }
 
@@ -583,6 +627,8 @@ private struct SupplierFormSheet: View {
                     deliveryMethod = s.deliveryMethod ?? ""
                     deliveryDays = s.deliveryDays ?? ""
                     notes = s.notes ?? ""
+                } else {
+                    loadAvailableBrandsForNewSupplier()
                 }
             }
         }
@@ -630,7 +676,7 @@ private struct SupplierFormSheet: View {
                 notes: notes.isEmpty ? nil : notes
             )
         } else {
-            _ = try service.createSupplier(
+            let newSupplierId = try service.createSupplier(
                 name: trimmedName,
                 contactName: contactName.isEmpty ? nil : contactName,
                 email: email.isEmpty ? nil : email,
@@ -645,6 +691,37 @@ private struct SupplierFormSheet: View {
                 accountNumber: accountNumber.isEmpty ? nil : accountNumber,
                 notes: notes.isEmpty ? nil : notes
             )
+            if !selectedBrandIdsForNewSupplier.isEmpty {
+                try service.setSupplierBrands(
+                    supplierId: newSupplierId,
+                    brandIds: selectedBrandIdsForNewSupplier
+                )
+            }
+        }
+    }
+
+    private func toggleNewSupplierBrandSelection(_ brandId: Int64) {
+        if selectedBrandIdsForNewSupplier.contains(brandId) {
+            selectedBrandIdsForNewSupplier.remove(brandId)
+        } else {
+            selectedBrandIdsForNewSupplier.insert(brandId)
+        }
+    }
+
+    private func loadAvailableBrandsForNewSupplier() {
+        guard let service = appCore.partsService else {
+            brandLoadError = "Parts service not available"
+            return
+        }
+        do {
+            brandLoadError = nil
+            availableBrandsForNewSupplier = try service.listBrands()
+                .compactMap { row in
+                    guard let id = row.brand.id else { return nil }
+                    return (id: id, name: row.brand.name)
+                }
+        } catch {
+            brandLoadError = userFriendlyError(error, context: "load brands")
         }
     }
 }
