@@ -1230,7 +1230,7 @@ private struct JPOMovementDetailContent: View {
             } else if let m = movement {
                 List {
                     Section("Movement Info") {
-                        LabeledContent("Type", value: m.movementType.replacingOccurrences(of: "_", with: " ").capitalized)
+                        LabeledContent("Type", value: StockMovement.MovementType.displayName(forRawValue: m.movementType))
                         LabeledContent("Quantity", value: "\(m.qty)")
                         if let reason = m.reason, !reason.isEmpty {
                             LabeledContent("Reason", value: reason)
