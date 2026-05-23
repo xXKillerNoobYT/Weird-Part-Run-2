@@ -25,22 +25,39 @@ struct WarehouseMovementsPage: View {
     private var effectiveStart: Date { dateRange.dateInterval?.start ?? customStart }
     private var effectiveEnd: Date { dateRange.dateInterval?.end ?? customEnd }
 
-    private enum MovementFilter: String, CaseIterable {
-        case all = "All"
-        case transfers = "Transfer"
-        case receives = "Received"
-        case consumed = "Consumed"
-        case returns = "Return"
-        case adjustments = "Adjustment"
+    private enum MovementFilter: Hashable {
+        case all
+        case type(StockMovement.MovementType)
+
+        static var allCases: [MovementFilter] {
+            [.all] + StockMovement.MovementType.primaryUIFilterTypes.map { .type($0) }
+        }
+
+        var title: String {
+            switch self {
+            case .all: "All"
+            case .type(let type): type.displayName
+            }
+        }
 
         var movementType: String? {
             switch self {
             case .all: nil
-            case .transfers: "transfer"
-            case .receives: "receive"
-            case .consumed: "consume"
-            case .returns: "return_to_supplier"
-            case .adjustments: "adjustment"
+            case .type(let type): type.rawValue
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .all: "tray.full"
+            case .type(let type): type.systemImageName
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .all: .accentColor
+            case .type(let type): WarehouseMovementsPage.movementColor(for: type.rawValue)
             }
         }
     }
@@ -155,20 +172,17 @@ struct WarehouseMovementsPage: View {
     // MARK: - Smart Card Filters
 
     private var smartCardFilters: some View {
-        let transferCount = dateFilteredMovements.filter { $0.movementType == "transfer" }.count
-        let receiveCount = dateFilteredMovements.filter { $0.movementType == "receive" }.count
-        let consumedCount = dateFilteredMovements.filter { $0.movementType == "consume" }.count
-        let returnCount = dateFilteredMovements.filter { $0.movementType == "return_to_supplier" }.count
-        let adjustCount = dateFilteredMovements.filter { $0.movementType == "adjustment" }.count
+        let countsByType = Dictionary(grouping: dateFilteredMovements, by: \.movementType)
+            .mapValues(\.count)
 
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                filterCard(.all, count: dateFilteredMovements.count, icon: "tray.full", color: .accentColor)
-                filterCard(.transfers, count: transferCount, icon: "arrow.left.arrow.right", color: .blue)
-                filterCard(.receives, count: receiveCount, icon: "arrow.down.circle", color: .green)
-                filterCard(.consumed, count: consumedCount, icon: "flame", color: .orange)
-                filterCard(.returns, count: returnCount, icon: "arrow.uturn.left", color: .purple)
-                filterCard(.adjustments, count: adjustCount, icon: "plus.forwardslash.minus", color: .gray)
+                ForEach(MovementFilter.allCases, id: \.self) { filter in
+                    filterCard(
+                        filter,
+                        count: filter.movementType.map { countsByType[$0, default: 0] } ?? dateFilteredMovements.count
+                    )
+                }
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
@@ -176,28 +190,28 @@ struct WarehouseMovementsPage: View {
         .background(Color(.secondarySystemGroupedBackground))
     }
 
-    private func filterCard(_ filter: MovementFilter, count: Int, icon: String, color: Color) -> some View {
+    private func filterCard(_ filter: MovementFilter, count: Int) -> some View {
         let isSelected = selectedFilter == filter
 
         return Button {
             selectedFilter = filter == .all || isSelected ? nil : filter
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: icon)
+                Image(systemName: filter.icon)
                     .font(.caption)
-                Text("\(filter.rawValue) (\(count))")
+                Text("\(filter.title) (\(count))")
                     .font(.caption)
                     .fontWeight(isSelected ? .bold : .regular)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(
-                Capsule().fill(isSelected ? color.opacity(0.15) : Color.secondary.opacity(0.08))
+                Capsule().fill(isSelected ? filter.color.opacity(0.15) : Color.secondary.opacity(0.08))
             )
             .overlay(
-                Capsule().stroke(isSelected ? color : Color.clear, lineWidth: 1.5)
+                Capsule().stroke(isSelected ? filter.color : Color.clear, lineWidth: 1.5)
             )
-            .foregroundStyle(isSelected ? color : .primary)
+            .foregroundStyle(isSelected ? filter.color : .primary)
         }
         .buttonStyle(.plain)
     }
@@ -381,7 +395,7 @@ struct WarehouseMovementsPage: View {
             .joined(separator: ", ")
         let context = """
         Warehouse Movements page. Read-only context.
-        Loaded movements: \(movements.count), visible after filters: \(filteredMovements.count), selected filter: \(selectedFilter?.rawValue ?? "none"), search active: \(!searchText.isEmpty).
+        Loaded movements: \(movements.count), visible after filters: \(filteredMovements.count), selected filter: \(selectedFilter?.title ?? "none"), search active: \(!searchText.isEmpty).
         Date range: \(dateRange.rawValue), movement types: \(movementTypes.isEmpty ? "none" : movementTypes).
         Available read-only guidance: explain movement history, date range, filter chips, search, detail rows, QR scan entry, and new movement entry point. Do not create movements, launch scanners, or change filters directly.
         """
@@ -395,36 +409,32 @@ struct WarehouseMovementsPage: View {
     // MARK: - Helpers
 
     private func movementIcon(_ type: String) -> String {
-        switch type {
-        case "transfer": "arrow.left.arrow.right"
-        case "receive": "arrow.down.circle"
-        case "consume": "flame"
-        case "return_to_supplier": "arrow.uturn.left"
-        case "adjustment": "plus.forwardslash.minus"
-        default: "arrow.left.arrow.right"
-        }
+        StockMovement.MovementType.systemImageName(forRawValue: type)
     }
 
     private func movementColor(_ type: String) -> Color {
-        switch type {
-        case "transfer": .blue
-        case "receive": .green
-        case "consume": .orange
-        case "return_to_supplier": .purple
-        case "adjustment": .gray
-        default: .blue
+        Self.movementColor(for: type)
+    }
+
+    private static func movementColor(for type: String) -> Color {
+        switch StockMovement.MovementType(rawValue: type) {
+        case .transfer, .restockFromShop:
+            return .blue
+        case .receive, .receiving, .receivingStaged, .receipt:
+            return .green
+        case .consume, .pull, .usage, .jobPull:
+            return .orange
+        case .stockReturn, .returnToSupplier:
+            return .purple
+        case .adjustment, .addStock, .writeOff:
+            return .gray
+        case nil:
+            return .blue
         }
     }
 
     private func movementLabel(_ type: String) -> String {
-        switch type {
-        case "transfer": "Transfer"
-        case "receive": "Received"
-        case "consume": "Consumed"
-        case "return_to_supplier": "Returned"
-        case "adjustment": "Adjustment"
-        default: type.capitalized
-        }
+        StockMovement.MovementType.displayName(forRawValue: type)
     }
 
     private func auditSummaryText(for movement: WarehouseService.MovementRow) -> String? {
@@ -570,13 +580,6 @@ private struct MovementDetailSheet: View {
     }
 
     private func movementLabel(_ type: String) -> String {
-        switch type {
-        case "transfer": "Transfer"
-        case "receive": "Received"
-        case "consume": "Consumed"
-        case "return_to_supplier": "Returned"
-        case "adjustment": "Adjustment"
-        default: type.capitalized
-        }
+        StockMovement.MovementType.displayName(forRawValue: type)
     }
 }

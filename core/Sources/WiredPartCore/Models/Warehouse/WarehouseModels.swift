@@ -41,6 +41,71 @@ public struct StockMovement: Codable, FetchableRecord, MutablePersistableRecord,
             .consume, .pull, .usage, .jobPull
         ]
 
+        /// Canonical movement types exposed as top-level filters in stock movement UI flows.
+        /// Picker/list/history screens should derive their options from this source instead
+        /// of hard-coding raw `movement_type` strings.
+        public static let primaryUIFilterTypes: [MovementType] = [
+            .transfer, .receive, .consume, .returnToSupplier, .adjustment
+        ]
+
+        public var displayName: String {
+            switch self {
+            case .transfer:
+                return "Transfer"
+            case .receive, .receiving, .receipt:
+                return "Received"
+            case .receivingStaged:
+                return "Receiving Staged"
+            case .stockReturn:
+                return "Returned"
+            case .returnToSupplier:
+                return "Returned"
+            case .adjustment:
+                return "Adjustment"
+            case .addStock:
+                return "Add Stock"
+            case .writeOff:
+                return "Write Off"
+            case .consume, .pull, .usage, .jobPull:
+                return "Consumed"
+            case .restockFromShop:
+                return "Restock From Shop"
+            }
+        }
+
+        public var systemImageName: String {
+            switch self {
+            case .transfer, .restockFromShop:
+                return "arrow.left.arrow.right"
+            case .receive, .receiving, .receivingStaged, .receipt:
+                return "arrow.down.circle"
+            case .consume, .pull, .usage, .jobPull:
+                return "flame"
+            case .stockReturn, .returnToSupplier:
+                return "arrow.uturn.left"
+            case .adjustment, .addStock, .writeOff:
+                return "plus.forwardslash.minus"
+            }
+        }
+
+        public static func displayName(forRawValue rawValue: String) -> String {
+            if let type = MovementType(rawValue: rawValue) {
+                return type.displayName
+            }
+
+            return rawValue
+                .split(separator: "_")
+                .map { part in
+                    guard let first = part.first else { return "" }
+                    return first.uppercased() + part.dropFirst().lowercased()
+                }
+                .joined(separator: " ")
+        }
+
+        public static func systemImageName(forRawValue rawValue: String) -> String {
+            MovementType(rawValue: rawValue)?.systemImageName ?? "arrow.triangle.2.circlepath"
+        }
+
         /// SQL literal list for static movement-type `IN (...)` clauses.
         /// Empty input deliberately produces a no-match list instead of invalid
         /// `IN ()` SQL so callers can safely compose from filtered type arrays.
