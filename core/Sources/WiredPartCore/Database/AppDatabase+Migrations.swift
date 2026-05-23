@@ -131,6 +131,7 @@ extension AppDatabase {
         registerMigration092VehicleLocationLatestLookupIndex(&migrator)
         registerMigration093DailyReportClockOutQuestion(&migrator)
         registerMigration094ShortTermPipelineCategoryOverride(&migrator)
+        registerMigration095JobStageTemplates(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5396,6 +5397,85 @@ extension AppDatabase {
                 ON jobs(short_term_pipeline_category)
                 WHERE deleted_at IS NULL
                 """)
+        }
+    }
+
+    // MARK: - Migration 095: Job Stage Templates
+
+    private static func registerMigration095JobStageTemplates(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("095_job_stage_templates") { db in
+            try db.create(table: "job_stage_templates") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("name", .text).notNull()
+                t.column("is_default", .integer).notNull().defaults(to: 0)
+                t.column("archived_at", .text)
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            }
+            try db.execute(sql: """
+                CREATE UNIQUE INDEX idx_job_stage_templates_one_default
+                ON job_stage_templates(is_default)
+                WHERE is_default = 1 AND archived_at IS NULL
+                """)
+            try db.execute(sql: """
+                INSERT INTO job_stage_templates (name, is_default, created_at, updated_at)
+                VALUES ('Default', 1, datetime('now'), datetime('now'))
+                """)
+            let defaultTemplateId = db.lastInsertedRowID
+
+            let stageColumns = try db.columns(in: "job_stages").map(\.name)
+            if !stageColumns.contains("template_id") {
+                try db.alter(table: "job_stages") { t in
+                    t.add(column: "template_id", .integer).references("job_stage_templates")
+                }
+            }
+            if !stageColumns.contains("updated_at") {
+                try db.alter(table: "job_stages") { t in
+                    t.add(column: "updated_at", .text)
+                }
+            }
+            try db.execute(sql: "UPDATE job_stages SET template_id = ? WHERE template_id IS NULL", arguments: [defaultTemplateId])
+            try db.execute(sql: "UPDATE job_stages SET updated_at = COALESCE(updated_at, created_at, datetime('now'))")
+            try db.execute(sql: """
+                CREATE UNIQUE INDEX idx_job_stages_template_sort_active
+                ON job_stages(template_id, sort_order)
+                WHERE deleted_at IS NULL
+                """)
+
+            let jobColumns = try db.columns(in: "jobs").map(\.name)
+            if !jobColumns.contains("stage_template_id") {
+                try db.alter(table: "jobs") { t in
+                    t.add(column: "stage_template_id", .integer).references("job_stage_templates")
+                }
+            }
+            try db.execute(sql: "UPDATE jobs SET stage_template_id = ? WHERE stage_template_id IS NULL", arguments: [defaultTemplateId])
+            try db.execute(sql: "CREATE INDEX idx_jobs_stage_template ON jobs(stage_template_id)")
+
+            let mappingColumns = try db.columns(in: "job_stage_category_map").map(\.name)
+            if !mappingColumns.contains("template_id") {
+                try db.alter(table: "job_stage_category_map") { t in
+                    t.add(column: "template_id", .integer).references("job_stage_templates")
+                }
+            }
+            if !mappingColumns.contains("updated_at") {
+                try db.alter(table: "job_stage_category_map") { t in
+                    t.add(column: "updated_at", .text)
+                }
+            }
+            try db.execute(sql: """
+                UPDATE job_stage_category_map
+                SET template_id = COALESCE(
+                    template_id,
+                    (SELECT template_id FROM job_stages WHERE job_stages.id = job_stage_category_map.stage_id),
+                    ?
+                ),
+                updated_at = COALESCE(updated_at, created_at, datetime('now'))
+                """, arguments: [defaultTemplateId])
+            try db.execute(sql: """
+                CREATE UNIQUE INDEX idx_jscm_template_category
+                ON job_stage_category_map(template_id, category_id)
+                """)
+            try db.execute(sql: "CREATE INDEX idx_jscm_template ON job_stage_category_map(template_id)")
         }
     }
 }

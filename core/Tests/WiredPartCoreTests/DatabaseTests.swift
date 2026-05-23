@@ -97,9 +97,9 @@ struct DatabaseTests {
         }
     }
 
-    @Test("Schema version is 89")
+    @Test("Schema version is 95")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 89)
+        #expect(AppDatabase.schemaVersion == 95)
     }
 
     @Test("Migration 089 creates vehicle location logs table and latest-location indexes")
