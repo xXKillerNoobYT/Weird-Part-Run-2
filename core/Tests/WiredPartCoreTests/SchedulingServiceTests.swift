@@ -3646,7 +3646,8 @@ struct SchedulingServiceTests {
         )
         try env.scheduling.updateTimeOffStatus(
             id: requestId,
-            status: "denied"
+            status: "denied",
+            approvedBy: env.adminUserId
         )
 
         let dispatchId = try env.scheduling.createDispatch(
