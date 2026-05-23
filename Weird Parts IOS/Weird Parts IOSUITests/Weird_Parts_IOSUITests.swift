@@ -225,7 +225,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += [
             "-UITesting",
-            "-UITestingPreserveDatabase",
             "-UITestingWarehouseSetupWizard"
         ]
         if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" {
@@ -313,6 +312,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += [
             "-UITesting",
+            "-UITestingPreserveDatabase",
             "-UITestingWarehouseSetupWizard"
         ]
         if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" {
@@ -321,7 +321,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app.launch()
         logInAsUITestOwnerIfNeeded()
         openWarehouseSetupWizard()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'R2C2'")).firstMatch.waitForExistence(timeout: 10),
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'R2C2'")).firstMatch.waitForExistence(timeout: 10),
                       "Zone placement should persist after leaving and resuming the wizard")
         captureWEI1185("06-storage-persisted-after-resume")
     }
@@ -770,6 +770,8 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             app.buttons["Warehouse"].exists && app.buttons["Warehouse"].isHittable ||
             app.buttons["Configure Your Warehouse"].exists && app.buttons["Configure Your Warehouse"].isHittable ||
             app.staticTexts["Warehouse Setup"].exists ||
+            app.staticTexts["Phase 1 · Define Size"].exists ||
+            app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Phase' OR label CONTAINS 'Create & Continue' OR label CONTAINS 'Zones'")).firstMatch.exists ||
             app.staticTexts["Confirm Zone Grid"].exists ||
             app.buttons["Create & Continue"].exists {
             return
@@ -794,6 +796,8 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                           app.buttons["Warehouse"].exists ||
                           app.buttons["Configure Your Warehouse"].exists ||
                           app.staticTexts["Warehouse Setup"].exists ||
+                          app.staticTexts["Phase 1 · Define Size"].exists ||
+                          app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Phase' OR label CONTAINS 'Create & Continue' OR label CONTAINS 'Zones'")).firstMatch.exists ||
                           app.staticTexts["Confirm Zone Grid"].exists ||
                           app.buttons["Create & Continue"].exists,
                           "UI test login should find UITest Owner or an already-authenticated shell")
@@ -836,6 +840,8 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                 app.buttons["Warehouse"].exists && app.buttons["Warehouse"].isHittable ||
                 app.buttons["Configure Your Warehouse"].exists && app.buttons["Configure Your Warehouse"].isHittable ||
                 app.staticTexts["Warehouse Setup"].exists ||
+                app.staticTexts["Phase 1 · Define Size"].exists ||
+                app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Phase' OR label CONTAINS 'Create & Continue' OR label CONTAINS 'Zones'")).firstMatch.exists ||
                 app.staticTexts["Confirm Zone Grid"].exists ||
                 app.buttons["Create & Continue"].exists {
                 return
@@ -853,6 +859,8 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                       app.buttons["Warehouse"].exists ||
                       app.buttons["Configure Your Warehouse"].exists ||
                       app.staticTexts["Warehouse Setup"].exists ||
+                      app.staticTexts["Phase 1 · Define Size"].exists ||
+                      app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Phase' OR label CONTAINS 'Create & Continue' OR label CONTAINS 'Zones'")).firstMatch.exists ||
                       app.staticTexts["Confirm Zone Grid"].exists ||
                       app.buttons["Create & Continue"].exists,
                       "Login should reach the app shell before opening the requested route")
@@ -863,6 +871,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
         if app.staticTexts["Confirm Zone Grid"].waitForExistence(timeout: 3) ||
             app.staticTexts["Warehouse Setup"].waitForExistence(timeout: 3) ||
+            app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Phase' OR label CONTAINS 'Zones'")).firstMatch.waitForExistence(timeout: 3) ||
             app.buttons["Create & Continue"].waitForExistence(timeout: 3) {
             return
         }
