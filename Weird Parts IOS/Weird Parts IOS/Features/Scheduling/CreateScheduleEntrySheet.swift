@@ -7,6 +7,8 @@ struct CreateScheduleEntrySheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let date: String
+    var initialJobId: Int64? = nil
+    var initialJobName: String? = nil
     var onSave: () -> Void
 
     @State private var jobs: [JobsService.JobListItem] = []
@@ -23,7 +25,23 @@ struct CreateScheduleEntrySheet: View {
         NavigationStack {
             Form {
                 Section("Job") {
-                    if jobs.isEmpty {
+                    if let initialJobId {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(initialJobName ?? selectedJobName(for: initialJobId))
+                                    .foregroundStyle(.primary)
+                                Text("Opened from this job's calendar")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                                .accessibilityHidden(true)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Selected job, \(initialJobName ?? selectedJobName(for: initialJobId))")
+                    } else if jobs.isEmpty {
                         Text("No active jobs")
                             .foregroundStyle(.secondary)
                     } else {
@@ -88,7 +106,12 @@ struct CreateScheduleEntrySheet: View {
             }
             .interactiveDismissDisabled(isSaving)
             .task { loadJobs() }
+            .onAppear { selectedJobId = initialJobId }
         }
+    }
+
+    private func selectedJobName(for jobId: Int64) -> String {
+        jobs.first(where: { $0.id == jobId })?.jobName ?? "Selected Job"
     }
 
     private func loadJobs() {
@@ -97,6 +120,9 @@ struct CreateScheduleEntrySheet: View {
             return
         }
         jobs = (try? service.listJobs(status: "active", limit: 200)) ?? []
+        if let initialJobId {
+            selectedJobId = initialJobId
+        }
     }
 
     private func saveEntry() {
