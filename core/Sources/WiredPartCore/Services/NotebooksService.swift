@@ -838,13 +838,75 @@ public final class NotebooksService: Sendable {
         }
     }
 
-    /// Update a block entry's content and/or block data.
-    public func updateBlockEntry(entryId: Int64, content: String?, blockData: String?) throws {
+    /// Update a block entry's visible fields and preserve the previous values in the sync/audit log.
+    public func updateBlockEntry(
+        entryId: Int64,
+        title: String? = nil,
+        content: String?,
+        blockData: String?,
+        headingLevel: Int? = nil,
+        checklistItems: String? = nil
+    ) throws {
         try db.writer.write { dbConn in
-            try dbConn.execute(sql: """
-                UPDATE notebook_entries SET content = ?, block_data = ?, updated_at = datetime('now')
+            guard let current = try Row.fetchOne(dbConn, sql: """
+                SELECT title, content, block_data, heading_level, checklist_items
+                FROM notebook_entries
                 WHERE id = ? AND deleted_at IS NULL
-                """, arguments: [content, blockData, entryId])
+                """, arguments: [entryId]) else { return }
+
+            let oldTitle: String = current["title"] ?? ""
+            let oldContent: String? = current["content"]
+            let oldBlockData: String? = current["block_data"]
+            let oldHeadingLevel: Int? = current["heading_level"]
+            let oldChecklistItems: String? = current["checklist_items"]
+
+            let newTitle = title ?? oldTitle
+            let newContent = content
+            let newBlockData = blockData
+            let newHeadingLevel = headingLevel ?? oldHeadingLevel
+            let newChecklistItems = checklistItems ?? oldChecklistItems
+
+            try dbConn.execute(sql: """
+                UPDATE notebook_entries
+                SET title = ?, content = ?, block_data = ?, heading_level = ?, checklist_items = ?, updated_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [newTitle, newContent, newBlockData, newHeadingLevel, newChecklistItems, entryId])
+
+            var changedFields: [String: Any] = [:]
+            var oldValues: [String: Any] = [:]
+            if newTitle != oldTitle {
+                changedFields["title"] = newTitle
+                oldValues["title"] = oldTitle
+            }
+            if newContent != oldContent {
+                changedFields["content"] = newContent ?? NSNull()
+                oldValues["content"] = oldContent ?? NSNull()
+            }
+            if newBlockData != oldBlockData {
+                changedFields["block_data"] = newBlockData ?? NSNull()
+                oldValues["block_data"] = oldBlockData ?? NSNull()
+            }
+            if newHeadingLevel != oldHeadingLevel {
+                changedFields["heading_level"] = newHeadingLevel ?? NSNull()
+                oldValues["heading_level"] = oldHeadingLevel ?? NSNull()
+            }
+            if newChecklistItems != oldChecklistItems {
+                changedFields["checklist_items"] = newChecklistItems ?? NSNull()
+                oldValues["checklist_items"] = oldChecklistItems ?? NSNull()
+            }
+
+            if !changedFields.isEmpty {
+                try dbConn.execute(sql: """
+                    INSERT INTO _change_log
+                        (device_id, table_name, record_id, operation, changed_fields, old_values)
+                    VALUES (?, 'notebook_entries', ?, 'UPDATE', ?, ?)
+                    """, arguments: [
+                        DeviceIdentity.current,
+                        entryId,
+                        Self.auditJSON(changedFields),
+                        Self.auditJSON(oldValues)
+                    ])
+            }
         }
     }
 
@@ -1476,6 +1538,15 @@ public final class NotebooksService: Sendable {
     // =========================================================================
     // MARK: - Internal Helpers
     // =========================================================================
+
+    /// Encode audit dictionaries for `_change_log`, preserving explicit nulls for cleared fields.
+    private static func auditJSON(_ dict: [String: Any]) -> String? {
+        guard !dict.isEmpty,
+              let data = try? JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys]) else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
+    }
 
     /// Detect whether a GRDB/SQLite error indicates a missing table.
     private func isTableNotFoundError(_ error: Error) -> Bool {

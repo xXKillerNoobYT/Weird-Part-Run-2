@@ -573,6 +573,25 @@ struct IOSNotebookDetailPage: View {
                 Label("Delete", systemImage: "trash")
             }
         }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button {
+                activeSheet = .editEntry(entry)
+            } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+            .tint(.blue)
+
+            Button(role: .destructive) {
+                pendingDelete = .entry(entry.id)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            activeSheet = .editEntry(entry)
+        }
+        .accessibilityHint("Tap to edit this block. Long press or swipe for more actions.")
     }
 
     // MARK: - Classification UI

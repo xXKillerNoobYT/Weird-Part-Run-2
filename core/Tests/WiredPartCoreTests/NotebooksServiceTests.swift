@@ -130,6 +130,54 @@ struct NotebooksServiceTests {
         #expect(updated?.content == "Revised content")
     }
 
+    @Test("Editing a block entry can update the visible title and preserves audit history")
+    func testUpdateBlockEntryTitleAndHistory() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Editable Block",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId, groupId: nil, name: "Punch List"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "text",
+            title: "Well",
+            content: "Original note",
+            createdBy: env.adminUserId
+        )
+
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId,
+            title: "Well edited",
+            content: "Edited note",
+            blockData: nil
+        )
+
+        let hierarchy = try env.notebooks.getNotebookHierarchy(notebookId: nbId)
+        let updated = hierarchy.ungroupedSections.flatMap(\.entries).first { $0.id == entryId }
+        #expect(updated?.title == "Well edited")
+        #expect(updated?.content == "Edited note")
+
+        let audit = try env.db.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: """
+                SELECT changed_fields, old_values FROM _change_log
+                WHERE table_name = 'notebook_entries'
+                  AND record_id = ?
+                  AND operation = 'UPDATE'
+                ORDER BY id DESC
+                LIMIT 1
+                """, arguments: [entryId])
+        }
+        #expect((audit?["changed_fields"] as String?)?.contains("Well edited") == true)
+        #expect((audit?["old_values"] as String?)?.contains("Well") == true)
+        #expect((audit?["changed_fields"] as String?)?.contains("Edited note") == true)
+        #expect((audit?["old_values"] as String?)?.contains("Original note") == true)
+    }
+
     // MARK: - 5. Delete Entry (Soft Delete)
 
     @Test("Soft-delete a block entry removes it from hierarchy")
