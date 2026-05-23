@@ -35,10 +35,22 @@ class PE047CategoriesColorPickerTests(unittest.TestCase):
         self.assertIn('Label("Add New Variant", systemImage: "plus")', self.picker)
         self.assertIn('Text("No variants in the shared pool. Add a variant to create catalog entries.")', self.picker)
 
+    def test_picker_sheet_state_uses_variant_terminology(self):
+        self.assertIn("case addVariant", self.picker)
+        self.assertIn("activeSheet = .addVariant", self.picker)
+        self.assertNotIn("case addColor", self.picker)
+        self.assertNotIn("activeSheet = .addColor", self.picker)
+
     def test_color_form_creates_hex_null_for_named_only_variants(self):
         self.assertIn('Text("Named-only variants save without a hex value', self.forms)
         self.assertIn('try service.createColor(name: trimmedName, hexCode: hex, partNumber: pn, sortOrder: sortOrder)', self.forms)
         self.assertNotIn('try service.createColor(name: trimmedName, hexCode: hex ?? "", partNumber: pn, sortOrder: sortOrder)', self.forms)
+
+    def test_color_form_uses_variant_title_and_treats_empty_hex_as_named_only(self):
+        self.assertIn('.navigationTitle(color == nil ? "New Variant" : "Edit Variant")', self.forms)
+        self.assertIn('if let hex = c.hexCode, !hex.trimmingCharacters(in: .whitespaces).isEmpty {', self.forms)
+        self.assertNotIn('.navigationTitle(color == nil ? "New Color" : "Edit Color")', self.forms)
+        self.assertNotIn('if let hex = c.hexCode {\n                        hasColor = true', self.forms)
 
 
 if __name__ == "__main__":

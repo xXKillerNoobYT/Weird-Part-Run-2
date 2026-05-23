@@ -14,7 +14,7 @@ struct CategoriesColorPicker: View {
     @State private var isLoading = true
     @State private var loadError: String?
     private enum ActiveSheet: String, Identifiable {
-        case addColor
+        case addVariant
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet?
@@ -32,7 +32,7 @@ struct CategoriesColorPicker: View {
                     .font(.headline)
                 Spacer()
                 Button {
-                    activeSheet = .addColor
+                    activeSheet = .addVariant
                 } label: {
                     Label("Add New Variant", systemImage: "plus")
                         .font(.caption)
@@ -71,7 +71,7 @@ struct CategoriesColorPicker: View {
         .task { await loadColors() }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
-            case .addColor:
+            case .addVariant:
                 ColorFormSheet(color: nil) {
                     await loadColors()
                     await onRefresh()

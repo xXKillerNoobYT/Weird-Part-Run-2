@@ -449,7 +449,7 @@ struct ColorFormSheet: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .accessibilityIdentifier("colorFormSheet")
-            .navigationTitle(color == nil ? "New Color" : "Edit Color")
+            .navigationTitle(color == nil ? "New Variant" : "Edit Variant")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -475,7 +475,7 @@ struct ColorFormSheet: View {
                     name = c.name
                     partNumber = c.partNumber ?? ""
                     sortOrder = c.sortOrder
-                    if let hex = c.hexCode {
+                    if let hex = c.hexCode, !hex.trimmingCharacters(in: .whitespaces).isEmpty {
                         hasColor = true
                         selectedColor = Color(hex: hex) ?? .gray
                     } else {
