@@ -11,6 +11,8 @@ import GRDB
 /// Ported from: Jobs & Labor feature area (Phases 4, 4.5, 15)
 public final class JobsService: Sendable {
     private let db: AppDatabase
+    private static let warehouseClockJobNumber = "__SHOP_WAREHOUSE__"
+    private static let warehouseClockJobName = "Shop / Warehouse"
 
     public init(db: AppDatabase) {
         self.db = db
@@ -915,6 +917,45 @@ public final class JobsService: Sendable {
                     VALUES (?, ?, datetime('now'), ?, ?, 'clocked_in', datetime('now'))
                     """,
                 arguments: [userId, jobId, gpsLat, gpsLng]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Clock a user into the internal Shop / Warehouse time bucket.
+    ///
+    /// The labor_entries schema requires a job_id, while the iOS clock page
+    /// exposes Shop / Warehouse as a pinned non-job option. This method bridges
+    /// that gap by creating/reusing a hidden active job row that is not shown in
+    /// the normal clock job picker, then creating the labor entry against it.
+    @discardableResult
+    public func clockInToWarehouse(
+        userId: Int64,
+        gpsLat: Double? = nil,
+        gpsLng: Double? = nil
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            let existing = try Int.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT COUNT(*) FROM labor_entries
+                    WHERE user_id = ? AND status = 'clocked_in' AND deleted_at IS NULL
+                    """,
+                arguments: [userId]
+            ) ?? 0
+
+            if existing > 0 {
+                throw JobsError.alreadyClockedIn(userId: userId, jobId: 0)
+            }
+
+            let warehouseJobId = try Self.ensureWarehouseClockJob(dbConn: dbConn, createdBy: userId)
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_in_gps_lat, clock_in_gps_lng, status, created_at)
+                    VALUES (?, ?, datetime('now'), ?, ?, 'clocked_in', datetime('now'))
+                    """,
+                arguments: [userId, warehouseJobId, gpsLat, gpsLng]
             )
             return dbConn.lastInsertedRowID
         }
@@ -1951,9 +1992,11 @@ public final class JobsService: Sendable {
                                     THEN ', ' || city ELSE '' END AS full_address,
                            gps_lat, gps_lng, status
                     FROM jobs
-                    WHERE status IN ('active', 'in_progress') AND deleted_at IS NULL
+                    WHERE status IN ('active', 'in_progress')
+                      AND deleted_at IS NULL
+                      AND job_number != ?
                     ORDER BY job_name ASC
-                    """)
+                    """, arguments: [Self.warehouseClockJobNumber])
                 return rows.map { row in
                     ClockJobRow(
                         id: row["id"] ?? 0,
@@ -2000,6 +2043,33 @@ public final class JobsService: Sendable {
             if isTableNotFoundError(error) { return 0.0 }
             throw error
         }
+    }
+
+    private static func ensureWarehouseClockJob(dbConn: Database, createdBy: Int64?) throws -> Int64 {
+        if let id = try Int64.fetchOne(
+            dbConn,
+            sql: "SELECT id FROM jobs WHERE job_number = ? AND deleted_at IS NULL LIMIT 1",
+            arguments: [warehouseClockJobNumber]
+        ) {
+            return id
+        }
+
+        try dbConn.execute(
+            sql: """
+                INSERT INTO jobs
+                (job_number, job_name, customer_name, status, priority, job_type,
+                 created_by, notes, job_classification, created_at, updated_at)
+                VALUES (?, ?, ?, 'active', 'normal', 'internal', ?, ?, 'internal', datetime('now'), datetime('now'))
+                """,
+            arguments: [
+                warehouseClockJobNumber,
+                warehouseClockJobName,
+                "Internal",
+                createdBy,
+                "Internal time bucket for Shop / Warehouse clock entries."
+            ]
+        )
+        return dbConn.lastInsertedRowID
     }
 
     /// List active/in-progress jobs, optionally excluding a specific job ID.
