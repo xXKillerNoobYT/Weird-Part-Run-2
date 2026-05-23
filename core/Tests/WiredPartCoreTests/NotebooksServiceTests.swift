@@ -187,6 +187,77 @@ struct NotebooksServiceTests {
         #expect(oldValues["title"] as? String == "Original heading")
     }
 
+    @Test("Creating checklist block entries stores checklist items in the canonical column")
+    func testCreateChecklistBlockEntryStoresChecklistItems() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Checklist Blocks",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId, groupId: nil, name: "Checklist"
+        )
+        let checklistJSON = """
+        [{"text":"Verify breaker labels","checked":"false"}]
+        """
+
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "checklist",
+            title: "Commissioning",
+            content: nil,
+            blockData: nil,
+            checklistItems: checklistJSON,
+            createdBy: env.adminUserId
+        )
+
+        let stored = try env.db.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: """
+                SELECT block_data, checklist_items
+                FROM notebook_entries
+                WHERE id = ?
+                """, arguments: [entryId])
+        }
+        #expect((stored?["block_data"] as String?) == nil)
+        #expect((stored?["checklist_items"] as String?) == checklistJSON)
+
+        let hierarchy = try env.notebooks.getNotebookHierarchy(notebookId: nbId)
+        let entry = hierarchy.ungroupedSections.flatMap(\.entries).first { $0.id == entryId }
+        #expect(entry?.checklistItems == checklistJSON)
+    }
+
+    @Test("Updating block entries requires manage_notebooks permission")
+    func testUpdateBlockEntryRequiresManageNotebooksPermission() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Permissioned Blocks",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId, groupId: nil, name: "Main"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "text",
+            title: "Protected",
+            content: "Original",
+            createdBy: env.adminUserId
+        )
+
+        #expect(throws: ServicePermissionGate.GateError.self) {
+            try env.notebooks.updateBlockEntry(
+                entryId: entryId,
+                content: "Unauthorized",
+                blockData: nil,
+                updatedBy: 999_999
+            )
+        }
+    }
+
     // MARK: - 5. Delete Entry (Soft Delete)
 
     @Test("Soft-delete a block entry removes it from hierarchy")
