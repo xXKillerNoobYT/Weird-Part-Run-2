@@ -596,7 +596,7 @@ public final class SchedulingService: Sendable {
                     try dbConn.execute(
                         sql: """
                             UPDATE schedule_exceptions
-                            SET is_approved = ?
+                            SET is_approved = ?, approved_by = NULL, approved_at = NULL
                             WHERE request_group = ? AND exception_type = 'time_off' AND deleted_at IS NULL
                             """,
                         arguments: [isApproved, group]
@@ -605,7 +605,7 @@ public final class SchedulingService: Sendable {
                     try dbConn.execute(
                         sql: """
                             UPDATE schedule_exceptions
-                            SET is_approved = ?
+                            SET is_approved = ?, approved_by = NULL, approved_at = NULL
                             WHERE id = ? AND deleted_at IS NULL
                             """,
                         arguments: [isApproved, id]

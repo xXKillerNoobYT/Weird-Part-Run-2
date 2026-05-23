@@ -2623,12 +2623,13 @@ struct SchedulingServiceTests {
             status: "pending"
         )
 
-        // Verify it's back to pending
+        // Verify it's back to pending and no stale approver is surfaced
         let requests = try env.scheduling.listTimeOffRequests(
             userId: env.adminUserId,
             status: "pending"
         )
         #expect(requests.count == 1)
+        #expect(requests.first?.approvedByName == nil)
     }
 
     // MARK: - Crew Utilization Caps at 1.0
