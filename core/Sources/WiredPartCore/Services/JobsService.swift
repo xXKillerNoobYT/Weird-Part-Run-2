@@ -2895,9 +2895,16 @@ public final class JobsService: Sendable {
             }
             let currentTemplateId: Int64? = jobRow["stage_template_id"]
             let currentStageId: Int64? = jobRow["current_stage_id"]
-            let stageStillBelongs = currentStageId.flatMap { stageId in
-                try? Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM job_stages WHERE id = ? AND template_id = ? AND deleted_at IS NULL", arguments: [stageId, templateId])
-            } ?? 0
+            let stageStillBelongs: Int
+            if let currentStageId {
+                stageStillBelongs = try Int.fetchOne(
+                    dbConn,
+                    sql: "SELECT COUNT(*) FROM job_stages WHERE id = ? AND template_id = ? AND deleted_at IS NULL",
+                    arguments: [currentStageId, templateId]
+                ) ?? 0
+            } else {
+                stageStillBelongs = 0
+            }
             let replacementStageId: Int64?
             let preservesCurrentStage = stageStillBelongs > 0
             if preservesCurrentStage {

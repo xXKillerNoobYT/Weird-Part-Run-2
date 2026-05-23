@@ -840,8 +840,8 @@ struct JobsServiceTests {
         #expect(stages.map(\.name).contains("Rough-in"))
     }
 
-    @Test("job stage templates default backfill assigns existing jobs to default stages")
-    func testJobStageTemplateDefaultBackfill() throws {
+    @Test("job stage templates seed default template and new jobs inherit it")
+    func testJobStageTemplateDefaultSeedAndNewJobAssignment() throws {
         let env = try E2ETestHelpers.setUp()
         let jobId = try E2ETestHelpers.seedJob(env)
 

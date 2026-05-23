@@ -46,6 +46,8 @@ public final class OrdersService: Sendable {
         case invalidQuantity(Int)
         case requiredFieldEmpty(String)
         case missingJPOReference(lineId: Int64)
+        case stageNotFound(Int64)
+        case stageTemplateMismatch(stageId: Int64, jobId: Int64)
 
         public var errorDescription: String? {
             switch self {
@@ -77,6 +79,8 @@ public final class OrdersService: Sendable {
             case .invalidQuantity(let qty): return "Quantity must be greater than zero (got \(qty))"
             case .requiredFieldEmpty(let field): return "\(field) is required and cannot be empty"
             case .missingJPOReference(let lineId): return "JPO line #\(lineId) is missing a required jpo_id reference"
+            case .stageNotFound(let id): return "Job stage #\(id) not found or has been deleted"
+            case .stageTemplateMismatch(let stageId, let jobId): return "Job stage #\(stageId) does not belong to job #\(jobId)'s assigned stage template"
             }
         }
     }
@@ -2691,19 +2695,33 @@ public final class OrdersService: Sendable {
     /// and auto-releases held parts in the next stage to procurement.
     public func markStageComplete(jobId: Int64, stageId: Int64) throws {
         try db.writer.write { dbConn in
-            // Get the completed stage's sort_order and template.
-            let stageRow = try Row.fetchOne(dbConn, sql: """
+            guard let jobRow = try Row.fetchOne(dbConn, sql: """
+                SELECT stage_template_id FROM jobs WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [jobId]) else {
+                throw OrdersError.jobNotFound(jobId)
+            }
+            let jobTemplateId: Int64? = jobRow["stage_template_id"]
+
+            // Get the completed stage's sort_order and template. Missing/deleted stages
+            // are domain errors; never fall back to order 0 / nil because that can move a
+            // job through the wrong template.
+            guard let stageRow = try Row.fetchOne(dbConn, sql: """
                 SELECT sort_order, template_id FROM job_stages WHERE id = ? AND deleted_at IS NULL
-                """, arguments: [stageId])
-            let completedOrder: Int = stageRow?["sort_order"] ?? 0
-            let templateId: Int64? = stageRow?["template_id"]
+                """, arguments: [stageId]) else {
+                throw OrdersError.stageNotFound(stageId)
+            }
+            let completedOrder: Int = stageRow["sort_order"] ?? 0
+            let templateId: Int64? = stageRow["template_id"]
+            guard jobTemplateId == templateId else {
+                throw OrdersError.stageTemplateMismatch(stageId: stageId, jobId: jobId)
+            }
 
             // Find the next stage
             let nextStageId: Int64? = try Int64.fetchOne(dbConn, sql: """
                 SELECT id FROM job_stages
-                WHERE sort_order > ? AND deleted_at IS NULL AND (template_id = ? OR ? IS NULL)
+                WHERE sort_order > ? AND deleted_at IS NULL AND template_id = ?
                 ORDER BY sort_order ASC LIMIT 1
-                """, arguments: [completedOrder, templateId, templateId])
+                """, arguments: [completedOrder, templateId])
 
             // Update job's current stage to the next stage (or keep at completed if last)
             try dbConn.execute(sql: """
@@ -2715,8 +2733,8 @@ public final class OrdersService: Sendable {
             if let nextId = nextStageId {
                 // Get category IDs for the next stage
                 let categoryIds = try Int64.fetchAll(dbConn, sql: """
-                    SELECT category_id FROM job_stage_category_map WHERE stage_id = ? AND (template_id = ? OR ? IS NULL)
-                    """, arguments: [nextId, templateId, templateId])
+                    SELECT category_id FROM job_stage_category_map WHERE stage_id = ? AND template_id = ?
+                    """, arguments: [nextId, templateId])
 
                 if !categoryIds.isEmpty {
                     // Release JPO line items whose part category matches the next stage
@@ -2756,7 +2774,12 @@ public final class OrdersService: Sendable {
             let defaultTemplateId = try Int64.fetchOne(dbConn, sql: "SELECT id FROM job_stage_templates WHERE is_default = 1 AND archived_at IS NULL ORDER BY id ASC LIMIT 1")
             let templateId: Int64?
             if let stageId {
-                templateId = try Int64.fetchOne(dbConn, sql: "SELECT template_id FROM job_stages WHERE id = ?", arguments: [stageId]) ?? defaultTemplateId
+                guard let stageTemplateId = try Int64.fetchOne(dbConn, sql: """
+                    SELECT template_id FROM job_stages WHERE id = ? AND deleted_at IS NULL
+                    """, arguments: [stageId]) else {
+                    throw OrdersError.stageNotFound(stageId)
+                }
+                templateId = stageTemplateId
             } else {
                 templateId = defaultTemplateId
             }
