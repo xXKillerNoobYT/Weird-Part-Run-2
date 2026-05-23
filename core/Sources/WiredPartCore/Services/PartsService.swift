@@ -5965,12 +5965,28 @@ public final class PartsService: Sendable {
         public var resolution: PartsImportConflictResolution = .ask
     }
 
+    /// Metadata that ties an import preview/commit to a durable source artifact.
+    public struct PartsImportSourceMetadata: Sendable {
+        public var sourceKind: String
+        public var filename: String?
+        public var sourceHash: String?
+        public var userId: Int64?
+
+        public init(sourceKind: String, filename: String? = nil, sourceHash: String? = nil, userId: Int64? = nil) {
+            self.sourceKind = sourceKind
+            self.filename = filename
+            self.sourceHash = sourceHash
+            self.userId = userId
+        }
+    }
+
     /// Preview generated before any import writes occur.
     public struct PartsImportPreview: Sendable {
         public var newParts: [PartsImportParsedRow] = []
         public var conflicts: [PartsImportConflict] = []
         public var errors: [PartsImportError] = []
         public var totalRows: Int = 0
+        public var source: PartsImportSourceMetadata?
     }
 
     /// Result of an atomic import commit.
@@ -5978,6 +5994,7 @@ public final class PartsService: Sendable {
         public let created: Int
         public let updated: Int
         public let skipped: Int
+        public let importSessionId: Int64?
     }
 
     /// Parse and validate a parts CSV without changing database state.
@@ -6096,121 +6113,199 @@ public final class PartsService: Sendable {
     /// errors, no writes are attempted. If any database write fails mid-import,
     /// GRDB rolls back the entire transaction, preventing partial bad state.
     public func commitPartsImportCSV(_ preview: PartsImportPreview) throws -> PartsImportCommitResult {
-        guard preview.errors.isEmpty else {
-            let first = preview.errors[0]
-            throw PartsError.invalidInput("Import has validation errors; first error row \(first.rowNumber): \(first.message)")
+        let importSessionId = try createImportSessionIfNeeded(for: preview)
+        do {
+            guard preview.errors.isEmpty else {
+                let first = preview.errors[0]
+                throw PartsError.invalidInput("Import has validation errors; first error row \(first.rowNumber): \(first.message)")
+            }
+
+            var created = 0
+            var updated = 0
+            var skipped = 0
+
+            try db.writer.write { dbConn in
+                func findOrCreateCategoryInTransaction(_ name: String) throws -> Int64 {
+                    if let existing = try Row.fetchOne(dbConn, sql: "SELECT id FROM part_categories WHERE name = ? AND deleted_at IS NULL", arguments: [name]) {
+                        return existing["id"]
+                    }
+                    try Validators.requireName(name, field: "Category name")
+                    try dbConn.execute(sql: """
+                        INSERT INTO part_categories (name, sort_order, is_active, created_at, updated_at)
+                        VALUES (?, 0, 1, datetime('now'), datetime('now'))
+                        """, arguments: [name])
+                    return dbConn.lastInsertedRowID
+                }
+
+                func findOrCreateBrandInTransaction(_ name: String?) throws -> Int64? {
+                    guard let name, !name.isEmpty else { return nil }
+                    if let existing = try Row.fetchOne(dbConn, sql: "SELECT id FROM brands WHERE name = ? AND deleted_at IS NULL", arguments: [name]) {
+                        return existing["id"]
+                    }
+                    try Validators.requireName(name, field: "Brand name")
+                    try dbConn.execute(sql: """
+                        INSERT INTO brands (name, is_active, created_at, updated_at)
+                        VALUES (?, 1, datetime('now'), datetime('now'))
+                        """, arguments: [name])
+                    return dbConn.lastInsertedRowID
+                }
+
+                func create(_ row: PartsImportParsedRow) throws -> Int64 {
+                    let categoryId = try findOrCreateCategoryInTransaction(row.category)
+                    let brandId = try findOrCreateBrandInTransaction(row.brand)
+                    let cost = row.fields["cost_price"].flatMap(Double.init) ?? 0
+                    let markup = row.fields["markup_percent"].flatMap(Double.init) ?? 0
+                    let partType = row.fields["part_type"] ?? "general"
+
+                    try Validators.requireName(row.name, field: "Part name")
+                    try Validators.requireText(row.code, field: "Part code", limit: Validators.Limits.code)
+                    try Validators.requireNonNegative(cost, field: "Cost price")
+                    try Validators.requireNonNegative(markup, field: "Markup percent")
+
+                    try dbConn.execute(sql: """
+                        INSERT INTO parts (
+                            category_id, brand_id, part_type, code, name, description,
+                            unit_of_measure, company_cost_price, weighted_avg_cost,
+                            company_markup_percent, shelf_location, bin_location,
+                            auto_add_to_wishlist_when_low, is_deprecated, is_qr_tagged,
+                            is_active, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 1, datetime('now'), datetime('now'))
+                        """, arguments: [
+                            categoryId,
+                            brandId,
+                            partType,
+                            row.code,
+                            row.name,
+                            row.fields["description"],
+                            row.fields["unit_of_measure"],
+                            cost,
+                            cost,
+                            markup,
+                            row.fields["shelf_location"],
+                            row.fields["bin_location"]
+                        ])
+                    return dbConn.lastInsertedRowID
+                }
+
+                func update(_ conflict: PartsImportConflict) throws {
+                    let row = conflict.parsedRow
+                    let categoryId = try findOrCreateCategoryInTransaction(row.category)
+                    let brandId = try findOrCreateBrandInTransaction(row.brand)
+                    let cost = row.fields["cost_price"].flatMap(Double.init)
+                    let markup = row.fields["markup_percent"].flatMap(Double.init)
+
+                    var clauses = [
+                        "name = ?",
+                        "code = ?",
+                        "category_id = ?",
+                        "brand_id = ?"
+                    ]
+                    var args: [DatabaseValueConvertible?] = [row.name, row.code, categoryId, brandId]
+
+                    if let partType = row.fields["part_type"] { clauses.append("part_type = ?"); args.append(partType) }
+                    if let description = row.fields["description"] { clauses.append("description = ?"); args.append(description) }
+                    if let unit = row.fields["unit_of_measure"] { clauses.append("unit_of_measure = ?"); args.append(unit) }
+                    if let cost { clauses.append("company_cost_price = ?"); args.append(cost); clauses.append("weighted_avg_cost = ?"); args.append(cost) }
+                    if let markup { clauses.append("company_markup_percent = ?"); args.append(markup) }
+                    if let shelf = row.fields["shelf_location"] { clauses.append("shelf_location = ?"); args.append(shelf) }
+                    if let bin = row.fields["bin_location"] { clauses.append("bin_location = ?"); args.append(bin) }
+                    clauses.append("updated_at = datetime('now')")
+                    args.append(conflict.existingPartId)
+
+                    try dbConn.execute(sql: "UPDATE parts SET \(clauses.joined(separator: ", ")) WHERE id = ? AND deleted_at IS NULL", arguments: StatementArguments(args))
+                }
+
+                for row in preview.newParts {
+                    let partId = try create(row)
+                    try recordImportRowEvidence(dbConn, sessionId: importSessionId, row: row, action: "created", partId: partId)
+                    created += 1
+                }
+                for conflict in preview.conflicts {
+                    switch conflict.resolution {
+                    case .update:
+                        try update(conflict)
+                        try recordImportRowEvidence(dbConn, sessionId: importSessionId, row: conflict.parsedRow, action: "updated", partId: conflict.existingPartId)
+                        updated += 1
+                    case .skip, .ask:
+                        skipped += 1
+                    }
+                }
+            }
+
+            try finishImportSessionIfNeeded(id: importSessionId, status: "committed", created: created, updated: updated, skipped: skipped, error: nil)
+            return PartsImportCommitResult(created: created, updated: updated, skipped: skipped, importSessionId: importSessionId)
+        } catch {
+            try? finishImportSessionIfNeeded(id: importSessionId, status: "failed", created: 0, updated: 0, skipped: 0, error: String(describing: error))
+            throw error
         }
+    }
 
-        var created = 0
-        var updated = 0
-        var skipped = 0
+    private func createImportSessionIfNeeded(for preview: PartsImportPreview) throws -> Int64? {
+        guard let source = preview.source else { return nil }
+        return try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO part_import_sessions (
+                    source_kind, filename, source_hash, user_id, status, total_rows, started_at
+                ) VALUES (?, ?, ?, ?, 'pending', ?, datetime('now'))
+                """, arguments: [source.sourceKind, source.filename, source.sourceHash, source.userId, preview.totalRows])
+            return dbConn.lastInsertedRowID
+        }
+    }
 
+    private func finishImportSessionIfNeeded(id: Int64?, status: String, created: Int, updated: Int, skipped: Int, error: String?) throws {
+        guard let id else { return }
         try db.writer.write { dbConn in
-            func findOrCreateCategoryInTransaction(_ name: String) throws -> Int64 {
-                if let existing = try Row.fetchOne(dbConn, sql: "SELECT id FROM part_categories WHERE name = ? AND deleted_at IS NULL", arguments: [name]) {
-                    return existing["id"]
-                }
-                try Validators.requireName(name, field: "Category name")
+            if status == "committed" {
                 try dbConn.execute(sql: """
-                    INSERT INTO part_categories (name, sort_order, is_active, created_at, updated_at)
-                    VALUES (?, 0, 1, datetime('now'), datetime('now'))
-                    """, arguments: [name])
-                return dbConn.lastInsertedRowID
-            }
-
-            func findOrCreateBrandInTransaction(_ name: String?) throws -> Int64? {
-                guard let name, !name.isEmpty else { return nil }
-                if let existing = try Row.fetchOne(dbConn, sql: "SELECT id FROM brands WHERE name = ? AND deleted_at IS NULL", arguments: [name]) {
-                    return existing["id"]
-                }
-                try Validators.requireName(name, field: "Brand name")
+                    UPDATE part_import_sessions
+                    SET status = ?, created_count = ?, updated_count = ?, skipped_count = ?, committed_at = datetime('now'), error_message = NULL
+                    WHERE id = ?
+                    """, arguments: [status, created, updated, skipped, id])
+            } else {
                 try dbConn.execute(sql: """
-                    INSERT INTO brands (name, is_active, created_at, updated_at)
-                    VALUES (?, 1, datetime('now'), datetime('now'))
-                    """, arguments: [name])
-                return dbConn.lastInsertedRowID
-            }
-
-            func create(_ row: PartsImportParsedRow) throws {
-                let categoryId = try findOrCreateCategoryInTransaction(row.category)
-                let brandId = try findOrCreateBrandInTransaction(row.brand)
-                let cost = row.fields["cost_price"].flatMap(Double.init) ?? 0
-                let markup = row.fields["markup_percent"].flatMap(Double.init) ?? 0
-                let partType = row.fields["part_type"] ?? "general"
-
-                try Validators.requireName(row.name, field: "Part name")
-                try Validators.requireText(row.code, field: "Part code", limit: Validators.Limits.code)
-                try Validators.requireNonNegative(cost, field: "Cost price")
-                try Validators.requireNonNegative(markup, field: "Markup percent")
-
-                try dbConn.execute(sql: """
-                    INSERT INTO parts (
-                        category_id, brand_id, part_type, code, name, description,
-                        unit_of_measure, company_cost_price, weighted_avg_cost,
-                        company_markup_percent, shelf_location, bin_location,
-                        auto_add_to_wishlist_when_low, is_deprecated, is_qr_tagged,
-                        is_active, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 1, datetime('now'), datetime('now'))
-                    """, arguments: [
-                        categoryId,
-                        brandId,
-                        partType,
-                        row.code,
-                        row.name,
-                        row.fields["description"],
-                        row.fields["unit_of_measure"],
-                        cost,
-                        cost,
-                        markup,
-                        row.fields["shelf_location"],
-                        row.fields["bin_location"]
-                    ])
-            }
-
-            func update(_ conflict: PartsImportConflict) throws {
-                let row = conflict.parsedRow
-                let categoryId = try findOrCreateCategoryInTransaction(row.category)
-                let brandId = try findOrCreateBrandInTransaction(row.brand)
-                let cost = row.fields["cost_price"].flatMap(Double.init)
-                let markup = row.fields["markup_percent"].flatMap(Double.init)
-
-                var clauses = [
-                    "name = ?",
-                    "code = ?",
-                    "category_id = ?",
-                    "brand_id = ?"
-                ]
-                var args: [DatabaseValueConvertible?] = [row.name, row.code, categoryId, brandId]
-
-                if let partType = row.fields["part_type"] { clauses.append("part_type = ?"); args.append(partType) }
-                if let description = row.fields["description"] { clauses.append("description = ?"); args.append(description) }
-                if let unit = row.fields["unit_of_measure"] { clauses.append("unit_of_measure = ?"); args.append(unit) }
-                if let cost { clauses.append("company_cost_price = ?"); args.append(cost); clauses.append("weighted_avg_cost = ?"); args.append(cost) }
-                if let markup { clauses.append("company_markup_percent = ?"); args.append(markup) }
-                if let shelf = row.fields["shelf_location"] { clauses.append("shelf_location = ?"); args.append(shelf) }
-                if let bin = row.fields["bin_location"] { clauses.append("bin_location = ?"); args.append(bin) }
-                clauses.append("updated_at = datetime('now')")
-                args.append(conflict.existingPartId)
-
-                try dbConn.execute(sql: "UPDATE parts SET \(clauses.joined(separator: ", ")) WHERE id = ? AND deleted_at IS NULL", arguments: StatementArguments(args))
-            }
-
-            for row in preview.newParts {
-                try create(row)
-                created += 1
-            }
-            for conflict in preview.conflicts {
-                switch conflict.resolution {
-                case .update:
-                    try update(conflict)
-                    updated += 1
-                case .skip, .ask:
-                    skipped += 1
-                }
+                    UPDATE part_import_sessions
+                    SET status = ?, created_count = ?, updated_count = ?, skipped_count = ?, failed_at = datetime('now'), error_message = ?
+                    WHERE id = ?
+                    """, arguments: [status, created, updated, skipped, error, id])
             }
         }
+    }
 
-        return PartsImportCommitResult(created: created, updated: updated, skipped: skipped)
+    private func recordImportRowEvidence(_ dbConn: Database, sessionId: Int64?, row: PartsImportParsedRow, action: String, partId: Int64) throws {
+        guard let sessionId else { return }
+        try dbConn.execute(sql: """
+            INSERT INTO part_import_row_evidence (
+                session_id, row_number, action, part_id, source_name, source_code,
+                source_category, source_brand, row_payload_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """, arguments: [
+                sessionId,
+                row.rowNumber,
+                action,
+                partId,
+                row.name,
+                row.code,
+                row.category,
+                row.brand,
+                importRowPayloadJSON(row)
+            ])
+    }
+
+    private func importRowPayloadJSON(_ row: PartsImportParsedRow) -> String {
+        let payload: [String: Any] = [
+            "rowNumber": row.rowNumber,
+            "name": row.name,
+            "code": row.code as Any,
+            "category": row.category,
+            "brand": row.brand as Any,
+            "fields": row.fields
+        ]
+        guard JSONSerialization.isValidJSONObject(payload),
+              let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+              let json = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return json
     }
 
     private func parseImportCSVLine(_ line: String) -> [String] {

@@ -133,6 +133,7 @@ extension AppDatabase {
         registerMigration094ShortTermPipelineCategoryOverride(&migrator)
         registerMigration095JobStageTemplates(&migrator)
         registerMigration096SubcontractorScheduleSoftDeleteUniqueness(&migrator)
+        registerMigration097PartImportAuditSessions(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5512,6 +5513,47 @@ extension AppDatabase {
                 ON job_stage_category_map(template_id, category_id)
                 """)
             try db.execute(sql: "CREATE INDEX idx_jscm_template ON job_stage_category_map(template_id)")
+        }
+    }
+
+
+    // MARK: - Migration 097: Part import audit sessions
+
+    private static func registerMigration097PartImportAuditSessions(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("097_part_import_audit_sessions") { db in
+            try db.create(table: "part_import_sessions", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("source_kind", .text).notNull()
+                t.column("filename", .text)
+                t.column("source_hash", .text)
+                t.column("user_id", .integer).references("users")
+                t.column("status", .text).notNull().defaults(to: "pending")
+                t.column("total_rows", .integer).notNull().defaults(to: 0)
+                t.column("created_count", .integer).notNull().defaults(to: 0)
+                t.column("updated_count", .integer).notNull().defaults(to: 0)
+                t.column("skipped_count", .integer).notNull().defaults(to: 0)
+                t.column("error_message", .text)
+                t.column("started_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("committed_at", .text)
+                t.column("failed_at", .text)
+            }
+            try db.create(table: "part_import_row_evidence", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("session_id", .integer).notNull()
+                    .references("part_import_sessions", onDelete: .cascade)
+                t.column("row_number", .integer).notNull()
+                t.column("action", .text).notNull()
+                t.column("part_id", .integer).references("parts")
+                t.column("source_name", .text).notNull()
+                t.column("source_code", .text)
+                t.column("source_category", .text).notNull()
+                t.column("source_brand", .text)
+                t.column("row_payload_json", .text).notNull()
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_part_import_sessions_source_hash", on: "part_import_sessions", columns: ["source_hash"])
+            try db.create(index: "idx_part_import_sessions_started", on: "part_import_sessions", columns: ["started_at"])
+            try db.create(index: "idx_part_import_row_evidence_session", on: "part_import_row_evidence", columns: ["session_id", "row_number"])
         }
     }
 

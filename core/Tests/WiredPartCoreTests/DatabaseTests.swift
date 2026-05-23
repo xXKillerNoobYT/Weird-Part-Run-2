@@ -97,9 +97,19 @@ struct DatabaseTests {
         }
     }
 
-    @Test("Schema version is 95")
+
+    @Test("Migration 097 creates part import audit session tables")
+    func testMigration097CreatesPartImportAuditTables() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let tables = try db.writer.read { db in
+            try String.fetchAll(db, sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('part_import_sessions', 'part_import_row_evidence') ORDER BY name")
+        }
+        #expect(tables == ["part_import_row_evidence", "part_import_sessions"])
+    }
+
+    @Test("Schema version is 97")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 95)
+        #expect(AppDatabase.schemaVersion == 97)
     }
 
     @Test("Migration 095 normalizes duplicate legacy stage sort orders and category maps")
