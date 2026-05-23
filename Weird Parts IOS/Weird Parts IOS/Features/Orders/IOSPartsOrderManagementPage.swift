@@ -47,6 +47,36 @@ struct IOSPartsOrderManagementPage: View {
         var id: String { "help" }
     }
 
+    private enum PartsOrderManagementEmptyReason {
+        case noSuppliersWithActivePOs
+        case selectSupplier
+        case noMatchingParts
+
+        var title: String {
+            switch self {
+            case .noSuppliersWithActivePOs: "No Suppliers"
+            case .selectSupplier, .noMatchingParts: "No Parts"
+            }
+        }
+
+        var message: String {
+            switch self {
+            case .noSuppliersWithActivePOs:
+                "No suppliers with active purchase orders. Create or activate a purchase order for a supplier to manage its parts here."
+            case .selectSupplier:
+                "Select a supplier above to view parts."
+            case .noMatchingParts:
+                "No parts match the current filters."
+            }
+        }
+    }
+
+    private var emptyReason: PartsOrderManagementEmptyReason {
+        if suppliers.isEmpty { return .noSuppliersWithActivePOs }
+        if selectedSupplierId == nil { return .selectSupplier }
+        return .noMatchingParts
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             supplierPicker
@@ -61,10 +91,8 @@ struct IOSPartsOrderManagementPage: View {
             } else if filteredRows.isEmpty {
                 EmptyStateView(
                     icon: "shippingbox",
-                    title: "No Parts",
-                    message: selectedSupplierId == nil
-                        ? "Select a supplier above to view parts."
-                        : "No parts match the current filters."
+                    title: emptyReason.title,
+                    message: emptyReason.message
                 )
             } else {
                 partsList
@@ -426,14 +454,25 @@ struct IOSPartsOrderManagementPage: View {
         }
         do {
             suppliers = try service.getSuppliersWithActivePOs()
+            if suppliers.isEmpty {
+                selectedSupplierId = nil
+                allRows = []
+                loadError = nil
+            }
         } catch {
             loadError = userFriendlyError(error, context: "load parts orders")
         }
     }
 
     private func loadData() {
-        guard let service = appCore.ordersService, let suppId = selectedSupplierId else {
+        guard let service = appCore.ordersService else {
             loadError = "Orders service not available"
+            isLoading = false
+            return
+        }
+        guard let suppId = selectedSupplierId else {
+            allRows = []
+            loadError = nil
             isLoading = false
             return
         }
