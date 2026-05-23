@@ -912,7 +912,8 @@ public final class PartsService: Sendable {
     }
 
     /// Update an existing color.
-    /// For `partNumber`, pass a value to set, pass `""` to clear, or omit to leave unchanged.
+    /// For `hexCode` and `partNumber`, pass a value to set, pass `""` to clear to NULL,
+    /// or omit to leave unchanged.
     public func updateColor(id: Int64, name: String? = nil, hexCode: String? = nil, partNumber: String? = nil, sortOrder: Int? = nil) throws {
         try db.writer.write { dbConn in
             var setClauses: [String] = []
@@ -924,7 +925,7 @@ public final class PartsService: Sendable {
             }
             if let hexCode {
                 setClauses.append("hex_code = ?")
-                args.append(hexCode)
+                args.append(hexCode.isEmpty ? nil : hexCode)
             }
             if let partNumber {
                 // Non-empty string = set the value; empty string = clear to NULL
