@@ -87,40 +87,6 @@ public final class FleetService: Sendable {
         }
     }
 
-    /// SQL-backed vehicle status counts for fleet filter cards.
-    public struct VehicleStatusCounts: Sendable, Equatable {
-        public let all: Int
-        public let active: Int
-        public let inactive: Int
-        public let maintenance: Int
-        public let retired: Int
-
-        public init(
-            all: Int = 0,
-            active: Int = 0,
-            inactive: Int = 0,
-            maintenance: Int = 0,
-            retired: Int = 0
-        ) {
-            self.all = all
-            self.active = active
-            self.inactive = inactive
-            self.maintenance = maintenance
-            self.retired = retired
-        }
-
-        public func count(for status: String) -> Int {
-            switch status {
-            case "all": return all
-            case "active": return active
-            case "inactive": return inactive
-            case "maintenance": return maintenance
-            case "retired": return retired
-            default: return 0
-            }
-        }
-    }
-
     /// Full vehicle detail including all fields and active assignments.
     public struct VehicleDetail: Sendable {
         public let id: Int64
@@ -369,10 +335,30 @@ public final class FleetService: Sendable {
         }
     }
 
-    /// Count active, non-deleted vehicles by status without hydrating the full vehicle list.
-    public func getVehicleStatusCounts() throws -> VehicleStatusCounts {
+    /// Counts for the vehicle status filter cards.
+    public struct VehicleStatusCounts: Sendable, Equatable {
+        public let countsByStatus: [String: Int]
+
+        public init(countsByStatus: [String: Int] = [:]) {
+            self.countsByStatus = countsByStatus
+        }
+
+        public var total: Int {
+            countsByStatus.values.reduce(0, +)
+        }
+
+        public func count(for status: String) -> Int {
+            status == "all" ? total : countsByStatus[status, default: 0]
+        }
+    }
+
+    /// Count active, non-deleted vehicles grouped by status.
+    ///
+    /// `IOSVehiclesPage` uses these pre-aggregated counts for its status cards so
+    /// rendering does not repeatedly scan the full vehicle list in Swift.
+    public func countVehiclesByStatus() throws -> [String: Int] {
         do {
-            return try db.writer.read { dbConn -> VehicleStatusCounts in
+            return try db.writer.read { dbConn -> [String: Int] in
                 let rows = try Row.fetchAll(dbConn, sql: """
                     SELECT status, COUNT(*) AS count
                     FROM vehicles
@@ -380,36 +366,19 @@ public final class FleetService: Sendable {
                     GROUP BY status
                     """)
 
-                var all = 0
-                var active = 0
-                var inactive = 0
-                var maintenance = 0
-                var retired = 0
-
-                for row in rows {
-                    let count: Int = row["count"] ?? 0
-                    all += count
-                    switch row["status"] as String? {
-                    case "active": active = count
-                    case "inactive": inactive = count
-                    case "maintenance": maintenance = count
-                    case "retired": retired = count
-                    default: break
-                    }
-                }
-
-                return VehicleStatusCounts(
-                    all: all,
-                    active: active,
-                    inactive: inactive,
-                    maintenance: maintenance,
-                    retired: retired
-                )
+                return Dictionary(uniqueKeysWithValues: rows.map { row in
+                    (row["status"] ?? "active", row["count"] ?? 0)
+                })
             }
         } catch {
-            if isTableNotFoundError(error) { return VehicleStatusCounts() }
+            if isTableNotFoundError(error) { return [:] }
             throw error
         }
+    }
+
+    /// Return strongly typed status counts for UI filter cards.
+    public func getVehicleStatusCounts() throws -> VehicleStatusCounts {
+        VehicleStatusCounts(countsByStatus: try countVehiclesByStatus())
     }
 
     /// Get a single vehicle by ID with full detail and active assignments.
@@ -426,59 +395,9 @@ public final class FleetService: Sendable {
                     arguments: [id]
                 ) else { return nil }
 
-                // Fetch active assignments for this vehicle
-                let assignmentRows = try Row.fetchAll(
-                    dbConn,
-                    sql: """
-                        SELECT va.id, va.user_id, va.assignment_type, va.is_take_home,
-                               va.start_date, va.end_date, va.is_active,
-                               COALESCE(u.display_name, u.email, 'Unknown') AS user_name
-                        FROM vehicle_assignments va
-                        LEFT JOIN users u ON u.id = va.user_id AND u.deleted_at IS NULL
-                        WHERE va.vehicle_id = ? AND va.deleted_at IS NULL
-                        ORDER BY va.is_active DESC, va.start_date DESC
-                        """,
-                    arguments: [id]
-                )
-
-                let assignments = assignmentRows.map { aRow in
-                    AssignmentRow(
-                        id: aRow["id"] ?? 0,
-                        userId: aRow["user_id"] ?? 0,
-                        userName: aRow["user_name"] ?? "Unknown",
-                        assignmentType: aRow["assignment_type"] ?? "primary",
-                        isTakeHome: (aRow["is_take_home"] as Int?) == 1,
-                        startDate: aRow["start_date"] ?? "",
-                        endDate: aRow["end_date"] as String?,
-                        isActive: (aRow["is_active"] as Int?) == 1
-                    )
-                }
-
-                return VehicleDetail(
-                    id: row["id"] ?? 0,
-                    vehicleNumber: row["vehicle_number"] ?? "",
-                    vehicleName: row["vehicle_name"] ?? "",
-                    vehicleType: row["vehicle_type"] ?? "truck",
-                    status: row["status"] ?? "active",
-                    make: row["make"] as String?,
-                    model: row["model"] as String?,
-                    year: row["year"] as Int?,
-                    color: row["color"] as String?,
-                    vin: row["vin"] as String?,
-                    licensePlate: row["license_plate"] as String?,
-                    insurancePolicy: row["insurance_policy"] as String?,
-                    insuranceExpiry: row["insurance_expiry"] as String?,
-                    registrationExpiry: row["registration_expiry"] as String?,
-                    currentOdometer: row["current_odometer"] as Int?,
-                    ownerUserId: row["owner_user_id"] as Int64?,
-                    notes: row["notes"] as String?,
-                    photoPath: row["photo_path"] as String?,
-                    isActive: (row["is_active"] as Int?) ?? 0,
-                    deletedAt: row["deleted_at"] as String?,
-                    createdAt: row["created_at"] as String?,
-                    updatedAt: row["updated_at"] as String?,
-                    assignments: assignments
-                )
+                let vehicleId = (row["id"] as Int64?) ?? id
+                let assignments = try fetchVehicleAssignments(dbConn: dbConn, vehicleId: vehicleId)
+                return buildVehicleDetail(from: row, vehicleId: vehicleId, assignments: assignments)
             }
         } catch {
             if isTableNotFoundError(error) { return nil }
@@ -837,6 +756,19 @@ public final class FleetService: Sendable {
 
     /// Get full fleet dashboard statistics including overdue inspections and cost data.
     public func getFleetDashboardStats() throws -> FleetDashboardStats {
+        let basic = try getFleetStats()
+
+        // Overdue inspections: active vehicles with no inspection today
+        let overdueInspections = try safeCount(sql: """
+            SELECT COUNT(*) FROM vehicles v
+            WHERE v.status = 'active' AND v.deleted_at IS NULL AND v.is_active = 1
+              AND v.id IN (SELECT vehicle_id FROM vehicle_assignments WHERE is_active = 1 AND deleted_at IS NULL)
+              AND v.id NOT IN (
+                  SELECT vehicle_id FROM inspection_records
+                  WHERE deleted_at IS NULL AND date(performed_at) = date('now')
+              )
+            """)
+
         // Month-to-date cost stats
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
@@ -844,91 +776,58 @@ public final class FleetService: Sendable {
         let startOfMonth = cal.date(from: cal.dateComponents([.year, .month], from: Date())) ?? Date()
         let monthStr = fmt.string(from: startOfMonth)
 
-        do {
-            return try db.writer.read { dbConn -> FleetDashboardStats in
-                let row = try Row.fetchOne(dbConn, sql: """
-                    SELECT
-                        (SELECT COUNT(*)
-                           FROM vehicles
-                          WHERE deleted_at IS NULL
-                            AND is_active = 1) AS total_vehicles,
-                        (SELECT COUNT(*)
-                           FROM vehicles
-                          WHERE status = 'active'
-                            AND deleted_at IS NULL
-                            AND is_active = 1) AS active_vehicles,
-                        (SELECT COUNT(*)
-                           FROM maintenance_schedules ms
-                           JOIN vehicles v ON v.id = ms.vehicle_id
-                                         AND v.deleted_at IS NULL
-                                         AND v.is_active = 1
-                          WHERE ms.deleted_at IS NULL
-                            AND (
-                                (ms.next_due_date IS NOT NULL AND date(ms.next_due_date) <= date('now'))
-                                OR (ms.next_due_miles IS NOT NULL AND v.current_odometer IS NOT NULL
-                                    AND ms.next_due_miles <= v.current_odometer)
-                            )) AS maintenance_due,
-                        (SELECT COUNT(*)
-                           FROM job_trailers
-                          WHERE deleted_at IS NULL
-                            AND is_active = 1) AS total_trailers,
-                        (SELECT COUNT(*)
-                           FROM vehicles v
-                          WHERE v.status = 'active'
-                            AND v.deleted_at IS NULL
-                            AND v.is_active = 1
-                            AND v.id IN (
-                                SELECT vehicle_id
-                                  FROM vehicle_assignments
-                                 WHERE is_active = 1
-                                   AND deleted_at IS NULL
-                            )
-                            AND v.id NOT IN (
-                                SELECT vehicle_id
-                                  FROM inspection_records
-                                 WHERE deleted_at IS NULL
-                                   AND date(performed_at) = date('now')
-                            )) AS overdue_inspections,
-                        (SELECT COALESCE(SUM(total_cost), 0)
-                           FROM fuel_logs
-                          WHERE log_date >= ?
-                            AND deleted_at IS NULL) AS fuel_cost_mtd,
-                        (SELECT COALESCE(CAST(SUM(total_miles) AS INTEGER), 0)
-                           FROM mileage_logs
-                          WHERE log_date >= ?
-                            AND deleted_at IS NULL) AS miles_mtd,
-                        (SELECT COALESCE(SUM(cost), 0)
-                           FROM maintenance_records
-                          WHERE performed_at >= ?
-                            AND deleted_at IS NULL) AS maintenance_cost_mtd
-                    """, arguments: [monthStr, monthStr, monthStr])
+        let fuelCostMTD: Double? = try {
+            do {
+                return try db.writer.read { dbConn in
+                    try Double.fetchOne(dbConn, sql: """
+                        SELECT COALESCE(SUM(total_cost), 0) FROM fuel_logs
+                        WHERE log_date >= ? AND deleted_at IS NULL
+                        """, arguments: [monthStr])
+                }
+            } catch {
+                if isTableNotFoundError(error) { return 0 }
+                throw error
+            }
+        }()
 
-                return FleetDashboardStats(
-                    totalVehicles: row?["total_vehicles"] ?? 0,
-                    activeVehicles: row?["active_vehicles"] ?? 0,
-                    maintenanceDue: row?["maintenance_due"] ?? 0,
-                    overdueInspections: row?["overdue_inspections"] ?? 0,
-                    totalTrailers: row?["total_trailers"] ?? 0,
-                    fuelCostMTD: row?["fuel_cost_mtd"] as Double? ?? 0,
-                    milesMTD: row?["miles_mtd"] as Int? ?? 0,
-                    maintenanceCostMTD: row?["maintenance_cost_mtd"] as Double? ?? 0
-                )
+        let milesMTD: Int? = try {
+            do {
+                return try db.writer.read { dbConn in
+                    try Int.fetchOne(dbConn, sql: """
+                        SELECT COALESCE(CAST(SUM(total_miles) AS INTEGER), 0) FROM mileage_logs
+                        WHERE log_date >= ? AND deleted_at IS NULL
+                        """, arguments: [monthStr])
+                }
+            } catch {
+                if isTableNotFoundError(error) { return 0 }
+                throw error
             }
-        } catch {
-            if isTableNotFoundError(error) {
-                return FleetDashboardStats(
-                    totalVehicles: 0,
-                    activeVehicles: 0,
-                    maintenanceDue: 0,
-                    overdueInspections: 0,
-                    totalTrailers: 0,
-                    fuelCostMTD: 0,
-                    milesMTD: 0,
-                    maintenanceCostMTD: 0
-                )
+        }()
+
+        let maintenanceCostMTD: Double? = try {
+            do {
+                return try db.writer.read { dbConn in
+                    try Double.fetchOne(dbConn, sql: """
+                        SELECT COALESCE(SUM(cost), 0) FROM maintenance_records
+                        WHERE performed_at >= ? AND deleted_at IS NULL
+                        """, arguments: [monthStr])
+                }
+            } catch {
+                if isTableNotFoundError(error) { return 0 }
+                throw error
             }
-            throw error
-        }
+        }()
+
+        return FleetDashboardStats(
+            totalVehicles: basic.totalVehicles,
+            activeVehicles: basic.activeVehicles,
+            maintenanceDue: basic.maintenanceDue,
+            overdueInspections: overdueInspections,
+            totalTrailers: basic.totalTrailers,
+            fuelCostMTD: fuelCostMTD,
+            milesMTD: milesMTD,
+            maintenanceCostMTD: maintenanceCostMTD
+        )
     }
 
     /// Get all vehicles with their current assignment and inspection status.
@@ -1237,13 +1136,30 @@ public final class FleetService: Sendable {
                 """, arguments: [userId]) ?? 0) > 0
             guard userExists else { return }
 
+            let now = CoreFormatters.nowISO()
+            // A vehicle can only have one active driver assignment, and a user
+            // can only be actively assigned to one vehicle. Close any existing
+            // active rows for either side before inserting the replacement.
+            try dbConn.execute(
+                sql: """
+                    UPDATE vehicle_assignments
+                    SET is_active = 0,
+                        end_date = COALESCE(end_date, date('now')),
+                        updated_at = ?
+                    WHERE deleted_at IS NULL
+                      AND is_active = 1
+                      AND (vehicle_id = ? OR user_id = ?)
+                    """,
+                arguments: [now, vehicleId, userId]
+            )
+
             try dbConn.execute(
                 sql: """
                     INSERT INTO vehicle_assignments
-                        (vehicle_id, user_id, assignment_type, is_take_home, is_active)
-                    VALUES (?, ?, ?, ?, 1)
+                        (vehicle_id, user_id, assignment_type, is_take_home, is_active, updated_at)
+                    VALUES (?, ?, ?, ?, 1, ?)
                     """,
-                arguments: [vehicleId, userId, assignmentType, isTakeHome ? 1 : 0]
+                arguments: [vehicleId, userId, assignmentType, isTakeHome ? 1 : 0, now]
             )
         }
     }
@@ -1278,6 +1194,193 @@ public final class FleetService: Sendable {
             self.hasTrailer = hasTrailer
             self.trailerName = trailerName
             self.trailerId = trailerId
+        }
+    }
+
+    /// Batched data payload for the iOS "My Truck" page.
+    public struct MyTruckDashboard: Sendable {
+        public let vehicle: VehicleDetail
+        public let stats: MyVehicleStats
+        public let truckStock: [VehicleStockItem]
+        public let transferItems: [VehicleStockItem]
+        public let recentMileage: [MileageRow]
+        public let recentFuel: [FuelRow]
+
+        public init(
+            vehicle: VehicleDetail,
+            stats: MyVehicleStats,
+            truckStock: [VehicleStockItem],
+            transferItems: [VehicleStockItem],
+            recentMileage: [MileageRow], recentFuel: [FuelRow]
+        ) {
+            self.vehicle = vehicle
+            self.stats = stats
+            self.truckStock = truckStock
+            self.transferItems = transferItems
+            self.recentMileage = recentMileage
+            self.recentFuel = recentFuel
+        }
+    }
+
+    /// Get all data needed by `IOSMyTruckPage` in one database read transaction.
+    ///
+    /// This replaces the page's previous load chain of stats + detail + stock + logs
+    /// service calls. The SQL is still intentionally readable, but it runs under a
+    /// single GRDB read so the UI only pays one database access/transaction cost.
+    public func getMyTruckDashboard(userId: Int64, recentLimit: Int = 5) throws -> MyTruckDashboard? {
+        do {
+            return try db.writer.read { dbConn -> MyTruckDashboard? in
+                guard let row = try Row.fetchOne(dbConn, sql: """
+                    SELECT v.*,
+                           va.vehicle_id,
+                           (
+                               SELECT COUNT(*)
+                               FROM tool_checkouts tc
+                               JOIN tools t ON tc.tool_id = t.id
+                               WHERE tc.checked_out_by = ?
+                                 AND tc.checked_in_at IS NULL
+                                 AND t.deleted_at IS NULL
+                           ) AS tool_count,
+                           (
+                               SELECT COALESCE(SUM(quantity), 0)
+                               FROM vehicle_stock
+                               WHERE vehicle_id = va.vehicle_id
+                                 AND stock_type = 'truck_stock'
+                                 AND deleted_at IS NULL
+                           ) AS part_count,
+                           (
+                               SELECT COUNT(*)
+                               FROM maintenance_schedules ms
+                               WHERE ms.vehicle_id = va.vehicle_id
+                                 AND ms.deleted_at IS NULL
+                                 AND ms.next_due_date IS NOT NULL
+                                 AND date(ms.next_due_date) <= date('now', '+7 days')
+                           ) AS maintenance_due,
+                           (
+                               SELECT COALESCE(SUM(quantity), 0)
+                               FROM vehicle_stock
+                               WHERE vehicle_id = va.vehicle_id
+                                 AND stock_type = 'transfer'
+                                 AND deleted_at IS NULL
+                           ) AS transfer_items,
+                           ta.trailer_id,
+                           jt.name AS trailer_name
+                    FROM vehicle_assignments va
+                    JOIN vehicles v ON va.vehicle_id = v.id AND v.deleted_at IS NULL AND v.is_active = 1
+                    LEFT JOIN trailer_attachments ta ON ta.vehicle_id = va.vehicle_id
+                        AND ta.detached_at IS NULL AND ta.deleted_at IS NULL
+                    LEFT JOIN job_trailers jt ON ta.trailer_id = jt.id
+                        AND jt.deleted_at IS NULL AND jt.is_active = 1
+                    WHERE va.user_id = ? AND va.is_active = 1 AND va.deleted_at IS NULL
+                    ORDER BY va.start_date DESC
+                    LIMIT 1
+                    """, arguments: [userId, userId]) else {
+                    return nil
+                }
+
+                guard let vehicleId = (row["id"] as Int64?) ?? (row["vehicle_id"] as Int64?),
+                      vehicleId > 0 else {
+                    return nil
+                }
+
+                let assignments = try fetchVehicleAssignments(dbConn: dbConn, vehicleId: vehicleId)
+                let vehicle = buildVehicleDetail(from: row, vehicleId: vehicleId, assignments: assignments)
+
+                let stats = MyVehicleStats(
+                    vehicleId: vehicleId,
+                    toolCount: row["tool_count"] ?? 0,
+                    partCount: row["part_count"] ?? 0,
+                    fuelLevel: row["fuel_level"] as Double?,
+                    maintenanceDue: row["maintenance_due"] ?? 0,
+                    transferItems: row["transfer_items"] ?? 0,
+                    hasTrailer: (row["trailer_id"] as Int64?) != nil,
+                    trailerName: row["trailer_name"] as String?,
+                    trailerId: row["trailer_id"] as Int64?
+                )
+
+                let stockRows = try Row.fetchAll(dbConn, sql: """
+                    SELECT id, part_name, quantity, stock_type,
+                           min_qty, target_qty, max_qty,
+                           source_location, destination_location, transfer_reason
+                    FROM vehicle_stock
+                    WHERE vehicle_id = ? AND stock_type IN ('truck_stock', 'transfer') AND deleted_at IS NULL
+                    ORDER BY stock_type ASC, part_name ASC
+                    """, arguments: [vehicleId])
+
+                let stockItems = stockRows.map { stockRow in
+                    VehicleStockItem(
+                        id: stockRow["id"] ?? 0,
+                        partName: stockRow["part_name"] ?? "",
+                        quantity: stockRow["quantity"] ?? 0,
+                        stockType: stockRow["stock_type"] ?? "",
+                        minQty: stockRow["min_qty"] as Int?,
+                        targetQty: stockRow["target_qty"] as Int?,
+                        maxQty: stockRow["max_qty"] as Int?,
+                        sourceLocation: stockRow["source_location"] as String?,
+                        destinationLocation: stockRow["destination_location"] as String?,
+                        transferReason: stockRow["transfer_reason"] as String?
+                    )
+                }
+
+                let mileageRows = try Row.fetchAll(dbConn, sql: """
+                    SELECT ml.id, ml.log_date, ml.total_miles, ml.purpose,
+                           v.vehicle_name,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS user_name
+                    FROM mileage_logs ml
+                    LEFT JOIN vehicles v ON v.id = ml.vehicle_id AND v.deleted_at IS NULL AND v.is_active = 1
+                    LEFT JOIN users u ON u.id = ml.user_id AND u.deleted_at IS NULL
+                    WHERE ml.deleted_at IS NULL AND ml.vehicle_id = ?
+                    ORDER BY ml.log_date DESC
+                    LIMIT ?
+                    """, arguments: [vehicleId, recentLimit])
+
+                let recentMileage = mileageRows.map { mileageRow in
+                    MileageRow(
+                        id: mileageRow["id"] ?? 0,
+                        vehicleName: mileageRow["vehicle_name"] ?? "",
+                        userName: mileageRow["user_name"] ?? "Unknown",
+                        logDate: mileageRow["log_date"] ?? "",
+                        totalMiles: mileageRow["total_miles"] as Double?,
+                        purpose: mileageRow["purpose"] as String?
+                    )
+                }
+
+                let fuelRows = try Row.fetchAll(dbConn, sql: """
+                    SELECT fl.id, fl.log_date, fl.gallons, fl.total_cost, fl.station,
+                           v.vehicle_name,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS user_name
+                    FROM fuel_logs fl
+                    LEFT JOIN vehicles v ON v.id = fl.vehicle_id AND v.deleted_at IS NULL AND v.is_active = 1
+                    LEFT JOIN users u ON u.id = fl.user_id AND u.deleted_at IS NULL
+                    WHERE fl.deleted_at IS NULL AND fl.vehicle_id = ?
+                    ORDER BY fl.log_date DESC
+                    LIMIT ?
+                    """, arguments: [vehicleId, recentLimit])
+
+                let recentFuel = fuelRows.map { fuelRow in
+                    FuelRow(
+                        id: fuelRow["id"] ?? 0,
+                        vehicleName: fuelRow["vehicle_name"] ?? "",
+                        userName: fuelRow["user_name"] ?? "Unknown",
+                        logDate: fuelRow["log_date"] ?? "",
+                        gallons: fuelRow["gallons"] as Double?,
+                        totalCost: fuelRow["total_cost"] as Double?,
+                        station: fuelRow["station"] as String?
+                    )
+                }
+
+                return MyTruckDashboard(
+                    vehicle: vehicle,
+                    stats: stats,
+                    truckStock: stockItems.filter { $0.stockType == "truck_stock" },
+                    transferItems: stockItems.filter { $0.stockType == "transfer" },
+                    recentMileage: recentMileage,
+                    recentFuel: recentFuel
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) { return nil }
+            throw error
         }
     }
 
@@ -1852,10 +1955,6 @@ public final class FleetService: Sendable {
         trailerId: Int64, locationType: String, locationLabel: String?,
         jobId: Int64? = nil, recordedBy: Int64
     ) throws {
-        try db.writer.read { dbConn in
-            try ServicePermissionGate.requirePermission(dbConn, userId: recordedBy, permissionKey: "manage_fleet")
-        }
-
         try db.writer.write { dbConn in
             // Guard: trailer must be active and not tombstoned — inserting history
             // against a soft-deleted trailer creates an orphan audit row and leaves
@@ -2362,6 +2461,63 @@ public final class FleetService: Sendable {
             if isTableNotFoundError(error) { return 0 }
             throw error
         }
+    }
+
+    private func fetchVehicleAssignments(dbConn: Database, vehicleId: Int64) throws -> [AssignmentRow] {
+        let assignmentRows = try Row.fetchAll(
+            dbConn,
+            sql: """
+                SELECT va.id, va.user_id, va.assignment_type, va.is_take_home,
+                       va.start_date, va.end_date, va.is_active,
+                       COALESCE(u.display_name, u.email, 'Unknown') AS user_name
+                FROM vehicle_assignments va
+                LEFT JOIN users u ON u.id = va.user_id AND u.deleted_at IS NULL
+                WHERE va.vehicle_id = ? AND va.deleted_at IS NULL
+                ORDER BY va.is_active DESC, va.start_date DESC
+                """,
+            arguments: [vehicleId]
+        )
+
+        return assignmentRows.map { aRow in
+            AssignmentRow(
+                id: aRow["id"] ?? 0,
+                userId: aRow["user_id"] ?? 0,
+                userName: aRow["user_name"] ?? "Unknown",
+                assignmentType: aRow["assignment_type"] ?? "primary",
+                isTakeHome: (aRow["is_take_home"] as Int?) == 1,
+                startDate: aRow["start_date"] ?? "",
+                endDate: aRow["end_date"] as String?,
+                isActive: (aRow["is_active"] as Int?) == 1
+            )
+        }
+    }
+
+    private func buildVehicleDetail(from row: Row, vehicleId: Int64, assignments: [AssignmentRow]) -> VehicleDetail {
+        VehicleDetail(
+            id: (row["id"] as Int64?) ?? vehicleId,
+            vehicleNumber: row["vehicle_number"] ?? "",
+            vehicleName: row["vehicle_name"] ?? "",
+            vehicleType: row["vehicle_type"] ?? "truck",
+            status: row["status"] ?? "active",
+            make: row["make"] as String?,
+            model: row["model"] as String?,
+            year: row["year"] as Int?,
+            color: row["color"] as String?,
+            vin: row["vin"] as String?,
+            licensePlate: row["license_plate"] as String?,
+            insurancePolicy: row["insurance_policy"] as String?,
+            insuranceExpiry: row["insurance_expiry"] as String?,
+            registrationExpiry: row["registration_expiry"] as String?,
+            currentOdometer: row["current_odometer"] as Int?,
+            ownerUserId: row["owner_user_id"] as Int64?,
+            notes: row["notes"] as String?,
+            photoPath: row["photo_path"] as String?,
+            isActive: (row["is_active"] as Int?) ?? 0,
+            deletedAt: row["deleted_at"] as String?,
+            createdAt: row["created_at"] as String?,
+            updatedAt: row["updated_at"] as String?,
+            assignments: assignments
+        )
     }
 
     /// Detect whether a GRDB/SQLite error indicates a missing table.

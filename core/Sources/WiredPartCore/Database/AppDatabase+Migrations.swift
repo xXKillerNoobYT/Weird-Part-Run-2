@@ -124,6 +124,12 @@ extension AppDatabase {
         registerMigration085AuditSessionEvents(&migrator)
         registerMigration086PartAutoWishlistOptIn(&migrator)
         registerMigration087ServicePermissionGateBackfill(&migrator)
+        registerMigration088FleetInspectionDashboardLookupIndex(&migrator)
+        registerMigration089VehicleLocationLogs(&migrator)
+        registerMigration090NotebookClassificationPermissions(&migrator)
+        registerMigration091MultiUserAuditResolutionColumns(&migrator)
+        registerMigration092VehicleLocationLatestLookupIndex(&migrator)
+        registerMigration093DailyReportClockOutQuestion(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5131,6 +5137,7 @@ extension AppDatabase {
         }
     }
 
+
     private static func registerMigration087ServicePermissionGateBackfill(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("087_service_permission_gate_backfill") { db in
             let permissionGrants: [(key: String, hats: [String])] = [
@@ -5167,6 +5174,112 @@ extension AppDatabase {
                         """, arguments: [grant.key, hatName])
                 }
             }
+        }
+    }
+
+    private static func registerMigration088FleetInspectionDashboardLookupIndex(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("088_fleet_inspection_dashboard_index") { db in
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_ir_vehicle_performed_at
+                ON inspection_records(vehicle_id, performed_at)
+                """)
+        }
+    }
+
+    private static func registerMigration089VehicleLocationLogs(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("089_vehicle_location_logs") { db in
+            try db.create(table: "vehicle_location_logs", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("vehicle_id", .integer).notNull()
+                    .references("vehicles", onDelete: .cascade)
+                t.column("user_id", .integer)
+                    .references("users")
+                t.column("latitude", .double)
+                t.column("longitude", .double)
+                t.column("speed", .double)
+                t.column("status", .text).notNull().defaults(to: "unknown")
+                t.column("recorded_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("deleted_at", .text)
+            }
+
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_vll_vehicle
+                ON vehicle_location_logs(vehicle_id)
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_vll_latest_active
+                ON vehicle_location_logs(vehicle_id, id)
+                WHERE deleted_at IS NULL
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_vll_recorded_at
+                ON vehicle_location_logs(recorded_at)
+                """)
+        }
+    }
+
+    private static func registerMigration090NotebookClassificationPermissions(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("090_notebook_classification_permissions") { db in
+            let permissionGrants: [(key: String, hatNames: [String])] = [
+                ("notebooks.classify_todo", ["Admin", "Manager", "Lead", "Worker"]),
+                ("notebooks.reclassify_todo", ["Admin", "Manager"]),
+                ("notebooks.review_classification", ["Admin", "Manager"]),
+            ]
+
+            for grant in permissionGrants {
+                for hatName in grant.hatNames {
+                    try db.execute(sql: """
+                        INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+                        SELECT id, ? FROM hats WHERE name = ?
+                        """, arguments: [grant.key, hatName])
+                }
+            }
+        }
+    }
+
+    private static func registerMigration091MultiUserAuditResolutionColumns(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("091_multi_user_audit_resolution_columns") { db in
+            // MultiUserAuditAssignment encodes these resolution fields when
+            // assignments are inserted or updated. Migration 059 created the
+            // table without them, so fresh and upgraded databases both need
+            // a guarded add-column pass before any assignment rows are saved.
+            try addColumnIfMissing(
+                db,
+                table: "multi_user_audit_assignments",
+                column: "resolved_quantity",
+                type: .integer
+            )
+            try addColumnIfMissing(
+                db,
+                table: "multi_user_audit_assignments",
+                column: "resolution_method",
+                type: .text
+            )
+            try addColumnIfMissing(
+                db,
+                table: "multi_user_audit_assignments",
+                column: "resolved_by",
+                type: .integer
+            )
+            try addColumnIfMissing(
+                db,
+                table: "multi_user_audit_assignments",
+                column: "resolved_at",
+                type: .text
+            )
+        }
+    }
+
+    private static func registerMigration092VehicleLocationLatestLookupIndex(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("092_vehicle_location_latest_lookup_index") { db in
+            // FleetService.listTelematicsData reads the latest non-deleted GPS row per vehicle.
+            // Migration 089 creates the table and basic indexes; this covering partial index
+            // preserves the intended PR #535 lookup performance on current main without
+            // reusing the stale 083 migration slot from the old stacked branch.
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_vll_vehicle_deleted_id
+                ON vehicle_location_logs(vehicle_id, deleted_at, id)
+                """)
         }
     }
 
@@ -5230,6 +5343,37 @@ extension AppDatabase {
                     )
                 }
             }
+        }
+    }
+
+    // MARK: - Migration 093: Daily Report clock-out prompt
+
+    private static func registerMigration093DailyReportClockOutQuestion(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("093_daily_report_clock_out_question") { db in
+            let existingCount = try Int.fetchOne(
+                db,
+                sql: """
+                    SELECT COUNT(*)
+                    FROM clock_out_questions
+                    WHERE lower(question_text) LIKE '%daily report%'
+                      AND is_active = 1
+                    """
+            ) ?? 0
+            guard existingCount == 0 else { return }
+
+            let nextSortOrder = (try Int.fetchOne(
+                db,
+                sql: "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM clock_out_questions"
+            ) ?? 1)
+
+            try db.execute(
+                sql: """
+                    INSERT INTO clock_out_questions
+                        (question_text, answer_type, is_required, sort_order, is_active, created_at, updated_at)
+                    VALUES (?, 'text', 1, ?, 1, datetime('now'), datetime('now'))
+                    """,
+                arguments: ["Daily Report: What did you accomplish today, and what should the office know for tomorrow?", nextSortOrder]
+            )
         }
     }
 }

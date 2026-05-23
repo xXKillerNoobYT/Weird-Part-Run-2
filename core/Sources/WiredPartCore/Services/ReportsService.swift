@@ -757,7 +757,7 @@ public final class ReportsService: Sendable {
                     LEFT JOIN parts p ON p.id = sm.part_id AND p.deleted_at IS NULL
                     LEFT JOIN part_categories pc ON pc.id = p.category_id AND pc.deleted_at IS NULL
                     LEFT JOIN jobs j ON j.id = sm.job_id AND j.deleted_at IS NULL
-                    WHERE sm.deleted_at IS NULL AND sm.movement_type IN ('pull', 'usage', 'job_pull')
+                    WHERE sm.deleted_at IS NULL AND sm.movement_type IN \(StockMovement.MovementType.sqlList(StockMovement.MovementType.materialUsageTypes))
                       AND date(sm.created_at) >= ? AND date(sm.created_at) <= ?
                     ORDER BY sm.created_at DESC
                     LIMIT 500

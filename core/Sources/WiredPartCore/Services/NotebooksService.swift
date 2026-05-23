@@ -11,20 +11,41 @@ import GRDB
 /// Ported from: Unified Notebook System (Phase 4.5)
 public final class NotebooksService: Sendable {
     private let db: AppDatabase
+    private let auth: AuthService
 
-    public init(db: AppDatabase) {
+    public init(db: AppDatabase, auth: AuthService? = nil) {
         self.db = db
+        self.auth = auth ?? AuthService(db: db)
     }
 
     // =========================================================================
     // MARK: - Error Types
     // =========================================================================
 
-    public enum NotebooksError: Error, Sendable {
+    public enum NotebooksError: Error, LocalizedError, Sendable {
         case notebookNotFound(Int64)
         case entryNotFound(Int64)
         case requiredFieldEmpty
         case invalidDuration(Int64)
+        case invalidData(String)
+        case insufficientPermissions(required: String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .insufficientPermissions(let required):
+                return "You don't have permission to perform this action (required: \(required))."
+            case .notebookNotFound(let id):
+                return "Notebook \(id) not found."
+            case .entryNotFound(let id):
+                return "Notebook entry \(id) not found."
+            case .requiredFieldEmpty:
+                return "A required field is empty."
+            case .invalidDuration(let duration):
+                return "Invalid duration: \(duration)."
+            case .invalidData(let message):
+                return message
+            }
+        }
     }
 
     // =========================================================================
@@ -490,19 +511,34 @@ public final class NotebooksService: Sendable {
         }
     }
 
+    private enum ClassificationPermission {
+        static let classify = "notebooks.classify_todo"
+        static let reclassify = "notebooks.reclassify_todo"
+        static let review = "notebooks.review_classification"
+    }
+
+    private func requirePermission(userId: Int64, permissionKey: String) throws {
+        guard try auth.hasPermission(userId, permissionKey: permissionKey) else {
+            throw NotebooksError.insufficientPermissions(required: permissionKey)
+        }
+    }
+
+    private static func fetchActiveClassification(_ dbConn: Database, entryId: Int64) throws -> String? {
+        let row = try Row.fetchOne(dbConn, sql: """
+            SELECT work_classification
+            FROM notebook_entries
+            WHERE id = ? AND deleted_at IS NULL
+            """, arguments: [entryId])
+        guard let row else { throw NotebooksError.entryNotFound(entryId) }
+        return row["work_classification"] as String?
+    }
+
     /// Classify a to-do as regular or warranty work.
     public func classifyTodoWork(entryId: Int64, classification: String, classifiedBy: Int64) throws {
-        try db.writer.read { dbConn in
-            try ServicePermissionGate.requirePermission(dbConn, userId: classifiedBy, permissionKey: "manage_notebooks")
-        }
-
+        try requirePermission(userId: classifiedBy, permissionKey: ClassificationPermission.classify)
         try db.writer.write { dbConn in
-            // Get current classification for history
-            let current = try String.fetchOne(dbConn, sql: """
-                SELECT work_classification FROM notebook_entries WHERE id = ?
-                """, arguments: [entryId])
+            let current = try Self.fetchActiveClassification(dbConn, entryId: entryId)
 
-            // Update classification
             try dbConn.execute(sql: """
                 UPDATE notebook_entries SET
                     work_classification = ?,
@@ -513,7 +549,6 @@ public final class NotebooksService: Sendable {
                 WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [classification, entryId])
 
-            // Log in classification_history
             try dbConn.execute(sql: """
                 INSERT INTO classification_history
                     (entry_id, old_classification, new_classification, changed_by, changed_at)
@@ -524,13 +559,11 @@ public final class NotebooksService: Sendable {
 
     /// Manager reviews/approves a classification.
     public func reviewClassification(entryId: Int64, reviewedBy: Int64, approved: Bool, newClassification: String?) throws {
-        try db.writer.read { dbConn in
-            try ServicePermissionGate.requirePermission(dbConn, userId: reviewedBy, permissionKey: "manage_notebooks")
-        }
-
+        try requirePermission(userId: reviewedBy, permissionKey: ClassificationPermission.review)
         try db.writer.write { dbConn in
+            let current = try Self.fetchActiveClassification(dbConn, entryId: entryId)
+
             if approved {
-                // Approve current classification
                 try dbConn.execute(sql: """
                     UPDATE notebook_entries SET
                         classification_reviewed = 1,
@@ -540,11 +573,6 @@ public final class NotebooksService: Sendable {
                     WHERE id = ? AND deleted_at IS NULL
                     """, arguments: [reviewedBy, entryId])
             } else if let newClass = newClassification {
-                // Reclassify and approve in one step
-                let current = try String.fetchOne(dbConn, sql: """
-                    SELECT work_classification FROM notebook_entries WHERE id = ?
-                    """, arguments: [entryId])
-
                 try dbConn.execute(sql: """
                     UPDATE notebook_entries SET
                         work_classification = ?,
@@ -607,23 +635,10 @@ public final class NotebooksService: Sendable {
 
     /// Reclassify a to-do with reason tracking. Resets the review flag.
     public func reclassifyTodoWork(entryId: Int64, newClassification: String, changedBy: Int64, reason: String?) throws {
-        try db.writer.read { dbConn in
-            try ServicePermissionGate.requirePermission(dbConn, userId: changedBy, permissionKey: "manage_notebooks")
-        }
-
+        try requirePermission(userId: changedBy, permissionKey: ClassificationPermission.reclassify)
         try db.writer.write { dbConn in
-            let current = try String.fetchOne(dbConn, sql: """
-                SELECT work_classification FROM notebook_entries WHERE id = ?
-                """, arguments: [entryId])
+            let current = try Self.fetchActiveClassification(dbConn, entryId: entryId)
 
-            // Log old → new
-            try dbConn.execute(sql: """
-                INSERT INTO classification_history
-                    (entry_id, old_classification, new_classification, changed_by, reason, changed_at)
-                VALUES (?, ?, ?, ?, ?, datetime('now'))
-                """, arguments: [entryId, current, newClassification, changedBy, reason])
-
-            // Update entry and reset review
             try dbConn.execute(sql: """
                 UPDATE notebook_entries SET
                     work_classification = ?,
@@ -633,6 +648,12 @@ public final class NotebooksService: Sendable {
                     updated_at = datetime('now')
                 WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [newClassification, entryId])
+
+            try dbConn.execute(sql: """
+                INSERT INTO classification_history
+                    (entry_id, old_classification, new_classification, changed_by, reason, changed_at)
+                VALUES (?, ?, ?, ?, ?, datetime('now'))
+                """, arguments: [entryId, current, newClassification, changedBy, reason])
         }
     }
 
@@ -663,7 +684,7 @@ public final class NotebooksService: Sendable {
     /// Start warranty timer when a to-do is completed. Sets timer_start = now, timer_end = now + job warranty days.
     public func startWarrantyTimer(entryId: Int64, warrantyDurationDays: Int) throws {
         guard warrantyDurationDays > 0 else {
-            throw NotebooksError.invalidDuration(entryId)
+            throw NotebooksError.invalidDuration(Int64(warrantyDurationDays))
         }
         let now = Date()
         let end = Calendar.current.date(byAdding: .day, value: warrantyDurationDays, to: now) ?? now.addingTimeInterval(Double(warrantyDurationDays) * 86400)
@@ -900,6 +921,8 @@ public final class NotebooksService: Sendable {
         title: String? = nil,
         content: String? = nil,
         blockData: String? = nil,
+        headingLevel: Int? = nil,
+        checklistItems: String? = nil,
         createdBy: Int64,
         sortOrder: Int? = nil
     ) throws -> Int64 {
@@ -922,23 +945,90 @@ public final class NotebooksService: Sendable {
                 SELECT notebook_id FROM notebook_sections WHERE id = ?
                 """, arguments: [sectionId])
 
+            let storedBlockData = blockType == "checklist" ? nil : blockData
+            let storedChecklistItems = checklistItems ?? (blockType == "checklist" ? blockData : nil)
+
             try dbConn.execute(sql: """
                 INSERT INTO notebook_entries
                 (section_id, notebook_id, title, content, entry_type, block_type, block_data,
-                 field_required, is_deleted, is_completed, sort_order, created_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'note', ?, ?, 0, 0, 0, ?, ?, datetime('now'), datetime('now'))
-                """, arguments: [sectionId, notebookId, title ?? "", content, blockType, blockData, order, createdBy])
+                 heading_level, checklist_items, field_required, is_deleted, is_completed,
+                 sort_order, created_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'note', ?, ?, ?, ?, 0, 0, 0, ?, ?, datetime('now'), datetime('now'))
+                """, arguments: [
+                    sectionId, notebookId, title ?? "", content, blockType, storedBlockData,
+                    headingLevel, storedChecklistItems, order, createdBy
+                ])
             return dbConn.lastInsertedRowID
         }
     }
 
-    /// Update a block entry's content and/or block data.
-    public func updateBlockEntry(entryId: Int64, content: String?, blockData: String?) throws {
+    /// Update a block entry's editable fields and record a sync-compatible change-log entry.
+    public func updateBlockEntry(
+        entryId: Int64,
+        title: String? = nil,
+        content: String?,
+        blockData: String?,
+        headingLevel: Int? = nil,
+        checklistItems: String? = nil,
+        updatedBy: Int64
+    ) throws {
         try db.writer.write { dbConn in
-            try dbConn.execute(sql: """
-                UPDATE notebook_entries SET content = ?, block_data = ?, updated_at = datetime('now')
+            try ServicePermissionGate.requirePermission(dbConn, userId: updatedBy, permissionKey: "manage_notebooks")
+
+            guard let existing = try Row.fetchOne(dbConn, sql: """
+                SELECT title, content, block_data, heading_level, checklist_items
+                FROM notebook_entries
                 WHERE id = ? AND deleted_at IS NULL
-                """, arguments: [content, blockData, entryId])
+                """, arguments: [entryId]) else { return }
+
+            let newTitle = title ?? (existing["title"] as String? ?? "")
+            let oldTitle = existing["title"] as String? ?? ""
+            let oldContent = existing["content"] as String?
+            let oldBlockData = existing["block_data"] as String?
+            let oldHeadingLevel = existing["heading_level"] as Int?
+            let oldChecklistItems = existing["checklist_items"] as String?
+
+            try dbConn.execute(sql: """
+                UPDATE notebook_entries
+                SET title = ?, content = ?, block_data = ?, heading_level = ?, checklist_items = ?,
+                    updated_by = ?, updated_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [newTitle, content, blockData, headingLevel, checklistItems, updatedBy, entryId])
+
+            var changedFields: [String: Any] = [:]
+            var oldValues: [String: Any] = [:]
+            func trackString(_ field: String, old: String?, new: String?) {
+                if old != new {
+                    changedFields[field] = new ?? NSNull()
+                    oldValues[field] = old ?? NSNull()
+                }
+            }
+            func trackInt(_ field: String, old: Int?, new: Int?) {
+                if old != new {
+                    changedFields[field] = new ?? NSNull()
+                    oldValues[field] = old ?? NSNull()
+                }
+            }
+            trackString("title", old: oldTitle, new: newTitle)
+            trackString("content", old: oldContent, new: content)
+            trackString("block_data", old: oldBlockData, new: blockData)
+            trackInt("heading_level", old: oldHeadingLevel, new: headingLevel)
+            trackString("checklist_items", old: oldChecklistItems, new: checklistItems)
+
+            if !changedFields.isEmpty {
+                let changedFieldsData = try JSONSerialization.data(withJSONObject: changedFields, options: [.sortedKeys])
+                let oldValuesData = try JSONSerialization.data(withJSONObject: oldValues, options: [.sortedKeys])
+                guard let changedFieldsJSON = String(data: changedFieldsData, encoding: .utf8),
+                      let oldValuesJSON = String(data: oldValuesData, encoding: .utf8) else {
+                    throw NotebooksError.invalidData("Unable to encode notebook change history")
+                }
+
+                try dbConn.execute(sql: """
+                    INSERT INTO _change_log
+                    (device_id, table_name, record_id, operation, changed_fields, old_values, timestamp)
+                    VALUES ('local', 'notebook_entries', ?, 'UPDATE', ?, ?, datetime('now'))
+                    """, arguments: [entryId, changedFieldsJSON, oldValuesJSON])
+            }
         }
     }
 

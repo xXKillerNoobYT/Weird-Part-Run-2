@@ -82,11 +82,11 @@ struct IOSMaintenancePage: View {
             } else if let error = loadError {
                 ErrorStateView(message: error) { loadData() }
             } else if filteredRecords.isEmpty {
-                ContentUnavailableView {
-                    Label("No Maintenance Records", systemImage: "wrench.and.screwdriver")
-                } description: {
-                    Text("No maintenance records found.")
-                }
+                EmptyStateView(
+                    icon: "wrench.and.screwdriver",
+                    title: "No Maintenance Records",
+                    message: "No maintenance records found."
+                )
             } else {
                 List(filteredRecords, id: \.id) { record in
                     maintenanceRow(record)

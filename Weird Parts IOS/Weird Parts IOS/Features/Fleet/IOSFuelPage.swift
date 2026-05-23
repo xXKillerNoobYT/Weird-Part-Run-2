@@ -80,11 +80,11 @@ struct IOSFuelPage: View {
             } else if let error = loadError {
                 ErrorStateView(message: error) { loadData() }
             } else if filteredLogs.isEmpty {
-                ContentUnavailableView {
-                    Label("No Fuel Logs", systemImage: "fuelpump")
-                } description: {
-                    Text("No fuel logs found.")
-                }
+                EmptyStateView(
+                    icon: "fuelpump",
+                    title: "No Fuel Logs",
+                    message: "No fuel logs found."
+                )
             } else {
                 List(filteredLogs, id: \.id) { log in
                     fuelRow(log)

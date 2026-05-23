@@ -40,14 +40,15 @@ struct PartsImportExportPage: View {
                         .frame(maxWidth: .infinity)
                         .padding(.top, 40)
                 } else if let error = loadError {
-                    ContentUnavailableView {
-                        Label("Failed to Load", systemImage: "exclamationmark.triangle")
-                    } description: {
-                        Text(error)
-                    } actions: {
-                        Button("Retry") { Task { await loadStats() } }
-                            .buttonStyle(.bordered)
+                    EmptyStateView(
+                        icon: "exclamationmark.triangle",
+                        title: "Failed to Load",
+                        message: error,
+                        actionLabel: "Retry"
+                    ) {
+                        Task { await loadStats() }
                     }
+                    .frame(minHeight: 320)
                 } else {
                     statsSection
                     exportSection
