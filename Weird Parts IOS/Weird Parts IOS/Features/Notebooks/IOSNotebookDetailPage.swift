@@ -1187,10 +1187,6 @@ struct IOSNotebookDetailPage: View {
             loadError = "No notebook loaded"
             return
         }
-        guard let userId = appCore.currentUser?.id else {
-            loadError = "Not logged in. Please log in and try again."
-            return
-        }
         guard let json = try? JSONEncoder().encode(schedule),
               let jsonString = String(data: json, encoding: .utf8) else {
             loadError = "Failed to encode panel schedule"
