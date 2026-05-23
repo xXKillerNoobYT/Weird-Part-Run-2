@@ -126,6 +126,7 @@ struct HelpContentRegistry {
         "WiredPart.vehiclesPageActive": "fleet-vehicles",
         "WiredPart.toolRegistryPageActive": "tools-registry",
         "WiredPart.notebooksListPageActive": "notebooks-all",
+        "WiredPart.settingsPageActive": "settings-app-config",
     ]
 
     // MARK: - All Entries (extracted from PageHelpSheet usages)
@@ -693,6 +694,19 @@ struct HelpContentRegistry {
                 ("How to Use It", "Use the type filter chips at the top to narrow by notebook type (General, Job, Daily Report, or Checklist). Use the search bar to find notebooks by title, job name, or author. Tap a notebook to view its full contents. Pull down to refresh the list."),
                 ("Creating a Notebook", "Tap the + button in the toolbar to create a new notebook. You can choose a type, assign it to a job, and optionally start from a template."),
                 ("Notebook Types", "General notebooks are standalone. Job notebooks are linked to a specific job. Daily Report notebooks track daily progress. Checklist notebooks contain to-do items that can be checked off."),
+            ]
+        ),
+
+        // ── SETTINGS ──────────────────────────────────────────────────────
+
+        HelpEntry(
+            pageId: "settings-app-config",
+            title: "App Config Help",
+            sections: [
+                ("What This Page Does", "General application configuration including auto-lock timeout, stale data warnings, archive retention, warranty defaults, payment tracking settings, and app tour reset."),
+                ("How to Use It", "Adjust the editable values, review the payment tracking controls if enabled, then tap Save Configuration to persist changes. Auto-lock controls how long before the app locks. Stale data warning triggers when sync data is old. Archive and warranty values control default retention and coverage windows."),
+                ("Payment Tracking", "Enable payment tracking to monitor invoices and payments per customer. Configure payment terms, overdue warning timing, and whether overdue customers should be placed on automatic payment hold."),
+                ("Tips", "Use Restart App Tour when a user needs onboarding again. Invalid or empty numeric settings keep Save Configuration disabled until corrected."),
             ]
         ),
 
