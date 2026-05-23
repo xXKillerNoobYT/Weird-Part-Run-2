@@ -511,7 +511,8 @@ public final class SchedulingService: Sendable {
         }
 
         let requiredPermission = "approve_time_off"
-        if status == "approved" || approvedBy != nil {
+        let requiresApprovalActor = status == "approved" || status == "denied"
+        if requiresApprovalActor || approvedBy != nil {
             guard let approvedBy,
                   try auth.hasPermission(approvedBy, permissionKey: requiredPermission) else {
                 throw SchedulingError.insufficientPermissions(required: requiredPermission)

@@ -231,6 +231,10 @@ struct DeviceResetServiceTests {
 
         try fm.createDirectory(at: backupDir, withIntermediateDirectories: true)
         fm.createFile(atPath: basePath, contents: Data("db".utf8))
+        fm.createFile(atPath: basePath + ".unencrypted.bak", contents: Data("plaintext backup".utf8))
+        fm.createFile(atPath: basePath + ".unencrypted.bak-wal", contents: Data("plaintext wal".utf8))
+        fm.createFile(atPath: basePath + ".encrypted-tmp", contents: Data("tmp db".utf8))
+        fm.createFile(atPath: basePath + ".encrypted-tmp-shm", contents: Data("tmp shm".utf8))
         fm.createFile(
             atPath: backupDir.appendingPathComponent("manual.sqlite").path,
             contents: Data("backup".utf8)
@@ -239,6 +243,10 @@ struct DeviceResetServiceTests {
         try DeviceResetService.deleteDatabaseStorage(atPath: basePath)
 
         #expect(!fm.fileExists(atPath: basePath))
+        #expect(!fm.fileExists(atPath: basePath + ".unencrypted.bak"))
+        #expect(!fm.fileExists(atPath: basePath + ".unencrypted.bak-wal"))
+        #expect(!fm.fileExists(atPath: basePath + ".encrypted-tmp"))
+        #expect(!fm.fileExists(atPath: basePath + ".encrypted-tmp-shm"))
         #expect(!fm.fileExists(atPath: backupDir.path))
 
         try? fm.removeItem(at: tmpDir)

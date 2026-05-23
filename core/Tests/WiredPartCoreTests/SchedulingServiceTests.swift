@@ -186,6 +186,13 @@ struct SchedulingServiceTests {
         let all = try env.scheduling.listTimeOffRequests(userId: env.adminUserId)
         #expect(all.count == 1)
         #expect(all[0].status == "pending") // is_approved = 0 maps to "pending" in the query
+
+        #expect(throws: SchedulingService.SchedulingError.insufficientPermissions(required: "approve_time_off")) {
+            try env.scheduling.updateTimeOffStatus(
+                id: requestId,
+                status: "denied"
+            )
+        }
     }
 
     @Test("updateTimeOffStatus throws for non-existent request")

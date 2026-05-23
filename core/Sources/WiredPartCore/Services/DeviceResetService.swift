@@ -145,6 +145,8 @@ public final class DeviceResetService: Sendable {
     /// recoverable user data after the app returns to first-run setup.
     public static func deleteDatabaseStorage(atPath path: String) throws {
         try deleteDatabaseFile(atPath: path)
+        try deleteDatabaseFile(atPath: path + ".unencrypted.bak")
+        try deleteDatabaseFile(atPath: path + ".encrypted-tmp")
 
         let fm = FileManager.default
         let backupPath = (path as NSString).deletingLastPathComponent + "/Backups"
@@ -163,7 +165,6 @@ public final class DeviceResetService: Sendable {
         if let domainName {
             defaults.removePersistentDomain(forName: domainName)
         }
-        defaults.synchronize()
     }
 
     // MARK: - Admin Verification
