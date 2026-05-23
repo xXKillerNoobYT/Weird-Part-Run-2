@@ -33,6 +33,8 @@ public final class CipherKeyManager: Sendable {
     private static let keychainAccount = "wp.dbcipher.salt"
     private static let keychainService = "com.wiredpart.dbcipher"
     private static let logger = Logger(subsystem: "com.wiredpart.core", category: "CipherKeyManager")
+    nonisolated(unsafe) private static var testSalt: Data?
+    private static let testSaltLock = NSLock()
 
     private init() {}
 
@@ -64,18 +66,27 @@ public final class CipherKeyManager: Sendable {
     /// - Returns: 32-byte `Data` value.
     /// - Throws: `CipherKeyError.keychainAccessFailed` on a hard Keychain failure.
     public func loadOrCreateSalt() throws -> Data {
+        // SwiftPM's command-line test runner can block indefinitely on macOS Keychain
+        // access when no GUI authorization session is available. Production app code
+        // still uses the Keychain path below; tests use a process-local stable salt so
+        // key derivation behavior remains deterministic without touching user Keychains.
+        if Self.isRunningUnderTestBundle {
+            return try Self.loadOrCreateProcessLocalTestSalt()
+        }
+
         // Attempt read first.
         if let existing = readSaltFromKeychain() {
             return existing
         }
-
-        // Generate 32 cryptographically-random bytes.
-        var bytes = [UInt8](repeating: 0, count: 32)
-        let rc = SecRandomCopyBytes(kSecRandomDefault, 32, &bytes)
-        guard rc == errSecSuccess else {
-            throw CipherKeyError.saltGenerationFailed(rc)
+        #if targetEnvironment(macCatalyst)
+        // Local Catalyst builds can run without keychain entitlements.
+        // Reuse a sandbox-stored salt so derived keys remain stable per install.
+        if let fallback = try readCatalystFallbackSalt() {
+            return fallback
         }
-        let salt = Data(bytes)
+        #endif
+
+        let salt = try Self.generateSalt()
 
         do {
             try writeSaltToKeychain(salt)
@@ -91,6 +102,12 @@ public final class CipherKeyManager: Sendable {
             Self.logger.error("CipherKeyManager: salt write raced (errSecDuplicateItem) and re-read also failed")
             throw CipherKeyError.keychainAccessFailed(errSecDuplicateItem)
         } catch {
+            #if targetEnvironment(macCatalyst)
+            if case CipherKeyError.keychainAccessFailed(errSecMissingEntitlement) = error {
+                try writeCatalystFallbackSalt(salt)
+                return salt
+            }
+            #endif
             // Any other write failure (e.g. errSecNotAvailable, errSecAuthFailed) — surface
             // the original error directly so callers get the real failure reason.
             throw error
@@ -99,6 +116,11 @@ public final class CipherKeyManager: Sendable {
 
     /// Delete the persisted salt (use only during device wipe / factory reset).
     public func deleteSalt() {
+        if Self.isRunningUnderTestBundle {
+            Self.clearProcessLocalTestSalt()
+            return
+        }
+
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: Self.keychainService,
@@ -108,6 +130,39 @@ public final class CipherKeyManager: Sendable {
         if status != errSecSuccess && status != errSecItemNotFound {
             Self.logger.warning("CipherKeyManager: SecItemDelete returned \(status) — salt may persist")
         }
+    }
+
+    // MARK: - Private Test Helpers
+
+    private static var isRunningUnderTestBundle: Bool {
+        let executablePath = Bundle.main.executablePath ?? ""
+        return executablePath.contains(".xctest") ||
+            ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
+    private static func loadOrCreateProcessLocalTestSalt() throws -> Data {
+        testSaltLock.lock()
+        defer { testSaltLock.unlock() }
+        if let existing = testSalt { return existing }
+        let salt = try generateSalt()
+        testSalt = salt
+        return salt
+    }
+
+    private static func clearProcessLocalTestSalt() {
+        testSaltLock.lock()
+        defer { testSaltLock.unlock() }
+        testSalt = nil
+    }
+
+    private static func generateSalt() throws -> Data {
+        // Generate 32 cryptographically-random bytes.
+        var bytes = [UInt8](repeating: 0, count: 32)
+        let rc = SecRandomCopyBytes(kSecRandomDefault, 32, &bytes)
+        guard rc == errSecSuccess else {
+            throw CipherKeyError.saltGenerationFailed(rc)
+        }
+        return Data(bytes)
     }
 
     // MARK: - Private Keychain Helpers
@@ -129,13 +184,16 @@ public final class CipherKeyManager: Sendable {
     }
 
     private func writeSaltToKeychain(_ salt: Data) throws {
-        let addQuery: [CFString: Any] = [
+        var addQuery: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: Self.keychainService,
             kSecAttrAccount: Self.keychainAccount,
-            kSecValueData: salt,
-            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            kSecValueData: salt
         ]
+        #if !targetEnvironment(macCatalyst)
+        // Catalyst keychain can reject iOS accessibility classes with errSecParam.
+        addQuery[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        #endif
         let status = SecItemAdd(addQuery as CFDictionary, nil)
         guard status == errSecSuccess || status == errSecDuplicateItem else {
             throw CipherKeyError.keychainAccessFailed(status)
@@ -148,6 +206,30 @@ public final class CipherKeyManager: Sendable {
             throw CipherKeyError.keychainAccessFailed(status)
         }
     }
+
+    #if targetEnvironment(macCatalyst)
+    private func catalystFallbackSaltURL() throws -> URL {
+        guard let supportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            throw CipherKeyError.keychainAccessFailed(errSecParam)
+        }
+        let dir = supportURL.appendingPathComponent("WiredPart", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("catalyst-dbcipher-salt.bin")
+    }
+
+    private func readCatalystFallbackSalt() throws -> Data? {
+        let url = try catalystFallbackSaltURL()
+        guard let data = try? Data(contentsOf: url), data.count == 32 else {
+            return nil
+        }
+        return data
+    }
+
+    private func writeCatalystFallbackSalt(_ salt: Data) throws {
+        let url = try catalystFallbackSaltURL()
+        try salt.write(to: url, options: .atomic)
+    }
+    #endif
 }
 
 // MARK: - CipherKeyError

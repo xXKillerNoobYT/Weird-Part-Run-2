@@ -378,6 +378,15 @@ public final class ReportsService: Sendable {
                     LEFT JOIN labor_entries le ON le.job_id = j.id
                         AND date(le.clock_in) >= ? AND date(le.clock_in) <= ?
                         AND le.deleted_at IS NULL
+                        AND NOT EXISTS (
+                            SELECT 1
+                            FROM billing_periods bp
+                            WHERE (bp.job_id = le.job_id OR bp.job_id IS NULL)
+                              AND bp.locked_at IS NOT NULL
+                              AND bp.deleted_at IS NULL
+                              AND date(le.clock_in) >= date(bp.period_start)
+                              AND date(le.clock_in) <= date(bp.period_end)
+                        )
                     WHERE j.deleted_at IS NULL
                     GROUP BY j.id
                     HAVING regular_hours > 0 OR overtime_hours > 0
@@ -625,6 +634,10 @@ public final class ReportsService: Sendable {
         name: String, type: String, columns: [String],
         filters: [String: String], userId: Int64, isShared: Bool
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "view_reports")
+        }
+
         let columnsData = try JSONSerialization.data(withJSONObject: columns)
         let filtersData = try JSONSerialization.data(withJSONObject: filters)
         let columnsJson = String(data: columnsData, encoding: .utf8) ?? "[]"
@@ -639,6 +652,7 @@ public final class ReportsService: Sendable {
     }
 
     /// Get saved reports for a user (own + shared).
+    // SCANNER-IGNORE: system-only read-only listing; does not write audit fields.
     public func getSavedReports(userId: Int64) throws -> [SavedReport] {
         do {
             return try db.writer.read { dbConn -> [SavedReport] in
@@ -743,7 +757,7 @@ public final class ReportsService: Sendable {
                     LEFT JOIN parts p ON p.id = sm.part_id AND p.deleted_at IS NULL
                     LEFT JOIN part_categories pc ON pc.id = p.category_id AND pc.deleted_at IS NULL
                     LEFT JOIN jobs j ON j.id = sm.job_id AND j.deleted_at IS NULL
-                    WHERE sm.deleted_at IS NULL AND sm.movement_type IN ('pull', 'usage', 'job_pull')
+                    WHERE sm.deleted_at IS NULL AND sm.movement_type IN \(StockMovement.MovementType.sqlList(StockMovement.MovementType.materialUsageTypes))
                       AND date(sm.created_at) >= ? AND date(sm.created_at) <= ?
                     ORDER BY sm.created_at DESC
                     LIMIT 500

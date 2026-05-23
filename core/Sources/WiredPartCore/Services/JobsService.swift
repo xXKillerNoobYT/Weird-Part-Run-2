@@ -11,6 +11,8 @@ import GRDB
 /// Ported from: Jobs & Labor feature area (Phases 4, 4.5, 15)
 public final class JobsService: Sendable {
     private let db: AppDatabase
+    private static let warehouseClockJobNumber = "__SHOP_WAREHOUSE__"
+    private static let warehouseClockJobName = "Shop / Warehouse"
 
     public init(db: AppDatabase) {
         self.db = db
@@ -52,12 +54,20 @@ public final class JobsService: Sendable {
         public let startDate: String?
         public let dueDate: String?
         public let currentStageId: Int64?
+        public let estimatedHours: Double?
+        public let budgetLimit: Double?
+        public let laborHours: Double
+        public let actualCost: Double
 
         public init(
             id: Int64, jobNumber: String, jobName: String, customerName: String?,
             status: String, priority: String, jobType: String = "service",
             teamCount: Int, startDate: String?, dueDate: String?,
-            currentStageId: Int64? = nil
+            currentStageId: Int64? = nil,
+            estimatedHours: Double? = nil,
+            budgetLimit: Double? = nil,
+            laborHours: Double = 0,
+            actualCost: Double = 0
         ) {
             self.id = id
             self.jobNumber = jobNumber
@@ -70,6 +80,10 @@ public final class JobsService: Sendable {
             self.startDate = startDate
             self.dueDate = dueDate
             self.currentStageId = currentStageId
+            self.estimatedHours = estimatedHours
+            self.budgetLimit = budgetLimit
+            self.laborHours = laborHours
+            self.actualCost = actualCost
         }
     }
 
@@ -408,12 +422,51 @@ public final class JobsService: Sendable {
                 args.append(offset)
 
                 let sql = """
+                    WITH team_counts AS (
+                        SELECT jtm.job_id, COUNT(*) AS team_count
+                        FROM job_team_members jtm
+                        WHERE jtm.deleted_at IS NULL
+                        GROUP BY jtm.job_id
+                    ),
+                    labor_totals AS (
+                        SELECT le.job_id,
+                               SUM(le.regular_hours + le.overtime_hours) AS labor_hours,
+                               SUM(
+                                   le.regular_hours * COALESCE(u.pay_rate, 0)
+                                   + le.overtime_hours * COALESCE(u.pay_rate, 0) * 1.5
+                               ) AS labor_cost
+                        FROM labor_entries le
+                        LEFT JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
+                        WHERE le.deleted_at IS NULL
+                          AND le.status = 'completed'
+                        GROUP BY le.job_id
+                    ),
+                    po_costs AS (
+                        SELECT jpo.job_id,
+                               SUM(
+                                   pli.qty_ordered * COALESCE(pli.received_unit_cost, pli.unit_cost, 0)
+                               ) AS po_cost
+                        FROM po_line_items pli
+                        JOIN purchase_orders po ON po.id = pli.po_id
+                        JOIN jpo_line_items jli ON jli.id = pli.jpo_line_id
+                        JOIN job_parts_orders jpo ON jpo.id = jli.jpo_id
+                        WHERE pli.deleted_at IS NULL
+                          AND jli.deleted_at IS NULL
+                          AND jpo.deleted_at IS NULL
+                          AND po.deleted_at IS NULL
+                          AND po.status NOT IN ('cancelled')
+                        GROUP BY jpo.job_id
+                    )
                     SELECT j.id, j.job_number, j.job_name, j.customer_name,
                            j.status, j.priority, j.job_type, j.start_date, j.due_date,
-                           j.current_stage_id,
-                           COALESCE((SELECT COUNT(*) FROM job_team_members jtm
-                                     WHERE jtm.job_id = j.id AND jtm.deleted_at IS NULL), 0) AS team_count
+                           j.current_stage_id, j.estimated_hours, j.budget_limit,
+                           COALESCE(tc.team_count, 0) AS team_count,
+                           COALESCE(lt.labor_hours, 0) AS labor_hours,
+                           COALESCE(lt.labor_cost, 0) + COALESCE(pc.po_cost, 0) AS actual_cost
                     FROM jobs j
+                    LEFT JOIN team_counts tc ON tc.job_id = j.id
+                    LEFT JOIN labor_totals lt ON lt.job_id = j.id
+                    LEFT JOIN po_costs pc ON pc.job_id = j.id
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY j.created_at DESC
                     LIMIT ? OFFSET ?
@@ -432,7 +485,11 @@ public final class JobsService: Sendable {
                         teamCount: row["team_count"] ?? 0,
                         startDate: row["start_date"] as String?,
                         dueDate: row["due_date"] as String?,
-                        currentStageId: row["current_stage_id"] as Int64?
+                        currentStageId: row["current_stage_id"] as Int64?,
+                        estimatedHours: row["estimated_hours"] as Double?,
+                        budgetLimit: row["budget_limit"] as Double?,
+                        laborHours: row["labor_hours"] ?? 0,
+                        actualCost: row["actual_cost"] ?? 0
                     )
                 }
             }
@@ -567,31 +624,8 @@ public final class JobsService: Sendable {
                     jobClassification
                 ]
             )
-            let jobId = dbConn.lastInsertedRowID
-            let notebookCreatorId = try resolveJobNotebookCreatorId(dbConn: dbConn, preferredUserId: createdBy)
-            try dbConn.execute(
-                sql: """
-                    INSERT INTO notebooks
-                    (title, notebook_type, job_id, created_by, status, created_at, updated_at)
-                    VALUES (?, 'job', ?, ?, 'active', datetime('now'), datetime('now'))
-                    """,
-                arguments: ["\(jobName) Job Notebook", jobId, notebookCreatorId]
-            )
-            return jobId
+            return dbConn.lastInsertedRowID
         }
-    }
-
-    private func resolveJobNotebookCreatorId(dbConn: Database, preferredUserId: Int64?) throws -> Int64 {
-        if let preferredUserId {
-            return preferredUserId
-        }
-        if let fallbackUserId = try Int64.fetchOne(
-            dbConn,
-            sql: "SELECT id FROM users WHERE deleted_at IS NULL ORDER BY id ASC LIMIT 1"
-        ) {
-            return fallbackUserId
-        }
-        throw JobsError.requiredFieldEmpty
     }
 
     /// Update an existing job. Only non-nil fields are updated.
@@ -943,6 +977,45 @@ public final class JobsService: Sendable {
         }
     }
 
+    /// Clock a user into the internal Shop / Warehouse time bucket.
+    ///
+    /// The labor_entries schema requires a job_id, while the iOS clock page
+    /// exposes Shop / Warehouse as a pinned non-job option. This method bridges
+    /// that gap by creating/reusing a hidden active job row that is not shown in
+    /// the normal clock job picker, then creating the labor entry against it.
+    @discardableResult
+    public func clockInToWarehouse(
+        userId: Int64,
+        gpsLat: Double? = nil,
+        gpsLng: Double? = nil
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            let existing = try Int.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT COUNT(*) FROM labor_entries
+                    WHERE user_id = ? AND status = 'clocked_in' AND deleted_at IS NULL
+                    """,
+                arguments: [userId]
+            ) ?? 0
+
+            if existing > 0 {
+                throw JobsError.alreadyClockedIn(userId: userId, jobId: 0)
+            }
+
+            let warehouseJobId = try Self.ensureWarehouseClockJob(dbConn: dbConn, createdBy: userId)
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_in_gps_lat, clock_in_gps_lng, status, created_at)
+                    VALUES (?, ?, datetime('now'), ?, ?, 'clocked_in', datetime('now'))
+                    """,
+                arguments: [userId, warehouseJobId, gpsLat, gpsLng]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
     /// Clock out a labor entry. Updates clock_out time, calculates hours, sets status to 'completed'.
     ///
     /// - Returns: The updated labor entry row ID.
@@ -954,13 +1027,15 @@ public final class JobsService: Sendable {
     ) throws -> Int64 {
         try db.writer.write { dbConn in
             // Verify the entry exists and is clocked in
-            guard let _ = try Row.fetchOne(
+            guard let entry = try Row.fetchOne(
                 dbConn,
-                sql: "SELECT id, clock_in FROM labor_entries WHERE id = ? AND status = 'clocked_in' AND deleted_at IS NULL",
+                sql: "SELECT id, user_id, clock_in FROM labor_entries WHERE id = ? AND status = 'clocked_in' AND deleted_at IS NULL",
                 arguments: [laborEntryId]
             ) else {
                 throw JobsError.laborEntryNotFound(laborEntryId)
             }
+            let userId: Int64 = entry["user_id"] ?? 0
+            let clockIn: String = entry["clock_in"] ?? ""
 
             // Calculate raw elapsed hours
             let rawHours = try Double.fetchOne(dbConn, sql: """
@@ -975,9 +1050,22 @@ public final class JobsService: Sendable {
                 """, arguments: [laborEntryId]) ?? 0
             let totalHours = max(0, rawHours - (breakMinutes / 60.0))
 
-            // Split into regular/overtime at 8-hour daily threshold
-            let regularHours = min(totalHours, 8.0)
-            let overtimeHours = max(0, totalHours - 8.0)
+            // Split into regular/overtime at the per-user, per-day threshold. Count earlier
+            // completed entries for the same worker/day so switching jobs does not restart
+            // the daily regular-hours allowance.
+            let priorWorkedHours = try Double.fetchOne(dbConn, sql: """
+                SELECT COALESCE(SUM(regular_hours + overtime_hours), 0)
+                FROM labor_entries
+                WHERE user_id = ?
+                  AND id != ?
+                  AND status = 'completed'
+                  AND deleted_at IS NULL
+                  AND date(clock_in) = date(?)
+                  AND clock_in < ?
+                """, arguments: [userId, laborEntryId, clockIn, clockIn]) ?? 0
+            let remainingRegularHours = max(0, 8.0 - priorWorkedHours)
+            let regularHours = min(totalHours, remainingRegularHours)
+            let overtimeHours = max(0, totalHours - regularHours)
 
             try dbConn.execute(
                 sql: """
@@ -1974,9 +2062,11 @@ public final class JobsService: Sendable {
                                     THEN ', ' || city ELSE '' END AS full_address,
                            gps_lat, gps_lng, status
                     FROM jobs
-                    WHERE status IN ('active', 'in_progress') AND deleted_at IS NULL
+                    WHERE status IN ('active', 'in_progress')
+                      AND deleted_at IS NULL
+                      AND job_number != ?
                     ORDER BY job_name ASC
-                    """)
+                    """, arguments: [Self.warehouseClockJobNumber])
                 return rows.map { row in
                     ClockJobRow(
                         id: row["id"] ?? 0,
@@ -2023,6 +2113,33 @@ public final class JobsService: Sendable {
             if isTableNotFoundError(error) { return 0.0 }
             throw error
         }
+    }
+
+    private static func ensureWarehouseClockJob(dbConn: Database, createdBy: Int64?) throws -> Int64 {
+        if let id = try Int64.fetchOne(
+            dbConn,
+            sql: "SELECT id FROM jobs WHERE job_number = ? AND deleted_at IS NULL LIMIT 1",
+            arguments: [warehouseClockJobNumber]
+        ) {
+            return id
+        }
+
+        try dbConn.execute(
+            sql: """
+                INSERT INTO jobs
+                (job_number, job_name, customer_name, status, priority, job_type,
+                 created_by, notes, job_classification, created_at, updated_at)
+                VALUES (?, ?, ?, 'active', 'normal', 'internal', ?, ?, 'internal', datetime('now'), datetime('now'))
+                """,
+            arguments: [
+                warehouseClockJobNumber,
+                warehouseClockJobName,
+                "Internal",
+                createdBy,
+                "Internal time bucket for Shop / Warehouse clock entries."
+            ]
+        )
+        return dbConn.lastInsertedRowID
     }
 
     /// List active/in-progress jobs, optionally excluding a specific job ID.

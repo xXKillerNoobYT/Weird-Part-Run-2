@@ -402,7 +402,11 @@ struct IOSMyTruckPage: View {
                 )
                 .environmentObject(appCore)
             } else {
-                ContentUnavailableView("No vehicle assigned", systemImage: "car.2", description: Text("Assign a vehicle before logging fuel."))
+                EmptyStateView(
+                    icon: "car.2",
+                    title: "No vehicle assigned",
+                    message: "Assign a vehicle before logging fuel."
+                )
             }
 
         case .reportIssue:
@@ -417,7 +421,11 @@ struct IOSMyTruckPage: View {
                 )
                 .environmentObject(appCore)
             } else {
-                ContentUnavailableView("No vehicle assigned", systemImage: "car.2", description: Text("Assign a vehicle before reporting an issue."))
+                EmptyStateView(
+                    icon: "car.2",
+                    title: "No vehicle assigned",
+                    message: "Assign a vehicle before reporting an issue."
+                )
             }
 
         case .addTransferItem:
@@ -431,7 +439,11 @@ struct IOSMyTruckPage: View {
                 )
                 .environmentObject(appCore)
             } else {
-                ContentUnavailableView("No vehicle assigned", systemImage: "car.2", description: Text("Assign a vehicle before transferring parts."))
+                EmptyStateView(
+                    icon: "car.2",
+                    title: "No vehicle assigned",
+                    message: "Assign a vehicle before transferring parts."
+                )
             }
 
         case .help:
@@ -480,21 +492,15 @@ struct IOSMyTruckPage: View {
                 return
             }
 
-            // Get smart card stats
-            vehicleStats = try fleet.getMyVehicleStats(userId: currentUserId)
-
-            if let stats = vehicleStats {
-                // Load vehicle detail
-                vehicle = try fleet.getVehicleDetail(id: stats.vehicleId)
-
-                // Load inventory by type
-                truckStock = try fleet.getVehicleStock(vehicleId: stats.vehicleId, stockType: "truck_stock")
-                transferItems = try fleet.getVehicleStock(vehicleId: stats.vehicleId, stockType: "transfer")
-
-                // Load recent logs
-                recentMileage = try fleet.listMileageLogs(vehicleId: stats.vehicleId, limit: 5)
-                recentFuel = try fleet.listFuelLogs(vehicleId: stats.vehicleId, limit: 5)
+            if let dashboard = try fleet.getMyTruckDashboard(userId: currentUserId, recentLimit: 5) {
+                vehicleStats = dashboard.stats
+                vehicle = dashboard.vehicle
+                truckStock = dashboard.truckStock
+                transferItems = dashboard.transferItems
+                recentMileage = dashboard.recentMileage
+                recentFuel = dashboard.recentFuel
             } else {
+                vehicleStats = nil
                 vehicle = nil
                 truckStock = []
                 transferItems = []

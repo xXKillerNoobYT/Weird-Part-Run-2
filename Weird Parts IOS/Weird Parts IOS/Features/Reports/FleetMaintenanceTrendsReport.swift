@@ -30,9 +30,11 @@ struct FleetMaintenanceTrendsReport: View {
                 Section { ProgressView("Loading...") }
             } else if trendData.isEmpty {
                 Section {
-                    ContentUnavailableView("No Maintenance Data",
-                        systemImage: "wrench.and.screwdriver",
-                        description: Text("No maintenance records found for this period."))
+                    EmptyStateView(
+                        icon: "wrench.and.screwdriver",
+                        title: "No Maintenance Data",
+                        message: "No maintenance records found for this period."
+                    )
                 }
             } else {
                 Section("Summary") {

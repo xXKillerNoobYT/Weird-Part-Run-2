@@ -63,11 +63,11 @@ struct IOSInspectionsPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredInspections.isEmpty {
-            ContentUnavailableView {
-                Label("No Inspections", systemImage: "checklist")
-            } description: {
-                Text("No vehicle inspections have been recorded yet.")
-            }
+            EmptyStateView(
+                icon: "checklist",
+                title: "No Inspections",
+                message: "No vehicle inspections have been recorded yet."
+            )
         } else {
             List(filteredInspections, id: \.id) { inspection in
                 inspectionRow(inspection)

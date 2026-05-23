@@ -23,6 +23,7 @@ public final class ChatService: Sendable {
         case channelNotFound(Int64)
         case messageNotFound(Int64)
         case threadNotFound(Int64)
+        case notChannelMember(channelId: Int64, userId: Int64)
         case requiredFieldEmpty
     }
 
@@ -321,6 +322,7 @@ public final class ChatService: Sendable {
             throw ChatError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
+            try requireActiveChannelMembership(dbConn, channelId: channelId, userId: senderId)
             try dbConn.execute(
                 sql: """
                     INSERT INTO chat_messages
@@ -356,6 +358,10 @@ public final class ChatService: Sendable {
         jobId: Int64? = nil,
         createdBy: Int64
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_chat")
+        }
+
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw ChatError.requiredFieldEmpty
         }
@@ -653,7 +659,11 @@ public final class ChatService: Sendable {
         holdReason: String?,
         userId: Int64
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "manage_orders")
+        }
+
+        return try db.writer.write { dbConn in
             let channelName = "Hold: \(partName) (\(jpoNumber))"
 
             // Check if a thread already exists for this part + JPO
@@ -761,6 +771,26 @@ public final class ChatService: Sendable {
         return message.contains("no such table") || message.contains("no such column")
     }
 
+    /// Enforce the active-channel/current-member gate for message writes.
+    ///
+    /// This closes the phantom-member write gap where a removed or never-added user
+    /// could still insert messages if they kept or guessed a channel ID. Read-side
+    /// membership enforcement is handled separately by the call sites that have a
+    /// requesting-user context.
+    private func requireActiveChannelMembership(_ dbConn: Database, channelId: Int64, userId: Int64) throws {
+        let channelExists = (try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM chat_channels
+            WHERE id = ? AND is_active = 1 AND deleted_at IS NULL
+            """, arguments: [channelId]) ?? 0) > 0
+        guard channelExists else { throw ChatError.channelNotFound(channelId) }
+
+        let isMember = (try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM chat_channel_members
+            WHERE channel_id = ? AND user_id = ? AND left_at IS NULL AND deleted_at IS NULL
+            """, arguments: [channelId, userId]) ?? 0) > 0
+        guard isMember else { throw ChatError.notChannelMember(channelId: channelId, userId: userId) }
+    }
+
     /// Parse an ISO 8601 date string from SQLite.
     private func parseDate(_ string: String) -> Date? { CoreFormatters.parseDateTime(string) }
 
@@ -813,6 +843,7 @@ public final class ChatService: Sendable {
         attachments: [PendingAttachment]
     ) throws -> Int64 {
         try db.writer.write { dbConn in
+            try requireActiveChannelMembership(dbConn, channelId: channelId, userId: userId)
             // Insert message
             try dbConn.execute(
                 sql: """
@@ -915,6 +946,10 @@ public final class ChatService: Sendable {
     /// `userId` must flow from the session; no default to prevent hardcoded user 1
     /// attribution on auto-created notebooks (documented in memory/feedback_hardcoded_user_ids.md).
     public func autoSaveToJobNotebook(channelId: Int64, attachment: MessageAttachment, userId: Int64) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "manage_notebooks")
+        }
+
         try db.writer.write { dbConn in
             // Get job ID from channel
             guard let row = try Row.fetchOne(dbConn, sql: """
@@ -1218,6 +1253,10 @@ public final class ChatService: Sendable {
 
     /// Escalate a Q&A thread to the next level.
     public func escalateThread(threadId: Int64, escalatedBy: Int64, notes: String?) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: escalatedBy, permissionKey: "moderate_chat")
+        }
+
         try db.writer.write { dbConn in
             guard let row = try Row.fetchOne(dbConn, sql: """
                 SELECT current_level FROM qa_threads WHERE id = ? AND deleted_at IS NULL
@@ -1320,7 +1359,11 @@ public final class ChatService: Sendable {
         createdBy: Int64,
         jobId: Int64? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_chat")
+        }
+
+        return try db.writer.write { dbConn in
             // Create the channel with type "supplier" and optional job link
             try dbConn.execute(sql: """
                 INSERT INTO chat_channels (channel_type, job_id, name, created_by, is_active, created_at)
@@ -1392,6 +1435,7 @@ public final class ChatService: Sendable {
         attachmentRef: String? = nil
     ) throws -> Int64 {
         try db.writer.write { dbConn in
+            try requireActiveChannelMembership(dbConn, channelId: channelId, userId: senderId)
             // Send as regular chat message
             try dbConn.execute(sql: """
                 INSERT INTO chat_messages (channel_id, sender_id, message_type, content, created_at)

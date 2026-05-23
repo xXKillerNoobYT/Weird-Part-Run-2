@@ -51,7 +51,7 @@ struct IOSAuditSettingsPage: View {
                 ProgressView("Loading audit settings...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let loadError {
-                ContentUnavailableView("Unable to Load", systemImage: "exclamationmark.triangle", description: Text(loadError))
+                ErrorStateView(message: loadError)
             } else {
                 settingsForm
             }

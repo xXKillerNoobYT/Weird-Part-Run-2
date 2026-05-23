@@ -28,11 +28,11 @@ struct IOSDeviceManagementPage: View {
             }
 
             Section("Paired Devices") {
-                ContentUnavailableView {
-                    Label("No Paired Devices", systemImage: "desktopcomputer")
-                } description: {
-                    Text("Device pairing will be available when sync infrastructure is enabled in a future update.")
-                }
+                EmptyStateView(
+                    icon: "desktopcomputer",
+                    title: "No Paired Devices",
+                    message: "Device pairing will be available when sync infrastructure is enabled in a future update."
+                )
             }
 
             Section("Actions") {

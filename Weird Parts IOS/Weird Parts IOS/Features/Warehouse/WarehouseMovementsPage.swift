@@ -15,6 +15,7 @@ struct WarehouseMovementsPage: View {
     @State private var selectedFilter: MovementFilter?
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
+    @State private var completedHistoryExpanded = false
 
     // Date filter
     @State private var dateRange: ReportDateRange = .thisWeek
@@ -25,15 +26,19 @@ struct WarehouseMovementsPage: View {
     private var effectiveEnd: Date { dateRange.dateInterval?.end ?? customEnd }
 
     private enum MovementFilter: String, CaseIterable {
-        case transfers = "Transfers"
-        case receives = "Receives"
-        case returns = "Returns"
-        case adjustments = "Adjustments"
+        case all = "All"
+        case transfers = "Transfer"
+        case receives = "Received"
+        case consumed = "Consumed"
+        case returns = "Return"
+        case adjustments = "Adjustment"
 
-        var movementType: String {
+        var movementType: String? {
             switch self {
+            case .all: nil
             case .transfers: "transfer"
             case .receives: "receive"
+            case .consumed: "consume"
             case .returns: "return_to_supplier"
             case .adjustments: "adjustment"
             }
@@ -43,6 +48,7 @@ struct WarehouseMovementsPage: View {
     private enum ActiveSheet: Identifiable {
         case movementDetail(WarehouseService.MovementRow)
         case newMovement
+        case quickLog
         case qrScanner
         case help
 
@@ -50,6 +56,7 @@ struct WarehouseMovementsPage: View {
             switch self {
             case .movementDetail(let m): "detail-\(m.id)"
             case .newMovement: "newMovement"
+            case .quickLog: "quickLog"
             case .qrScanner: "qrScanner"
             case .help: "help"
             }
@@ -81,6 +88,10 @@ struct WarehouseMovementsPage: View {
                     Image(systemName: "qrcode.viewfinder")
                 }
                 .accessibilityLabel("Scan QR code")
+                Button { activeSheet = .quickLog } label: {
+                    Image(systemName: "square.and.pencil")
+                }
+                .accessibilityLabel("Quick log movement")
                 Button { activeSheet = .newMovement } label: {
                     Image(systemName: "plus")
                 }
@@ -119,6 +130,10 @@ struct WarehouseMovementsPage: View {
         case .newMovement:
             IOSMovementWizard(onComplete: { loadData() })
                 .environmentObject(appCore)
+        case .quickLog:
+            QuickLogMovementSheet(openFullMovementWizard: {
+                activeSheet = .newMovement
+            })
         case .qrScanner:
             QRScanSheet(expectedType: .part) { result in
                 activeSheet = nil
@@ -128,9 +143,10 @@ struct WarehouseMovementsPage: View {
             PageHelpSheet(
                 title: "Movements Help",
                 sections: [
-                    ("Overview", "Track all stock movements: transfers between locations, receiving from suppliers, returns, and adjustments."),
-                    ("Creating Movements", "Tap + to start a new guided movement. The wizard walks you through selecting parts, quantities, and locations."),
-                    ("Filtering", "Use the smart card chips to filter by movement type. Search by part name. Tap any movement for details.")
+                    ("Overview", "Track all stock movements: transfers, receiving, consumed-on-job, supplier returns, and inventory adjustments."),
+                    ("Creating Movements", "Tap + to start a guided movement. Use Quick Log for an informal already-happened event that should be documented before entering exact stock details."),
+                    ("Filtering", "Use the six smart cards to filter by movement type or return to All. Search by part name. Tap any movement for type-specific details."),
+                    ("History", "Active movements are shown first, oldest to newest. Completed history keeps the last 7 days collapsed until you need it.")
                 ]
             )
         }
@@ -139,15 +155,18 @@ struct WarehouseMovementsPage: View {
     // MARK: - Smart Card Filters
 
     private var smartCardFilters: some View {
-        let transferCount = movements.filter { $0.movementType == "transfer" }.count
-        let receiveCount = movements.filter { $0.movementType == "receive" }.count
-        let returnCount = movements.filter { $0.movementType == "return_to_supplier" }.count
-        let adjustCount = movements.filter { $0.movementType == "adjustment" }.count
+        let transferCount = dateFilteredMovements.filter { $0.movementType == "transfer" }.count
+        let receiveCount = dateFilteredMovements.filter { $0.movementType == "receive" }.count
+        let consumedCount = dateFilteredMovements.filter { $0.movementType == "consume" }.count
+        let returnCount = dateFilteredMovements.filter { $0.movementType == "return_to_supplier" }.count
+        let adjustCount = dateFilteredMovements.filter { $0.movementType == "adjustment" }.count
 
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                filterCard(.all, count: dateFilteredMovements.count, icon: "tray.full", color: .accentColor)
                 filterCard(.transfers, count: transferCount, icon: "arrow.left.arrow.right", color: .blue)
                 filterCard(.receives, count: receiveCount, icon: "arrow.down.circle", color: .green)
+                filterCard(.consumed, count: consumedCount, icon: "flame", color: .orange)
                 filterCard(.returns, count: returnCount, icon: "arrow.uturn.left", color: .purple)
                 filterCard(.adjustments, count: adjustCount, icon: "plus.forwardslash.minus", color: .gray)
             }
@@ -161,7 +180,7 @@ struct WarehouseMovementsPage: View {
         let isSelected = selectedFilter == filter
 
         return Button {
-            selectedFilter = isSelected ? nil : filter
+            selectedFilter = filter == .all || isSelected ? nil : filter
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: icon)
@@ -186,39 +205,81 @@ struct WarehouseMovementsPage: View {
     // MARK: - Filtered Movements
 
     private var filteredMovements: [WarehouseService.MovementRow] {
-        var result = movements
-        if let filter = selectedFilter {
-            result = result.filter { $0.movementType == filter.movementType }
+        var result = dateFilteredMovements
+        if let filter = selectedFilter, let movementType = filter.movementType {
+            result = result.filter { $0.movementType == movementType }
         }
         if !searchText.isEmpty {
             let query = searchText.lowercased()
             result = result.filter { $0.partName.lowercased().contains(query) }
         }
-        return result
+        return result.sorted { ($0.createdAt ?? "") < ($1.createdAt ?? "") }
+    }
+
+    private var dateFilteredMovements: [WarehouseService.MovementRow] {
+        movements.filter { movement in
+            guard let date = movementDate(movement) else { return true }
+            return date >= effectiveStart && date <= effectiveEnd
+        }
     }
 
     // MARK: - Movements List
+
+    private var activeMovements: [WarehouseService.MovementRow] {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+        return filteredMovements.filter { movementDate($0) ?? Date.distantFuture >= cutoff }
+    }
+
+    private var completedHistoryMovements: [WarehouseService.MovementRow] {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+        return filteredMovements.filter { movementDate($0) ?? Date.distantFuture < cutoff }
+    }
 
     @ViewBuilder
     private var movementsList: some View {
         List {
             Section {
-                Text("\(filteredMovements.count) movement\(filteredMovements.count == 1 ? "" : "s")")
+                Text("\(filteredMovements.count) movement\(filteredMovements.count == 1 ? "" : "s") • oldest to newest")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            ForEach(filteredMovements, id: \.id) { movement in
-                Button {
-                    activeSheet = .movementDetail(movement)
-                } label: {
-                    movementRow(movement)
+            Section("Active") {
+                if activeMovements.isEmpty {
+                    Text("No active movements in the selected range.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(activeMovements, id: \.id) { movementButton($0) }
                 }
-                .buttonStyle(.plain)
+            }
+
+            Section {
+                DisclosureGroup(isExpanded: $completedHistoryExpanded) {
+                    if completedHistoryMovements.isEmpty {
+                        Text("No completed movements older than 7 days for this filter.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(completedHistoryMovements, id: \.id) { movementButton($0) }
+                    }
+                } label: {
+                    Label("Completed History (7+ days)", systemImage: "clock.arrow.circlepath")
+                        .font(.subheadline)
+                }
             }
         }
         .listStyle(.insetGrouped)
         .scrollDismissesKeyboard(.interactively)
+    }
+
+    private func movementButton(_ movement: WarehouseService.MovementRow) -> some View {
+        Button {
+            activeSheet = .movementDetail(movement)
+        } label: {
+            movementRow(movement)
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -248,7 +309,11 @@ struct WarehouseMovementsPage: View {
                         .background(movementColor(movement.movementType).opacity(0.1))
                         .clipShape(Capsule())
 
-                    if let from = movement.fromLocationType, let to = movement.toLocationType {
+                    if let auditSummary = auditSummaryText(for: movement) {
+                        Text(auditSummary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if let from = movement.fromLocationType, let to = movement.toLocationType {
                         Text("\(from.capitalized) → \(to.capitalized)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -259,7 +324,7 @@ struct WarehouseMovementsPage: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 3) {
-                Text("×\(movement.qty)")
+                Text(quantityLabel(for: movement))
                     .font(.subheadline)
                     .fontWeight(.semibold)
                 Text(formatDate(movement.createdAt))
@@ -301,7 +366,7 @@ struct WarehouseMovementsPage: View {
         isLoading = movements.isEmpty
         loadError = nil
         do {
-            movements = try service.listMovements(limit: 200)
+            movements = try service.listMovements(limit: 200, sortOrder: .oldestFirst)
             postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load movements")
@@ -362,9 +427,96 @@ struct WarehouseMovementsPage: View {
         }
     }
 
+    private func auditSummaryText(for movement: WarehouseService.MovementRow) -> String? {
+        guard movement.movementType == "adjustment",
+              let notes = movement.notes,
+              notes.hasPrefix("Audit count adjustment:") else { return nil }
+        return notes.replacingOccurrences(of: "Audit count adjustment:", with: "Audit:")
+    }
+
+    private func quantityLabel(for movement: WarehouseService.MovementRow) -> String {
+        guard movement.movementType == "adjustment",
+              auditSummaryText(for: movement) != nil else { return "×\(movement.qty)" }
+        return movement.qty >= 0 ? "+\(movement.qty)" : "\(movement.qty)"
+    }
+
     private func formatDate(_ dateStr: String?) -> String {
         guard let dateStr else { return "" }
         return dateStr.count >= 10 ? String(dateStr.prefix(10)) : dateStr
+    }
+
+    private func movementDate(_ movement: WarehouseService.MovementRow) -> Date? {
+        guard let raw = movement.createdAt else { return nil }
+        return Self.sqliteDateFormatter.date(from: raw)
+            ?? ISO8601DateFormatter().date(from: raw)
+    }
+
+    private static let sqliteDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter
+    }()
+}
+
+// MARK: - Quick Log Sheet
+
+private struct QuickLogMovementSheet: View {
+    let openFullMovementWizard: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Label("Quick Log", systemImage: "square.and.pencil")
+                        .font(.headline)
+                    Text("Use this for already-happened warehouse events that need a fast note before exact stock details are entered. The full movement wizard still records inventory-safe quantities and locations.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Common informal events") {
+                    quickLogHint("Transfer", icon: "arrow.left.arrow.right", note: "Moved between warehouse locations")
+                    quickLogHint("Received", icon: "arrow.down.circle", note: "Supplier or PO items arrived")
+                    quickLogHint("Consumed", icon: "flame", note: "Used on a job or delivery")
+                    quickLogHint("Return", icon: "arrow.uturn.left", note: "Return to supplier, manager approval required")
+                    quickLogHint("Adjustment", icon: "plus.forwardslash.minus", note: "Inventory correction, audit trail required")
+                }
+
+                Section {
+                    Button {
+                        dismiss()
+                        openFullMovementWizard()
+                    } label: {
+                        Label("Open full movement wizard", systemImage: "plus.circle.fill")
+                    }
+                }
+            }
+            .navigationTitle("Quick Log")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func quickLogHint(_ title: String, icon: String, note: String) -> some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } icon: {
+            Image(systemName: icon)
+                .foregroundStyle(Color.accentColor)
+        }
     }
 }
 

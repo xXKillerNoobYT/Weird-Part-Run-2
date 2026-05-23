@@ -145,11 +145,12 @@ struct PricingBulkEditSheet: View {
         // so the user understands why there's nothing to preview rather than
         // seeing only the "Apply to All" / "Review One at a Time" buttons.
         if previewParts.isEmpty {
-            ContentUnavailableView(
-                "No Parts Match",
-                systemImage: "magnifyingglass",
-                description: Text("No parts match the current bulk-edit filter. Adjust the filter on the previous step or close this sheet.")
+            EmptyStateView(
+                icon: "magnifyingglass",
+                title: "No Parts Match",
+                message: "No parts match the current bulk-edit filter. Adjust the filter on the previous step or close this sheet."
             )
+            .padding()
             .navigationTitle("Preview")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {

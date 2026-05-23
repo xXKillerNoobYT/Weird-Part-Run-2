@@ -293,8 +293,11 @@ public final class ToolsService: Sendable {
     /// - Parameters:
     ///   - toolId: Optional tool ID to filter by.
     ///   - active: When true, only return currently active (unreturned) checkouts.
+    ///   - limit: Optional maximum number of rows to return. Leave nil for full history callers.
     /// - Returns: An array of `CheckoutRow` rows.
-    public func listCheckouts(toolId: Int64? = nil, active: Bool = false) throws -> [CheckoutRow] {
+    public func listCheckouts(toolId: Int64? = nil, active: Bool = false, limit: Int? = nil) throws -> [CheckoutRow] {
+        if let limit, limit <= 0 { return [] }
+
         do {
             return try db.writer.read { dbConn -> [CheckoutRow] in
                 var whereClauses = ["tm.deleted_at IS NULL"]
@@ -307,7 +310,11 @@ public final class ToolsService: Sendable {
                 if active {
                     whereClauses.append("tm.movement_type = 'checkout'")
                 }
+                if let limit {
+                    args.append(limit)
+                }
 
+                let limitClause = limit == nil ? "" : " LIMIT ?"
                 let sql = """
                     SELECT tm.id, tm.created_at AS checked_out_at,
                            NULL AS expected_return, NULL AS returned_at,
@@ -317,7 +324,7 @@ public final class ToolsService: Sendable {
                     LEFT JOIN tools t ON t.id = tm.tool_id AND t.deleted_at IS NULL
                     LEFT JOIN users u ON u.id = tm.performed_by AND u.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
-                    ORDER BY tm.created_at DESC
+                    ORDER BY tm.created_at DESC, tm.id DESC\(limitClause)
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
@@ -411,6 +418,10 @@ public final class ToolsService: Sendable {
     /// Logs the status change in `tool_change_log` with `performedBy` for
     /// audit traceability (#272).
     public func markToolMaintenance(toolId: Int64, performedBy: Int64) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: performedBy, permissionKey: "maintain_tools")
+        }
+
         try db.writer.write { dbConn in
             // FK-orphan guards mirror the pattern in other write methods.
             let toolExists = (try Int.fetchOne(dbConn, sql: """
@@ -773,6 +784,10 @@ public final class ToolsService: Sendable {
     public func checkoutToolWithCondition(
         toolId: Int64, userId: Int64, condition: String, notes: String? = nil
     ) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "checkout_tools")
+        }
+
         guard !condition.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw ToolsError.requiredFieldEmpty("condition")
         }
@@ -818,6 +833,10 @@ public final class ToolsService: Sendable {
     public func returnToolWithCondition(
         toolId: Int64, userId: Int64, condition: String, notes: String? = nil
     ) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "checkout_tools")
+        }
+
         guard !condition.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw ToolsError.requiredFieldEmpty("condition")
         }
@@ -1477,7 +1496,11 @@ public final class ToolsService: Sendable {
         performedBy: Int64, conditionBefore: String?, conditionAfter: String?,
         notes: String?, cost: Double?
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: performedBy, permissionKey: "maintain_tools")
+        }
+
+        return try db.writer.write { dbConn in
             // Guard: tool must exist and not be tombstoned — otherwise the
             // INSERT INTO tool_maintenance_records below would create an orphan record.
             let exists = (try Int.fetchOne(dbConn, sql: """

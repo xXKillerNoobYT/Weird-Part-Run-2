@@ -57,7 +57,7 @@ struct IOSDailyReportTemplatesPage: View {
                 ProgressView("Loading template...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let loadError {
-                ContentUnavailableView("Unable to Load", systemImage: "exclamationmark.triangle", description: Text(loadError))
+                ErrorStateView(message: loadError)
             } else {
                 templateEditor
             }
@@ -181,10 +181,10 @@ struct IOSDailyReportTemplatesPage: View {
         // so the preview doesn't render an empty list with no explanation.
         let enabledSections = sections.filter(\.enabled)
         if enabledSections.isEmpty {
-            ContentUnavailableView(
-                "No Sections Enabled",
-                systemImage: "doc.text.magnifyingglass",
-                description: Text("Enable at least one section in the template editor to preview it here.")
+            EmptyStateView(
+                icon: "doc.text.magnifyingglass",
+                title: "No Sections Enabled",
+                message: "Enable at least one section in the template editor to preview it here."
             )
         } else {
         List {

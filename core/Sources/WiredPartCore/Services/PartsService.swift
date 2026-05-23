@@ -2886,6 +2886,12 @@ public final class PartsService: Sendable {
 
     /// Update a company cost setting.
     public func updateCompanyCostSetting(key: String, value: String, updatedBy: Int64? = nil) throws {
+        if let updatedBy {
+            try db.writer.read { dbConn in
+                try ServicePermissionGate.requirePermission(dbConn, userId: updatedBy, permissionKey: "parts.manage_company_costs")
+            }
+        }
+
         try db.writer.write { dbConn in
             try dbConn.execute(sql: """
                 INSERT INTO company_cost_settings (setting_key, setting_value, updated_by, updated_at)
@@ -3344,14 +3350,14 @@ public final class PartsService: Sendable {
                     LEFT JOIN (
                         SELECT part_id, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
-                        WHERE movement_type IN ('consume', 'return_to_supplier')
+                        WHERE movement_type IN \(StockMovement.MovementType.sqlList(StockMovement.MovementType.forecastConsumptionTypes))
                           AND created_at >= datetime('now', '-30 days') AND deleted_at IS NULL
                         GROUP BY part_id
                     ) m30 ON m30.part_id = p.id
                     LEFT JOIN (
                         SELECT part_id, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
-                        WHERE movement_type IN ('consume', 'return_to_supplier')
+                        WHERE movement_type IN \(StockMovement.MovementType.sqlList(StockMovement.MovementType.forecastConsumptionTypes))
                           AND created_at >= datetime('now', '-90 days') AND deleted_at IS NULL
                         GROUP BY part_id
                     ) m90 ON m90.part_id = p.id
@@ -3607,14 +3613,14 @@ public final class PartsService: Sendable {
                     LEFT JOIN (
                         SELECT part_id, from_location_type AS lt, from_location_id AS lid, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
-                        WHERE movement_type IN ('consume')
+                        WHERE movement_type IN \(StockMovement.MovementType.sqlList(StockMovement.MovementType.forecastConsumptionTypes))
                           AND created_at >= datetime('now','-30 days') AND deleted_at IS NULL
                         GROUP BY part_id, from_location_type, from_location_id
                     ) c30 ON c30.part_id = combos.part_id AND c30.lt = combos.lt AND c30.lid = combos.lid
                     LEFT JOIN (
                         SELECT part_id, from_location_type AS lt, from_location_id AS lid, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
-                        WHERE movement_type IN ('consume')
+                        WHERE movement_type IN \(StockMovement.MovementType.sqlList(StockMovement.MovementType.forecastConsumptionTypes))
                           AND created_at >= datetime('now','-90 days') AND deleted_at IS NULL
                         GROUP BY part_id, from_location_type, from_location_id
                     ) c90 ON c90.part_id = combos.part_id AND c90.lt = combos.lt AND c90.lid = combos.lid
@@ -3880,7 +3886,7 @@ public final class PartsService: Sendable {
                     let consumed = try Int.fetchOne(dbConn, sql: """
                         SELECT COALESCE(SUM(ABS(qty)), 0) FROM stock_movements
                         WHERE part_id = ? AND from_location_type = ? AND from_location_id = ?
-                          AND movement_type IN ('consume')
+                          AND movement_type IN \(StockMovement.MovementType.sqlList(StockMovement.MovementType.forecastConsumptionTypes))
                           AND created_at >= datetime('now', '-\(windowDays) days')
                           AND deleted_at IS NULL
                         """, arguments: [partId, locType, locId]) ?? 0
@@ -3891,7 +3897,7 @@ public final class PartsService: Sendable {
                     let consumed = try Int.fetchOne(dbConn, sql: """
                         SELECT COALESCE(SUM(ABS(qty)), 0) FROM stock_movements
                         WHERE part_id = ? AND from_location_type = ? AND from_location_id = ?
-                          AND movement_type IN ('consume')
+                          AND movement_type IN \(StockMovement.MovementType.sqlList(StockMovement.MovementType.forecastConsumptionTypes))
                           AND created_at >= datetime('now', '-\(s.aduLookbackDays) days')
                           AND deleted_at IS NULL
                         """, arguments: [partId, locType, locId]) ?? 0
@@ -5892,6 +5898,12 @@ public final class PartsService: Sendable {
 
     /// Approve a scheduled deletion — performs the actual soft delete.
     public func approveScheduledDeletion(id: Int64, approvedBy: Int64?) throws {
+        if let approvedBy {
+            try db.writer.read { dbConn in
+                try ServicePermissionGate.requirePermission(dbConn, userId: approvedBy, permissionKey: "parts.approve_scheduled_deletion")
+            }
+        }
+
         try db.writer.write { db in
             let row = try Row.fetchOne(db, sql: "SELECT * FROM scheduled_deletions WHERE id = ?", arguments: [id])
             guard let row else { return }
@@ -5985,7 +5997,7 @@ public final class PartsService: Sendable {
             let receivedRow = try Row.fetchOne(dbConn, sql: """
                 SELECT COALESCE(SUM(qty), 0) AS total_received
                 FROM stock_movements
-                WHERE supplier_id = ? AND movement_type = 'receipt' AND deleted_at IS NULL
+                WHERE supplier_id = ? AND movement_type = '\(StockMovement.MovementType.receipt.rawValue)' AND deleted_at IS NULL
                 """, arguments: [supplierId])
             let totalReceived: Int = receivedRow?["total_received"] ?? 0
 
@@ -5993,7 +6005,7 @@ public final class PartsService: Sendable {
             let returnedRow = try Row.fetchOne(dbConn, sql: """
                 SELECT COALESCE(SUM(qty), 0) AS total_returned
                 FROM stock_movements
-                WHERE supplier_id = ? AND movement_type = 'return' AND deleted_at IS NULL
+                WHERE supplier_id = ? AND movement_type = '\(StockMovement.MovementType.stockReturn.rawValue)' AND deleted_at IS NULL
                 AND from_location_type IN ('warehouse', 'staging')
                 AND to_location_type = 'supplier'
                 """, arguments: [supplierId])
@@ -6384,7 +6396,7 @@ public final class PartsService: Sendable {
                 return TraceStep(
                     movementId: row["id"],
                     date: row["created_at"] ?? "",
-                    movementType: row["movement_type"] ?? "transfer",
+                    movementType: row["movement_type"] ?? StockMovement.MovementType.transfer.rawValue,
                     fromLocation: describeLocation(type: fromType),
                     toLocation: describeLocation(type: toType),
                     qty: row["qty"],
@@ -6415,7 +6427,7 @@ public final class PartsService: Sendable {
                 return TraceStep(
                     movementId: row["id"],
                     date: row["created_at"] ?? "",
-                    movementType: row["movement_type"] ?? "transfer",
+                    movementType: row["movement_type"] ?? StockMovement.MovementType.transfer.rawValue,
                     fromLocation: describeLocation(type: fromType),
                     toLocation: describeLocation(type: toType),
                     qty: row["qty"],

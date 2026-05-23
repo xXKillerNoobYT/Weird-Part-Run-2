@@ -144,11 +144,11 @@ struct IOSSpendingPage: View {
                 .padding()
             }
         } else {
-            ContentUnavailableView {
-                Label("No Spending Data", systemImage: "dollarsign.circle")
-            } description: {
-                Text("No spending data available for the selected period.")
-            }
+            EmptyStateView(
+                icon: "dollarsign.circle",
+                title: "No Spending Data",
+                message: "No spending data available for the selected period."
+            )
         }
     }
 
