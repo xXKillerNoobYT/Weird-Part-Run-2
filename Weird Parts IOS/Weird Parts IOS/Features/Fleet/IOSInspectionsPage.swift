@@ -13,7 +13,9 @@ struct IOSInspectionsPage: View {
     // MARK: - State
 
     @State private var inspections: [FleetService.InspectionRow] = []
-    @State private var isLoading = true
+    @State private var isInitialLoading = true
+    @State private var isRefreshing = false
+    @State private var hasLoadedOnce = false
     @State private var loadError: String?
     @State private var searchText = ""
     @State private var activeSheet: ActiveSheet?
@@ -57,22 +59,39 @@ struct IOSInspectionsPage: View {
 
     @ViewBuilder
     private var inspectionList: some View {
-        if isLoading {
-            ProgressView("Loading inspections...")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error = loadError {
-            ErrorStateView(message: error) { loadData() }
-        } else if filteredInspections.isEmpty {
-            EmptyStateView(
-                icon: "checklist",
-                title: "No Inspections",
-                message: "No vehicle inspections have been recorded yet."
-            )
-        } else {
-            List(filteredInspections, id: \.id) { inspection in
-                inspectionRow(inspection)
+        Group {
+            if isInitialLoading {
+                ProgressView("Loading inspections...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ErrorStateView(message: error) { loadData() }
+            } else if filteredInspections.isEmpty {
+                EmptyStateView(
+                    icon: "checklist",
+                    title: "No Inspections",
+                    message: "No vehicle inspections have been recorded yet."
+                )
+            } else {
+                List(filteredInspections, id: \.id) { inspection in
+                    inspectionRow(inspection)
+                }
+                .listStyle(.insetGrouped)
             }
-            .listStyle(.insetGrouped)
+        }
+        .overlay(alignment: .top) {
+            refreshingOverlay
+        }
+    }
+
+    @ViewBuilder
+    private var refreshingOverlay: some View {
+        if isRefreshing {
+            ProgressView()
+                .progressViewStyle(.linear)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .transition(.opacity)
+                .accessibilityLabel("Refreshing inspections")
         }
     }
 
@@ -138,18 +157,32 @@ struct IOSInspectionsPage: View {
     private func loadData() {
         guard let service = appCore.fleetService else {
             loadError = "Fleet service not available"
-            isLoading = false
+            hasLoadedOnce = true
+            isInitialLoading = false
+            isRefreshing = false
             return
         }
-        isLoading = inspections.isEmpty
-        loadError = nil
 
-        do {
-            inspections = try service.listInspections()
-        } catch {
-            loadError = userFriendlyError(error, context: "load inspections")
+        if hasLoadedOnce {
+            isRefreshing = true
+        } else {
+            isInitialLoading = true
         }
 
-        isLoading = false
+        DispatchQueue.main.async {
+            defer {
+                self.hasLoadedOnce = true
+                self.isInitialLoading = false
+                self.isRefreshing = false
+            }
+
+            self.loadError = nil
+
+            do {
+                self.inspections = try service.listInspections()
+            } catch {
+                self.loadError = userFriendlyError(error, context: "load inspections")
+            }
+        }
     }
 }
