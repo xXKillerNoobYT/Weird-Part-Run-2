@@ -221,6 +221,60 @@ struct DeviceResetServiceTests {
         try DeviceResetService.deleteDatabaseFile(atPath: path)
     }
 
+    @Test("deleteDatabaseStorage removes local backups")
+    func testDeleteDatabaseStorageRemovesBackups() throws {
+        let tmpDir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("test-reset-storage-\(UUID().uuidString)", isDirectory: true)
+        let basePath = tmpDir.appendingPathComponent("wiredpart.sqlite").path
+        let backupDir = tmpDir.appendingPathComponent("Backups", isDirectory: true)
+        let fm = FileManager.default
+
+        try fm.createDirectory(at: backupDir, withIntermediateDirectories: true)
+        fm.createFile(atPath: basePath, contents: Data("db".utf8))
+        fm.createFile(atPath: basePath + ".unencrypted.bak", contents: Data("plaintext backup".utf8))
+        fm.createFile(atPath: basePath + ".unencrypted.bak-wal", contents: Data("plaintext wal".utf8))
+        fm.createFile(atPath: basePath + ".encrypted-tmp", contents: Data("tmp db".utf8))
+        fm.createFile(atPath: basePath + ".encrypted-tmp-shm", contents: Data("tmp shm".utf8))
+        fm.createFile(
+            atPath: backupDir.appendingPathComponent("manual.sqlite").path,
+            contents: Data("backup".utf8)
+        )
+
+        try DeviceResetService.deleteDatabaseStorage(atPath: basePath)
+
+        #expect(!fm.fileExists(atPath: basePath))
+        #expect(!fm.fileExists(atPath: basePath + ".unencrypted.bak"))
+        #expect(!fm.fileExists(atPath: basePath + ".unencrypted.bak-wal"))
+        #expect(!fm.fileExists(atPath: basePath + ".encrypted-tmp"))
+        #expect(!fm.fileExists(atPath: basePath + ".encrypted-tmp-shm"))
+        #expect(!fm.fileExists(atPath: backupDir.path))
+
+        try? fm.removeItem(at: tmpDir)
+    }
+
+    @Test("clearSavedAppState removes persisted defaults")
+    func testClearSavedAppStateRemovesDefaults() throws {
+        let suiteName = "DeviceResetServiceTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        defaults.set(true, forKey: "hasCompletedOnboarding")
+        defaults.set(true, forKey: "hasCompletedCompanySetup")
+        defaults.set(Data("draft".utf8), forKey: "partsFlow_counts")
+        defaults.set("device-123", forKey: "com.wiredpart.deviceId")
+        defaults.set(true, forKey: "device_paired")
+
+        DeviceResetService.clearSavedAppState(defaults: defaults, domainName: suiteName)
+
+        #expect(defaults.object(forKey: "hasCompletedOnboarding") == nil)
+        #expect(defaults.object(forKey: "hasCompletedCompanySetup") == nil)
+        #expect(defaults.object(forKey: "partsFlow_counts") == nil)
+        #expect(defaults.object(forKey: "com.wiredpart.deviceId") == nil)
+        #expect(defaults.object(forKey: "device_paired") == nil)
+    }
+
     // MARK: - Admin Verification
 
     @Test("verifyAdminApproval returns true for admin user with correct PIN")
