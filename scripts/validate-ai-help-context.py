@@ -9,43 +9,52 @@ notification has no production post site.
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import sys
 from pathlib import Path
 
 
 def read(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        print(f"error: missing required file: {path}", file=sys.stderr)
+        sys.exit(2)
+
+
+def run_coverage_guard(repo_root: Path) -> int:
+    """Run the canonical registry/mapping guard before extra post-site checks."""
+    script = repo_root / "scripts" / "verify-ai-help-context-coverage.py"
+    if not script.exists():
+        print(f"error: missing required file: {script}", file=sys.stderr)
+        return 2
+
+    spec = importlib.util.spec_from_file_location("verify_ai_help_context_coverage", script)
+    if spec is None or spec.loader is None:
+        print(f"error: unable to load required script: {script}", file=sys.stderr)
+        return 2
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    try:
+        return int(module.main())
+    except SystemExit as exc:
+        return int(exc.code or 0)
 
 
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
+    coverage_status = run_coverage_guard(repo_root)
+    if coverage_status != 0:
+        return coverage_status
+
     ios_root = repo_root / "Weird Parts IOS" / "Weird Parts IOS"
     ai_panel = ios_root / "AI" / "IOSAIAssistantPanel.swift"
-    help_registry = ios_root / "Shared" / "HelpContentRegistry.swift"
 
     ai_text = read(ai_panel)
-    registry_text = read(help_registry)
-
-    active_page_ids = set(re.findall(r'activePageId\s*=\s*"([^"]+)"', ai_text))
-    registry_page_ids = set(re.findall(r'pageId:\s*"([^"]+)"', registry_text))
-    mapped_page_ids = set(re.findall(r'"WiredPart\.[^"]+PageActive"\s*:\s*"([^"]+)"', registry_text))
 
     errors: list[str] = []
-
-    missing_help_entries = sorted(active_page_ids - registry_page_ids)
-    if missing_help_entries:
-        errors.append(
-            "activePageId values without HelpContentRegistry entries: "
-            + ", ".join(missing_help_entries)
-        )
-
-    missing_mapped_entries = sorted(mapped_page_ids - registry_page_ids)
-    if missing_mapped_entries:
-        errors.append(
-            "notificationToPageId values without HelpContentRegistry entries: "
-            + ", ".join(missing_mapped_entries)
-        )
 
     observed_notifications = set(
         re.findall(r'publisher\(for:\s*\.([A-Za-z0-9_]+Page(?:Active|Inactive))\)', ai_text)
@@ -91,8 +100,6 @@ def main() -> int:
 
     print(
         "AI help context validation passed: "
-        f"{len(active_page_ids)} active page IDs, "
-        f"{len(mapped_page_ids)} registry notification mappings, "
         f"{len(observed_notifications)} observed notifications, "
         f"{len(production_posts)} production page post sites."
     )
