@@ -2,6 +2,7 @@ import SwiftUI
 import WiredPartCore
 import os
 #if os(iOS) && !targetEnvironment(macCatalyst)
+import Vision
 import VisionKit
 #endif
 
@@ -46,10 +47,6 @@ struct IOSDashboardQRScannerPage: View {
             }
         }
     }
-
-    #if os(iOS) && !targetEnvironment(macCatalyst)
-    @State private var scanner: IOSQRScanner?
-    #endif
 
     var body: some View {
         VStack(spacing: 0) {
@@ -136,20 +133,10 @@ struct IOSDashboardQRScannerPage: View {
             }
         }
         .onAppear {
-            #if os(iOS) && !targetEnvironment(macCatalyst)
-            if DataScannerViewController.isSupported {
-                startContinuousScanning()
-            }
-            #endif
             // Load user's last known warehouse position for direction guidance
             if let service = appCore.warehouseService, let userId = appCore.currentUser?.id {
                 userPositionAreaId = try? service.getUserCurrentPosition(userId: userId)
             }
-        }
-        .onDisappear {
-            #if os(iOS) && !targetEnvironment(macCatalyst)
-            scanner?.stopScanning()
-            #endif
         }
     }
 
@@ -159,28 +146,34 @@ struct IOSDashboardQRScannerPage: View {
     @ViewBuilder
     private var cameraSection: some View {
         ZStack {
-            // Camera preview placeholder
-            // In production, embed the DataScannerViewController view here
-            Rectangle()
-                .fill(Color.black)
-                .overlay(
-                    VStack {
-                        if isLocked {
-                            HStack {
-                                Spacer()
-                                Label("Locked", systemImage: "lock.fill")
-                                    .font(.caption)
-                                    .fontWeight(.bold)
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(Capsule().fill(.orange))
-                                    .padding()
-                            }
-                        }
+            EmbeddedDashboardQRScannerView(
+                isActive: !isLocked,
+                onDetected: { payload in
+                    Task { await processCode(payload, autoLock: false) }
+                },
+                onError: { message in
+                    scanError = message
+                    isScanning = false
+                }
+            )
+            .ignoresSafeArea(edges: .horizontal)
+
+            if isLocked {
+                VStack {
+                    HStack {
                         Spacer()
+                        Label("Locked", systemImage: "lock.fill")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(.orange))
+                            .padding()
                     }
-                )
+                    Spacer()
+                }
+            }
 
             // Scanning frame overlay
             if !isLocked {
@@ -487,66 +480,18 @@ struct IOSDashboardQRScannerPage: View {
             unlockAndResume()
         } else {
             isLocked = true
-            #if os(iOS) && !targetEnvironment(macCatalyst)
-            scanner?.stopScanning()
-            #endif
         }
     }
 
     private func unlockAndResume() {
         isLocked = false
         currentResult = nil
-        #if os(iOS) && !targetEnvironment(macCatalyst)
-        startContinuousScanning()
-        #endif
     }
 
     private func autoLockAction(_ action: @escaping () -> Void) {
         isLocked = true
         action()
     }
-
-    // MARK: - Continuous Scanning
-
-    #if os(iOS) && !targetEnvironment(macCatalyst)
-    private func startContinuousScanning() {
-        guard !isLocked else { return }
-        let newScanner = IOSQRScanner()
-        scanner = newScanner
-
-        guard newScanner.isAvailable else {
-            scanError = "Camera scanner not available."
-            return
-        }
-
-        isScanning = true
-        scanError = nil
-
-        Task {
-            do {
-                let stream = try await newScanner.startScanning()
-                for await event in stream {
-                    guard !isLocked else { continue }
-
-                    switch event {
-                    case .detected(let payload, _):
-                        // Don't stop scanning — process and update overlay
-                        await processCode(payload, autoLock: false)
-                    case .error(let msg):
-                        scanError = msg
-                    case .permissionDenied:
-                        scanError = "Camera permission denied. Enable in Settings."
-                        isScanning = false
-                        return
-                    }
-                }
-            } catch {
-                scanError = userFriendlyError(error, context: "scan item")
-                isScanning = false
-            }
-        }
-    }
-    #endif
 
     // MARK: - Process Code
 
@@ -802,6 +747,132 @@ struct IOSDashboardQRScannerPage: View {
         NotificationCenter.default.post(name: .navigateToModule, object: nil, userInfo: ["moduleId": moduleId])
     }
 }
+
+#if os(iOS) && !targetEnvironment(macCatalyst)
+// MARK: - Embedded Scanner Preview
+
+/// Embeds VisionKit's live `DataScannerViewController` camera preview directly in
+/// the dashboard scanner page so the production supported-device path shows the
+/// real viewfinder instead of a black placeholder.
+private struct EmbeddedDashboardQRScannerView: UIViewControllerRepresentable {
+    let isActive: Bool
+    let onDetected: (String) -> Void
+    let onError: (String) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onDetected: onDetected, onError: onError)
+    }
+
+    func makeUIViewController(context: Context) -> DataScannerViewController {
+        let recognizedTypes: Set<DataScannerViewController.RecognizedDataType> = [
+            .barcode(symbologies: [.qr, .code128, .ean8, .ean13, .upce, .code39])
+        ]
+
+        let scanner = DataScannerViewController(
+            recognizedDataTypes: recognizedTypes,
+            qualityLevel: .accurate,
+            recognizesMultipleItems: false,
+            isHighFrameRateTrackingEnabled: true,
+            isHighlightingEnabled: true
+        )
+
+        scanner.delegate = context.coordinator
+        context.coordinator.scanner = scanner
+        return scanner
+    }
+
+    func updateUIViewController(_ uiViewController: DataScannerViewController, context: Context) {
+        context.coordinator.onDetected = onDetected
+        context.coordinator.onError = onError
+        context.coordinator.scanner = uiViewController
+        context.coordinator.setActive(isActive)
+    }
+
+    static func dismantleUIViewController(_ uiViewController: DataScannerViewController, coordinator: Coordinator) {
+        coordinator.setActive(false)
+        uiViewController.delegate = nil
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, DataScannerViewControllerDelegate {
+        var onDetected: (String) -> Void
+        var onError: (String) -> Void
+        weak var scanner: DataScannerViewController?
+
+        private var isStarted = false
+        private var lastPayload: String?
+        private var lastTime: Date = .distantPast
+
+        init(onDetected: @escaping (String) -> Void, onError: @escaping (String) -> Void) {
+            self.onDetected = onDetected
+            self.onError = onError
+        }
+
+        func setActive(_ active: Bool) {
+            guard let scanner else { return }
+
+            if active {
+                guard !isStarted else { return }
+                guard DataScannerViewController.isAvailable else {
+                    onError("Camera scanner not available.")
+                    return
+                }
+
+                do {
+                    try scanner.startScanning()
+                    isStarted = true
+                } catch {
+                    onError(userFriendlyError(error, context: "scan item"))
+                }
+            } else if isStarted {
+                scanner.stopScanning()
+                isStarted = false
+            }
+        }
+
+        func dataScanner(
+            _ dataScanner: DataScannerViewController,
+            didAdd addedItems: [RecognizedItem],
+            allItems: [RecognizedItem]
+        ) {
+            emitPayload(from: addedItems)
+        }
+
+        func dataScanner(
+            _ dataScanner: DataScannerViewController,
+            didUpdate updatedItems: [RecognizedItem],
+            allItems: [RecognizedItem]
+        ) {
+            emitPayload(from: updatedItems)
+        }
+
+        func dataScanner(
+            _ dataScanner: DataScannerViewController,
+            becameUnavailableWithError error: DataScannerViewController.ScanningUnavailable
+        ) {
+            isStarted = false
+            onError(userFriendlyError(error, context: "scan item"))
+        }
+
+        private func emitPayload(from items: [RecognizedItem]) {
+            for item in items {
+                guard case .barcode(let barcode) = item,
+                      let payload = barcode.payloadStringValue else { continue }
+
+                let now = Date()
+                if payload == lastPayload,
+                   now.timeIntervalSince(lastTime) < 1.0 {
+                    continue
+                }
+
+                lastPayload = payload
+                lastTime = now
+                onDetected(payload)
+            }
+        }
+    }
+}
+#endif
 
 // MARK: - Local Types
 
