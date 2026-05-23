@@ -26,6 +26,28 @@ struct OrdersServiceTests {
         #expect(jpos.count >= 1)
     }
 
+    @Test("JPO list and detail expose backing job due dates for timeline priority color")
+    func testJPORowsExposeJobDueDate() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try env.jobs.createJob(
+            jobNumber: "J-JPO-DUE",
+            jobName: "Due Date JPO Job",
+            customerName: "Test Customer",
+            status: "active",
+            dueDate: "2026-07-20",
+            createdBy: env.adminUserId
+        )
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+
+        let listItem = try env.orders.listJPOs().first(where: { $0.id == jpoId })
+        let jobListItem = try env.orders.listJPOs(jobId: jobId).first(where: { $0.id == jpoId })
+        let detail = try env.orders.getJPODetail(id: jpoId)
+
+        #expect(listItem?.dueDate == "2026-07-20")
+        #expect(jobListItem?.dueDate == "2026-07-20")
+        #expect(detail.dueDate == "2026-07-20")
+    }
+
     @Test("JPO detail with line items")
     func testJPODetail() throws {
         let env = try E2ETestHelpers.setUp()
