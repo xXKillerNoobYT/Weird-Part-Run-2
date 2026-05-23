@@ -121,6 +121,47 @@ struct SchedulingServiceTests {
         #expect(requests[0].approvedByName == "TestAdmin")
     }
 
+    @Test("updateTimeOffStatus throws insufficientPermissions when actor lacks approve_time_off")
+    func testUpdateTimeOffStatusRequiresApproveTimeOffPermission() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let workerId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO users (display_name, pin_hash, is_active)
+                VALUES ('WorkerUser', 'hash123', 1)
+                """)
+            let userId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO user_hats (user_id, hat_id, is_active)
+                SELECT ?, id, 1 FROM hats WHERE name = 'Worker'
+                """, arguments: [userId])
+            return userId
+        }
+
+        let requestId = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2026-09-02",
+            endDate: "2026-09-02",
+            reason: "Permission gate regression"
+        )
+
+        #expect(throws: SchedulingService.SchedulingError.insufficientPermissions(required: "approve_time_off")) {
+            try env.scheduling.updateTimeOffStatus(
+                id: requestId,
+                status: "approved",
+                approvedBy: workerId
+            )
+        }
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT is_approved, approved_by FROM schedule_exceptions WHERE id = ?
+                """, arguments: [requestId])
+        }
+        #expect(row?["is_approved"] as Int? == 0)
+        #expect((row?["approved_by"] as Int64?) == nil)
+    }
+
     // MARK: - 4. Reject Time-Off
 
     @Test("updateTimeOffStatus rejects (denies) a pending time-off request")
@@ -136,7 +177,8 @@ struct SchedulingServiceTests {
 
         try env.scheduling.updateTimeOffStatus(
             id: requestId,
-            status: "denied"
+            status: "denied",
+            approvedBy: env.adminUserId
         )
 
         // Denied requests have is_approved = 0, same as pending.
@@ -144,6 +186,13 @@ struct SchedulingServiceTests {
         let all = try env.scheduling.listTimeOffRequests(userId: env.adminUserId)
         #expect(all.count == 1)
         #expect(all[0].status == "pending") // is_approved = 0 maps to "pending" in the query
+
+        #expect(throws: SchedulingService.SchedulingError.insufficientPermissions(required: "approve_time_off")) {
+            try env.scheduling.updateTimeOffStatus(
+                id: requestId,
+                status: "denied"
+            )
+        }
     }
 
     @Test("updateTimeOffStatus throws for non-existent request")
@@ -151,7 +200,7 @@ struct SchedulingServiceTests {
         let env = try E2ETestHelpers.setUp()
 
         #expect(throws: SchedulingService.SchedulingError.self) {
-            try env.scheduling.updateTimeOffStatus(id: 9999, status: "approved")
+            try env.scheduling.updateTimeOffStatus(id: 9999, status: "approved", approvedBy: env.adminUserId)
         }
     }
 
@@ -1273,7 +1322,7 @@ struct SchedulingServiceTests {
         )
 
         // Should not throw — "cancelled" is a valid status
-        try env.scheduling.updateTimeOffStatus(id: requestId, status: "cancelled")
+        try env.scheduling.updateTimeOffStatus(id: requestId, status: "cancelled", approvedBy: env.adminUserId)
 
         // After cancelling, is_approved = 0, which maps to "pending" in the query
         let requests = try env.scheduling.listTimeOffRequests(userId: env.adminUserId)
@@ -1962,7 +2011,8 @@ struct SchedulingServiceTests {
         // Deny the legacy row (hits the else branch at L488)
         try env.scheduling.updateTimeOffStatus(
             id: legacyId,
-            status: "denied"
+            status: "denied",
+            approvedBy: env.adminUserId
         )
 
         // Verify is_approved is still 0
@@ -2580,12 +2630,13 @@ struct SchedulingServiceTests {
             status: "pending"
         )
 
-        // Verify it's back to pending
+        // Verify it's back to pending and no stale approver is surfaced
         let requests = try env.scheduling.listTimeOffRequests(
             userId: env.adminUserId,
             status: "pending"
         )
         #expect(requests.count == 1)
+        #expect(requests.first?.approvedByName == nil)
     }
 
     // MARK: - Crew Utilization Caps at 1.0
