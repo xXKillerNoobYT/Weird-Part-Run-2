@@ -311,6 +311,22 @@ struct JobsServiceTests {
         #expect(questions.count >= 0) // May have default questions
     }
 
+    @Test("Default clock-out questions include daily report prompt")
+    func testDefaultClockOutQuestionsIncludeDailyReportPrompt() throws {
+        let env = try E2ETestHelpers.setUp()
+        let questions = try env.jobs.getActiveQuestions()
+
+        let dailyReportQuestion = questions.first { question in
+            question.questionText.localizedCaseInsensitiveContains("daily report")
+        }
+
+        #expect(dailyReportQuestion != nil)
+        #expect(dailyReportQuestion?.answerType == "text")
+        #expect(dailyReportQuestion?.isRequired == true)
+    }
+
+    // MARK: - One-Time Questions
+
     @Test("Create one-time question")
     func testOneTimeQuestion() throws {
         let env = try E2ETestHelpers.setUp()
@@ -615,6 +631,47 @@ struct JobsServiceTests {
         #expect(responses[0].questionText == "Any safety concerns?")
 
         try env.jobs.clockOut(laborEntryId: laborEntryId)
+    }
+
+    @Test("saveClockOutDailyReport creates a job-scoped daily report notebook entry")
+    func testSaveClockOutDailyReportCreatesNotebookEntry() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-DR-CLOCK", name: "Clockout Daily Report Job")
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+
+        let entryId = try #require(try env.jobs.saveClockOutDailyReport(
+            laborEntryId: laborEntryId,
+            dailyReport: "  Pulled feeder wire, finished panel labeling, and staged tomorrow's materials.  "
+        ))
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT ne.title, ne.content, ne.entry_type, nb.notebook_type, nb.job_id, nb.created_by
+                FROM notebook_entries ne
+                JOIN notebook_sections ns ON ns.id = ne.section_id
+                JOIN notebooks nb ON nb.id = ns.notebook_id
+                WHERE ne.id = ?
+                """, arguments: [entryId])
+        }
+
+        #expect(row?["entry_type"] as String? == "daily-report")
+        #expect(row?["notebook_type"] as String? == "daily-report")
+        #expect(row?["job_id"] as Int64? == jobId)
+        #expect(row?["created_by"] as Int64? == env.adminUserId)
+        let title = row?["title"] as String? ?? ""
+        let content = row?["content"] as String? ?? ""
+        #expect(title.contains("Daily Report"))
+        #expect(content.contains("Pulled feeder wire, finished panel labeling, and staged tomorrow's materials."))
+    }
+
+    @Test("saveClockOutDailyReport ignores blank clock-out daily report text")
+    func testSaveClockOutDailyReportIgnoresBlankText() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+
+        let entryId = try env.jobs.saveClockOutDailyReport(laborEntryId: laborEntryId, dailyReport: "  \n\t  ")
+        #expect(entryId == nil)
     }
 
     // MARK: - One-Time Questions

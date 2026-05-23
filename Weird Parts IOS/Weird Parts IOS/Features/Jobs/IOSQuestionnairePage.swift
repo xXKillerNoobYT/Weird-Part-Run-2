@@ -25,6 +25,7 @@ struct IOSQuestionnairePage: View {
     @State private var isLoading = true
     @State private var isSubmitting = false
     @State private var errorMessage: String?
+    @State private var dailyReportText = ""
 
     // Companion poll questions
     @State private var companionPolls: [(pollId: Int64, questionText: String, hasVoted: Bool)] = []
@@ -169,6 +170,32 @@ struct IOSQuestionnairePage: View {
                     }
                 }
 
+                // Daily report narrative captured at clock-out
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Daily Report")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+
+                        Text("Add the work summary, progress, blockers, or notes the office needs from today.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        TextField("What got done today?", text: $dailyReportText, axis: .vertical)
+                            .lineLimit(3...8)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.subheadline)
+                    }
+                    .padding(.vertical, 4)
+                } header: {
+                    HStack {
+                        Image(systemName: "doc.text")
+                            .foregroundStyle(.blue)
+                            .accessibilityHidden(true)
+                        Text("Daily Report")
+                    }
+                }
+
                 // Companion poll questions (always optional)
                 if !companionPolls.isEmpty {
                     Section {
@@ -296,11 +323,22 @@ struct IOSQuestionnairePage: View {
         let responses: [(questionId: Int64, answer: String)] = questions.map { q in
             (questionId: q.questionId, answer: answers[q.questionId] ?? "")
         }
+        let configuredDailyReportAnswers = questions
+            .filter { $0.questionText.localizedCaseInsensitiveContains("daily report") }
+            .compactMap { answers[$0.questionId]?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let dailyReportBody = ([dailyReportText.trimmingCharacters(in: .whitespacesAndNewlines)] + configuredDailyReportAnswers)
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
 
         do {
             try service.saveClockOutResponses(
                 laborEntryId: laborEntryId,
                 responses: responses
+            )
+            try service.saveClockOutDailyReport(
+                laborEntryId: laborEntryId,
+                dailyReport: dailyReportBody
             )
 
             // Handle break verification
@@ -431,8 +469,8 @@ struct IOSQuestionnairePage: View {
         let context = """
         Clock-Out Questionnaire page. Read-only context.
         Labor entry id: \(laborEntryId), questions loaded: \(questions.count), required questions: \(requiredCount), answered fields: \(answeredCount), unanswered required: \(hasUnansweredRequired).
-        Answer types: \(answerTypes.isEmpty ? "none" : answerTypes), companion polls: \(companionPolls.count), break verification: \(breakVerification.rawValue), missed break selections: \(missedBreaks.count), submitting: \(isSubmitting).
-        Available read-only guidance: explain required questions, answer types, break verification, companion poll section, and submit/skip availability. Do not submit or change answers directly.
+        Answer types: \(answerTypes.isEmpty ? "none" : answerTypes), companion polls: \(companionPolls.count), break verification: \(breakVerification.rawValue), missed break selections: \(missedBreaks.count), daily report characters: \(dailyReportText.trimmingCharacters(in: .whitespacesAndNewlines).count), submitting: \(isSubmitting).
+        Available read-only guidance: explain required questions, answer types, break verification, Daily Report field, companion poll section, and submit/skip availability. Do not submit or change answers directly.
         """
         NotificationCenter.default.post(
             name: .questionnairePageActive,
