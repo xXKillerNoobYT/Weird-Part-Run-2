@@ -27,6 +27,15 @@ struct PartsCategoriesPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Dedicated page marker for UI tests. Keep this on its own tiny
+            // element instead of the root VStack; applying the identifier to
+            // the root container causes SwiftUI to export the same identifier
+            // on descendants, masking child controls such as
+            // `createFirstCategoryButton`.
+            Color.clear
+                .frame(width: 1, height: 1)
+                .accessibilityIdentifier("partsCategoriesPage")
+
             OnboardingBanner(pageId: "parts-categories")
 
             Group {
@@ -49,7 +58,6 @@ struct PartsCategoriesPage: View {
             // This prevents stale data from persisting after sheet edits.
             .id(dataVersion)
         }
-        .accessibilityIdentifier("partsCategoriesPage")
         .background(DS.Background.page)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

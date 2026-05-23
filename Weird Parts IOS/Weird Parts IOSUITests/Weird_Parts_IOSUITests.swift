@@ -70,10 +70,35 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         // Pass a launch argument so the app can detect testing mode
         // (useful for seeding test data or skipping onboarding)
         app.launchArguments += ["-UITesting"]
+        if shouldOpenPartsCategoriesOnLaunch {
+            app.launchArguments += ["-UITestingOpenPartsCategories"]
+        }
         if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" {
             XCUIDevice.shared.orientation = .landscapeLeft
         }
         app.launch()
+    }
+
+    private var shouldOpenPartsCategoriesOnLaunch: Bool {
+        [
+            "Category",
+            "Categories",
+            "DataPersistsAndDisplaysAfterSheetDismiss",
+            "SaveButtonDisabledWhenNameEmpty",
+            "SearchFiltersCategoriesTree",
+        ].contains { name.contains($0) }
+    }
+
+    /// SwiftUI exposes the page accessibility identifier on the visible child
+    /// elements instead of a stable `Other` container on compact iPhone. Query
+    /// all descendants so navigation assertions prove the page is visible
+    /// without depending on the exported accessibility role.
+    private var partsCategoriesPage: XCUIElement {
+        app.descendants(matching: .any)["partsCategoriesPage"]
+    }
+
+    private var categoryFormSheet: XCUIElement {
+        app.descendants(matching: .any)["categoryFormSheet"]
     }
 
     override func tearDownWithError() throws {
@@ -738,6 +763,9 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     private func logInAsUITestOwnerIfNeeded() {
         if app.buttons["tab_dashboard"].waitForExistence(timeout: 5) && app.buttons["tab_dashboard"].isHittable ||
             app.buttons["Dashboard"].exists && app.buttons["Dashboard"].isHittable ||
+            app.buttons["tab_parts"].exists && app.buttons["tab_parts"].isHittable ||
+            app.buttons["Parts"].exists && app.buttons["Parts"].isHittable ||
+            partsCategoriesPage.exists ||
             app.buttons["tab_warehouse"].exists && app.buttons["tab_warehouse"].isHittable ||
             app.buttons["Warehouse"].exists && app.buttons["Warehouse"].isHittable ||
             app.buttons["Configure Your Warehouse"].exists && app.buttons["Configure Your Warehouse"].isHittable ||
@@ -747,32 +775,45 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             return
         }
 
-        let loginView = app.otherElements["loginView"]
-        if loginView.waitForExistence(timeout: 30) || app.staticTexts["UITest Owner"].waitForExistence(timeout: 5) {
-            let userRows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'loginUserRow_'"))
-            if userRows.firstMatch.waitForExistence(timeout: 10) {
-                userRows.firstMatch.tap()
-            } else {
-                let ownerLabel = app.staticTexts["UITest Owner"]
-                XCTAssertTrue(ownerLabel.waitForExistence(timeout: 10), "UITest Owner should be seeded")
-                ownerLabel.tap()
-            }
-
-            let pinField = app.secureTextFields["loginPINField"]
-            XCTAssertTrue(pinField.waitForExistence(timeout: 5), "PIN field should appear")
-            pinField.tap()
-            pinField.typeText("1234")
-
-            let done = app.buttons["loginPINDoneButton"]
-            if done.waitForExistence(timeout: 3) && done.isHittable {
-                done.tap()
-            }
-
-            let signIn = app.buttons["loginSignInButton"]
-            XCTAssertTrue(signIn.waitForExistence(timeout: 5), "Sign In should be available")
-            XCTAssertTrue(signIn.isHittable, "Sign In should be hittable after entering the UITest Owner PIN")
-            signIn.tap()
+        let userRows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'loginUserRow_'"))
+        let ownerRow = app.buttons["loginUserRow_1"]
+        let ownerLabel = app.staticTexts["UITest Owner"]
+        if userRows.firstMatch.waitForExistence(timeout: 30) {
+            userRows.firstMatch.tap()
+        } else if ownerRow.waitForExistence(timeout: 5) {
+            ownerRow.tap()
+        } else if ownerLabel.waitForExistence(timeout: 5) {
+            ownerLabel.tap()
+        } else {
+            XCTAssertTrue(app.buttons["tab_dashboard"].exists ||
+                          app.buttons["Dashboard"].exists ||
+                          app.buttons["tab_parts"].exists ||
+                          app.buttons["Parts"].exists ||
+                          partsCategoriesPage.exists ||
+                          app.buttons["tab_warehouse"].exists ||
+                          app.buttons["Warehouse"].exists ||
+                          app.buttons["Configure Your Warehouse"].exists ||
+                          app.staticTexts["Warehouse Setup"].exists ||
+                          app.staticTexts["Confirm Zone Grid"].exists ||
+                          app.buttons["Create & Continue"].exists,
+                          "UI test login should find UITest Owner or an already-authenticated shell")
+            return
         }
+
+        let pinField = app.secureTextFields["loginPINField"]
+        XCTAssertTrue(pinField.waitForExistence(timeout: 5), "PIN field should appear")
+        pinField.tap()
+        pinField.typeText("1234")
+
+        let done = app.buttons["loginPINDoneButton"]
+        if done.waitForExistence(timeout: 3) && done.isHittable {
+            done.tap()
+        }
+
+        let signIn = app.buttons["loginSignInButton"]
+        XCTAssertTrue(signIn.waitForExistence(timeout: 5), "Sign In should be available")
+        XCTAssertTrue(signIn.isHittable, "Sign In should be hittable after entering the UITest Owner PIN")
+        signIn.tap()
 
         let welcomeCTA = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Got It'")).firstMatch
         let skipTour = app.buttons["Skip"]
@@ -788,6 +829,9 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             if skipAny.exists && skipAny.isHittable { skipAny.tap(); continue }
             if app.buttons["tab_dashboard"].exists && app.buttons["tab_dashboard"].isHittable ||
                 app.buttons["Dashboard"].exists && app.buttons["Dashboard"].isHittable ||
+                app.buttons["tab_parts"].exists && app.buttons["tab_parts"].isHittable ||
+                app.buttons["Parts"].exists && app.buttons["Parts"].isHittable ||
+                partsCategoriesPage.exists ||
                 app.buttons["tab_warehouse"].exists && app.buttons["tab_warehouse"].isHittable ||
                 app.buttons["Warehouse"].exists && app.buttons["Warehouse"].isHittable ||
                 app.buttons["Configure Your Warehouse"].exists && app.buttons["Configure Your Warehouse"].isHittable ||
@@ -802,13 +846,16 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         captureWEI1185("00-login-shell-not-reached")
         XCTAssertTrue(app.buttons["tab_dashboard"].exists ||
                       app.buttons["Dashboard"].exists ||
+                      app.buttons["tab_parts"].exists ||
+                      app.buttons["Parts"].exists ||
+                      partsCategoriesPage.exists ||
                       app.buttons["tab_warehouse"].exists ||
                       app.buttons["Warehouse"].exists ||
                       app.buttons["Configure Your Warehouse"].exists ||
                       app.staticTexts["Warehouse Setup"].exists ||
                       app.staticTexts["Confirm Zone Grid"].exists ||
                       app.buttons["Create & Continue"].exists,
-                      "Login should reach the dashboard or warehouse shell before opening the wizard")
+                      "Login should reach the app shell before opening the requested route")
     }
 
     private func openWarehouseSetupWizard() {
@@ -1077,6 +1124,14 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     /// Navigates from the main tab bar to the Parts > Categories page.
     /// Handles the case where the app may be on a different tab.
     private func navigateToCategories() {
+        logInAsUITestOwnerIfNeeded()
+
+        let page = partsCategoriesPage
+        if page.waitForExistence(timeout: 10) {
+            dismissTransientOnboardingOverlays()
+            return
+        }
+
         // Tap the "Parts" tab (or "More" then "Parts" on iPhone)
         let partsTab = app.tabBars.buttons["Parts"]
         if partsTab.waitForExistence(timeout: 10) {
@@ -1086,9 +1141,30 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             let moreTab = app.tabBars.buttons["More"]
             if moreTab.waitForExistence(timeout: 5) {
                 moreTab.tap()
-                let partsCell = app.cells.staticTexts["Parts"]
-                if partsCell.waitForExistence(timeout: 5) {
-                    partsCell.tap()
+                let partsButtons = app.buttons.matching(NSPredicate(format: "label == 'Parts'"))
+                var tappedPartsFromMore = false
+                for index in 0..<partsButtons.count {
+                    let candidate = partsButtons.element(boundBy: index)
+                    guard candidate.exists else { continue }
+                    // In the compact More list the tappable row is exposed as a Button labeled "Parts".
+                    // Prefer a hittable row, and fall back to its center coordinate so we do not
+                    // accidentally tap a non-row duplicate from another tab hierarchy.
+                    if candidate.isHittable {
+                        candidate.tap()
+                        tappedPartsFromMore = true
+                        break
+                    }
+                    if candidate.frame.minY > 0 && candidate.frame.maxY < app.frame.maxY - 80 {
+                        candidate.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                        tappedPartsFromMore = true
+                        break
+                    }
+                }
+                if !tappedPartsFromMore {
+                    let partsCell = app.cells.staticTexts["Parts"]
+                    if partsCell.waitForExistence(timeout: 5) {
+                        partsCell.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                    }
                 }
             }
         }
@@ -1106,9 +1182,36 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         }
 
         // Wait for the page to appear
-        let page = app.otherElements["partsCategoriesPage"]
         XCTAssertTrue(page.waitForExistence(timeout: 10),
                       "Parts Categories page should appear after navigation")
+        dismissTransientOnboardingOverlays()
+    }
+
+    private func dismissTransientOnboardingOverlays(timeout: TimeInterval = 8) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let gotIt = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Got It'")).firstMatch
+            if gotIt.exists && gotIt.isHittable {
+                gotIt.tap()
+                continue
+            }
+
+            let skipAny = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Skip'")).firstMatch
+            if skipAny.exists && skipAny.isHittable {
+                skipAny.tap()
+                continue
+            }
+
+            let next = app.buttons["Next"]
+            if app.staticTexts["Quick Tour"].exists && next.exists && next.isHittable {
+                // If a tour variant lacks a Skip button on the current page,
+                // advance once; the loop will tap Skip/Got It when it appears.
+                next.tap()
+                continue
+            }
+
+            break
+        }
     }
 
     // MARK: - Helper: Wait for loading to complete
@@ -1148,7 +1251,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         }
 
         // Verify the category form sheet appeared
-        let formSheet = app.otherElements["categoryFormSheet"]
+        let formSheet = categoryFormSheet
         XCTAssertTrue(formSheet.waitForExistence(timeout: 5),
                       "Category form sheet should appear after tapping Add")
 
@@ -1191,7 +1294,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         }
 
         // Wait for form to appear
-        let formSheet = app.otherElements["categoryFormSheet"]
+        let formSheet = categoryFormSheet
         XCTAssertTrue(formSheet.waitForExistence(timeout: 5),
                       "Category form sheet should appear")
 
@@ -1242,7 +1345,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                        "Error state should not be visible when data loads successfully")
 
         // Page should be visible
-        let page = app.otherElements["partsCategoriesPage"]
+        let page = partsCategoriesPage
         XCTAssertTrue(page.exists, "Categories page should be visible")
 
         // Either the tree list OR the empty state should be shown (not both)
@@ -1286,7 +1389,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app.buttons["categoryFormSaveButton"].tap()
 
         // Wait for sheet to dismiss
-        let formSheet = app.otherElements["categoryFormSheet"]
+        let formSheet = categoryFormSheet
         let disappeared = NSPredicate(format: "exists == false")
         expectation(for: disappeared, evaluatedWith: formSheet)
         waitForExpectations(timeout: 10)
@@ -1331,7 +1434,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             app.buttons["addCategoryMenuItem"].tap()
         }
 
-        let formSheet = app.otherElements["categoryFormSheet"]
+        let formSheet = categoryFormSheet
         XCTAssertTrue(formSheet.waitForExistence(timeout: 5))
 
         // Save button should be disabled when name is empty

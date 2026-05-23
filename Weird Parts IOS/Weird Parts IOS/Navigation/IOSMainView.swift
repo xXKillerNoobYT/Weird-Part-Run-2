@@ -55,7 +55,26 @@ struct IOSMainView: View {
 
     /// Filtered modules in the user's preferred order.
     private var orderedModules: [AppModule] {
-        tabPrefs.orderedModules(from: filteredModules)
+        let modules = tabPrefs.orderedModules(from: filteredModules)
+        guard isUITestingOpenPartsCategories else { return modules }
+
+        // UI tests for Parts > Categories should validate the feature, not the
+        // compact "More" list traversal. In testing only, pin Parts into the
+        // primary TabView set so selectedModuleId can open it deterministically.
+        guard let partsIndex = modules.firstIndex(where: { $0.id == "parts" }) else {
+            return modules
+        }
+        var reordered = modules
+        let parts = reordered.remove(at: partsIndex)
+        reordered.insert(parts, at: min(3, reordered.count))
+        return reordered
+    }
+
+    /// Test-only deep link used by GH#568 UI tests. Requires both flags so a
+    /// stray feature flag cannot affect production or manual debug launches.
+    private var isUITestingOpenPartsCategories: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-UITesting") && args.contains("-UITestingOpenPartsCategories")
     }
 
     /// First 4 ordered modules shown as dedicated bottom tabs.
@@ -111,6 +130,11 @@ struct IOSMainView: View {
         }
         .onAppear {
             tabPrefs.load(userId: appCore.currentUser?.id)
+            if isUITestingOpenPartsCategories {
+                selectedModuleId = "parts"
+                expandedModuleId = "parts"
+                selectedTabPath = "/parts/categories"
+            }
             badgeManager.refresh()
         }
         .onChange(of: scenePhase) {
@@ -674,13 +698,23 @@ struct ModuleHostView: View {
         }
         .onAppear {
             applyNavigationRequest(navigationRequest)
-            if selectedTabId.isEmpty, let first = visibleTabsList.first {
+            if isUITestingOpenPartsCategories, module.id == "parts" {
+                selectedTabId = "parts-categories"
+            } else if selectedTabId.isEmpty, let first = visibleTabsList.first {
                 selectedTabId = first.id
             }
         }
         .onChange(of: navigationRequest) { _, request in
             applyNavigationRequest(request)
         }
+    }
+
+    /// Test-only deep link used by GH#568 UI tests. This is intentionally
+    /// duplicated inside ModuleHostView so sub-tab selection stays local to the
+    /// module host and remains inert unless the UI-test harness opts in.
+    private var isUITestingOpenPartsCategories: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-UITesting") && args.contains("-UITestingOpenPartsCategories")
     }
 
     private var currentPath: String {
