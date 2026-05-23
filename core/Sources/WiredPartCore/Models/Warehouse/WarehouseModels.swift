@@ -7,6 +7,99 @@ import GRDB
 /// Tracks the full journey of parts: Supplier → Warehouse → Staging → Truck → Job.
 public struct StockMovement: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "stock_movements"
+
+    /// Canonical values stored in `stock_movements.movement_type`.
+    ///
+    /// Keep movement producers and SQL consumers on this enum instead of
+    /// open-coded strings so forecasting/reporting do not silently drift when a
+    /// writer uses a synonym such as `consumed` or `job_pull`.
+    public enum MovementType: String, Codable, CaseIterable, Sendable {
+        case transfer
+        case receive
+        case receiving
+        case receivingStaged = "receiving_staged"
+        case receipt
+        case stockReturn = "return"
+        case returnToSupplier = "return_to_supplier"
+        case adjustment
+        case addStock = "add_stock"
+        case writeOff = "write_off"
+        case consume
+        case pull
+        case usage
+        case jobPull = "job_pull"
+        case restockFromShop = "restock_from_shop"
+
+        /// Movement types that remove stock from normal availability and should
+        /// contribute to demand/forecast calculations. Return-to-supplier stays
+        /// included to preserve the pre-existing 30/90-day consumption stats
+        /// behavior while making every forecast query use the same definition.
+        public static let forecastConsumptionTypes: [MovementType] = [
+            .consume, .pull, .usage, .jobPull, .returnToSupplier
+        ]
+
+        /// Movement types shown as material usage in reports.
+        public static let materialUsageTypes: [MovementType] = [
+            .consume, .pull, .usage, .jobPull
+        ]
+
+        /// Accept legacy/synonym values at write/filter boundaries, but persist
+        /// the canonical raw value for all new stock movements.
+        public var aliases: [String] {
+            switch self {
+            case .transfer:
+                return ["transfer"]
+            case .receive:
+                return ["receive", "received", "receiving", "receipt"]
+            case .receiving:
+                return ["receiving"]
+            case .receivingStaged:
+                return ["receiving_staged"]
+            case .receipt:
+                return ["receipt"]
+            case .stockReturn:
+                return ["return", "returned", "stock_return"]
+            case .returnToSupplier:
+                return ["return_to_supplier"]
+            case .adjustment:
+                return ["adjustment", "adjust"]
+            case .addStock:
+                return ["add_stock"]
+            case .writeOff:
+                return ["write_off"]
+            case .consume:
+                return ["consume", "consumed", "consumption"]
+            case .pull:
+                return ["pull"]
+            case .usage:
+                return ["usage"]
+            case .jobPull:
+                return ["job_pull"]
+            case .restockFromShop:
+                return ["restock_from_shop"]
+            }
+        }
+
+        public static func normalize(_ movementType: String) -> String {
+            let normalized = movementType
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+                .replacingOccurrences(of: "-", with: "_")
+                .replacingOccurrences(of: " ", with: "_")
+            for type in Self.allCases where type.aliases.contains(normalized) {
+                return type.rawValue
+            }
+            return normalized
+        }
+
+        /// SQL literal list for static movement-type `IN (...)` clauses.
+        /// Empty input deliberately produces a no-match list instead of invalid
+        /// `IN ()` SQL so callers can safely compose from filtered type arrays.
+        public static func sqlList(_ types: [MovementType]) -> String {
+            guard !types.isEmpty else { return "(NULL)" }
+            return "(" + types.map { "'\($0.rawValue)'" }.joined(separator: ", ") + ")"
+        }
+    }
     public var id: Int64?
     public var partId: Int64
     public var qty: Int

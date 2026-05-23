@@ -946,7 +946,7 @@ public final class OrdersService: Sendable {
                         """,
                     arguments: [userId, lineId]
                 )
-                return "transfer"
+                return StockMovement.MovementType.transfer.rawValue
             } else {
                 // Needs ordering — requires approval
                 try dbConn.execute(
@@ -1012,7 +1012,7 @@ public final class OrdersService: Sendable {
                     fromLocationId: 1,
                     toLocationType: "warehouse",
                     toLocationId: 1,
-                    movementType: "transfer",
+                    movementType: StockMovement.MovementType.transfer.rawValue,
                     reason: "JPO line hold — reversing transfer",
                     notes: "Reversed transfer for JPO line #\(lineId)",
                     performedBy: reversedBy

@@ -357,7 +357,7 @@ struct WarehouseServiceExtTests {
         // Verify movement was recorded
         let movement = try env.warehouse.getMovement(id: movId)
         #expect(movement?.qty == 10)
-        #expect(movement?.movementType == "transfer")
+        #expect(movement?.movementType == StockMovement.MovementType.consume.rawValue)
     }
 
     // MARK: - getStockAtLocation
@@ -1229,6 +1229,33 @@ struct WarehouseServiceExtTests {
                 movementType: "   ", performedBy: env.adminUserId
             )
         }
+    }
+
+
+    @Test("StockMovement.MovementType centralizes canonical movement values")
+    func testStockMovementTypeCanonicalValues() throws {
+        #expect(StockMovement.MovementType.normalize(" consumed ") == StockMovement.MovementType.consume.rawValue)
+        #expect(StockMovement.MovementType.normalize("job-pull") == StockMovement.MovementType.jobPull.rawValue)
+        #expect(StockMovement.MovementType.normalize("RETURNED") == StockMovement.MovementType.stockReturn.rawValue)
+        #expect(StockMovement.MovementType.forecastConsumptionTypes.contains(.returnToSupplier))
+        #expect(StockMovement.MovementType.sqlList(StockMovement.MovementType.materialUsageTypes) == "('consume', 'pull', 'usage', 'job_pull')")
+    }
+
+    @Test("createMovement persists canonical movement type values")
+    func testCreateMovement_persistsCanonicalMovementType() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        let movementId = try env.warehouse.createMovement(
+            partId: partId, qty: 1,
+            fromLocationType: nil, fromLocationId: nil,
+            toLocationType: "warehouse", toLocationId: 1,
+            movementType: " consumed ", performedBy: env.adminUserId
+        )
+
+        let movement = try env.warehouse.getMovement(id: movementId)
+        #expect(movement?.movementType == StockMovement.MovementType.consume.rawValue)
     }
 
     @Test("createMovement throws insufficientStock when source qty is less than requested")

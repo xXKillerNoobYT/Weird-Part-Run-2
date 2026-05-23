@@ -134,7 +134,7 @@ public final class WarehouseService: Sendable {
         let pendingReturns = try safeCount(
             sql: """
                 SELECT COUNT(*) FROM stock_movements
-                WHERE movement_type = 'return'
+                WHERE movement_type = '\(StockMovement.MovementType.stockReturn.rawValue)'
                   AND date(created_at) = date('now')
                   AND deleted_at IS NULL
                 """
@@ -466,8 +466,9 @@ public final class WarehouseService: Sendable {
                     args.append(pattern)
                 }
                 if let movementType, !movementType.isEmpty {
+                    let canonicalMovementType = StockMovement.MovementType.normalize(movementType)
                     whereClauses.append("sm.movement_type = ?")
-                    args.append(movementType)
+                    args.append(canonicalMovementType)
                 }
 
                 args.append(limit)
@@ -570,9 +571,11 @@ public final class WarehouseService: Sendable {
         // which of fromLocationType/toLocationType is non-nil, not by sign. A
         // negative qty inverts the stock delta: `qty = qty - (-3)` = qty + 3.
         guard qty > 0 else { throw WarehouseError.invalidQuantity }
-        guard !movementType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        let trimmedMovementType = movementType.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedMovementType.isEmpty else {
             throw WarehouseError.requiredFieldEmpty
         }
+        let canonicalMovementType = StockMovement.MovementType.normalize(trimmedMovementType)
         return try db.writer.write { dbConn in
             // Guard: part must exist and not be tombstoned — otherwise the INSERT
             // would create an orphan stock_movement against a soft-deleted part.
@@ -606,7 +609,7 @@ public final class WarehouseService: Sendable {
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                     """,
                 arguments: [partId, qty, fromLocationType, fromLocationId,
-                            toLocationType, toLocationId, movementType,
+                            toLocationType, toLocationId, canonicalMovementType,
                             reason, notes, performedBy, jobId, photoPath,
                             referenceNumber, unitCostAtMove, unitSellAtMove]
             )
@@ -708,7 +711,7 @@ public final class WarehouseService: Sendable {
         guard !movements.isEmpty else { return [] }
         for m in movements {
             guard m.qty > 0 else { throw WarehouseError.invalidQuantity }
-            guard !m.movementType.trimmingCharacters(in: .whitespaces).isEmpty else {
+            guard !m.movementType.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty else {
                 throw WarehouseError.requiredFieldEmpty
             }
         }
@@ -742,7 +745,7 @@ public final class WarehouseService: Sendable {
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                     """,
                     arguments: [m.partId, m.qty, m.fromLocationType, m.fromLocationId,
-                                m.toLocationType, m.toLocationId, m.movementType,
+                                m.toLocationType, m.toLocationId, StockMovement.MovementType.normalize(m.movementType),
                                 m.reason, m.notes, performedBy, m.jobId, m.photoPath,
                                 m.referenceNumber, m.unitCostAtMove, m.unitSellAtMove])
                 ids.append(dbConn.lastInsertedRowID)
@@ -1378,7 +1381,7 @@ public final class WarehouseService: Sendable {
                         FROM stock_movements sm
                         LEFT JOIN parts p ON p.id = sm.part_id AND p.deleted_at IS NULL
                         LEFT JOIN users u ON u.id = sm.performed_by AND u.deleted_at IS NULL
-                        WHERE sm.movement_type = 'return' AND sm.deleted_at IS NULL
+                        WHERE sm.movement_type = '\(StockMovement.MovementType.stockReturn.rawValue)' AND sm.deleted_at IS NULL
                         ORDER BY sm.created_at DESC
                         LIMIT ?
                         """,
@@ -1430,7 +1433,7 @@ public final class WarehouseService: Sendable {
             fromLocationId: fromLocationId,
             toLocationType: toLocationType,
             toLocationId: toLocationId,
-            movementType: "return",
+            movementType: StockMovement.MovementType.stockReturn.rawValue,
             reason: isDamaged ? "damaged" : (reason ?? "return"),
             notes: notes,
             performedBy: performedBy
@@ -2368,7 +2371,7 @@ public final class WarehouseService: Sendable {
             fromLocationId: nil,
             toLocationType: "pulled",
             toLocationId: jobId,
-            movementType: "receiving_staged",
+            movementType: StockMovement.MovementType.receivingStaged.rawValue,
             reason: "Received and staged for job",
             notes: notes,
             performedBy: performedBy,
@@ -2392,7 +2395,7 @@ public final class WarehouseService: Sendable {
             fromLocationId: nil,
             toLocationType: nil,
             toLocationId: nil,
-            movementType: "write_off",
+            movementType: StockMovement.MovementType.writeOff.rawValue,
             reason: reason,
             notes: notes,
             performedBy: performedBy
@@ -2415,7 +2418,7 @@ public final class WarehouseService: Sendable {
             fromLocationId: nil,
             toLocationType: nil,
             toLocationId: nil,
-            movementType: "return_to_supplier",
+            movementType: StockMovement.MovementType.returnToSupplier.rawValue,
             reason: "Damaged: \(returnType)",
             notes: notes,
             performedBy: performedBy
@@ -2525,12 +2528,15 @@ public final class WarehouseService: Sendable {
     /// Determine the movement_type based on from/to location types.
     private static func determineMovementType(from: String, to: String) -> String {
         if to == "warehouse" && (from == "truck" || from == "trailer") {
-            return "return"
+            return StockMovement.MovementType.stockReturn.rawValue
         }
         if from == "job" {
-            return "return"
+            return StockMovement.MovementType.stockReturn.rawValue
         }
-        return "transfer"
+        if to == "job" {
+            return StockMovement.MovementType.consume.rawValue
+        }
+        return StockMovement.MovementType.transfer.rawValue
     }
 
     /// Build a human-readable display name for a location.
