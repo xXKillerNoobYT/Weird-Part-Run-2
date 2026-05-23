@@ -1317,10 +1317,7 @@ public final class NotebooksService: Sendable {
         jobType: String?,
         createdBy: Int64
     ) throws -> Int64 {
-        if try getTemplates(templateType: "job").isEmpty {
-            try seedDefaultTemplates(createdBy: createdBy)
-        }
-        return try db.writer.write { dbConn in
+        try db.writer.write { dbConn in
             try ensureJobNotebook(dbConn: dbConn, jobId: jobId, jobName: jobName, jobType: jobType, createdBy: createdBy)
         }
     }
@@ -1368,6 +1365,8 @@ public final class NotebooksService: Sendable {
             """, arguments: [jobId]) {
             return existing
         }
+
+        try seedDefaultTemplatesIfMissing(dbConn: dbConn, createdBy: createdBy)
 
         let template = try findBestJobTemplate(dbConn: dbConn, jobType: jobType)
         let titleBase = jobName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1537,15 +1536,27 @@ public final class NotebooksService: Sendable {
         }
     }
 
-    /// Seed default templates if none exist.
+    /// Seed default templates if none exist. Requires template-management permission for user-initiated calls.
     public func seedDefaultTemplates(createdBy: Int64) throws {
         try db.writer.read { dbConn in
             try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_templates")
         }
 
-        let count = try db.writer.read { dbConn -> Int in
-            try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM notebook_templates WHERE is_default = 1") ?? 0
+        try db.writer.write { dbConn in
+            try seedDefaultTemplatesIfMissing(dbConn: dbConn, createdBy: createdBy)
         }
+    }
+
+    /// Seed bootstrap job templates inside an existing trusted write transaction.
+    ///
+    /// This intentionally does not enforce `manage_templates`: create-job flows call
+    /// it to install system defaults needed for the atomic job-notebook side effect,
+    /// while public template-management entry points keep their permission gate.
+    func seedDefaultTemplatesIfMissing(dbConn: Database, createdBy: Int64) throws {
+        let count = try Int.fetchOne(
+            dbConn,
+            sql: "SELECT COUNT(*) FROM notebook_templates WHERE template_type = 'job' AND deleted_at IS NULL"
+        ) ?? 0
         guard count == 0 else { return }
 
         // Residential Job Template
@@ -1583,15 +1594,13 @@ public final class NotebooksService: Sendable {
         let jsonData = try JSONEncoder().encode(residentialTemplate)
         let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
 
-        try db.writer.write { dbConn in
-            try dbConn.execute(sql: """
-                INSERT INTO notebook_templates (name, description, template_type, category, template_data, is_default, created_by)
-                VALUES (?, ?, ?, ?, ?, 1, ?)
-                """, arguments: [
-                    "Residential Job", "Standard residential job notebook with safety, materials, daily log, photos, and punch list",
-                    "job", "residential", jsonString, createdBy
-                ])
-        }
+        try dbConn.execute(sql: """
+            INSERT INTO notebook_templates (name, description, template_type, category, template_data, is_default, created_by)
+            VALUES (?, ?, ?, ?, ?, 1, ?)
+            """, arguments: [
+                "Residential Job", "Standard residential job notebook with safety, materials, daily log, photos, and punch list",
+                "job", "residential", jsonString, createdBy
+            ])
 
         // Commercial Job Template
         let commercialTemplate = NotebookTemplateData(groups: [
@@ -1628,15 +1637,13 @@ public final class NotebooksService: Sendable {
         let commercialJson = try JSONEncoder().encode(commercialTemplate)
         let commercialJsonStr = String(data: commercialJson, encoding: .utf8) ?? "{}"
 
-        try db.writer.write { dbConn in
-            try dbConn.execute(sql: """
-                INSERT INTO notebook_templates (name, description, template_type, category, template_data, is_default, created_by)
-                VALUES (?, ?, ?, ?, ?, 1, ?)
-                """, arguments: [
-                    "Commercial Job", "Commercial job notebook with panel schedules, permits, and as-built documentation",
-                    "job", "commercial", commercialJsonStr, createdBy
-                ])
-        }
+        try dbConn.execute(sql: """
+            INSERT INTO notebook_templates (name, description, template_type, category, template_data, is_default, created_by)
+            VALUES (?, ?, ?, ?, ?, 1, ?)
+            """, arguments: [
+                "Commercial Job", "Commercial job notebook with panel schedules, permits, and as-built documentation",
+                "job", "commercial", commercialJsonStr, createdBy
+            ])
 
         // Service Call Template
         let serviceTemplate = NotebookTemplateData(groups: [
@@ -1654,15 +1661,13 @@ public final class NotebooksService: Sendable {
         let serviceJson = try JSONEncoder().encode(serviceTemplate)
         let serviceJsonStr = String(data: serviceJson, encoding: .utf8) ?? "{}"
 
-        try db.writer.write { dbConn in
-            try dbConn.execute(sql: """
-                INSERT INTO notebook_templates (name, description, template_type, category, template_data, is_default, created_by)
-                VALUES (?, ?, ?, ?, ?, 1, ?)
-                """, arguments: [
-                    "Service Call", "Quick service call notebook for diagnosis and repair",
-                    "job", "service", serviceJsonStr, createdBy
-                ])
-        }
+        try dbConn.execute(sql: """
+            INSERT INTO notebook_templates (name, description, template_type, category, template_data, is_default, created_by)
+            VALUES (?, ?, ?, ?, ?, 1, ?)
+            """, arguments: [
+                "Service Call", "Quick service call notebook for diagnosis and repair",
+                "job", "service", serviceJsonStr, createdBy
+            ])
     }
 
     // =========================================================================

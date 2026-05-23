@@ -662,9 +662,6 @@ public final class JobsService: Sendable {
         guard !jobName.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
         guard !jobNumber.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
         let notebooks = NotebooksService(db: db)
-        if let createdBy, try notebooks.getTemplates(templateType: "job").isEmpty {
-            try notebooks.seedDefaultTemplates(createdBy: createdBy)
-        }
         return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """

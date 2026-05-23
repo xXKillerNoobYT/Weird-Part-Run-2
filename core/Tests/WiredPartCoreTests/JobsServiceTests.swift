@@ -41,6 +41,42 @@ struct JobsServiceTests {
         #expect(notebooks[0].title.contains("Auto Notebook Job"))
     }
 
+    @Test("createJob internally seeds templates for create-job user without manage_templates")
+    func testCreateJobSeedsTemplatesWithoutManageTemplatesPermission() throws {
+        let env = try E2ETestHelpers.setUp()
+        let officeUserId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO users (display_name, pin_hash, is_active, created_at, updated_at)
+                VALUES ('Office Create Jobs Only', 'test-hash', 1, datetime('now'), datetime('now'))
+                """)
+            let userId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO user_hats (user_id, hat_id, is_active)
+                SELECT ?, id, 1 FROM hats WHERE name = 'Lead'
+                """, arguments: [userId])
+            return userId
+        }
+        #expect(try env.auth.hasPermission(officeUserId, permissionKey: "create_jobs"))
+        #expect(!(try env.auth.hasPermission(officeUserId, permissionKey: "manage_templates")))
+        try env.db.writer.write { db in
+            try db.execute(sql: "DELETE FROM notebook_templates")
+        }
+
+        let jobId = try env.jobs.createJob(
+            jobNumber: "JN-NO-MANAGE-TEMPLATES",
+            jobName: "Create Only Job",
+            jobType: "service",
+            createdBy: officeUserId
+        )
+
+        let notebooks = try env.notebooks.listNotebooks(notebookType: "job", jobId: jobId)
+        let templateCount = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM notebook_templates WHERE template_type = 'job' AND deleted_at IS NULL") ?? 0
+        }
+        #expect(notebooks.count == 1)
+        #expect(templateCount >= 3)
+    }
+
     @Test("listJobs aggregates completed labor and job-linked PO line costs without duplication")
     func testListJobsAggregatesCompletedLaborAndPOLineCosts() throws {
         let env = try E2ETestHelpers.setUp()

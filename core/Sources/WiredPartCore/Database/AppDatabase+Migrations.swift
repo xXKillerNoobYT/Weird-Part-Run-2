@@ -5436,6 +5436,22 @@ extension AppDatabase {
             }
             try db.execute(sql: "UPDATE job_stages SET template_id = ? WHERE template_id IS NULL", arguments: [defaultTemplateId])
             try db.execute(sql: "UPDATE job_stages SET updated_at = COALESCE(updated_at, created_at, datetime('now'))")
+            // Legacy installs could have duplicate active sort_order values before
+            // templates existed. Normalize deterministically before enforcing one
+            // active stage per (template, sort_order), preserving user-visible order
+            // by sorting first on the old sort_order and then on stable row id.
+            try db.execute(sql: """
+                WITH ordered AS (
+                    SELECT id,
+                           ROW_NUMBER() OVER (PARTITION BY template_id ORDER BY sort_order ASC, id ASC) AS normalized_sort_order
+                    FROM job_stages
+                    WHERE deleted_at IS NULL AND template_id IS NOT NULL
+                )
+                UPDATE job_stages
+                SET sort_order = (SELECT normalized_sort_order FROM ordered WHERE ordered.id = job_stages.id),
+                    updated_at = datetime('now')
+                WHERE id IN (SELECT id FROM ordered)
+                """)
             try db.execute(sql: """
                 CREATE UNIQUE INDEX idx_job_stages_template_sort_active
                 ON job_stages(template_id, sort_order)
@@ -5471,6 +5487,21 @@ extension AppDatabase {
                 ),
                 updated_at = COALESCE(updated_at, created_at, datetime('now'))
                 """, arguments: [defaultTemplateId])
+            // Legacy category mappings were only unique per (stage, category).
+            // After all existing stages move under the default template, multiple
+            // stages can point the same category at the same template. Keep the
+            // earliest row so category ownership remains deterministic before the
+            // template/category unique index is created.
+            try db.execute(sql: """
+                DELETE FROM job_stage_category_map
+                WHERE template_id IS NOT NULL
+                  AND id NOT IN (
+                      SELECT MIN(id)
+                      FROM job_stage_category_map
+                      WHERE template_id IS NOT NULL
+                      GROUP BY template_id, category_id
+                  )
+                """)
             try db.execute(sql: """
                 CREATE UNIQUE INDEX idx_jscm_template_category
                 ON job_stage_category_map(template_id, category_id)

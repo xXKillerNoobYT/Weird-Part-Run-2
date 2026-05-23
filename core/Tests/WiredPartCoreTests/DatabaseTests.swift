@@ -102,6 +102,55 @@ struct DatabaseTests {
         #expect(AppDatabase.schemaVersion == 95)
     }
 
+    @Test("Migration 095 normalizes duplicate legacy stage sort orders and category maps")
+    func testMigration095NormalizesDuplicateLegacyStageDataBeforeUniqueIndexes() throws {
+        var config = Configuration()
+        config.foreignKeysEnabled = true
+        let queue = try DatabaseQueue(configuration: config)
+        var migrator = DatabaseMigrator()
+        AppDatabase.registerMigrations(&migrator)
+        try migrator.migrate(queue, upTo: "094_short_term_pipeline_category_override")
+
+        try queue.write { db in
+            try db.execute(sql: "INSERT INTO part_categories (name, description) VALUES ('Legacy Duplicate Category', 'migration fixture')")
+            let categoryId = db.lastInsertedRowID
+            let originalStageId = try Int64.fetchOne(db, sql: "SELECT id FROM job_stages WHERE sort_order = 1 ORDER BY id LIMIT 1")!
+            try db.execute(sql: "INSERT INTO job_stages (name, sort_order, created_at) VALUES ('Legacy Duplicate Rough-in', 1, datetime('now'))")
+            let duplicateStageId = db.lastInsertedRowID
+            try db.execute(sql: "INSERT INTO job_stage_category_map (stage_id, category_id, created_at) VALUES (?, ?, datetime('now'))", arguments: [originalStageId, categoryId])
+            try db.execute(sql: "INSERT INTO job_stage_category_map (stage_id, category_id, created_at) VALUES (?, ?, datetime('now'))", arguments: [duplicateStageId, categoryId])
+        }
+
+        try migrator.migrate(queue)
+
+        let result = try queue.read { db -> (sortOrders: [Int], mapStageIds: [Int64], templateMapCount: Int) in
+            let sortOrders = try Int.fetchAll(db, sql: """
+                SELECT sort_order FROM job_stages
+                WHERE deleted_at IS NULL
+                ORDER BY sort_order ASC, id ASC
+                """)
+            let mapStageIds = try Int64.fetchAll(db, sql: """
+                SELECT m.stage_id
+                FROM job_stage_category_map m
+                JOIN part_categories c ON c.id = m.category_id
+                WHERE c.name = 'Legacy Duplicate Category'
+                ORDER BY m.id ASC
+                """)
+            let templateMapCount = try Int.fetchOne(db, sql: """
+                SELECT COUNT(*)
+                FROM job_stage_category_map
+                WHERE template_id = (SELECT id FROM job_stage_templates WHERE is_default = 1 AND archived_at IS NULL)
+                GROUP BY template_id, category_id
+                HAVING COUNT(*) > 1
+                """) ?? 0
+            return (sortOrders, mapStageIds, templateMapCount)
+        }
+
+        #expect(result.sortOrders == Array(1...result.sortOrders.count))
+        #expect(result.mapStageIds.count == 1)
+        #expect(result.templateMapCount == 0)
+    }
+
     @Test("Migration 089 creates vehicle location logs table and latest-location indexes")
     func testMigration089VehicleLocationLogsIndexes() throws {
         let db = try AppDatabase.openInMemoryDatabase()
