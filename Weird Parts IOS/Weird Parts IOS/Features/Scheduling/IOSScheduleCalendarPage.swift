@@ -562,24 +562,15 @@ struct IOSScheduleCalendarPage: View {
                     startDate: listRangeStart,
                     endDate: listRangeEnd
                 )
-                rangeTimeOffCounts = try loadRangeTimeOffCounts(service: service)
+                rangeTimeOffCounts = try service.getTimeOffCountsByDate(
+                    startDate: listRangeStart,
+                    endDate: listRangeEnd
+                )
             }
         } catch {
             loadError = userFriendlyError(error, context: "load schedule")
         }
         isLoading = false
-    }
-
-    private func loadRangeTimeOffCounts(service: SchedulingService) throws -> [String: Int] {
-        var counts: [String: Int] = [:]
-        for date in listRangeDates {
-            let dateString = Formatters.iso8601DateOnly.string(from: date)
-            let entries = try service.getTimeOffForDate(date: dateString)
-            if !entries.isEmpty {
-                counts[dateString] = entries.count
-            }
-        }
-        return counts
     }
 
     private func loadDayDetail() {
