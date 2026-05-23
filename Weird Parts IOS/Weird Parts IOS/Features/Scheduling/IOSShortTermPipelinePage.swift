@@ -26,6 +26,7 @@ struct IOSShortTermPipelinePage: View {
     }
     @State private var activeSheet: ActiveSheet?
     @State private var selectedItem: SchedulingService.PipelineItem?
+    @State private var targetedDropCategory: String?
 
     // AI Dispatch
     @State private var aiSuggestions: [AIDispatchService.DispatchSuggestion] = []
@@ -167,25 +168,29 @@ struct IOSShortTermPipelinePage: View {
             // Start Anytime
             pipelineSection(
                 title: "Start Anytime", target: 3,
-                items: startAnytimeItems, icon: "bolt.fill", color: .green
+                category: "start_anytime", items: startAnytimeItems,
+                icon: "bolt.fill", color: .green
             )
 
             // Schedule Needed
             pipelineSection(
                 title: "Schedule Needed", target: 2,
-                items: scheduleNeededItems, icon: "calendar.badge.exclamationmark", color: .blue
+                category: "schedule_needed", items: scheduleNeededItems,
+                icon: "calendar.badge.exclamationmark", color: .blue
             )
 
             // Favorite GC
             pipelineSection(
                 title: "Favorite GC", target: 1,
-                items: favoriteGCItems, icon: "star.fill", color: .purple
+                category: "favorite_gc", items: favoriteGCItems,
+                icon: "star.fill", color: .purple
             )
 
             // Small Jobs
             pipelineSection(
                 title: "Small Jobs", target: nil,
-                items: smallJobItems, icon: "rectangle.compress.vertical", color: .orange
+                category: "small_job", items: smallJobItems,
+                icon: "rectangle.compress.vertical", color: .orange
             )
 
             // Callbacks Due
@@ -230,6 +235,7 @@ struct IOSShortTermPipelinePage: View {
 
     private func pipelineSection(
         title: String, target: Int?,
+        category: String,
         items: [SchedulingService.PipelineItem], icon: String, color: Color
     ) -> some View {
         Section {
@@ -246,6 +252,10 @@ struct IOSShortTermPipelinePage: View {
             }
             ForEach(items, id: \.id) { item in
                 pipelineRow(item)
+                    .draggable(String(item.jobId)) {
+                        Label(item.jobName, systemImage: "line.3.horizontal")
+                            .padding(8)
+                    }
             }
         } header: {
             HStack {
@@ -260,6 +270,20 @@ struct IOSShortTermPipelinePage: View {
                         .foregroundStyle(items.count >= target ? .green : .red)
                 }
             }
+            .padding(.vertical, targetedDropCategory == category ? 6 : 0)
+            .padding(.horizontal, targetedDropCategory == category ? 8 : 0)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(targetedDropCategory == category ? color.opacity(0.18) : Color.clear)
+            )
+        }
+        .dropDestination(for: String.self) { droppedIds, _ in
+            guard let rawId = droppedIds.first,
+                  let jobId = Int64(rawId) else { return false }
+            movePipelineItem(jobId: jobId, to: category)
+            return true
+        } isTargeted: { isTargeted in
+            targetedDropCategory = isTargeted ? category : nil
         }
     }
 
@@ -319,6 +343,36 @@ struct IOSShortTermPipelinePage: View {
             loadError = userFriendlyError(error, context: "load pipeline data")
         }
         activeSheet = nil
+    }
+
+    private func movePipelineItem(jobId: Int64, to category: String) {
+        guard let service = appCore.schedulingService else {
+            loadError = "Scheduling service not available"
+            return
+        }
+        guard let item = pipelineItems.first(where: { $0.jobId == jobId }) else { return }
+        guard item.pipelineCategory != category else { return }
+
+        do {
+            try service.updateShortTermPipelineCategory(jobId: jobId, category: category)
+            pipelineItems = pipelineItems.map { current in
+                guard current.jobId == jobId else { return current }
+                return SchedulingService.PipelineItem(
+                    id: current.id,
+                    jobId: current.jobId,
+                    jobName: current.jobName,
+                    customerName: current.customerName,
+                    estimatedDays: current.estimatedDays,
+                    pipelineCategory: category,
+                    callbackDate: current.callbackDate,
+                    callbackSnoozedUntil: current.callbackSnoozedUntil,
+                    notes: current.notes
+                )
+            }
+        } catch {
+            loadError = userFriendlyError(error, context: "move pipeline job")
+            loadData()
+        }
     }
 
     // MARK: - Data Loading
