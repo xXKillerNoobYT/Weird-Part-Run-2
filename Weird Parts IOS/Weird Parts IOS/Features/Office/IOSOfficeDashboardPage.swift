@@ -114,6 +114,10 @@ struct IOSOfficeDashboardPage: View {
             }
         }
         .refreshable { loadData() }
+        .onAppear { postAIContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .officeDashboardPageInactive, object: nil)
+        }
         .task {
             appCore.onboardingManager?.markCompleted("office-view")
             loadData()
@@ -442,6 +446,20 @@ struct IOSOfficeDashboardPage: View {
         }
 
         isLoading = false
+        postAIContext()
+    }
+
+    private func postAIContext() {
+        let attentionSummary = attentionItems.isEmpty ? "no attention items" : "\(attentionItems.count) attention items"
+        let scheduleSummary = todaySchedule.isEmpty ? "no scheduled crew items" : "\(todaySchedule.count) schedule items"
+        let briefingSummary = briefing == nil ? "briefing not loaded" : "briefing loaded"
+        let financialSummary = financialSnapshot == nil ? "financial snapshot hidden or unavailable" : "financial snapshot loaded"
+        let context = "Office Dashboard: \(briefingSummary), \(attentionSummary), \(scheduleSummary), \(financialSummary). Loading=\(isLoading). Error=\(loadError ?? "none")."
+        NotificationCenter.default.post(
+            name: .officeDashboardPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 
     private func suggestedAction(for item: DashboardService.AttentionItem) -> String {

@@ -1,7 +1,7 @@
 # AI Page Context Coverage Inventory
 
 Issue: WEI-1112 / WEI-1194 / GitHub #86 T1-19
-Updated: 2026-05-14
+Updated: 2026-05-23
 
 ## Success Condition
 
@@ -9,11 +9,11 @@ Complete the 87-page page-context coverage set by adding read-only page-active/p
 
 ## Current Coverage
 
-Implemented page-context notifications observed by `IOSAIAssistantPanel`: 47 page contexts.
+Implemented page-context notifications observed by `IOSAIAssistantPanel`: 50 page contexts.
 
-Help registry mappings with matching help entries: 46 page contexts.
+Help registry mappings with matching help entries: 50 page contexts.
 
-Known gap: `settingsPageActive` is observed by the AI panel and active-page tracker, but `HelpContentRegistry` does not yet contain a `settings-app-config` entry. That should be handled in the settings slice rather than mapped to a missing help entry.
+The previous `settingsPageActive` / `settings-app-config` gap is closed. The static check in `tests/static/test_ai_help_context_coverage.py` now prevents tracked page IDs, `HelpContentRegistry.notificationToPageId`, and representative beta pages from drifting silently.
 
 ## Covered Pages
 
@@ -65,7 +65,9 @@ Known gap: `settingsPageActive` is observed by the AI panel and active-page trac
 | Fleet | Vehicles | `vehiclesPageActive` | `fleet-vehicles` |
 | Tools | Tool Registry | `toolRegistryPageActive` | `tools-registry` |
 | Notebooks | Notebooks List | `notebooksListPageActive` | `notebooks-all` |
-| Settings | Settings/App Config observer only | `settingsPageActive` | missing help entry |
+| Office | Office Dashboard | `officeDashboardPageActive` | `office-dashboard` |
+| Reports | Timesheets | `reportsTimesheetsPageActive` | `reports-timesheets` |
+| Settings | Settings/App Config | `settingsPageActive` | `settings-app-config` |
 
 ## WEI-1194 Slice
 
@@ -159,11 +161,26 @@ Validated jobs completion slice in the shared workspace on 2026-05-14:
 Static validation:
 
 ```bash
+python3 tests/static/test_ai_help_context_coverage.py
 rg -n "PageActive|PageInactive|post\\(name: \\." "Weird Parts IOS/Weird Parts IOS" -g "*.swift"
 ruby -ne 'puts $1 if /pageId: "([^"]+)"/' "Weird Parts IOS/Weird Parts IOS/Shared/HelpContentRegistry.swift" | sort > /tmp/helpids.txt
 ruby -ne 'puts $1 if /"WiredPart\\.[^"]+": "([^"]+)"/' "Weird Parts IOS/Weird Parts IOS/Shared/HelpContentRegistry.swift" | sort | uniq > /tmp/mapids.txt
 comm -13 /tmp/helpids.txt /tmp/mapids.txt
 ```
+
+Representative coverage table for GH #650:
+
+| Representative area | Page | HelpContentRegistry | Page context freshness |
+| --- | --- | --- | --- |
+| Dashboard | Dashboard Home | `dashboard-home` registered and mapped | Existing active/inactive context observed by AI panel |
+| Jobs | Jobs List | `jobs-list` registered and mapped | Existing list/filter context observed by AI panel |
+| Jobs | Clock-Out Questionnaire | `jobs-questionnaire` registered and mapped | Existing questionnaire context observed by AI panel |
+| Warehouse | Inventory Grid | `warehouse-inventory` registered and mapped | Existing inventory/filter context observed by AI panel |
+| Fleet | Vehicles | `fleet-vehicles` registered and mapped | Existing vehicle context observed by AI panel; no extra fleet page notification currently maps to missing help |
+| People | Employees | `people-employees` registered and mapped | Existing employee/search context observed by AI panel |
+| Office | Office Dashboard | `office-dashboard` registered and mapped | New office dashboard context posts on appear/load and is observed by AI panel |
+| Reports | Timesheets | `reports-timesheets` registered and mapped | New timesheets context posts on appear/load/search/date changes and is observed by AI panel |
+| Settings | Settings/App Config | `settings-app-config` registered and mapped | Existing settings context now resolves matching help content |
 
 Build validation:
 

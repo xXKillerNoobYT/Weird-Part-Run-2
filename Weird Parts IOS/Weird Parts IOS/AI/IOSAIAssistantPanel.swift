@@ -82,6 +82,8 @@ struct IOSAIAssistantPanel: View {
     @State private var vehiclesContext: String?
     @State private var toolRegistryContext: String?
     @State private var notebooksListContext: String?
+    @State private var officeDashboardContext: String?
+    @State private var reportsTimesheetsContext: String?
     @State private var settingsContext: String?
 
     /// Tracks which page the user is currently on, mapped to a HelpContentRegistry page ID.
@@ -299,6 +301,8 @@ struct IOSAIAssistantPanel: View {
             vehiclesContext: $vehiclesContext,
             toolRegistryContext: $toolRegistryContext,
             notebooksListContext: $notebooksListContext,
+            officeDashboardContext: $officeDashboardContext,
+            reportsTimesheetsContext: $reportsTimesheetsContext,
             settingsContext: $settingsContext
         ))
         .modifier(ActivePageIdTracker(activePageId: $activePageId))
@@ -683,6 +687,12 @@ struct IOSAIAssistantPanel: View {
             if let ctx = notebooksListContext {
                 navContext += "\n\nNotebooks Context: \(ctx)"
             }
+            if let ctx = officeDashboardContext {
+                navContext += "\n\nOffice Dashboard Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = reportsTimesheetsContext {
+                navContext += "\n\nTimesheets Report Context (READ-ONLY): \(ctx)"
+            }
             if let ctx = settingsContext {
                 navContext += "\n\nSettings Context: \(ctx)"
             }
@@ -1065,6 +1075,8 @@ private struct FeaturePageContextObservers: ViewModifier {
     @Binding var vehiclesContext: String?
     @Binding var toolRegistryContext: String?
     @Binding var notebooksListContext: String?
+    @Binding var officeDashboardContext: String?
+    @Binding var reportsTimesheetsContext: String?
     @Binding var settingsContext: String?
 
     func body(content: Content) -> some View {
@@ -1121,6 +1133,8 @@ private struct FeaturePageContextObservers: ViewModifier {
                 vehiclesContext: $vehiclesContext,
                 toolRegistryContext: $toolRegistryContext,
                 notebooksListContext: $notebooksListContext,
+                officeDashboardContext: $officeDashboardContext,
+                reportsTimesheetsContext: $reportsTimesheetsContext,
                 settingsContext: $settingsContext
             ))
     }
@@ -1442,6 +1456,8 @@ private struct FeaturePageContextObserversGroupB: ViewModifier {
     @Binding var vehiclesContext: String?
     @Binding var toolRegistryContext: String?
     @Binding var notebooksListContext: String?
+    @Binding var officeDashboardContext: String?
+    @Binding var reportsTimesheetsContext: String?
     @Binding var settingsContext: String?
 
     func body(content: Content) -> some View {
@@ -1475,6 +1491,18 @@ private struct FeaturePageContextObserversGroupB: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .notebooksListPageInactive)) { _ in
                 notebooksListContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .officeDashboardPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { officeDashboardContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .officeDashboardPageInactive)) { _ in
+                officeDashboardContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .reportsTimesheetsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { reportsTimesheetsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .reportsTimesheetsPageInactive)) { _ in
+                reportsTimesheetsContext = nil
             }
             .onReceive(NotificationCenter.default.publisher(for: .settingsPageActive)) { notification in
                 if let ctx = notification.userInfo?["context"] as? String { settingsContext = ctx }
@@ -1698,6 +1726,10 @@ private struct ActivePageIdTrackerFleetToolsNotebooks: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .toolRegistryPageInactive)) { _ in if activePageId == "tools-registry" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .notebooksListPageActive)) { _ in activePageId = "notebooks-all" }
             .onReceive(NotificationCenter.default.publisher(for: .notebooksListPageInactive)) { _ in if activePageId == "notebooks-all" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .officeDashboardPageActive)) { _ in activePageId = "office-dashboard" }
+            .onReceive(NotificationCenter.default.publisher(for: .officeDashboardPageInactive)) { _ in if activePageId == "office-dashboard" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .reportsTimesheetsPageActive)) { _ in activePageId = "reports-timesheets" }
+            .onReceive(NotificationCenter.default.publisher(for: .reportsTimesheetsPageInactive)) { _ in if activePageId == "reports-timesheets" { activePageId = nil } }
             .onReceive(NotificationCenter.default.publisher(for: .settingsPageActive)) { _ in activePageId = "settings-app-config" }
             .onReceive(NotificationCenter.default.publisher(for: .settingsPageInactive)) { _ in if activePageId == "settings-app-config" { activePageId = nil } }
     }

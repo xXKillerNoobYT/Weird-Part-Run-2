@@ -125,6 +125,9 @@ struct HelpContentRegistry {
         "WiredPart.employeesPageActive": "people-employees",
         "WiredPart.vehiclesPageActive": "fleet-vehicles",
         "WiredPart.toolRegistryPageActive": "tools-registry",
+        "WiredPart.settingsPageActive": "settings-app-config",
+        "WiredPart.officeDashboardPageActive": "office-dashboard",
+        "WiredPart.reportsTimesheetsPageActive": "reports-timesheets",
         "WiredPart.notebooksListPageActive": "notebooks-all",
     ]
 
@@ -627,6 +630,18 @@ struct HelpContentRegistry {
                 ("Hats Tab", "Displays all available hats (roles) and which ones are assigned to this employee. If you have manage_people permission, you can toggle hats on and off directly. Each hat grants a set of permissions."),
                 ("Teams Tab", "Shows which teams this employee belongs to, their role within each team, and when they joined."),
                 ("Tips", "Pull down to refresh all data. Only managers and admins can toggle hat assignments. The Edit button updates contact info only — use the Hats tab for role changes."),
+            ]
+        ),
+
+        // ── SETTINGS ──────────────────────────────────────────────────────
+
+        HelpEntry(
+            pageId: "settings-app-config",
+            title: "Settings Help",
+            sections: [
+                ("Overview", "Use Settings to configure app behavior, company defaults, warehouse and operations preferences, sync options, templates, permissions, and other setup choices."),
+                ("Finding Settings", "Use the grouped navigation and search to jump to the configuration area you need. The active settings context tells the AI which setting group is open so help stays page-specific."),
+                ("Safe Changes", "Review descriptions before changing values. Pull down or re-open a settings section if data looks stale, and ask the AI for help from the active settings page when you need guidance."),
             ]
         ),
 

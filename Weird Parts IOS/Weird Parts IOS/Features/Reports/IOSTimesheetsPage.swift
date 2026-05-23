@@ -62,6 +62,11 @@ struct IOSTimesheetsPage: View {
         .searchable(text: $searchText, prompt: "Search employees...")
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear { postAIContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .reportsTimesheetsPageInactive, object: nil)
+        }
+        .onChange(of: searchText) { _, _ in postAIContext() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
     }
@@ -157,5 +162,17 @@ struct IOSTimesheetsPage: View {
             loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
+        postAIContext()
+    }
+
+    private func postAIContext() {
+        let querySummary = searchText.isEmpty ? "no active search" : "search active for '\(searchText)'"
+        let visibleCount = filteredRows.count
+        let context = "Timesheets report: \(rows.count) total rows, \(visibleCount) visible after filters, \(querySummary), range \(startDateString) to \(endDateString). Loading=\(isLoading). Error=\(loadError ?? "none")."
+        NotificationCenter.default.post(
+            name: .reportsTimesheetsPageActive,
+            object: nil,
+            userInfo: ["context": context]
+        )
     }
 }

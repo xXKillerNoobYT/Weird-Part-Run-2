@@ -499,6 +499,22 @@ extension Notification.Name {
     /// Posted when the Notebooks List page disappears.
     static let notebooksListPageInactive = Notification.Name("WiredPart.notebooksListPageInactive")
 
+    // MARK: - Office
+
+    /// Posted when the Office Dashboard appears, with manager dashboard context for AI.
+    static let officeDashboardPageActive = Notification.Name("WiredPart.officeDashboardPageActive")
+
+    /// Posted when the Office Dashboard disappears.
+    static let officeDashboardPageInactive = Notification.Name("WiredPart.officeDashboardPageInactive")
+
+    // MARK: - Reports
+
+    /// Posted when the Timesheets report appears, with search/date range context for AI.
+    static let reportsTimesheetsPageActive = Notification.Name("WiredPart.reportsTimesheetsPageActive")
+
+    /// Posted when the Timesheets report disappears.
+    static let reportsTimesheetsPageInactive = Notification.Name("WiredPart.reportsTimesheetsPageInactive")
+
     // MARK: - Settings
 
     /// Posted when the Settings page appears, with context for AI.
