@@ -67,12 +67,12 @@ final class PartsBrandsPageRegressionTests: XCTestCase {
             "Supplier creation should keep an explicit selected-brand set for existing brand links."
         )
         XCTAssertTrue(
-            source.contains("let newSupplierId = try service.createSupplier"),
-            "Supplier creation must keep the new supplier id so brand links can be saved immediately."
+            source.contains("initialBrandIds: selectedBrandIdsForNewSupplier"),
+            "Supplier creation should pass selected brand IDs into the create call so supplier + initial links are saved atomically."
         )
         XCTAssertTrue(
-            source.contains("try service.setSupplierBrands(") && source.contains("supplierId: newSupplierId"),
-            "After creating a supplier, the form should persist selected existing brand links."
+            source.contains("Task.detached(priority: .userInitiated)") && source.contains("try service.listBrands()"),
+            "The new-supplier brand picker should load existing brands off the main actor instead of doing synchronous DB work on appear."
         )
     }
 

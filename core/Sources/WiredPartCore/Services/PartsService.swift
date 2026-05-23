@@ -1711,7 +1711,8 @@ public final class PartsService: Sendable {
         deliveryMethod: String? = nil,
         deliveryDays: String? = nil,
         accountNumber: String? = nil,
-        notes: String? = nil
+        notes: String? = nil,
+        initialBrandIds: Set<Int64> = []
     ) throws -> Int64 {
         // Fix #213: validate inputs
         try Validators.requireName(name, field: "Supplier name")
@@ -1740,7 +1741,15 @@ public final class PartsService: Sendable {
         )
         record.isActive = 1
         try db.writer.write { dbConn in
+            let activeInitialBrandIds = try Self.activeBrandIds(from: initialBrandIds, dbConn: dbConn)
             try record.insert(dbConn)
+            guard let id = record.id else { throw PartsError.invalidInput("Failed to get ID after insert") }
+            try Self.setSupplierBrandLinksInternal(
+                dbConn: dbConn,
+                supplierId: id,
+                brandIds: activeInitialBrandIds,
+                validateSupplier: false
+            )
         }
         guard let id = record.id else { throw PartsError.invalidInput("Failed to get ID after insert") }
         return id
@@ -2134,94 +2143,108 @@ public final class PartsService: Sendable {
         }
     }
 
-    /// Set the complete list of brands for a supplier.
-    /// Links brands in `brandIds`, unlinks any not in the list.
-    public func setSupplierBrands(supplierId: Int64, brandIds: Set<Int64>) throws {
-        try db.writer.write { dbConn in
+    private static func activeBrandIds(from brandIds: Set<Int64>, dbConn: Database) throws -> Set<Int64> {
+        guard !brandIds.isEmpty else { return [] }
+
+        let sortedBrandIds = brandIds.sorted()
+        let placeholders = Array(repeating: "?", count: sortedBrandIds.count).joined(separator: ",")
+        return Set(try Int64.fetchAll(
+            dbConn,
+            sql: """
+                SELECT id FROM brands
+                WHERE id IN (\(placeholders))
+                  AND is_active = 1
+                  AND deleted_at IS NULL
+                """,
+            arguments: StatementArguments(sortedBrandIds)
+        ))
+    }
+
+    private static func validateActiveBrandIds(_ brandIds: Set<Int64>, dbConn: Database) throws {
+        let validBrandIds = try activeBrandIds(from: brandIds, dbConn: dbConn)
+        guard validBrandIds.count == brandIds.count else {
+            let missingBrandId = brandIds.subtracting(validBrandIds).sorted().first ?? 0
+            throw PartsError.brandNotFound(missingBrandId)
+        }
+    }
+
+    private static func setSupplierBrandLinksInternal(
+        dbConn: Database,
+        supplierId: Int64,
+        brandIds: Set<Int64>,
+        validateSupplier: Bool = true
+    ) throws {
+        if validateSupplier {
             let supplierExists = (try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM suppliers
                 WHERE id = ? AND is_active = 1 AND deleted_at IS NULL
                 """, arguments: [supplierId]) ?? 0) > 0
             guard supplierExists else { throw PartsError.supplierNotFound(supplierId) }
+        }
 
-            if !brandIds.isEmpty {
-                let placeholders = Array(repeating: "?", count: brandIds.count).joined(separator: ",")
-                let activeBrandCount = try Int.fetchOne(
-                    dbConn,
-                    sql: """
-                        SELECT COUNT(*) FROM brands
-                        WHERE id IN (\(placeholders))
-                          AND is_active = 1
-                          AND deleted_at IS NULL
-                        """,
-                    arguments: StatementArguments(brandIds.sorted())
-                ) ?? 0
-                guard activeBrandCount == brandIds.count else {
-                    let validBrandIds = try Int64.fetchAll(
-                        dbConn,
-                        sql: """
-                            SELECT id FROM brands
-                            WHERE id IN (\(placeholders))
-                              AND is_active = 1
-                              AND deleted_at IS NULL
-                            """,
-                        arguments: StatementArguments(brandIds.sorted())
-                    )
-                    let missingBrandId = brandIds.subtracting(validBrandIds).sorted().first ?? 0
-                    throw PartsError.brandNotFound(missingBrandId)
-                }
-            }
+        try validateActiveBrandIds(brandIds, dbConn: dbConn)
 
-            let currentIds = Set(try Int64.fetchAll(dbConn, sql: """
-                SELECT brand_id FROM brand_supplier_links
-                WHERE supplier_id = ?
-                  AND is_active = 1
-                  AND deleted_at IS NULL
-                """, arguments: [supplierId]))
+        let currentIds = Set(try Int64.fetchAll(dbConn, sql: """
+            SELECT brand_id FROM brand_supplier_links
+            WHERE supplier_id = ?
+              AND is_active = 1
+              AND deleted_at IS NULL
+            """, arguments: [supplierId]))
 
-            for brandId in brandIds.subtracting(currentIds).sorted() {
-                if let existing = try Row.fetchOne(
-                    dbConn,
-                    sql: """
-                        SELECT id FROM brand_supplier_links
-                        WHERE brand_id = ? AND supplier_id = ?
-                        """,
-                    arguments: [brandId, supplierId]
-                ) {
-                    let linkId: Int64 = existing["id"]
-                    try dbConn.execute(
-                        sql: """
-                            UPDATE brand_supplier_links
-                            SET deleted_at = NULL,
-                                is_active = 1,
-                                carry_status = COALESCE(carry_status, 'carry_on_shelf')
-                            WHERE id = ?
-                            """,
-                        arguments: [linkId]
-                    )
-                } else {
-                    try dbConn.execute(
-                        sql: """
-                            INSERT INTO brand_supplier_links (brand_id, supplier_id, is_active, created_at)
-                            VALUES (?, ?, 1, datetime('now'))
-                            """,
-                        arguments: [brandId, supplierId]
-                    )
-                }
-            }
-
-            for brandId in currentIds.subtracting(brandIds).sorted() {
+        for brandId in brandIds.subtracting(currentIds).sorted() {
+            if let existing = try Row.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT id FROM brand_supplier_links
+                    WHERE brand_id = ? AND supplier_id = ?
+                    """,
+                arguments: [brandId, supplierId]
+            ) {
+                let linkId: Int64 = existing["id"]
                 try dbConn.execute(
                     sql: """
                         UPDATE brand_supplier_links
-                        SET deleted_at = datetime('now'), is_active = 0
-                        WHERE brand_id = ?
-                          AND supplier_id = ?
-                          AND deleted_at IS NULL
+                        SET deleted_at = NULL,
+                            is_active = 1,
+                            carry_status = COALESCE(carry_status, 'carry_on_shelf')
+                        WHERE id = ?
+                        """,
+                    arguments: [linkId]
+                )
+            } else {
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO brand_supplier_links (brand_id, supplier_id, is_active, created_at)
+                        VALUES (?, ?, 1, datetime('now'))
                         """,
                     arguments: [brandId, supplierId]
                 )
             }
+        }
+
+        for brandId in currentIds.subtracting(brandIds).sorted() {
+            try dbConn.execute(
+                sql: """
+                    UPDATE brand_supplier_links
+                    SET deleted_at = datetime('now'), is_active = 0
+                    WHERE brand_id = ?
+                      AND supplier_id = ?
+                      AND deleted_at IS NULL
+                    """,
+                arguments: [brandId, supplierId]
+            )
+        }
+    }
+
+    /// Set the complete list of brands for a supplier.
+    /// Links brands in `brandIds`, unlinks any not in the list.
+    public func setSupplierBrands(supplierId: Int64, brandIds: Set<Int64>) throws {
+        try db.writer.write { dbConn in
+            try Self.setSupplierBrandLinksInternal(
+                dbConn: dbConn,
+                supplierId: supplierId,
+                brandIds: brandIds
+            )
         }
     }
 

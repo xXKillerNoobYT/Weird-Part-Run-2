@@ -627,9 +627,11 @@ private struct SupplierFormSheet: View {
                     deliveryMethod = s.deliveryMethod ?? ""
                     deliveryDays = s.deliveryDays ?? ""
                     notes = s.notes ?? ""
-                } else {
-                    loadAvailableBrandsForNewSupplier()
                 }
+            }
+            .task {
+                guard supplier == nil else { return }
+                await loadAvailableBrandsForNewSupplier()
             }
         }
         .interactiveDismissDisabled(isSaving)
@@ -676,7 +678,7 @@ private struct SupplierFormSheet: View {
                 notes: notes.isEmpty ? nil : notes
             )
         } else {
-            let newSupplierId = try service.createSupplier(
+            _ = try service.createSupplier(
                 name: trimmedName,
                 contactName: contactName.isEmpty ? nil : contactName,
                 email: email.isEmpty ? nil : email,
@@ -689,14 +691,9 @@ private struct SupplierFormSheet: View {
                 deliveryMethod: deliveryMethod.isEmpty ? nil : deliveryMethod,
                 deliveryDays: deliveryDays.isEmpty ? nil : deliveryDays,
                 accountNumber: accountNumber.isEmpty ? nil : accountNumber,
-                notes: notes.isEmpty ? nil : notes
+                notes: notes.isEmpty ? nil : notes,
+                initialBrandIds: selectedBrandIdsForNewSupplier
             )
-            if !selectedBrandIdsForNewSupplier.isEmpty {
-                try service.setSupplierBrands(
-                    supplierId: newSupplierId,
-                    brandIds: selectedBrandIdsForNewSupplier
-                )
-            }
         }
     }
 
@@ -708,18 +705,23 @@ private struct SupplierFormSheet: View {
         }
     }
 
-    private func loadAvailableBrandsForNewSupplier() {
+    @MainActor
+    private func loadAvailableBrandsForNewSupplier() async {
         guard let service = appCore.partsService else {
             brandLoadError = "Parts service not available"
             return
         }
+        brandLoadError = nil
         do {
-            brandLoadError = nil
-            availableBrandsForNewSupplier = try service.listBrands()
-                .compactMap { row in
-                    guard let id = row.brand.id else { return nil }
-                    return (id: id, name: row.brand.name)
-                }
+            let brands = try await Task.detached(priority: .userInitiated) {
+                try service.listBrands()
+                    .compactMap { row in
+                        guard let id = row.brand.id else { return nil }
+                        return (id: id, name: row.brand.name)
+                    }
+            }.value
+            availableBrandsForNewSupplier = brands
+            selectedBrandIdsForNewSupplier.formIntersection(Set(brands.map { $0.id }))
         } catch {
             brandLoadError = userFriendlyError(error, context: "load brands")
         }

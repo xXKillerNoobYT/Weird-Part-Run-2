@@ -213,6 +213,41 @@ struct PartsServiceExtTests {
         #expect(suppliers.contains(where: { $0.supplier.name == "ElecSupply Co" }))
     }
 
+    @Test("Supplier creation links selected brands in the same transaction")
+    func testCreateSupplierAtomicallyLinksInitialBrands() throws {
+        let env = try E2ETestHelpers.setUp()
+        let brandId = try env.parts.createBrand(name: "Creation Link Brand")
+
+        let supplierId = try env.parts.createSupplier(
+            name: "Atomic Link Supplier",
+            initialBrandIds: [brandId]
+        )
+
+        let linkedBrands = try env.parts.getSupplierBrandRows(supplierId: supplierId)
+        #expect(linkedBrands.map(\.brandId) == [brandId])
+    }
+
+    @Test("Supplier creation ignores stale initial brand selections")
+    func testCreateSupplierIgnoresStaleInitialBrandSelections() throws {
+        let env = try E2ETestHelpers.setUp()
+        let activeBrandId = try env.parts.createBrand(name: "Still Active Brand")
+        let inactiveBrandId = try env.parts.createBrand(name: "Stale Inactive Brand")
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE brands SET is_active = 0 WHERE id = ?",
+                arguments: [inactiveBrandId]
+            )
+        }
+
+        let supplierId = try env.parts.createSupplier(
+            name: "Stale Safe Supplier",
+            initialBrandIds: [activeBrandId, inactiveBrandId]
+        )
+
+        let linkedBrands = try env.parts.getSupplierBrandRows(supplierId: supplierId)
+        #expect(linkedBrands.map(\.brandId) == [activeBrandId])
+    }
+
     @Test("Supplier-brand links can be managed from supplier side")
     func testSetSupplierBrandsLinksAndUnlinksExistingBrands() throws {
         let env = try E2ETestHelpers.setUp()
