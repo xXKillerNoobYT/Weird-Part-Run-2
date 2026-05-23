@@ -1711,7 +1711,8 @@ public final class PartsService: Sendable {
         deliveryMethod: String? = nil,
         deliveryDays: String? = nil,
         accountNumber: String? = nil,
-        notes: String? = nil
+        notes: String? = nil,
+        initialBrandIds: Set<Int64> = []
     ) throws -> Int64 {
         // Fix #213: validate inputs
         try Validators.requireName(name, field: "Supplier name")
@@ -1740,7 +1741,59 @@ public final class PartsService: Sendable {
         )
         record.isActive = 1
         try db.writer.write { dbConn in
+            if !initialBrandIds.isEmpty {
+                let placeholders = Array(repeating: "?", count: initialBrandIds.count).joined(separator: ",")
+                let activeBrandIds = Set(try Int64.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT id FROM brands
+                        WHERE id IN (\(placeholders))
+                          AND is_active = 1
+                          AND deleted_at IS NULL
+                        """,
+                    arguments: StatementArguments(initialBrandIds.sorted())
+                ))
+                guard activeBrandIds.count == initialBrandIds.count else {
+                    let missingBrandId = initialBrandIds.subtracting(activeBrandIds).sorted().first ?? 0
+                    throw PartsError.brandNotFound(missingBrandId)
+                }
+            }
+
             try record.insert(dbConn)
+            guard let supplierId = record.id else {
+                throw PartsError.invalidInput("Failed to get ID after insert")
+            }
+
+            for brandId in initialBrandIds.sorted() {
+                if let existing = try Row.fetchOne(
+                    dbConn,
+                    sql: """
+                        SELECT id FROM brand_supplier_links
+                        WHERE brand_id = ? AND supplier_id = ?
+                        """,
+                    arguments: [brandId, supplierId]
+                ) {
+                    let linkId: Int64 = existing["id"]
+                    try dbConn.execute(
+                        sql: """
+                            UPDATE brand_supplier_links
+                            SET deleted_at = NULL,
+                                is_active = 1,
+                                carry_status = COALESCE(carry_status, 'carry_on_shelf')
+                            WHERE id = ?
+                            """,
+                        arguments: [linkId]
+                    )
+                } else {
+                    try dbConn.execute(
+                        sql: """
+                            INSERT INTO brand_supplier_links (brand_id, supplier_id, is_active, created_at)
+                            VALUES (?, ?, 1, datetime('now'))
+                            """,
+                        arguments: [brandId, supplierId]
+                    )
+                }
+            }
         }
         guard let id = record.id else { throw PartsError.invalidInput("Failed to get ID after insert") }
         return id

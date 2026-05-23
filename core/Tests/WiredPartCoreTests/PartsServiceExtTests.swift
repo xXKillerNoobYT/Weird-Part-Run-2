@@ -229,6 +229,44 @@ struct PartsServiceExtTests {
         #expect(linkedBrands.allSatisfy { $0.carryStatus == "carry_on_shelf" })
     }
 
+    @Test("Supplier creation can atomically link initial active brands")
+    func testCreateSupplierLinksInitialBrandsAtomically() throws {
+        let env = try E2ETestHelpers.setUp()
+        let firstBrandId = try env.parts.createBrand(name: "Initial Brand One")
+        let secondBrandId = try env.parts.createBrand(name: "Initial Brand Two")
+
+        let supplierId = try env.parts.createSupplier(
+            name: "Supplier With Initial Brands",
+            initialBrandIds: [firstBrandId, secondBrandId]
+        )
+
+        let linkedBrands = try env.parts.getSupplierBrandRows(supplierId: supplierId)
+        #expect(linkedBrands.map(\.brandId).sorted() == [firstBrandId, secondBrandId].sorted())
+        #expect(linkedBrands.allSatisfy { $0.carryStatus == "carry_on_shelf" })
+    }
+
+    @Test("Supplier creation rejects inactive initial brands without creating supplier")
+    func testCreateSupplierRejectsInactiveInitialBrandWithoutPartialSupplier() throws {
+        let env = try E2ETestHelpers.setUp()
+        let inactiveBrandId = try env.parts.createBrand(name: "Inactive Initial Brand")
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE brands SET is_active = 0 WHERE id = ?",
+                arguments: [inactiveBrandId]
+            )
+        }
+
+        #expect(throws: (any Error).self) {
+            _ = try env.parts.createSupplier(
+                name: "Should Not Persist",
+                initialBrandIds: [inactiveBrandId]
+            )
+        }
+
+        let suppliers = try env.parts.listSuppliers()
+        #expect(!suppliers.contains { $0.supplier.name == "Should Not Persist" })
+    }
+
     @Test("Supplier-side brand picker only offers active unlinked brands")
     func testListBrandsAvailableForSupplierExcludesLinkedAndDeletedBrands() throws {
         let env = try E2ETestHelpers.setUp()
