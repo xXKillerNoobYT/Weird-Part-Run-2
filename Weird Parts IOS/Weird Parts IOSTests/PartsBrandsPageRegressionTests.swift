@@ -26,6 +26,31 @@ final class PartsBrandsPageRegressionTests: XCTestCase {
         )
     }
 
+    func testBrandDetailRefreshesDisplayedBrandAfterEditAndSupplierSave() throws {
+        let source = try Self.readPartsBrandsPageSource()
+
+        XCTAssertTrue(
+            source.contains("@State private var displayedBrand: BrandListRow"),
+            "Brand detail should keep a refreshed local row instead of rendering the immutable row passed when the sheet opened."
+        )
+        XCTAssertTrue(
+            source.contains("refreshDisplayedBrand()"),
+            "Brand detail should reload the displayed row after edit/save flows so edited text and supplier count appear without closing the sheet."
+        )
+        XCTAssertTrue(
+            source.contains("displayedBrand = BrandListRow("),
+            "Refresh should rebuild the displayed row from PartsService.listBrands so brand fields and supplier counts match the saved database state."
+        )
+        XCTAssertTrue(
+            source.contains("await refreshDisplayedBrand()") && source.contains("await onUpdate()"),
+            "Edit and supplier save callbacks should refresh the detail sheet and notify the parent list."
+        )
+        XCTAssertFalse(
+            source.contains("LabeledContent(\"Name\", value: brand.name)"),
+            "Brand detail must not render stale immutable brand.name after an edit."
+        )
+    }
+
     private static func readPartsBrandsPageSource(
         file: StaticString = #filePath
     ) throws -> String {
