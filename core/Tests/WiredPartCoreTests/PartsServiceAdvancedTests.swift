@@ -297,6 +297,90 @@ struct PartsServiceAdvancedTests {
         }
     }
 
+
+
+    @Test("commitPartsImportCSV records durable import session and accepted row evidence")
+    func testCommitPartsImportCSVRecordsAuditSessionEvidence() throws {
+        let env = try E2ETestHelpers.setUp()
+        var preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,brand,cost_price
+        Audited Part,AUD-001,Audit Category,Audit Brand,12.25
+        """)
+        preview.source = PartsService.PartsImportSourceMetadata(
+            sourceKind: "csv",
+            filename: "parts.csv",
+            sourceHash: "sha256:testhash",
+            userId: env.adminUserId
+        )
+
+        let result = try env.parts.commitPartsImportCSV(preview)
+
+        let sessionId = try #require(result.importSessionId)
+        let session = try #require(try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT * FROM part_import_sessions WHERE id = ?", arguments: [sessionId])
+        })
+        #expect(session["source_kind"] as String == "csv")
+        #expect(session["filename"] as String? == "parts.csv")
+        #expect(session["source_hash"] as String? == "sha256:testhash")
+        #expect(session["user_id"] as Int64? == env.adminUserId)
+        #expect(session["status"] as String == "committed")
+        #expect(session["total_rows"] as Int == 1)
+        #expect(session["created_count"] as Int == 1)
+        #expect(session["updated_count"] as Int == 0)
+        #expect(session["skipped_count"] as Int == 0)
+        #expect(session["committed_at"] as String? != nil)
+
+        let evidence = try env.db.writer.read { db in
+            try Row.fetchAll(db, sql: "SELECT * FROM part_import_row_evidence WHERE session_id = ? ORDER BY row_number", arguments: [sessionId])
+        }
+        #expect(evidence.count == 1)
+        let firstEvidence = try #require(evidence.first)
+        #expect(firstEvidence["row_number"] as Int == 2)
+        #expect(firstEvidence["action"] as String == "created")
+        #expect(firstEvidence["source_code"] as String? == "AUD-001")
+        #expect(firstEvidence["source_name"] as String == "Audited Part")
+        #expect(firstEvidence["part_id"] as Int64? != nil)
+        #expect((firstEvidence["row_payload_json"] as String?)?.contains("Audit Category") == true)
+    }
+
+    @Test("commitPartsImportCSV records failed import session while rolling back partial writes")
+    func testCommitPartsImportCSVRecordsRollbackFailureWithoutPartialWrites() throws {
+        let env = try E2ETestHelpers.setUp()
+        let before = try env.parts.getImportExportStats()
+        var preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,brand,cost_price
+        Duplicate One,DUP-AUD-001,Rollback Audit Category,Rollback Audit Brand,5
+        Duplicate Two,DUP-AUD-001,Rollback Audit Category,Rollback Audit Brand,6
+        """)
+        preview.source = PartsService.PartsImportSourceMetadata(
+            sourceKind: "csv",
+            filename: "duplicate.csv",
+            sourceHash: "sha256:duplicate",
+            userId: env.adminUserId
+        )
+
+        do {
+            _ = try env.parts.commitPartsImportCSV(preview)
+            Issue.record("duplicate part code should fail during atomic import commit")
+        } catch {
+            let after = try env.parts.getImportExportStats()
+            #expect(after.totalParts == before.totalParts)
+            #expect(after.totalCategories == before.totalCategories)
+            #expect(try env.parts.findPartByCode("DUP-AUD-001") == nil)
+
+            let session = try #require(try env.db.writer.read { db in
+                try Row.fetchOne(db, sql: "SELECT * FROM part_import_sessions WHERE source_hash = ?", arguments: ["sha256:duplicate"])
+            })
+            #expect(session["status"] as String == "failed")
+            #expect(session["error_message"] as String? != nil)
+            #expect(session["created_count"] as Int == 0)
+            let evidenceCount = try env.db.writer.read { db in
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM part_import_row_evidence WHERE session_id = ?", arguments: [session["id"] as Int64]) ?? -1
+            }
+            #expect(evidenceCount == 0)
+        }
+    }
+
     @Test("commitPartsImportCSV creates and updates rows atomically from a clean preview")
     func testCommitPartsImportCSVCreatesAndUpdates() throws {
         let env = try E2ETestHelpers.setUp()
