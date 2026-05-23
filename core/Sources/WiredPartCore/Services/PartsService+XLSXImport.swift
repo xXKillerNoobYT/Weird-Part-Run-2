@@ -28,6 +28,10 @@ extension PartsService {
                 message: "XLSX sheet '\(workbook.sheetName)' row \(error.rowNumber): \(error.message)"
             )
         }
+        preview.source = PartsImportSourceMetadata(
+            sourceKind: "xlsx",
+            sourceHash: importSourceHash(data)
+        )
         return preview
     }
 
