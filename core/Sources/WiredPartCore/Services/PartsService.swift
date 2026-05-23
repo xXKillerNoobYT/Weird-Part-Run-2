@@ -1895,6 +1895,16 @@ public final class PartsService: Sendable {
         public let carryStatus: String  // "carry_on_shelf" | "need_to_order"
     }
 
+    /// A supplier-side brand link row with part count and carry status.
+    public struct SupplierBrandRow: Sendable, Identifiable {
+        public let brandId: Int64
+        public let brandName: String
+        public let partCount: Int
+        public let carryStatus: String  // "carry_on_shelf" | "need_to_order"
+
+        public var id: Int64 { brandId }
+    }
+
     /// Get all suppliers for a brand (via brand_supplier_links).
     public func getBrandSuppliers(brandId: Int64) throws -> [Supplier] {
         do {
@@ -2008,7 +2018,9 @@ public final class PartsService: Sendable {
                 try dbConn.execute(
                     sql: """
                         UPDATE brand_supplier_links
-                        SET deleted_at = NULL, is_active = 1
+                        SET deleted_at = NULL,
+                            is_active = 1,
+                            carry_status = COALESCE(carry_status, 'carry_on_shelf')
                         WHERE id = ?
                         """,
                     arguments: [linkId]
@@ -2058,6 +2070,71 @@ public final class PartsService: Sendable {
         // Remove old links
         let toRemove = currentIds.subtracting(supplierIds)
         for supplierId in toRemove {
+            try unlinkBrandFromSupplier(brandId: brandId, supplierId: supplierId)
+        }
+    }
+
+    /// Get supplier-side brand rows with carry status and part count.
+    public func getSupplierBrandRows(supplierId: Int64) throws -> [SupplierBrandRow] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT b.id AS brand_id,
+                       b.name AS brand_name,
+                       COUNT(DISTINCT ps.part_id) AS part_count,
+                       COALESCE(bsl.carry_status, 'carry_on_shelf') AS carry_status
+                FROM brand_supplier_links bsl
+                JOIN brands b ON b.id = bsl.brand_id AND b.deleted_at IS NULL
+                LEFT JOIN parts p ON p.brand_id = b.id AND p.deleted_at IS NULL
+                LEFT JOIN part_supplier_links ps
+                    ON ps.part_id = p.id
+                   AND ps.supplier_id = bsl.supplier_id
+                   AND ps.deleted_at IS NULL
+                WHERE bsl.supplier_id = ? AND bsl.deleted_at IS NULL
+                GROUP BY b.id, b.name, bsl.carry_status
+                ORDER BY b.name ASC
+                """, arguments: [supplierId])
+
+            return rows.map { row in
+                SupplierBrandRow(
+                    brandId: row["brand_id"] as Int64? ?? 0,
+                    brandName: row["brand_name"] as String? ?? "",
+                    partCount: row["part_count"] as Int? ?? 0,
+                    carryStatus: row["carry_status"] as String? ?? "carry_on_shelf"
+                )
+            }
+        }
+    }
+
+    /// List active brands that are not currently linked to the supplier.
+    public func listBrandsAvailableForSupplier(supplierId: Int64) throws -> [Brand] {
+        try db.writer.read { dbConn in
+            try Brand.fetchAll(dbConn, sql: """
+                SELECT b.*
+                FROM brands b
+                WHERE b.deleted_at IS NULL
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM brand_supplier_links bsl
+                    WHERE bsl.brand_id = b.id
+                      AND bsl.supplier_id = ?
+                      AND bsl.deleted_at IS NULL
+                  )
+                ORDER BY b.name ASC
+                """, arguments: [supplierId])
+        }
+    }
+
+    /// Set the complete list of brands for a supplier.
+    /// Links brands in `brandIds`, unlinks any not in the list.
+    public func setSupplierBrands(supplierId: Int64, brandIds: Set<Int64>) throws {
+        let currentRows = try getSupplierBrandRows(supplierId: supplierId)
+        let currentIds = Set(currentRows.map(\.brandId))
+
+        for brandId in brandIds.subtracting(currentIds) {
+            try linkBrandToSupplier(brandId: brandId, supplierId: supplierId)
+        }
+
+        for brandId in currentIds.subtracting(brandIds) {
             try unlinkBrandFromSupplier(brandId: brandId, supplierId: supplierId)
         }
     }

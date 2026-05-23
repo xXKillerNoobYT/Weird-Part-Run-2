@@ -213,6 +213,41 @@ struct PartsServiceExtTests {
         #expect(suppliers.contains(where: { $0.supplier.name == "ElecSupply Co" }))
     }
 
+    @Test("Supplier-brand links can be managed from supplier side")
+    func testSetSupplierBrandsLinksAndUnlinksExistingBrands() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try env.parts.createSupplier(name: "Supplier Brand Manager")
+        let keepBrandId = try env.parts.createBrand(name: "Keep Brand")
+        let removeBrandId = try env.parts.createBrand(name: "Remove Brand")
+        let addBrandId = try env.parts.createBrand(name: "Add Brand")
+
+        try env.parts.setSupplierBrands(supplierId: supplierId, brandIds: [keepBrandId, removeBrandId])
+        try env.parts.setSupplierBrands(supplierId: supplierId, brandIds: [keepBrandId, addBrandId])
+
+        let linkedBrands = try env.parts.getSupplierBrandRows(supplierId: supplierId)
+        #expect(linkedBrands.map(\.brandId).sorted() == [addBrandId, keepBrandId].sorted())
+        #expect(linkedBrands.allSatisfy { $0.carryStatus == "carry_on_shelf" })
+    }
+
+    @Test("Supplier-side brand picker only offers active unlinked brands")
+    func testListBrandsAvailableForSupplierExcludesLinkedAndDeletedBrands() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try env.parts.createSupplier(name: "Picker Supplier")
+        let linkedBrandId = try env.parts.createBrand(name: "Already Linked")
+        let availableBrandId = try env.parts.createBrand(name: "Available Brand")
+        let deletedBrandId = try env.parts.createBrand(name: "Deleted Brand")
+        try env.parts.linkBrandToSupplier(brandId: linkedBrandId, supplierId: supplierId)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE brands SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [deletedBrandId]
+            )
+        }
+
+        let availableBrands = try env.parts.listBrandsAvailableForSupplier(supplierId: supplierId)
+        #expect(availableBrands.map(\.id) == [availableBrandId])
+    }
+
     @Test("Part-supplier link")
     func testPartSupplierLink() throws {
         let env = try E2ETestHelpers.setUp()
