@@ -34,10 +34,14 @@ public final class SchedulingService: Sendable {
         /// Fix #207: surfaces the conflict so UI can require cancellation/resolution first.
         case timeOffConflictsWithDispatch(conflicts: Int)
         case invalidDateRange(start: String, end: String)
+        case invalidDate(String)
         case requiredFieldEmpty
         case jobNotFound(Int64)
         case userNotFound(Int64)
         case insufficientPermissions(required: String)
+        case contractorNotFound(Int64)
+        case subcontractorScheduleNotFound(Int64)
+        case subcontractorScheduleConflict(jobId: Int64, gcId: Int64, date: String)
     }
 
     // =========================================================================
@@ -653,6 +657,7 @@ public final class SchedulingService: Sendable {
 
     /// Get subcontractor schedule rows for a given date.
     public func getSubSchedule(date: String) throws -> [SubScheduleRow] {
+        let normalizedDate = try Self.normalizeScheduleDateOnly(date)
         do {
             return try db.writer.read { dbConn -> [SubScheduleRow] in
                 let sql = """
@@ -666,16 +671,17 @@ public final class SchedulingService: Sendable {
                     LEFT JOIN general_contractors gc ON gc.id = ss.gc_id AND gc.deleted_at IS NULL
                     LEFT JOIN jobs j ON j.id = ss.job_id AND j.deleted_at IS NULL
                     WHERE ss.scheduled_date = ?
+                      AND ss.deleted_at IS NULL
                     ORDER BY sub_name
                     """
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [date])
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [normalizedDate])
                 return rows.map { row in
                     SubScheduleRow(
                         id: row["id"] ?? 0,
                         subName: row["sub_name"] ?? "Unknown",
                         companyName: row["company_name"] ?? "",
                         jobName: row["job_name"] ?? "Unknown Job",
-                        scheduleDate: row["schedule_date"] ?? date,
+                        scheduleDate: row["schedule_date"] ?? normalizedDate,
                         status: row["status"] ?? "scheduled"
                     )
                 }
@@ -683,6 +689,105 @@ public final class SchedulingService: Sendable {
         } catch {
             if isTableNotFoundError(error) { return [] }
             throw error
+        }
+    }
+
+    /// Create a subcontractor schedule row with strict date-only validation.
+    @discardableResult
+    public func createSubcontractorSchedule(
+        jobId: Int64,
+        gcId: Int64,
+        scheduledDate: String,
+        arrivalTime: String? = nil,
+        departureTime: String? = nil,
+        scopeOfWork: String? = nil,
+        status: String = "scheduled",
+        notes: String? = nil,
+        createdBy: Int64? = nil
+    ) throws -> Int64 {
+        let normalizedDate = try Self.normalizeScheduleDateOnly(scheduledDate)
+        let normalizedStatus = try Self.normalizeSubcontractorScheduleStatus(status)
+
+        return try db.writer.write { dbConn in
+            try validateSubcontractorScheduleParents(dbConn, jobId: jobId, gcId: gcId)
+            try guardNoActiveSubcontractorScheduleConflict(dbConn, jobId: jobId, gcId: gcId, date: normalizedDate)
+
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO subcontractor_schedules
+                    (job_id, gc_id, scheduled_date, arrival_time, departure_time, scope_of_work, status, notes, created_by, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                    """,
+                arguments: [jobId, gcId, normalizedDate, arrivalTime, departureTime, scopeOfWork, normalizedStatus, notes, createdBy]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Correct the scheduled date for a non-deleted subcontractor schedule.
+    public func updateSubcontractorScheduleDate(id: Int64, scheduledDate: String) throws {
+        let normalizedDate = try Self.normalizeScheduleDateOnly(scheduledDate)
+
+        try db.writer.write { dbConn in
+            guard let existing = try Row.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT job_id, gc_id
+                    FROM subcontractor_schedules
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [id]
+            ) else {
+                throw SchedulingError.subcontractorScheduleNotFound(id)
+            }
+
+            let jobId: Int64 = existing["job_id"]
+            let gcId: Int64 = existing["gc_id"]
+            try validateSubcontractorScheduleParents(dbConn, jobId: jobId, gcId: gcId)
+
+            let conflictCount = try Int.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT COUNT(*)
+                    FROM subcontractor_schedules
+                    WHERE job_id = ?
+                      AND gc_id = ?
+                      AND scheduled_date = ?
+                      AND deleted_at IS NULL
+                      AND id <> ?
+                    """,
+                arguments: [jobId, gcId, normalizedDate, id]
+            ) ?? 0
+            if conflictCount > 0 {
+                throw SchedulingError.subcontractorScheduleConflict(jobId: jobId, gcId: gcId, date: normalizedDate)
+            }
+
+            try dbConn.execute(
+                sql: """
+                    UPDATE subcontractor_schedules
+                    SET scheduled_date = ?, updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [normalizedDate, id]
+            )
+        }
+    }
+
+    /// Soft-delete a subcontractor schedule so it disappears from scheduling views.
+    public func cancelSubcontractorSchedule(id: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE subcontractor_schedules
+                    SET status = 'cancelled', deleted_at = datetime('now'), updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [id]
+            )
+
+            guard dbConn.changesCount > 0 else {
+                throw SchedulingError.subcontractorScheduleNotFound(id)
+            }
         }
     }
 
@@ -2233,6 +2338,88 @@ public final class SchedulingService: Sendable {
     // =========================================================================
     // MARK: - Internal Helpers
     // =========================================================================
+
+    /// Normalize a user-entered schedule date without timezone conversion.
+    /// Accepts only a trimmed yyyy-MM-dd calendar date string.
+    private static func normalizeScheduleDateOnly(_ rawDate: String) throws -> String {
+        let value = rawDate.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { throw SchedulingError.requiredFieldEmpty }
+
+        let parts = value.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 3,
+              parts[0].count == 4,
+              parts[1].count == 2,
+              parts[2].count == 2,
+              let year = Int(parts[0]),
+              let month = Int(parts[1]),
+              let day = Int(parts[2]),
+              String(format: "%04d-%02d-%02d", year, month, day) == value,
+              (1...12).contains(month) else {
+            throw SchedulingError.invalidDate(value)
+        }
+
+        let daysInMonth: Int
+        switch month {
+        case 1, 3, 5, 7, 8, 10, 12:
+            daysInMonth = 31
+        case 4, 6, 9, 11:
+            daysInMonth = 30
+        case 2:
+            let isLeapYear = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+            daysInMonth = isLeapYear ? 29 : 28
+        default:
+            throw SchedulingError.invalidDate(value)
+        }
+
+        guard (1...daysInMonth).contains(day) else {
+            throw SchedulingError.invalidDate(value)
+        }
+
+        return value
+    }
+
+    private static func normalizeSubcontractorScheduleStatus(_ rawStatus: String) throws -> String {
+        let value = rawStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let validStatuses: Set<String> = ["scheduled", "confirmed", "in_progress", "completed", "cancelled"]
+        guard validStatuses.contains(value) else {
+            throw SchedulingError.invalidStatus(rawStatus)
+        }
+        return value
+    }
+
+    private func validateSubcontractorScheduleParents(_ dbConn: Database, jobId: Int64, gcId: Int64) throws {
+        let jobExists = (try Int.fetchOne(
+            dbConn,
+            sql: "SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL",
+            arguments: [jobId]
+        ) ?? 0) > 0
+        guard jobExists else { throw SchedulingError.jobNotFound(jobId) }
+
+        let contractorExists = (try Int.fetchOne(
+            dbConn,
+            sql: "SELECT COUNT(*) FROM general_contractors WHERE id = ? AND deleted_at IS NULL",
+            arguments: [gcId]
+        ) ?? 0) > 0
+        guard contractorExists else { throw SchedulingError.contractorNotFound(gcId) }
+    }
+
+    private func guardNoActiveSubcontractorScheduleConflict(_ dbConn: Database, jobId: Int64, gcId: Int64, date: String) throws {
+        let conflictCount = try Int.fetchOne(
+            dbConn,
+            sql: """
+                SELECT COUNT(*)
+                FROM subcontractor_schedules
+                WHERE job_id = ?
+                  AND gc_id = ?
+                  AND scheduled_date = ?
+                  AND deleted_at IS NULL
+                """,
+            arguments: [jobId, gcId, date]
+        ) ?? 0
+        guard conflictCount == 0 else {
+            throw SchedulingError.subcontractorScheduleConflict(jobId: jobId, gcId: gcId, date: date)
+        }
+    }
 
     /// Execute a SELECT COUNT(*) query returning an Int.
     /// Returns 0 if the table does not exist.

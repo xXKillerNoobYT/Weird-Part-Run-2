@@ -1246,6 +1246,205 @@ struct SchedulingServiceTests {
         #expect(subs.isEmpty)
     }
 
+    @Test("createSubcontractorSchedule stores an exact trimmed date-only value")
+    func testCreateSubcontractorScheduleDateOnlyRoundTrip() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let gcId = try seedSchedulingContractor(env, contactName: "Trimmed Sub", companyName: "Trim Co")
+
+        let scheduleId = try env.scheduling.createSubcontractorSchedule(
+            jobId: jobId,
+            gcId: gcId,
+            scheduledDate: " 2026-09-15 ",
+            arrivalTime: "08:00",
+            departureTime: "12:00",
+            scopeOfWork: "Rough-in",
+            status: "scheduled",
+            notes: "Use side gate",
+            createdBy: env.adminUserId
+        )
+
+        #expect(scheduleId > 0)
+        let subs = try env.scheduling.getSubSchedule(date: "2026-09-15")
+        #expect(subs.count == 1)
+        #expect(subs[0].scheduleDate == "2026-09-15")
+        #expect(subs[0].subName == "Trimmed Sub")
+    }
+
+    @Test("subcontractor schedule date validation rejects timestamps instead of shifting days")
+    func testSubcontractorScheduleRejectsNonDateOnlyInput() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let gcId = try seedSchedulingContractor(env, contactName: "Timestamp Sub", companyName: "Time Co")
+
+        #expect(throws: SchedulingService.SchedulingError.invalidDate("2026-09-15T00:30:00Z")) {
+            _ = try env.scheduling.createSubcontractorSchedule(
+                jobId: jobId,
+                gcId: gcId,
+                scheduledDate: "2026-09-15T00:30:00Z",
+                arrivalTime: nil,
+                departureTime: nil,
+                scopeOfWork: nil,
+                status: "scheduled",
+                notes: nil,
+                createdBy: nil
+            )
+        }
+    }
+
+    @Test("getSubSchedule excludes soft-deleted subcontractor schedules")
+    func testGetSubScheduleExcludesDeletedRows() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let gcId = try seedSchedulingContractor(env, contactName: "Deleted Sub", companyName: "Gone Co")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO subcontractor_schedules (job_id, gc_id, scheduled_date, status, deleted_at, created_at)
+                VALUES (?, ?, '2026-09-15', 'scheduled', datetime('now'), datetime('now'))
+                """, arguments: [jobId, gcId])
+        }
+
+        let subs = try env.scheduling.getSubSchedule(date: "2026-09-15")
+        #expect(subs.isEmpty)
+    }
+
+    @Test("createSubcontractorSchedule guards deleted jobs and contractors")
+    func testCreateSubcontractorScheduleGuardsDeletedJobAndContractor() throws {
+        let env = try E2ETestHelpers.setUp()
+        let liveJobId = try E2ETestHelpers.seedJob(env)
+        let deletedJobId = try E2ETestHelpers.seedJob(env, jobNumber: "DEL-1", name: "Deleted Job")
+        let liveGcId = try seedSchedulingContractor(env, contactName: "Live Sub", companyName: "Live Co")
+        let deletedGcId = try seedSchedulingContractor(env, contactName: "Deleted Sub", companyName: "Deleted Co")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?", arguments: [deletedJobId])
+            try db.execute(sql: "UPDATE general_contractors SET deleted_at = datetime('now') WHERE id = ?", arguments: [deletedGcId])
+        }
+
+        #expect(throws: SchedulingService.SchedulingError.jobNotFound(deletedJobId)) {
+            _ = try env.scheduling.createSubcontractorSchedule(
+                jobId: deletedJobId,
+                gcId: liveGcId,
+                scheduledDate: "2026-09-15",
+                arrivalTime: nil,
+                departureTime: nil,
+                scopeOfWork: nil,
+                status: "scheduled",
+                notes: nil,
+                createdBy: nil
+            )
+        }
+
+        #expect(throws: SchedulingService.SchedulingError.contractorNotFound(deletedGcId)) {
+            _ = try env.scheduling.createSubcontractorSchedule(
+                jobId: liveJobId,
+                gcId: deletedGcId,
+                scheduledDate: "2026-09-15",
+                arrivalTime: nil,
+                departureTime: nil,
+                scopeOfWork: nil,
+                status: "scheduled",
+                notes: nil,
+                createdBy: nil
+            )
+        }
+    }
+
+    @Test("createSubcontractorSchedule surfaces duplicate active date conflicts")
+    func testCreateSubcontractorScheduleDuplicateConflict() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let gcId = try seedSchedulingContractor(env, contactName: "Duplicate Sub", companyName: "Dup Co")
+
+        _ = try env.scheduling.createSubcontractorSchedule(
+            jobId: jobId,
+            gcId: gcId,
+            scheduledDate: "2026-09-15",
+            arrivalTime: nil,
+            departureTime: nil,
+            scopeOfWork: nil,
+            status: "scheduled",
+            notes: nil,
+            createdBy: nil
+        )
+
+        #expect(throws: SchedulingService.SchedulingError.subcontractorScheduleConflict(jobId: jobId, gcId: gcId, date: "2026-09-15")) {
+            _ = try env.scheduling.createSubcontractorSchedule(
+                jobId: jobId,
+                gcId: gcId,
+                scheduledDate: "2026-09-15",
+                arrivalTime: nil,
+                departureTime: nil,
+                scopeOfWork: nil,
+                status: "scheduled",
+                notes: nil,
+                createdBy: nil
+            )
+        }
+    }
+
+    @Test("updateSubcontractorScheduleDate reschedules without UTC date shifts")
+    func testUpdateSubcontractorScheduleDateCorrection() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let gcId = try seedSchedulingContractor(env, contactName: "Reschedule Sub", companyName: "Move Co")
+        let scheduleId = try env.scheduling.createSubcontractorSchedule(
+            jobId: jobId,
+            gcId: gcId,
+            scheduledDate: "2026-09-15",
+            arrivalTime: nil,
+            departureTime: nil,
+            scopeOfWork: nil,
+            status: "scheduled",
+            notes: nil,
+            createdBy: nil
+        )
+
+        try env.scheduling.updateSubcontractorScheduleDate(id: scheduleId, scheduledDate: " 2026-09-16 ")
+
+        #expect(try env.scheduling.getSubSchedule(date: "2026-09-15").isEmpty)
+        let moved = try env.scheduling.getSubSchedule(date: "2026-09-16")
+        #expect(moved.count == 1)
+        #expect(moved[0].scheduleDate == "2026-09-16")
+    }
+
+    @Test("cancelSubcontractorSchedule soft-deletes the row")
+    func testCancelSubcontractorScheduleSoftDeletesRow() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let gcId = try seedSchedulingContractor(env, contactName: "Cancel Sub", companyName: "Cancel Co")
+        let scheduleId = try env.scheduling.createSubcontractorSchedule(
+            jobId: jobId,
+            gcId: gcId,
+            scheduledDate: "2026-09-15",
+            arrivalTime: nil,
+            departureTime: nil,
+            scopeOfWork: nil,
+            status: "scheduled",
+            notes: nil,
+            createdBy: nil
+        )
+
+        try env.scheduling.cancelSubcontractorSchedule(id: scheduleId)
+
+        #expect(try env.scheduling.getSubSchedule(date: "2026-09-15").isEmpty)
+        let deletedAt: String? = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT deleted_at FROM subcontractor_schedules WHERE id = ?", arguments: [scheduleId])
+        }
+        #expect(deletedAt != nil)
+    }
+
+    private func seedSchedulingContractor(_ env: E2ETestHelpers.TestEnvironment, contactName: String, companyName: String) throws -> Int64 {
+        try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO general_contractors (contact_name, company_name, created_at)
+                VALUES (?, ?, datetime('now'))
+                """, arguments: [contactName, companyName])
+            return db.lastInsertedRowID
+        }
+    }
+
     // MARK: - Pipeline Category Logic
 
     @Test("getShortTermPipeline categorizes small jobs (<=2 est days)")
