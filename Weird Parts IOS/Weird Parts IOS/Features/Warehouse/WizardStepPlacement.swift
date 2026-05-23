@@ -536,7 +536,7 @@ struct WizardStepPlacement: View {
 
     private func loadBinsForCartMode() {
         guard let svc = appCore.warehouseService else {
-            stepError = "Warehouse service not available"
+            stepError = "Warehouse service unavailable"
             return
         }
         var loadedBins: [FloorPlanBinInfo] = []
