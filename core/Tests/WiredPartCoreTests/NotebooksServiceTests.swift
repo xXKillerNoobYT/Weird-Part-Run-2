@@ -130,6 +130,53 @@ struct NotebooksServiceTests {
         #expect(updated?.content == "Revised content")
     }
 
+    @Test("Editing a block entry updates title and records change history")
+    func testUpdateBlockEntryTitleAndHistory() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Editable Blocks",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId, groupId: nil, name: "Info"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "heading",
+            title: "Original heading",
+            content: nil,
+            createdBy: env.adminUserId
+        )
+
+        try env.notebooks.updateBlockEntry(
+            entryId: entryId,
+            title: "Revised heading",
+            content: nil,
+            blockData: nil,
+            updatedBy: env.adminUserId
+        )
+
+        let hierarchy = try env.notebooks.getNotebookHierarchy(notebookId: nbId)
+        let updated = hierarchy.ungroupedSections.flatMap(\.entries).first { $0.id == entryId }
+        #expect(updated?.title == "Revised heading")
+
+        let historyRows = try env.db.writer.read { dbConn in
+            try Row.fetchAll(dbConn, sql: """
+                SELECT changed_fields, old_values
+                FROM _change_log
+                WHERE table_name = 'notebook_entries'
+                  AND record_id = ?
+                  AND operation = 'UPDATE'
+                ORDER BY id DESC
+                """, arguments: [entryId])
+        }
+        #expect(historyRows.count == 1)
+        #expect((historyRows.first?["changed_fields"] as String?)?.contains("title") == true)
+        #expect((historyRows.first?["old_values"] as String?)?.contains("Original heading") == true)
+    }
+
     // MARK: - 5. Delete Entry (Soft Delete)
 
     @Test("Soft-delete a block entry removes it from hierarchy")

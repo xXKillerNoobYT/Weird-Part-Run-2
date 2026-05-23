@@ -640,7 +640,8 @@ struct IOSNotebookDetailPage: View {
 
     @ViewBuilder
     private func entryRow(_ entry: NotebooksService.NotebookEntryRow) -> some View {
-        Group {
+        HStack(alignment: .top, spacing: 8) {
+            Group {
             switch entry.blockType {
             case "heading":
                 Text(entry.title ?? entry.content)
@@ -802,6 +803,18 @@ struct IOSNotebookDetailPage: View {
                     }
                 }
             }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                activeSheet = .editEntry(entry)
+            } label: {
+                Image(systemName: "pencil.circle")
+                    .imageScale(.large)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Edit block")
+            .accessibilityHint("Opens this block for editing while preserving change history")
         }
         .contextMenu {
             Button {

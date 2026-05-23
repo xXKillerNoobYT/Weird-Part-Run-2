@@ -303,8 +303,12 @@ struct AddNotebookEntrySheet: View {
                 let blockData = blockType == "checklist" ? encodeChecklistItems() : nil
                 try service.updateBlockEntry(
                     entryId: entry.id,
+                    title: title,
                     content: content.isEmpty ? nil : content,
-                    blockData: blockData
+                    blockData: blockType == "checklist" ? nil : blockData,
+                    headingLevel: blockType == "heading" ? headingLevel : nil,
+                    checklistItems: blockType == "checklist" ? blockData : nil,
+                    updatedBy: userId
                 )
             } else {
                 // Create new entry
