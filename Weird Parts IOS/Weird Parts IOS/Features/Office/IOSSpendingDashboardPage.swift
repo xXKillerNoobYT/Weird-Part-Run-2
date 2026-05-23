@@ -60,7 +60,7 @@ struct IOSSpendingDashboardPage: View {
                 }
                 .padding(.top, 8)
 
-                // Charts placeholder — only show when data has loaded with no cost data
+                // No-data empty state — only show after loading succeeds with no cost data
                 if !isLoading && loadError == nil && totalPartsCost == 0 && totalLaborHours == 0 {
                     EmptyStateView(
                         icon: "chart.bar",

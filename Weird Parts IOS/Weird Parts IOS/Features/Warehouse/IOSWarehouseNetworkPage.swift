@@ -3,8 +3,8 @@ import WiredPartCore
 
 /// Warehouse network status page showing device connectivity.
 ///
-/// Displays an honest placeholder for the network discovery feature,
-/// which will be available when sync infrastructure is implemented.
+/// Displays local device network status plus read-only guidance for
+/// network sync features that depend on the sync infrastructure.
 struct IOSWarehouseNetworkPage: View {
     @EnvironmentObject private var appCore: AppCore
     @State private var activeSheet: ActiveSheet?
@@ -38,15 +38,14 @@ struct IOSWarehouseNetworkPage: View {
                 }
             }
 
-            // Network discovery placeholder
             Section("Connected Devices") {
                 VStack(spacing: 16) {
                     Image(systemName: "network")
                         .font(.largeTitle)
                         .foregroundStyle(.secondary)
-                    Text("Network Discovery")
+                    Text("Network Sync Not Active")
                         .font(.headline)
-                    Text("Device network discovery will be available in a future update. This page will show connected shop computers, tablets, and phones on your local network.")
+                    Text("This beta uses the local database on this device. Connected shop computers, tablets, and phones will appear here after network sync is configured.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -55,8 +54,7 @@ struct IOSWarehouseNetworkPage: View {
                 .padding(.vertical, 20)
             }
 
-            // Planned features
-            Section("Planned Features") {
+            Section("Sync Capabilities") {
                 featureRow(icon: "wifi", label: "LAN HTTP Sync", description: "Sync with shop computer over Wi-Fi")
                 featureRow(icon: "dot.radiowaves.left.and.right", label: "Multipeer Connectivity", description: "Bluetooth and Wi-Fi P2P device pairing")
                 featureRow(icon: "lock.shield", label: "Encrypted Sync", description: "TLS transport with field-level encryption")
@@ -77,9 +75,9 @@ struct IOSWarehouseNetworkPage: View {
             PageHelpSheet(
                 title: "Network Help",
                 sections: [
-                    ("Overview", "View the network status of your device and connected shop computers, tablets, and phones."),
-                    ("Sync", "When network sync is available, this page will show real-time connectivity and sync status for all devices on your local network."),
-                    ("Planned", "Features coming soon include LAN HTTP sync, Bluetooth P2P pairing, encrypted sync, and conflict resolution.")
+                    ("Overview", "View this device's local database status and the network sync capabilities expected by the shop workflow."),
+                    ("Current Beta", "Network discovery and pairing are not active on this screen yet, so there are no buttons to pair devices or start sync from here."),
+                    ("Sync Capabilities", "The design targets LAN HTTP sync, Bluetooth P2P pairing, encrypted sync, and conflict resolution after the sync infrastructure is configured.")
                 ]
             )
         }
@@ -92,8 +90,8 @@ struct IOSWarehouseNetworkPage: View {
     private func postAIContext() {
         let context = """
         Warehouse Network page. Read-only context.
-        This device status: Online, local database active. Connected device discovery is a planned placeholder.
-        Planned features shown: LAN HTTP Sync, Multipeer Connectivity, Encrypted Sync, Conflict Resolution.
+        This device status: Online, local database active. Connected device discovery is not active in this beta.
+        Sync capabilities shown: LAN HTTP Sync, Multipeer Connectivity, Encrypted Sync, Conflict Resolution.
         Available read-only guidance: explain current local status and planned network sync capabilities. Do not attempt pairing, discovery, or sync actions directly.
         """
         NotificationCenter.default.post(

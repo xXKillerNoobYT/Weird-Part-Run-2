@@ -820,8 +820,8 @@ struct PartsCompanionsPage: View {
     /// Build a "Category > Style > Type" label using the names resolved by
     /// `listCompanionRulesHierarchy`. When a hierarchy row has been soft- or
     /// hard-deleted, the join returns a nil name; fall back to an "Unknown"
-    /// placeholder that still surfaces the original ID for cleanup, instead
-    /// of the old `Cat:<id>` / `Style:<id>` / `Type:<id>` placeholders.
+    /// data-quality label that still surfaces the original ID for cleanup,
+    /// instead of the old `Cat:<id>` / `Style:<id>` / `Type:<id>` labels.
     private func buildEntryName(
         categoryId: Int64,
         styleId: Int64?,

@@ -17,7 +17,7 @@ struct IOSTeamsPage: View {
     @State private var filter: TeamFilter = .all
 
     private enum TeamFilter {
-        case all, active, mine
+        case all, active
     }
 
     private enum ActiveSheet: String, Identifiable {
@@ -57,7 +57,7 @@ struct IOSTeamsPage: View {
                         title: "Teams Help",
                         sections: [
                             ("What This Page Does", "View and manage teams. Teams group employees together for job assignments and scheduling. Each row shows the team name, description, leader, and member count."),
-                            ("Smart Card Filters", "Tap the filter cards at the top to narrow the list: All shows every team, Active shows teams with at least one member, and My Teams shows teams you belong to."),
+                            ("Smart Card Filters", "Tap the filter cards at the top to narrow the list: All shows every team, and Staffed shows teams with at least one member."),
                             ("How to Use It", "Use the search bar to find teams by name, description, or leader. Tap a team to see its members, assigned jobs, and management options. Tap the + button to create a new team."),
                             ("Tips", "Pull down to refresh. The member count badge on each row shows how many employees are in that team. Teams with a star icon indicate the team leader.")
                         ]
@@ -72,8 +72,7 @@ struct IOSTeamsPage: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 smartCard("All", count: teams.count, icon: "person.3", filterType: .all, color: .accentColor)
-                smartCard("Active", count: activeTeams.count, icon: "checkmark.circle", filterType: .active, color: .green)
-                smartCard("My Teams", count: myTeams.count, icon: "person.crop.circle", filterType: .mine, color: .blue)
+                smartCard("Staffed", count: activeTeams.count, icon: "checkmark.circle", filterType: .active, color: .green)
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
@@ -121,18 +120,11 @@ struct IOSTeamsPage: View {
         teams.filter { $0.memberCount > 0 }
     }
 
-    private var myTeams: [PeopleService.TeamListItem] {
-        // For now, show all teams — would need current user's team membership to filter
-        // This is a placeholder; ideally we'd filter by current user's teams
-        teams
-    }
-
     private var filteredTeams: [PeopleService.TeamListItem] {
         var result: [PeopleService.TeamListItem]
         switch filter {
         case .all: result = teams
         case .active: result = activeTeams
-        case .mine: result = myTeams
         }
 
         guard !searchText.isEmpty else { return result }

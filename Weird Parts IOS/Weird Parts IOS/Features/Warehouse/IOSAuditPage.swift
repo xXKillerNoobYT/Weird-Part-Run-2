@@ -1301,29 +1301,7 @@ private struct MisplacedPartSheet: View {
     }
 
     private func saveMisplaced() {
-        guard let service = appCore.warehouseService,
-              let userId = appCore.currentUser?.id else {
-            errorMessage = "Service unavailable"
-            return
-        }
-        isSaving = true
-        errorMessage = nil
-        do {
-            // Log with placeholder IDs — in production would resolve from search
-            try service.logMisplacedPart(
-                partId: 0,
-                foundAtAreaId: 0,
-                homeAreaId: nil,
-                qtyFound: qtyFound,
-                foundBy: userId
-            )
-            try service.updateUserRating(userId: userId, action: "misplacement_find")
-            dismiss()
-            onSave()
-        } catch {
-            errorMessage = userFriendlyError(error, context: "load audit")
-        }
-        isSaving = false
+        errorMessage = "Misplaced-part quick logging needs part and location lookup before it can save safely. For beta, use Search or Guided Count to open the exact part/location record, then log the variance there."
     }
 }
 

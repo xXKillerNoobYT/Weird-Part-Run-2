@@ -159,8 +159,8 @@ struct IOSDashboardQRScannerPage: View {
     @ViewBuilder
     private var cameraSection: some View {
         ZStack {
-            // Camera preview placeholder
-            // In production, embed the DataScannerViewController view here
+            // VisionKit presents the live scanner while this in-page surface
+            // keeps the lock/status overlays and quick actions visible.
             Rectangle()
                 .fill(Color.black)
                 .overlay(

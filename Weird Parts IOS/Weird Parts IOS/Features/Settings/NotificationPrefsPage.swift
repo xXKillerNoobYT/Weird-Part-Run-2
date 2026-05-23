@@ -4,8 +4,8 @@ import WiredPartCore
 /// Notification preferences settings page.
 ///
 /// Allows users to configure which types of notifications they
-/// receive and how they are delivered. Currently an informational
-/// placeholder that shows the planned notification categories.
+/// receive and whether notification sounds are enabled. Preferences
+/// are stored locally; push delivery depends on sync-service setup.
 struct NotificationPrefsPage: View {
     @EnvironmentObject private var appCore: AppCore
     @State private var activeSheet: ActiveSheet?

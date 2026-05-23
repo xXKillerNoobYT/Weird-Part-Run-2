@@ -161,7 +161,7 @@ struct ContactTypeBadge: View {
     }
 }
 
-// MARK: - Edit Contact Sheet (placeholder)
+// MARK: - Edit Contact Sheet
 
 /// Simple edit sheet for updating contact info.
 private struct EditContactSheet: View {
