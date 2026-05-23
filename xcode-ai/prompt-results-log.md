@@ -3266,3 +3266,25 @@ All 136 prompts verified and implemented. Program ready for review.
 - Confirmed IOSFlexPoolPage already has .refreshable on the current base branch.
 **Issues Found:** None
 **Build:** PARTIAL — `swift build` PASS; `swift test` FAILS in pre-existing NotebooksServiceTests jobId filter expectations unrelated to this UI refreshability change. App-target validation was not run during this initial pass.
+
+## Prompt WEI-2025 — Dismiss-safety verification for remaining sheet-based pages (2026-05-23)
+
+**Status:** SUCCESS
+**Files Changed:**
+- `Weird Parts IOS/Weird Parts IOS/Shared/DismissSafety.swift`
+- `Weird Parts IOS/Weird Parts IOS/Shared/FormSheet.swift`
+- `Weird Parts IOS/Weird Parts IOS/Features/Fleet/IOSCreateVehicleSheet.swift`
+- `Weird Parts IOS/Weird Parts IOS/Features/Fleet/IOSCreateTrailerSheet.swift`
+- `Weird Parts IOS/Weird Parts IOS/Features/Fleet/IOSAssignDriverSheet.swift`
+- `Weird Parts IOS/Weird Parts IOS/Features/Fleet/PreTripInspectionView.swift`
+- `docs/plans/dismiss-safety-verification-2026-05-23.md`
+**What Was Done:**
+- Ran the PE-044-style static dismiss-safety checklist across Tools, Fleet, Reports, Warehouse, Orders, and Settings `.sheet` sites.
+- Added a shared `DismissSafety` helper/modifier for dirty/saving sheet protection and discard confirmation.
+- Upgraded `FormSheet` so future users can pass `isDirty` and receive consistent swipe-dismiss blocking plus Cancel discard confirmation.
+- Hardened Fleet create vehicle, create trailer, assign driver, and pre-trip inspection sheets so dirty local input cannot be silently lost.
+- Documented read-only/help/scanner/share false positives and branch/workspace hygiene evidence.
+**Issues Found:**
+- The repo still has 57 remote branches after prune, above the 20 branch soft cap; no open PRs existed at start.
+- The primary local `main` worktree is divergent, so work was isolated in `/private/tmp/wei-2025-dismiss-safety-sheets` based on `origin/main`.
+**Build:** PASS (`swiftc -parse` on changed Swift files; `git diff --check`)

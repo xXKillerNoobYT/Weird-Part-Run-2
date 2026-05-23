@@ -18,8 +18,22 @@ struct IOSCreateVehicleSheet: View {
     @State private var notes = ""
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @State private var showDiscardConfirmation = false
 
     private let vehicleTypes = ["truck", "van", "car", "suv", "trailer", "other"]
+
+    private var isDirty: Bool {
+        !vehicleNumber.trimmingCharacters(in: .whitespaces).isEmpty ||
+        !vehicleName.trimmingCharacters(in: .whitespaces).isEmpty ||
+        vehicleType != "truck" ||
+        !make.trimmingCharacters(in: .whitespaces).isEmpty ||
+        !model.trimmingCharacters(in: .whitespaces).isEmpty ||
+        !yearText.trimmingCharacters(in: .whitespaces).isEmpty ||
+        !color.trimmingCharacters(in: .whitespaces).isEmpty ||
+        !vin.trimmingCharacters(in: .whitespaces).isEmpty ||
+        !licensePlate.trimmingCharacters(in: .whitespaces).isEmpty ||
+        !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         NavigationStack {
@@ -39,10 +53,22 @@ struct IOSCreateVehicleSheet: View {
             }
             .navigationTitle("New Vehicle")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(isSaving)
+            .dismissSafety(
+                isDirty: isDirty,
+                isSaving: isSaving,
+                showDiscardConfirmation: $showDiscardConfirmation,
+                onDiscard: { dismiss() }
+            )
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        DismissSafety.cancelOrConfirm(
+                            isDirty: isDirty,
+                            isSaving: isSaving,
+                            dismiss: dismiss,
+                            showDiscardConfirmation: $showDiscardConfirmation
+                        )
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { saveVehicle() }

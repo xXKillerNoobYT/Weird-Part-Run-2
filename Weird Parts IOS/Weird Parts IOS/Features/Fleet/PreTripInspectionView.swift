@@ -25,6 +25,14 @@ struct PreTripInspectionView: View {
     @State private var saveError: String?
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var showDiscardConfirmation = false
+
+    private var isDirty: Bool {
+        !generalNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !odometerReading.trimmingCharacters(in: .whitespaces).isEmpty ||
+        fuelLevel != 1.0 ||
+        checklistItems.contains { !$0.status.isEmpty || !$0.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
 
     // MARK: - Init
 
@@ -65,10 +73,22 @@ struct PreTripInspectionView: View {
             }
             .navigationTitle("Pre-Trip Inspection")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(isSaving)
+            .dismissSafety(
+                isDirty: isDirty,
+                isSaving: isSaving,
+                showDiscardConfirmation: $showDiscardConfirmation,
+                onDiscard: { dismiss() }
+            )
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        DismissSafety.cancelOrConfirm(
+                            isDirty: isDirty,
+                            isSaving: isSaving,
+                            dismiss: dismiss,
+                            showDiscardConfirmation: $showDiscardConfirmation
+                        )
+                    }
                         .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
