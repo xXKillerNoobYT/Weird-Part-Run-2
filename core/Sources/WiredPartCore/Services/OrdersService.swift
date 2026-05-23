@@ -98,11 +98,13 @@ public final class OrdersService: Sendable {
         public let priority: String
         public let lineCount: Int
         public let holdCount: Int
+        public let dueDate: String?
         public let createdAt: String?
 
         public init(
             id: Int64, jobId: Int64 = 0, jobName: String, requestedByName: String,
-            status: String, priority: String, lineCount: Int, holdCount: Int = 0, createdAt: String?
+            status: String, priority: String, lineCount: Int, holdCount: Int = 0,
+            dueDate: String? = nil, createdAt: String?
         ) {
             self.id = id
             self.jobId = jobId
@@ -112,6 +114,7 @@ public final class OrdersService: Sendable {
             self.priority = priority
             self.lineCount = lineCount
             self.holdCount = holdCount
+            self.dueDate = dueDate
             self.createdAt = createdAt
         }
     }
@@ -200,6 +203,7 @@ public final class OrdersService: Sendable {
         public let approvedByName: String?
         public let approvedAt: String?
         public let deletedAt: String?
+        public let dueDate: String?
         public let createdAt: String?
         public let updatedAt: String?
         public let deliveryOption: String?
@@ -211,7 +215,7 @@ public final class OrdersService: Sendable {
             requestedBy: Int64, requestedByName: String,
             status: String, priority: String, notes: String?,
             approvedBy: Int64?, approvedByName: String?, approvedAt: String?,
-            deletedAt: String?, createdAt: String?, updatedAt: String?,
+            deletedAt: String?, dueDate: String? = nil, createdAt: String?, updatedAt: String?,
             lines: [JPOLineRow],
             deliveryOption: String? = "partial", deliveryLocked: Bool = false
         ) {
@@ -227,6 +231,7 @@ public final class OrdersService: Sendable {
             self.approvedByName = approvedByName
             self.approvedAt = approvedAt
             self.deletedAt = deletedAt
+            self.dueDate = dueDate
             self.createdAt = createdAt
             self.updatedAt = updatedAt
             self.deliveryOption = deliveryOption
@@ -478,7 +483,7 @@ public final class OrdersService: Sendable {
                 args.append(limit)
 
                 let sql = """
-                    SELECT jp.id, jp.job_id, jp.status, jp.priority, jp.created_at,
+                    SELECT jp.id, jp.job_id, jp.status, jp.priority, jp.created_at, j.due_date,
                            COALESCE(j.job_name, 'Unknown Job') AS job_name,
                            COALESCE(u.display_name, u.email, 'Unknown') AS requested_by_name,
                            COALESCE((SELECT COUNT(*) FROM jpo_line_items jl
@@ -505,6 +510,7 @@ public final class OrdersService: Sendable {
                         priority: row["priority"] ?? "normal",
                         lineCount: row["line_count"] ?? 0,
                         holdCount: row["hold_count"] ?? 0,
+                        dueDate: row["due_date"] as String?,
                         createdAt: row["created_at"] as String?
                     )
                 }
@@ -534,7 +540,7 @@ public final class OrdersService: Sendable {
                 args.append(limit)
 
                 let sql = """
-                    SELECT jp.id, jp.job_id, jp.status, jp.priority, jp.created_at,
+                    SELECT jp.id, jp.job_id, jp.status, jp.priority, jp.created_at, j.due_date,
                            COALESCE(j.job_name, 'Unknown Job') AS job_name,
                            COALESCE(u.display_name, u.email, 'Unknown') AS requested_by_name,
                            COALESCE((SELECT COUNT(*) FROM jpo_line_items jl
@@ -561,6 +567,7 @@ public final class OrdersService: Sendable {
                         priority: row["priority"] ?? "normal",
                         lineCount: row["line_count"] ?? 0,
                         holdCount: row["hold_count"] ?? 0,
+                        dueDate: row["due_date"] as String?,
                         createdAt: row["created_at"] as String?
                     )
                 }
@@ -577,6 +584,7 @@ public final class OrdersService: Sendable {
             let sql = """
                 SELECT jp.*,
                        COALESCE(j.job_name, 'Unknown Job') AS job_name,
+                       j.due_date,
                        COALESCE(u_req.display_name, u_req.email, 'Unknown') AS requested_by_name,
                        COALESCE(u_app.display_name, u_app.email) AS approved_by_name
                 FROM job_parts_orders jp
@@ -633,6 +641,7 @@ public final class OrdersService: Sendable {
                 approvedByName: row["approved_by_name"] as String?,
                 approvedAt: row["approved_at"] as String?,
                 deletedAt: row["deleted_at"] as String?,
+                dueDate: row["due_date"] as String?,
                 createdAt: row["created_at"] as String?,
                 updatedAt: row["updated_at"] as String?,
                 lines: lines,

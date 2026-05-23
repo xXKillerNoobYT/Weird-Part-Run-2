@@ -249,7 +249,7 @@ struct IOSJPODetailPage: View {
                 // Header
                 HStack(spacing: 8) {
                     StatusBadge(text: jpo.status.capitalized, color: statusColor(jpo.status))
-                    StatusBadge(text: jpo.priority.capitalized, color: priorityColor(jpo.priority))
+                    StatusBadge(text: jpo.priority.capitalized, color: priorityColor(jpo.priority, dueDate: jpo.dueDate))
                     Spacer()
                 }
 
@@ -970,10 +970,8 @@ struct IOSJPODetailPage: View {
         default: .secondary
         }
     }
-
-    // TODO: When JPODetail gains a dueDate field, replace fallback with TimelinePriorityColor.color(priority:dueDateString:)
-    private func priorityColor(_ priority: String) -> Color {
-        return TimelinePriorityColor.fallbackColor(priority: priority)
+    private func priorityColor(_ priority: String, dueDate: String?) -> Color {
+        return TimelinePriorityColor.color(priority: priority, dueDateString: dueDate)
     }
 
     private func formatCurrency(_ value: Double) -> String {

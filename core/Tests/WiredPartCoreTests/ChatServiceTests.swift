@@ -98,6 +98,32 @@ struct ChatServiceTests {
         #expect(threads.first?.question == "Where are the 12 AWG connectors?")
     }
 
+    @Test("QA thread rows expose backing job due dates for timeline priority color")
+    func testQAThreadRowsExposeJobDueDate() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try env.jobs.createJob(
+            jobNumber: "J-QA-DUE",
+            jobName: "Due Date QA Job",
+            customerName: "Test Customer",
+            status: "active",
+            dueDate: "2026-06-15",
+            createdBy: env.adminUserId
+        )
+
+        let threadId = try env.chat.createQAThread(
+            jobId: jobId,
+            askedBy: env.adminUserId,
+            subject: "Will this badge use the job due date?",
+            priority: "urgent"
+        )
+
+        let allThreads = try env.chat.listQAThreads(status: nil)
+        let jobThreads = try env.chat.listQAThreads(jobId: jobId, status: nil)
+
+        #expect(allThreads.first(where: { $0.id == threadId })?.dueDate == "2026-06-15")
+        #expect(jobThreads.first?.dueDate == "2026-06-15")
+    }
+
     @Test("Filter QA threads by job")
     func testQAThreadsByJob() throws {
         let env = try E2ETestHelpers.setUp()

@@ -201,12 +201,13 @@ public final class ChatService: Sendable {
         public let currentLevel: String
         public let status: String
         public let priority: String
+        public let dueDate: String?
         public let answer: String?
         public let answeredByName: String?
 
         public init(
             id: Int64, jobId: Int64 = 0, question: String, askedByName: String,
-            currentLevel: String, status: String, priority: String,
+            currentLevel: String, status: String, priority: String, dueDate: String? = nil,
             answer: String?, answeredByName: String?
         ) {
             self.id = id
@@ -216,6 +217,7 @@ public final class ChatService: Sendable {
             self.currentLevel = currentLevel
             self.status = status
             self.priority = priority
+            self.dueDate = dueDate
             self.answer = answer
             self.answeredByName = answeredByName
         }
@@ -397,10 +399,11 @@ public final class ChatService: Sendable {
 
                 let sql = """
                     SELECT qa.id, COALESCE(qa.job_id, 0) AS job_id, qa.subject, qa.current_level, qa.status, qa.priority,
-                           qa.answer_text,
+                           qa.answer_text, j.due_date,
                            COALESCE(ua.display_name, ua.email, 'Unknown') AS asked_by_name,
                            COALESCE(ub.display_name, ub.email) AS answered_by_name
                     FROM qa_threads qa
+                    LEFT JOIN jobs j ON j.id = qa.job_id AND j.deleted_at IS NULL
                     LEFT JOIN users ua ON ua.id = qa.asked_by AND ua.deleted_at IS NULL
                     LEFT JOIN users ub ON ub.id = qa.answered_by AND ub.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
@@ -417,6 +420,7 @@ public final class ChatService: Sendable {
                         currentLevel: row["current_level"] ?? "field",
                         status: row["status"] ?? "open",
                         priority: row["priority"] ?? "normal",
+                        dueDate: row["due_date"] as String?,
                         answer: row["answer_text"] as String?,
                         answeredByName: row["answered_by_name"] as String?
                     )
@@ -442,10 +446,11 @@ public final class ChatService: Sendable {
 
                 let sql = """
                     SELECT qa.id, COALESCE(qa.job_id, 0) AS job_id, qa.subject, qa.current_level, qa.status, qa.priority,
-                           qa.answer_text,
+                           qa.answer_text, j.due_date,
                            COALESCE(ua.display_name, ua.email, 'Unknown') AS asked_by_name,
                            COALESCE(ub.display_name, ub.email) AS answered_by_name
                     FROM qa_threads qa
+                    LEFT JOIN jobs j ON j.id = qa.job_id AND j.deleted_at IS NULL
                     LEFT JOIN users ua ON ua.id = qa.asked_by AND ua.deleted_at IS NULL
                     LEFT JOIN users ub ON ub.id = qa.answered_by AND ub.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
@@ -462,6 +467,7 @@ public final class ChatService: Sendable {
                         currentLevel: row["current_level"] ?? "field",
                         status: row["status"] ?? "open",
                         priority: row["priority"] ?? "normal",
+                        dueDate: row["due_date"] as String?,
                         answer: row["answer_text"] as String?,
                         answeredByName: row["answered_by_name"] as String?
                     )

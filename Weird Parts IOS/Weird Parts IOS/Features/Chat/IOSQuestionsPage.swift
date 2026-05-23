@@ -211,7 +211,7 @@ struct IOSQuestionsPage: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    priorityBadge(thread.priority)
+                    priorityBadge(thread.priority, dueDate: thread.dueDate)
                     levelBadge(thread.currentLevel)
                 }
                 Text(thread.question)
@@ -268,9 +268,8 @@ struct IOSQuestionsPage: View {
             .foregroundStyle(color)
     }
 
-    // TODO: When QAThreadRow gains a dueDate field, replace fallback with TimelinePriorityColor.color(priority:dueDateString:)
-    private func priorityBadge(_ priority: String) -> some View {
-        let color = TimelinePriorityColor.fallbackColor(priority: priority)
+    private func priorityBadge(_ priority: String, dueDate: String?) -> some View {
+        let color = TimelinePriorityColor.color(priority: priority, dueDateString: dueDate)
         return Text(priority.capitalized)
             .font(.caption2)
             .foregroundStyle(color)
