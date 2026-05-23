@@ -235,6 +235,7 @@ struct QRScanSheet: View {
                         await processPayload(payload)
                     case .error(let msg):
                         scanError = msg
+                        isScanning = false
                     case .permissionDenied:
                         scanError = "Camera permission required. Enable in Settings."
                         isScanning = false
