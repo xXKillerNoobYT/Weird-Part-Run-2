@@ -1648,6 +1648,13 @@ public final class SchedulingService: Sendable {
         }
     }
 
+    private static let validShortTermPipelineCategories: Set<String> = [
+        "start_anytime",
+        "schedule_needed",
+        "favorite_gc",
+        "small_job",
+    ]
+
     /// Get the short-term pipeline: active jobs categorized by readiness.
     /// Categories: start_anytime (no blockers), schedule_needed (need dispatch),
     /// favorite_gc (from preferred GCs), small_job (<=2 est. days).
@@ -1661,6 +1668,7 @@ public final class SchedulingService: Sendable {
                            CAST(COALESCE(j.estimated_hours, 0) / 8 AS INTEGER) AS estimated_days,
                            j.notes,
                            j.due_date AS callback_date,
+                           j.short_term_pipeline_category AS manual_pipeline_category,
                            (SELECT COUNT(*) FROM job_dispatch jd
                             WHERE jd.job_id = j.id
                               AND jd.dispatch_date >= date('now')
@@ -1680,10 +1688,15 @@ public final class SchedulingService: Sendable {
                     let futureDispatches: Int = row["future_dispatches"] ?? 0
                     let callbackDate: String? = row["callback_date"] as String?
                     let notes: String? = row["notes"] as String?
+                    let manualCategory: String? = row["manual_pipeline_category"] as String?
 
-                    // Categorize
+                    // Categorize. Manual drag/drop overrides win; otherwise keep the
+                    // derived readiness buckets so existing jobs continue to organize
+                    // themselves without user maintenance.
                     let category: String
-                    if let days = estimatedDays, days <= 2 {
+                    if let manualCategory, Self.validShortTermPipelineCategories.contains(manualCategory) {
+                        category = manualCategory
+                    } else if let days = estimatedDays, days <= 2 {
                         category = "small_job"
                     } else if futureDispatches == 0 {
                         category = "start_anytime"
@@ -1705,6 +1718,31 @@ public final class SchedulingService: Sendable {
         } catch {
             if isTableNotFoundError(error) { return [] }
             throw error
+        }
+    }
+
+    /// Persist a dispatcher-controlled Short-Term Pipeline bucket move.
+    ///
+    /// Drag/drop is a planning override, so it intentionally does not create or
+    /// delete dispatches. Passing one of the four visible section identifiers pins
+    /// the job in that section until another move updates the override.
+    public func updateShortTermPipelineCategory(jobId: Int64, category: String) throws {
+        guard Self.validShortTermPipelineCategories.contains(category) else {
+            throw SchedulingError.invalidStatus(category)
+        }
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE jobs
+                    SET short_term_pipeline_category = ?, updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [category, jobId]
+            )
+            if dbConn.changesCount == 0 {
+                throw SchedulingError.jobNotFound(jobId)
+            }
         }
     }
 

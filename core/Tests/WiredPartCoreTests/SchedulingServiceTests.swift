@@ -1624,6 +1624,27 @@ struct SchedulingServiceTests {
         #expect(item?.pipelineCategory == "schedule_needed")
     }
 
+    @Test("updateShortTermPipelineCategory persists a manual drag/drop category override")
+    func testUpdateShortTermPipelineCategoryPersistsOverride() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO jobs (job_name, job_number, status, estimated_hours, deleted_at, created_at, updated_at)
+                VALUES ('Dragged Pipeline Job', 'J-DRAG-01', 'active', 40, NULL, datetime('now'), datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+
+        #expect(try env.scheduling.getShortTermPipeline().first(where: { $0.id == jobId })?.pipelineCategory == "start_anytime")
+
+        try env.scheduling.updateShortTermPipelineCategory(jobId: jobId, category: "favorite_gc")
+
+        let pipeline = try env.scheduling.getShortTermPipeline()
+        let item = pipeline.first(where: { $0.id == jobId })
+        #expect(item != nil)
+        #expect(item?.pipelineCategory == "favorite_gc")
+    }
+
     // MARK: - updateTimeOffStatus Cancelled
 
     @Test("updateTimeOffStatus with cancelled status")

@@ -130,6 +130,7 @@ extension AppDatabase {
         registerMigration091MultiUserAuditResolutionColumns(&migrator)
         registerMigration092VehicleLocationLatestLookupIndex(&migrator)
         registerMigration093DailyReportClockOutQuestion(&migrator)
+        registerMigration094ShortTermPipelineCategoryOverride(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5374,6 +5375,27 @@ extension AppDatabase {
                     """,
                 arguments: ["Daily Report: What did you accomplish today, and what should the office know for tomorrow?", nextSortOrder]
             )
+        }
+    }
+
+    // MARK: - Migration 094: Short-term pipeline manual category override
+
+    private static func registerMigration094ShortTermPipelineCategoryOverride(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("094_short_term_pipeline_category_override") { db in
+            // GH #616: allow dispatchers to drag jobs between Short-Term Pipeline
+            // columns/sections and have that planning choice survive reloads. When
+            // NULL, SchedulingService keeps using the derived readiness category.
+            try addColumnIfMissing(
+                db,
+                table: "jobs",
+                column: "short_term_pipeline_category",
+                type: .text
+            )
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_jobs_short_term_pipeline_category
+                ON jobs(short_term_pipeline_category)
+                WHERE deleted_at IS NULL
+                """)
         }
     }
 }
