@@ -23,4 +23,36 @@ struct Weird_Parts_IOSTests {
         #expect(!QAThreadStatusBuckets.isResolved("open"))
         #expect(!QAThreadStatusBuckets.isResolved("escalated"))
     }
+
+    @Test func partsCSVImportRejectsInvalidNumericValues() async throws {
+        let fields = [
+            "cost_price": "N/A",
+            "markup_percent": "forty",
+        ]
+
+        let issues = PartsCSVImportParser.validateNumericFields(fieldValues: fields, rowNumber: 2)
+
+        #expect(issues.count == 2)
+        #expect(issues.contains(PartsCSVImportValidationIssue(
+            rowNumber: 2,
+            columnName: "cost_price",
+            rawValue: "N/A"
+        )))
+        #expect(issues.contains(PartsCSVImportValidationIssue(
+            rowNumber: 2,
+            columnName: "markup_percent",
+            rawValue: "forty"
+        )))
+    }
+
+    @Test func partsCSVImportAcceptsValidNumericValues() async throws {
+        let fields = [
+            "cost_price": "12.50",
+            "markup_percent": "40",
+        ]
+
+        let issues = PartsCSVImportParser.validateNumericFields(fieldValues: fields, rowNumber: 2)
+
+        #expect(issues.isEmpty)
+    }
 }

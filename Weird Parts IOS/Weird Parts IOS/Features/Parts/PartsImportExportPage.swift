@@ -519,6 +519,17 @@ struct PartsImportExportPage: View {
                     }
                 }
 
+                let numericIssues = PartsCSVImportParser.validateNumericFields(
+                    fieldValues: fieldsMap,
+                    rowNumber: lineIdx + 1
+                )
+                if !numericIssues.isEmpty {
+                    preview.errors.append(contentsOf: numericIssues.map {
+                        ImportError(rowNumber: $0.rowNumber, message: $0.message)
+                    })
+                    continue
+                }
+
                 let parsed = ParsedRow(name: partName, code: code, category: category, brand: brand, fields: fieldsMap)
 
                 // Duplicate detection: by code first, then by name
@@ -650,6 +661,27 @@ struct PartsImportExportPage: View {
     // MARK: - CSV Helpers
 
     private func parseCSVLine(_ line: String) -> [String] {
+        PartsCSVImportParser.parseCSVLine(line)
+    }
+}
+
+struct PartsCSVImportValidationIssue: Equatable {
+    let rowNumber: Int
+    let columnName: String
+    let rawValue: String
+
+    var message: String {
+        "Invalid numeric value in '\(columnName)': '\(rawValue)'"
+    }
+}
+
+enum PartsCSVImportParser {
+    nonisolated static let numericColumns: Set<String> = [
+        "cost_price",
+        "markup_percent",
+    ]
+
+    nonisolated static func parseCSVLine(_ line: String) -> [String] {
         var fields: [String] = []
         var current = ""
         var inQuotes = false
@@ -666,6 +698,27 @@ struct PartsImportExportPage: View {
         }
         fields.append(current)
         return fields
+    }
+
+    nonisolated static func validateNumericFields(
+        fieldValues: [String: String],
+        rowNumber: Int,
+        numericColumns: Set<String> = PartsCSVImportParser.numericColumns
+    ) -> [PartsCSVImportValidationIssue] {
+        numericColumns.sorted().compactMap { columnName in
+            guard let rawValue = fieldValues[columnName]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !rawValue.isEmpty else {
+                return nil
+            }
+            guard let numericValue = Double(rawValue), numericValue.isFinite else {
+                return PartsCSVImportValidationIssue(
+                    rowNumber: rowNumber,
+                    columnName: columnName,
+                    rawValue: rawValue
+                )
+            }
+            return nil
+        }
     }
 }
 
