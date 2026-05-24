@@ -69,7 +69,7 @@ struct PartsImportExportPage: View {
         }
         .fileImporter(
             isPresented: $showFileImporter,
-            allowedContentTypes: importAllowedContentTypes,
+            allowedContentTypes: ImportSourceKind.allowedContentTypes,
             allowsMultipleSelection: false
         ) { result in
             switch result {
@@ -99,8 +99,9 @@ struct PartsImportExportPage: View {
                     title: "Import/Export Help",
                     sections: [
                         ("Exporting", "Export your parts catalog to CSV. Select which field groups to include: hierarchy, pricing, stock levels, and more."),
-                        ("Importing", "Import parts from a CSV file. Preview changes before committing. Conflicts are highlighted for review."),
-                        ("Tips", "Exported files can be edited in Excel or Google Sheets and re-imported. Use the same column headers for a smooth import.")
+                        ("Importing", "Import parts from CSV or XLSX. Preview source metadata, detected column mapping, validation results, and duplicate conflicts before committing."),
+                        ("PDF", "PDF import is visible as a planned source, but remains disabled until the PDF backend lands."),
+                        ("Tips", "Exported files can be edited in Excel or Google Sheets and re-imported. Use recognizable column headers for a smooth import; ambiguous headers can be reviewed before commit.")
                     ]
                 )
             }
@@ -292,8 +293,11 @@ struct PartsImportExportPage: View {
                         Text("Import Parts from CSV or Excel")
                             .font(.subheadline)
                             .fontWeight(.medium)
-                        Text("Choose CSV/XLSX, review detected mappings, then resolve duplicates before commit.")
+                        Text("Preview source metadata, detected mappings, validation, and duplicate conflicts before committing.")
                             .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Label("PDF import planned - disabled until backend lands", systemImage: "doc.richtext")
+                            .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -374,7 +378,7 @@ struct PartsImportExportPage: View {
     @ViewBuilder
     private var infoSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("CSV/XLSX Format")
+            Text("CSV / XLSX Format")
                 .font(.headline)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -413,16 +417,6 @@ struct PartsImportExportPage: View {
         .padding()
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-
-    // MARK: - Import Types
-
-    private var importAllowedContentTypes: [UTType] {
-        var types: [UTType] = [.commaSeparatedText, .plainText]
-        if let xlsx = UTType(filenameExtension: "xlsx") {
-            types.append(xlsx)
-        }
-        return types
     }
 
     // MARK: - Data Loading
@@ -494,6 +488,12 @@ struct PartsImportExportPage: View {
                 return
             }
 
+            let sourceKind = ImportSourceKind(url: url)
+            guard sourceKind != .pdf else {
+                await MainActor.run { importStatus = .error("Parse error: PDF import is planned, but the PDF backend is not available yet.") }
+                return
+            }
+
             // Offload blocking file I/O off the cooperative thread pool.
             let (fileExt, filename, rawData, rawText) = try await Task.detached(priority: .userInitiated) {
                 let accessing = url.startAccessingSecurityScopedResource()
@@ -561,7 +561,7 @@ struct PartsImportExportPage: View {
             }
         } catch {
             await MainActor.run {
-                importStatus = .error("Parse error: \(userFriendlyError(error, context: "read import file"))")
+                importStatus = .error(importStageError(error, stage: "parse"))
             }
         }
     }
@@ -700,7 +700,7 @@ struct PartsImportExportPage: View {
             await loadStats()
         } catch {
             await MainActor.run {
-                importStatus = .error("Conflict/import error: \(userFriendlyError(error, context: "commit parts import"))")
+                importStatus = .error(importStageError(error, stage: "validation"))
             }
         }
     }
@@ -762,6 +762,20 @@ struct PartsImportExportPage: View {
         }.joined(separator: ",")
     }
 
+    private func importStageError(_ error: Error, stage: String) -> String {
+        let message = userFriendlyError(error, context: "parts import")
+        if message.localizedCaseInsensitiveContains("conflict") {
+            return "Conflict error: \(message)"
+        }
+        if message.localizedCaseInsensitiveContains("mapping") || message.localizedCaseInsensitiveContains("column") {
+            return "Mapping error: \(message)"
+        }
+        if message.localizedCaseInsensitiveContains("validation") || message.localizedCaseInsensitiveContains("required") || message.localizedCaseInsensitiveContains("invalid") {
+            return "Validation error: \(message)"
+        }
+        return "\(stage.capitalized) error: \(message)"
+    }
+
 }
 
 // MARK: - Export Field Group Display Names
@@ -791,6 +805,26 @@ private enum ImportStatus {
 private enum ImportSourceKind: String {
     case csv
     case xlsx
+    case pdf
+
+#if canImport(UniformTypeIdentifiers)
+    static var allowedContentTypes: [UTType] {
+        [
+            .commaSeparatedText,
+            .plainText,
+            UTType(filenameExtension: "csv") ?? .commaSeparatedText,
+            UTType(filenameExtension: "xlsx") ?? .data
+        ]
+    }
+#endif
+
+    init(url: URL) {
+        switch url.pathExtension.lowercased() {
+        case "xlsx": self = .xlsx
+        case "pdf": self = .pdf
+        default: self = .csv
+        }
+    }
 
     var displayName: String { rawValue.uppercased() }
 }
