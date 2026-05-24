@@ -494,13 +494,23 @@ struct PartsImportExportPage: View {
                 return
             }
 
-            let accessing = url.startAccessingSecurityScopedResource()
-            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            // Offload blocking file I/O off the cooperative thread pool.
+            let (fileExt, filename, rawData, rawText) = try await Task.detached(priority: .userInitiated) {
+                let accessing = url.startAccessingSecurityScopedResource()
+                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                let ext = url.pathExtension.lowercased()
+                let name = url.lastPathComponent
+                if ext == "xlsx" {
+                    let data = try Data(contentsOf: url)
+                    return (ext, name, data as Data?, nil as String?)
+                } else {
+                    let text = try String(contentsOf: url, encoding: .utf8)
+                    return (ext, name, nil as Data?, text as String?)
+                }
+            }.value
 
-            let filename = url.lastPathComponent
-            let ext = url.pathExtension.lowercased()
-            if ext == "xlsx" {
-                let data = try Data(contentsOf: url)
+            if fileExt == "xlsx" {
+                let data = rawData!
                 var servicePreview = try service.previewPartsImportXLSX(data)
                 servicePreview.source?.filename = filename
                 let preview = ImportPreview(
@@ -521,12 +531,12 @@ struct PartsImportExportPage: View {
                 return
             }
 
-            guard ext == "csv" || ext == "txt" || ext.isEmpty else {
+            guard fileExt == "csv" || fileExt == "txt" || fileExt.isEmpty else {
                 await MainActor.run { importStatus = .error("Parse error: choose a CSV or XLSX file. PDF import is planned but not available yet.") }
                 return
             }
 
-            let content = try String(contentsOf: url, encoding: .utf8)
+            let content = rawText!
             let sourceRows = parseCSVRows(content)
             guard sourceRows.count > 1 else {
                 await MainActor.run { importStatus = .error("Parse error: CSV file is empty or has no data rows.") }
@@ -578,8 +588,10 @@ struct PartsImportExportPage: View {
         let header = selectedMappings.map { $0.target.rawValue }
         let rows = preview.sourceRows.dropFirst().map { row in
             selectedMappings.map { mapping -> String in
-                guard let sourceIndex = preview.sourceColumns.firstIndex(of: mapping.sourceColumn), sourceIndex < row.count else { return "" }
-                return row[sourceIndex]
+                // Use positional index via UUID so duplicate column names resolve correctly.
+                guard let colIndex = preview.columnMappings.firstIndex(where: { $0.id == mapping.id }),
+                      colIndex < row.count else { return "" }
+                return row[colIndex]
             }
         }
         var csv = encodeCSVRow(header)
@@ -678,10 +690,24 @@ struct PartsImportExportPage: View {
         var row: [String] = []
         var field = ""
         var inQuotes = false
-        var iterator = text.makeIterator()
-        while let char = iterator.next() {
+        let chars = Array(text)
+        var i = 0
+        while i < chars.count {
+            let char = chars[i]
             if char == "\"" {
-                inQuotes.toggle()
+                if inQuotes {
+                    // RFC 4180: "" inside a quoted field is a literal double-quote.
+                    let next = i + 1
+                    if next < chars.count && chars[next] == "\"" {
+                        field.append("\"")
+                        i = next + 1
+                        continue
+                    } else {
+                        inQuotes = false
+                    }
+                } else {
+                    inQuotes = true
+                }
             } else if char == "," && !inQuotes {
                 row.append(field)
                 field = ""
@@ -695,6 +721,7 @@ struct PartsImportExportPage: View {
             } else if char != "\r" || inQuotes {
                 field.append(char)
             }
+            i += 1
         }
         row.append(field)
         if row.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
@@ -917,6 +944,22 @@ private struct ImportPreviewContent: View {
                 Text("Using canonical \(preview.sourceKind.displayName) headers from the backend preview.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            } else if preview.sourceKind == .xlsx {
+                // XLSX column mapping is handled by the backend; the UI pickers are display-only.
+                Text("Column mapping for XLSX is handled automatically. No manual mapping is needed.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach(preview.columnMappings) { mapping in
+                    HStack {
+                        Text(mapping.sourceColumn)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Spacer()
+                        Text(mapping.target.displayName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             } else {
                 ForEach($preview.columnMappings) { $mapping in
                     VStack(alignment: .leading, spacing: 6) {
@@ -1026,8 +1069,8 @@ private struct ImportPreviewContent: View {
                 }
                 .frame(maxWidth: .infinity)
 
-                ForEach($preview.servicePreview.conflicts, id: \.existingPartId) { $conflict in
-                    conflictRow(conflict: $conflict)
+                ForEach(preview.servicePreview.conflicts.indices, id: \.self) { index in
+                    conflictRow(conflict: $preview.servicePreview.conflicts[index])
                 }
             } header: {
                 Text("Conflicts — Duplicates Found")
