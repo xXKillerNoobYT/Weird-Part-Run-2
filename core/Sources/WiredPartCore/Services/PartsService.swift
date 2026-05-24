@@ -5991,13 +5991,7 @@ public final class PartsService: Sendable {
         public var totalRows: Int = 0
         public var source: PartsImportSourceMetadata?
 
-        public init(
-            newParts: [PartsImportParsedRow] = [],
-            conflicts: [PartsImportConflict] = [],
-            errors: [PartsImportError] = [],
-            totalRows: Int = 0,
-            source: PartsImportSourceMetadata? = nil
-        ) {
+        public init(newParts: [PartsImportParsedRow] = [], conflicts: [PartsImportConflict] = [], errors: [PartsImportError] = [], totalRows: Int = 0, source: PartsImportSourceMetadata? = nil) {
             self.newParts = newParts
             self.conflicts = conflicts
             self.errors = errors
