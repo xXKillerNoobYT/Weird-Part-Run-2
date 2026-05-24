@@ -658,6 +658,7 @@ struct ModuleHostView: View {
     @EnvironmentObject private var appCore: AppCore
     @EnvironmentObject private var tabPrefs: TabBarPreferences
     @State private var selectedTabId: String = ""
+    @State private var hasPositionedInitialSubTab = false
     @State private var showUserMenu = false
 
     /// Tabs visible to the current user after permission filtering.
@@ -815,30 +816,52 @@ struct ModuleHostView: View {
         let chipH: CGFloat = 14
         let isSelected: (AppTab) -> Bool = { $0.id == selectedTabId }
 
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: DS.Space.sm) {
-                ForEach(visibleTabsList) { tab in
-                    Button {
-                        dsAnimate(DS.Anim.fast) {
-                            selectedTabId = tab.id
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: DS.Space.sm) {
+                    ForEach(visibleTabsList) { tab in
+                        Button {
+                            dsAnimate(DS.Anim.fast) {
+                                selectedTabId = tab.id
+                            }
+                        } label: {
+                            subTabChip(tab: tab, selected: isSelected(tab), chipH: chipH)
                         }
-                    } label: {
-                        subTabChip(tab: tab, selected: isSelected(tab), chipH: chipH)
+                        .id(tab.id)
+                        // Glass buttons inside a horizontally scrolling, narrow iPhone
+                        // sub-tab strip can report invalid accessibility activation
+                        // points to XCTest. Keep the chip styling in `subTabChip`, but
+                        // give automation a plain, explicitly-sized hit region.
+                        .buttonStyle(.plain)
+                        .contentShape(Rectangle())
+                        .accessibilityIdentifier("subtab_\(tab.id)")
+                        .accessibilityLabel(tab.label)
                     }
-                    // Glass buttons inside a horizontally scrolling, narrow iPhone
-                    // sub-tab strip can report invalid accessibility activation
-                    // points to XCTest. Keep the chip styling in `subTabChip`, but
-                    // give automation a plain, explicitly-sized hit region.
-                    .buttonStyle(.plain)
-                    .contentShape(Rectangle())
-                    .accessibilityIdentifier("subtab_\(tab.id)")
-                    .accessibilityLabel(tab.label)
                 }
+                .padding(.horizontal, DS.Space.lg)
+                .padding(.vertical, DS.Space.sm)
             }
-            .padding(.horizontal, DS.Space.lg)
-            .padding(.vertical, DS.Space.sm)
+            .onAppear {
+                positionSelectedSubTab(with: proxy, animated: false)
+            }
+            .onChange(of: selectedTabId) { _, _ in
+                positionSelectedSubTab(with: proxy, animated: hasPositionedInitialSubTab)
+            }
         }
         .background(DS.Background.page)
+    }
+
+    private func positionSelectedSubTab(with proxy: ScrollViewProxy, animated: Bool) {
+        guard !selectedTabId.isEmpty else { return }
+
+        if animated {
+            dsAnimate(DS.Anim.standard) {
+                proxy.scrollTo(selectedTabId, anchor: .center)
+            }
+        } else {
+            proxy.scrollTo(selectedTabId, anchor: .center)
+        }
+        hasPositionedInitialSubTab = true
     }
 
     @ViewBuilder
