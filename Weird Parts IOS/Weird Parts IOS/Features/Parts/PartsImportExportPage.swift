@@ -87,7 +87,7 @@ struct PartsImportExportPage: View {
                 ImportPreviewSheet(
                     preview: $importPreview,
                     onConfirm: { Task { await executeImport() } },
-                    onApplyMapping: { reapplyImportMapping($0) },
+                    onApplyMapping: { preview in Task { await reapplyImportMapping(preview) } },
                     onCancel: {
                         importPreview = nil
                         activeSheet = nil
@@ -566,21 +566,23 @@ struct PartsImportExportPage: View {
         }
     }
 
-    private func applyMapping(to preview: inout ImportPreview, service: PartsService) throws {
-        guard preview.sourceKind == .csv else { return }
+    /// Validates the column mapping and builds the remapped CSV string.
+    /// Returns the CSV string if valid, or `nil` after recording the error on `preview`.
+    private func buildMappedCSV(from preview: inout ImportPreview) -> String? {
+        guard preview.sourceKind == .csv else { return nil }
         let selectedTargets = preview.columnMappings.filter { $0.target != .ignore }.map(\.target)
         let missingRequired = ColumnMappingTarget.required.filter { !selectedTargets.contains($0) }
         guard missingRequired.isEmpty else {
             preview.mappingError = "Mapping error: map a source column to \(missingRequired.map(\.displayName).joined(separator: " and "))."
             preview.servicePreview = PartsService.PartsImportPreview(totalRows: max(0, preview.sourceRows.count - 1))
-            return
+            return nil
         }
 
         let duplicateTargets = Dictionary(grouping: selectedTargets, by: { $0 }).filter { $0.value.count > 1 }.map(\.key)
         guard duplicateTargets.isEmpty else {
             preview.mappingError = "Mapping error: each canonical field can only be mapped once (duplicate: \(duplicateTargets.map(\.displayName).joined(separator: ", ")))."
             preview.servicePreview = PartsService.PartsImportPreview(totalRows: max(0, preview.sourceRows.count - 1))
-            return
+            return nil
         }
 
         preview.mappingError = nil
@@ -598,23 +600,43 @@ struct PartsImportExportPage: View {
         for row in rows {
             csv += "\n" + encodeCSVRow(row)
         }
+        return csv
+    }
+
+    private func applyMapping(to preview: inout ImportPreview, service: PartsService) throws {
+        guard let csv = buildMappedCSV(from: &preview) else { return }
         var servicePreview = try service.previewPartsImportCSV(csv)
         servicePreview.source?.filename = preview.filename
         preview.servicePreview = servicePreview
     }
 
-    private func reapplyImportMapping(_ updatedPreview: ImportPreview) {
+    /// Re-runs the backend import preview after the user adjusts column mappings.
+    /// Validation and CSV building happen on the calling actor (fast, pure);
+    /// the DB-backed `previewPartsImportCSV` call is offloaded to a detached task
+    /// so the main actor is never blocked.
+    private func reapplyImportMapping(_ updatedPreview: ImportPreview) async {
         guard let service = appCore.partsService else {
-            importPreview?.mappingError = "Validation error: parts service is not available."
+            await MainActor.run { importPreview?.mappingError = "Validation error: parts service is not available." }
             return
         }
         var preview = updatedPreview
+        // Pure validation + CSV building — fast, no DB reads.
+        guard let csv = buildMappedCSV(from: &preview) else {
+            await MainActor.run { importPreview = preview }
+            return
+        }
+        // Offload the DB preview call off the main actor.
         do {
-            try applyMapping(to: &preview, service: service)
+            var svcPreview = try await Task.detached(priority: .userInitiated) {
+                try service.previewPartsImportCSV(csv)
+            }.value
+            svcPreview.source?.filename = preview.filename
+            preview.servicePreview = svcPreview
+            await MainActor.run { importPreview = preview }
         } catch {
             preview.mappingError = "Validation error: \(userFriendlyError(error, context: "preview mapped import"))"
+            await MainActor.run { importPreview = preview }
         }
-        importPreview = preview
     }
 
     private func canonicalColumns(from preview: PartsService.PartsImportPreview) -> [String] {
