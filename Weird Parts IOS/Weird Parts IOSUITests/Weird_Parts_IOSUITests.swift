@@ -725,12 +725,13 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += [
             "-UITesting",
+            "-UITestingForceLogin",
             "-UIPreferredContentSizeCategoryName",
             UIContentSizeCategory.accessibilityExtraExtraExtraLarge.rawValue
         ]
         app.launch()
 
-        let loginView = app.otherElements["loginView"]
+        let loginView = app.descendants(matching: .any)["loginView"]
         guard loginView.waitForExistence(timeout: 30) else {
             throw XCTSkip("Login was not shown; this regression requires a fresh logged-out UI-test launch.")
         }
