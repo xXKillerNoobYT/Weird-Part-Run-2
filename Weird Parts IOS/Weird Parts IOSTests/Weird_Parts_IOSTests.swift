@@ -197,6 +197,20 @@ struct Weird_Parts_IOSTests {
         #expect(scannerSource.contains("activeContinuation?.finish()"), "Startup failures should finish the scan stream instead of leaving a dead sheet")
     }
 
+    @Test func questionnaireBreakAutofillDoesNotSwallowSubmitErrors() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let pageURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Jobs/IOSQuestionnairePage.swift")
+        let pageSource = try String(contentsOf: pageURL, encoding: .utf8)
+
+        #expect(!pageSource.contains("try? breakSvc.autoFillBreaksForDay"), "Break auto-fill failures in submit flow must not be swallowed")
+        #expect(pageSource.contains("try handleBreakVerification()"), "Submit flow should fail and show error when break auto-fill fails")
+        #expect(pageSource.contains("private func handleBreakVerification() throws"), "Break verification helper should throw to propagate save failures")
+    }
+
     @Test func uiTestingFixturesSeedJPOFlowDataForQASmoke() throws {
         let db = try AppDatabase.openInMemoryDatabase()
         let auth = AuthService(db: db)

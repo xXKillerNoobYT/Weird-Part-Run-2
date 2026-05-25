@@ -375,7 +375,7 @@ struct IOSQuestionnairePage: View {
             )
 
             // Handle break verification
-            handleBreakVerification()
+            try handleBreakVerification()
 
             // Save companion poll votes (separate from clock-out responses)
             if let partsService = appCore.partsService,
@@ -400,11 +400,14 @@ struct IOSQuestionnairePage: View {
     /// Handle break verification logic:
     /// - "Yes, all taken" + no break buttons used → auto-fill at defaults
     /// - "Forgot" or "Partial" → report missed breaks to office
-    private func handleBreakVerification() {
+    private func handleBreakVerification() throws {
         guard let breakSvc = appCore.breakService,
               let userId = appCore.currentUser?.id else {
-            errorMessage = "Break service not available"
-            return
+            throw NSError(
+               domain: "IOSQuestionnairePage",
+               code: 1,
+               userInfo: [NSLocalizedDescriptionKey: "Break service not available"]
+            )
         }
 
         switch breakVerification {
@@ -412,7 +415,7 @@ struct IOSQuestionnairePage: View {
             // If user said "yes, all taken" but didn't actually use break buttons,
             // auto-fill break records at default times for compliance
             if !hadBreakButtons {
-                try? breakSvc.autoFillBreaksForDay(
+                try breakSvc.autoFillBreaksForDay(
                     userId: userId,
                     laborEntryId: laborEntryId
                 )
@@ -421,7 +424,7 @@ struct IOSQuestionnairePage: View {
 
         case .forgot:
             // All breaks missed — mark all as missed, auto-fill for compliance
-            try? breakSvc.autoFillBreaksForDay(
+            try breakSvc.autoFillBreaksForDay(
                 userId: userId,
                 laborEntryId: laborEntryId
             )
@@ -430,7 +433,7 @@ struct IOSQuestionnairePage: View {
         case .partial:
             // Some breaks missed — auto-fill the ones that were missed
             if !missedBreaks.isEmpty {
-                try? breakSvc.autoFillBreaksForDay(
+                try breakSvc.autoFillBreaksForDay(
                     userId: userId,
                     laborEntryId: laborEntryId
                 )
