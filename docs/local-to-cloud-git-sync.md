@@ -10,7 +10,11 @@ Run the sync audit from the active worktree:
 scripts/git-cloud-sync-audit.sh
 ```
 
-The audit fetches `origin`, reports dirty worktree state, shows whether the current branch has an upstream, lists local branches that are ahead/behind or lack upstreams, and compares local/remote tag counts.
+The audit fetches `origin`, reports dirty worktree state, shows whether the current branch has an upstream, lists local branches that are ahead/behind or lack upstreams, compares local/remote tag counts, and prints a branch hygiene snapshot:
+
+- remote branch count (excluding `origin/HEAD`, `main`, `master`)
+- branches already merged into `origin/main` (or `origin/master` fallback)
+- when `gh` + `jq` are available, open PR count and remote branches without open PRs
 
 ## Push the Active Issue Branch
 
