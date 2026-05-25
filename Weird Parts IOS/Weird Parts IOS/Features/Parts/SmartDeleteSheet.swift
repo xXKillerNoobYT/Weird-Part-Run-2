@@ -181,8 +181,8 @@ struct SmartDeleteSheet: View {
                 entityType: entityType, entityId: entityId, entityName: entityName,
                 reason: reason.isEmpty ? nil : reason, scheduledBy: nil
             )
-            await onComplete()
             dismiss()
+            await onComplete()
         } catch {
             self.error = userFriendlyError(error, context: "delete parts")
         }
@@ -205,8 +205,8 @@ struct SmartDeleteSheet: View {
             case "color": try service.deleteColor(id: entityId)
             default: break
             }
-            await onComplete()
             dismiss()
+            await onComplete()
         } catch {
             self.error = userFriendlyError(error, context: "delete parts")
         }
