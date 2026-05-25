@@ -283,34 +283,19 @@ public final class BreakService: Sendable {
         let dateStr = Self.formatDateUTC(date)  // must match the UTC date used in getBreakRecordsForDay
 
         do { try db.writer.write { dbConn in
-            // Auto-fill morning break if missing
-            let hasBreak = existing.contains { $0.breakType == "break" }
-            if !hasBreak {
-                if let morningTime = settings.defaultMorningBreak {
-                    let startStr = "\(dateStr)T\(morningTime):00"
-                    var record = BreakRecord(
-                        id: nil, userId: userId, laborEntryId: laborEntryId,
-                        breakType: "break", startedAt: startStr,
-                        endedAt: "\(dateStr)T\(Self.addMinutes(morningTime, 15)):00",
-                        durationMinutes: 15, isPaid: true,
-                        autoFilled: true, timerDurationMinutes: 15,
-                        createdAt: nil, deletedAt: nil
-                    )
-                    try record.insert(dbConn)
-                }
-
-                if let afternoonTime = settings.defaultAfternoonBreak {
-                    let startStr = "\(dateStr)T\(afternoonTime):00"
-                    var record = BreakRecord(
-                        id: nil, userId: userId, laborEntryId: laborEntryId,
-                        breakType: "break", startedAt: startStr,
-                        endedAt: "\(dateStr)T\(Self.addMinutes(afternoonTime, 15)):00",
-                        durationMinutes: 15, isPaid: true,
-                        autoFilled: true, timerDurationMinutes: 15,
-                        createdAt: nil, deletedAt: nil
-                    )
-                    try record.insert(dbConn)
-                }
+            let existingBreaks = existing.filter { $0.breakType == "break" }
+            let scheduledBreakTimes = [settings.defaultMorningBreak, settings.defaultAfternoonBreak].compactMap { $0 }
+            for breakTime in scheduledBreakTimes.dropFirst(existingBreaks.count) {
+                let startStr = "\(dateStr)T\(breakTime):00"
+                var record = BreakRecord(
+                    id: nil, userId: userId, laborEntryId: laborEntryId,
+                    breakType: "break", startedAt: startStr,
+                    endedAt: "\(dateStr)T\(Self.addMinutes(breakTime, 15)):00",
+                    durationMinutes: 15, isPaid: true,
+                    autoFilled: true, timerDurationMinutes: 15,
+                    createdAt: nil, deletedAt: nil
+                )
+                try record.insert(dbConn)
             }
 
             // Auto-fill lunch if missing

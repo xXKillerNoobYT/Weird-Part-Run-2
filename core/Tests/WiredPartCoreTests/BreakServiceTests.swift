@@ -226,8 +226,8 @@ struct BreakServiceTests {
         #expect(records.allSatisfy { $0.autoFilled == true })
     }
 
-    @Test("autoFillBreaksForDay skips if breaks already exist")
-    func testAutoFillSkipsExisting() throws {
+    @Test("autoFillBreaksForDay fills only the missing scheduled break")
+    func testAutoFillFillsMissingScheduledBreak() throws {
         let env = try freshEnv()
         let breakService = BreakService(db: env.db)
 
@@ -237,21 +237,77 @@ struct BreakServiceTests {
             roundingEnabled: false,
             autoFillBreaks: true,
             defaultMorningBreak: "10:00",
-            defaultLunch: "12:00"
+            defaultLunch: "12:00",
+            defaultAfternoonBreak: "14:00"
         )
 
         // Manually start a break first
         let record = try breakService.startBreak(userId: env.adminUserId, breakType: "break")
         try breakService.endBreak(recordId: record.id!)
 
-        let countBefore = try breakService.getBreakRecordsForDay(userId: env.adminUserId).count
-
-        // Auto-fill should skip "break" type since one already exists
         try breakService.autoFillBreaksForDay(userId: env.adminUserId)
 
-        let countAfter = try breakService.getBreakRecordsForDay(userId: env.adminUserId).count
-        // Lunch may be added but existing break type should not be duplicated
-        #expect(countAfter >= countBefore)
+        let records = try breakService.getBreakRecordsForDay(userId: env.adminUserId)
+        let breakRecords = records.filter { $0.breakType == "break" }
+        let lunchRecords = records.filter { $0.breakType.hasPrefix("lunch") }
+
+        #expect(breakRecords.count == 2)
+        #expect(lunchRecords.count == 1)
+        #expect(breakRecords.contains { $0.autoFilled == false })
+        #expect(breakRecords.contains { $0.autoFilled == true && $0.startedAt.hasSuffix("T14:00:00") })
+    }
+
+    @Test("autoFillBreaksForDay keeps existing lunch and still fills breaks")
+    func testAutoFillKeepsExistingLunchAndFillsBreaks() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        try breakService.updateCompanyBreakSettings(
+            stateCode: "CA",
+            roundingMinutes: 15,
+            roundingEnabled: false,
+            autoFillBreaks: true,
+            defaultMorningBreak: "10:00",
+            defaultLunch: "12:00",
+            defaultAfternoonBreak: "14:00"
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO break_records
+                    (user_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
+                VALUES (?, 'lunch_paid', date('now') || 'T12:00:00', date('now') || 'T12:30:00', 30, 1, 0)
+                """, arguments: [env.adminUserId])
+        }
+
+        try breakService.autoFillBreaksForDay(userId: env.adminUserId)
+
+        let records = try breakService.getBreakRecordsForDay(userId: env.adminUserId)
+        #expect(records.filter { $0.breakType == "break" }.count == 2)
+        #expect(records.filter { $0.breakType.hasPrefix("lunch") }.count == 1)
+    }
+
+    @Test("autoFillBreaksForDay does not duplicate default breaks when already present")
+    func testAutoFillDoesNotDuplicateExistingDefaultBreaks() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        try breakService.updateCompanyBreakSettings(
+            stateCode: "CA",
+            roundingMinutes: 15,
+            roundingEnabled: false,
+            autoFillBreaks: true,
+            defaultMorningBreak: "10:00",
+            defaultLunch: "12:00",
+            defaultAfternoonBreak: "14:00"
+        )
+
+        try breakService.autoFillBreaksForDay(userId: env.adminUserId)
+        try breakService.autoFillBreaksForDay(userId: env.adminUserId)
+
+        let records = try breakService.getBreakRecordsForDay(userId: env.adminUserId)
+        #expect(records.filter { $0.breakType == "break" }.count == 2)
+        #expect(records.filter { $0.breakType.hasPrefix("lunch") }.count == 1)
     }
 
     // MARK: - Rounding
