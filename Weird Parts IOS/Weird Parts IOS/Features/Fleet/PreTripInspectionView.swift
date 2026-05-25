@@ -99,6 +99,7 @@ struct PreTripInspectionView: View {
             }
             .task { loadChecklist() }
         }
+        .presentationDetents([.large])
     }
 
     // MARK: - Form

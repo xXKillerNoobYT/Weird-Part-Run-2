@@ -102,11 +102,30 @@ struct IOSTrailersPage: View {
             } else if let error = loadError {
                 ErrorStateView(message: error) { loadData() }
             } else if filteredTrailers.isEmpty {
-                EmptyStateView(
-                    icon: "shippingbox",
-                    title: "No Trailers",
-                    message: "No trailers found."
-                )
+                if trimmedSearchText.isEmpty {
+                    EmptyStateView(
+                        icon: "shippingbox",
+                        title: "No Trailers",
+                        message: "No trailers found."
+                    )
+                } else {
+                    VStack(spacing: 12) {
+                        Image(systemName: "shippingbox")
+                            .font(.system(size: 32))
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        Text("No trailers match '\(trimmedSearchText)'")
+                            .font(.headline)
+                            .multilineTextAlignment(.center)
+                        Button("Clear Search") {
+                            searchText = ""
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityLabel("Clear search")
+                    }
+                    .padding(.horizontal, 24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             } else {
                 List(filteredTrailers, id: \.id) { trailer in
                     NavigationLink(destination: IOSTrailerDetailPage(trailerId: trailer.id)) {
@@ -133,9 +152,13 @@ struct IOSTrailersPage: View {
         }
     }
 
+    private var trimmedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private var filteredTrailers: [FleetService.TrailerListItem] {
-        guard !searchText.isEmpty else { return trailers }
-        let query = searchText.lowercased()
+        guard !trimmedSearchText.isEmpty else { return trailers }
+        let query = trimmedSearchText.lowercased()
         return trailers.filter {
             $0.trailerNumber.lowercased().contains(query) ||
             $0.trailerType.lowercased().contains(query) ||

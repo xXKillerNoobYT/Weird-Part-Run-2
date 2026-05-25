@@ -72,6 +72,7 @@ struct IOSCreateTrailerSheet: View {
                 }
             }
         }
+        .presentationDetents([.large])
     }
 
     var onSaved: (() -> Void)?
