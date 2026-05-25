@@ -1098,6 +1098,109 @@ public final class NotebooksService: Sendable {
         }
     }
 
+    /// Select the best job starter template for a job type.
+    public func findBestJobTemplate(jobType: String?) throws -> NotebookTemplateItem? {
+        try db.writer.read { dbConn in
+            try findBestJobTemplate(dbConn: dbConn, jobType: jobType)
+        }
+    }
+
+    /// Ensure a job has exactly one active linked job notebook, creating and templating it when missing.
+    @discardableResult
+    public func ensureJobNotebook(
+        jobId: Int64,
+        jobName: String,
+        jobType: String?,
+        createdBy: Int64
+    ) throws -> Int64 {
+        if try getTemplates(templateType: "job").isEmpty {
+            try seedDefaultTemplates(createdBy: createdBy)
+        }
+        return try db.writer.write { dbConn in
+            try ensureJobNotebook(dbConn: dbConn, jobId: jobId, jobName: jobName, jobType: jobType, createdBy: createdBy)
+        }
+    }
+
+    func findBestJobTemplate(dbConn: Database, jobType: String?) throws -> NotebookTemplateItem? {
+        let normalized = Self.normalizedJobTemplateCategory(jobType)
+        let rows = try Row.fetchAll(dbConn, sql: """
+            SELECT id, name, description, template_type, category, is_default, created_at
+            FROM notebook_templates
+            WHERE deleted_at IS NULL AND template_type = 'job'
+            ORDER BY is_default DESC, name ASC
+            """)
+        let templates = rows.map { row in
+            NotebookTemplateItem(
+                id: row["id"] ?? 0,
+                name: row["name"] ?? "",
+                description: row["description"] as String?,
+                templateType: row["template_type"] ?? "job",
+                category: row["category"] as String?,
+                isDefault: (row["is_default"] as Int?) == 1,
+                createdAt: row["created_at"] as String?
+            )
+        }
+        if let exact = templates.first(where: { Self.normalizedJobTemplateCategory($0.category) == normalized }) {
+            return exact
+        }
+        if let service = templates.first(where: { Self.normalizedJobTemplateCategory($0.category) == "service" }) {
+            return service
+        }
+        return templates.first(where: { $0.isDefault }) ?? templates.first
+    }
+
+    @discardableResult
+    func ensureJobNotebook(
+        dbConn: Database,
+        jobId: Int64,
+        jobName: String,
+        jobType: String?,
+        createdBy: Int64
+    ) throws -> Int64 {
+        if let existing = try Int64.fetchOne(dbConn, sql: """
+            SELECT id FROM notebooks
+            WHERE job_id = ? AND notebook_type = 'job' AND deleted_at IS NULL
+            ORDER BY id ASC LIMIT 1
+            """, arguments: [jobId]) {
+            return existing
+        }
+
+        let template = try findBestJobTemplate(dbConn: dbConn, jobType: jobType)
+        let titleBase = jobName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let notebookTitle = titleBase.isEmpty ? "Job Notebook" : "\(titleBase) Notebook"
+        try dbConn.execute(sql: """
+            INSERT INTO notebooks
+            (title, notebook_type, job_id, template_id, created_by, status, created_at, updated_at)
+            VALUES (?, 'job', ?, ?, ?, 'active', datetime('now'), datetime('now'))
+            """, arguments: [notebookTitle, jobId, template?.id, createdBy])
+        let notebookId = dbConn.lastInsertedRowID
+
+        if let template {
+            try applyJobTemplate(dbConn: dbConn, templateId: template.id, notebookId: notebookId, createdBy: createdBy)
+        } else {
+            try createMinimalJobNotebookSections(dbConn: dbConn, notebookId: notebookId, createdBy: createdBy)
+        }
+        return notebookId
+    }
+
+    private static func normalizedJobTemplateCategory(_ value: String?) -> String {
+        let normalized = (value ?? "service")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+        return normalized.isEmpty ? "service" : normalized
+    }
+
+    private func createMinimalJobNotebookSections(dbConn: Database, notebookId: Int64, createdBy: Int64) throws {
+        for (index, name) in ["General", "Daily Log", "Photos"].enumerated() {
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_sections (notebook_id, name, section_type, sort_order, is_locked, is_collapsed, created_at, updated_at)
+                VALUES (?, ?, 'standard', ?, 0, 0, datetime('now'), datetime('now'))
+                """, arguments: [notebookId, name, index])
+        }
+    }
+
     /// Create a template.
     public func createTemplate(
         name: String,
@@ -1123,54 +1226,56 @@ public final class NotebooksService: Sendable {
 
     /// Apply a job template to a notebook — creates groups, sections, and entries.
     public func applyJobTemplate(templateId: Int64, notebookId: Int64, createdBy: Int64) throws {
-        let templateRow = try db.writer.read { dbConn in
-            try Row.fetchOne(dbConn, sql: "SELECT template_data FROM notebook_templates WHERE id = ?", arguments: [templateId])
+        // Single transaction — partial template application is worse than no application.
+        try db.writer.write { dbConn in
+            try applyJobTemplate(dbConn: dbConn, templateId: templateId, notebookId: notebookId, createdBy: createdBy)
         }
+    }
+
+    func applyJobTemplate(dbConn: Database, templateId: Int64, notebookId: Int64, createdBy: Int64) throws {
+        let templateRow = try Row.fetchOne(dbConn, sql: "SELECT template_data FROM notebook_templates WHERE id = ?", arguments: [templateId])
         guard let jsonString = templateRow?["template_data"] as String?,
               let jsonData = jsonString.data(using: .utf8) else { return }
 
         let template = try JSONDecoder().decode(NotebookTemplateData.self, from: jsonData)
 
-        // Single transaction — partial template application is worse than no application.
-        try db.writer.write { dbConn in
-            for group in template.groups {
-                let groupMaxOrder = try Int.fetchOne(dbConn, sql: """
-                    SELECT COALESCE(MAX(sort_order), -1) FROM notebook_section_groups
+        for group in template.groups {
+            let groupMaxOrder = try Int.fetchOne(dbConn, sql: """
+                SELECT COALESCE(MAX(sort_order), -1) FROM notebook_section_groups
+                WHERE notebook_id = ? AND deleted_at IS NULL
+                """, arguments: [notebookId]) ?? -1
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_section_groups (notebook_id, name, sort_order, created_at, updated_at)
+                VALUES (?, ?, ?, datetime('now'), datetime('now'))
+                """, arguments: [notebookId, group.name, groupMaxOrder + 1])
+            let groupId = dbConn.lastInsertedRowID
+
+            for section in group.sections {
+                let sectionMaxOrder = try Int.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(MAX(sort_order), -1) FROM notebook_sections
                     WHERE notebook_id = ? AND deleted_at IS NULL
                     """, arguments: [notebookId]) ?? -1
                 try dbConn.execute(sql: """
-                    INSERT INTO notebook_section_groups (notebook_id, name, sort_order, created_at, updated_at)
-                    VALUES (?, ?, ?, datetime('now'), datetime('now'))
-                    """, arguments: [notebookId, group.name, groupMaxOrder + 1])
-                let groupId = dbConn.lastInsertedRowID
+                    INSERT INTO notebook_sections (notebook_id, group_id, name, section_type, sort_order, is_locked, is_collapsed, created_at, updated_at)
+                    VALUES (?, ?, ?, 'standard', ?, 0, 0, datetime('now'), datetime('now'))
+                    """, arguments: [notebookId, groupId, section.name, sectionMaxOrder + 1])
+                let sectionId = dbConn.lastInsertedRowID
 
-                for section in group.sections {
-                    let sectionMaxOrder = try Int.fetchOne(dbConn, sql: """
-                        SELECT COALESCE(MAX(sort_order), -1) FROM notebook_sections
-                        WHERE notebook_id = ? AND deleted_at IS NULL
-                        """, arguments: [notebookId]) ?? -1
-                    try dbConn.execute(sql: """
-                        INSERT INTO notebook_sections (notebook_id, group_id, name, section_type, sort_order, is_locked, is_collapsed, created_at, updated_at)
-                        VALUES (?, ?, ?, 'standard', ?, 0, 0, datetime('now'), datetime('now'))
-                        """, arguments: [notebookId, groupId, section.name, sectionMaxOrder + 1])
-                    let sectionId = dbConn.lastInsertedRowID
-
-                    for (entryIndex, entry) in section.entries.enumerated() {
-                        var checklistJson: String? = nil
-                        if let items = entry.checklistItems, let data = try? JSONSerialization.data(withJSONObject: items) {
-                            checklistJson = String(data: data, encoding: .utf8)
-                        }
-                        try dbConn.execute(sql: """
-                            INSERT INTO notebook_entries (notebook_id, section_id, entry_type, block_type, title, content,
-                                heading_level, checklist_items, sort_order, created_by, created_at)
-                            VALUES (?, ?, 'note', ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                            """, arguments: [
-                                notebookId, sectionId, entry.blockType,
-                                entry.title, entry.content,
-                                entry.headingLevel, checklistJson,
-                                entryIndex, createdBy
-                            ])
+                for (entryIndex, entry) in section.entries.enumerated() {
+                    var checklistJson: String? = nil
+                    if let items = entry.checklistItems, let data = try? JSONSerialization.data(withJSONObject: items) {
+                        checklistJson = String(data: data, encoding: .utf8)
                     }
+                    try dbConn.execute(sql: """
+                        INSERT INTO notebook_entries (notebook_id, section_id, entry_type, block_type, title, content,
+                            heading_level, checklist_items, sort_order, created_by, created_at)
+                        VALUES (?, ?, 'note', ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                        """, arguments: [
+                            notebookId, sectionId, entry.blockType,
+                            entry.title, entry.content,
+                            entry.headingLevel, checklistJson,
+                            entryIndex, createdBy
+                        ])
                 }
             }
         }

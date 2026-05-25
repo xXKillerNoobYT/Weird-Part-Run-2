@@ -31,6 +31,13 @@ struct IOSJobDetailTabView: View {
     /// Job stages with computed statuses (Rough-in, Prep/Makeup, Trim-out).
     @State private var jobStages: [JobsService.JobStageStatus] = []
 
+    // Job notebook recovery/opening state
+    @State private var jobNotebook: NotebooksService.NotebookListItem?
+    @State private var jobNotebookTemplate: NotebooksService.NotebookTemplateItem?
+    @State private var isLoadingJobNotebook = false
+    @State private var isCreatingJobNotebook = false
+    @State private var jobNotebookError: String?
+
     // Flex Pool
     @State private var isInFlexPool = false
     @State private var showFlexPoolConfirm = false
@@ -863,27 +870,104 @@ struct IOSJobDetailTabView: View {
     private func notebooksTab(_ job: JobsService.JobDetail) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("Job Notebooks")
+                Text("Job Notebook")
                     .font(.headline)
                 Spacer()
+                Button {
+                    loadJobNotebook(for: job)
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Refresh job notebook")
             }
 
-            Text("Notebooks for \(job.jobName) can be viewed in the Notebooks module.")
+            Text("Each job should have one linked notebook. New and recovered notebooks start from the best matching job-type starter template.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            Button {
-                NotificationCenter.default.post(
-                    name: .navigateToModule,
-                    object: nil,
-                    userInfo: ["moduleId": "notebooks", "tabId": "notebooks-job-notebooks"]
-                )
-            } label: {
-                Label("Open Job Notebooks", systemImage: "note.text")
+            if isLoadingJobNotebook {
+                ProgressView("Checking job notebook...")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .dsCard()
+            } else if let error = jobNotebookError {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("Could not load this job notebook", systemImage: "exclamationmark.triangle.fill")
+                        .font(.headline)
+                        .foregroundStyle(.orange)
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("Retry") { loadJobNotebook(for: job) }
+                        .buttonStyle(.borderedProminent)
+                }
+                .padding()
+                .dsCard()
+            } else if let notebook = jobNotebook {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "note.text")
+                            .font(.title2)
+                            .foregroundStyle(Color.accentColor)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(notebook.title)
+                                .font(.headline)
+                            Text("Linked to \(job.jobName)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            HStack(spacing: 6) {
+                                StatusBadge(text: "Job Notebook", color: .blue)
+                                StatusBadge(text: "Job Type: \(formattedJobType(job.jobType))", color: .secondary)
+                                if let template = jobNotebookTemplate {
+                                    StatusBadge(text: "Starter: \(template.name)", color: .green)
+                                }
+                            }
+                        }
+                        Spacer()
+                    }
+
+                    LabeledContent("Entries", value: "\(notebook.entryCount)")
+                    LabeledContent("Status", value: notebook.status.capitalized)
+
+                    NavigationLink {
+                        IOSNotebookDetailPage(notebookId: notebook.id)
+                            .environmentObject(appCore)
+                    } label: {
+                        Label("Open Job Notebook", systemImage: "arrow.right.circle.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding()
+                .dsCard()
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("This older job does not have a notebook yet", systemImage: "exclamationmark.triangle.fill")
+                        .font(.headline)
+                        .foregroundStyle(.orange)
+                    Text("Create one now using the \(formattedJobType(job.jobType)) job-type starter template rules. Recovery is duplicate-safe, so tapping this will reuse an existing linked notebook if one appears during refresh.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button {
+                        createMissingJobNotebook(for: job)
+                    } label: {
+                        if isCreatingJobNotebook {
+                            ProgressView()
+                        } else {
+                            Label("Create Job Notebook", systemImage: "plus.circle.fill")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isCreatingJobNotebook)
+                }
+                .padding()
+                .dsCard()
             }
-            .buttonStyle(.bordered)
         }
         .padding()
+        .task(id: job.id) { loadJobNotebook(for: job) }
     }
 
     // MARK: - Chat Tab
@@ -1110,6 +1194,53 @@ struct IOSJobDetailTabView: View {
         } catch {
             tabError = userFriendlyError(error, context: "load job details")
         }
+    }
+
+    private func loadJobNotebook(for job: JobsService.JobDetail) {
+        guard let service = appCore.notebooksService else {
+            jobNotebookError = "Notebooks service not available"
+            return
+        }
+        isLoadingJobNotebook = true
+        jobNotebookError = nil
+        do {
+            jobNotebook = try service.listNotebooks(notebookType: "job", jobId: job.id).first
+            jobNotebookTemplate = try service.findBestJobTemplate(jobType: job.jobType)
+        } catch {
+            jobNotebookError = userFriendlyError(error, context: "load job notebook")
+        }
+        isLoadingJobNotebook = false
+    }
+
+    private func createMissingJobNotebook(for job: JobsService.JobDetail) {
+        guard let service = appCore.notebooksService,
+              let userId = appCore.currentUser?.id else {
+            jobNotebookError = "Notebooks service unavailable or user not logged in"
+            return
+        }
+        isCreatingJobNotebook = true
+        jobNotebookError = nil
+        do {
+            _ = try service.ensureJobNotebook(
+                jobId: job.id,
+                jobName: job.jobName,
+                jobType: job.jobType,
+                createdBy: userId
+            )
+            jobNotebook = try service.listNotebooks(notebookType: "job", jobId: job.id).first
+            jobNotebookTemplate = try service.findBestJobTemplate(jobType: job.jobType)
+        } catch {
+            jobNotebookError = userFriendlyError(error, context: "create job notebook")
+        }
+        isCreatingJobNotebook = false
+    }
+
+    private func formattedJobType(_ jobType: String) -> String {
+        jobType
+            .replacingOccurrences(of: "_", with: " ")
+            .split(separator: " ")
+            .map { $0.capitalized }
+            .joined(separator: " ")
     }
 
     private func loadJobQA() {

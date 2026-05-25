@@ -1573,10 +1573,12 @@ public final class OrdersService: Sendable {
     /// Parts in stages after the job's current stage are marked as "held".
     public func getJobStageParts(jobId: Int64) throws -> [StagePart] {
         try db.writer.read { dbConn in
-            // Get the job's current stage
-            let currentStageId: Int64? = try Int64.fetchOne(dbConn, sql: """
-                SELECT current_stage_id FROM jobs WHERE id = ? AND deleted_at IS NULL
+            // Get the job's current stage and assigned template
+            let jobRow = try Row.fetchOne(dbConn, sql: """
+                SELECT current_stage_id, stage_template_id FROM jobs WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [jobId])
+            let currentStageId: Int64? = jobRow?["current_stage_id"]
+            let templateId: Int64? = jobRow?["stage_template_id"]
 
             // Get current stage sort_order (default to 0 = all stages active)
             let currentSortOrder: Int = try Int.fetchOne(dbConn, sql: """
@@ -1593,13 +1595,13 @@ public final class OrdersService: Sendable {
                 FROM jpo_line_items jl
                 JOIN job_parts_orders jpo ON jpo.id = jl.jpo_id
                 LEFT JOIN parts p ON p.id = jl.part_id AND p.deleted_at IS NULL
-                LEFT JOIN job_stage_category_map jscm ON jscm.category_id = p.category_id
-                LEFT JOIN job_stages js ON js.id = COALESCE(jl.stage_id, jscm.stage_id)
+                LEFT JOIN job_stage_category_map jscm ON jscm.category_id = p.category_id AND (jscm.template_id = ? OR (? IS NULL AND jscm.template_id IS NULL))
+                LEFT JOIN job_stages js ON js.id = COALESCE(jl.stage_id, jscm.stage_id) AND (js.template_id = ? OR ? IS NULL)
                 WHERE jpo.job_id = ?
                   AND jl.deleted_at IS NULL
                   AND jpo.deleted_at IS NULL
                 ORDER BY COALESCE(js.sort_order, 999) ASC, p.name ASC
-                """, arguments: [jobId])
+                """, arguments: [templateId, templateId, templateId, templateId, jobId])
 
             return rows.map { row in
                 let stageSortOrder: Int = row["stage_sort_order"] ?? 999
@@ -1627,17 +1629,19 @@ public final class OrdersService: Sendable {
     /// and auto-releases held parts in the next stage to procurement.
     public func markStageComplete(jobId: Int64, stageId: Int64) throws {
         try db.writer.write { dbConn in
-            // Get the completed stage's sort_order
-            let completedOrder = try Int.fetchOne(dbConn, sql: """
-                SELECT sort_order FROM job_stages WHERE id = ?
-                """, arguments: [stageId]) ?? 0
+            // Get the completed stage's sort_order and template.
+            let stageRow = try Row.fetchOne(dbConn, sql: """
+                SELECT sort_order, template_id FROM job_stages WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [stageId])
+            let completedOrder: Int = stageRow?["sort_order"] ?? 0
+            let templateId: Int64? = stageRow?["template_id"]
 
             // Find the next stage
             let nextStageId: Int64? = try Int64.fetchOne(dbConn, sql: """
                 SELECT id FROM job_stages
-                WHERE sort_order > ? AND deleted_at IS NULL
+                WHERE sort_order > ? AND deleted_at IS NULL AND (template_id = ? OR ? IS NULL)
                 ORDER BY sort_order ASC LIMIT 1
-                """, arguments: [completedOrder])
+                """, arguments: [completedOrder, templateId, templateId])
 
             // Update job's current stage to the next stage (or keep at completed if last)
             try dbConn.execute(sql: """
@@ -1649,8 +1653,8 @@ public final class OrdersService: Sendable {
             if let nextId = nextStageId {
                 // Get category IDs for the next stage
                 let categoryIds = try Int64.fetchAll(dbConn, sql: """
-                    SELECT category_id FROM job_stage_category_map WHERE stage_id = ?
-                    """, arguments: [nextId])
+                    SELECT category_id FROM job_stage_category_map WHERE stage_id = ? AND (template_id = ? OR ? IS NULL)
+                    """, arguments: [nextId, templateId, templateId])
 
                 if !categoryIds.isEmpty {
                     // Release JPO line items whose part category matches the next stage
@@ -1687,17 +1691,23 @@ public final class OrdersService: Sendable {
     /// Update which category belongs to which stage.
     public func updateCategoryStageMapping(categoryId: Int64, stageId: Int64?) throws {
         try db.writer.write { dbConn in
-            // Remove existing mapping for this category
+            let templateId: Int64?
+            if let stageId {
+                templateId = try Int64.fetchOne(dbConn, sql: "SELECT template_id FROM job_stages WHERE id = ?", arguments: [stageId])
+            } else {
+                templateId = try Int64.fetchOne(dbConn, sql: "SELECT id FROM job_stage_templates WHERE is_default = 1 AND archived_at IS NULL ORDER BY id ASC LIMIT 1")
+            }
+            // Remove existing mapping for this category within the selected/default template.
             try dbConn.execute(sql: """
-                DELETE FROM job_stage_category_map WHERE category_id = ?
-                """, arguments: [categoryId])
+                DELETE FROM job_stage_category_map WHERE category_id = ? AND (template_id = ? OR (? IS NULL AND template_id IS NULL))
+                """, arguments: [categoryId, templateId, templateId])
 
             // Add new mapping if a stage was provided
             if let stageId = stageId {
                 try dbConn.execute(sql: """
-                    INSERT INTO job_stage_category_map (stage_id, category_id)
-                    VALUES (?, ?)
-                    """, arguments: [stageId, categoryId])
+                    INSERT INTO job_stage_category_map (template_id, stage_id, category_id, updated_at)
+                    VALUES (?, ?, ?, datetime('now'))
+                    """, arguments: [templateId, stageId, categoryId])
             }
         }
     }
@@ -1705,15 +1715,16 @@ public final class OrdersService: Sendable {
     /// Get the category→stage mapping for all categories.
     public func getCategoryStageMappings() throws -> [(categoryId: Int64, categoryName: String, stageId: Int64?, stageName: String?)] {
         try db.writer.read { dbConn in
+            let templateId = try Int64.fetchOne(dbConn, sql: "SELECT id FROM job_stage_templates WHERE is_default = 1 AND archived_at IS NULL ORDER BY id ASC LIMIT 1")
             let rows = try Row.fetchAll(dbConn, sql: """
                 SELECT pc.id AS category_id, pc.name AS category_name,
                        jscm.stage_id, js.name AS stage_name
                 FROM part_categories pc
-                LEFT JOIN job_stage_category_map jscm ON jscm.category_id = pc.id
+                LEFT JOIN job_stage_category_map jscm ON jscm.category_id = pc.id AND (jscm.template_id = ? OR (? IS NULL AND jscm.template_id IS NULL))
                 LEFT JOIN job_stages js ON js.id = jscm.stage_id
                 WHERE pc.deleted_at IS NULL
                 ORDER BY pc.name ASC
-                """)
+                """, arguments: [templateId, templateId])
             return rows.map { row in
                 (
                     categoryId: row["category_id"] as Int64? ?? 0,

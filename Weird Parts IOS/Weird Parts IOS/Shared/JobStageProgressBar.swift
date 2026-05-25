@@ -1,10 +1,11 @@
 import SwiftUI
 import WiredPartCore
 
-/// A visual progression bar showing job stages (Rough-in, Prep/Makeup, Trim-out).
+/// A visual progression bar showing the ordered stages assigned to a job.
 ///
-/// Displays connected circles with status colors and optional labels.
-/// Use `compact: true` for list rows, `compact: false` for detail views.
+/// Handles one, two, default three-stage, five-stage, and many-stage templates.
+/// Detail mode labels up to five stages; larger workflows use compact chips to
+/// avoid unreadable overlap while preserving an accessible combined summary.
 struct JobStageProgressBar: View {
     let stages: [JobsService.JobStageStatus]
     var compact: Bool = false
@@ -13,7 +14,7 @@ struct JobStageProgressBar: View {
         if stages.isEmpty {
             // No stages configured — show nothing
             EmptyView()
-        } else {
+        } else if compact || stages.count <= 5 {
             HStack(spacing: 0) {
                 ForEach(Array(stages.enumerated()), id: \.element.id) { index, stage in
                     stageNode(stage, index: index)
@@ -22,6 +23,17 @@ struct JobStageProgressBar: View {
                         connector(completed: stage.status == "completed")
                     }
                 }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(accessibilityDescription)
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(stages.enumerated()), id: \.element.id) { index, stage in
+                        manyStageChip(stage, index: index)
+                    }
+                }
+                .padding(.vertical, 2)
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(accessibilityDescription)
@@ -63,6 +75,35 @@ struct JobStageProgressBar: View {
                     .fixedSize(horizontal: true, vertical: false)
             }
         }
+    }
+
+    // MARK: - Many Stage Chip
+
+    private func manyStageChip(_ stage: JobsService.JobStageStatus, index: Int) -> some View {
+        HStack(spacing: 6) {
+            ZStack {
+                Circle()
+                    .fill(stageColor(stage))
+                    .frame(width: 18, height: 18)
+                if stage.status == "completed" {
+                    Image(systemName: "checkmark")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.white)
+                } else {
+                    Text("\(index + 1)")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(stage.status == "in_progress" ? Color.white : Color.secondary)
+                }
+            }
+            Text(stage.name)
+                .font(.caption)
+                .fontWeight(stage.status == "in_progress" ? .semibold : .regular)
+                .foregroundStyle(stage.status == "pending" ? .secondary : .primary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(stage.status == "in_progress" ? Color.blue.opacity(0.12) : Color.secondary.opacity(0.08), in: Capsule())
     }
 
     // MARK: - Connector
@@ -133,6 +174,38 @@ struct JobStageProgressBar: View {
                 .init(id: 1, name: "Rough-in", sortOrder: 1, status: "pending"),
                 .init(id: 2, name: "Prep/Makeup", sortOrder: 2, status: "pending"),
                 .init(id: 3, name: "Trim-out", sortOrder: 3, status: "pending"),
+            ],
+            compact: false
+        )
+
+        JobStageProgressBar(
+            stages: [
+                .init(id: 1, name: "Visit", sortOrder: 1, status: "in_progress"),
+            ],
+            compact: false
+        )
+
+        JobStageProgressBar(
+            stages: [
+                .init(id: 1, name: "Rough-in", sortOrder: 1, status: "completed"),
+                .init(id: 2, name: "Inspection", sortOrder: 2, status: "completed"),
+                .init(id: 3, name: "Makeup", sortOrder: 3, status: "in_progress"),
+                .init(id: 4, name: "Trim-out", sortOrder: 4, status: "pending"),
+                .init(id: 5, name: "Punch List", sortOrder: 5, status: "pending"),
+            ],
+            compact: false
+        )
+
+        JobStageProgressBar(
+            stages: [
+                .init(id: 1, name: "Underground", sortOrder: 1, status: "completed"),
+                .init(id: 2, name: "Rough-in", sortOrder: 2, status: "completed"),
+                .init(id: 3, name: "Inspection", sortOrder: 3, status: "completed"),
+                .init(id: 4, name: "Makeup", sortOrder: 4, status: "in_progress"),
+                .init(id: 5, name: "Above Ceiling", sortOrder: 5, status: "pending"),
+                .init(id: 6, name: "Trim", sortOrder: 6, status: "pending"),
+                .init(id: 7, name: "Commission", sortOrder: 7, status: "pending"),
+                .init(id: 8, name: "Closeout", sortOrder: 8, status: "pending"),
             ],
             compact: false
         )

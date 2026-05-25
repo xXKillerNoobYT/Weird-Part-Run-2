@@ -26,6 +26,9 @@ struct IOSEditJobSheet: View {
 
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @State private var stageTemplates: [JobsService.JobStageTemplate] = []
+    @State private var selectedStageTemplateId: Int64?
+    @State private var showingTemplateChangeConfirmation = false
 
     private let jobTypes = ["service", "installation", "maintenance", "inspection", "emergency", "warranty"]
     private let priorities = ["low", "normal", "high", "urgent"]
@@ -94,6 +97,28 @@ struct IOSEditJobSheet: View {
                         .keyboardType(.decimalPad)
                 }
 
+                Section("Stage Template") {
+                    if stageTemplates.isEmpty {
+                        Text("No stage templates available. Create one in Settings → Job Stage Templates.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Picker("Workflow", selection: Binding(
+                            get: { selectedStageTemplateId ?? stageTemplates.first?.id ?? 0 },
+                            set: { selectedStageTemplateId = $0 }
+                        )) {
+                            ForEach(stageTemplates.filter { $0.stageCount > 0 }) { template in
+                                Text(template.name).tag(template.id)
+                            }
+                        }
+                        if selectedStageTemplateId != job.stageTemplateId {
+                            Text("Saving will preview and confirm the template change so the current stage is preserved when possible.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 Section("Notes") {
                     TextEditor(text: $notes)
                         .frame(minHeight: 80)
@@ -122,14 +147,41 @@ struct IOSEditJobSheet: View {
                 }
             }
             .interactiveDismissDisabled(isSaving)
+            .task { loadStageTemplates() }
+            .confirmationDialog(
+                "Change stage template?",
+                isPresented: $showingTemplateChangeConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Change Template") { saveJob(applyTemplateChange: true) }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("The job will move to the selected workflow. If its current stage is not in that template, it will move to the first stage in the new template.")
+            }
         }
     }
 
     // MARK: - Actions
 
-    private func saveJob() {
+    private func loadStageTemplates() {
+        guard let service = appCore.jobsService else { return }
+        do {
+            stageTemplates = try service.listJobStageTemplates().filter { $0.stageCount > 0 }
+            if selectedStageTemplateId == nil {
+                selectedStageTemplateId = job.stageTemplateId ?? stageTemplates.first(where: { $0.isDefault })?.id ?? stageTemplates.first?.id
+            }
+        } catch {
+            errorMessage = userFriendlyError(error, context: "load stage templates")
+        }
+    }
+
+    private func saveJob(applyTemplateChange: Bool = false) {
         guard let service = appCore.jobsService else {
             errorMessage = "Service not available"
+            return
+        }
+        if selectedStageTemplateId != job.stageTemplateId && !applyTemplateChange {
+            showingTemplateChangeConfirmation = true
             return
         }
         isSaving = true
@@ -151,6 +203,10 @@ struct IOSEditJobSheet: View {
                 notes: notes.isEmpty ? nil : notes,
                 budgetLimit: Double(budgetLimit)
             )
+            if applyTemplateChange, let selectedStageTemplateId, selectedStageTemplateId != job.stageTemplateId {
+                let preview = try service.previewJobStageTemplateAssignment(jobId: job.id, templateId: selectedStageTemplateId)
+                try service.assignJobStageTemplate(jobId: job.id, templateId: selectedStageTemplateId, currentStageId: preview.replacementStageId)
+            }
             onUpdated?()
             dismiss()
         } catch {

@@ -44,6 +44,8 @@ struct IOSCreateJobSheet: View {
     // UI
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @State private var stageTemplates: [JobsService.JobStageTemplate] = []
+    @State private var selectedStageTemplateId: Int64?
 
     private let jobTypes = ["service", "installation", "maintenance", "inspection", "emergency", "warranty"]
     private let jobClassifications = ["standard", "continuous", "convention"]
@@ -98,6 +100,29 @@ struct IOSCreateJobSheet: View {
                     }
                 }
 
+                // Stage template
+                Section("Stage Template") {
+                    if stageTemplates.isEmpty {
+                        Text("No stage templates available. Create one in Settings → Job Stage Templates.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Picker("Workflow", selection: Binding(
+                            get: { selectedStageTemplateId ?? stageTemplates.first?.id ?? 0 },
+                            set: { selectedStageTemplateId = $0 }
+                        )) {
+                            ForEach(stageTemplates.filter { $0.stageCount > 0 }) { template in
+                                Text(template.name).tag(template.id)
+                            }
+                        }
+                        if let selected = stageTemplates.first(where: { $0.id == selectedStageTemplateId }) {
+                            Text("\(selected.stageCount) stage workflow")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 // Dates
                 Section("Schedule") {
                     Toggle("Start Date", isOn: $hasStartDate)
@@ -148,10 +173,23 @@ struct IOSCreateJobSheet: View {
                 }
             }
             .interactiveDismissDisabled(isSaving)
+            .task { loadStageTemplates() }
         }
     }
 
     // MARK: - Actions
+
+    private func loadStageTemplates() {
+        guard let service = appCore.jobsService else { return }
+        do {
+            stageTemplates = try service.listJobStageTemplates().filter { $0.stageCount > 0 }
+            if selectedStageTemplateId == nil {
+                selectedStageTemplateId = stageTemplates.first(where: { $0.isDefault })?.id ?? stageTemplates.first?.id
+            }
+        } catch {
+            errorMessage = userFriendlyError(error, context: "load stage templates")
+        }
+    }
 
     private func createJob() {
         guard let service = appCore.jobsService else {
@@ -165,7 +203,7 @@ struct IOSCreateJobSheet: View {
         dateFormatter.dateFormat = "yyyy-MM-dd"
 
         do {
-            try service.createJob(
+            let jobId = try service.createJob(
                 jobNumber: jobNumber.trimmingCharacters(in: .whitespaces),
                 jobName: jobName.trimmingCharacters(in: .whitespaces),
                 customerName: customerName.isEmpty ? nil : customerName,
@@ -184,6 +222,9 @@ struct IOSCreateJobSheet: View {
                 createdBy: appCore.currentUser?.id,
                 jobClassification: jobClassification
             )
+            if let selectedStageTemplateId {
+                try service.assignJobStageTemplate(jobId: jobId, templateId: selectedStageTemplateId)
+            }
             appCore.onboardingManager?.markCompleted("jobs-create")
             onCreated?()
             dismiss()
