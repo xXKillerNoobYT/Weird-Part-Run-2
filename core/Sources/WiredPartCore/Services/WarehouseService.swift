@@ -2216,17 +2216,7 @@ public final class WarehouseService: Sendable {
             let jobNumber = (jobRow["job_number"] as String?) ?? "\(jobId)"
             let jobName = (jobRow["job_name"] as String?) ?? ""
 
-            // Count existing boxes for this job to determine sequence
-            let existingCount = try Int.fetchOne(
-                dbConn,
-                sql: """
-                    SELECT COUNT(*) FROM staging_boxes
-                    WHERE job_id = ? AND deleted_at IS NULL
-                    """,
-                arguments: [jobId]
-            ) ?? 0
-
-            let seq = existingCount + 1
+            let seq = try nextStagingBoxSequence(dbConn: dbConn, jobId: jobId)
             let seqStr = String(format: "%02d", seq)
             let boxNumber = "\(jobNumber)-\(seqStr)"
 
@@ -2342,13 +2332,7 @@ public final class WarehouseService: Sendable {
             )
 
             // Create next box (inlined for atomicity — no nested db.writer.write)
-            let existingCount = try Int.fetchOne(
-                dbConn,
-                sql: "SELECT COUNT(*) FROM staging_boxes WHERE job_id = ? AND deleted_at IS NULL",
-                arguments: [jobId]
-            ) ?? 0
-
-            let seq = existingCount + 1
+            let seq = try nextStagingBoxSequence(dbConn: dbConn, jobId: jobId)
             let seqStr = String(format: "%02d", seq)
             let boxNumber = "\(jobNumber)-\(seqStr)"
             let shortName = buildShortLabel(jobName: jobName)
@@ -2398,6 +2382,23 @@ public final class WarehouseService: Sendable {
                 arguments: [boxId]
             )
         }
+    }
+
+    private func nextStagingBoxSequence(dbConn: Database, jobId: Int64) throws -> Int {
+        let boxNumbers = try String.fetchAll(
+            dbConn,
+            sql: "SELECT box_number FROM staging_boxes WHERE job_id = ?",
+            arguments: [jobId]
+        )
+
+        let highest = boxNumbers.compactMap { boxNumber -> Int? in
+            guard let dashIndex = boxNumber.lastIndex(of: "-") else { return nil }
+            let suffixStart = boxNumber.index(after: dashIndex)
+            guard suffixStart < boxNumber.endIndex else { return nil }
+            return Int(boxNumber[suffixStart...])
+        }.max() ?? 0
+
+        return highest + 1
     }
 
     /// Build a short label from a job name for box labeling.

@@ -421,6 +421,32 @@ struct WarehouseAuditTests {
         #expect(boxes.isEmpty)
     }
 
+    @Test("Staging box sequence does not reuse number after soft delete")
+    func testStagingBoxSequenceAfterSoftDelete() throws {
+        let env = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-100")
+
+        let first = try env.warehouse.createStagingBox(jobId: jobId)
+        _ = try env.warehouse.createStagingBox(jobId: jobId)
+        try env.warehouse.deleteStagingBox(boxId: first.id)
+
+        let third = try env.warehouse.createStagingBox(jobId: jobId)
+        #expect(third.boxNumber == "J-100-03")
+    }
+
+    @Test("markBoxFull successor sequence does not reuse number after soft delete")
+    func testMarkBoxFullSequenceAfterSoftDelete() throws {
+        let env = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-200")
+
+        let first = try env.warehouse.createStagingBox(jobId: jobId)
+        let second = try env.warehouse.createStagingBox(jobId: jobId)
+        try env.warehouse.deleteStagingBox(boxId: first.id)
+
+        let next = try env.warehouse.markBoxFull(boxId: second.id)
+        #expect(next.boxNumber == "J-200-03")
+    }
+
     // MARK: - Trailers
 
     @Test("Trailer lifecycle: create, update, list")
