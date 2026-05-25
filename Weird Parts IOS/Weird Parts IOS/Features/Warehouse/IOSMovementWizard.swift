@@ -28,6 +28,7 @@ struct IOSMovementWizard: View {
     @State private var selectedParts: [WizardPart] = []
     @State private var partSearchText = ""
     @State private var partSearchResults: [PartSearchRow] = []
+    @State private var partSelectionError: String?
 
     // Step 3: Quantities (stored in selectedParts[].qty)
 
@@ -375,6 +376,31 @@ struct IOSMovementWizard: View {
                         .font(.subheadline)
                 }
                 .buttonStyle(.bordered)
+            }
+
+            if let error = partSelectionError {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .accessibilityHidden(true)
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        partSelectionError = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss stock warning")
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
             }
 
             partSearchBar
@@ -906,12 +932,21 @@ struct IOSMovementWizard: View {
     private func addPart(_ part: PartSearchRow) {
         guard !selectedParts.contains(where: { $0.partId == part.id }) else { return }
         guard selectedParts.count < 20 else { return }
+        guard let availableQty = part.availableQty else {
+            partSelectionError = "Unable to add \(part.name) because stock could not be loaded. Please try again."
+            return
+        }
+        guard availableQty > 0 else {
+            partSelectionError = "Unable to add \(part.name) because no stock is currently available."
+            return
+        }
+        partSelectionError = nil
         selectedParts.append(WizardPart(
             partId: part.id,
             name: part.name,
             code: part.code,
             qty: 1,
-            availableQty: part.availableQty ?? 999
+            availableQty: availableQty
         ))
     }
 
@@ -922,19 +957,27 @@ struct IOSMovementWizard: View {
     private func addScannedPart(partId: Int64, name: String, code: String?) {
         guard !selectedParts.contains(where: { $0.partId == partId }) else { return }
         guard selectedParts.count < 20 else { return }
-
-        var availableQty = 999
-        if let service = appCore.partsService {
-            availableQty = (try? service.getPartStockSummary(partId: partId).total) ?? 999
+        guard let service = appCore.partsService else {
+            partSelectionError = "Unable to add \(name) because stock could not be loaded. Please try again."
+            return
         }
-
-        selectedParts.append(WizardPart(
-            partId: partId,
-            name: name,
-            code: code,
-            qty: 1,
-            availableQty: availableQty
-        ))
+        do {
+            let availableQty = try service.getPartStockSummary(partId: partId).total
+            guard availableQty > 0 else {
+                partSelectionError = "Unable to add \(name) because no stock is currently available."
+                return
+            }
+            partSelectionError = nil
+            selectedParts.append(WizardPart(
+                partId: partId,
+                name: name,
+                code: code,
+                qty: 1,
+                availableQty: availableQty
+            ))
+        } catch {
+            partSelectionError = "Unable to add \(name) because stock could not be loaded. Please try again."
+        }
     }
 
     // MARK: - Execute
