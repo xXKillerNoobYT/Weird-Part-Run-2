@@ -79,7 +79,7 @@ public final class AppDatabase: Sendable {
                 let src = path + suffix
                 let dst = backupPath + suffix
                 if fileManager.fileExists(atPath: src) {
-                    try? fileManager.copyItem(atPath: src, toPath: dst)
+                    try fileManager.copyItem(atPath: src, toPath: dst)
                 }
             }
 
@@ -100,6 +100,9 @@ public final class AppDatabase: Sendable {
 
             return backupPath
         } catch {
+            try? fileManager.removeItem(atPath: backupPath)
+            try? fileManager.removeItem(atPath: backupPath + "-wal")
+            try? fileManager.removeItem(atPath: backupPath + "-shm")
             return nil
         }
     }
@@ -108,16 +111,18 @@ public final class AppDatabase: Sendable {
     public static func restoreDatabase(from backupPath: String, to dbPath: String) throws {
         let fileManager = FileManager.default
         // Remove current DB files
-        try? fileManager.removeItem(atPath: dbPath)
-        try? fileManager.removeItem(atPath: dbPath + "-wal")
-        try? fileManager.removeItem(atPath: dbPath + "-shm")
+        for target in [dbPath, dbPath + "-wal", dbPath + "-shm"] {
+            if fileManager.fileExists(atPath: target) {
+                try fileManager.removeItem(atPath: target)
+            }
+        }
         // Copy backup into place
         try fileManager.copyItem(atPath: backupPath, toPath: dbPath)
         // Restore WAL/SHM if they exist
         for suffix in ["-wal", "-shm"] {
             let src = backupPath + suffix
             if fileManager.fileExists(atPath: src) {
-                try? fileManager.copyItem(atPath: src, toPath: dbPath + suffix)
+                try fileManager.copyItem(atPath: src, toPath: dbPath + suffix)
             }
         }
     }

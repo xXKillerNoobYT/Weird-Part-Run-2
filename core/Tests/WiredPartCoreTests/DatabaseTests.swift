@@ -1,5 +1,6 @@
 import Testing
 import GRDB
+import Foundation
 @testable import WiredPartCore
 
 @Suite("Database Migration Tests")
@@ -340,5 +341,46 @@ struct DatabaseTests {
 
         #expect(columns.contains("budget_limit"))
         #expect(columns.contains("budget_alert_percent"))
+    }
+
+    @Test("Pre-migration backup preserves WAL state and restore keeps committed rows")
+    func testBackupAndRestorePreservesWALCommittedData() throws {
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory
+            .appendingPathComponent("wiredpart-backup-wal-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: tempDir) }
+
+        let livePath = tempDir.appendingPathComponent("live.sqlite").path
+        var config = Configuration()
+        config.prepareDatabase { db in
+            try db.execute(sql: "PRAGMA journal_mode = WAL")
+            try db.execute(sql: "PRAGMA wal_autocheckpoint = 0")
+        }
+        let queue = try DatabaseQueue(path: livePath, configuration: config)
+        try queue.write { db in
+            try db.execute(sql: "CREATE TABLE t(id INTEGER PRIMARY KEY, value TEXT)")
+            try db.execute(sql: "INSERT INTO t(value) VALUES ('committed-only-in-wal')")
+        }
+        #expect(fileManager.fileExists(atPath: livePath + "-wal"))
+
+        guard let backupPath = AppDatabase.backupDatabase(atPath: livePath) else {
+            Issue.record("Expected backupDatabase to succeed for WAL-mode database")
+            return
+        }
+        #expect(fileManager.fileExists(atPath: backupPath + "-wal"))
+
+        let backedUpValue = try DatabaseQueue(path: backupPath).read { db in
+            try String.fetchOne(db, sql: "SELECT value FROM t WHERE id = 1")
+        }
+        #expect(backedUpValue == "committed-only-in-wal")
+
+        let restorePath = tempDir.appendingPathComponent("restored.sqlite").path
+        try AppDatabase.restoreDatabase(from: backupPath, to: restorePath)
+
+        let restoredValue = try DatabaseQueue(path: restorePath).read { db in
+            try String.fetchOne(db, sql: "SELECT value FROM t WHERE id = 1")
+        }
+        #expect(restoredValue == "committed-only-in-wal")
     }
 }
