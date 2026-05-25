@@ -494,9 +494,44 @@ struct FleetServiceTests {
 
         #expect(tableExists, "vehicle_location_logs should be created by migrations")
         #expect(
-            indexNames.contains("idx_vll_vehicle_deleted_id"),
-            "listTelematicsData latest-per-vehicle lookup needs an index on vehicle_id/deleted_at/id"
+            indexNames.contains("idx_vll_latest_active"),
+            "listTelematicsData latest-per-vehicle lookup needs a partial compound index on (vehicle_id, id) WHERE deleted_at IS NULL"
         )
+    }
+
+    @Test("listTelematicsData returns latest live row per vehicle, ignoring soft-deleted logs")
+    func testTelematicsLatestRowPerVehicle() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
+            vehicleNumber: "V-TEL1", vehicleName: "Telematics Truck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+
+        // Insert two live rows (older then newer) and one soft-deleted row.
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO vehicle_location_logs
+                    (vehicle_id, user_id, latitude, longitude, speed, status, recorded_at, deleted_at)
+                VALUES
+                    (?, ?, 40.0, -74.0, 55.0, 'moving', datetime('now', '-10 minutes'), NULL),
+                    (?, ?, 41.0, -75.0, 60.0, 'moving', datetime('now', '-5 minutes'),  NULL),
+                    (?, ?, 42.0, -76.0, 0.0,  'parked', datetime('now'),                datetime('now'))
+                """,
+                arguments: [
+                    vehicleId, env.adminUserId,
+                    vehicleId, env.adminUserId,
+                    vehicleId, env.adminUserId
+                ]
+            )
+        }
+
+        let data = try env.fleet.listTelematicsData()
+        // One row per vehicle; the latest *live* row is the second inserted row (lat=41).
+        #expect(data.count == 1, "Expected exactly one telematics row for the vehicle")
+        #expect(data[0].latitude == 41.0, "Expected the most recent live latitude (41.0)")
+        #expect(data[0].longitude == -75.0, "Expected the most recent live longitude (-75.0)")
     }
 
     // MARK: - Vehicle Tools
