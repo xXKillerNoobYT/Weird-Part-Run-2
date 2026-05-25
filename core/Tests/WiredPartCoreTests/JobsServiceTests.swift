@@ -253,8 +253,8 @@ struct JobsServiceTests {
         #expect(summary.totalEntries >= 1)
     }
 
-    @Test("Daily overtime threshold spans multiple labor entries")
-    func testDailyOvertimeThresholdSpansMultipleLaborEntries() throws {
+    @Test("split-job same-day overtime applies to the entry crossing 8 hours")
+    func testSplitJobSameDayOvertime() throws {
         let env = try E2ETestHelpers.setUp()
         let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-1", name: "First OT Job")
         let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-2", name: "Second OT Job")
@@ -267,9 +267,9 @@ struct JobsServiceTests {
                     (
                         ?,
                         ?,
-                        date(datetime('now', '-4 hours')) || ' 00:00:00',
-                        date(datetime('now', '-4 hours')) || ' 06:00:00',
-                        6.0,
+                        date(datetime('now', '-5 hours')) || ' 00:00:00',
+                        date(datetime('now', '-5 hours')) || ' 05:00:00',
+                        5.0,
                         0.0,
                         'completed',
                         datetime('now')
@@ -280,7 +280,7 @@ struct JobsServiceTests {
         let secondLaborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: secondJobId)
         try env.db.writer.write { db in
             try db.execute(
-                sql: "UPDATE labor_entries SET clock_in = datetime('now', '-4 hours') WHERE id = ?",
+                sql: "UPDATE labor_entries SET clock_in = datetime('now', '-5 hours') WHERE id = ?",
                 arguments: [secondLaborEntryId]
             )
         }
@@ -295,8 +295,81 @@ struct JobsServiceTests {
             )
         }
 
-        #expect(secondEntry?["regular_hours"] as Double? == 2.0)
+        #expect(secondEntry?["regular_hours"] as Double? == 3.0)
         #expect(secondEntry?["overtime_hours"] as Double? == 2.0)
+    }
+
+    @Test("single-entry overtime still splits 10h into 8 regular and 2 overtime")
+    func testSingleEntryOvertimeSplit() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-SINGLE", name: "Single OT Job")
+
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE labor_entries SET clock_in = datetime('now', '-10 hours') WHERE id = ?",
+                arguments: [laborEntryId]
+            )
+        }
+
+        try env.jobs.clockOut(laborEntryId: laborEntryId)
+
+        let entry = try env.db.writer.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT regular_hours, overtime_hours FROM labor_entries WHERE id = ?",
+                arguments: [laborEntryId]
+            )
+        }
+
+        #expect(entry?["regular_hours"] as Double? == 8.0)
+        #expect(entry?["overtime_hours"] as Double? == 2.0)
+    }
+
+    @Test("same-day entries below threshold stay fully regular")
+    func testSameDayEntriesBelowThresholdStayRegular() throws {
+        let env = try E2ETestHelpers.setUp()
+        let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-LOW-1", name: "Low Threshold Job 1")
+        let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-LOW-2", name: "Low Threshold Job 2")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES
+                    (
+                        ?,
+                        ?,
+                        date(datetime('now', '-3 hours')) || ' 00:00:00',
+                        date(datetime('now', '-3 hours')) || ' 02:00:00',
+                        2.0,
+                        0.0,
+                        'completed',
+                        datetime('now')
+                    )
+                """, arguments: [env.adminUserId, firstJobId])
+        }
+
+        let secondLaborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: secondJobId)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE labor_entries SET clock_in = datetime('now', '-3 hours') WHERE id = ?",
+                arguments: [secondLaborEntryId]
+            )
+        }
+
+        try env.jobs.clockOut(laborEntryId: secondLaborEntryId)
+
+        let secondEntry = try env.db.writer.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT regular_hours, overtime_hours FROM labor_entries WHERE id = ?",
+                arguments: [secondLaborEntryId]
+            )
+        }
+
+        #expect(secondEntry?["regular_hours"] as Double? == 3.0)
+        #expect(secondEntry?["overtime_hours"] as Double? == 0.0)
     }
 
     // MARK: - Team Members
