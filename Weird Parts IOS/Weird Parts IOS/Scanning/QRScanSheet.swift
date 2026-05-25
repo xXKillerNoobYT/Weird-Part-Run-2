@@ -234,16 +234,22 @@ struct QRScanSheet: View {
                     case .detected(let payload, _):
                         await processPayload(payload)
                     case .error(let msg):
-                        scanError = msg
+                        await MainActor.run {
+                            scanError = msg
+                        }
                     case .permissionDenied:
-                        scanError = "Camera permission required. Enable in Settings."
-                        isScanning = false
+                        await MainActor.run {
+                            scanError = "Camera permission required. Enable in Settings."
+                            isScanning = false
+                        }
                         return
                     }
                 }
             } catch {
-                scanError = userFriendlyError(error, context: "scan item")
-                isScanning = false
+                await MainActor.run {
+                    scanError = userFriendlyError(error, context: "scan item")
+                    isScanning = false
+                }
             }
         }
     }
