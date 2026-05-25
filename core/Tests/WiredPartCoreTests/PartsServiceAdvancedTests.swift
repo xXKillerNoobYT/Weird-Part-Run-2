@@ -289,6 +289,22 @@ struct PartsServiceAdvancedTests {
         #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid number for markup_percent: forty" })
     }
 
+    @Test("previewPartsImportCSV keeps rows with valid numeric pricing fields")
+    func testPreviewPartsImportCSVAcceptsValidNumericValues() throws {
+        let env = try E2ETestHelpers.setUp()
+        let csv = """
+        name,code,category,cost_price,markup_percent
+        Good Price Part,GOOD-001,Test,12.50,40
+        """
+
+        let preview = try env.parts.previewPartsImportCSV(csv)
+
+        #expect(preview.errors.isEmpty)
+        #expect(preview.newParts.count == 1)
+        #expect(preview.newParts.first?.fields["cost_price"] == "12.50")
+        #expect(preview.newParts.first?.fields["markup_percent"] == "40")
+    }
+
     @Test("commitPartsImportCSV rejects preview errors before writing partial state")
     func testCommitPartsImportCSVRejectsErrorsWithoutPartialWrites() throws {
         let env = try E2ETestHelpers.setUp()
