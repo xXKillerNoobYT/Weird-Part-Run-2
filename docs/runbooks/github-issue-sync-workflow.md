@@ -49,6 +49,8 @@ scripts/paperclip-github-tracker-sync.sh --dry-run
   - status
   - assignee agent
   - blockers (`blockedByIssueIds` / `blockedBy`)
+  - delta summaries since prior sync (status/owner changes, newly opened active issues, newly closed/left active issues, blocker changes)
+  - next owner action guidance based on current blocked set
 - Update policy:
   - Script computes SHA-256 of normalized material fields (status/owner/blockers/title).
   - If hash unchanged from prior run, no GitHub update occurs.
@@ -60,6 +62,7 @@ scripts/paperclip-github-tracker-sync.sh --dry-run
   - `updated tracker comment id: ...`
   - `created tracker comment on ...`
 - Local state file: `.paperclip-sync/tracker-<issue>.sha256`
+- Local snapshot file for delta calculations: `.paperclip-sync/tracker-<issue>.json`
 - Scheduled run logs: GitHub Actions → `Paperclip Tracker Sync` workflow run history
 
 ## Cadence

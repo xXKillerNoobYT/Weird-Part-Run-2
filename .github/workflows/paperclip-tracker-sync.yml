@@ -35,6 +35,7 @@ jobs:
             paperclip-tracker-sync-
 
       - name: Validate required configuration
+        id: validate_config
         shell: bash
         run: |
           set -euo pipefail
@@ -47,9 +48,12 @@ jobs:
           done
           if [[ "$missing" -eq 1 ]]; then
             echo "Skipping sync because required Paperclip secrets are not configured."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
 
       - name: Sync tracker from Paperclip
+        if: steps.validate_config.outputs.configured == 'true'
         shell: bash
         run: scripts/paperclip-github-tracker-sync.sh

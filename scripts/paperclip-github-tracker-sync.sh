@@ -98,6 +98,7 @@ REPO="${REPO_ARG:-${POSITIONAL[0]:-${GITHUB_REPO:-xXKillerNoobYT/Weird-Part-Run-
 TRACKER_NUMBER="${TRACKER_NUMBER_ARG:-${POSITIONAL[1]:-${GITHUB_TRACKER_ISSUE:-372}}}"
 STATE_DIR="${STATE_DIR_ARG:-${POSITIONAL[2]:-.paperclip-sync}}"
 STATE_PATH="$STATE_DIR/tracker-${TRACKER_NUMBER}.sha256"
+STATE_DATA_PATH="$STATE_DIR/tracker-${TRACKER_NUMBER}.json"
 mkdir -p "$STATE_DIR"
 
 if [[ ! "$REPO" =~ ^[^/]+/[^/]+$ ]]; then
@@ -120,6 +121,37 @@ AGENTS_JSON="$(curl -fsS \
   -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
   "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/agents")"
 
+NORMALIZED_JSON="$(
+  jq -cS -n \
+    --argjson issues "$ISSUES_JSON" \
+    --argjson agents "$AGENTS_JSON" '
+    def agent_name($id):
+      ($agents | map(select(.id == $id)) | .[0].name) // "unassigned";
+
+    $issues
+    | map({
+        identifier: (.identifier // (.id | tostring)),
+        title: (.title // "(untitled)"),
+        status: (.status // "unknown"),
+        priority,
+        assigneeAgentId,
+        assigneeName: agent_name(.assigneeAgentId),
+        blockerIds: (
+          (.blockedByIssueIds // [] | map(tostring))
+          + ((.blockedBy // []) | map(.identifier // .id // tostring))
+        ) | unique | sort
+      })
+    | sort_by(.identifier)
+  '
+)"
+
+PREV_SYNC_JSON='[]'
+if [[ -f "$STATE_DATA_PATH" ]]; then
+  if jq -e . "$STATE_DATA_PATH" >/dev/null 2>&1; then
+    PREV_SYNC_JSON="$(cat "$STATE_DATA_PATH")"
+  fi
+fi
+
 render_link() {
   local identifier="$1"
   if [[ -n "$WEB_URL" ]]; then
@@ -132,69 +164,138 @@ render_link() {
 
 COMMENT_BODY="$(
   jq -nr \
-    --argjson issues "$ISSUES_JSON" \
-    --argjson agents "$AGENTS_JSON" \
+    --argjson normalized "$NORMALIZED_JSON" \
+    --argjson previous "$PREV_SYNC_JSON" \
     --arg stamp "$STAMP" '
-    def agent_name($id):
-      ($agents | map(select(.id == $id)) | .[0].name) // "unassigned";
-
-    def issue_sort_key: .identifier // .id // "";
-
-    def normalized:
-      $issues
-      | map({
-          identifier,
-          title,
-          status,
-          priority,
-          assigneeAgentId,
-          blockedByIssueIds: (
-            (.blockedByIssueIds // [])
-            + ((.blockedBy // []) | map(.id))
-          ) | unique | sort
-        })
-      | sort_by(issue_sort_key);
+    def as_map($arr):
+      reduce $arr[] as $item ({}; .[$item.identifier] = $item);
 
     def blocker_summary($issue):
-      if (($issue.blockedByIssueIds // []) | length) == 0 then "none"
-      else (($issue.blockedByIssueIds // []) | map(.identifier // .id // tostring) | join(", "))
+      if (($issue.blockerIds // []) | length) == 0 then "none"
+      else ($issue.blockerIds | join(", "))
       end;
+
+    def status_owner_changes($current; $previous):
+      as_map($current) as $curr
+      | as_map($previous) as $prev
+      | (
+          ($current | map(.identifier))
+          | map(select($prev[.] != null))
+          | map(
+              {
+                identifier: .,
+                oldStatus: ($prev[.].status // "unknown"),
+                newStatus: ($curr[.].status // "unknown"),
+                oldOwner: ($prev[.].assigneeName // "unassigned"),
+                newOwner: ($curr[.].assigneeName // "unassigned")
+              }
+            )
+          | map(select(.oldStatus != .newStatus or .oldOwner != .newOwner))
+        );
+
+    def blocker_changes($current; $previous):
+      as_map($current) as $curr
+      | as_map($previous) as $prev
+      | (
+          ($current | map(.identifier))
+          | map(select($prev[.] != null))
+          | map(
+              {
+                identifier: .,
+                oldBlockers: ($prev[.].blockerIds // []),
+                newBlockers: ($curr[.].blockerIds // [])
+              }
+            )
+          | map(select(.oldBlockers != .newBlockers))
+        );
+
+    as_map($normalized) as $currentMap
+    | as_map($previous) as $previousMap
+    | (
+        ($normalized | map(.identifier))
+        - ($previous | map(.identifier))
+      ) as $opened
+    | (
+        ($previous | map(.identifier))
+        - ($normalized | map(.identifier))
+      ) as $closed
+    | status_owner_changes($normalized; $previous) as $statusOwnerDelta
+    | blocker_changes($normalized; $previous) as $blockerDelta
+    | ($normalized | map(select(.status == "blocked" or (.blockerIds | length) > 0))) as $blockedNow
+    |
 
     "# paperclip-tracker-sync:v1\n" +
     "## Paperclip Active Issues Snapshot\n\n" +
     "- Synced at (UTC): `" + $stamp + "`\n" +
     "- Active statuses: `todo`, `in_progress`, `in_review`, `blocked`\n" +
-    "- Issue count: `" + ((normalized | length) | tostring) + "`\n\n" +
+    "- Issue count: `" + (($normalized | length) | tostring) + "`\n\n" +
     "### Active Issues\n\n" +
     (
-      (normalized | map(
+      ($normalized | map(
         "- " + (.identifier // .id) +
         " | **" + (.status // "unknown") + "**" +
-        " | owner: `" + (agent_name(.assigneeAgentId)) + "`" +
+        " | owner: `" + (.assigneeName // "unassigned") + "`" +
         " | blockers: `" + blocker_summary(.) + "`" +
         " | " + (.title // "(untitled)")
       )) | join("\n")
-    ) + "\n"
+    ) + "\n\n" +
+    "### Changes Since Last Sync\n\n" +
+    "- Status/owner changes:\n" +
+    (
+      if ($statusOwnerDelta | length) == 0 then
+        "  - none\n"
+      else
+        ($statusOwnerDelta | map(
+          "  - " + .identifier +
+          ": status `" + .oldStatus + "` → `" + .newStatus + "`; owner `" + .oldOwner + "` → `" + .newOwner + "`"
+        ) | join("\n")) + "\n"
+      end
+    ) +
+    "- Newly opened active issues:\n" +
+    (
+      if ($opened | length) == 0 then
+        "  - none\n"
+      else
+        ($opened | map("  - " + . + " | " + ($currentMap[.].title // "(untitled)")) | join("\n")) + "\n"
+      end
+    ) +
+    "- Newly closed/left active set:\n" +
+    (
+      if ($closed | length) == 0 then
+        "  - none\n"
+      else
+        ($closed | map("  - " + . + " | " + ($previousMap[.].title // "(untitled)")) | join("\n")) + "\n"
+      end
+    ) +
+    "- Blocker changes:\n" +
+    (
+      if ($blockerDelta | length) == 0 then
+        "  - none\n"
+      else
+        ($blockerDelta | map(
+          "  - " + .identifier +
+          ": blockers `" +
+          (if (.oldBlockers | length) == 0 then "none" else (.oldBlockers | join(", ")) end) +
+          "` → `" +
+          (if (.newBlockers | length) == 0 then "none" else (.newBlockers | join(", ")) end) +
+          "`"
+        ) | join("\n")) + "\n"
+      end
+    ) + "\n" +
+    "### Next Owner Action\n\n" +
+    (
+      if ($blockedNow | length) == 0 then
+        "- No blocked active issues. Next owner action: advance in-progress items to review with verification evidence.\n"
+      else
+        "- `" + (($blockedNow | length) | tostring) + "` issue(s) are blocked. Next owner action: each blocked issue owner must post unblock owner/date and update blockers in Paperclip and GitHub.\n"
+      end
+    )
   '
 )"
 
 SYNC_FINGERPRINT="$(
   jq -cS -n \
-    --argjson issues "$ISSUES_JSON" '
-    $issues
-    | map({
-        identifier,
-        title,
-        status,
-        priority,
-        assigneeAgentId,
-        blockedByIssueIds: (
-          (.blockedByIssueIds // [])
-          + ((.blockedBy // []) | map(.id))
-        ) | unique | sort
-      })
-    | sort_by(.identifier // .id // "")
-  '
+    --argjson normalized "$NORMALIZED_JSON" '$normalized'
 )"
 
 # Convert bare identifiers in bullet lines to markdown links when WEB URL is present.
@@ -247,4 +348,5 @@ else
 fi
 
 printf "%s" "$CONTENT_HASH" > "$STATE_PATH"
+printf "%s" "$NORMALIZED_JSON" > "$STATE_DATA_PATH"
 echo "saved sync hash: $STATE_PATH"
