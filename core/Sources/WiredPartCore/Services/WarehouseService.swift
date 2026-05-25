@@ -761,7 +761,7 @@ public final class WarehouseService: Sendable {
 
             // Guard: performing user must exist and not be tombstoned.
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [performedBy]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(performedBy) }
 
@@ -944,7 +944,7 @@ public final class WarehouseService: Sendable {
         }
         return try db.writer.write { dbConn in
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [performedBy]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(performedBy) }
 
@@ -1244,7 +1244,7 @@ public final class WarehouseService: Sendable {
             // we retain the existing permissive behavior for stockId (tags may
             // outlive their stock row). Only the user-FK is guarded.
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [taggedBy]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(taggedBy) }
 
@@ -1323,7 +1323,7 @@ public final class WarehouseService: Sendable {
             // Guard: session-starter must not be tombstoned
             guard let _ = try Row.fetchOne(
                 dbConn,
-                sql: "SELECT id FROM users WHERE id = ? AND deleted_at IS NULL",
+                sql: "SELECT id FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1",
                 arguments: [startedBy]
             ) else {
                 throw WarehouseError.userNotFound(startedBy)
@@ -1505,7 +1505,7 @@ public final class WarehouseService: Sendable {
             // Guard: completing user must not be tombstoned (stock movements will reference them)
             guard let _ = try Row.fetchOne(
                 dbConn,
-                sql: "SELECT id FROM users WHERE id = ? AND deleted_at IS NULL",
+                sql: "SELECT id FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1",
                 arguments: [completedBy]
             ) else {
                 throw WarehouseError.userNotFound(completedBy)
@@ -1852,7 +1852,7 @@ public final class WarehouseService: Sendable {
             // pre-check, an orphan audit session with an unresolvable `started_by`
             // would appear in listAuditSessions' display joins as "Unknown" user.
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [userId]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(userId) }
 
@@ -1894,7 +1894,7 @@ public final class WarehouseService: Sendable {
         try db.writer.write { dbConn in
             if let uid = performedBy {
                 let userExists = (try Int.fetchOne(dbConn, sql: """
-                    SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                    SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                     """, arguments: [uid]) ?? 0) > 0
                 guard userExists else { throw WarehouseError.userNotFound(uid) }
                 try ServicePermissionGate.requirePermission(dbConn, userId: uid, permissionKey: "perform_audit")
@@ -2123,7 +2123,7 @@ public final class WarehouseService: Sendable {
 
             // Guard: recording user must exist and not be tombstoned.
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [recordedBy]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(recordedBy) }
 
@@ -3101,7 +3101,7 @@ public final class WarehouseService: Sendable {
             guard floorPlanExists else { throw WarehouseError.invalidDimension }
 
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [userId]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(userId) }
 
@@ -4232,7 +4232,7 @@ public final class WarehouseService: Sendable {
         guard systemCount >= 0 else { throw WarehouseError.invalidQuantity }
         return try db.writer.write { dbConn in
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [countedBy]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(countedBy) }
             let variance = userCount - systemCount
@@ -4484,7 +4484,7 @@ public final class WarehouseService: Sendable {
         guard countedQuantity >= 0 else { throw WarehouseError.invalidQuantity }
         return try db.writer.write { dbConn in
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [verifiedBy]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(verifiedBy) }
 
@@ -4617,7 +4617,7 @@ public final class WarehouseService: Sendable {
     public func updateUserRating(userId: Int64, action: String, result: String? = nil) throws {
         try db.writer.write { dbConn in
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [userId]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(userId) }
 
@@ -4721,7 +4721,7 @@ public final class WarehouseService: Sendable {
             guard areaExists else { throw WarehouseError.areaNotFound(areaId) }
 
             let checkerExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [checkedBy]) ?? 0) > 0
             guard checkerExists else { throw WarehouseError.userNotFound(checkedBy) }
 
@@ -4813,7 +4813,7 @@ public final class WarehouseService: Sendable {
     public func castConsolidationVote(voteId: Int64, userId: Int64, chosenAreaId: Int64) throws {
         try db.writer.write { dbConn in
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [userId]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(userId) }
 
@@ -4892,7 +4892,7 @@ public final class WarehouseService: Sendable {
             // Guard: reporter must be a non-tombstoned user — orphan foundBy would
             // produce Unknown-user entries in the misplaced-parts dashboard.
             let userOk = (try Int.fetchOne(dbConn, sql:
-                "SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL",
+                "SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1",
                 arguments: [foundBy]) ?? 0) > 0
             guard userOk else { throw WarehouseError.userNotFound(foundBy) }
             var log = MisplacedPartsLog(
@@ -4943,7 +4943,7 @@ public final class WarehouseService: Sendable {
             // Guard: resolver must be non-tombstoned — a blank resolved_by would
             // make the resolution appear as "Unknown" on the audit dashboard.
             let userOk = (try Int.fetchOne(dbConn, sql:
-                "SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL",
+                "SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1",
                 arguments: [resolvedBy]) ?? 0) > 0
             guard userOk else { throw WarehouseError.userNotFound(resolvedBy) }
             try dbConn.execute(sql: """
@@ -5491,7 +5491,7 @@ public final class WarehouseService: Sendable {
     ) throws -> Int? {
         try db.writer.write { dbConn in
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [resolvedBy]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(resolvedBy) }
             // Get all assignments for this part in this session

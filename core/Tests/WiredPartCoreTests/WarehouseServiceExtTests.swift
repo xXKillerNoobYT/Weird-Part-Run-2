@@ -1391,6 +1391,25 @@ struct WarehouseServiceExtTests {
         }
     }
 
+    @Test("createMovement throws userNotFound for inactive performedBy")
+    func testCreateMovement_throwsForInactivePerformedBy() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [env.adminUserId])
+        }
+
+        #expect(throws: WarehouseService.WarehouseError.userNotFound(env.adminUserId)) {
+            _ = try env.warehouse.createMovement(
+                partId: partId, qty: 1,
+                fromLocationType: nil, fromLocationId: nil,
+                toLocationType: "warehouse", toLocationId: 1,
+                movementType: "add_stock", performedBy: env.adminUserId
+            )
+        }
+    }
+
     @Test("createMovement throws insufficientStock when source qty is less than requested")
     func testCreateMovement_throwsForInsufficientStock() throws {
         let env = try E2ETestHelpers.setUp()
@@ -1473,6 +1492,20 @@ struct WarehouseServiceExtTests {
         }
     }
 
+    @Test("adjustAuditCount throws userNotFound for inactive performedBy")
+    func testAdjustAuditCount_throwsForInactivePerformedBy() throws {
+        let env = try E2ETestHelpers.setUp()
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [env.adminUserId])
+        }
+        #expect(throws: WarehouseService.WarehouseError.userNotFound(env.adminUserId)) {
+            try env.warehouse.adjustAuditCount(
+                partId: 999, locationType: "warehouse", locationId: 1,
+                newQty: 3, reason: nil, performedBy: env.adminUserId
+            )
+        }
+    }
+
     @Test("createAuditSession throws requiredFieldEmpty for blank scope")
     func testCreateAuditSession_throwsForBlankScope() throws {
         let env = try E2ETestHelpers.setUp()
@@ -1481,6 +1514,24 @@ struct WarehouseServiceExtTests {
             _ = try env.warehouse.createAuditSession(
                 scope: "   ", zone: nil, sampleSize: nil,
                 includeZeroStock: false, notes: nil, userId: env.adminUserId
+            )
+        }
+    }
+
+    @Test("createAuditSession throws userNotFound for inactive starter")
+    func testCreateAuditSession_throwsForInactiveUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [env.adminUserId])
+        }
+        #expect(throws: WarehouseService.WarehouseError.userNotFound(env.adminUserId)) {
+            _ = try env.warehouse.createAuditSession(
+                scope: "full",
+                zone: nil,
+                sampleSize: nil,
+                includeZeroStock: false,
+                notes: nil,
+                userId: env.adminUserId
             )
         }
     }
@@ -1821,6 +1872,30 @@ struct WarehouseServiceExtTests {
                              arguments: [validPart]) ?? 0
         }
         #expect(count == 0)
+    }
+
+    @Test("createBatchMovements throws userNotFound for inactive performedBy")
+    func testCreateBatchMovements_throwsForInactivePerformedBy() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "InactiveBatchPart", categoryId: catId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [env.adminUserId])
+        }
+
+        let movements = [
+            WarehouseService.MovementInput(
+                partId: partId,
+                qty: 1,
+                toLocationType: "warehouse",
+                toLocationId: 1,
+                movementType: "receive"
+            ),
+        ]
+
+        #expect(throws: WarehouseService.WarehouseError.userNotFound(env.adminUserId)) {
+            _ = try env.warehouse.createBatchMovements(movements: movements, performedBy: env.adminUserId)
+        }
     }
 
     // MARK: - is_active defense

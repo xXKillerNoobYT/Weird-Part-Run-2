@@ -641,6 +641,33 @@ struct FleetServiceTests {
         #expect(records[0].odometerReading == 5000)
     }
 
+    @Test("saveInspection throws userNotFound for inactive inspector")
+    func testSaveInspection_inactiveInspectorRejected() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
+            vehicleNumber: "V-INSP-INACTIVE",
+            vehicleName: "Inspection Inactive Truck",
+            vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [env.adminUserId])
+        }
+        #expect(throws: FleetService.FleetError.userNotFound(env.adminUserId)) {
+            _ = try env.fleet.saveInspection(
+                vehicleId: vehicleId,
+                trailerId: nil,
+                inspectorId: env.adminUserId,
+                result: "pass",
+                items: [],
+                notes: nil,
+                odometerReading: nil,
+                fuelLevel: nil
+            )
+        }
+    }
+
     // MARK: - Fleet Reports
 
     @Test("getFuelCostReport returns empty on fresh DB")
@@ -829,6 +856,39 @@ struct FleetServiceTests {
             "Soft-deleted vehicle must not receive a new driver assignment — INSERT must be pre-checked")
     }
 
+    @Test("assignDriver creates no assignment for inactive user")
+    func testAssignDriver_noAssignmentForInactiveUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
+            vehicleNumber: "V-ASGN-INACTIVE",
+            vehicleName: "Inactive User Truck",
+            vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let inactiveUserId = try env.auth.createUser(displayName: "Inactive Fleet User", pin: "9999")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [inactiveUserId])
+        }
+
+        try env.fleet.assignDriver(
+            actorId: env.adminUserId,
+            vehicleId: vehicleId,
+            userId: inactiveUserId,
+            assignmentType: "primary",
+            isTakeHome: false
+        )
+
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM vehicle_assignments WHERE vehicle_id = ? AND user_id = ? AND deleted_at IS NULL",
+                arguments: [vehicleId, inactiveUserId]
+            ) ?? 0
+        }
+        #expect(count == 0, "Inactive users must be rejected like missing/soft-deleted users")
+    }
+
     // MARK: - Input validation (iter 73)
 
     @Test("logFuelLevel rejects fuel level outside [0.0, 1.0]")
@@ -912,6 +972,24 @@ struct FleetServiceTests {
         try env.db.writer.write { db in
             try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
                            arguments: [env.adminUserId])
+        }
+        #expect(throws: FleetService.FleetError.userNotFound(env.adminUserId)) {
+            try env.fleet.updateTrailerLocation(
+                trailerId: trailerId,
+                locationType: "job",
+                locationLabel: nil,
+                jobId: nil,
+                recordedBy: env.adminUserId
+            )
+        }
+    }
+
+    @Test("updateTrailerLocation throws userNotFound for inactive recordedBy")
+    func testUpdateTrailerLocation_throwsForInactiveUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let trailerId = try env.fleet.createTrailer(actorId: env.adminUserId, trailerNumber: "T-FK-INACTIVE", trailerType: "flatbed", notes: nil)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [env.adminUserId])
         }
         #expect(throws: FleetService.FleetError.userNotFound(env.adminUserId)) {
             try env.fleet.updateTrailerLocation(
@@ -1138,6 +1216,29 @@ struct FleetServiceTests {
             try env.fleet.reportVehicleIssue(
                 vehicleId: vehicleId, reportedBy: env.adminUserId,
                 severity: "low", description: "issue on deactivated vehicle"
+            )
+        }
+    }
+
+    @Test("reportVehicleIssue throws userNotFound for inactive reporter")
+    func testReportVehicleIssue_inactiveReporterRejected() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
+            vehicleNumber: "V-ISSUE-INACTIVE",
+            vehicleName: "Issue Inactive Truck",
+            vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [env.adminUserId])
+        }
+        #expect(throws: FleetService.FleetError.userNotFound(env.adminUserId)) {
+            try env.fleet.reportVehicleIssue(
+                vehicleId: vehicleId,
+                reportedBy: env.adminUserId,
+                severity: "low",
+                description: "inactive reporter should be blocked"
             )
         }
     }
