@@ -54,8 +54,8 @@ struct SecurityAdminPage: View {
         }
         .sheet(item: $activeSheet) { _ in
             PageHelpSheet(title: "Security Help", sections: [
-                ("What This Page Does", "Shows registered devices and active user sessions. Administrators can force-logout sessions from this page."),
-                ("How to Use It", "Review device status and active sessions. To end a session, tap the red X button next to it (admin permission required). Full device and session management is available on the desktop application."),
+                ("What This Page Does", "Shows registered device records and revocable trusted device sessions. Administrators can force-logout trusted sessions from this page."),
+                ("How to Use It", "Review device status in Registered Devices. Use Revocable Sessions to remotely sign a trusted device out; Registered Devices above are status-only records. Full device and session management is available on the desktop application."),
             ])
         }
         .task { loadData() }
@@ -108,9 +108,9 @@ struct SecurityAdminPage: View {
     // MARK: - Sessions Section
 
     private var sessionsSection: some View {
-        Section("Active Sessions") {
+        Section("Revocable Sessions") {
             if sessions.isEmpty {
-                Text("No active sessions.")
+                Text("No revocable sessions.")
                     .foregroundStyle(.secondary)
                     .font(.subheadline)
             } else {
@@ -122,6 +122,9 @@ struct SecurityAdminPage: View {
                             Text("Started: \(session.createdAt)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            Text("Device ID: \(session.userId)")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
                         }
                         Spacer()
                         if appCore.hasPermission("manage_devices") {
@@ -146,7 +149,7 @@ struct SecurityAdminPage: View {
 
     private var securityInfoSection: some View {
         Section {
-            Text("Full device and session management is available on the desktop application. This page provides a read-only view of the current security state.")
+            Text("Registered Devices shows device inventory and last-seen status. Revocable Sessions shows trusted device entries that can be force-logged-out. Full device and session management is available on the desktop application.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

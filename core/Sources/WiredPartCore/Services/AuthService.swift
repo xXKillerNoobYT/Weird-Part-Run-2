@@ -672,12 +672,30 @@ public final class AuthService: Sendable {
         }
     }
 
-    /// Force-deactivate a session by its rowid in the device registry.
+    /// Force-deactivate a trusted device session by its rowid in the device registry.
+    /// The deactivation is also appended to `_change_log` so peers can sync the revocation.
     public func deactivateSession(sessionId: String) throws {
         try db.writer.write { dbConnection in
-            try dbConnection.execute(
-                sql: "UPDATE _device_registry SET is_deactivated = 1 WHERE rowid = ?",
+            guard let deviceId = try String.fetchOne(
+                dbConnection,
+                sql: "SELECT device_id FROM _device_registry WHERE rowid = ?",
                 arguments: [sessionId]
+            ) else {
+                return
+            }
+            try dbConnection.execute(
+                sql: "UPDATE _device_registry SET is_deactivated = 1 WHERE device_id = ?",
+                arguments: [deviceId]
+            )
+
+            let changedFieldsJSON = #"{"is_deactivated":1,"device_id":"\#(deviceId)"}"#
+            try dbConnection.execute(
+                sql: """
+                    INSERT INTO _change_log
+                        (table_name, record_id, operation, device_id, changed_fields, timestamp)
+                    VALUES ('_device_registry', 0, 'UPDATE', ?, ?, datetime('now'))
+                    """,
+                arguments: [deviceId, changedFieldsJSON]
             )
         }
     }
@@ -1108,7 +1126,35 @@ public final class AuthService: Sendable {
             if (row["revoked_at"] as String?) != nil { return false }
             let nowMs = Date().timeIntervalSince1970 * 1000
             let expMs = row["expires_at_ms"] as Double? ?? 0
-            return expMs > nowMs
+            guard expMs > nowMs else { return false }
+            return try !isCurrentDeviceDeactivated(in: dbConn)
+        }
+    }
+
+    private func isCurrentDeviceDeactivated(in dbConn: Database) throws -> Bool {
+        let currentDeviceId: String?
+        do {
+            currentDeviceId = try String.fetchOne(
+                dbConn,
+                sql: "SELECT value FROM settings WHERE key = 'device_id'"
+            )
+        } catch {
+            if Self.isTableNotFoundError(error) { return false }
+            throw error
+        }
+
+        guard let currentDeviceId else { return false }
+
+        do {
+            let isDeactivated = try Int.fetchOne(
+                dbConn,
+                sql: "SELECT is_deactivated FROM _device_registry WHERE device_id = ?",
+                arguments: [currentDeviceId]
+            ) ?? 0
+            return isDeactivated != 0
+        } catch {
+            if Self.isTableNotFoundError(error) { return false }
+            throw error
         }
     }
 

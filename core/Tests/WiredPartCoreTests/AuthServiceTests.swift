@@ -714,6 +714,62 @@ struct AuthServiceTests {
 
         sessions = try auth.listActiveSessions()
         #expect(sessions.isEmpty)
+
+        let changeCount: Int = try db.writer.read { dbConnection in
+            try Int.fetchOne(
+                dbConnection,
+                sql: """
+                    SELECT COUNT(*) FROM _change_log
+                    WHERE table_name = '_device_registry'
+                      AND record_id = 0
+                      AND changed_fields LIKE '%abc-device-123%'
+                    """
+            )!
+        }
+        #expect(changeCount == 1)
+    }
+
+    @Test("force-logged-out current device can no longer use access or refresh tokens")
+    func testForceLoggedOutDeviceRevokesLocalSessionAccess() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
+        let accessToken = try #require(seed.token)
+        let refreshToken = try #require(seed.refreshToken)
+        let deviceId = DeviceIdentity.current
+
+        let sessionRowId = try db.writer.write { dbConnection -> Int64 in
+            try dbConnection.execute(
+                sql: """
+                    INSERT INTO settings (key, value, category, updated_at)
+                    VALUES ('device_id', ?, 'sync', datetime('now'))
+                    """,
+                arguments: [deviceId]
+            )
+            try dbConnection.execute(
+                sql: """
+                    INSERT INTO _device_registry (device_id, device_name, platform, role, is_trusted, is_deactivated, last_seen_at)
+                    VALUES (?, 'Admin iPhone', 'ios', 'field', 1, 0, datetime('now'))
+                    """,
+                arguments: [deviceId]
+            )
+            return try Int64.fetchOne(
+                dbConnection,
+                sql: "SELECT rowid FROM _device_registry WHERE device_id = ?",
+                arguments: [deviceId]
+            )!
+        }
+
+        _ = try auth.getLocalUserProfile(token: accessToken)
+
+        try auth.deactivateSession(sessionId: "\(sessionRowId)")
+
+        #expect(throws: AuthService.AuthError.sessionRevoked) {
+            _ = try auth.getLocalUserProfile(token: accessToken)
+        }
+        #expect(throws: AuthService.AuthError.sessionRevoked) {
+            _ = try auth.refreshLocalSession(refreshToken: refreshToken)
+        }
     }
 
     @Test("listRegisteredDevices shows Unassigned for soft-deleted assigned user")
