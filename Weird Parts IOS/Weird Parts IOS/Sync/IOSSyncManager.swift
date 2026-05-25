@@ -359,6 +359,60 @@ final class IOSSyncManager {
         refreshConflictCount()
     }
 
+    /// Apply an optional manual resolution value before marking a conflict reviewed.
+    ///
+    /// Currently supported for notebook entry conflicts where the user-selected
+    /// value should be persisted to `notebook_entries` before review dismissal.
+    func resolveConflict(conflictId: Int64, selectedValue: String?) {
+        guard let db else { return }
+        do {
+            try db.writer.write { dbConn in
+                if let selectedValue,
+                   let row = try Row.fetchOne(
+                    dbConn,
+                    sql: """
+                        SELECT table_name, record_id, field_name
+                        FROM _conflict_log
+                        WHERE id = ?
+                        """,
+                    arguments: [conflictId]
+                   ) {
+                    let tableName: String = row["table_name"] ?? ""
+                    let recordId: String = row["record_id"] ?? ""
+                    let fieldName: String = row["field_name"] ?? ""
+
+                    if tableName == "notebook_entries" {
+                        let allowedFields: [String: String] = [
+                            "content": "content",
+                            "block_data": "block_data",
+                            "title": "title",
+                            "checklist_items": "checklist_items",
+                            "heading_level": "heading_level",
+                            "photo_path": "photo_path",
+                            "task_status": "task_status",
+                            "sort_order": "sort_order",
+                        ]
+
+                        if let safeColumn = allowedFields[fieldName] {
+                            try dbConn.execute(
+                                sql: "UPDATE notebook_entries SET \"\(safeColumn)\" = ?, updated_at = datetime('now') WHERE id = ?",
+                                arguments: [selectedValue, recordId]
+                            )
+                        }
+                    }
+                }
+
+                try dbConn.execute(
+                    sql: "UPDATE _conflict_log SET reviewed = 1 WHERE id = ?",
+                    arguments: [conflictId]
+                )
+            }
+        } catch {
+            logger.error("[IOSSyncManager] resolveConflict failed for id \(conflictId): \(error.localizedDescription)")
+        }
+        refreshConflictCount()
+    }
+
     /// Mark all unreviewed conflicts as reviewed.
     func markAllConflictsReviewed() {
         guard let db else { return }

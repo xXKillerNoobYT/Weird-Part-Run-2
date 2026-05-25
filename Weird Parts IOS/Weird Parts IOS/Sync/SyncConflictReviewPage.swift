@@ -101,18 +101,18 @@ struct SyncConflictReviewPage: View {
                 CriticalConflictView(
                     conflict: conflict,
                     onResolveLocal: {
-                        withAnimation { markReviewed(conflict) }
+                        withAnimation { markReviewed(conflict, selectedValue: conflict.localValue) }
                     },
                     onResolveRemote: {
-                        withAnimation { markReviewed(conflict) }
+                        withAnimation { markReviewed(conflict, selectedValue: conflict.remoteValue) }
                     }
                 )
 
             case .hard:
                 // Hard: show AI merge button or AI resolution if available
                 if let resolution = aiResolutions[conflict.id ?? 0] {
-                    AIConflictResolutionView(resolution: resolution) { _ in
-                        withAnimation { markReviewed(conflict) }
+                    AIConflictResolutionView(resolution: resolution) { selectedText in
+                        withAnimation { markReviewed(conflict, selectedValue: selectedText) }
                     }
                 } else {
                     // Standard view with AI merge button
@@ -264,9 +264,9 @@ struct SyncConflictReviewPage: View {
         return String(clean)
     }
 
-    private func markReviewed(_ conflict: ConflictLogEntry) {
+    private func markReviewed(_ conflict: ConflictLogEntry, selectedValue: String? = nil) {
         guard let id = conflict.id else { return }
-        syncManager.markConflictReviewed(conflictId: id)
+        syncManager.resolveConflict(conflictId: id, selectedValue: selectedValue)
         conflicts.removeAll { $0.id == id }
     }
 

@@ -98,20 +98,20 @@
 
 | # | Issue | Count |
 |---|-------|-------|
-| T3-01 | 6 pages use ContentUnavailableView instead of EmptyStateView | 6 pages |
+| T3-01 | Standardize remaining audited empty states | OPEN (WEI-863) |
 | T3-02 | 39 pages missing .refreshable | 39 pages |
 | T3-03 | 28 pages missing .searchable | 28 pages |
-| T3-04 | AIDispatchService not wired to AppCore | 1 service |
-| T3-05 | 9 orphan model structs in CostsModels | 9 structs |
-| T3-06 | 4 services missing isTableNotFoundError | 4 services |
-| T3-07 | Price shows 5 decimal places in receiving | Display bug |
-| T3-08 | PO number generation has duplicate risk | Data integrity |
-| T3-09 | Completing receiving with unrouted items — no warning | Silent problem |
-| T3-10 | Draft PO line item edit uses cramped alert instead of sheet | Hard to use |
-| T3-11 | Notebook AI merge not implemented | Sync conflicts unresolved |
-| T3-12 | Weekly/end-of-job reviews only partially exist | Missing feedback loop |
-| T3-13 | Multi-user audit verification not implemented | Accuracy feature missing |
-| T3-14 | JPO Hold chat threads not dual-homed | Chat fragmented |
+| T3-04 | ~~AIDispatchService not wired to AppCore~~ | ✅ CLOSED (audit false positive) |
+| T3-05 | ~~9 orphan model structs in CostsModels~~ | ✅ CLOSED (retained schema carriers) |
+| T3-06 | ~~4 services missing isTableNotFoundError~~ | ✅ CLOSED |
+| T3-07 | ~~Price shows 5 decimal places in receiving~~ | ✅ CLOSED |
+| T3-08 | ~~PO number generation has duplicate risk~~ | ✅ CLOSED (DB UNIQUE) |
+| T3-09 | ~~Completing receiving with unrouted items — no warning~~ | ✅ CLOSED |
+| T3-10 | ~~Draft PO line item edit uses cramped alert instead of sheet~~ | ✅ CLOSED |
+| T3-11 | Notebook AI/manual merge choice not persisted before review | OPEN (WEI-862) |
+| T3-12 | ~~Weekly/end-of-job reviews only partially exist~~ | ✅ CLOSED |
+| T3-13 | ~~Multi-user audit verification not implemented~~ | ✅ CLOSED |
+| T3-14 | Bulk JPO hold chat threads not fully dual-homed | OPEN (WEI-861) |
 | T3-15 | PO detail missing job grouping on line items | Hard to read |
 | T3-16 | PO detail missing delivery timeline bars | No ETA visibility |
 | T3-17 | PO detail missing receipt history timeline | No delivery tracking |
