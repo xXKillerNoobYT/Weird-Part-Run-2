@@ -458,10 +458,12 @@ public final class PartsService: Sendable {
 
                 // Build type-brand map: typeId -> [Brand]
                 var typeBrandMap: [Int64: [Brand]] = [:]
+                var typeBrandIdSetMap: [Int64: Set<Int64>] = [:]
                 for link in brandLinks {
                     let typeId: Int64 = link["type_id"]
                     let brandId: Int64 = link["brand_id"]
-                    if let brand = brandById[brandId] {
+                    if let brand = brandById[brandId],
+                       typeBrandIdSetMap[typeId, default: []].insert(brandId).inserted {
                         typeBrandMap[typeId, default: []].append(brand)
                     }
                 }
@@ -476,6 +478,16 @@ public final class PartsService: Sendable {
                 let typeColorLinks = try Row.fetchAll(
                     dbConn,
                     sql: "SELECT type_id, color_id FROM type_color_links"
+                )
+
+                // Fetch explicit SKU-level color-brand links for each type.
+                let colorBrandSKURows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT type_id, brand_id, color_id
+                        FROM color_brand_skus
+                        WHERE deleted_at IS NULL AND is_active = 1
+                        """
                 )
 
                 // Build brand+type -> color IDs map
@@ -496,6 +508,19 @@ public final class PartsService: Sendable {
                     brandTypeColorMap[generalKey, default: []].insert(colorId)
                 }
 
+                // Merge color_brand_skus into brand nodes (and ensure those brands appear for the type).
+                for row in colorBrandSKURows {
+                    guard let typeId: Int64 = row["type_id"],
+                          let brandId: Int64 = row["brand_id"],
+                          let colorId: Int64 = row["color_id"] else { continue }
+                    let brandKey = "\(typeId)-\(brandId)"
+                    brandTypeColorMap[brandKey, default: []].insert(colorId)
+                    if let brand = brandById[brandId],
+                       typeBrandIdSetMap[typeId, default: []].insert(brandId).inserted {
+                        typeBrandMap[typeId, default: []].append(brand)
+                    }
+                }
+
                 // Index colors by ID for quick lookup
                 let colorById = Dictionary(uniqueKeysWithValues: colors.compactMap { c in
                     c.id.map { ($0, c) }
@@ -514,7 +539,9 @@ public final class PartsService: Sendable {
                     brandNodes.append(BrandNode(brand: nil, colors: generalColors, allColors: colors))
 
                     // Named brands linked to this type
-                    let linkedBrands = typeBrandMap[tId] ?? []
+                    let linkedBrands = (typeBrandMap[tId] ?? []).sorted {
+                        $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                    }
                     for brand in linkedBrands {
                         let bId = brand.id ?? 0
                         let brandKey = "\(tId)-\(bId)"

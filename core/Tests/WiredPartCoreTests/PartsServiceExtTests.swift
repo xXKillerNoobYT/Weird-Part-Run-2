@@ -470,6 +470,33 @@ struct PartsServiceExtTests {
         #expect(!tree.categories.isEmpty)
     }
 
+    @Test("getHierarchy includes SKU-linked shared color across multiple brands without parts rows")
+    func testHierarchyIncludesColorBrandSKUsWithoutPartsRows() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let colorId = try env.parts.createColor(name: "Matte Black", hexCode: "#111111")
+        let brandId1 = try E2ETestHelpers.seedBrand(env, name: "Brand A")
+        let brandId2 = try E2ETestHelpers.seedBrand(env, name: "Brand B")
+
+        try env.parts.upsertColorBrandSKU(colorId: colorId, brandId: brandId1, typeId: typeId, partNumber: "A-MB")
+        try env.parts.upsertColorBrandSKU(colorId: colorId, brandId: brandId2, typeId: typeId, partNumber: "B-MB")
+
+        let tree = try env.parts.getHierarchy()
+        let typeNode = tree.categories
+            .flatMap(\.styles)
+            .flatMap(\.types)
+            .first(where: { $0.type.id == typeId })
+        let resolvedTypeNode = try #require(typeNode)
+
+        let brandNode1 = resolvedTypeNode.brandNodes.first(where: { $0.brand?.id == brandId1 })
+        let brandNode2 = resolvedTypeNode.brandNodes.first(where: { $0.brand?.id == brandId2 })
+        let resolvedBrandNode1 = try #require(brandNode1)
+        let resolvedBrandNode2 = try #require(brandNode2)
+
+        #expect(resolvedBrandNode1.colors.contains(where: { $0.id == colorId && $0.name == "Matte Black" && $0.hexCode == "#111111" }))
+        #expect(resolvedBrandNode2.colors.contains(where: { $0.id == colorId && $0.name == "Matte Black" && $0.hexCode == "#111111" }))
+    }
+
     // MARK: - Part Alternatives
 
     @Test("listPartAlternatives returns empty when no alternatives exist")
