@@ -105,6 +105,7 @@ struct PartsImportExportPage: View {
                 )
             }
         }
+        .presentationDetents([.medium, .large])
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {

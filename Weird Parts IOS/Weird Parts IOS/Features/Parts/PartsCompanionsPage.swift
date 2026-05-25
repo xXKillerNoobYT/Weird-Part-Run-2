@@ -147,6 +147,7 @@ struct PartsCompanionsPage: View {
         .sheet(item: $activeSheet) { sheet in
             sheetContent(for: sheet)
         }
+        .presentationDetents([.medium, .large])
         .alert("Delete Rule?", isPresented: $showDeleteRuleConfirm, presenting: ruleToDelete) { rule in
             Button("Delete", role: .destructive) {
                 Task { await confirmDeleteRule(rule) }

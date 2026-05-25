@@ -95,6 +95,7 @@ struct PartsBrandsPage: View {
                 )
             }
         }
+        .presentationDetents([.medium, .large])
         .onChange(of: activeSheet?.id) { _, sheetId in
             guard sheetId == nil, let brandId = pendingAddSuppliersBrandId else { return }
             pendingAddSuppliersBrandId = nil
@@ -611,6 +612,7 @@ private struct BrandDetailSheet: View {
                     .environmentObject(appCore)
                 }
             }
+            .presentationDetents([.medium, .large])
             .task { loadSuppliers() }
         }
     }

@@ -78,6 +78,7 @@ struct PartsCategoriesPage: View {
                 ]
             )
         }
+        .presentationDetents([.medium, .large])
         .task {
             await loadHierarchy()
             appCore.onboardingManager?.markCompleted("categories-browse")

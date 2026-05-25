@@ -56,6 +56,7 @@ struct PartsPricingPage: View {
         .sheet(item: $activeSheet) { sheet in
             sheetContent(sheet)
         }
+        .presentationDetents([.medium, .large])
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -732,6 +733,7 @@ struct PartsPricingPage: View {
                 .environmentObject(appCore)
             }
         }
+        .presentationDetents([.large])
         .task { await loadCascadeData() }
     }
 

@@ -84,6 +84,7 @@ struct PartsForecastingPage: View {
                 ForecastDetailSheet(row: row)
             }
         }
+        .presentationDetents([.medium, .large])
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {

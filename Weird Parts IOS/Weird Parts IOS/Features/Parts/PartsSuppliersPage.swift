@@ -129,6 +129,7 @@ struct PartsSuppliersPage: View {
                 )
             }
         }
+        .presentationDetents([.medium, .large])
         .background(DS.Background.page)
         .task {
             await loadData()
@@ -851,6 +852,7 @@ private struct SupplierDetailSheet: View {
                     .environmentObject(appCore)
                 }
             }
+            .presentationDetents([.medium, .large])
         }
     }
 

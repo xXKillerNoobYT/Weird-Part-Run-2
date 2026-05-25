@@ -1664,6 +1664,7 @@ private struct PartDetailSheet: View {
                     await onUpdate()
                 }
             }
+            .presentationDetents([.large])
             .task { await loadStock() }
             .task { appCore.onboardingManager?.markCompleted("catalog-detail") }
         }
