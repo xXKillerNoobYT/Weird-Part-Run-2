@@ -459,15 +459,30 @@ struct IOSProcurementPage: View {
 
             // Sources
             ForEach(item.sources) { source in
-                HStack(spacing: 4) {
-                    sourceIcon(source.sourceType)
-                    Text(source.sourceName)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text("qty: \(source.quantity)")
-                        .font(.caption)
-                        .monospaced()
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        sourceIcon(source.sourceType)
+                        Text(source.sourceName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("qty: \(source.quantity)")
+                            .font(.caption)
+                            .monospaced()
+                    }
+                    if let lockedSupplierId = source.lockedSupplierId {
+                        let supplierLabel = source.lockedSupplierName ?? "Supplier #\(lockedSupplierId)"
+                        HStack(spacing: 4) {
+                            Image(systemName: "lock.fill")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                                .accessibilityHidden(true)
+                            Text("Locked to \(supplierLabel)")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                        }
+                        .padding(.leading, 14)
+                    }
                 }
             }
 
@@ -476,14 +491,28 @@ struct IOSProcurementPage: View {
 
             // Generic part lock indicator
             if item.isGeneric {
-                HStack(spacing: 4) {
-                    Image(systemName: "lock.fill")
-                        .font(.caption2)
-                        .foregroundStyle(.orange)
-                        .accessibilityHidden(true)
-                    Text("Generic — supplier locked per job")
-                        .font(.caption2)
-                        .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "lock.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                            .accessibilityHidden(true)
+                        if let lockedSupplierId = item.lockedSupplierId {
+                            let supplierLabel = item.lockedSupplierName ?? "Supplier #\(lockedSupplierId)"
+                            Text("Generic — locked to \(supplierLabel)")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                        } else {
+                            Text("Generic — supplier lock applies per job")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    if let lockSourceName = item.lockSourceName {
+                        Text("Based on \(lockSourceName)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
