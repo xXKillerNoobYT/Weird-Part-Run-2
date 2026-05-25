@@ -219,6 +219,8 @@ Memory is organized by topic, not chronologically. Each entry includes when it w
 
 **Service profile:** SettingsService is a broad catch-all service — covers theme, company profiles, business profiles, break policies, tool policies, pre-trip checklists, dispatch preferences, forecast settings, clock-out questions, saved reports, daily report templates, audit settings, org thresholds, device keys, app config, and setup wizard draft (22+ logical subsystems). 53 tests.
 
+- [2026-05-25] **Resolved multi-write settings atomicity gap:** `upsertSettingsMap` writes the entire key/value map inside one `db.writer.write` transaction (not per-key transactions). Pattern rule: for `*Map`/`*Bulk`/`*Batch` helpers, transaction must wrap the loop.
+
 **`company_profiles` soft-delete pattern:** Uses only `deleted_at` (no `is_active` column). `WHERE deleted_at IS NULL` is the correct filter — do NOT flag this as an `is_active` gap.
 
 **`exportTable()` SQL table-name pattern:** Validates caller-supplied table name via parameterized `sqlite_master` lookup, then uses the DB-returned value in the query string. This is safe — same category as the GRDB partial-UPDATE allowlist idiom. Do not flag as injection risk.

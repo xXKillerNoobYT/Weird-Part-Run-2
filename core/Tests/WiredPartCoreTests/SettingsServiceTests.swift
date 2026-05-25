@@ -337,6 +337,65 @@ struct SettingsServiceTests {
         }
     }
 
+    @Test("upsertSettingsMap gives one updated_at timestamp for a successful batch")
+    func testUpsertSettingsMapBatchTimestampConsistency() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        try svc.upsertSettingsMap(
+            ["theme_mode": "dark", "primary_color": "#ff0000", "font_family": "Menlo"],
+            category: "timestamp_test"
+        )
+
+        let distinctUpdatedAtCount = try db.writer.read { dbConn in
+            try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COUNT(DISTINCT updated_at) FROM settings WHERE category = ?",
+                arguments: ["timestamp_test"]
+            ) ?? 0
+        }
+
+        #expect(distinctUpdatedAtCount == 1)
+    }
+
+    @Test("updateTheme rolls back if one key write fails")
+    func testUpdateThemeIsAtomicOnFailure() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        let original = SettingsService.ThemeSettings(
+            themeMode: "light",
+            primaryColor: "#0000ff",
+            fontFamily: "Inter"
+        )
+        _ = try svc.updateTheme(original)
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                CREATE TRIGGER fail_theme_primary_color_update
+                BEFORE INSERT ON settings
+                WHEN NEW.category = 'theme' AND NEW.key = 'primary_color'
+                BEGIN
+                    SELECT RAISE(ABORT, 'simulated theme settings failure');
+                END
+                """)
+        }
+
+        do {
+            _ = try svc.updateTheme(SettingsService.ThemeSettings(
+                themeMode: "dark",
+                primaryColor: "#ff0000",
+                fontFamily: "Menlo"
+            ))
+            Issue.record("Expected updateTheme to throw when the trigger aborts one key write")
+        } catch {
+            let persisted = try svc.getTheme()
+            #expect(persisted.themeMode == original.themeMode)
+            #expect(persisted.primaryColor == original.primaryColor)
+            #expect(persisted.fontFamily == original.fontFamily)
+        }
+    }
+
     // MARK: - Business Profile
 
     @Test("createBusinessProfile and hasBusinessProfile")
