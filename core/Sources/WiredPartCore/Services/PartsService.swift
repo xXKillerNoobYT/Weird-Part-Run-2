@@ -6012,8 +6012,8 @@ public final class PartsService: Sendable {
     ///
     /// Required columns: `name`, `category`.
     /// Optional columns: `code`, `brand`, `cost_price`, `markup_percent`,
-    /// `description`, `unit_of_measure`, `shelf_location`, `bin_location`,
-    /// `part_type`.
+    /// `min_stock`, `target_stock`, `max_stock`, `description`,
+    /// `unit_of_measure`, `shelf_location`, `bin_location`, `part_type`.
     struct PartsImportTabularRow {
         let rowNumber: Int
         let columns: [String]
@@ -6088,6 +6088,18 @@ public final class PartsService: Sendable {
                     }
                     if value < 0 {
                         preview.errors.append(PartsImportError(rowNumber: rowNumber, message: "\(numericHeader) cannot be negative"))
+                        continue
+                    }
+                }
+            }
+            for integerHeader in ["min_stock", "target_stock", "max_stock"] {
+                if let raw = fields[integerHeader] {
+                    guard let value = Int(raw) else {
+                        preview.errors.append(PartsImportError(rowNumber: rowNumber, message: "Invalid integer for \(integerHeader): \(raw)"))
+                        continue
+                    }
+                    if value < 0 {
+                        preview.errors.append(PartsImportError(rowNumber: rowNumber, message: "\(integerHeader) cannot be negative"))
                         continue
                     }
                 }
@@ -6171,6 +6183,9 @@ public final class PartsService: Sendable {
                     let brandId = try findOrCreateBrandInTransaction(row.brand)
                     let cost = row.fields["cost_price"].flatMap(Double.init) ?? 0
                     let markup = row.fields["markup_percent"].flatMap(Double.init) ?? 0
+                    let minStock = row.fields["min_stock"].flatMap(Int.init)
+                    let targetStock = row.fields["target_stock"].flatMap(Int.init)
+                    let maxStock = row.fields["max_stock"].flatMap(Int.init)
                     let partType = row.fields["part_type"] ?? "general"
 
                     try Validators.requireName(row.name, field: "Part name")
@@ -6182,10 +6197,11 @@ public final class PartsService: Sendable {
                         INSERT INTO parts (
                             category_id, brand_id, part_type, code, name, description,
                             unit_of_measure, company_cost_price, weighted_avg_cost,
-                            company_markup_percent, shelf_location, bin_location,
+                            company_markup_percent, min_stock_level, target_stock_level, max_stock_level,
+                            shelf_location, bin_location,
                             auto_add_to_wishlist_when_low, is_deprecated, is_qr_tagged,
                             is_active, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 1, datetime('now'), datetime('now'))
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 1, datetime('now'), datetime('now'))
                         """, arguments: [
                             categoryId,
                             brandId,
@@ -6197,6 +6213,9 @@ public final class PartsService: Sendable {
                             cost,
                             cost,
                             markup,
+                            minStock,
+                            targetStock,
+                            maxStock,
                             row.fields["shelf_location"],
                             row.fields["bin_location"]
                         ])
@@ -6209,6 +6228,9 @@ public final class PartsService: Sendable {
                     let brandId = try findOrCreateBrandInTransaction(row.brand)
                     let cost = row.fields["cost_price"].flatMap(Double.init)
                     let markup = row.fields["markup_percent"].flatMap(Double.init)
+                    let minStock = row.fields["min_stock"].flatMap(Int.init)
+                    let targetStock = row.fields["target_stock"].flatMap(Int.init)
+                    let maxStock = row.fields["max_stock"].flatMap(Int.init)
 
                     var clauses = [
                         "name = ?",
@@ -6223,6 +6245,9 @@ public final class PartsService: Sendable {
                     if let unit = row.fields["unit_of_measure"] { clauses.append("unit_of_measure = ?"); args.append(unit) }
                     if let cost { clauses.append("company_cost_price = ?"); args.append(cost); clauses.append("weighted_avg_cost = ?"); args.append(cost) }
                     if let markup { clauses.append("company_markup_percent = ?"); args.append(markup) }
+                    if let minStock { clauses.append("min_stock_level = ?"); args.append(minStock) }
+                    if let targetStock { clauses.append("target_stock_level = ?"); args.append(targetStock) }
+                    if let maxStock { clauses.append("max_stock_level = ?"); args.append(maxStock) }
                     if let shelf = row.fields["shelf_location"] { clauses.append("shelf_location = ?"); args.append(shelf) }
                     if let bin = row.fields["bin_location"] { clauses.append("bin_location = ?"); args.append(bin) }
                     clauses.append("updated_at = datetime('now')")

@@ -414,12 +414,19 @@ struct PartsServiceAdvancedTests {
     func testCommitPartsImportCSVCreatesAndUpdates() throws {
         let env = try E2ETestHelpers.setUp()
         let existingCategoryId = try E2ETestHelpers.seedCategory(env, name: "Existing Category")
-        let existingId = try env.parts.createPart(categoryId: existingCategoryId, name: "Existing Part", code: "EX-002")
+        let existingId = try env.parts.createPart(
+            categoryId: existingCategoryId,
+            name: "Existing Part",
+            code: "EX-002",
+            minStockLevel: 1,
+            targetStockLevel: 2,
+            maxStockLevel: 3
+        )
 
         var preview = try env.parts.previewPartsImportCSV("""
-        name,code,category,brand,cost_price,markup_percent,unit_of_measure,shelf_location,bin_location
-        Created Part,NEW-002,Created Category,Created Brand,7.5,20,each,A1,B2
-        Updated Name,EX-002,Existing Category,Created Brand,8.5,30,box,C3,D4
+        name,code,category,brand,cost_price,markup_percent,min_stock,target_stock,max_stock,unit_of_measure,shelf_location,bin_location
+        Created Part,NEW-002,Created Category,Created Brand,7.5,20,5,20,40,each,A1,B2
+        Updated Name,EX-002,Existing Category,Created Brand,8.5,30,6,24,48,box,C3,D4
         """)
         preview.conflicts = preview.conflicts.map { conflict in
             var editable = conflict
@@ -434,9 +441,32 @@ struct PartsServiceAdvancedTests {
         #expect(result.skipped == 0)
         let created = try #require(try env.parts.findPartByCode("NEW-002"))
         #expect(created.name == "Created Part")
+        #expect(created.minStockLevel == 5)
+        #expect(created.targetStockLevel == 20)
+        #expect(created.maxStockLevel == 40)
         let updated = try #require(try env.parts.findPartByCode("EX-002"))
         #expect(updated.id == existingId)
         #expect(updated.name == "Updated Name")
+        #expect(updated.minStockLevel == 6)
+        #expect(updated.targetStockLevel == 24)
+        #expect(updated.maxStockLevel == 48)
+    }
+
+    @Test("previewPartsImportCSV reports invalid stock threshold values")
+    func testPreviewPartsImportCSVRejectsInvalidStockThresholds() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,min_stock,target_stock,max_stock
+        Bad Min,MIN-001,Stock Category,not-an-int,10,20
+        Negative Target,TGT-001,Stock Category,1,-2,20
+        """)
+
+        #expect(preview.errors.count == 2)
+        #expect(preview.errors.map(\.rowNumber).contains(2))
+        #expect(preview.errors.map(\.rowNumber).contains(3))
+        #expect(preview.errors.contains { $0.message.contains("Invalid integer for min_stock") })
+        #expect(preview.errors.contains { $0.message.contains("target_stock cannot be negative") })
     }
 
     @Test("previewPartsImportXLSX parses first worksheet through shared import pipeline")
