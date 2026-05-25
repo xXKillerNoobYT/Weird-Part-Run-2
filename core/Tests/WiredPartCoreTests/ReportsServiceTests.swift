@@ -167,7 +167,7 @@ struct ReportsServiceTests {
             userId: env.adminUserId,
             isShared: false
         )
-        try env.reports.deleteSavedReport(reportId: reportId)
+        try env.reports.deleteSavedReport(reportId: reportId, byUserId: env.adminUserId)
         let saved = try env.reports.getSavedReports(userId: env.adminUserId)
         #expect(!saved.contains(where: { $0.id == reportId }))
     }
@@ -183,7 +183,111 @@ struct ReportsServiceTests {
             userId: env.adminUserId,
             isShared: true
         )
-        try env.reports.markReportRun(reportId: reportId)
+        try env.reports.markReportRun(reportId: reportId, byUserId: env.adminUserId)
+        let saved = try env.reports.getSavedReports(userId: env.adminUserId)
+        let updated = saved.first { $0.id == reportId }
+        #expect(updated?.lastRunAt != nil)
+    }
+
+    @Test("Non-owner cannot delete another user's private report")
+    func testDeleteSavedReport_nonOwnerPrivateDenied() throws {
+        let env = try E2ETestHelpers.setUp()
+        let reportId = try env.reports.saveReportConfig(
+            name: "Owner Private",
+            type: "labor",
+            columns: ["employee"],
+            filters: [:],
+            userId: env.adminUserId,
+            isShared: false
+        )
+        let otherUserId = try env.auth.createUser(displayName: "Report Intruder", pin: "5678")
+
+        #expect(throws: ReportsService.ReportsError.notOwner) {
+            try env.reports.deleteSavedReport(reportId: reportId, byUserId: otherUserId)
+        }
+    }
+
+    @Test("Non-owner cannot delete another user's shared report")
+    func testDeleteSavedReport_nonOwnerSharedDenied() throws {
+        let env = try E2ETestHelpers.setUp()
+        let reportId = try env.reports.saveReportConfig(
+            name: "Owner Shared",
+            type: "labor",
+            columns: ["employee"],
+            filters: [:],
+            userId: env.adminUserId,
+            isShared: true
+        )
+        let otherUserId = try env.auth.createUser(displayName: "Shared Intruder", pin: "5678")
+
+        #expect(throws: ReportsService.ReportsError.notOwner) {
+            try env.reports.deleteSavedReport(reportId: reportId, byUserId: otherUserId)
+        }
+    }
+
+    @Test("Non-owner cannot mark run on private report")
+    func testMarkReportRun_nonOwnerPrivateDenied() throws {
+        let env = try E2ETestHelpers.setUp()
+        let reportId = try env.reports.saveReportConfig(
+            name: "Private Runner",
+            type: "spending",
+            columns: ["job", "amount"],
+            filters: [:],
+            userId: env.adminUserId,
+            isShared: false
+        )
+        let otherUserId = try env.auth.createUser(displayName: "Run Intruder", pin: "5678")
+
+        #expect(throws: ReportsService.ReportsError.notOwner) {
+            try env.reports.markReportRun(reportId: reportId, byUserId: otherUserId)
+        }
+    }
+
+    @Test("Non-owner can mark run on shared report")
+    func testMarkReportRun_nonOwnerSharedAllowed() throws {
+        let env = try E2ETestHelpers.setUp()
+        let reportId = try env.reports.saveReportConfig(
+            name: "Shared Runner",
+            type: "spending",
+            columns: ["job", "amount"],
+            filters: [:],
+            userId: env.adminUserId,
+            isShared: true
+        )
+        let otherUserId = try env.auth.createUser(displayName: "Allowed Runner", pin: "5678")
+
+        try env.reports.markReportRun(reportId: reportId, byUserId: otherUserId)
+
+        let saved = try env.reports.getSavedReports(userId: env.adminUserId)
+        let updated = saved.first { $0.id == reportId }
+        #expect(updated?.lastRunAt != nil)
+    }
+
+    @Test("Delete nonexistent saved report throws not found")
+    func testDeleteSavedReport_notFound() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(throws: ReportsService.ReportsError.savedReportNotFound) {
+            try env.reports.deleteSavedReport(reportId: 9_999_999, byUserId: env.adminUserId)
+        }
+    }
+
+    @Test("Mark run on deleted report throws not found")
+    func testMarkReportRun_deletedReportThrowsNotFound() throws {
+        let env = try E2ETestHelpers.setUp()
+        let reportId = try env.reports.saveReportConfig(
+            name: "Delete Then Run",
+            type: "spending",
+            columns: ["job", "amount"],
+            filters: [:],
+            userId: env.adminUserId,
+            isShared: true
+        )
+
+        try env.reports.deleteSavedReport(reportId: reportId, byUserId: env.adminUserId)
+
+        #expect(throws: ReportsService.ReportsError.savedReportNotFound) {
+            try env.reports.markReportRun(reportId: reportId, byUserId: env.adminUserId)
+        }
     }
 
     // MARK: - Tool Checkout Report

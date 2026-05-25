@@ -285,13 +285,14 @@ struct IOSReportTemplatesPage: View {
 
     private func confirmDelete() {
         guard let service = appCore.reportsService,
+              let userId = appCore.currentUser?.id,
               let template = deleteCandidate else {
             loadError = "Reports service not available"
             return
         }
 
         do {
-            try service.deleteSavedReport(reportId: template.id)
+            try service.deleteSavedReport(reportId: template.id, byUserId: userId)
             deleteCandidate = nil
             loadTemplates()
         } catch {

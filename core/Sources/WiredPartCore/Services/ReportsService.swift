@@ -19,6 +19,11 @@ public final class ReportsService: Sendable {
         self.db = db
     }
 
+    public enum ReportsError: Error, Sendable, Equatable {
+        case savedReportNotFound
+        case notOwner
+    }
+
     // =========================================================================
     // MARK: - Result Types
     // =========================================================================
@@ -682,20 +687,65 @@ public final class ReportsService: Sendable {
     }
 
     /// Delete a saved report (soft delete).
-    public func deleteSavedReport(reportId: Int64) throws {
+    public func deleteSavedReport(reportId: Int64, byUserId: Int64) throws {
         try db.writer.write { dbConn in
+            guard let row = try Row.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT created_by
+                    FROM saved_reports
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [reportId]
+            ) else {
+                throw ReportsError.savedReportNotFound
+            }
+
+            let createdBy: Int64 = row["created_by"] ?? 0
+            guard createdBy == byUserId else {
+                throw ReportsError.notOwner
+            }
+
             try dbConn.execute(sql: """
-                UPDATE saved_reports SET deleted_at = datetime('now') WHERE id = ?
+                UPDATE saved_reports
+                SET deleted_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [reportId])
+            guard dbConn.changesCount > 0 else {
+                throw ReportsError.savedReportNotFound
+            }
         }
     }
 
     /// Update last_run_at timestamp.
-    public func markReportRun(reportId: Int64) throws {
+    public func markReportRun(reportId: Int64, byUserId: Int64) throws {
         try db.writer.write { dbConn in
+            guard let row = try Row.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT created_by, is_shared
+                    FROM saved_reports
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [reportId]
+            ) else {
+                throw ReportsError.savedReportNotFound
+            }
+
+            let createdBy: Int64 = row["created_by"] ?? 0
+            let isShared = row["is_shared"] as Bool? ?? false
+            guard createdBy == byUserId || isShared else {
+                throw ReportsError.notOwner
+            }
+
             try dbConn.execute(sql: """
-                UPDATE saved_reports SET last_run_at = datetime('now') WHERE id = ?
+                UPDATE saved_reports
+                SET last_run_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [reportId])
+            guard dbConn.changesCount > 0 else {
+                throw ReportsError.savedReportNotFound
+            }
         }
     }
 

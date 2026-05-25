@@ -401,14 +401,15 @@ private struct CustomReportsView: View {
     }
 
     private func deleteReports(at offsets: IndexSet) {
-        guard let service = appCore.reportsService else {
+        guard let service = appCore.reportsService,
+              let userId = appCore.currentUser?.id else {
             loadError = "Service not available"
             return
         }
         for idx in offsets {
             let report = savedReports[idx]
             do {
-                try service.deleteSavedReport(reportId: report.id)
+                try service.deleteSavedReport(reportId: report.id, byUserId: userId)
             } catch {
                 loadError = userFriendlyError(error, context: "load reports")
             }
