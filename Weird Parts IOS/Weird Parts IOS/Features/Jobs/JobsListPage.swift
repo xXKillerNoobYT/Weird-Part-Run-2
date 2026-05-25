@@ -47,13 +47,11 @@ struct JobsListPage: View {
     private enum ActiveSheet: Identifiable {
         case help
         case createJob
-        case jobDetail(Int64)
 
         var id: String {
             switch self {
             case .help: return "help"
             case .createJob: return "createJob"
-            case .jobDetail(let id): return "jobDetail-\(id)"
             }
         }
     }
@@ -61,6 +59,11 @@ struct JobsListPage: View {
     private struct QuickStatusTarget: Identifiable {
         let job: JobsService.JobListItem
         var id: Int64 { job.id }
+    }
+
+    private struct JobDetailTarget: Identifiable {
+        let jobId: Int64
+        var id: Int64 { jobId }
     }
 
     private struct CachedJobSummary {
@@ -80,6 +83,7 @@ struct JobsListPage: View {
     @State private var sortOption: JobSort = .recentActivity
     @State private var loadError: String?
     @State private var quickStatusTarget: QuickStatusTarget?
+    @State private var jobDetailTarget: JobDetailTarget?
     @State private var jobSummaryCache: [Int64: CachedJobSummary] = [:]
     /// Cached stage definitions keyed by template id.
     @State private var stagesByTemplateId: [Int64: [JobsService.JobStageStatus]] = [:]
@@ -142,43 +146,35 @@ struct JobsListPage: View {
                     loadJobs()
                 }
                 .environmentObject(appCore)
-            case .jobDetail(let jobId):
-                NavigationStack {
-                    IOSJobDetailTabView(jobId: jobId)
-                        .environmentObject(appCore)
-                }
+            }
+        }
+        .sheet(item: $jobDetailTarget) { target in
+            NavigationStack {
+                IOSJobDetailTabView(jobId: target.jobId)
+                    .environmentObject(appCore)
             }
         }
         .confirmationDialog(
-            "Change Status",
+            "Change Job Status",
             isPresented: Binding(
                 get: { quickStatusTarget != nil },
-                set: { if !$0 { quickStatusTarget = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            if let target = quickStatusTarget {
-                let statuses: [(String, String)] = [
-                    ("active", "Active"),
-                    ("on_hold", "On Hold"),
-                    ("payment_hold", "Payment Hold"),
-                    ("completed", "Completed"),
-                    ("warranty", "Warranty"),
-                    ("continuous", "Continuous")
-                ]
-                ForEach(statuses, id: \.0) { status, label in
-                    if target.job.status != status {
-                        Button(label) {
-                            updateJobStatus(job: target.job, newStatus: status)
-                        }
-                    }
+                set: { isPresented in
+                    if !isPresented { quickStatusTarget = nil }
                 }
-                Button("Cancel", role: .cancel) { quickStatusTarget = nil }
+            ),
+            titleVisibility: .visible,
+            presenting: quickStatusTarget?.job
+        ) { job in
+            ForEach(statusActions(for: job), id: \.self) { status in
+                Button(status.replacingOccurrences(of: "_", with: " ").capitalized) {
+                    applyQuickStatus(status, to: job)
+                }
             }
-        } message: {
-            if let target = quickStatusTarget {
-                Text("Job: \(target.job.jobName ?? target.job.jobNumber)"  )
+            Button("Cancel", role: .cancel) {
+                quickStatusTarget = nil
             }
+        } message: { job in
+            Text("\(job.jobNumber) • \(job.jobName)")
         }
         .onChange(of: searchText) { loadJobs() }
         .onChange(of: sortOption) { applyFilterAndSort() }
@@ -297,12 +293,18 @@ struct JobsListPage: View {
                     jobCard(job)
                 }
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    Button { quickStatusTarget = QuickStatusTarget(job: job) } label: {
-                        Label("Status", systemImage: "arrow.triangle.2.circlepath")
+                    if appCore.hasPermission("manage_jobs") {
+                        Button {
+                            quickStatusTarget = QuickStatusTarget(job: job)
+                        } label: {
+                            Label("Status", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        .tint(.blue)
                     }
-                    .tint(.blue)
 
-                    Button { activeSheet = .jobDetail(job.id) } label: {
+                    Button {
+                        jobDetailTarget = JobDetailTarget(jobId: job.id)
+                    } label: {
                         Label("Detail", systemImage: "doc.text.magnifyingglass")
                     }
                     .tint(.indigo)
@@ -587,20 +589,6 @@ struct JobsListPage: View {
             .foregroundStyle(color)
     }
 
-    // MARK: - Status Change
-
-    private func updateJobStatus(job: JobsService.JobListItem, newStatus: String) {
-        guard let service = appCore.jobsService else { return }
-        do {
-            try service.updateJob(id: job.id, status: newStatus)
-            quickStatusTarget = nil
-            loadJobs()
-        } catch {
-            loadError = "Could not update status: \(error.localizedDescription)"
-            quickStatusTarget = nil
-        }
-    }
-
     // MARK: - Data Loading
 
     private func loadJobs() {
@@ -671,5 +659,24 @@ struct JobsListPage: View {
         }
 
         jobs = filtered
+    }
+
+    private func statusActions(for job: JobsService.JobListItem) -> [String] {
+        let allStatuses = ["active", "on_hold", "payment_hold", "completed", "cancelled", "warranty"]
+        return allStatuses.filter { $0 != job.status }
+    }
+
+    private func applyQuickStatus(_ status: String, to job: JobsService.JobListItem) {
+        defer { quickStatusTarget = nil }
+        guard let service = appCore.jobsService else {
+            loadError = "Service not available"
+            return
+        }
+        do {
+            try service.updateJob(id: job.id, status: status)
+            loadJobs()
+        } catch {
+            loadError = userFriendlyError(error, context: "update job status")
+        }
     }
 }

@@ -22,6 +22,39 @@ final class JobsListPageRegressionTests: XCTestCase {
         )
     }
 
+    func testSwipeStatusAndDetailActionsAreWiredToRealFlows() throws {
+        let source = try Self.readJobsListPageSource()
+
+        XCTAssertTrue(
+            source.contains("quickStatusTarget = QuickStatusTarget(job: job)"),
+            "Status swipe action should open a real status flow instead of an empty closure."
+        )
+        XCTAssertTrue(
+            source.contains("confirmationDialog(") && source.contains("\"Change Job Status\""),
+            "Jobs list should present a status-change dialog for the selected swipe target."
+        )
+        XCTAssertTrue(
+            source.contains("try service.updateJob(id: job.id, status: status)"),
+            "Status flow should persist the new status through JobsService.updateJob."
+        )
+        XCTAssertTrue(
+            source.contains("jobDetailTarget = JobDetailTarget(jobId: job.id)"),
+            "Detail swipe action should route to a real destination."
+        )
+        XCTAssertTrue(
+            source.contains(".sheet(item: $jobDetailTarget)") && source.contains("IOSJobDetailTabView(jobId: target.jobId)"),
+            "Detail swipe action should present job detail content."
+        )
+        XCTAssertFalse(
+            source.contains("Button { } label: {\n                        Label(\"Status\""),
+            "Status swipe action must not remain an empty dead button."
+        )
+        XCTAssertFalse(
+            source.contains("Button { } label: {\n                        Label(\"Detail\""),
+            "Detail swipe action must not remain an empty dead button."
+        )
+    }
+
     private static func readJobsListPageSource(file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL
