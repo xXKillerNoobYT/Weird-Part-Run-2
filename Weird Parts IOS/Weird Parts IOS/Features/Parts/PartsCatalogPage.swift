@@ -1257,6 +1257,7 @@ private struct QuickEditSheet: View {
     @State private var markupPercent: String = ""
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var pricingValidationError: String?
     @State private var originalName: String = ""
     @State private var originalCode: String = ""
     @State private var originalCostPrice: String = ""
@@ -1267,9 +1268,12 @@ private struct QuickEditSheet: View {
         costPrice != originalCostPrice || markupPercent != originalMarkup
     }
 
-    private var sellPrice: Double {
-        let cost = Double(costPrice) ?? 0
-        let markup = Double(markupPercent) ?? 0
+    private var sellPrice: Double? {
+        let trimmedCost = costPrice.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedMarkup = markupPercent.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsedCost = trimmedCost.isEmpty ? 0 : Double(trimmedCost)
+        let parsedMarkup = trimmedMarkup.isEmpty ? 0 : Double(trimmedMarkup)
+        guard let cost = parsedCost, let markup = parsedMarkup else { return nil }
         return cost * (1 + markup / 100)
     }
 
@@ -1311,7 +1315,12 @@ private struct QuickEditSheet: View {
                         Text("%")
                     }
                     .frame(minHeight: 44)
-                    LabeledContent("Sell Price", value: String(format: "$%.2f", sellPrice))
+                    if let pricingValidationError {
+                        Text(pricingValidationError)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                    LabeledContent("Sell Price", value: sellPrice.map { String(format: "$%.2f", $0) } ?? "—")
                         .foregroundStyle(.secondary)
                 }
 
@@ -1353,7 +1362,29 @@ private struct QuickEditSheet: View {
             } message: {
                 Text(saveError ?? "")
             }
+            .onChange(of: costPrice) { _ in pricingValidationError = nil }
+            .onChange(of: markupPercent) { _ in pricingValidationError = nil }
         }
+    }
+
+    private func parsePricingInputs() -> (cost: Double, markup: Double)? {
+        let trimmedCost = costPrice.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedMarkup = markupPercent.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let parsedCost = trimmedCost.isEmpty ? 0 : Double(trimmedCost)
+        guard let cost = parsedCost else {
+            pricingValidationError = "Cost price must be a valid number."
+            return nil
+        }
+
+        let parsedMarkup = trimmedMarkup.isEmpty ? 0 : Double(trimmedMarkup)
+        guard let markup = parsedMarkup else {
+            pricingValidationError = "Markup must be a valid number."
+            return nil
+        }
+
+        pricingValidationError = nil
+        return (cost, markup)
     }
 
     private func save() async {
@@ -1363,18 +1394,17 @@ private struct QuickEditSheet: View {
             saveError = "Service not available"
             return
         }
+        guard let pricing = parsePricingInputs() else { return }
 
         isSaving = true
-        let cost = Double(costPrice) ?? 0
-        let markup = Double(markupPercent) ?? 0
 
         do {
             try service.updatePart(
                 id: part.id,
                 name: trimmedName,
                 code: code.isEmpty ? nil : code,
-                companyCostPrice: cost,
-                companyMarkupPercent: markup
+                companyCostPrice: pricing.cost,
+                companyMarkupPercent: pricing.markup
             )
             await onSave()
             await MainActor.run { dismiss() }
@@ -1404,6 +1434,7 @@ private struct PartFormSheet: View {
     @State private var partType = "standard"
     @State private var costPrice = ""
     @State private var markupPercent = ""
+    @State private var pricingValidationError: String?
     @State private var autoAddToWishlistWhenLow = false
     @State private var saveError: String?
     @State private var isSaving = false
@@ -1456,6 +1487,11 @@ private struct PartFormSheet: View {
                         Text("%")
                     }
                     .frame(minHeight: 44)
+                    if let pricingValidationError {
+                        Text(pricingValidationError)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
                 }
 
                 if appCore.hasPermission("edit_parts_catalog") {
@@ -1481,7 +1517,7 @@ private struct PartFormSheet: View {
                                 isSaving = true
                                 await save()
                                 isSaving = false
-                                if saveError == nil {
+                                if saveError == nil, pricingValidationError == nil {
                                     dismiss()
                                     await onSave()
                                 }
@@ -1511,14 +1547,35 @@ private struct PartFormSheet: View {
             } message: {
                 Text(saveError ?? "")
             }
+            .onChange(of: costPrice) { _ in pricingValidationError = nil }
+            .onChange(of: markupPercent) { _ in pricingValidationError = nil }
         }
+    }
+
+    private func parsePricingInputs() -> (cost: Double, markup: Double)? {
+        let trimmedCost = costPrice.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedMarkup = markupPercent.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let parsedCost = trimmedCost.isEmpty ? 0 : Double(trimmedCost)
+        guard let cost = parsedCost else {
+            pricingValidationError = "Cost price must be a valid number."
+            return nil
+        }
+
+        let parsedMarkup = trimmedMarkup.isEmpty ? 0 : Double(trimmedMarkup)
+        guard let markup = parsedMarkup else {
+            pricingValidationError = "Markup must be a valid number."
+            return nil
+        }
+
+        pricingValidationError = nil
+        return (cost, markup)
     }
 
     private func save() async {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         guard !trimmedName.isEmpty, selectedCategoryId > 0 else { return }
-        let cost = Double(costPrice) ?? 0
-        let markup = Double(markupPercent) ?? 0
+        guard let pricing = parsePricingInputs() else { return }
         guard let service = appCore.partsService else {
             saveError = "Service not available"
             return
@@ -1534,8 +1591,8 @@ private struct PartFormSheet: View {
                     categoryId: selectedCategoryId,
                     brandId: selectedBrandId,
                     partType: partType,
-                    companyCostPrice: cost,
-                    companyMarkupPercent: markup
+                    companyCostPrice: pricing.cost,
+                    companyMarkupPercent: pricing.markup
                 )
                 savedPartId = p.id
             } else {
@@ -1545,8 +1602,8 @@ private struct PartFormSheet: View {
                     partType: partType,
                     code: code.isEmpty ? nil : code,
                     brandId: selectedBrandId,
-                    companyCostPrice: cost,
-                    companyMarkupPercent: markup
+                    companyCostPrice: pricing.cost,
+                    companyMarkupPercent: pricing.markup
                 )
             }
             if appCore.hasPermission("edit_parts_catalog"), let userId = appCore.currentUser?.id {
