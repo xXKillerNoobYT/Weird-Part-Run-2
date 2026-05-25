@@ -901,7 +901,7 @@ private struct SupplierDetailSheet: View {
             )
             supplierChannelId = channelId
         } catch {
-            // Channel creation failed silently — user can retry
+            loadError = userFriendlyError(error, context: "create supplier channel")
         }
     }
 
