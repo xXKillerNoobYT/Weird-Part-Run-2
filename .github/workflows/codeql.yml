@@ -80,3 +80,13 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: "/language:${{ matrix.language }}"
+          output: "${{ github.workspace }}/codeql-results"
+          upload: never
+
+      - name: Upload CodeQL SARIF artifact
+        if: github.event_name != 'pull_request' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-sarif-${{ matrix.language }}
+          path: "${{ github.workspace }}/codeql-results/*.sarif"
+          if-no-files-found: warn
