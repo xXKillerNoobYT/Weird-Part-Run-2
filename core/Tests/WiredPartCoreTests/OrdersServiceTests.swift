@@ -179,9 +179,28 @@ struct OrdersServiceTests {
         var detail = try env.orders.getPODetail(id: poId)
         #expect(detail.status == "submitted")
 
-        try env.orders.updatePOStatus(id: poId, status: "ordered", userId: env.adminUserId)
+        try env.orders.markPOOrderedWithSupplierContact(
+            id: poId,
+            contactNote: "Emailed supplier rep and received confirmation",
+            userId: env.adminUserId,
+            author: "Admin"
+        )
         detail = try env.orders.getPODetail(id: poId)
         #expect(detail.status == "ordered")
+        #expect((detail.notes ?? "").contains("Supplier contacted before marking ordered: Emailed supplier rep and received confirmation"))
+    }
+
+    @Test("Submitted PO requires supplier contact log before ordered transition")
+    func testSubmittedPORequiresSupplierContactLogBeforeOrderedTransition() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-STS-GUARD", supplierId: supplierId, notes: nil)
+
+        try env.orders.updatePOStatus(id: poId, status: "submitted", userId: env.adminUserId)
+
+        #expect(throws: OrdersService.OrdersError.supplierContactLogRequiredForOrderedPO) {
+            try env.orders.updatePOStatus(id: poId, status: "ordered", userId: env.adminUserId)
+        }
     }
 
     @Test("Update PO status supports cancellation from active states")

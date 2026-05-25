@@ -22,9 +22,11 @@ struct IOSPODetailPage: View {
     // Confirmations
     @State private var showDeleteConfirmation = false
     @State private var showSubmitConfirmation = false
+    @State private var showMarkOrderedConfirmation = false
     @State private var showCancelConfirmation = false
     @State private var showCancelRemainingConfirmation = false
     @State private var cancelReason = ""
+    @State private var supplierContactNote = ""
 
     // Sheets
     @State private var activeSheet: ActiveSheet?
@@ -160,7 +162,19 @@ struct IOSPODetailPage: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This changes the PO status to Submitted. You still need to contact the supplier separately (email, phone, or portal) to actually send the order.")
+            Text("This changes the PO status to Submitted for internal approval/review only. Supplier contact is tracked in a separate step before Ordered.")
+        }
+        // Mark Ordered confirmation with required supplier contact note
+        .alert("Mark Supplier Contacted / Ordered?", isPresented: $showMarkOrderedConfirmation) {
+            TextField("Supplier contact details (required)", text: $supplierContactNote)
+            Button("Keep as Submitted", role: .cancel) {
+                supplierContactNote = ""
+            }
+            Button("Mark Ordered") {
+                Task { await markOrderedWithSupplierContact() }
+            }
+        } message: {
+            Text("Log how/when you contacted the supplier before moving this PO to Ordered.")
         }
         // Line item editing now uses POLineEditSheet via .sheet(item: $activeSheet)
         // Action message
@@ -215,8 +229,8 @@ struct IOSPODetailPage: View {
                 title: "PO Detail Help",
                 sections: [
                     ("What This Page Does", "Shows everything about a Purchase Order -- supplier info, line items grouped by job, delivery timeline, cost breakdown, receipt history, and notes. This is where you manage the full lifecycle of a PO."),
-                    ("Status Actions", "Draft POs can be edited inline (tap a line item to change qty/price) and deleted. Submitted/Ordered POs can be received, have their ETA updated, or be cancelled with a required reason. Partially received POs show what's still outstanding."),
-                    ("Key Actions", "Receive Shipment: start checking in items. Manage Parts: see all parts for this supplier across POs. Contact Supplier: open a chat channel. Update ETA: set a new expected delivery date. Double Order: re-order remaining items from a different supplier. Report Issue: log a problem."),
+                    ("Status Actions", "Draft POs can be edited inline (tap a line item to change qty/price) and deleted. Submitted means internal approval/review only. Before Ordered, log supplier contact in the Mark Supplier Contacted action. Ordered/Partial POs can be received, have ETA updated, or be cancelled with a required reason."),
+                    ("Key Actions", "Receive Shipment: start checking in items. Manage Parts: see all parts for this supplier across POs. Contact Supplier: open a chat channel. Mark Supplier Contacted: log outreach and move to Ordered. Update ETA: set a new expected delivery date. Double Order: re-order remaining items from a different supplier. Report Issue: log a problem."),
                     ("Notes Tabs", "The notes section has two tabs -- PO Notes (about this specific order) and Supplier Notes (general notes about the supplier visible on all their POs). Add notes to keep a paper trail."),
                     ("Tips", "Swipe left on the PO in the list view to quick-delete drafts or cancel active orders. The cost breakdown section shows subtotal, tax, shipping, and grand total. Receipt history tracks every receiving session.")
                 ]
@@ -1964,8 +1978,8 @@ struct IOSPODetailPage: View {
 
             case "submitted":
                 HStack(spacing: 8) {
-                    actionButton("Mark Ordered", icon: "checkmark.circle.fill", color: .blue) {
-                        await transitionPO(to: "ordered")
+                    actionButton("Mark Supplier Contacted", icon: "checkmark.circle.fill", color: .blue) {
+                        showMarkOrderedConfirmation = true
                     }
                     actionButton("Drafting / Unclear", icon: "questionmark.circle", color: .yellow) {
                         await transitionPO(to: "drafting")
@@ -2080,10 +2094,38 @@ struct IOSPODetailPage: View {
             try service.updatePOStatus(id: poId, status: newStatus, userId: userId)
             loadData()
             if newStatus == "submitted" {
-                actionMessage = "PO marked as Submitted. Remember to send the order to the supplier."
+                actionMessage = "PO marked as Submitted for internal review. Log supplier contact before moving to Ordered."
             }
         } catch {
             actionMessage = userFriendlyError(error, context: "update status")
+        }
+    }
+
+    private func markOrderedWithSupplierContact() async {
+        guard let service = appCore.ordersService,
+              let userId = appCore.currentUser?.id else {
+            actionMessage = "Service not available"
+            return
+        }
+        let trimmedContact = supplierContactNote.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedContact.isEmpty else {
+            actionMessage = "Supplier contact details are required before marking ordered."
+            return
+        }
+        let trimmedAuthor = appCore.currentUser?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let authorName = trimmedAuthor.isEmpty ? "Unknown" : trimmedAuthor
+        do {
+            try service.markPOOrderedWithSupplierContact(
+                id: poId,
+                contactNote: trimmedContact,
+                userId: userId,
+                author: authorName
+            )
+            supplierContactNote = ""
+            loadData()
+            actionMessage = "PO marked as Ordered with supplier contact logged."
+        } catch {
+            actionMessage = userFriendlyError(error, context: "mark ordered")
         }
     }
 

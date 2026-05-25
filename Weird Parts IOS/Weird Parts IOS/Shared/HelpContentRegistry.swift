@@ -365,7 +365,7 @@ struct HelpContentRegistry {
             pageId: "orders-pos",
             title: "Purchase Orders Help",
             sections: [
-                ("What This Page Does", "Lists all purchase orders sent to suppliers. Track POs from draft through ordering, receiving, and completion. See totals, line counts, and delivery status at a glance."),
+                ("What This Page Does", "Lists all purchase orders and their workflow status. Submitted means internal review/approval; Ordered means supplier contact has been logged. Track POs through receiving and completion with totals and delivery status at a glance."),
                 ("How to Use It", "Filter by status with the chips at the top (Draft, Submitted, Ordered, Partial, Received, Cancelled). Search by PO number or supplier name. Tap a PO to see full details. Tap + to create a new PO or scan a QR code."),
                 ("Sorting", "Use the sort button (arrows icon) to order by newest, oldest, total cost (high/low), supplier name, or status."),
                 ("Swipe Actions", "Swipe left on a draft PO to delete it, or swipe left on an active PO to cancel it. Cancellations require a reason. The system generates an AI summary of the PO to help you confirm."),
@@ -438,8 +438,8 @@ struct HelpContentRegistry {
             title: "PO Detail Help",
             sections: [
                 ("What This Page Does", "Shows everything about a Purchase Order -- supplier info, line items grouped by job, delivery timeline, cost breakdown, receipt history, and notes. This is where you manage the full lifecycle of a PO."),
-                ("Status Actions", "Draft POs can be edited inline (tap a line item to change qty/price) and deleted. Submitted/Ordered POs can be received, have their ETA updated, or be cancelled with a required reason. Partially received POs show what's still outstanding."),
-                ("Key Actions", "Receive Shipment: start checking in items. Manage Parts: see all parts for this supplier across POs. Contact Supplier: open a chat channel. Update ETA: set a new expected delivery date. Double Order: re-order remaining items from a different supplier. Report Issue: log a problem."),
+                ("Status Actions", "Draft POs can be edited inline (tap a line item to change qty/price) and deleted. Submitted means internal approval/review only. Before Ordered, log supplier contact in the Mark Supplier Contacted action. Ordered/Partial POs can be received, have ETA updated, or be cancelled with a required reason."),
+                ("Key Actions", "Receive Shipment: start checking in items. Manage Parts: see all parts for this supplier across POs. Contact Supplier: open a chat channel. Mark Supplier Contacted: log outreach and move to Ordered. Update ETA: set a new expected delivery date. Double Order: re-order remaining items from a different supplier. Report Issue: log a problem."),
                 ("Notes Tabs", "The notes section has two tabs -- PO Notes (about this specific order) and Supplier Notes (general notes about the supplier visible on all their POs). Add notes to keep a paper trail."),
                 ("Tips", "Swipe left on the PO in the list view to quick-delete drafts or cancel active orders. The cost breakdown section shows subtotal, tax, shipping, and grand total. Receipt history tracks every receiving session."),
             ]

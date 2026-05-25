@@ -48,6 +48,7 @@ public final class OrdersService: Sendable {
         case missingJPOReference(lineId: Int64)
         case stageNotFound(Int64)
         case stageTemplateMismatch(stageId: Int64, jobId: Int64)
+        case supplierContactLogRequiredForOrderedPO
 
         public var errorDescription: String? {
             switch self {
@@ -81,6 +82,8 @@ public final class OrdersService: Sendable {
             case .missingJPOReference(let lineId): return "JPO line #\(lineId) is missing a required jpo_id reference"
             case .stageNotFound(let id): return "Job stage #\(id) not found or has been deleted"
             case .stageTemplateMismatch(let stageId, let jobId): return "Job stage #\(stageId) does not belong to job #\(jobId)'s assigned stage template"
+            case .supplierContactLogRequiredForOrderedPO:
+                return "Cannot mark a submitted PO as ordered until supplier contact is logged"
             }
         }
     }
@@ -3146,6 +3149,9 @@ public final class OrdersService: Sendable {
                     throw OrdersError.invalidStatusTransition(entity: "PO", from: oldStatus, to: status)
                 }
             }
+            if oldStatus == "submitted", status == "ordered" {
+                throw OrdersError.supplierContactLogRequiredForOrderedPO
+            }
 
             // 2. Update status
             try dbConn.execute(
@@ -3164,6 +3170,48 @@ public final class OrdersService: Sendable {
                     VALUES ('purchase_order', ?, ?, ?, ?, datetime('now'))
                     """,
                 arguments: [id, oldStatus, status, userId]
+            )
+        }
+    }
+
+    /// Mark a submitted PO as ordered and append a required supplier-contact log entry.
+    public func markPOOrderedWithSupplierContact(id: Int64, contactNote: String, userId: Int64, author: String) throws {
+        let trimmedNote = contactNote.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedAuthor = author.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedNote.isEmpty else { throw OrdersError.requiredFieldEmpty("contact note") }
+        guard !trimmedAuthor.isEmpty else { throw OrdersError.requiredFieldEmpty("author") }
+
+        try db.writer.write { dbConn in
+            guard let row = try Row.fetchOne(
+                dbConn,
+                sql: "SELECT status, notes FROM purchase_orders WHERE id = ? AND deleted_at IS NULL",
+                arguments: [id]
+            ) else { return }
+            let oldStatus: String = row["status"] ?? "draft"
+            let existingNotes: String = row["notes"] ?? ""
+
+            guard oldStatus == "submitted" else {
+                throw OrdersError.invalidStatusTransition(entity: "PO", from: oldStatus, to: "ordered")
+            }
+
+            let timestamp = CoreFormatters.nowISO()
+            let auditNote = "\(timestamp) [\(trimmedAuthor)]: Supplier contacted before marking ordered: \(trimmedNote)"
+            let combinedNotes = existingNotes.isEmpty ? auditNote : "\(existingNotes)\n\(auditNote)"
+
+            try dbConn.execute(
+                sql: """
+                    UPDATE purchase_orders
+                    SET status = 'ordered', notes = ?, updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [combinedNotes, id]
+            )
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO order_status_history (entity_type, entity_id, old_status, new_status, changed_by, created_at)
+                    VALUES ('purchase_order', ?, ?, 'ordered', ?, datetime('now'))
+                    """,
+                arguments: [id, oldStatus, userId]
             )
         }
     }

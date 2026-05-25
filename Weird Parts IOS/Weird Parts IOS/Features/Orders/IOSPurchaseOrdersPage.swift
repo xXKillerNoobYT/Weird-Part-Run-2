@@ -204,7 +204,7 @@ struct IOSPurchaseOrdersPage: View {
             PageHelpSheet(
                 title: "Purchase Orders Help",
                 sections: [
-                    ("What This Page Does", "Lists all purchase orders sent to suppliers. Track POs from draft through ordering, receiving, and completion. See totals, line counts, and delivery status at a glance."),
+                    ("What This Page Does", "Lists all purchase orders and their workflow status. Submitted means internal review/approval; Ordered means supplier contact has been logged. Track POs through receiving and completion with totals and delivery status at a glance."),
                     ("How to Use It", "Filter by status with the chips at the top (Draft, Submitted, Ordered, Partial, Received, Cancelled). Search by PO number or supplier name. Tap a PO to see full details. Tap + to create a new PO or scan a QR code."),
                     ("Sorting", "Use the sort button (arrows icon) to order by newest, oldest, total cost (high/low), supplier name, or status."),
                     ("Swipe Actions", "Swipe left on a draft PO to delete it, or swipe left on an active PO to cancel it. Cancellations require a reason. The system generates an AI summary of the PO to help you confirm."),
