@@ -210,6 +210,15 @@ LOOP STATUS — Iteration N
 - `docs/RELEASE-READINESS-CHECKLIST.md` — release gates
 - All `docs/plans/ios-*.md` — per-module feature specs
 
+### Bug-hunt/Fisher Entrypoint
+- Script: `scripts/bug-hunt-fisher.sh`
+- Canonical plan paths:
+  - `docs/plans/hunt-fix-verify-loop.md` (core plan)
+  - `docs/plans/master-issue-list.md` (fishing plan)
+  - `docs/hunt-fix-tracker.md` (daily run template)
+- Issue selection order: `blocked` → `todo` → `backlog`
+- Smoke check: `scripts/bug-hunt-fisher.sh --smoke-check` (fails fast if any required plan file is missing)
+
 ### Code (What Gets Fixed)
 - `core/Sources/WiredPartCore/Services/*.swift` — 21 services
 - `core/Sources/WiredPartCore/Database/AppDatabase+Migrations.swift` — schema
