@@ -14,11 +14,19 @@
 
 - GitHub product tracker: https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/645
 - Obsidian product note: `/Users/IA/Documents/Obsidian Vault/01_projects/Weird-Part-Run-2/Plans/Omi Intake - Construction Parts App and Company Context.md`
+- Obsidian frontend handoff note: `/Users/IA/Documents/Obsidian Vault/01_projects/Weird-Part-Run-2/Plans/Omi Intake - Frontend Humane Review Handoff.md`
 - Obsidian intake note: `/Users/IA/Documents/Obsidian Vault/Paperclip/Omi to GitHub and Paperclip intake.md`
 - Related canonical implementation trackers:
   - GitHub #638 / Paperclip WEI-1981 — stock movement type centralization across UI flows.
   - GitHub #599 / Paperclip WEI-1937 — warehouse clock-in/out, only reopen/file fresh work with new regression evidence.
   - Paperclip WEI-1956, WEI-1848, WEI-1876 — launch/humane-review/frontend blockers.
+
+## Omi intake update (2026-05-22)
+
+- Keep this roadmap and GitHub #645 as planning/intake routing, not as a single execution epic.
+- The clearest product theme from Omi intake remains split into this dedicated roadmap and associated frontend handoff note.
+- Confirmed duplicates remain tracked in existing issues: #638 (stock movement centralization) and #599 (warehouse clock-in/out).
+- No personal Obsidian TODOs were created for project-agent execution work from this intake pass.
 
 ## Non-goals for current beta
 
