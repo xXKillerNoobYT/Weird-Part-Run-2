@@ -370,6 +370,17 @@ public final class PartsService: Sendable {
         }
     }
 
+    /// Counts returned by automatic Parts maintenance jobs run on app startup.
+    public struct ScheduledMaintenanceResult: Sendable, Equatable {
+        public let updatedSupplierScores: Int
+        public let dailyRecommendationGenerated: Bool
+
+        public init(updatedSupplierScores: Int, dailyRecommendationGenerated: Bool) {
+            self.updatedSupplierScores = updatedSupplierScores
+            self.dailyRecommendationGenerated = dailyRecommendationGenerated
+        }
+    }
+
     // MARK: - Errors
 
     public enum PartsError: Error, LocalizedError, Sendable, Equatable {
@@ -6746,6 +6757,45 @@ public final class PartsService: Sendable {
                     """, arguments: [scores.qualityScore, scores.onTimeRate, scores.reliabilityScore, id])
             }
         }
+    }
+
+    // =========================================================================
+    // MARK: - 12a2. Scheduled Maintenance
+    // =========================================================================
+
+    /// Run all Parts maintenance jobs that should be performed automatically on app startup.
+    ///
+    /// Calls `recalculateAllSupplierScores()` and `generateDailyRecommendation()`.
+    /// Both are periodic-pattern methods that have no other scheduled caller; this
+    /// wrapper lets AppCore fire them once on every launch without duplicating logic.
+    @discardableResult
+    public func runScheduledMaintenance() throws -> ScheduledMaintenanceResult {
+        // Supplier score recalculation: count active suppliers that will be updated.
+        let supplierIds: [Int64] = (try? db.writer.read { dbConn in
+            try Row.fetchAll(dbConn, sql: "SELECT id FROM suppliers WHERE deleted_at IS NULL")
+                .compactMap { $0["id"] as Int64? }
+        }) ?? []
+        try recalculateAllSupplierScores()
+
+        // Daily recommendation: run and report whether a new recommendation was written.
+        let recsBefore: Int = (try? db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM target_recommendations
+                WHERE DATE(created_at) = DATE('now') AND deleted_at IS NULL
+                """) ?? 0
+        }) ?? 0
+        try generateDailyRecommendation()
+        let recsAfter: Int = (try? db.writer.read { dbConn in
+            try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM target_recommendations
+                WHERE DATE(created_at) = DATE('now') AND deleted_at IS NULL
+                """) ?? 0
+        }) ?? recsBefore
+
+        return ScheduledMaintenanceResult(
+            updatedSupplierScores: supplierIds.count,
+            dailyRecommendationGenerated: recsAfter > recsBefore
+        )
     }
 
     // =========================================================================

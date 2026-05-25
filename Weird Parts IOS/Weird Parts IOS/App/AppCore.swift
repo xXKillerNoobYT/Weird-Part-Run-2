@@ -308,6 +308,33 @@ final class AppCore: ObservableObject {
                 }
             }
 
+            // Run scheduled Parts maintenance on launch so supplier scores and daily
+            // recommendations are refreshed even when users never open those pages.
+            Task.detached { [partsService, backgroundTaskService] in
+                let taskId = try? backgroundTaskService?.startTask(
+                    name: "Parts Scheduled Maintenance",
+                    type: "parts_maintenance"
+                )
+                do {
+                    let result = try partsService?.runScheduledMaintenance()
+                    if let taskId {
+                        let supplierCount = result?.updatedSupplierScores ?? 0
+                        let didRec = result?.dailyRecommendationGenerated == true
+                        try? backgroundTaskService?.completeTask(
+                            id: taskId,
+                            summary: "Updated \(supplierCount) supplier score(s); daily recommendation \(didRec ? "generated" : "skipped")"
+                        )
+                    }
+                } catch {
+                    if let taskId {
+                        try? backgroundTaskService?.failTask(
+                            id: taskId,
+                            error: error.localizedDescription
+                        )
+                    }
+                }
+            }
+
             // Ensure Office chat channel exists (auto-created system channel)
             Task.detached { [chatService, backgroundTaskService] in
                 let taskId = try? backgroundTaskService?.startTask(

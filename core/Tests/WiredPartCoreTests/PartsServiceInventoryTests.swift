@@ -1152,4 +1152,52 @@ struct PartsServiceInventoryTests {
             try env.parts.dismissRecommendation(id: recId, byUserId: env.adminUserId, reason: "Not needed")
         }
     }
+
+    // =========================================================================
+    // MARK: - runScheduledMaintenance
+    // =========================================================================
+
+    @Test("runScheduledMaintenance completes without error on an empty database")
+    func test_runScheduledMaintenance_noOpOnEmptyDB() throws {
+        let env = try E2ETestHelpers.setUp()
+        // No suppliers, no stock targets — should return without throwing
+        #expect(throws: Never.self) {
+            _ = try env.parts.runScheduledMaintenance()
+        }
+    }
+
+    @Test("runScheduledMaintenance updates supplier scores for all active suppliers")
+    func test_runScheduledMaintenance_updatesSupplierScores() throws {
+        let env = try E2ETestHelpers.setUp()
+        let s1 = try env.parts.createSupplier(name: "SchedSupplierA")
+        let s2 = try env.parts.createSupplier(name: "SchedSupplierB")
+
+        let result = try env.parts.runScheduledMaintenance()
+
+        // Both active suppliers were processed
+        #expect(result.updatedSupplierScores == 2)
+
+        // Scores were actually written (>= 0)
+        let rows = try env.db.writer.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT id, quality_score FROM suppliers
+                WHERE id IN (?, ?) AND deleted_at IS NULL
+                """, arguments: [s1, s2])
+        }
+        #expect(rows.count == 2)
+        for row in rows {
+            let score: Double = row["quality_score"] ?? -1
+            #expect(score >= 0)
+        }
+    }
+
+    @Test("runScheduledMaintenance reports dailyRecommendationGenerated false when there is no sufficient data")
+    func test_runScheduledMaintenance_noRecommendationWithoutData() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let result = try env.parts.runScheduledMaintenance()
+
+        // No stock movement data → recommendation engine should skip
+        #expect(result.dailyRecommendationGenerated == false)
+    }
 }
