@@ -332,8 +332,8 @@ struct PricingBulkEditSheet: View {
                 .padding(.horizontal, 32)
             Button("Done") {
                 Task {
-                    await onComplete()
                     dismiss()
+                    await onComplete()
                 }
             }
             .buttonStyle(.borderedProminent)
