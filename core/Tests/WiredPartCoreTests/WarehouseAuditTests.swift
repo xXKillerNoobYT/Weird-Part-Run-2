@@ -1021,6 +1021,63 @@ struct WarehouseAuditTests {
         #expect(myAssignments.contains { $0.assignedUserId == env.adminUserId })
     }
 
+    @Test("flagForMultiUserAudit throws noEligibleVerificationCounters when required counters cannot be assigned")
+    func testFlagForMultiUserAuditNoEligibleCounters() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
+        let auditSession = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+        let sessionId = auditSession.id!
+
+        #expect(throws: WarehouseService.WarehouseError.noEligibleVerificationCounters) {
+            _ = try env.warehouse.flagForMultiUserAudit(
+                partId: partId,
+                expectedQty: 10,
+                sessionId: sessionId,
+                flaggedBy: env.adminUserId,
+                requiredCounts: 2
+            )
+        }
+
+        let assignments = try env.warehouse.getMultiUserAuditAssignments(sessionId: sessionId)
+        #expect(assignments.isEmpty)
+    }
+
+    @Test("flagForMultiUserAudit throws partAlreadyFlaggedForVerification when unresolved assignments already exist")
+    func testFlagForMultiUserAuditAlreadyFlaggedInSession() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
+        let auditSession = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+        let sessionId = auditSession.id!
+        _ = try env.auth.createUser(displayName: "Counter B", pin: "2222")
+
+        let firstAssignments = try env.warehouse.flagForMultiUserAudit(
+            partId: partId,
+            expectedQty: 10,
+            sessionId: sessionId,
+            flaggedBy: nil,
+            requiredCounts: 2
+        )
+        #expect(firstAssignments.count == 2)
+
+        #expect(throws: WarehouseService.WarehouseError.partAlreadyFlaggedForVerification) {
+            _ = try env.warehouse.flagForMultiUserAudit(
+                partId: partId,
+                expectedQty: 10,
+                sessionId: sessionId,
+                flaggedBy: nil,
+                requiredCounts: 2
+            )
+        }
+
+        let assignments = try env.warehouse.getMultiUserAuditAssignments(sessionId: sessionId)
+        let assignmentCount = assignments.reduce(0) { $0 + $1.assignments.count }
+        #expect(assignmentCount == 2)
+    }
+
     @Test("getMultiUserAuditAssignments filtered by sessionId returns only that session")
     func testGetMultiUserAuditAssignmentsFilteredBySession() throws {
         let env = try freshEnv()

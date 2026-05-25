@@ -24,6 +24,8 @@ public final class WarehouseService: Sendable {
         case invalidMovementPath(from: String, to: String)
         case insufficientStock(available: Int, requested: Int)
         case partNotFound(Int64)
+        case partAlreadyFlaggedForVerification
+        case noEligibleVerificationCounters
         case sessionNotFound(Int64)
         case sessionAlreadyCompleted
         case trailerNotFound(Int64)
@@ -5291,6 +5293,28 @@ public final class WarehouseService: Sendable {
         requiredCounts: Int = 2
     ) throws -> [MultiUserAuditAssignment] {
         try db.writer.write { dbConn in
+            let cappedRequiredCounts = min(max(requiredCounts, 2), 3)
+
+            let existingAssignmentCount: Int
+            if let sessionId {
+                existingAssignmentCount = try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM multi_user_audit_assignments
+                    WHERE part_id = ?
+                      AND audit_session_id = ?
+                      AND status != 'resolved'
+                    """, arguments: [partId, sessionId]) ?? 0
+            } else {
+                existingAssignmentCount = try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM multi_user_audit_assignments
+                    WHERE part_id = ?
+                      AND audit_session_id IS NULL
+                      AND status != 'resolved'
+                    """, arguments: [partId]) ?? 0
+            }
+            guard existingAssignmentCount == 0 else {
+                throw WarehouseError.partAlreadyFlaggedForVerification
+            }
+
             // Get part info
             let partRow = try Row.fetchOne(dbConn, sql: """
                 SELECT p.name, COALESCE(wpa.area_id, 0) AS area_id,
@@ -5323,7 +5347,11 @@ public final class WarehouseService: Sendable {
                     \(excludeClause)
                 ORDER BY COALESCE(uwr.accuracy_rating, 5.0) DESC
                 LIMIT ?
-                """, arguments: StatementArguments(userArgs + [min(requiredCounts, 3)]))
+                """, arguments: StatementArguments(userArgs + [cappedRequiredCounts]))
+
+            guard userRows.count >= cappedRequiredCounts else {
+                throw WarehouseError.noEligibleVerificationCounters
+            }
 
             var assignments: [MultiUserAuditAssignment] = []
 

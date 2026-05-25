@@ -1420,6 +1420,15 @@ private struct QueueSendForVerificationSheet: View {
             )
             onSent()
             dismiss()
+        } catch let warehouseError as WarehouseService.WarehouseError {
+            switch warehouseError {
+            case .noEligibleVerificationCounters:
+                errorMessage = "No eligible active counters are available for this verification."
+            case .partAlreadyFlaggedForVerification:
+                errorMessage = "This part is already flagged for verification."
+            default:
+                errorMessage = userFriendlyError(warehouseError, context: "send for multi-user verification")
+            }
         } catch {
             errorMessage = userFriendlyError(error, context: "send for multi-user verification")
         }
