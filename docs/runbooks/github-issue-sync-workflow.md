@@ -71,7 +71,10 @@ scripts/paperclip-github-tracker-sync.sh --dry-run
 If automated sync fails, use the existing snapshot path:
 ```bash
 scripts/github-issue-sync.sh --repo xXKillerNoobYT/Weird-Part-Run-2 --state all
+scripts/github-issue-sync.sh --repo xXKillerNoobYT/Weird-Part-Run-2 --state all --source-issue WEI-2309
 ```
+
+`--source-issue` sets snapshot metadata explicitly. If omitted, the script falls back to `PAPERCLIP_TASK_ID` (when present), then to legacy default `WEI-44`.
 Artifacts (local only, ignored by git):
 - `.tmp/github-issue-sync/<UTC timestamp>/issues.json`
 - `.tmp/github-issue-sync/latest-sync.md`
