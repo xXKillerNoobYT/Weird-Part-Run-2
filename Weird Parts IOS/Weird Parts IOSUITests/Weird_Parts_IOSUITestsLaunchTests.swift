@@ -9,6 +9,7 @@
 import XCTest
 
 final class Weird_Parts_IOSUITestsLaunchTests: XCTestCase {
+    private static let uiTestingPIN = "8396"
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
         true
@@ -21,6 +22,7 @@ final class Weird_Parts_IOSUITestsLaunchTests: XCTestCase {
     @MainActor
     func testLaunch() throws {
         let app = XCUIApplication()
+        app.launchEnvironment["WEIRD_PARTS_UI_TEST_PIN"] = Self.uiTestingPIN
         app.launchArguments += ["-UITesting"]
         app.launch()
 
@@ -37,6 +39,7 @@ final class Weird_Parts_IOSUITestsLaunchTests: XCTestCase {
     @MainActor
     func testLaunchToMainView() throws {
         let app = XCUIApplication()
+        app.launchEnvironment["WEIRD_PARTS_UI_TEST_PIN"] = Self.uiTestingPIN
         app.launchArguments += ["-UITesting"]
         app.launch()
 

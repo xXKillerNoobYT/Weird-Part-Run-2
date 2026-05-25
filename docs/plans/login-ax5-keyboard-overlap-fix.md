@@ -150,7 +150,7 @@ The fix is complete when **all** of the following pass on iPhone 13 mini (375 ×
 6. Back chevron (`loginBackButton`) is tappable at AX5 (must not be pushed behind the keyboard either — verify when AX header collapse is active, Back stays at the top of the scroll content).
 7. Inline error message (`loginErrorMessage`) is visible above the Sign In dock when login fails.
 8. iPad mini regression check — user-list landing layout unchanged.
-9. UITest seed flow (`UITest Owner` / `1234`) reaches the post-login banner without the auto-login workaround.
+9. UITest seed flow (`UITest Owner` / `WEIRD_PARTS_UI_TEST_PIN`) reaches the post-login banner without the auto-login workaround.
 
 Tap-target requirement: Sign In and Done must each be ≥ 44 × 44 pt at every Dynamic Type size.
 
