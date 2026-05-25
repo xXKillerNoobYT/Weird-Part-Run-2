@@ -30,8 +30,8 @@ struct IOSFlexPoolPage: View {
     @State private var claimedJobId: Int64?
     @State private var pendingApprovalIds: Set<Int64> = []
 
-    private var currentUserId: Int64 {
-        appCore.currentUser?.id ?? 0
+    private var currentUserId: Int64? {
+        appCore.currentUser?.id
     }
 
     var body: some View {
@@ -197,6 +197,10 @@ struct IOSFlexPoolPage: View {
             claimError = "Scheduling service not available"
             return
         }
+        guard let currentUserId else {
+            claimError = "Your session is unavailable. Please log in again."
+            return
+        }
 
         do {
             try service.claimFlexJob(jobId: job.id, userId: currentUserId)
@@ -217,6 +221,12 @@ struct IOSFlexPoolPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
+        guard let currentUserId else {
+            isLoading = false
+            flexJobs = []
+            loadError = "Your session is unavailable. Please log in again."
+            return
+        }
         guard let service = appCore.schedulingService else {
             isLoading = false
             loadError = "Scheduling service not available."

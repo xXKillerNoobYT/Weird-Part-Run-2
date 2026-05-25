@@ -197,6 +197,22 @@ struct Weird_Parts_IOSTests {
         #expect(scannerSource.contains("activeContinuation?.finish()"), "Startup failures should finish the scan stream instead of leaving a dead sheet")
     }
 
+    @Test func flexPoolPageRequiresCurrentUserBeforeLoadAndClaim() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let pageURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Scheduling/IOSFlexPoolPage.swift")
+        let pageSource = try String(contentsOf: pageURL, encoding: .utf8)
+
+        #expect(!pageSource.contains("appCore.currentUser?.id ?? 0"), "Flex Pool page must not fall back to user id 0 when session state is unavailable.")
+        #expect(pageSource.contains("guard let currentUserId else"), "Flex Pool load/claim paths must require a real current user id before invoking SchedulingService.")
+        #expect(pageSource.contains("Your session is unavailable. Please log in again."), "Flex Pool should surface a clear session/login message when current user is missing.")
+        #expect(pageSource.contains("try service.fetchFlexPool(userId: currentUserId)"), "Flex Pool fetch should only run with the guarded current user id.")
+        #expect(pageSource.contains("try service.claimFlexJob(jobId: job.id, userId: currentUserId)"), "Flex Pool claim should only run with the guarded current user id.")
+    }
+
     @Test func uiTestingFixturesSeedJPOFlowDataForQASmoke() throws {
         let db = try AppDatabase.openInMemoryDatabase()
         let auth = AuthService(db: db)
