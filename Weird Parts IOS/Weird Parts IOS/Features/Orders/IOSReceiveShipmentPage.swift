@@ -17,7 +17,9 @@ struct IOSReceiveShipmentPage: View {
     @State private var activeSessionId: Int64?
     @State private var sessionItems: [WarehouseService.ReceivingItemInfo] = []
     @State private var receivedQtys: [Int64: Int] = [:]  // itemId -> qty
+    @State private var differentPriceInputs: [Int64: String] = [:]  // itemId -> raw input
     @State private var priceVerifications: [Int64: PriceVerification] = [:]  // itemId -> verification
+    @State private var invalidDifferentPriceItemIds: Set<Int64> = []
     @State private var isCompleting = false
     @State private var completionMessage: String?
     @State private var activeSheet: ActiveSheet?
@@ -145,7 +147,9 @@ struct IOSReceiveShipmentPage: View {
                 completionMessage = nil
                 activeSessionId = nil
                 sessionItems = []
+                differentPriceInputs = [:]
                 priceVerifications = [:]
+                invalidDifferentPriceItemIds = []
                 receivedQtys = [:]
                 routingResults = [:]
                 loadData()
@@ -451,7 +455,9 @@ struct IOSReceiveShipmentPage: View {
                     Button(role: .destructive) {
                         activeSessionId = nil
                         sessionItems = []
+                        differentPriceInputs = [:]
                         priceVerifications = [:]
+                        invalidDifferentPriceItemIds = []
                         receivedQtys = [:]
                         routingResults = [:]
                         loadData()
@@ -489,7 +495,9 @@ struct IOSReceiveShipmentPage: View {
                 Button {
                     activeSessionId = nil
                     sessionItems = []
+                    differentPriceInputs = [:]
                     priceVerifications = [:]
+                    invalidDifferentPriceItemIds = []
                     receivedQtys = [:]
                     routingResults = [:]
                     loadData()
@@ -774,6 +782,7 @@ struct IOSReceiveShipmentPage: View {
             HStack(spacing: 8) {
                 Button {
                     priceVerifications[itemId] = .matches
+                    invalidDifferentPriceItemIds.remove(itemId)
                 } label: {
                     Label("Matches", systemImage: currentVerification.isMatches ? "checkmark.circle.fill" : "circle")
                         .font(.caption)
@@ -785,7 +794,12 @@ struct IOSReceiveShipmentPage: View {
                 .buttonStyle(.plain)
 
                 Button {
-                    priceVerifications[itemId] = .different(newPrice: 0)
+                    let existingInput = differentPriceInputs[itemId]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    if let parsed = Double(existingInput), parsed > 0 {
+                        priceVerifications[itemId] = .different(newPrice: parsed)
+                    } else {
+                        priceVerifications[itemId] = .different(newPrice: 0)
+                    }
                 } label: {
                     Label("Different", systemImage: currentVerification.isDifferent ? "exclamationmark.circle.fill" : "circle")
                         .font(.caption)
@@ -798,6 +812,7 @@ struct IOSReceiveShipmentPage: View {
 
                 Button {
                     priceVerifications[itemId] = .notShown
+                    invalidDifferentPriceItemIds.remove(itemId)
                 } label: {
                     Label("Not Shown", systemImage: currentVerification.isNotShown ? "questionmark.circle.fill" : "circle")
                         .font(.caption)
@@ -816,18 +831,39 @@ struct IOSReceiveShipmentPage: View {
                         .font(.caption)
                     TextField("0.00", text: Binding(
                         get: {
-                            if case .different(let p) = priceVerifications[itemId] {
-                                return p > 0 ? String(format: "%.2f", p) : ""
+                            if let cachedInput = differentPriceInputs[itemId] {
+                                return cachedInput
+                            }
+                            if case .different(let p) = priceVerifications[itemId], p > 0 {
+                                return String(format: "%.2f", p)
                             }
                             return ""
                         },
                         set: { newVal in
-                            priceVerifications[itemId] = .different(newPrice: Double(newVal) ?? 0)
+                            differentPriceInputs[itemId] = newVal
+                            let trimmed = newVal.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if let parsed = Double(trimmed), parsed > 0 {
+                                priceVerifications[itemId] = .different(newPrice: parsed)
+                                invalidDifferentPriceItemIds.remove(itemId)
+                            } else {
+                                priceVerifications[itemId] = .different(newPrice: 0)
+                            }
                         }
                     ))
                     .keyboardType(.decimalPad)
                     .textFieldStyle(.roundedBorder)
+                    .overlay {
+                        if invalidDifferentPriceItemIds.contains(itemId) {
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color.red, lineWidth: 1)
+                        }
+                    }
                     .frame(maxWidth: 120)
+                }
+                if invalidDifferentPriceItemIds.contains(itemId) {
+                    Label("Enter a valid price greater than 0.", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.red)
                 }
             }
         }
@@ -892,6 +928,8 @@ struct IOSReceiveShipmentPage: View {
         do {
             let sessionId = try service.startReceivingSession(poId: poId, startedBy: userId)
             activeSessionId = sessionId
+            differentPriceInputs = [:]
+            invalidDifferentPriceItemIds = []
             loadSessionItems()
         } catch {
             actionError = userFriendlyError(error, context: "receive shipment")
@@ -933,6 +971,25 @@ struct IOSReceiveShipmentPage: View {
             return
         }
 
+        let invalidDifferentItems = sessionItems.compactMap { item -> WarehouseService.ReceivingItemInfo? in
+            let qty = receivedQtys[item.id] ?? item.expectedQty
+            guard qty > 0 else { return nil }
+            guard case .different(let newPrice)? = priceVerifications[item.id], newPrice <= 0 else { return nil }
+            return item
+        }
+        guard invalidDifferentItems.isEmpty else {
+            invalidDifferentPriceItemIds = Set(invalidDifferentItems.map(\.id))
+            let names = invalidDifferentItems
+                .map(\.partName)
+                .prefix(3)
+                .joined(separator: ", ")
+            let extraCount = invalidDifferentItems.count - min(3, invalidDifferentItems.count)
+            let suffix = extraCount > 0 ? " and \(extraCount) more" : ""
+            actionError = "Enter a valid actual price (> 0) for each 'Different' item before completing. Check: \(names)\(suffix)."
+            return
+        }
+
+        invalidDifferentPriceItemIds = []
         isCompleting = true
         actionError = nil
 
