@@ -72,7 +72,7 @@ On any computer connected to the same Wi-Fi:
 ### First Login
 
 1. Select the admin user ("Admin")
-2. Enter the default PIN: **1234**
+2. Enter the admin PIN created during setup
 3. You're in! Go to **Settings → People** to create employee accounts
 
 ### Create Employee Accounts
@@ -213,7 +213,7 @@ The script will show available backups and let you choose one. A safety backup o
 | Server won't start | Check Python is installed: `python --version` |
 | Can't access from other computers | Ensure all devices are on the same Wi-Fi network |
 | Mobile app can't connect | Check the shop URL in Settings → Sync. Must include `http://` and port |
-| "Invalid PIN" | Default admin PIN is 1234. Ask your admin to reset your PIN |
+| "Invalid PIN" | Ask your admin to reset your PIN |
 | Slow performance | The database grows over time. Regular backups + cleanup help |
 | Data not syncing | Tap the sync icon in the header. Check if shop is reachable |
 

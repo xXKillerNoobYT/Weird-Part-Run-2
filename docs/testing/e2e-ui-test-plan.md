@@ -36,10 +36,10 @@
 |---|--------|-----------------|--------|
 | 1.1 | Launch Tauri app for the first time | UserPicker shows with "Set Up New Company" and "Sync from Another Device" | SKIP — Admin pre-existing in test DB |
 | 1.2 | Click "Set Up New Company" | Form appears: company name + admin name + PIN | SKIP — Admin pre-existing |
-| 1.3 | Enter company "Test Co", admin "Admin User", PIN "1234" | Submits, creates admin user, redirects to main app | SKIP — Admin pre-existing |
+| 1.3 | Enter company "Test Co", admin "Admin User", test PIN | Submits, creates admin user, redirects to main app | SKIP — Admin pre-existing |
 | 1.4 | Check About page (Settings → About) | Shows platform info (e.g. "Native (macos)"), version "0.1.0" | SKIP — Tested in 10.6 |
 | 1.5 | Logout (user menu → logout) | Returns to UserPicker, shows "Admin User" card | PASS — Sign out returns to UserPicker with admin card |
-| 1.6 | Click admin card, enter PIN "1234" | Logs in, shows main dashboard | PASS — Correct PIN logs in to dashboard |
+| 1.6 | Click admin card, enter test PIN | Logs in, shows main dashboard | PASS — Correct PIN logs in to dashboard |
 | 1.7 | Enter wrong PIN "9999" | Shows error message, does not log in | PASS — "Invalid PIN" error shown, login blocked |
 
 ---
