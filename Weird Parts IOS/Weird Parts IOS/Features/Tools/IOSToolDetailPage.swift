@@ -1389,7 +1389,12 @@ struct ToolTradeSheet: View {
                                 }
                             }
                             .contentShape(Rectangle())
-                            .onTapGesture { selectedUser = emp.id }
+                            .onTapGesture {
+                                if selectedUser != emp.id {
+                                    selectedUser = emp.id
+                                    isDirty = true
+                                }
+                            }
                         }
                     }
                 }
