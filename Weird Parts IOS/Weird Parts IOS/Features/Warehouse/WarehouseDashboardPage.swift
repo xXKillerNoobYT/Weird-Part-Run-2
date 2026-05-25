@@ -384,11 +384,11 @@ struct WarehouseDashboardPage: View {
                 // Smart Card Filters
                 smartCardFilters
 
-                // KPI Summary
-                kpiRow
-
                 // Quick Actions
                 quickActionsSection
+
+                // KPI Summary
+                kpiRow
 
                 // Sub-page Links
                 subPageLinks
@@ -397,6 +397,7 @@ struct WarehouseDashboardPage: View {
                 recentActivitySection
             }
             .padding()
+            .padding(.bottom, 24)
         }
     }
 
@@ -626,7 +627,6 @@ struct WarehouseDashboardPage: View {
             quickActionButton(title: action.title, icon: action.icon, color: action.color)
         }
             .buttonStyle(.plain)
-            .accessibilityElement(children: .ignore)
             .accessibilityLabel(action.title)
             .accessibilityAddTraits(.isButton)
             .accessibilityIdentifier(action.identifier)
