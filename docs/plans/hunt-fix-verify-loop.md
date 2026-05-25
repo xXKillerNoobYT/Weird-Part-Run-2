@@ -89,7 +89,8 @@ These are the "eyes" of the loop. They don't fix anything — they just produce 
 ### Scanner 5: Problems Folder
 - **Input:** `docs/Problomes/` directory
 - **Output:** List of user-reported issues not yet fixed
-- **Pass condition:** Every file has been addressed
+- **Normalization rule:** `docs/Problomes/` is canonical. If `docs/Problomes ` (trailing space) exists, treat it as the same backlog and fail scanner setup until paths are normalized.
+- **Pass condition:** Every file has been addressed (do not treat a missing canonical path as pass when a trailing-space alias exists)
 
 ### Scanner 6: Master Issue List
 - **Input:** `docs/plans/master-issue-list.md`
