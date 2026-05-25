@@ -1201,9 +1201,19 @@ private struct ForecastDetailSheet: View {
             return
         }
 
-        let min = Int(editMinStock) ?? 0
-        let target = Int(editTargetStock) ?? 0
-        let max = Int(editMaxStock) ?? 0
+        func parseStockField(_ value: String, fieldName: String) -> Int? {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, let parsed = Int(trimmed) else {
+                editError = "\(fieldName) must be a whole number"
+                isSaving = false
+                return nil
+            }
+            return parsed
+        }
+
+        guard let min = parseStockField(editMinStock, fieldName: "Min Stock") else { return }
+        guard let target = parseStockField(editTargetStock, fieldName: "Target Stock") else { return }
+        guard let max = parseStockField(editMaxStock, fieldName: "Max Stock") else { return }
         guard min < target else {
             editError = "Min stock must be less than target stock"
             isSaving = false
