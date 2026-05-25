@@ -499,6 +499,9 @@ public final class OrdersService: Sendable {
         public let jpoLineId: Int64?
         public let partId: Int64?
         public let partName: String?
+        public let brandId: Int64?
+        public let brandName: String?
+        public let brandSelectionMode: String
         public let description: String?
         public let quantityOrdered: Int
         public let quantityReceived: Int
@@ -515,7 +518,7 @@ public final class OrdersService: Sendable {
 
         public init(
             id: Int64, poId: Int64, jpoLineId: Int64?, partId: Int64?,
-            partName: String?, description: String?,
+            partName: String?, brandId: Int64? = nil, brandName: String? = nil, brandSelectionMode: String = "specific", description: String?,
             quantityOrdered: Int, quantityReceived: Int, unitPrice: Double?,
             status: String, notes: String?, createdAt: String?,
             jobId: Int64? = nil, jobName: String? = nil, source: String? = nil
@@ -525,6 +528,9 @@ public final class OrdersService: Sendable {
             self.jpoLineId = jpoLineId
             self.partId = partId
             self.partName = partName
+            self.brandId = brandId
+            self.brandName = brandName
+            self.brandSelectionMode = brandSelectionMode
             self.description = description
             self.quantityOrdered = quantityOrdered
             self.quantityReceived = quantityReceived
@@ -2529,15 +2535,21 @@ public final class OrdersService: Sendable {
                     guard item.quantity > 0 else { throw OrdersError.invalidQuantity(item.quantity) }
 
                     if item.jpoLineIds.isEmpty {
+                        let partBrandId = try Int64.fetchOne(
+                            dbConn,
+                            sql: "SELECT brand_id FROM parts WHERE id = ? AND deleted_at IS NULL",
+                            arguments: [item.partId]
+                        )
                         try dbConn.execute(
                             sql: """
                                 INSERT INTO po_line_items
-                                (po_id, part_id, qty_ordered, unit_cost, notes, created_at)
-                                VALUES (?, ?, ?, ?, ?, datetime('now'))
+                                (po_id, part_id, brand_id, brand_selection_mode, qty_ordered, unit_cost, notes, created_at)
+                                VALUES (?, ?, ?, 'specific', ?, ?, ?, datetime('now'))
                                 """,
                             arguments: [
                                 poId,
                                 item.partId,
+                                partBrandId,
                                 item.quantity,
                                 item.unitCost,
                                 procurementLineNotes(for: item)
@@ -2552,14 +2564,30 @@ public final class OrdersService: Sendable {
                     var remainingQty = item.quantity
                     for jpoLineId in item.jpoLineIds where remainingQty > 0 {
                         let lineRow = try Row.fetchOne(dbConn, sql: """
-                            SELECT part_id, qty_requested
-                            FROM jpo_line_items
-                            WHERE id = ? AND deleted_at IS NULL
+                            SELECT jl.part_id,
+                                   jl.qty_requested,
+                                   COALESCE(jl.brand_selection_mode, 'specific') AS brand_selection_mode,
+                                   p.brand_id AS part_brand_id
+                            FROM jpo_line_items jl
+                            LEFT JOIN parts p ON p.id = jl.part_id AND p.deleted_at IS NULL
+                            WHERE jl.id = ? AND jl.deleted_at IS NULL
                             """, arguments: [jpoLineId])
                         guard let lineRow else { throw OrdersError.invalidStatus("JPO line #\(jpoLineId) not found or has been deleted") }
                         let sourcePartId: Int64 = lineRow["part_id"] ?? item.partId
                         guard sourcePartId == item.partId else { throw OrdersError.partNotFound(item.partId) }
                         let sourceQty: Int = lineRow["qty_requested"] ?? item.quantity
+                        var brandSelectionMode: String = lineRow["brand_selection_mode"] ?? "specific"
+                        var resolvedBrandId: Int64? = lineRow["part_brand_id"]
+                        if brandSelectionMode == "general" {
+                            switch try resolveGeneralLineItem(jpoLineId: jpoLineId, supplierId: item.supplierId) {
+                            case .resolved(let brandId, _):
+                                resolvedBrandId = brandId
+                            case .alreadySpecific:
+                                brandSelectionMode = "specific"
+                            case .noMatch:
+                                throw OrdersError.invalidStatus("Supplier doesn't carry this brand — pick another supplier")
+                            }
+                        }
                         let lineQty = item.jpoLineIds.count == 1 ? item.quantity : min(sourceQty, remainingQty)
                         guard lineQty > 0 else { continue }
                         remainingQty -= lineQty
@@ -2567,10 +2595,10 @@ public final class OrdersService: Sendable {
                         try dbConn.execute(
                             sql: """
                                 INSERT INTO po_line_items
-                                (po_id, jpo_line_id, part_id, qty_ordered, unit_cost, created_at)
-                                VALUES (?, ?, ?, ?, ?, datetime('now'))
+                                (po_id, jpo_line_id, part_id, brand_id, brand_selection_mode, qty_ordered, unit_cost, created_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
                                 """,
-                            arguments: [poId, jpoLineId, item.partId, lineQty, item.unitCost]
+                            arguments: [poId, jpoLineId, item.partId, resolvedBrandId, brandSelectionMode, lineQty, item.unitCost]
                         )
                         let poLineId = dbConn.lastInsertedRowID
                         totalLines += 1
@@ -2892,9 +2920,14 @@ public final class OrdersService: Sendable {
             let lines = try Row.fetchAll(
                 dbConn,
                 sql: """
-                    SELECT id, part_id, qty_requested
-                    FROM jpo_line_items
-                    WHERE jpo_id = ? AND deleted_at IS NULL
+                    SELECT jl.id,
+                           jl.part_id,
+                           jl.qty_requested,
+                           COALESCE(jl.brand_selection_mode, 'specific') AS brand_selection_mode,
+                           p.brand_id AS part_brand_id
+                    FROM jpo_line_items jl
+                    LEFT JOIN parts p ON p.id = jl.part_id AND p.deleted_at IS NULL
+                    WHERE jl.jpo_id = ? AND jl.deleted_at IS NULL
                     """,
                 arguments: [jpoId]
             )
@@ -2902,13 +2935,25 @@ public final class OrdersService: Sendable {
                 let partId: Int64 = line["part_id"] ?? 0
                 let qty: Int = line["qty_requested"] ?? 1
                 let jpoLineId: Int64 = line["id"] ?? 0
+                var brandSelectionMode: String = line["brand_selection_mode"] ?? "specific"
+                var resolvedBrandId: Int64? = line["part_brand_id"]
+                if brandSelectionMode == "general" {
+                    switch try resolveGeneralLineItem(jpoLineId: jpoLineId, supplierId: supplierId) {
+                    case .resolved(let brandId, _):
+                        resolvedBrandId = brandId
+                    case .alreadySpecific:
+                        brandSelectionMode = "specific"
+                    case .noMatch:
+                        throw OrdersError.invalidStatus("Supplier doesn't carry this brand — pick another supplier")
+                    }
+                }
                 try dbConn.execute(
                     sql: """
                         INSERT INTO po_line_items
-                        (po_id, jpo_line_id, part_id, qty_ordered, created_at)
-                        VALUES (?, ?, ?, ?, datetime('now'))
+                        (po_id, jpo_line_id, part_id, brand_id, brand_selection_mode, qty_ordered, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
                         """,
-                    arguments: [poId, jpoLineId, partId, qty]
+                    arguments: [poId, jpoLineId, partId, resolvedBrandId, brandSelectionMode, qty]
                 )
                 let poLineId = dbConn.lastInsertedRowID
                 try dbConn.execute(
@@ -3014,6 +3059,8 @@ public final class OrdersService: Sendable {
             let linesSql = """
                 SELECT pl.*,
                        p.name AS part_name,
+                       b.id AS line_brand_id,
+                       b.name AS line_brand_name,
                        j.id AS job_id,
                        COALESCE(j.job_name,
                            CASE WHEN pl.notes LIKE '%forecast%' THEN 'Forecast Restock'
@@ -3028,6 +3075,7 @@ public final class OrdersService: Sendable {
                        END AS source
                 FROM po_line_items pl
                 LEFT JOIN parts p ON p.id = pl.part_id AND p.deleted_at IS NULL
+                LEFT JOIN brands b ON b.id = pl.brand_id AND b.deleted_at IS NULL
                 LEFT JOIN jpo_line_items jli ON jli.id = pl.jpo_line_id
                 LEFT JOIN job_parts_orders jpo ON jpo.id = jli.jpo_id
                 LEFT JOIN jobs j ON j.id = jpo.job_id AND j.deleted_at IS NULL
@@ -3042,6 +3090,9 @@ public final class OrdersService: Sendable {
                     jpoLineId: lr["jpo_line_id"] as Int64?,
                     partId: lr["part_id"] as Int64?,
                     partName: lr["part_name"] as String?,
+                    brandId: lr["line_brand_id"] as Int64?,
+                    brandName: lr["line_brand_name"] as String?,
+                    brandSelectionMode: lr["brand_selection_mode"] ?? "specific",
                     description: lr["description"] as String?,
                     quantityOrdered: lr["qty_ordered"] ?? 0,
                     quantityReceived: lr["qty_received"] ?? 0,

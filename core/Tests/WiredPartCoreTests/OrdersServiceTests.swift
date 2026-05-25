@@ -1844,6 +1844,111 @@ struct OrdersServiceTests {
         }
     }
 
+    @Test("generatePOsFromProcurement persists resolved brand for general-mode JPO lines")
+    func testGeneratePOsFromProcurementPersistsResolvedBrand() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env, type: "POGenType")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "POGenCat")
+        let colorId = try env.parts.createColor(name: "POGenColor", hexCode: "#ABC123")
+        let brandId = try E2ETestHelpers.seedBrand(env, name: "POGenBrand")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "POGenSupplier")
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "INSERT OR IGNORE INTO brand_supplier_links (brand_id, supplier_id, is_active) VALUES (?, ?, 1)",
+                arguments: [brandId, supplierId]
+            )
+        }
+        _ = try env.parts.upsertColorBrandSKU(colorId: colorId, brandId: brandId, typeId: typeId)
+
+        let partId = try env.parts.createPart(
+            categoryId: catId,
+            name: "PO General Part",
+            typeId: typeId,
+            colorId: colorId,
+            brandId: brandId
+        )
+        let lineId = try approvedJPOLine(env, jobId: jobId, partId: partId, quantity: 2)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE jpo_line_items SET brand_selection_mode = 'general' WHERE id = ?",
+                arguments: [lineId]
+            )
+        }
+
+        let result = try env.orders.generatePOsFromProcurement(items: [
+            OrdersService.ProcurementGenerateItem(
+                partId: partId,
+                supplierId: supplierId,
+                quantity: 2,
+                jpoLineIds: [lineId]
+            )
+        ])
+        let poId = try #require(result.createdPOs.first?.poId)
+
+        try env.db.writer.read { db in
+            let row = try Row.fetchOne(
+                db,
+                sql: "SELECT brand_id, brand_selection_mode FROM po_line_items WHERE po_id = ? LIMIT 1",
+                arguments: [poId]
+            )
+            let storedBrandId: Int64? = row?["brand_id"]
+            let storedMode: String? = row?["brand_selection_mode"]
+            #expect(storedBrandId == brandId)
+            #expect(storedMode == "general")
+        }
+
+        let poDetail = try env.orders.getPODetail(id: poId)
+        #expect(poDetail.lines.first?.brandName == "POGenBrand")
+        #expect(poDetail.lines.first?.brandSelectionMode == "general")
+    }
+
+    @Test("generatePOsFromProcurement blocks unresolved general-mode brand")
+    func testGeneratePOsFromProcurementBlocksUnresolvedGeneralBrand() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env, type: "POBlockType")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "POBlockCat")
+        let colorId = try env.parts.createColor(name: "POBlockColor", hexCode: "#456DEF")
+        let brandId = try E2ETestHelpers.seedBrand(env, name: "POBlockBrand")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "NoBrandSupplier")
+
+        _ = try env.parts.upsertColorBrandSKU(colorId: colorId, brandId: brandId, typeId: typeId)
+        let partId = try env.parts.createPart(
+            categoryId: catId,
+            name: "PO Block Part",
+            typeId: typeId,
+            colorId: colorId,
+            brandId: brandId
+        )
+        let lineId = try approvedJPOLine(env, jobId: jobId, partId: partId, quantity: 1)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE jpo_line_items SET brand_selection_mode = 'general' WHERE id = ?",
+                arguments: [lineId]
+            )
+        }
+
+        do {
+            _ = try env.orders.generatePOsFromProcurement(items: [
+                OrdersService.ProcurementGenerateItem(
+                    partId: partId,
+                    supplierId: supplierId,
+                    quantity: 1,
+                    jpoLineIds: [lineId]
+                )
+            ])
+            #expect(Bool(false), "Expected unresolved general-mode supplier rejection")
+        } catch let error as OrdersService.OrdersError {
+            guard case .invalidStatus(let message) = error else {
+                #expect(Bool(false), "Unexpected OrdersError: \(error)")
+                return
+            }
+            #expect(message.contains("Supplier doesn't carry this brand"))
+        }
+    }
+
     @Test("listJPOs shows Unknown for soft-deleted job and user")
     func testListJPOsHidesDeletedJobAndUser() throws {
         let env = try E2ETestHelpers.setUp()

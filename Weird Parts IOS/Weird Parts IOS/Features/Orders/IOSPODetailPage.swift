@@ -1341,6 +1341,33 @@ struct IOSPODetailPage: View {
                         .font(.subheadline)
                         .fontWeight(.medium)
 
+                    if line.brandSelectionMode == "general" {
+                        if let brandName = line.brandName, !brandName.isEmpty {
+                            HStack(spacing: 4) {
+                                Image(systemName: "info.circle.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(.teal)
+                                    .accessibilityHidden(true)
+                                Text("Resolved: \(brandName)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.teal)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(Color.teal.opacity(0.12)))
+                        } else {
+                            HStack(spacing: 4) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(.red)
+                                    .accessibilityHidden(true)
+                                Text("Supplier doesn't carry this brand — unresolved")
+                                    .font(.caption2)
+                                    .foregroundStyle(.red)
+                            }
+                        }
+                    }
+
                     // Stale price warning
                     if let partId = line.partId,
                        let service = appCore.partsService,

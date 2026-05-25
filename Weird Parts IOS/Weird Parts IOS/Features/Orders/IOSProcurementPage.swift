@@ -49,10 +49,16 @@ struct IOSProcurementPage: View {
     // avoids per-render filter scans in smart card filters and PO preview section.
     @State private var sourceCounts: [String: Int] = [:]
     @State private var cachedReadyToGenerate: [OrdersService.ProcurementItem] = []
+    @State private var generalBrandResolutionByLineId: [Int64: GeneralBrandResolution] = [:]
 
     private enum ActiveSheet: Identifiable {
         case help
         var id: String { "help" }
+    }
+
+    private enum GeneralBrandResolution {
+        case resolved(brandName: String)
+        case unresolved
     }
 
     private var generateErrorPresented: Binding<Bool> {
@@ -469,6 +475,9 @@ struct IOSProcurementPage: View {
                         .font(.caption)
                         .monospaced()
                 }
+                if source.sourceType == "jpo" {
+                    sourceResolutionBadge(source.lineIds)
+                }
             }
 
             // Pull options
@@ -682,6 +691,10 @@ struct IOSProcurementPage: View {
         }
 
         do {
+            if let blockingError = validateGeneralResolutionBeforeGenerate() {
+                generateError = blockingError
+                return
+            }
             let result = try service.generatePOsFromProcurement(items: generateItems)
             let poNumbers = result.createdPOs.map(\.poNumber).joined(separator: ", ")
             generateSuccess = "Created \(result.createdPOs.count) PO(s): \(poNumbers) with \(result.totalLineItems) line items"
@@ -729,6 +742,7 @@ struct IOSProcurementPage: View {
                     supplierRow(supplier, isSelected: selectedSupplier[item.id] == supplier.id)
                         .onTapGesture {
                             selectedSupplier[item.id] = supplier.id
+                            resolveGeneralLineItems(for: item, supplierId: supplier.id)
                         }
                 }
             }
@@ -829,6 +843,98 @@ struct IOSProcurementPage: View {
             .padding(.vertical, 2)
             .background(Capsule().fill(color.opacity(0.15)))
             .foregroundStyle(color)
+    }
+
+    @ViewBuilder
+    private func sourceResolutionBadge(_ lineIds: [Int64]) -> some View {
+        let states = lineIds.compactMap { generalBrandResolutionByLineId[$0] }
+        if states.contains(where: {
+            if case .unresolved = $0 { return true }
+            return false
+        }) {
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .accessibilityHidden(true)
+                Text("Supplier doesn't carry this brand — pick another supplier")
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+            }
+        } else {
+            let brandNames = Set(states.compactMap { state -> String? in
+                if case .resolved(let brandName) = state { return brandName }
+                return nil
+            })
+            if !brandNames.isEmpty {
+                HStack(spacing: 4) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.teal)
+                        .accessibilityHidden(true)
+                    Text("Resolved: \(brandNames.sorted().joined(separator: ", "))")
+                        .font(.caption2)
+                        .foregroundStyle(.teal)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(Color.teal.opacity(0.12)))
+            }
+        }
+    }
+
+    private func jpoLineIds(for item: OrdersService.ProcurementItem) -> [Int64] {
+        item.sources
+            .filter { $0.sourceType == "jpo" }
+            .flatMap(\.lineIds)
+    }
+
+    private func resolveGeneralLineItems(for item: OrdersService.ProcurementItem, supplierId: Int64) {
+        guard let ordersService = appCore.ordersService else { return }
+        let lineIds = jpoLineIds(for: item)
+        guard !lineIds.isEmpty else { return }
+
+        for lineId in lineIds {
+            do {
+                switch try ordersService.resolveGeneralLineItem(jpoLineId: lineId, supplierId: supplierId) {
+                case .alreadySpecific:
+                    generalBrandResolutionByLineId.removeValue(forKey: lineId)
+                case .resolved(let brandId, _):
+                    let brandName = (try? appCore.partsService?.getBrand(id: brandId).name) ?? "Brand #\(brandId)"
+                    generalBrandResolutionByLineId[lineId] = .resolved(brandName: brandName)
+                case .noMatch:
+                    generalBrandResolutionByLineId[lineId] = .unresolved
+                }
+            } catch {
+                generalBrandResolutionByLineId[lineId] = .unresolved
+            }
+        }
+    }
+
+    private func validateGeneralResolutionBeforeGenerate() -> String? {
+        guard let ordersService = appCore.ordersService else { return "Orders service not available" }
+        for item in cachedReadyToGenerate {
+            guard let supplierId = selectedSupplier[item.id] else { continue }
+            let lineIds = jpoLineIds(for: item)
+            for lineId in lineIds {
+                do {
+                    switch try ordersService.resolveGeneralLineItem(jpoLineId: lineId, supplierId: supplierId) {
+                    case .alreadySpecific:
+                        continue
+                    case .resolved(let brandId, _):
+                        let brandName = (try? appCore.partsService?.getBrand(id: brandId).name) ?? "Brand #\(brandId)"
+                        generalBrandResolutionByLineId[lineId] = .resolved(brandName: brandName)
+                    case .noMatch:
+                        generalBrandResolutionByLineId[lineId] = .unresolved
+                        return "Supplier doesn't carry this brand — pick another supplier"
+                    }
+                } catch {
+                    generalBrandResolutionByLineId[lineId] = .unresolved
+                    return userFriendlyError(error, context: "resolve brand")
+                }
+            }
+        }
+        return nil
     }
 
     private func tagInfo(_ tag: String) -> (String, Color) {
@@ -1161,12 +1267,19 @@ struct IOSProcurementPage: View {
             // Clean up pull decisions for parts no longer in the list
             let currentIds = Set(newItems.map(\.id))
             pullDecisions = pullDecisions.filter { currentIds.contains($0.key) }
+            let currentLineIds = Set(newItems.flatMap { item in
+                item.sources.filter { $0.sourceType == "jpo" }.flatMap(\.lineIds)
+            })
+            generalBrandResolutionByLineId = generalBrandResolutionByLineId.filter { currentLineIds.contains($0.key) }
             items = newItems
             // Auto-select preferred suppliers
             for item in items {
                 if selectedSupplier[item.id] == nil,
                    let preferred = item.suppliers.first(where: { $0.isPreferred }) {
                     selectedSupplier[item.id] = preferred.id
+                }
+                if let supplierId = selectedSupplier[item.id] {
+                    resolveGeneralLineItems(for: item, supplierId: supplierId)
                 }
             }
             // Single-pass source counts — avoids per-render filter scans in smart card filters.

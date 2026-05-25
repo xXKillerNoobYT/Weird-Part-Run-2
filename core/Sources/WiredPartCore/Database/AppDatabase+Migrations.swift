@@ -134,6 +134,7 @@ extension AppDatabase {
         registerMigration095JobStageTemplates(&migrator)
         registerMigration096SubcontractorScheduleSoftDeleteUniqueness(&migrator)
         registerMigration097PartImportAuditSessions(&migrator)
+        registerMigration098POLineBrandResolution(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5554,6 +5555,19 @@ extension AppDatabase {
             try db.create(index: "idx_part_import_sessions_source_hash", on: "part_import_sessions", columns: ["source_hash"])
             try db.create(index: "idx_part_import_sessions_started", on: "part_import_sessions", columns: ["started_at"])
             try db.create(index: "idx_part_import_row_evidence_session", on: "part_import_row_evidence", columns: ["session_id", "row_number"])
+        }
+    }
+
+    // MARK: - Migration 098: PO line resolved brand persistence
+
+    private static func registerMigration098POLineBrandResolution(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("098_po_line_brand_resolution") { db in
+            try addColumnIfMissing(db, table: "po_line_items", column: "brand_id", type: .integer)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_po_line_items_brand
+                ON po_line_items (brand_id)
+                WHERE deleted_at IS NULL
+                """)
         }
     }
 
