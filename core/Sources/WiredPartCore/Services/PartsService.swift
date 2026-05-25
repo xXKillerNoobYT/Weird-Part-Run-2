@@ -5825,11 +5825,10 @@ public final class PartsService: Sendable {
                 headers += ["category", "style", "type", "brand", "color"]
             }
             if groups.contains(.pricing) {
-                // Fix #209: use weighted_avg_cost (actual FIFO/LIFO cost) not company_cost_price,
-                // so exported sell prices match what the app displays.
-                columns += ["p.weighted_avg_cost AS cost_price", "p.company_markup_percent AS markup_percent",
+                columns += ["p.company_cost_price AS cost_price", "p.weighted_avg_cost AS weighted_avg_cost",
+                             "p.company_markup_percent AS markup_percent",
                              "ROUND(p.weighted_avg_cost * (1.0 + p.company_markup_percent / 100.0), 2) AS sell_price"]
-                headers += ["cost_price", "markup_percent", "sell_price"]
+                headers += ["cost_price", "weighted_avg_cost", "markup_percent", "sell_price"]
             }
             if groups.contains(.stockLevels) {
                 columns += ["p.min_stock_level AS min_stock", "p.target_stock_level AS target_stock", "p.max_stock_level AS max_stock",

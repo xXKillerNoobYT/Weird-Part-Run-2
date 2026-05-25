@@ -622,7 +622,7 @@ extension PartsService.ExportFieldGroup {
     var displayName: String {
         switch self {
         case .hierarchy: return "Hierarchy (category, style, type, brand, color)"
-        case .pricing: return "Pricing (cost, markup, sell price)"
+        case .pricing: return "Pricing (company cost, weighted avg cost, markup, sell price)"
         case .stockLevels: return "Stock Levels (min, target, max, current)"
         case .forecast: return "Forecast (ADU, days until low, suggested order)"
         case .details: return "Details (description, UOM, shelf/bin location)"
