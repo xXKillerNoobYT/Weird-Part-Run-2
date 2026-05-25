@@ -305,15 +305,38 @@ struct E2EPartsCatalogTests {
 
     @Test("Export and import parts CSV round-trips")
     func testCSVRoundTrip() throws {
-        let env = try E2ETestHelpers.setUp()
-        let catId = try E2ETestHelpers.seedCategory(env, name: "CSVTest")
-        _ = try env.parts.createPart(categoryId: catId, name: "CSV Part 1", code: "CSV-001")
-        _ = try env.parts.createPart(categoryId: catId, name: "CSV Part 2", code: "CSV-002")
+        let exportEnv = try E2ETestHelpers.setUp()
+        let (categoryId, styleId, typeId) = try E2ETestHelpers.seedPartHierarchy(
+            exportEnv,
+            category: "CSVTest",
+            style: "Raceway",
+            type: "Conduit"
+        )
+        let quotedName = "A \"quoted\" part"
+        let code = "CSV-001"
+        _ = try exportEnv.parts.createPart(
+            categoryId: categoryId,
+            name: quotedName,
+            partType: "Conduit",
+            styleId: styleId,
+            typeId: typeId,
+            code: code
+        )
 
-        let csv = try env.parts.exportPartsCSV(groups: Set(PartsService.ExportFieldGroup.allCases))
-        #expect(csv.contains("CSV Part 1"))
-        #expect(csv.contains("CSV Part 2"))
-        #expect(csv.contains("CSV-001"))
+        let csv = try exportEnv.parts.exportPartsCSV(groups: Set([.hierarchy]))
+        #expect(csv.contains(#""A ""quoted"" part""#))
+        #expect(csv.contains(",Conduit,"))
+
+        let importEnv = try E2ETestHelpers.setUp()
+        let preview = try importEnv.parts.previewPartsImportCSV(csv)
+        #expect(preview.errors.isEmpty)
+        #expect(preview.conflicts.isEmpty)
+        #expect(preview.newParts.count == 1)
+
+        _ = try importEnv.parts.commitPartsImportCSV(preview)
+        let imported = try #require(try importEnv.parts.findPartByCode(code))
+        #expect(imported.name == quotedName)
+        #expect(imported.partType == "Conduit")
     }
 
     // MARK: - Color Part Numbers (#46)

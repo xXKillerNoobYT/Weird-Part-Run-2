@@ -6043,7 +6043,10 @@ public final class PartsService: Sendable {
             throw PartsError.invalidInput(emptyDescription)
         }
 
-        let headers = rows[0].columns.map { $0.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) }
+        let headers = rows[0].columns.map {
+            let normalized = $0.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            return normalized == "type" ? "part_type" : normalized
+        }
         guard let nameIdx = headers.firstIndex(of: "name") else {
             throw PartsError.invalidInput("CSV must have a 'name' column.")
         }
@@ -6337,6 +6340,20 @@ public final class PartsService: Sendable {
         var iterator = line.makeIterator()
         while let char = iterator.next() {
             if char == "\"" {
+                if inQuotes, let next = iterator.next() {
+                    if next == "\"" {
+                        current.append("\"")
+                        continue
+                    }
+                    inQuotes = false
+                    if next == "," {
+                        fields.append(current)
+                        current = ""
+                    } else {
+                        current.append(next)
+                    }
+                    continue
+                }
                 inQuotes.toggle()
             } else if char == "," && !inQuotes {
                 fields.append(current)

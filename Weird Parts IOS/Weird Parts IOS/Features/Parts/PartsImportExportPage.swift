@@ -579,9 +579,24 @@ struct PartsImportExportPage: View {
         var fields: [String] = []
         var current = ""
         var inQuotes = false
+        var iterator = line.makeIterator()
 
-        for char in line {
+        while let char = iterator.next() {
             if char == "\"" {
+                if inQuotes, let next = iterator.next() {
+                    if next == "\"" {
+                        current.append("\"")
+                        continue
+                    }
+                    inQuotes = false
+                    if next == "," {
+                        fields.append(current.trimmingCharacters(in: .whitespacesAndNewlines))
+                        current = ""
+                    } else {
+                        current.append(next)
+                    }
+                    continue
+                }
                 inQuotes.toggle()
             } else if char == "," && !inQuotes {
                 fields.append(current.trimmingCharacters(in: .whitespacesAndNewlines))
