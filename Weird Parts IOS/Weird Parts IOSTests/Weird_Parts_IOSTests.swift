@@ -197,6 +197,21 @@ struct Weird_Parts_IOSTests {
         #expect(scannerSource.contains("activeContinuation?.finish()"), "Startup failures should finish the scan stream instead of leaving a dead sheet")
     }
 
+    @Test func dashboardQRScannerEmbedsLiveCameraPreviewInsteadOfPlaceholder() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let pageURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Dashboard/IOSDashboardQRScannerPage.swift")
+        let pageSource = try String(contentsOf: pageURL, encoding: .utf8)
+
+        #expect(pageSource.contains("if DataScannerViewController.isSupported {"), "Supported devices should use the live scanner camera section")
+        #expect(pageSource.contains("IOSQRScannerView(isScanning: isScanning && !isLocked)"), "Camera section should embed the live DataScannerViewController wrapper")
+        #expect(!pageSource.contains("Camera preview placeholder"), "Dashboard scanner should not keep the old placeholder camera comment")
+        #expect(!pageSource.contains("In production, embed the DataScannerViewController view here"), "Dashboard scanner should not use the old black rectangle placeholder path")
+    }
+
     @Test func uiTestingFixturesSeedJPOFlowDataForQASmoke() throws {
         let db = try AppDatabase.openInMemoryDatabase()
         let auth = AuthService(db: db)
