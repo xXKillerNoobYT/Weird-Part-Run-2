@@ -273,6 +273,22 @@ struct PartsServiceAdvancedTests {
         #expect(preview.errors.map(\.rowNumber).contains(5))
     }
 
+    @Test("previewPartsImportCSV reports invalid cost_price and markup_percent values with row and column context")
+    func testPreviewPartsImportCSVRejectsInvalidNumericValues() throws {
+        let env = try E2ETestHelpers.setUp()
+        let csv = """
+        name,code,category,cost_price,markup_percent
+        Bad Price Part,BAD-001,Test,N/A,forty
+        """
+
+        let preview = try env.parts.previewPartsImportCSV(csv)
+
+        #expect(preview.newParts.isEmpty)
+        #expect(preview.errors.count == 2)
+        #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid number for cost_price: N/A" })
+        #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid number for markup_percent: forty" })
+    }
+
     @Test("commitPartsImportCSV rejects preview errors before writing partial state")
     func testCommitPartsImportCSVRejectsErrorsWithoutPartialWrites() throws {
         let env = try E2ETestHelpers.setUp()
@@ -294,6 +310,35 @@ struct PartsServiceAdvancedTests {
             #expect(after.totalParts == before.totalParts)
             #expect(after.totalCategories == before.totalCategories)
             #expect(try env.parts.findPartByCode("GOOD-001") == nil)
+        }
+    }
+
+    @Test("commitPartsImportCSV does not silently coerce invalid pricing values to zero")
+    func testCommitPartsImportCSVRejectsTamperedInvalidNumericValues() throws {
+        let env = try E2ETestHelpers.setUp()
+        let preview = PartsService.PartsImportPreview(
+            newParts: [
+                PartsService.PartsImportParsedRow(
+                    rowNumber: 2,
+                    name: "Tampered Bad Price",
+                    code: "BAD-TAMPER-001",
+                    category: "Tamper Category",
+                    brand: nil,
+                    fields: [
+                        "cost_price": "N/A",
+                        "markup_percent": "forty"
+                    ]
+                )
+            ],
+            totalRows: 1
+        )
+
+        do {
+            _ = try env.parts.commitPartsImportCSV(preview)
+            Issue.record("commitPartsImportCSV should reject invalid numeric fields instead of coercing them to zero")
+        } catch {
+            #expect("\(error)".contains("Invalid number for cost_price at row 2"))
+            #expect(try env.parts.findPartByCode("BAD-TAMPER-001") == nil)
         }
     }
 
