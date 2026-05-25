@@ -70,6 +70,21 @@ run_or_log() {
   "$@"
 }
 
+run_capture_or_log() {
+  if [[ "$DRY_RUN" == "1" ]]; then
+    printf 'dry-run:'
+    printf ' %q' "$@"
+    printf '\n'
+    return 0
+  fi
+  "$@" 2>&1
+}
+
+is_approval_gate_error() {
+  local message="$1"
+  [[ "$message" =~ approving\ review|review\ is\ required|required\ review|is\ required\ to\ merge|protected\ branch\.*review ]]
+}
+
 echo "Scanning up to $MAX_PRS open PRs in $REPO targeting $BASE"
 
 prs_json="$(gh pr list \
@@ -83,6 +98,8 @@ if [[ "$(jq 'length' <<<"$prs_json")" -eq 0 ]]; then
   echo "No open PRs targeting $BASE."
   exit 0
 fi
+
+approval_backlog=()
 
 while IFS= read -r pr; do
   number="$(jq -r '.number' <<<"$pr")"
@@ -147,10 +164,24 @@ while IFS= read -r pr; do
 
   if [[ "$auto_merge_enabled" != "true" && "$blocked" != "1" ]]; then
     echo "enabling squash auto-merge"
-    if ! run_or_log gh pr merge "$number" --repo "$REPO" --auto --squash --delete-branch; then
-      echo "blocked: auto-merge enable failed"
+    merge_output=""
+    if ! merge_output="$(run_capture_or_log gh pr merge "$number" --repo "$REPO" --auto --squash --delete-branch)"; then
+      [[ -n "$merge_output" ]] && echo "$merge_output"
+      if is_approval_gate_error "$merge_output"; then
+        echo "blocked: merge approval required from non-author maintainer"
+        approval_backlog+=("#$number $title")
+      else
+        echo "blocked: auto-merge enable failed"
+      fi
     fi
   fi
 
   echo "::endgroup::"
 done < <(jq -c '.[]' <<<"$prs_json")
+
+if [[ "${#approval_backlog[@]}" -gt 0 ]]; then
+  echo "::warning::merge gate backlog detected (${#approval_backlog[@]} PRs need non-author approval)."
+  echo "Approval-gated PRs:"
+  printf '  - %s\n' "${approval_backlog[@]}"
+  echo "Action required: approve/merge these PRs on github.com or provide a non-author credential for automation."
+fi
