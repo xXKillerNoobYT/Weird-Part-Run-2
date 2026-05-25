@@ -104,6 +104,7 @@ final class AppCore: ObservableObject {
                 #endif
 
                 let database: AppDatabase
+                let keyHex = try Self.deviceBootstrapKeyHex()
                 do {
 // SQLCipher: derive a device-bound bootstrap key from the Keychain.
                     // This key never changes unless the Keychain is wiped (device reset).
@@ -112,7 +113,6 @@ final class AppCore: ObservableObject {
                     //
                     // Migration path: if the DB file is still plaintext (pre-SQLCipher binary),
                     // `migratePlaintextDBIfNeeded` converts it in-place before opening.
-                    let keyHex = try Self.deviceBootstrapKeyHex()
                     try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
                     database = try AppDatabase.openEncryptedDatabase(atPath: path, keyHex: keyHex)
                     // Remove the .unencrypted.bak file after it has been retained for 7 days.
@@ -121,9 +121,18 @@ final class AppCore: ObservableObject {
                     #if !DEBUG
                     // Migration failed — try to restore from backup
                     if let backup = backupPath {
-                        try? AppDatabase.restoreDatabase(from: backup, to: path)
-                        // Retry with restored DB (old schema, but data preserved)
-                        logger.error("[AppCore] Migration failed, restored from backup. Error: \(error.localizedDescription)")
+                        let originalError = error
+                        do {
+                            try AppDatabase.restoreDatabase(from: backup, to: path)
+                            // Retry with restored DB (old schema, but data preserved)
+                            logger.error("[AppCore] Migration failed, restored from backup. Retrying open. Original error: \(originalError.localizedDescription)")
+                            try AppDatabase.migratePlaintextDBIfNeeded(atPath: path, keyHex: keyHex)
+                            database = try AppDatabase.openEncryptedDatabase(atPath: path, keyHex: keyHex)
+                            AppDatabase.cleanupStaleUnencryptedBackup(atPath: path)
+                        } catch let retryError {
+                            logger.error("[AppCore] Migration rollback retry failed. Original error: \(originalError.localizedDescription). Retry error: \(retryError.localizedDescription)")
+                            throw retryError
+                        }
                     }
                     #endif
                     throw error
