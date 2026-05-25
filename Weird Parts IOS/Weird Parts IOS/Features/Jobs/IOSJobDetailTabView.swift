@@ -1107,10 +1107,10 @@ struct IOSJobDetailTabView: View {
             return
         }
         do {
-            jobNotebookId = try service.createNotebook(
-                title: "\(job.jobName) Job Notebook",
-                notebookType: "job",
+            jobNotebookId = try service.ensureJobNotebook(
                 jobId: job.id,
+                jobName: job.jobName,
+                jobType: job.jobType,
                 createdBy: userId
             )
         } catch {
