@@ -31,6 +31,18 @@ class QRScanSheetMainActorTests(unittest.TestCase):
             section,
         )
 
+    def test_matching_result_auto_dismiss_behavior_remains(self):
+        text = SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "if result.entityType == expected {\n                        await MainActor.run { dismiss() }\n                        onResult(result)",
+            text,
+        )
+        self.assertIn(
+            "await MainActor.run { dismiss() }\n                    onResult(result)",
+            text,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
