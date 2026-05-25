@@ -17,6 +17,7 @@ struct IOSReceiveShipmentPage: View {
     @State private var activeSessionId: Int64?
     @State private var sessionItems: [WarehouseService.ReceivingItemInfo] = []
     @State private var receivedQtys: [Int64: Int] = [:]  // itemId -> qty
+    @State private var scannerZeroStartItemIds: Set<Int64> = []  // itemIds prefilled from expected; first scan starts from 0
     @State private var priceVerifications: [Int64: PriceVerification] = [:]  // itemId -> verification
     @State private var isCompleting = false
     @State private var completionMessage: String?
@@ -147,6 +148,7 @@ struct IOSReceiveShipmentPage: View {
                 sessionItems = []
                 priceVerifications = [:]
                 receivedQtys = [:]
+                scannerZeroStartItemIds = []
                 routingResults = [:]
                 loadData()
             }
@@ -304,7 +306,10 @@ struct IOSReceiveShipmentPage: View {
                         Button {
                             let svc = appCore.warehouseService
                             let items = sessionItems
-                            for item in items { receivedQtys[item.id] = item.expectedQty }
+                            for item in items {
+                                receivedQtys[item.id] = item.expectedQty
+                                scannerZeroStartItemIds.remove(item.id)
+                            }
                             Task {
                                 guard let svc else { return }
                                 var failed = 0
@@ -323,7 +328,10 @@ struct IOSReceiveShipmentPage: View {
                         Button(role: .destructive) {
                             let svc = appCore.warehouseService
                             let items = sessionItems
-                            for item in items { receivedQtys[item.id] = 0 }
+                            for item in items {
+                                receivedQtys[item.id] = 0
+                                scannerZeroStartItemIds.remove(item.id)
+                            }
                             Task {
                                 guard let svc else { return }
                                 var failed = 0
@@ -613,6 +621,7 @@ struct IOSReceiveShipmentPage: View {
                         if current > 0 {
                             let newQty = current - 1
                             receivedQtys[item.id] = newQty
+                            scannerZeroStartItemIds.remove(item.id)
                             let svc = appCore.warehouseService
                             let iid = item.id
                             Task {
@@ -641,6 +650,7 @@ struct IOSReceiveShipmentPage: View {
                         let current = receivedQtys[item.id] ?? item.expectedQty
                         let newQty = current + 1
                         receivedQtys[item.id] = newQty
+                        scannerZeroStartItemIds.remove(item.id)
                         let svc = appCore.warehouseService
                         let iid = item.id
                         Task {
@@ -659,6 +669,7 @@ struct IOSReceiveShipmentPage: View {
                         Button {
                             let newQty = item.expectedQty
                             receivedQtys[item.id] = newQty
+                            scannerZeroStartItemIds.remove(item.id)
                             let svc = appCore.warehouseService
                             let iid = item.id
                             Task {
@@ -863,8 +874,11 @@ struct IOSReceiveShipmentPage: View {
 
         // Auto-increment received quantity and auto-save (PE-041)
         let currentQty = receivedQtys[item.id] ?? item.expectedQty
-        let newQty = currentQty + 1
+        let shouldStartScanFromZero = scannerZeroStartItemIds.contains(item.id) && currentQty == item.expectedQty
+        let baselineQty = shouldStartScanFromZero ? 0 : currentQty
+        let newQty = baselineQty + 1
         receivedQtys[item.id] = newQty
+        scannerZeroStartItemIds.remove(item.id)
         let svc = appCore.warehouseService
         let iid = item.id
         Task {
@@ -912,7 +926,13 @@ struct IOSReceiveShipmentPage: View {
             // Otherwise fall back to expectedQty so fresh sessions are pre-filled (61L).
             for item in sessionItems {
                 if receivedQtys[item.id] == nil {
-                    receivedQtys[item.id] = item.receivedQty > 0 ? item.receivedQty : item.expectedQty
+                    if item.receivedQty > 0 {
+                        receivedQtys[item.id] = item.receivedQty
+                        scannerZeroStartItemIds.remove(item.id)
+                    } else {
+                        receivedQtys[item.id] = item.expectedQty
+                        scannerZeroStartItemIds.insert(item.id)
+                    }
                 }
             }
             postAIContext()
