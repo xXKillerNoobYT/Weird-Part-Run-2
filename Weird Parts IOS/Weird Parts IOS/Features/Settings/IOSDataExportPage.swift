@@ -280,7 +280,8 @@ struct IOSDataExportPage: View {
         isExporting = true
         errorMessage = nil
 
-        guard let dbPath = try? AppCore.databasePath() else {
+        guard let settingsService = appCore.settingsService,
+              let dbPath = try? AppCore.databasePath() else {
             errorMessage = "Cannot locate database."
             isExporting = false
             return
@@ -293,9 +294,12 @@ struct IOSDataExportPage: View {
         let destURL = tmpDir.appendingPathComponent("wiredpart-full-\(dateStr).sqlite")
 
         do {
-            // Remove previous temp if exists
-            try? FileManager.default.removeItem(at: destURL)
-            try FileManager.default.copyItem(at: URL(fileURLWithPath: dbPath), to: destURL)
+            // Use WAL-safe export: checkpoints the WAL into the main file before
+            // copying so the exported file contains all committed data.
+            try settingsService.exportWALSafeSnapshot(
+                to: destURL.path,
+                sourcePath: dbPath
+            )
             exportURLs = [destURL]
             exportSuccess = true
             showShareSheet = true

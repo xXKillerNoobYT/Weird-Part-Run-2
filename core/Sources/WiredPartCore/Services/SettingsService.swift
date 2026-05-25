@@ -517,6 +517,42 @@ public final class SettingsService: Sendable {
         }
     }
 
+    /// Export a WAL-safe snapshot of the live database to the specified path.
+    ///
+    /// SQLite WAL mode keeps recently committed rows in `*.sqlite-wal` until a
+    /// checkpoint flushes them back into the main database file. Copying only the
+    /// main file without checkpointing can produce an incomplete export that is
+    /// missing recently written rows. This method performs a
+    /// `PRAGMA wal_checkpoint(TRUNCATE)` via GRDB before copying, guaranteeing
+    /// the destination file contains all committed data and is self-contained.
+    ///
+    /// - Parameters:
+    ///   - destinationPath: The file path to write the snapshot to.
+    ///   - sourcePath: The file path of the live database (obtain via `AppCore.databasePath()`).
+    /// - Throws: A `DatabaseError` if the checkpoint is blocked, or a filesystem error
+    ///   if the copy fails.
+    public func exportWALSafeSnapshot(to destinationPath: String, sourcePath: String) throws {
+        // Flush all WAL frames into the main database file.
+        // TRUNCATE mode checkpoints all frames and resets the WAL file to empty,
+        // ensuring the main file is fully self-contained for copying.
+        // Run outside an explicit transaction to avoid conflicting with WAL locking.
+        try db.writer.writeWithoutTransaction { connection in
+            let rows = try Row.fetchAll(connection, sql: "PRAGMA wal_checkpoint(TRUNCATE)")
+            // The 'busy' column is 1 if the checkpoint was blocked by an active reader.
+            if let busy = rows.first.flatMap({ Int.fromDatabaseValue($0["busy"]) }), busy != 0 {
+                throw DatabaseError(message: "WAL checkpoint is blocked by an active reader; export aborted to prevent incomplete data.")
+            }
+        }
+        // Copy the now-complete main database file to the destination.
+        let fm = FileManager.default
+        try? fm.removeItem(atPath: destinationPath)
+        try fm.copyItem(atPath: sourcePath, toPath: destinationPath)
+        // Remove any stale WAL/SHM sidecars at the destination to prevent confusion
+        // when the exported file is opened without the original WAL context.
+        try? fm.removeItem(atPath: destinationPath + "-wal")
+        try? fm.removeItem(atPath: destinationPath + "-shm")
+    }
+
     // MARK: - Update Protocol
 
     /// Settings for the update protocol page.

@@ -879,4 +879,74 @@ struct SettingsServiceTests {
             _ = try svc.addClockOutQuestion(text: "Clean up?", type: "", isRequired: true, sortOrder: 0)
         }
     }
+
+    // MARK: - WAL-Safe Export
+
+    @Test("exportWALSafeSnapshot includes data committed only to WAL")
+    func testExportWALSafeSnapshotIncludesWALData() throws {
+        let srcPath = (NSTemporaryDirectory() as NSString)
+            .appendingPathComponent("WPExportSrc_\(UUID().uuidString).sqlite")
+        let dstPath = (NSTemporaryDirectory() as NSString)
+            .appendingPathComponent("WPExportDst_\(UUID().uuidString).sqlite")
+        defer {
+            for path in [srcPath, dstPath] {
+                for suffix in ["", "-wal", "-shm"] {
+                    try? FileManager.default.removeItem(atPath: path + suffix)
+                }
+            }
+        }
+
+        // Open a file-based WAL-mode database.
+        let srcDB = try AppDatabase.openDatabase(atPath: srcPath)
+        let svc = SettingsService(db: srcDB)
+
+        // Disable automatic WAL checkpointing so committed data stays in the
+        // WAL file, reproducing the failure mode described in GitHub issue #2297.
+        try srcDB.writer.writeWithoutTransaction { db in
+            try db.execute(sql: "PRAGMA wal_autocheckpoint = 0")
+        }
+
+        // Commit a setting — this lands in the WAL, not yet in the main file.
+        try svc.upsertSetting(key: "wal_export_key", value: "wal_export_value", category: "test")
+
+        // Export using the WAL-safe snapshot method.
+        try svc.exportWALSafeSnapshot(to: dstPath, sourcePath: srcPath)
+
+        // The destination file must exist.
+        #expect(FileManager.default.fileExists(atPath: dstPath))
+
+        // Open the exported file in a fresh connection and verify the committed row
+        // is present — proving the checkpoint flushed WAL data before the copy.
+        let dstDB = try AppDatabase.openDatabase(atPath: dstPath)
+        let dstSvc = SettingsService(db: dstDB)
+        let val = try dstSvc.getSetting("wal_export_key")
+        #expect(val == "wal_export_value", "Exported database must contain the row committed only to WAL")
+    }
+
+    @Test("exportWALSafeSnapshot destination has no stale WAL sidecar")
+    func testExportWALSafeSnapshotCleanDestination() throws {
+        let srcPath = (NSTemporaryDirectory() as NSString)
+            .appendingPathComponent("WPExportSrc2_\(UUID().uuidString).sqlite")
+        let dstPath = (NSTemporaryDirectory() as NSString)
+            .appendingPathComponent("WPExportDst2_\(UUID().uuidString).sqlite")
+        defer {
+            for path in [srcPath, dstPath] {
+                for suffix in ["", "-wal", "-shm"] {
+                    try? FileManager.default.removeItem(atPath: path + suffix)
+                }
+            }
+        }
+
+        let srcDB = try AppDatabase.openDatabase(atPath: srcPath)
+        let svc = SettingsService(db: srcDB)
+        try svc.upsertSetting(key: "clean_test", value: "1", category: "test")
+
+        // Pre-create a stale WAL sidecar at the destination to verify it gets removed.
+        FileManager.default.createFile(atPath: dstPath + "-wal", contents: Data([0xDE, 0xAD]))
+
+        try svc.exportWALSafeSnapshot(to: dstPath, sourcePath: srcPath)
+
+        // The stale sidecar should have been removed by the export.
+        #expect(!FileManager.default.fileExists(atPath: dstPath + "-wal"))
+    }
 }
