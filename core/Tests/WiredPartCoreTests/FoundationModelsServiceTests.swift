@@ -93,6 +93,13 @@ struct FoundationModelsServiceTests {
         #expect(!result.success)
     }
 
+    @Test("user-scoped companion tools stay disabled without an authenticated user")
+    func testUserScopedCompanionToolsRequireAuthenticatedUser() {
+        #expect(!FoundationModelsService.shouldEnableUserScopedCompanionTools(userId: nil))
+        #expect(!FoundationModelsService.shouldEnableUserScopedCompanionTools(userId: 0))
+        #expect(FoundationModelsService.shouldEnableUserScopedCompanionTools(userId: 42))
+    }
+
     // MARK: - AIResult Factory
 
     @Test("AIResult.ok stores text and sets success=true")

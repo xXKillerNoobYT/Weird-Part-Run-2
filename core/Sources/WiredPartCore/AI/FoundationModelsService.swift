@@ -98,6 +98,11 @@ public struct AIConversationMessage: Sendable, Codable {
 /// Foundation Models is not available, methods return graceful fallbacks.
 public actor FoundationModelsService {
 
+    nonisolated static func shouldEnableUserScopedCompanionTools(userId: Int64?) -> Bool {
+        guard let userId else { return false }
+        return userId > 0
+    }
+
     private let logger = Logger(subsystem: "com.wiredpart.core", category: "FoundationModels")
 
     /// Maximum characters of context to send to the model.
@@ -331,7 +336,7 @@ public actor FoundationModelsService {
         query: String,
         db: AppDatabase,
         permissions: [String],
-        userId: Int64 = 0,
+        userId: Int64? = nil,
         navigationContext: String,
         conversationId: String = "default"
     ) async -> AIResult {
@@ -342,17 +347,21 @@ public actor FoundationModelsService {
         #if canImport(FoundationModels)
         if #available(macOS 26.0, iOS 26.0, *) {
             do {
-                let tools: [any FoundationModels.Tool] = [
+                var tools: [any FoundationModels.Tool] = [
                     SearchPartsTool(db: db, permissions: permissions),
                     SearchContactsTool(db: db, permissions: permissions),
                     SearchJobsTool(db: db, permissions: permissions),
                     GetSupplierInfoTool(db: db, permissions: permissions),
                     ListCompanionRulesTool(db: db, permissions: permissions),
-                    GetActiveCompanionPollsTool(db: db, permissions: permissions, userId: userId),
                     ExplainCoOccurrenceTool(db: db, permissions: permissions),
-                    GetVotingSummaryTool(db: db, permissions: permissions, userId: userId),
                     GetForecastDataTool(db: db, permissions: permissions),
                 ]
+                if Self.shouldEnableUserScopedCompanionTools(userId: userId), let userId {
+                    tools.append(contentsOf: [
+                        GetActiveCompanionPollsTool(db: db, permissions: permissions, userId: userId),
+                        GetVotingSummaryTool(db: db, permissions: permissions, userId: userId),
+                    ])
+                }
 
                 let chatInstructions = domainInstructions + "\n\n" + """
                     You are a helpful assistant for the WiredPart app. You have access to tools \

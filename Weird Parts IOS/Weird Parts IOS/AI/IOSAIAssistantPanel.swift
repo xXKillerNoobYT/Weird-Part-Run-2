@@ -593,6 +593,9 @@ struct IOSAIAssistantPanel: View {
     /// falls back to basic keyword matching.
     private func generateResponse(for queryText: String) async -> String {
         if aiAvailability == .available, let db = appCore.db {
+            if companionsContext != nil, appCore.currentUser == nil {
+                return "Your session isn't available right now, so I can't check companion poll or voting data. Please log in again or wait for your profile to finish loading."
+            }
             // Use Foundation Models with tool calling for real database access
             var navContext = buildNavigationContext(permissions: appCore.permissions)
             if let ctx = catalogContext {
@@ -812,7 +815,7 @@ struct IOSAIAssistantPanel: View {
                 query: queryText,
                 db: db,
                 permissions: appCore.permissions,
-                userId: appCore.currentUser?.id ?? 0,
+                userId: appCore.currentUser?.id,
                 navigationContext: navContext,
                 conversationId: conversationId
             )
@@ -2119,4 +2122,3 @@ struct AssistantMessage: Identifiable, Sendable {
 enum MessageRole: Sendable {
     case user, assistant
 }
-
