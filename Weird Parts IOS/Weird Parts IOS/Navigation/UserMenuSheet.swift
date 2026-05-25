@@ -52,6 +52,9 @@ struct UserMenuSheet: View {
                 MenuItem(id: "settings-app-config", label: "App Config", icon: "slider.horizontal.3",
                          tabId: "settings-app-config", permission: nil,
                          keywords: ["app config", "configuration", "preferences", "general settings"]),
+                MenuItem(id: "settings-bug-report", label: "Submit Feedback", icon: "ant.fill",
+                         tabId: "settings-bug-report", permission: nil,
+                         keywords: ["bug", "report", "feedback", "feature request", "issue", "crash", "problem", "submit"]),
             ]),
 
             // 2. Company

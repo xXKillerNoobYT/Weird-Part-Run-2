@@ -15,7 +15,15 @@ struct WiredPartIOSApp: App {
     @AppStorage("hasSeenOnboardAIMVPEntry") private var hasSeenOnboardAIMVPEntry = false
     @AppStorage(OnboardAIFeatureFlag.onboardingMVP) private var onboardAIMVPEnabled = false
 
+    /// Pending crash-report info collected from the previous session.
+    @State private var pendingCrashInfo: String?
+    @State private var showCrashReportAlert = false
+
     init() {
+        // Install crash reporter FIRST so it can read any previous crash state
+        // before marking this session as active.
+        CrashReporter.shared.install()
+
         // One-time migration: users who already completed the old welcome flow
         // don't need to re-run the walkthrough or company-setup wizard.
         // Consume hasSeenWelcome immediately so this never re-fires on a
@@ -130,6 +138,55 @@ struct WiredPartIOSApp: App {
             }
             .preferredColorScheme(resolvedColorScheme)
             .tint(accentColor)
+            // Show crash-report prompt once the app is ready and a previous crash was detected.
+            .onAppear {
+                if CrashReporter.shared.hasPendingCrashReport {
+                    pendingCrashInfo = CrashReporter.shared.pendingCrashInfo
+                    showCrashReportAlert = true
+                }
+            }
+            .alert("The app crashed last time", isPresented: $showCrashReportAlert) {
+                Button("Report on GitHub") {
+                    submitCrashReport()
+                }
+                Button("Dismiss", role: .cancel) {
+                    CrashReporter.shared.clearPendingCrashReport()
+                    pendingCrashInfo = nil
+                }
+            } message: {
+                Text("The previous session ended unexpectedly. Would you like to open GitHub to submit a crash report? Your device info and crash details will be pre-filled.")
+            }
         }
+    }
+
+    // MARK: - Crash Report Submission
+
+    private func submitCrashReport() {
+        let crashInfo = pendingCrashInfo ?? "No details captured."
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
+        let build   = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        let device  = UIDevice.current
+        let body = """
+        **Crash detected automatically on the previous app session.**
+
+        \(crashInfo)
+
+        ---
+        **Device:** \(device.model)
+        **iOS:** \(device.systemName) \(device.systemVersion)
+        **App Version:** \(version) (\(build))
+        """
+        let repo = "xXKillerNoobYT/Weird-Part-Run-2"
+        var components = URLComponents(string: "https://github.com/\(repo)/issues/new")
+        components?.queryItems = [
+            URLQueryItem(name: "title",  value: "[Crash] App crashed – auto-report"),
+            URLQueryItem(name: "body",   value: body),
+            URLQueryItem(name: "labels", value: "bug"),
+        ]
+        if let url = components?.url {
+            UIApplication.shared.open(url)
+        }
+        CrashReporter.shared.clearPendingCrashReport()
+        pendingCrashInfo = nil
     }
 }

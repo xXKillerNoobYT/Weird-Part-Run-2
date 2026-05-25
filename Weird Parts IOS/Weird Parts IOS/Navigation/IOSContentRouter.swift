@@ -342,6 +342,8 @@ struct IOSContentRouter: View {
             SettingsRouter(tabId: "settings-report-templates")
         case "/settings/payment-tracking":
             SettingsRouter(tabId: "settings-payment-tracking")
+        case "/settings/bug-report":
+            SettingsRouter(tabId: "settings-bug-report")
 
         // Everything else — placeholder for future native views
         default:

@@ -110,6 +110,8 @@ struct SettingsRouter: View {
             IOSJobStageTemplatesSettingsPage()
         case "settings-payment-tracking":
             comingSoonPage("Payment Tracking", icon: "banknote.fill")
+        case "settings-bug-report":
+            IOSBugReportPage()
 
         default:
             Text("Unknown settings page: \(tabId)")
