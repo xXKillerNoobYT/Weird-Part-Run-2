@@ -203,7 +203,9 @@ let appModules: [AppModule] = [
 
 extension Notification.Name {
     /// Posted when a view wants to navigate to a specific module tab.
-    /// `userInfo` should contain `"moduleId"` (String) and optionally `"tabId"` (String).
+    /// `userInfo` should contain `"moduleId"` (String) and optionally:
+    /// `"tabId"` (String), `"entityType"` (String), `"entityId"` (Int64),
+    /// `"code"` (String), and `"action"` (String) for deep-link/prefill context.
     static let navigateToModule = Notification.Name("WiredPart.navigateToModule")
 
     /// Posted when the Parts Catalog page appears, with current context for AI.

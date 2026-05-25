@@ -436,34 +436,90 @@ struct IOSDashboardQRScannerPage: View {
     private func quickActions(for result: ScanResultData) -> some View {
         if result.isLocation {
             DSQuickActionButton(title: "Quick Audit", icon: "checklist", color: .orange) {
-                autoLockAction { navigateToModule("warehouse") }
+                autoLockAction {
+                    navigateToModule(
+                        "warehouse",
+                        tabId: "warehouse-audit",
+                        action: "quickAudit",
+                        result: result
+                    )
+                }
             }
             DSQuickActionButton(title: "Assign Part", icon: "plus.circle", color: .green) {
-                autoLockAction { navigateToModule("warehouse") }
+                autoLockAction {
+                    navigateToModule(
+                        "warehouse",
+                        tabId: "warehouse-locations",
+                        action: "assignPart",
+                        result: result
+                    )
+                }
             }
             DSQuickActionButton(title: "Floor Plan", icon: "map", color: .blue) {
-                autoLockAction { navigateToModule("warehouse") }
+                autoLockAction {
+                    navigateToModule(
+                        "warehouse",
+                        tabId: "warehouse-locations",
+                        action: "floorPlan",
+                        result: result
+                    )
+                }
             }
         } else {
             switch result.entityType {
             case .part:
                 DSQuickActionButton(title: "Move Stock", icon: "arrow.left.arrow.right", color: .orange) {
-                    autoLockAction { navigateToModule("warehouse") }
+                    autoLockAction {
+                        navigateToModule(
+                            "warehouse",
+                            tabId: "warehouse-movements",
+                            action: "moveStock",
+                            result: result
+                        )
+                    }
                 }
                 DSQuickActionButton(title: "View Part", icon: "info.circle", color: .blue) {
-                    autoLockAction { navigateToModule("parts") }
+                    autoLockAction {
+                        navigateToModule(
+                            "parts",
+                            tabId: "parts-catalog",
+                            action: "view",
+                            result: result
+                        )
+                    }
                 }
             case .tool:
                 DSQuickActionButton(title: "Check Status", icon: "wrench.and.screwdriver", color: .blue) {
-                    autoLockAction { navigateToModule("tools") }
+                    autoLockAction {
+                        navigateToModule(
+                            "tools",
+                            tabId: "tools-registry",
+                            action: "checkStatus",
+                            result: result
+                        )
+                    }
                 }
             case .job:
                 DSQuickActionButton(title: "View Job", icon: "hammer", color: .orange) {
-                    autoLockAction { navigateToModule("jobs") }
+                    autoLockAction {
+                        navigateToModule(
+                            "jobs",
+                            tabId: "jobs-list",
+                            action: "view",
+                            result: result
+                        )
+                    }
                 }
             case .vehicle:
                 DSQuickActionButton(title: "View Fleet", icon: "car", color: .green) {
-                    autoLockAction { navigateToModule("fleet") }
+                    autoLockAction {
+                        navigateToModule(
+                            "fleet",
+                            tabId: "fleet-vehicles",
+                            action: "view",
+                            result: result
+                        )
+                    }
                 }
             default:
                 DSQuickActionButton(title: "Details", icon: "info.circle", color: .blue) {
@@ -773,8 +829,29 @@ struct IOSDashboardQRScannerPage: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    private func navigateToModule(_ moduleId: String) {
-        NotificationCenter.default.post(name: .navigateToModule, object: nil, userInfo: ["moduleId": moduleId])
+    private func navigateToModule(
+        _ moduleId: String,
+        tabId: String? = nil,
+        action: String? = nil,
+        result: ScanResultData? = nil
+    ) {
+        var userInfo: [String: Any] = ["moduleId": moduleId]
+        if let tabId {
+            userInfo["tabId"] = tabId
+        }
+        if let action {
+            userInfo["action"] = action
+        }
+        if let result {
+            userInfo["code"] = result.code
+            if let entityType = result.entityType?.rawValue {
+                userInfo["entityType"] = entityType
+            }
+            if let entityId = result.entityId {
+                userInfo["entityId"] = entityId
+            }
+        }
+        NotificationCenter.default.post(name: .navigateToModule, object: nil, userInfo: userInfo)
     }
 }
 

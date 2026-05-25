@@ -164,6 +164,19 @@ struct IOSMainView: View {
         .onReceive(NotificationCenter.default.publisher(for: .navigateToModule)) { notification in
             if let moduleId = notification.userInfo?["moduleId"] as? String {
                 let requestedTabId = notification.userInfo?["tabId"] as? String
+                let requestedEntityType = notification.userInfo?["entityType"] as? String
+                let requestedEntityId = (notification.userInfo?["entityId"] as? NSNumber)?.int64Value
+                    ?? notification.userInfo?["entityId"] as? Int64
+                let requestedCode = notification.userInfo?["code"] as? String
+                let requestedAction = notification.userInfo?["action"] as? String
+                let navigationRequest = ModuleNavigationRequest(
+                    moduleId: moduleId,
+                    tabId: requestedTabId,
+                    entityType: requestedEntityType,
+                    entityId: requestedEntityId,
+                    code: requestedCode,
+                    action: requestedAction
+                )
                 if tabPrefs.navigationStyle == .fullSidebar {
                     // Navigate within full sidebar
                     expandedModuleId = moduleId
@@ -177,8 +190,8 @@ struct IOSMainView: View {
                         }
                     }
                 } else {
-                    if let requestedTabId {
-                        moduleNavigationRequests[moduleId] = ModuleNavigationRequest(moduleId: moduleId, tabId: requestedTabId)
+                    if requestedTabId != nil || requestedEntityType != nil || requestedEntityId != nil || requestedCode != nil || requestedAction != nil {
+                        moduleNavigationRequests[moduleId] = navigationRequest
                     }
                     routeToModuleInTabLayout(moduleId)
                 }
@@ -647,7 +660,11 @@ struct IOSMainView: View {
 /// the double-nested NavigationStack bug that breaks "More" tab navigation.
 struct ModuleNavigationRequest: Equatable {
     let moduleId: String
-    let tabId: String
+    let tabId: String?
+    let entityType: String?
+    let entityId: Int64?
+    let code: String?
+    let action: String?
     private let token = UUID()
 }
 
