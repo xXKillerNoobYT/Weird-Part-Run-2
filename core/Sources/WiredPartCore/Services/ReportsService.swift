@@ -494,7 +494,8 @@ public final class ReportsService: Sendable {
                            COALESCE(po.total_cost, 0) AS total_amount
                     FROM purchase_orders po
                     LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL
-                    WHERE date(po.created_at) >= ? AND date(po.created_at) <= ?
+                    WHERE po.deleted_at IS NULL
+                      AND date(po.created_at) >= ? AND date(po.created_at) <= ?
                     ORDER BY po.po_number
                     """
 

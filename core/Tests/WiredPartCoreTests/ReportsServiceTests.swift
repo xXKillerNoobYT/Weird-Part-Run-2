@@ -127,6 +127,36 @@ struct ReportsServiceTests {
                 "Soft-deleted supplier's name must not leak into bookkeeper material report — LEFT JOIN guard should make COALESCE degrade to 'Unknown'")
     }
 
+    @Test("Bookkeeper material POs exclude soft-deleted purchase orders")
+    func testBookkeeperMaterialPOs_excludesDeletedPurchaseOrders() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "DeletedPOVendor")
+        let poId = try env.orders.createPurchaseOrder(
+            poNumber: "PO-BK-DELETED", supplierId: supplierId, notes: nil
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE purchase_orders
+                    SET total_cost = 100.0,
+                        created_at = datetime('now'),
+                        deleted_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                arguments: [poId]
+            )
+        }
+
+        let today = ISO8601DateFormatter().string(from: Date()).prefix(10)
+        let data = try env.reports.getBookkeeperMaterialPOs(
+            startDate: String(today), endDate: String(today)
+        )
+
+        #expect(data.contains { $0.poNumber == "PO-BK-DELETED" } == false,
+                "Soft-deleted purchase orders must be excluded from the bookkeeper material export")
+    }
+
     // MARK: - Stats
 
     @Test("Reports stats aggregates correctly")
