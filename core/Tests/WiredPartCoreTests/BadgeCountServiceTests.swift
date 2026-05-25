@@ -363,6 +363,68 @@ struct BadgeCountServiceTests {
             "Unread chat badge must not count channels with left_at/deleted_at memberships")
     }
 
+    @Test("unreadMessages excludes channels whose membership was soft-deleted")
+    func testUnreadMessagesRequiresNonDeletedMembership() throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = BadgeCountService(db: env.db)
+
+        let senderId = try env.auth.createUser(displayName: "Deleted Sender", pin: "8642", email: "badge-deleted-sender@test.com")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO chat_channels (channel_type, name, created_by, is_active)
+                VALUES ('group', 'Deleted Badge Channel', ?, 1)
+                """, arguments: [senderId])
+            let channelId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO chat_channel_members (channel_id, user_id, role, joined_at)
+                VALUES (?, ?, 'member', datetime('now'))
+                """, arguments: [channelId, senderId])
+            try db.execute(sql: """
+                INSERT INTO chat_channel_members (channel_id, user_id, role, joined_at, deleted_at)
+                VALUES (?, ?, 'member', datetime('now'), datetime('now'))
+                """, arguments: [channelId, env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO chat_messages (channel_id, sender_id, message_type, content, created_at)
+                VALUES (?, ?, 'text', 'deleted membership private message', datetime('now'))
+                """, arguments: [channelId, senderId])
+        }
+
+        let counts = try service.getAllBadgeCounts(userId: env.adminUserId)
+        #expect(counts.unreadMessages == 0,
+            "Unread chat badge must not count channels with soft-deleted memberships")
+    }
+
+    @Test("unreadMessages includes channels where user has active membership")
+    func testUnreadMessagesIncludesActiveMembership() throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = BadgeCountService(db: env.db)
+
+        let senderId = try env.auth.createUser(displayName: "Active Sender", pin: "9753", email: "badge-active-sender@test.com")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO chat_channels (channel_type, name, created_by, is_active)
+                VALUES ('group', 'Active Badge Channel', ?, 1)
+                """, arguments: [senderId])
+            let channelId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO chat_channel_members (channel_id, user_id, role, joined_at)
+                VALUES (?, ?, 'member', datetime('now'))
+                """, arguments: [channelId, senderId])
+            try db.execute(sql: """
+                INSERT INTO chat_channel_members (channel_id, user_id, role, joined_at)
+                VALUES (?, ?, 'member', datetime('now'))
+                """, arguments: [channelId, env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO chat_messages (channel_id, sender_id, message_type, content, created_at)
+                VALUES (?, ?, 'text', 'active membership private message', datetime('now'))
+                """, arguments: [channelId, senderId])
+        }
+
+        let counts = try service.getAllBadgeCounts(userId: env.adminUserId)
+        #expect(counts.unreadMessages == 1,
+            "Unread chat badge should count messages from channels where the user is an active member")
+    }
+
     @Test("unreadNotebookEntries excludes job notebooks whose team membership was soft-deleted")
     func testUnreadNotebookEntries_ignoresSoftDeletedTeamMembership() throws {
         let env = try E2ETestHelpers.setUp()
