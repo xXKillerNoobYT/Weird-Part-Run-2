@@ -83,6 +83,7 @@ struct IOSJPOCreationPage: View {
         let partName: String
         let partCode: String?
         var quantity: Int
+        var brandSelectionMode: String = "specific"
         let unitPrice: Double?
         let shopStock: Int
         let stockStatus: StockStatus
@@ -570,6 +571,16 @@ struct IOSJPOCreationPage: View {
                     Text("\(item.shopStock) in stock")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                    if item.brandSelectionMode == "general" {
+                        Text("General")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.blue.opacity(0.15))
+                            .foregroundStyle(.blue)
+                            .clipShape(Capsule())
+                    }
                 }
             }
 
@@ -603,6 +614,14 @@ struct IOSJPOCreationPage: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Increase quantity")
             }
+            .frame(maxWidth: 120)
+
+            Picker("Brand Mode", selection: $cartItems[index].brandSelectionMode) {
+                Text("Specific brand").tag("specific")
+                Text("General").tag("general")
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 220)
 
             // Remove button
             Button(role: .destructive) {
@@ -810,6 +829,7 @@ struct IOSJPOCreationPage: View {
             partName: part.name,
             partCode: part.code,
             quantity: quantity,
+            brandSelectionMode: "specific",
             unitPrice: part.companyCostPrice,
             shopStock: stock,
             stockStatus: status
@@ -1073,13 +1093,15 @@ struct IOSJPOCreationPage: View {
 
         do {
             let lines = cartItems.map { (partId: $0.partId, quantity: $0.quantity) }
+            let brandSelectionModes = cartItems.map(\.brandSelectionMode)
             let jpoId = try service.createJPOWithLines(
                 jobId: jobId,
                 requestedBy: userId,
                 priority: priority,
                 deliveryOption: deliveryOption,
                 notes: notes.isEmpty ? nil : notes,
-                lines: lines
+                lines: lines,
+                brandSelectionModes: brandSelectionModes
             )
 
             appCore.onboardingManager?.markCompleted("jpo-create")

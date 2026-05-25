@@ -113,6 +113,46 @@ struct OrdersServiceTests {
         #expect(detail.lines.first?.notes == "Confirm panel fit before procurement")
     }
 
+    @Test("Create JPO with lines persists mixed brand selection modes")
+    func testCreateJPOWithLinesPersistsMixedBrandSelectionModes() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let specificPartId = try E2ETestHelpers.seedPart(env, name: "Specific Mode Part", categoryId: catId)
+        let generalPartId = try E2ETestHelpers.seedPart(env, name: "General Mode Part", categoryId: catId)
+
+        let jpoId = try env.orders.createJPOWithLines(
+            jobId: jobId,
+            requestedBy: env.adminUserId,
+            priority: "normal",
+            deliveryOption: "standard",
+            notes: "Mixed mode order",
+            lines: [
+                (partId: specificPartId, quantity: 2),
+                (partId: generalPartId, quantity: 3)
+            ],
+            brandSelectionModes: ["specific", "general"]
+        )
+
+        let storedModes = try env.db.writer.read { db in
+            try String.fetchAll(
+                db,
+                sql: """
+                    SELECT brand_selection_mode
+                    FROM jpo_line_items
+                    WHERE jpo_id = ? AND deleted_at IS NULL
+                    ORDER BY id ASC
+                    """,
+                arguments: [jpoId]
+            )
+        }
+        #expect(storedModes == ["specific", "general"])
+
+        let detail = try env.orders.getJPODetail(id: jpoId)
+        let detailModes = detail.lines.map(\.brandSelectionMode)
+        #expect(detailModes == ["specific", "general"])
+    }
+
     @Test("Create JPO with lines rejects mismatched line notes")
     func testCreateJPOWithLinesRejectsMismatchedLineNotes() throws {
         let env = try E2ETestHelpers.setUp()

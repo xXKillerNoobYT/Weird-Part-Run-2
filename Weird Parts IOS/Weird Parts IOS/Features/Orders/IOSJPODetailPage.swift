@@ -401,9 +401,21 @@ struct IOSJPODetailPage: View {
                     Text(line.partName ?? "Unknown Part")
                         .font(.subheadline)
                         .fontWeight(.medium)
-                    Text("Qty: \(line.quantity)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        Text("Qty: \(line.quantity)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if line.brandSelectionMode == "general" {
+                            Text("General")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.blue.opacity(0.15))
+                                .foregroundStyle(.blue)
+                                .clipShape(Capsule())
+                        }
+                    }
                 }
 
                 Spacer()

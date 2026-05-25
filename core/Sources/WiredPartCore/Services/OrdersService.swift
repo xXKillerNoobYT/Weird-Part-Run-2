@@ -27,6 +27,8 @@ public final class OrdersService: Sendable {
         case invalidStatusTransition(entity: String, from: String, to: String)
         case invalidStatus(String)
         case invalidLineNotesCount(expected: Int, actual: Int)
+        case invalidBrandSelectionModesCount(expected: Int, actual: Int)
+        case invalidBrandSelectionMode(String)
         case jobNotFound(Int64)
         case supplierNotFound(Int64)
         case partNotFound(Int64)
@@ -59,6 +61,10 @@ public final class OrdersService: Sendable {
             case .invalidStatus(let msg): return msg
             case .invalidLineNotesCount(let expected, let actual):
                 return "Line notes count must match JPO line count (expected \(expected), got \(actual))"
+            case .invalidBrandSelectionModesCount(let expected, let actual):
+                return "Brand selection modes count must match JPO line count (expected \(expected), got \(actual))"
+            case .invalidBrandSelectionMode(let mode):
+                return "Invalid brand selection mode: \(mode). Expected 'specific' or 'general'."
             case .jobNotFound(let id): return "Job #\(id) not found or has been deleted"
             case .supplierNotFound(let id): return "Supplier #\(id) not found or has been deleted"
             case .partNotFound(let id): return "Part #\(id) not found or has been deleted"
@@ -375,6 +381,7 @@ public final class OrdersService: Sendable {
         public let chatThreadId: Int64?
         public let poLineId: Int64?
         public let transferId: Int64?
+        public let brandSelectionMode: String
         public let createdAt: String?
 
         public init(
@@ -383,7 +390,8 @@ public final class OrdersService: Sendable {
             notes: String?, priority: String, createdAt: String?,
             lineStatus: String = "pending", holdReason: String? = nil,
             rejectReason: String? = nil, chatThreadId: Int64? = nil,
-            poLineId: Int64? = nil, transferId: Int64? = nil
+            poLineId: Int64? = nil, transferId: Int64? = nil,
+            brandSelectionMode: String = "specific"
         ) {
             self.id = id
             self.jpoId = jpoId
@@ -400,6 +408,7 @@ public final class OrdersService: Sendable {
             self.chatThreadId = chatThreadId
             self.poLineId = poLineId
             self.transferId = transferId
+            self.brandSelectionMode = brandSelectionMode
             self.createdAt = createdAt
         }
     }
@@ -742,7 +751,8 @@ public final class OrdersService: Sendable {
                     rejectReason: lr["reject_reason"] as String?,
                     chatThreadId: lr["chat_thread_id"] as Int64?,
                     poLineId: lr["po_line_id"] as Int64?,
-                    transferId: lr["transfer_id"] as Int64?
+                    transferId: lr["transfer_id"] as Int64?,
+                    brandSelectionMode: lr["brand_selection_mode"] ?? "specific"
                 )
             }
 
@@ -1270,7 +1280,8 @@ public final class OrdersService: Sendable {
         deliveryOption: String,
         notes: String?,
         lines: [(partId: Int64, quantity: Int)],
-        lineNotes: [String?]? = nil
+        lineNotes: [String?]? = nil,
+        brandSelectionModes: [String]? = nil
     ) throws -> Int64 {
         try db.writer.write { dbConn in
             // Guard: job and requesting user must exist and not be tombstoned (mirrors createJPO).
@@ -1287,6 +1298,14 @@ public final class OrdersService: Sendable {
             if let lineNotes {
                 guard lineNotes.count == lines.count else {
                     throw OrdersError.invalidLineNotesCount(expected: lines.count, actual: lineNotes.count)
+                }
+            }
+            if let brandSelectionModes {
+                guard brandSelectionModes.count == lines.count else {
+                    throw OrdersError.invalidBrandSelectionModesCount(expected: lines.count, actual: brandSelectionModes.count)
+                }
+                if let invalidMode = brandSelectionModes.first(where: { $0 != "specific" && $0 != "general" }) {
+                    throw OrdersError.invalidBrandSelectionMode(invalidMode)
                 }
             }
 
@@ -1312,11 +1331,12 @@ public final class OrdersService: Sendable {
             // 2. Insert each line and smart-route
             for (index, line) in lines.enumerated() {
                 let note = lineNotes?[index]
+                let brandSelectionMode = brandSelectionModes?[index] ?? "specific"
                 try dbConn.execute(sql: """
                     INSERT INTO jpo_line_items
-                    (jpo_id, part_id, qty_requested, priority, notes, created_at)
-                    VALUES (?, ?, ?, ?, ?, datetime('now'))
-                    """, arguments: [jpoId, line.partId, line.quantity, priority, note])
+                    (jpo_id, part_id, qty_requested, priority, notes, brand_selection_mode, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+                    """, arguments: [jpoId, line.partId, line.quantity, priority, note, brandSelectionMode])
                 let lineId = dbConn.lastInsertedRowID
 
                 // Check shop stock for smart routing
