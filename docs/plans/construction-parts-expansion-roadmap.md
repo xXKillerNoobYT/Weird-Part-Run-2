@@ -13,8 +13,14 @@
 ## Source links
 
 - GitHub product tracker: https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/645
+- Merged roadmap PR: https://github.com/xXKillerNoobYT/Weird-Part-Run-2/pull/652
 - Obsidian product note: `/Users/IA/Documents/Obsidian Vault/01_projects/Weird-Part-Run-2/Plans/Omi Intake - Construction Parts App and Company Context.md`
 - Obsidian intake note: `/Users/IA/Documents/Obsidian Vault/Paperclip/Omi to GitHub and Paperclip intake.md`
+- Paperclip planning trackers:
+  - WEI-1982 — planning tracker intake/handoff.
+  - WEI-1984 — UX roadmap owner for this plan.
+- Paperclip backend/data audit:
+  - WEI-1977 — confirmed current Swift/GRDB model is already mostly trade-neutral for electrical phase 1 and did not justify an immediate schema change.
 - Related canonical implementation trackers:
   - GitHub #638 / Paperclip WEI-1981 — stock movement type centralization across UI flows.
   - GitHub #599 / Paperclip WEI-1937 — warehouse clock-in/out, only reopen/file fresh work with new regression evidence.
@@ -32,6 +38,8 @@
 **Purpose:** Keep GH #645 as a product roadmap and prevent planning work from stealing focus from launch readiness.
 
 **Current decision:** No new beta blocker was found during this UX planning pass. Existing launch/implementation owners remain the right path.
+
+**Status refresh (Paperclip triage):** Dedupe remains unchanged after backend/data audit and planning intake: #638 stays stock movement owner, #599 stays clock-in/out owner unless fresh regression evidence appears, and WEI-1956/WEI-1848/WEI-1876 stay launch/humane-review owners.
 
 **Routing rules:**
 
