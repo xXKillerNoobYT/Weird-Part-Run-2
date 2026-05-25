@@ -107,6 +107,38 @@ struct DatabaseTests {
         #expect(tables == ["part_import_row_evidence", "part_import_sessions"])
     }
 
+    @Test("Migration 085 creates audit session events table and index")
+    func testMigration085CreatesAuditSessionEventsTableAndIndex() throws {
+        var config = Configuration()
+        config.foreignKeysEnabled = true
+        let queue = try DatabaseQueue(configuration: config)
+        var migrator = DatabaseMigrator()
+        AppDatabase.registerMigrations(&migrator)
+        try migrator.migrate(queue, upTo: "084_warehouse_onboarding_completed_steps")
+
+        let tableExistsBefore085 = try queue.read { db in
+            try db.tableExists("audit_session_events")
+        }
+        #expect(!tableExistsBefore085)
+
+        try migrator.migrate(queue, upTo: "085_audit_session_events")
+
+        let result = try queue.read { db -> (tableExists: Bool, columns: [String], indexes: [String]) in
+            let tableExists = try db.tableExists("audit_session_events")
+            let columns = tableExists ? try db.columns(in: "audit_session_events").map(\.name) : []
+            let indexes = try Row.fetchAll(db, sql: "PRAGMA index_list('audit_session_events')")
+                .map { row in row["name"] as String }
+            return (tableExists, columns, indexes)
+        }
+
+        #expect(result.tableExists)
+        #expect(result.columns.contains("session_id"))
+        #expect(result.columns.contains("event_type"))
+        #expect(result.columns.contains("recorded_by"))
+        #expect(result.columns.contains("recorded_at"))
+        #expect(result.indexes.contains("idx_audit_session_events_session"))
+    }
+
     @Test("Schema version is 97")
     func testSchemaVersion() throws {
         #expect(AppDatabase.schemaVersion == 97)
