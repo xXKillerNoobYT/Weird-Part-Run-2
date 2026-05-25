@@ -237,17 +237,18 @@ struct IOSBackupsPage: View {
             let sourceURL = URL(fileURLWithPath: sourcePath)
             try FileManager.default.copyItem(at: sourceURL, to: destURL)
 
-            // Copy WAL/SHM if they exist
+            // Copy WAL/SHM if they exist — use `try` so a copy failure is
+            // treated as a backup failure instead of being silently swallowed.
             let walPath = sourcePath + "-wal"
             if FileManager.default.fileExists(atPath: walPath) {
-                try? FileManager.default.copyItem(
+                try FileManager.default.copyItem(
                     at: URL(fileURLWithPath: walPath),
                     to: dir.appendingPathComponent(backupName + "-wal")
                 )
             }
             let shmPath = sourcePath + "-shm"
             if FileManager.default.fileExists(atPath: shmPath) {
-                try? FileManager.default.copyItem(
+                try FileManager.default.copyItem(
                     at: URL(fileURLWithPath: shmPath),
                     to: dir.appendingPathComponent(backupName + "-shm")
                 )
