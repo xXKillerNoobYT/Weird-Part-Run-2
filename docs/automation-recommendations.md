@@ -825,7 +825,7 @@ Running total: **23 confirmed gaps / 2 areas** (parts 15 + jobs 8). Scanner prio
 | PartsService SQL column validator hook | Hook | High | APPROVED 2026-04-18 | ✅ BUILT (iter 8, commit pending) |
 | `parts-sql-schema-checker` skill | Skill | High | APPROVED (already built) | ✅ BUILT (pre-existing skill, #254 closed) |
 | `parts-xcode-phase2-generator` | Skill | Low | REJECTED 2026-04-18 | ❌ Removed — duplicates xcode-planner-and-review |
-| `parts-drift-detector` subagent | Subagent | Medium | DEFERRED 2026-04-18 | ⏸ Revisit when PE-COLORS Phase 2 code starts landing (#256) |
+| `parts-drift-detector` subagent | Subagent | Medium | IMPLEMENTED 2026-05-25 | ✅ BUILT (`.claude/agents/parts-drift-detector.md`, #256) |
 
 **Want more?** Run `/claude-automation-recommender` scoped to a different area or category.
 
