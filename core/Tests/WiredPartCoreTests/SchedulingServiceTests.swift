@@ -1236,6 +1236,52 @@ struct SchedulingServiceTests {
         #expect(jobs.count == 1)
     }
 
+    @Test("fetchFlexPool excludes jobs when non-empty user filter JSON is malformed")
+    func testFlexPoolMalformedUserFilterFailsClosed() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE jobs
+                    SET is_flex_pool = 1,
+                        status = 'active',
+                        flex_pool_user_filter = ?,
+                        flex_pool_team_filter = NULL
+                    WHERE id = ?
+                    """,
+                arguments: ["[999", jobId]
+            )
+        }
+
+        let jobs = try env.scheduling.fetchFlexPool(userId: env.adminUserId)
+        #expect(jobs.isEmpty, "Malformed non-empty user filter must fail closed")
+    }
+
+    @Test("fetchFlexPool excludes jobs when non-empty team filter JSON is malformed")
+    func testFlexPoolMalformedTeamFilterFailsClosed() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE jobs
+                    SET is_flex_pool = 1,
+                        status = 'active',
+                        flex_pool_user_filter = NULL,
+                        flex_pool_team_filter = ?
+                    WHERE id = ?
+                    """,
+                arguments: ["[123", jobId]
+            )
+        }
+
+        let jobs = try env.scheduling.fetchFlexPool(userId: env.adminUserId)
+        #expect(jobs.isEmpty, "Malformed non-empty team filter must fail closed")
+    }
+
     @Test("claimFlexJob sets worker as lead and removes job from flex pool")
     func testClaimFlexJob() throws {
         let env = try E2ETestHelpers.setUp()

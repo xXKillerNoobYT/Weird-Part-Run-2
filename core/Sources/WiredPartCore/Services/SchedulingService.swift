@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import os.log
 
 /// Scheduling Service — schedule entries, dispatch board, time-off requests,
 /// dispatch templates, and scheduling stats.
@@ -12,6 +13,7 @@ import GRDB
 public final class SchedulingService: Sendable {
     private let db: AppDatabase
     private let auth: AuthService
+    fileprivate static let logger = Logger(subsystem: "com.wiredpart.core", category: "SchedulingService")
 
     public init(db: AppDatabase, auth: AuthService? = nil) {
         self.db = db
@@ -2445,20 +2447,38 @@ public final class SchedulingService: Sendable {
                     let teamFilter: String? = row["flex_pool_team_filter"]
 
                     // User-level filter: if set, userId must appear in the JSON array.
-                    if let uf = userFilter,
-                       let data = uf.data(using: .utf8),
-                       let ids = try? JSONDecoder().decode([Int64].self, from: data),
-                       !ids.contains(userId) {
-                        return nil
+                    if let uf = userFilter, !uf.isEmpty {
+                        guard let data = uf.data(using: .utf8) else {
+                            Self.logger.error("fetchFlexPool excluding job \(id, privacy: .public) due to unreadable flex_pool_user_filter bytes")
+                            return nil
+                        }
+                        let ids: [Int64]
+                        do {
+                            ids = try JSONDecoder().decode([Int64].self, from: data)
+                        } catch {
+                            Self.logger.error("fetchFlexPool excluding job \(id, privacy: .public) due to malformed flex_pool_user_filter JSON: \(String(describing: error), privacy: .public)")
+                            return nil
+                        }
+                        if !ids.contains(userId) {
+                            return nil
+                        }
                     }
 
                     // Fix #167: Team-level filter. If the job restricts to specific teams,
                     // the user must belong to at least one of them.
-                    if let tf = teamFilter, !tf.isEmpty,
-                       let data = tf.data(using: .utf8),
-                       let allowedTeams = try? JSONDecoder().decode([Int64].self, from: data),
-                       !allowedTeams.isEmpty {
-                        if userTeamIds.isDisjoint(with: Set(allowedTeams)) {
+                    if let tf = teamFilter, !tf.isEmpty {
+                        guard let data = tf.data(using: .utf8) else {
+                            Self.logger.error("fetchFlexPool excluding job \(id, privacy: .public) due to unreadable flex_pool_team_filter bytes")
+                            return nil
+                        }
+                        let allowedTeams: [Int64]
+                        do {
+                            allowedTeams = try JSONDecoder().decode([Int64].self, from: data)
+                        } catch {
+                            Self.logger.error("fetchFlexPool excluding job \(id, privacy: .public) due to malformed flex_pool_team_filter JSON: \(String(describing: error), privacy: .public)")
+                            return nil
+                        }
+                        if !allowedTeams.isEmpty, userTeamIds.isDisjoint(with: Set(allowedTeams)) {
                             return nil
                         }
                     }
