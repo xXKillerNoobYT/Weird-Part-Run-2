@@ -312,10 +312,7 @@ struct IOSRFIListPage: View {
         }
     }
     private func priorityColor(_ priority: String, dueDate: String?) -> Color {
-        if dueDate != nil {
-            return TimelinePriorityColor.color(priority: priority, dueDateString: dueDate)
-        }
-        return TimelinePriorityColor.fallbackColor(priority: priority)
+        TimelinePriorityColor.color(priority: priority, dueDateString: dueDate)
     }
 
     // MARK: - Data

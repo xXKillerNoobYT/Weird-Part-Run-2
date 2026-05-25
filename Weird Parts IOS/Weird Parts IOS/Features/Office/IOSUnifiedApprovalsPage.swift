@@ -379,9 +379,7 @@ struct IOSUnifiedApprovalsPage: View {
                 subtitle: "JPO #\(jpo.id) by \(jpo.requestedByName) - \(jpo.lineCount) lines"
             )
             HStack(spacing: 12) {
-                let priorityColor: Color = jpo.dueDate != nil
-                    ? TimelinePriorityColor.color(priority: jpo.priority, dueDateString: jpo.dueDate)
-                    : TimelinePriorityColor.fallbackColor(priority: jpo.priority)
+                let priorityColor = TimelinePriorityColor.color(priority: jpo.priority, dueDateString: jpo.dueDate)
                 Text("Priority: \(jpo.priority.capitalized)")
                     .font(.caption)
                     .foregroundStyle(priorityColor)

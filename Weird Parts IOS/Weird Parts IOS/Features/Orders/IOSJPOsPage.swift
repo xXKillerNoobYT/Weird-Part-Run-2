@@ -279,9 +279,7 @@ struct IOSJPOsPage: View {
     }
 
     private func priorityBadge(_ priority: String, dueDate: String?) -> some View {
-        let color: Color = dueDate != nil
-            ? TimelinePriorityColor.color(priority: priority, dueDateString: dueDate)
-            : TimelinePriorityColor.fallbackColor(priority: priority)
+        let color = TimelinePriorityColor.color(priority: priority, dueDateString: dueDate)
         return Text(priority.capitalized)
             .font(.caption2)
             .foregroundStyle(color)

@@ -95,7 +95,6 @@ struct TimelinePriorityColor {
     ///
     /// Use this ONLY when no due date is available on the model.
     static func fallbackColor(priority: String?) -> Color {
-        // TODO: When due dates are added to these models, replace with time-based color
         switch priority?.lowercased() {
         case "urgent": return .red
         case "high": return .orange
