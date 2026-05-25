@@ -192,6 +192,144 @@ struct BadgeCountServiceTests {
         #expect(counts.hasOldItems == true)
     }
 
+    @Test("oldestPendingDate includes old pending time-off requests when no JPOs are pending")
+    func testOldestPendingDateIncludesPendingTimeOff() throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = BadgeCountService(db: env.db)
+
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
+        let dateStr = ISO8601DateFormatter().string(from: tomorrow).prefix(10).description
+        let requestId = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: dateStr,
+            endDate: dateStr,
+            reason: "Old pending vacation"
+        )
+
+        let expectedOldest = try env.db.writer.write { db -> String in
+            try db.execute(
+                sql: "UPDATE schedule_exceptions SET created_at = datetime('now', '-10 days') WHERE id = ?",
+                arguments: [requestId]
+            )
+            return try String.fetchOne(
+                db,
+                sql: "SELECT created_at FROM schedule_exceptions WHERE id = ?",
+                arguments: [requestId]
+            )!
+        }
+
+        let counts = try service.getAllBadgeCounts(userId: env.adminUserId)
+        #expect(counts.pendingApprovals == 0)
+        #expect(counts.pendingTimeOff == 1)
+        #expect(counts.oldestPendingDate == expectedOldest)
+        #expect(counts.hasOldItems == true)
+    }
+
+    @Test("oldestPendingDate includes old pending tool edits when no JPOs are pending")
+    func testOldestPendingDateIncludesPendingToolEdit() throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = BadgeCountService(db: env.db)
+
+        let expectedOldest = try env.db.writer.write { db -> String in
+            try db.execute(sql: """
+                INSERT INTO tools (tool_number, name, category, status, has_kit, created_at, updated_at)
+                VALUES ('T-BADGE-OLD', 'Badge Tool', 'hand_tools', 'available', 0, datetime('now'), datetime('now'))
+                """)
+            let toolId = db.lastInsertedRowID
+
+            try db.execute(sql: """
+                INSERT INTO tool_change_log
+                    (tool_id, changed_by, change_type, field_name, new_value, verification_status, changed_at)
+                VALUES (?, ?, 'edit', 'notes', 'Needs approval', 'pending', datetime('now', '-10 days'))
+                """, arguments: [toolId, env.adminUserId])
+
+            return try String.fetchOne(
+                db,
+                sql: "SELECT changed_at FROM tool_change_log WHERE tool_id = ?",
+                arguments: [toolId]
+            )!
+        }
+
+        let counts = try service.getAllBadgeCounts(userId: env.adminUserId)
+        #expect(counts.pendingApprovals == 0)
+        #expect(counts.pendingToolEdits == 1)
+        #expect(counts.oldestPendingDate == expectedOldest)
+        #expect(counts.hasOldItems == true)
+    }
+
+    @Test("oldestPendingDate includes old pending deletion approvals when no JPOs are pending")
+    func testOldestPendingDateIncludesPendingDeletionApproval() throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = BadgeCountService(db: env.db)
+
+        let categoryId = try env.parts.createCategory(name: "Old Badge Delete")
+        try env.parts.scheduleEmptyShelfDeletion(
+            entityType: "category",
+            entityId: categoryId,
+            entityName: "Old Badge Delete",
+            reason: nil,
+            scheduledBy: env.adminUserId
+        )
+
+        let expectedOldest = try env.db.writer.write { db -> String in
+            try db.execute(
+                sql: """
+                    UPDATE scheduled_deletions
+                    SET created_at = datetime('now', '-10 days')
+                    WHERE entity_type = 'category' AND entity_id = ?
+                    """,
+                arguments: [categoryId]
+            )
+            return try String.fetchOne(
+                db,
+                sql: """
+                    SELECT created_at FROM scheduled_deletions
+                    WHERE entity_type = 'category' AND entity_id = ?
+                    """,
+                arguments: [categoryId]
+            )!
+        }
+
+        let counts = try service.getAllBadgeCounts(userId: env.adminUserId)
+        #expect(counts.pendingApprovals == 0)
+        #expect(counts.pendingDeletions == 1)
+        #expect(counts.oldestPendingDate == expectedOldest)
+        #expect(counts.hasOldItems == true)
+    }
+
+    @Test("oldestPendingDate still includes old pending JPOs")
+    func testOldestPendingDateIncludesPendingJPO() throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = BadgeCountService(db: env.db)
+
+        let jobId = try env.jobs.createJob(
+            jobNumber: "J-BADGE-OLD",
+            jobName: "Old Pending JPO",
+            customerName: "Test Customer",
+            status: "active",
+            createdBy: env.adminUserId
+        )
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
+        try env.orders.updateJPOStatus(id: jpoId, status: "pending")
+
+        let expectedOldest = try env.db.writer.write { db -> String in
+            try db.execute(
+                sql: "UPDATE job_parts_orders SET created_at = datetime('now', '-10 days') WHERE id = ?",
+                arguments: [jpoId]
+            )
+            return try String.fetchOne(
+                db,
+                sql: "SELECT created_at FROM job_parts_orders WHERE id = ?",
+                arguments: [jpoId]
+            )!
+        }
+
+        let counts = try service.getAllBadgeCounts(userId: env.adminUserId)
+        #expect(counts.pendingApprovals == 1)
+        #expect(counts.oldestPendingDate == expectedOldest)
+        #expect(counts.hasOldItems == true)
+    }
+
     // MARK: - activeClockedIn: labor_entries with no clock_out
 
     @Test("activeClockedIn counts workers currently clocked in")

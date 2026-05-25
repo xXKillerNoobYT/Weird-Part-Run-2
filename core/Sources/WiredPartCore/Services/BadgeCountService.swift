@@ -78,7 +78,7 @@ public final class BadgeCountService: Sendable {
         /// True if any item has been pending for more than 7 days.
         public var hasOldItems: Bool {
             guard let dateStr = oldestPendingDate else { return false }
-            guard let date = CoreFormatters.parseISO(dateStr) else { return false }
+            guard let date = CoreFormatters.parseDateTime(dateStr) else { return false }
             return Date().timeIntervalSince(date) > 7 * 86400
         }
 
@@ -235,11 +235,8 @@ public final class BadgeCountService: Sendable {
             """, arguments: [uid, uid])
         }
 
-        // Oldest pending date — find the oldest pending/in-review JPO for tint calculation
-        counts.oldestPendingDate = try safeString(sql: """
-            SELECT MIN(created_at) FROM job_parts_orders
-            WHERE status IN ('pending', 'in_review') AND deleted_at IS NULL
-        """)
+        // Oldest pending date — include every queue that contributes to approval urgency.
+        counts.oldestPendingDate = try oldestPendingDate()
 
         return counts
     }
@@ -307,6 +304,47 @@ public final class BadgeCountService: Sendable {
             if isTableNotFoundError(error) { return nil }
             throw error
         }
+    }
+
+    /// Returns the oldest pending timestamp across all approval queues that drive badge urgency.
+    private func oldestPendingDate() throws -> String? {
+        let pendingDateQueries = [
+            """
+            SELECT MIN(created_at) FROM job_parts_orders
+            WHERE status IN ('pending', 'in_review') AND deleted_at IS NULL
+            """,
+            """
+            SELECT MIN(created_at) FROM schedule_exceptions
+            WHERE exception_type = 'time_off'
+              AND is_approved = 0
+              AND deleted_at IS NULL
+            """,
+            """
+            SELECT MIN(changed_at) FROM tool_change_log
+            WHERE verification_status = 'pending' AND deleted_at IS NULL
+            """,
+            """
+            SELECT MIN(created_at) FROM scheduled_deletions
+            WHERE status = 'pending_approval' AND deleted_at IS NULL
+            """
+        ]
+
+        var oldest: (raw: String, date: Date)?
+
+        for sql in pendingDateQueries {
+            guard let rawDate = try safeString(sql: sql),
+                  let parsedDate = CoreFormatters.parseDateTime(rawDate) else {
+                continue
+            }
+
+            if let currentOldest = oldest, currentOldest.date <= parsedDate {
+                continue
+            }
+
+            oldest = (rawDate, parsedDate)
+        }
+
+        return oldest?.raw
     }
 
     /// Detect GRDB "no such table" / "no such column" errors.
