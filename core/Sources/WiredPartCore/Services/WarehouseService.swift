@@ -22,6 +22,7 @@ public final class WarehouseService: Sendable {
 
     public enum WarehouseError: Error, Sendable, Equatable {
         case invalidMovementPath(from: String, to: String)
+        case invalidMovementType(String)
         case insufficientStock(available: Int, requested: Int)
         case partNotFound(Int64)
         case sessionNotFound(Int64)
@@ -442,45 +443,15 @@ public final class WarehouseService: Sendable {
         case completed
     }
 
-    public enum MovementType: String, Sendable, CaseIterable {
-        case transfer
-        case receive
-        case consume
-        case returnToSupplier = "return_to_supplier"
-        case adjustment
-
-        public var aliases: [String] {
-            switch self {
-            case .transfer:
-                return ["transfer"]
-            case .receive:
-                return ["receive", "received", "receipt"]
-            case .consume:
-                return ["consume", "consumed", "consumption", "pull", "usage", "job_pull"]
-            case .returnToSupplier:
-                return ["return_to_supplier", "return", "returned"]
-            case .adjustment:
-                return ["adjustment", "adjust", "add_stock", "write_off"]
-            }
-        }
-    }
-
     public static func normalizeMovementType(_ movementType: String) -> String {
-        let normalized = movementType
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .replacingOccurrences(of: "-", with: "_")
-            .replacingOccurrences(of: " ", with: "_")
-        for type in MovementType.allCases where type.aliases.contains(normalized) {
-            return type.rawValue
-        }
-        return normalized
+        StockMovement.MovementType.canonicalRawValue(for: movementType)
+            ?? StockMovement.MovementType.normalizeRawValue(movementType)
     }
 
     private static func movementTypeAliases(for movementType: String) -> [String] {
-        let canonical = normalizeMovementType(movementType)
-        guard let type = MovementType(rawValue: canonical) else { return [canonical] }
-        return type.aliases
+        let canonical = StockMovement.MovementType.normalizeRawValue(movementType)
+        guard let type = StockMovement.MovementType.canonicalType(for: canonical) else { return [canonical] }
+        return Array(type.primaryUIFilterRawValues).sorted()
     }
 
     private static func sqliteDateString(_ date: Date) -> String {
@@ -574,7 +545,7 @@ public final class WarehouseService: Sendable {
             qty: qty,
             fromLabel: Self.locationDisplayName(type: fromLocationType, id: fromLocationId),
             toLabel: Self.locationDisplayName(type: toLocationType, id: toLocationId),
-            movementType: movementType
+            movementType: movementType.rawValue
         )
     }
 
@@ -625,9 +596,9 @@ public final class WarehouseService: Sendable {
                 case .all:
                     break
                 case .active:
-                    whereClauses.append("sm.movement_type IN ('receiving_staged')")
+                    whereClauses.append("sm.movement_type IN ('\(StockMovement.MovementType.receivingStaged.rawValue)')")
                 case .completed:
-                    whereClauses.append("sm.movement_type NOT IN ('receiving_staged')")
+                    whereClauses.append("sm.movement_type NOT IN ('\(StockMovement.MovementType.receivingStaged.rawValue)')")
                 }
 
                 args.append(limit)
@@ -725,6 +696,53 @@ public final class WarehouseService: Sendable {
         fromLocationId: Int64?,
         toLocationType: String?,
         toLocationId: Int64?,
+        movementType: StockMovement.MovementType,
+        reason: String? = nil,
+        notes: String? = nil,
+        performedBy: Int64,
+        jobId: Int64? = nil,
+        photoPath: String? = nil,
+        referenceNumber: String? = nil,
+        unitCostAtMove: Double? = nil,
+        unitSellAtMove: Double? = nil,
+        occurredAt: Date? = nil,
+        verifiedBy: Int64? = nil,
+        scanConfirmed: Bool = false,
+        gpsLat: Double? = nil,
+        gpsLng: Double? = nil
+    ) throws -> Int64 {
+        try createMovement(
+            partId: partId,
+            qty: qty,
+            fromLocationType: fromLocationType,
+            fromLocationId: fromLocationId,
+            toLocationType: toLocationType,
+            toLocationId: toLocationId,
+            movementType: movementType.rawValue,
+            reason: reason,
+            notes: notes,
+            performedBy: performedBy,
+            jobId: jobId,
+            photoPath: photoPath,
+            referenceNumber: referenceNumber,
+            unitCostAtMove: unitCostAtMove,
+            unitSellAtMove: unitSellAtMove,
+            occurredAt: occurredAt,
+            verifiedBy: verifiedBy,
+            scanConfirmed: scanConfirmed,
+            gpsLat: gpsLat,
+            gpsLng: gpsLng
+        )
+    }
+
+    @discardableResult
+    public func createMovement(
+        partId: Int64,
+        qty: Int,
+        fromLocationType: String?,
+        fromLocationId: Int64?,
+        toLocationType: String?,
+        toLocationId: Int64?,
         movementType: String,
         reason: String? = nil,
         notes: String? = nil,
@@ -750,6 +768,9 @@ public final class WarehouseService: Sendable {
         guard qty > 0 else { throw WarehouseError.invalidQuantity }
         guard !movementType.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw WarehouseError.requiredFieldEmpty
+        }
+        guard let canonicalMovementType = StockMovement.MovementType.canonicalRawValue(for: movementType) else {
+            throw WarehouseError.invalidMovementType(movementType)
         }
         return try db.writer.write { dbConn in
             // Guard: part must exist and not be tombstoned — otherwise the INSERT
@@ -784,7 +805,7 @@ public final class WarehouseService: Sendable {
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                 arguments: [partId, qty, fromLocationType, fromLocationId,
-                            toLocationType, toLocationId, movementType,
+                            toLocationType, toLocationId, canonicalMovementType,
                             reason, notes, performedBy, jobId, photoPath,
                             referenceNumber, unitCostAtMove, unitSellAtMove,
                             verifiedBy, scanConfirmed ? 1 : 0, gpsLat, gpsLng,
@@ -868,6 +889,9 @@ public final class WarehouseService: Sendable {
         gpsLat: Double? = nil,
         gpsLng: Double? = nil
     ) throws -> Int64 {
+        guard let canonicalType = StockMovement.MovementType.canonicalType(for: movementType) else {
+            throw WarehouseError.invalidMovementType(movementType)
+        }
         try createMovement(
             partId: partId,
             qty: qty,
@@ -875,7 +899,7 @@ public final class WarehouseService: Sendable {
             fromLocationId: fromLocationId,
             toLocationType: toLocationType,
             toLocationId: toLocationId,
-            movementType: Self.normalizeMovementType(movementType),
+            movementType: canonicalType,
             reason: reason,
             notes: notes,
             performedBy: performedBy,
@@ -941,6 +965,9 @@ public final class WarehouseService: Sendable {
             guard !m.movementType.trimmingCharacters(in: .whitespaces).isEmpty else {
                 throw WarehouseError.requiredFieldEmpty
             }
+            guard StockMovement.MovementType.canonicalRawValue(for: m.movementType) != nil else {
+                throw WarehouseError.invalidMovementType(m.movementType)
+            }
         }
         return try db.writer.write { dbConn in
             let userExists = (try Int.fetchOne(dbConn, sql: """
@@ -950,6 +977,9 @@ public final class WarehouseService: Sendable {
 
             var ids: [Int64] = []
             for m in movements {
+                guard let canonicalMovementType = StockMovement.MovementType.canonicalRawValue(for: m.movementType) else {
+                    throw WarehouseError.invalidMovementType(m.movementType)
+                }
                 let partExists = (try Int.fetchOne(dbConn, sql: """
                     SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL
                     """, arguments: [m.partId]) ?? 0) > 0
@@ -972,7 +1002,7 @@ public final class WarehouseService: Sendable {
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                     """,
                     arguments: [m.partId, m.qty, m.fromLocationType, m.fromLocationId,
-                                m.toLocationType, m.toLocationId, m.movementType,
+                                m.toLocationType, m.toLocationId, canonicalMovementType,
                                 m.reason, m.notes, performedBy, m.jobId, m.photoPath,
                                 m.referenceNumber, m.unitCostAtMove, m.unitSellAtMove])
                 ids.append(dbConn.lastInsertedRowID)
@@ -1669,7 +1699,7 @@ public final class WarehouseService: Sendable {
             fromLocationId: fromLocationId,
             toLocationType: toLocationType,
             toLocationId: toLocationId,
-            movementType: StockMovement.MovementType.stockReturn.rawValue,
+            movementType: .stockReturn,
             reason: isDamaged ? "damaged" : (reason ?? "return"),
             notes: notes,
             performedBy: performedBy
@@ -2640,7 +2670,7 @@ public final class WarehouseService: Sendable {
             fromLocationId: nil,
             toLocationType: "pulled",
             toLocationId: jobId,
-            movementType: StockMovement.MovementType.receivingStaged.rawValue,
+            movementType: .receivingStaged,
             reason: "Received and staged for job",
             notes: notes,
             performedBy: performedBy,
@@ -2664,7 +2694,7 @@ public final class WarehouseService: Sendable {
             fromLocationId: nil,
             toLocationType: nil,
             toLocationId: nil,
-            movementType: StockMovement.MovementType.writeOff.rawValue,
+            movementType: .writeOff,
             reason: reason,
             notes: notes,
             performedBy: performedBy
@@ -2687,7 +2717,7 @@ public final class WarehouseService: Sendable {
             fromLocationId: nil,
             toLocationType: nil,
             toLocationId: nil,
-            movementType: StockMovement.MovementType.returnToSupplier.rawValue,
+            movementType: .returnToSupplier,
             reason: "Damaged: \(returnType)",
             notes: notes,
             performedBy: performedBy
@@ -2842,14 +2872,14 @@ public final class WarehouseService: Sendable {
     }
 
     /// Determine the movement_type based on from/to location types.
-    private static func determineMovementType(from: String, to: String) -> String {
+    private static func determineMovementType(from: String, to: String) -> StockMovement.MovementType {
         if to == "warehouse" && (from == "truck" || from == "trailer") {
-            return StockMovement.MovementType.stockReturn.rawValue
+            return .stockReturn
         }
         if from == "job" {
-            return StockMovement.MovementType.stockReturn.rawValue
+            return .stockReturn
         }
-        return StockMovement.MovementType.transfer.rawValue
+        return .transfer
     }
 
     /// Build a human-readable display name for a location.

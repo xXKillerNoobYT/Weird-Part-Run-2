@@ -48,6 +48,43 @@ public struct StockMovement: Codable, FetchableRecord, MutablePersistableRecord,
             .transfer, .receive, .consume, .returnToSupplier, .adjustment
         ]
 
+        /// Accepted aliases normalized at the write boundary.
+        /// Keeps legacy spellings compatible while still persisting canonical values.
+        public var aliases: [String] {
+            switch self {
+            case .transfer:
+                return ["transfer"]
+            case .receive:
+                return ["receive", "received"]
+            case .receiving:
+                return ["receiving"]
+            case .receivingStaged:
+                return ["receiving_staged"]
+            case .receipt:
+                return ["receipt"]
+            case .stockReturn:
+                return ["return", "returned"]
+            case .returnToSupplier:
+                return ["return_to_supplier"]
+            case .adjustment:
+                return ["adjustment", "adjust"]
+            case .addStock:
+                return ["add_stock"]
+            case .writeOff:
+                return ["write_off"]
+            case .consume:
+                return ["consume", "consumed", "consumption"]
+            case .pull:
+                return ["pull"]
+            case .usage:
+                return ["usage"]
+            case .jobPull:
+                return ["job_pull"]
+            case .restockFromShop:
+                return ["restock_from_shop"]
+            }
+        }
+
         /// Persisted raw movement types represented by this top-level UI filter.
         ///
         /// Some legacy/current writers store semantically equivalent movement
@@ -134,6 +171,38 @@ public struct StockMovement: Codable, FetchableRecord, MutablePersistableRecord,
 
         public static func systemImageName(forRawValue rawValue: String) -> String {
             MovementType(rawValue: rawValue)?.systemImageName ?? "arrow.triangle.2.circlepath"
+        }
+
+        public static func normalizeRawValue(_ rawValue: String) -> String {
+            rawValue
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+                .replacingOccurrences(of: "-", with: "_")
+                .replacingOccurrences(of: " ", with: "_")
+        }
+
+        public static func canonicalType(for rawValue: String) -> MovementType? {
+            let normalized = normalizeRawValue(rawValue)
+            for type in MovementType.allCases where type.aliases.contains(normalized) {
+                return type
+            }
+            return MovementType(rawValue: normalized)
+        }
+
+        public static func canonicalRawValue(for rawValue: String) -> String? {
+            canonicalType(for: rawValue)?.rawValue
+        }
+
+        /// Canonical movement type derivation for warehouse wizard routes.
+        public static func from(sourceLocationType: String, destinationLocationType: String) -> MovementType {
+            switch (sourceLocationType, destinationLocationType) {
+            case ("job", _):
+                return .returnToSupplier
+            case (_, "job"):
+                return .consume
+            default:
+                return .transfer
+            }
         }
 
         /// SQL literal list for static movement-type `IN (...)` clauses.

@@ -52,12 +52,11 @@ struct IOSMovementWizard: View {
     @State private var activeSheet: WizardSheet?
 
     // Derived
-    private var movementType: String {
-        switch (fromLocationType, toLocationType) {
-        case ("job", _): return StockMovement.MovementType.returnToSupplier.rawValue
-        case (_, "job"): return StockMovement.MovementType.consume.rawValue
-        default: return StockMovement.MovementType.transfer.rawValue
-        }
+    private var movementType: StockMovement.MovementType {
+        StockMovement.MovementType.from(
+            sourceLocationType: fromLocationType,
+            destinationLocationType: toLocationType
+        )
     }
 
     private var canAdvance: Bool {
@@ -304,7 +303,7 @@ struct IOSMovementWizard: View {
                 HStack(spacing: 8) {
                     Image(systemName: "info.circle.fill")
                         .foregroundStyle(.blue)
-                    Text("Movement type: **\(movementType.replacingOccurrences(of: "_", with: " ").capitalized)**")
+                    Text("Movement type: **\(movementType.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)**")
                         .font(.subheadline)
                 }
                 .padding(12)
@@ -726,7 +725,7 @@ struct IOSMovementWizard: View {
                         .accessibilityHidden(true)
                     flowBadge(toLocationType, color: .green)
                     Spacer()
-                    Text(movementType.replacingOccurrences(of: "_", with: " ").capitalized)
+                    Text(movementType.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
                         .font(.caption)
                         .fontWeight(.medium)
                         .padding(.horizontal, 8)

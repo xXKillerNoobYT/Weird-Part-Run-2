@@ -201,6 +201,49 @@ struct WarehouseServiceExtTests {
         #expect(movement?.gpsLng == -104.9903)
     }
 
+    @Test("createMovement with enum overload persists canonical movement type")
+    func testCreateMovementWithEnumOverloadPersistsCanonicalMovementType() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        let movementId = try env.warehouse.createMovement(
+            partId: partId,
+            qty: 2,
+            fromLocationType: nil,
+            fromLocationId: nil,
+            toLocationType: "warehouse",
+            toLocationId: 1,
+            movementType: .receive,
+            reason: "Enum write",
+            performedBy: env.adminUserId
+        )
+
+        let movement = try env.warehouse.getMovement(id: movementId)
+        #expect(movement?.movementType == StockMovement.MovementType.receive.rawValue)
+    }
+
+    @Test("createMovement rejects unknown movement type strings")
+    func testCreateMovementRejectsUnknownMovementTypeStrings() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        #expect(throws: WarehouseService.WarehouseError.invalidMovementType("consumedd")) {
+            _ = try env.warehouse.createMovement(
+                partId: partId,
+                qty: 1,
+                fromLocationType: nil,
+                fromLocationId: nil,
+                toLocationType: "warehouse",
+                toLocationId: 1,
+                movementType: "consumedd",
+                reason: nil,
+                performedBy: env.adminUserId
+            )
+        }
+    }
+
     @Test("Movement service returns empty defaults when movement table is missing")
     func testMovementMissingTableDefaults() throws {
         let env = try E2ETestHelpers.setUp()

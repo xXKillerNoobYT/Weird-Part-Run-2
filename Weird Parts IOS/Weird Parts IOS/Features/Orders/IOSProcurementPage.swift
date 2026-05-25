@@ -1083,7 +1083,7 @@ struct IOSProcurementPage: View {
                 fromLocationId: 1,
                 toLocationType: "pulled",
                 toLocationId: 1,
-                movementType: StockMovement.MovementType.transfer.rawValue,
+                movementType: .transfer,
                 reason: "Procurement pull",
                 notes: "Pulled \(actualPull) for procurement demand of \(item.totalDemand)",
                 performedBy: userId

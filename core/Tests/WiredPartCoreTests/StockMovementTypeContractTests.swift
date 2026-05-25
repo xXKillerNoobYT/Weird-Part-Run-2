@@ -29,4 +29,17 @@ struct StockMovementTypeContractTests {
         #expect(StockMovement.MovementType.displayName(forRawValue: "receiving_staged") == "Receiving Staged")
         #expect(StockMovement.MovementType.displayName(forRawValue: "custom_type") == "Custom Type")
     }
+
+    @Test("Wizard route derivation uses canonical movement types")
+    func wizardRouteDerivationUsesCanonicalMovementTypes() {
+        #expect(
+            StockMovement.MovementType.from(sourceLocationType: "warehouse", destinationLocationType: "job") == .consume
+        )
+        #expect(
+            StockMovement.MovementType.from(sourceLocationType: "job", destinationLocationType: "truck") == .returnToSupplier
+        )
+        #expect(
+            StockMovement.MovementType.from(sourceLocationType: "warehouse", destinationLocationType: "truck") == .transfer
+        )
+    }
 }

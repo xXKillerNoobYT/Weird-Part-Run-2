@@ -753,7 +753,7 @@ struct IOSJPODetailPage: View {
                 fromLocationId: 1,
                 toLocationType: "pulled",
                 toLocationId: 1,
-                movementType: StockMovement.MovementType.transfer.rawValue,
+                movementType: .transfer,
                 reason: "JPO smart route — in stock",
                 notes: "Auto-transfer from JPO #\(line.jpoId), line #\(line.id)",
                 performedBy: userId
