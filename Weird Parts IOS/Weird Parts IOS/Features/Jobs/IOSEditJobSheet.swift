@@ -164,7 +164,10 @@ struct IOSEditJobSheet: View {
     // MARK: - Actions
 
     private func loadStageTemplates() {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            errorMessage = "Jobs service unavailable"
+            return
+        }
         do {
             stageTemplates = try service.listJobStageTemplates().filter { $0.stageCount > 0 }
             if selectedStageTemplateId == nil {
