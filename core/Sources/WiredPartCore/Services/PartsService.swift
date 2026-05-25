@@ -5939,7 +5939,7 @@ public final class PartsService: Sendable {
         public let rowNumber: Int
         public let name: String
         public let code: String?
-        public let category: String
+        public let category: String?
         public let brand: String?
         public let fields: [String: String]
     }
@@ -6047,9 +6047,7 @@ public final class PartsService: Sendable {
         guard let nameIdx = headers.firstIndex(of: "name") else {
             throw PartsError.invalidInput("CSV must have a 'name' column.")
         }
-        guard let categoryIdx = headers.firstIndex(of: "category") else {
-            throw PartsError.invalidInput("CSV must have a 'category' column.")
-        }
+        let categoryIdx = headers.firstIndex(of: "category")
         let codeIdx = headers.firstIndex(of: "code")
         let brandIdx = headers.firstIndex(of: "brand")
 
@@ -6067,10 +6065,7 @@ public final class PartsService: Sendable {
                 preview.errors.append(PartsImportError(rowNumber: rowNumber, message: "Missing required name"))
                 continue
             }
-            guard let category = value(at: categoryIdx) else {
-                preview.errors.append(PartsImportError(rowNumber: rowNumber, message: "Missing required category"))
-                continue
-            }
+            let category = value(at: categoryIdx)
 
             var fields: [String: String] = [:]
             for (index, header) in headers.enumerated() {
@@ -6119,6 +6114,10 @@ public final class PartsService: Sendable {
                     existingPartCode: existingPart.code
                 ))
             } else {
+                guard let category else {
+                    preview.errors.append(PartsImportError(rowNumber: rowNumber, message: "Missing category for new part"))
+                    continue
+                }
                 preview.newParts.append(parsed)
             }
         }
@@ -6167,7 +6166,10 @@ public final class PartsService: Sendable {
                 }
 
                 func create(_ row: PartsImportParsedRow) throws -> Int64 {
-                    let categoryId = try findOrCreateCategoryInTransaction(row.category)
+                    guard let category = row.category else {
+                        throw PartsError.invalidInput("Missing category for new part at row \(row.rowNumber)")
+                    }
+                    let categoryId = try findOrCreateCategoryInTransaction(category)
                     let brandId = try findOrCreateBrandInTransaction(row.brand)
                     let cost = row.fields["cost_price"].flatMap(Double.init) ?? 0
                     let markup = row.fields["markup_percent"].flatMap(Double.init) ?? 0
@@ -6205,7 +6207,6 @@ public final class PartsService: Sendable {
 
                 func update(_ conflict: PartsImportConflict) throws {
                     let row = conflict.parsedRow
-                    let categoryId = try findOrCreateCategoryInTransaction(row.category)
                     let brandId = try findOrCreateBrandInTransaction(row.brand)
                     let cost = row.fields["cost_price"].flatMap(Double.init)
                     let markup = row.fields["markup_percent"].flatMap(Double.init)
@@ -6213,10 +6214,14 @@ public final class PartsService: Sendable {
                     var clauses = [
                         "name = ?",
                         "code = ?",
-                        "category_id = ?",
                         "brand_id = ?"
                     ]
-                    var args: [DatabaseValueConvertible?] = [row.name, row.code, categoryId, brandId]
+                    var args: [DatabaseValueConvertible?] = [row.name, row.code, brandId]
+
+                    if let category = row.category {
+                        clauses.append("category_id = ?")
+                        args.append(try findOrCreateCategoryInTransaction(category))
+                    }
 
                     if let partType = row.fields["part_type"] { clauses.append("part_type = ?"); args.append(partType) }
                     if let description = row.fields["description"] { clauses.append("description = ?"); args.append(description) }
@@ -6312,7 +6317,7 @@ public final class PartsService: Sendable {
             "rowNumber": row.rowNumber,
             "name": row.name,
             "code": row.code as Any,
-            "category": row.category,
+            "category": row.category as Any,
             "brand": row.brand as Any,
             "fields": row.fields
         ]

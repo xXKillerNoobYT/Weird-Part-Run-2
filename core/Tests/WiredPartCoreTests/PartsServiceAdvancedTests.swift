@@ -271,6 +271,29 @@ struct PartsServiceAdvancedTests {
         #expect(preview.errors.count == 2)
         #expect(preview.errors.map(\.rowNumber).contains(4))
         #expect(preview.errors.map(\.rowNumber).contains(5))
+        #expect(preview.errors.contains { $0.rowNumber == 4 && $0.message == "Missing category for new part" })
+    }
+
+    @Test("previewPartsImportCSV allows updates without category but errors new rows missing category")
+    func testPreviewPartsImportCSVAllowsUpdateWithoutCategory() throws {
+        let env = try E2ETestHelpers.setUp()
+        let existingCategoryId = try E2ETestHelpers.seedCategory(env, name: "Existing Category")
+        _ = try env.parts.createPart(categoryId: existingCategoryId, name: "Existing Part", code: "EX-003")
+
+        let preview = try env.parts.previewPartsImportCSV("""
+        name,code,brand,cost_price
+        Updated Existing,EX-003,Acme,8
+        Missing Category New,NEW-003,Acme,3
+        """)
+
+        #expect(preview.totalRows == 2)
+        #expect(preview.newParts.isEmpty)
+        #expect(preview.conflicts.count == 1)
+        #expect(preview.conflicts.first?.existingPartCode == "EX-003")
+        #expect(preview.conflicts.first?.parsedRow.category == nil)
+        #expect(preview.errors.count == 1)
+        #expect(preview.errors.first?.rowNumber == 3)
+        #expect(preview.errors.first?.message == "Missing category for new part")
     }
 
     @Test("commitPartsImportCSV rejects preview errors before writing partial state")
@@ -437,6 +460,33 @@ struct PartsServiceAdvancedTests {
         let updated = try #require(try env.parts.findPartByCode("EX-002"))
         #expect(updated.id == existingId)
         #expect(updated.name == "Updated Name")
+    }
+
+    @Test("commitPartsImportCSV preserves existing category when update row omits category")
+    func testCommitPartsImportCSVUpdateWithoutCategoryPreservesCategory() throws {
+        let env = try E2ETestHelpers.setUp()
+        let existingCategoryId = try E2ETestHelpers.seedCategory(env, name: "Existing Category")
+        let existingId = try env.parts.createPart(categoryId: existingCategoryId, name: "Existing Part", code: "EX-004")
+
+        var preview = try env.parts.previewPartsImportCSV("""
+        name,code,brand,cost_price
+        Updated Existing,EX-004,Acme,11
+        """)
+        preview.conflicts = preview.conflicts.map { conflict in
+            var editable = conflict
+            editable.resolution = .update
+            return editable
+        }
+
+        let result = try env.parts.commitPartsImportCSV(preview)
+
+        #expect(result.created == 0)
+        #expect(result.updated == 1)
+        #expect(result.skipped == 0)
+        let updated = try #require(try env.parts.findPartByCode("EX-004"))
+        #expect(updated.id == existingId)
+        #expect(updated.name == "Updated Existing")
+        #expect(updated.categoryId == existingCategoryId)
     }
 
     @Test("previewPartsImportXLSX parses first worksheet through shared import pipeline")
