@@ -207,6 +207,12 @@ struct PartsCompanionsPage: View {
             await loadData()
             appCore.onboardingManager?.markCompleted("companions-view")
         }
+        .onChange(of: appCore.currentUser?.id) { _, newId in
+            // Reload when the user session hydrates so poll state is fetched
+            // for the real operator, not left empty from the pre-auth load.
+            guard newId != nil else { return }
+            Task { await loadData() }
+        }
         .onAppear { postCompanionsContext() }
         .onDisappear {
             NotificationCenter.default.post(name: .companionsPageInactive, object: nil)
@@ -455,27 +461,38 @@ struct PartsCompanionsPage: View {
     private var pollsView: some View {
         ScrollView {
             VStack(spacing: 16) {
-                // Last Week's Results
-                if !lastWeekResults.isEmpty {
-                    lastWeekResultsSection
-                }
-
-                // Active Polls
-                if activePolls.isEmpty {
-                    if let training = trainingQuestion {
-                        trainingQuestionCard(training)
-                    } else {
-                        emptyPollsState
+                // Guard: show auth-pending state instead of stale/user-0 poll data.
+                if appCore.currentUser?.id == nil {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Authenticating…")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
+                    .frame(maxWidth: .infinity, minHeight: 120)
                 } else {
-                    ForEach(activePolls, id: \.pollId) { poll in
-                        pollCard(poll)
+                    // Last Week's Results
+                    if !lastWeekResults.isEmpty {
+                        lastWeekResultsSection
                     }
-                }
 
-                // Admin: Preview Next Week
-                if appCore.hasPermission("vote_veto"), let preview = nextPollPreview {
-                    adminPreviewSection(preview)
+                    // Active Polls
+                    if activePolls.isEmpty {
+                        if let training = trainingQuestion {
+                            trainingQuestionCard(training)
+                        } else {
+                            emptyPollsState
+                        }
+                    } else {
+                        ForEach(activePolls, id: \.pollId) { poll in
+                            pollCard(poll)
+                        }
+                    }
+
+                    // Admin: Preview Next Week
+                    if appCore.hasPermission("vote_veto"), let preview = nextPollPreview {
+                        adminPreviewSection(preview)
+                    }
                 }
             }
             .padding()
@@ -909,8 +926,18 @@ struct PartsCompanionsPage: View {
             let rules = try service.listCompanionRulesHierarchy()
             let alts = try service.listAllAlternatives()
 
-            // Poll data
-            let userId = appCore.currentUser?.id ?? 0
+            // Poll data — require a real current user id; never fall back to 0.
+            guard let userId = appCore.currentUser?.id else {
+                // User session not yet hydrated; load rules/alternatives only
+                // and let the .onChange(of: currentUser?.id) trigger a full reload.
+                await MainActor.run {
+                    companionRules = rules
+                    alternatives = alts
+                    isLoading = false
+                }
+                return
+            }
+
             let isAdmin = appCore.hasPermission("vote_veto")
             let polls = try service.getActivePolls(userId: userId, isAdmin: isAdmin)
             let results = try service.getLastWeekResults(userId: userId)

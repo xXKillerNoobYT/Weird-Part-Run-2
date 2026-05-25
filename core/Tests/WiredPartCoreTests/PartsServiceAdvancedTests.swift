@@ -1005,6 +1005,53 @@ struct PartsServiceAdvancedTests {
         #expect(entry.matchedWinner == true)
     }
 
+    // MARK: - user-id-0 regression guard
+
+    @Test("getActivePolls with userId 0 never returns another user's vote state")
+    func testGetActivePollsUserZeroDoesNotLeakRealUserVote() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catAId = try E2ETestHelpers.seedCategory(env, name: "UZ_ActiveA")
+        let catBId = try E2ETestHelpers.seedCategory(env, name: "UZ_ActiveB")
+        _ = try seedCoOccurrencePair(env, catAId: catAId, catBId: catBId)
+        let pollId = try #require(try env.parts.createWeeklyPoll())
+
+        try env.parts.castVote(pollId: pollId, userId: env.adminUserId, vote: "accept")
+
+        // Real user sees their vote.
+        let realPolls = try env.parts.getActivePolls(userId: env.adminUserId)
+        let realPoll = try #require(realPolls.first { $0.pollId == pollId })
+        #expect(realPoll.myVote == "accept")
+
+        // Querying with userId 0 (the ?? 0 fallback) must not return the real user's vote.
+        let user0Polls = try env.parts.getActivePolls(userId: 0)
+        let user0Poll = try #require(user0Polls.first { $0.pollId == pollId })
+        #expect(user0Poll.myVote == nil,
+                "userId 0 must never expose another user's vote — this guards the ?? 0 anti-pattern")
+    }
+
+    @Test("getLastWeekResults with userId 0 never returns another user's vote state")
+    func testGetLastWeekResultsUserZeroDoesNotLeakRealUserVote() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catAId = try E2ETestHelpers.seedCategory(env, name: "UZ_LWRA")
+        let catBId = try E2ETestHelpers.seedCategory(env, name: "UZ_LWRB")
+        _ = try seedCoOccurrencePair(env, catAId: catAId, catBId: catBId)
+        let pollId = try #require(try env.parts.createWeeklyPoll())
+
+        try insertPoweredVote(env, pollId: pollId, userId: env.adminUserId, vote: "accept")
+        try env.parts.closePoll(pollId: pollId)
+
+        // Real user sees their vote in last-week results.
+        let realResults = try env.parts.getLastWeekResults(userId: env.adminUserId)
+        let realEntry = try #require(realResults.first)
+        #expect(realEntry.myVote == "accept")
+
+        // Querying with userId 0 must not return the real user's vote.
+        let user0Results = try env.parts.getLastWeekResults(userId: 0)
+        let user0Entry = try #require(user0Results.first)
+        #expect(user0Entry.myVote == nil,
+                "userId 0 must never expose another user's vote — this guards the ?? 0 anti-pattern")
+    }
+
     // MARK: - getActivePollsForClockOut
 
     @Test("getActivePollsForClockOut returns empty for fresh database")
