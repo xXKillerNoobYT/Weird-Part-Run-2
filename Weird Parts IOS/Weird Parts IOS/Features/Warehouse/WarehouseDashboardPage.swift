@@ -8,6 +8,7 @@ import WiredPartCore
 /// Quick actions open movement wizard and QR scanner as sheets.
 struct WarehouseDashboardPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     // MARK: - State
 
@@ -348,15 +349,22 @@ struct WarehouseDashboardPage: View {
 
     private var kpiRow: some View {
         let kpis = dashKPIs?.kpis
+        let totalAuditParts = auditSummary?.totalParts ?? 0
+        let countedAuditParts = auditSummary?.countedParts ?? 0
+        let auditScore = totalAuditParts > 0 ? (countedAuditParts * 100 / totalAuditParts) : 100
         let totalStock = kpis?.totalStock ?? 0
         let healthPct = kpis?.stockHealthPercent ?? 100
         let shortfalls = kpis?.shortfallCount ?? 0
 
         return LazyVGrid(columns: [
-            GridItem(.flexible(), spacing: 12),
-            GridItem(.flexible(), spacing: 12),
-            GridItem(.flexible(), spacing: 12),
+            GridItem(.adaptive(minimum: kpiMinimumCardWidth), spacing: 12),
         ], spacing: 12) {
+            miniKPI(
+                title: "Audit Score",
+                value: "\(auditScore)%",
+                icon: "checkmark.seal.fill",
+                color: auditScore >= 80 ? .green : auditScore >= 50 ? .orange : .red
+            )
             miniKPI(title: "Total Stock", value: "\(totalStock)", icon: "shippingbox.fill", color: .blue)
             miniKPI(
                 title: "Health",
@@ -373,6 +381,10 @@ struct WarehouseDashboardPage: View {
         }
     }
 
+    private var kpiMinimumCardWidth: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 240 : 150
+    }
+
     private func miniKPI(title: String, value: String, icon: String, color: Color) -> some View {
         VStack(spacing: 4) {
             Image(systemName: icon)
@@ -385,8 +397,11 @@ struct WarehouseDashboardPage: View {
             Text(title)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
         }
         .frame(maxWidth: .infinity)
+        .frame(minHeight: 74)
         .padding(.vertical, 10)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 10))
