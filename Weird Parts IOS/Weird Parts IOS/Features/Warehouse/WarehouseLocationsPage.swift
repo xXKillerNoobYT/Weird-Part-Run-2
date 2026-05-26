@@ -939,6 +939,7 @@ private struct AddStorageUnitSheet: View {
                         ForEach(faceOptions, id: \.self) { Text($0.capitalized) }
                     }
                     .pickerStyle(.segmented)
+                    .accessibilityIdentifier("warehouse-add-unit-front-face")
                     Text("Side with stickers and aisle access.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -1114,6 +1115,7 @@ private struct EditStorageUnitSheet: View {
                         ForEach(faceOptions, id: \.self) { Text($0.capitalized) }
                     }
                     .pickerStyle(.segmented)
+                    .accessibilityIdentifier("warehouse-edit-unit-front-face")
                     Text("Side with stickers and aisle access.")
                         .font(.caption)
                         .foregroundStyle(.secondary)

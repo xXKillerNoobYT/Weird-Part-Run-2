@@ -364,6 +364,18 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             XCTAssertTrue(button.waitForExistence(timeout: 10), "\(unitType) toolbar item should be present")
             XCTAssertTrue(button.isHittable, "\(unitType) toolbar item should be reachable at iPhone width")
         }
+        let packoutToolbarButton = app.buttons["warehouse-unit-type-packout"]
+        packoutToolbarButton.tap()
+        XCTAssertTrue(
+            app.textFields.firstMatch.waitForExistence(timeout: 8),
+            "Packout Set toolbar action should open the add-unit sheet with a name field"
+        )
+        XCTAssertTrue(
+            app.buttons["East"].waitForExistence(timeout: 3) ||
+                app.buttons["West"].waitForExistence(timeout: 3),
+            "Add Packout Set sheet should expose Front Face controls"
+        )
+        app.buttons["Cancel"].tap()
         XCTAssertTrue(
             app.staticTexts["UITesting Shelf A"].waitForExistence(timeout: 10) ||
                 app.staticTexts["UITesting Pipe Rack"].waitForExistence(timeout: 10),
