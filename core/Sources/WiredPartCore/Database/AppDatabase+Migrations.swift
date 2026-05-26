@@ -136,6 +136,7 @@ extension AppDatabase {
         registerMigration097PartImportAuditSessions(&migrator)
         registerMigration098JobReturnIntakeHolding(&migrator)
         registerMigration099ReceivingItemRoutingDisposition(&migrator)
+        registerMigration100StagingBoxContentsAndDeliveryState(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5658,6 +5659,40 @@ extension AppDatabase {
             try db.create(index: "idx_receiving_items_routing_disposition",
                           on: "receiving_session_items",
                           columns: ["session_id", "routing_disposition"])
+        }
+    }
+
+    private static func registerMigration100StagingBoxContentsAndDeliveryState(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("100_staging_box_contents_delivery_state") { db in
+            try addColumnIfMissing(db, table: "staging_boxes", column: "status", type: .text, defaultValue: "staged")
+            try addColumnIfMissing(db, table: "staging_boxes", column: "loaded_at", type: .text)
+            try addColumnIfMissing(db, table: "staging_boxes", column: "delivered_at", type: .text)
+            try addColumnIfMissing(db, table: "staging_boxes", column: "returned_cancelled_at", type: .text)
+            try db.execute(sql: "UPDATE staging_boxes SET status = 'staged' WHERE status IS NULL OR status = ''")
+
+            try db.create(table: "staging_box_contents", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("box_id", .integer).notNull()
+                    .references("staging_boxes", onDelete: .cascade)
+                t.column("staging_tag_id", .integer).notNull()
+                    .references("pulled_staging_tags", onDelete: .cascade)
+                t.column("status", .text).notNull()
+                    .defaults(to: "staged")
+                t.column("assigned_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+                t.column("removed_at", .text)
+                t.column("loaded_at", .text)
+                t.column("delivered_at", .text)
+                t.column("returned_cancelled_at", .text)
+                t.column("deleted_at", .text)
+            }
+
+            try db.create(index: "idx_staging_box_contents_box",
+                          on: "staging_box_contents",
+                          columns: ["box_id"])
+            try db.create(index: "idx_staging_box_contents_tag",
+                          on: "staging_box_contents",
+                          columns: ["staging_tag_id"])
         }
     }
 }
