@@ -177,7 +177,7 @@ struct IOSReceiveShipmentPage: View {
                     } label: {
                         Image(systemName: "qrcode.viewfinder")
                     }
-                    .accessibilityLabel("Scan QR code")
+                    .accessibilityLabel("Scan PO")
                 }
             }
             ToolbarItem(placement: .primaryAction) {
@@ -1031,6 +1031,7 @@ struct IOSReceiveShipmentPage: View {
                 let returnCount = routingResults.values.filter { result in
                     switch result.route {
                     case .recommendReturn, .returnOverstock, .damagedReturn: return true
+                    case .jobReturnDamagedReview, .jobReturnSupplierReview: return true
                     default: return false
                     }
                 }.count
