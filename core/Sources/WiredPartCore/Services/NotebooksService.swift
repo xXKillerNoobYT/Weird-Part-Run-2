@@ -1052,6 +1052,74 @@ public final class NotebooksService: Sendable {
         }
     }
 
+    // MARK: - Advisory Block Edit Locks
+
+    @discardableResult
+    public func acquireBlockEditLock(
+        entryId: Int64,
+        userId: Int64,
+        deviceId: String = DeviceIdentity.current,
+        now: Date = Date(),
+        ttlSeconds: TimeInterval = 300
+    ) throws -> NotebookEntryEditLock {
+        try db.writer.write { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "manage_notebooks")
+            try purgeExpiredBlockEditLocks(dbConn, now: now)
+
+            let lockedAt = Self.lockTimestamp(now)
+            let expiresAt = Self.lockTimestamp(now.addingTimeInterval(ttlSeconds))
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_entry_edit_locks (entry_id, user_id, device_id, locked_at, expires_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(entry_id, user_id, device_id) DO UPDATE SET
+                    locked_at = excluded.locked_at,
+                    expires_at = excluded.expires_at
+                """, arguments: [entryId, userId, deviceId, lockedAt, expiresAt])
+
+            guard let lock = try fetchBlockEditLock(dbConn: dbConn, entryId: entryId, userId: userId, deviceId: deviceId) else {
+                throw NotebooksError.invalidData("Unable to acquire notebook edit lock")
+            }
+            return lock
+        }
+    }
+
+    public func releaseBlockEditLock(
+        entryId: Int64,
+        userId: Int64,
+        deviceId: String = DeviceIdentity.current
+    ) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                DELETE FROM notebook_entry_edit_locks
+                WHERE entry_id = ? AND user_id = ? AND device_id = ?
+                """, arguments: [entryId, userId, deviceId])
+        }
+    }
+
+    public func activeBlockEditLocks(notebookId: Int64, now: Date = Date()) throws -> [NotebookEntryEditLock] {
+        do {
+            return try db.writer.write { dbConn in
+                try purgeExpiredBlockEditLocks(dbConn, now: now)
+                let nowString = Self.lockTimestamp(now)
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT l.id, l.entry_id, l.user_id, l.device_id, l.locked_at, l.expires_at,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS user_name
+                    FROM notebook_entry_edit_locks l
+                    INNER JOIN notebook_entries ne ON ne.id = l.entry_id
+                    LEFT JOIN users u ON u.id = l.user_id AND u.deleted_at IS NULL
+                    WHERE ne.notebook_id = ?
+                      AND ne.deleted_at IS NULL
+                      AND l.expires_at > ?
+                    ORDER BY l.locked_at DESC
+                    """, arguments: [notebookId, nowString])
+                return rows.map(Self.makeEditLock)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
     /// Soft-delete a block entry.
     public func deleteBlockEntry(entryId: Int64) throws {
         try db.writer.write { dbConn in
@@ -1791,6 +1859,65 @@ public final class NotebooksService: Sendable {
         }
     }
 
+    @discardableResult
+    public func resolveBlockConflictWithFoundationModels(
+        conflictLogId: Int64,
+        mergeText: @escaping @Sendable (_ localText: String, _ remoteText: String, _ context: String?) async -> String? = { localText, remoteText, context in
+            let result = await FoundationModelsService().mergeTextConflict(
+                localText: localText,
+                remoteText: remoteText,
+                context: context
+            )
+            return result.success ? result.text : nil
+        }
+    ) async throws -> Bool {
+        let pending = try await db.writer.read { dbConn -> (recordId: String, fieldName: String, local: String, remote: String, context: String?)? in
+            guard let row = try Row.fetchOne(dbConn, sql: """
+                SELECT cl.record_id, cl.field_name, cl.local_value, cl.remote_value,
+                       ne.title AS entry_title, ne.block_type
+                FROM _conflict_log cl
+                LEFT JOIN notebook_entries ne ON CAST(cl.record_id AS INTEGER) = ne.id
+                WHERE cl.id = ? AND cl.reviewed = 0
+                """, arguments: [conflictLogId]) else {
+                return nil
+            }
+
+            let fieldName: String = row["field_name"] ?? ""
+            guard Self.foundationMergeFields.contains(fieldName) else { return nil }
+            let local = row["local_value"] as String? ?? ""
+            let remote = row["remote_value"] as String? ?? ""
+            let context = [
+                row["entry_title"] as String?,
+                row["block_type"] as String?
+            ].compactMap { $0 }.joined(separator: " / ")
+            return (
+                recordId: row["record_id"] ?? "0",
+                fieldName: fieldName,
+                local: local,
+                remote: remote,
+                context: context.isEmpty ? nil : context
+            )
+        }
+
+        guard let pending else { return false }
+        guard let merged = await mergeText(pending.local, pending.remote, pending.context),
+              !merged.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+
+        try await db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE notebook_entries SET \"\(pending.fieldName)\" = ?, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
+                arguments: [merged, pending.recordId]
+            )
+            try dbConn.execute(
+                sql: "UPDATE _conflict_log SET winner = 'ai_merge', reviewed = 1 WHERE id = ?",
+                arguments: [conflictLogId]
+            )
+        }
+        return true
+    }
+
     /// Bulk-resolve all unreviewed conflicts for a notebook, keeping the specified version.
     ///
     /// Convenience method for "Keep All Local" or "Keep All Remote" actions.
@@ -1809,5 +1936,44 @@ public final class NotebooksService: Sendable {
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
         return message.contains("no such table") || message.contains("no such column")
+    }
+
+    private static let foundationMergeFields: Set<String> = ["title", "content", "block_data", "checklist_items"]
+
+    private static func lockTimestamp(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: date)
+    }
+
+    private static func makeEditLock(row: Row) -> NotebookEntryEditLock {
+        NotebookEntryEditLock(
+            id: row["id"] ?? 0,
+            entryId: row["entry_id"] ?? 0,
+            userId: row["user_id"] ?? 0,
+            userName: row["user_name"] ?? "Unknown",
+            deviceId: row["device_id"] ?? "",
+            lockedAt: row["locked_at"] ?? "",
+            expiresAt: row["expires_at"] ?? ""
+        )
+    }
+
+    private func fetchBlockEditLock(dbConn: Database, entryId: Int64, userId: Int64, deviceId: String) throws -> NotebookEntryEditLock? {
+        let row = try Row.fetchOne(dbConn, sql: """
+            SELECT l.id, l.entry_id, l.user_id, l.device_id, l.locked_at, l.expires_at,
+                   COALESCE(u.display_name, u.email, 'Unknown') AS user_name
+            FROM notebook_entry_edit_locks l
+            LEFT JOIN users u ON u.id = l.user_id AND u.deleted_at IS NULL
+            WHERE l.entry_id = ? AND l.user_id = ? AND l.device_id = ?
+            """, arguments: [entryId, userId, deviceId])
+        return row.map(Self.makeEditLock)
+    }
+
+    private func purgeExpiredBlockEditLocks(_ dbConn: Database, now: Date) throws {
+        let nowString = Self.lockTimestamp(now)
+        try dbConn.execute(
+            sql: "DELETE FROM notebook_entry_edit_locks WHERE expires_at <= ?",
+            arguments: [nowString]
+        )
     }
 }
