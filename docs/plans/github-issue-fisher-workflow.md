@@ -6,7 +6,7 @@
 
 ## Purpose
 
-This workflow turns the WEI-2441 "keep GitHub issue work moving" prompt into a repeatable technical pass. Each run produces one to three issue-moving actions from real GitHub and repository evidence. It is not allowed to invent findings to satisfy a quota.
+This workflow turns the WEI-2441 "keep GitHub issue work moving" prompt into a repeatable technical pass. Each run produces one to three issue-moving actions from real GitHub and repository evidence. It is not allowed to invent findings to satisfy a quota, and generated run reports stay local unless a reviewer explicitly asks for a report snapshot.
 
 ## Inputs
 
@@ -38,7 +38,7 @@ Each run writes:
 - `docs/github-issue-fisher/<timestamp>/report.md`
 - `docs/github-issue-fisher/latest-report.md`
 
-The report is the daily/run record required by WEI-2441. It captures the selected GitHub issue-moving actions, sampled evidence, and guardrails used for the run.
+The report is the daily/run record required by WEI-2441. It captures the selected GitHub issue-moving actions, sampled evidence, and guardrails used for the run. The `docs/github-issue-fisher/` output directory is ignored by git so repeat runs do not leave stale generated artifacts in pull requests.
 
 ## Mutation Rules
 
@@ -64,4 +64,4 @@ Successful verification proves:
 - `docs/plans/` exists and contains markdown plans;
 - GitHub issues can be read with `gh`;
 - actions are ordered `blocked -> todo -> backlog`;
-- the run report is written without creating fake findings or mutating GitHub.
+- the local run report is written without creating fake findings, committing generated artifacts, or mutating GitHub.
