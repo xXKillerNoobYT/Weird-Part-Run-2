@@ -102,7 +102,10 @@ struct CreateReturnSheet: View {
             saveError = "Orders service not available"
             return
         }
-        guard let userId = appCore.currentUser?.id else { return }
+        guard let userId = appCore.currentUser?.id else {
+            saveError = "User session unavailable. Sign in again."
+            return
+        }
         isSaving = true
         saveError = nil
         do {

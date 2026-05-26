@@ -448,7 +448,10 @@ struct IOSPurchaseOrdersPage: View {
             actionMessage = "Service not available"
             return
         }
-        guard let userId = appCore.currentUser?.id else { return }
+        guard let userId = appCore.currentUser?.id else {
+            actionMessage = "User session unavailable. Sign in again."
+            return
+        }
         do {
             if po.status == "draft" {
                 try service.deletePO(id: po.id)

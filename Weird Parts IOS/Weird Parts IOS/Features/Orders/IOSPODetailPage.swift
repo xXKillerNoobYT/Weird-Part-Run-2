@@ -2075,7 +2075,10 @@ struct IOSPODetailPage: View {
             actionMessage = "Service not available"
             return
         }
-        guard let userId = appCore.currentUser?.id else { return }
+        guard let userId = appCore.currentUser?.id else {
+            actionMessage = "User session unavailable. Sign in again."
+            return
+        }
         do {
             try service.updatePOStatus(id: poId, status: newStatus, userId: userId)
             loadData()
