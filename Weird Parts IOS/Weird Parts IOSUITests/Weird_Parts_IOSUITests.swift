@@ -351,10 +351,19 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             "Warehouse module should open without the manual login/PIN route"
         )
         XCTAssertTrue(
-            app.buttons["Shelf"].waitForExistence(timeout: 10) ||
+            app.buttons["Shelving"].waitForExistence(timeout: 10) ||
                 app.staticTexts["UITesting Shelf A"].waitForExistence(timeout: 10),
             "Warehouse Locations should render its floor-plan controls or seeded shelf"
         )
+        let requiredToolbarItems = [
+            "shelving", "gang_box", "pipe_rack", "pallet_rack", "wall_mount", "floor_area",
+            "cabinet", "packout", "tool_bag", "parts_bin", "crate", "custom"
+        ]
+        for unitType in requiredToolbarItems {
+            let button = app.buttons["warehouse-unit-type-\(unitType)"]
+            XCTAssertTrue(button.waitForExistence(timeout: 10), "\(unitType) toolbar item should be present")
+            XCTAssertTrue(button.isHittable, "\(unitType) toolbar item should be reachable at iPhone width")
+        }
         XCTAssertTrue(
             app.staticTexts["UITesting Shelf A"].waitForExistence(timeout: 10) ||
                 app.staticTexts["UITesting Pipe Rack"].waitForExistence(timeout: 10),

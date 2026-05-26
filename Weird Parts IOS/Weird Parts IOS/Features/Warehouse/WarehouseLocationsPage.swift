@@ -299,34 +299,42 @@ struct WarehouseLocationsPage: View {
 
     @ViewBuilder
     private var unitTypeToolbar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(storageUnitTypeCatalog) { item in
-                    unitTypeButton(item)
-                }
+        let columns = [GridItem(.adaptive(minimum: 80), spacing: 8)]
+
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+            ForEach(storageUnitTypeCatalog) { item in
+                unitTypeButton(item)
             }
-            .padding(.horizontal)
-            .padding(.vertical, 6)
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .background(Color(.secondarySystemBackground))
     }
 
     @ViewBuilder
     private func unitTypeButton(_ item: StorageUnitTypeCatalogItem) -> some View {
         Button { activeSheet = .addUnit(item.id) } label: {
-            HStack(spacing: 4) {
-                Image(systemName: item.icon)
-                    .font(.caption2)
+            Label {
                 Text(item.label)
                     .font(.caption)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            } icon: {
+                Image(systemName: item.icon)
+                    .font(.caption)
+                    .accessibilityHidden(true)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .frame(minHeight: 44)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .padding(.horizontal, 8)
             .background(item.color.opacity(0.12))
             .foregroundStyle(item.color)
-            .clipShape(Capsule())
+            .contentShape(Rectangle())
+            .clipShape(RoundedRectangle(cornerRadius: 8))
         }
+        .simultaneousGesture(TapGesture().onEnded {
+            activeSheet = .addUnit(item.id)
+        })
+        .accessibilityIdentifier("warehouse-unit-type-\(item.id)")
     }
 
     // MARK: - Floor Plan Grid
