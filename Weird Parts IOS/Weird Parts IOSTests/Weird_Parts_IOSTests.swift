@@ -11,6 +11,9 @@ import Testing
 import WiredPartCore
 @testable import Weird_Parts
 
+private enum QuestionnaireBreakTestError: Error {
+    case autoFillFailed
+}
 
 struct Weird_Parts_IOSTests {
 
@@ -251,6 +254,71 @@ struct Weird_Parts_IOSTests {
             source.contains("actionError = userFriendlyError(error, context: \"check time-off conflicts\")\n            return"),
             "Conflict-check failures should stop assignment creation."
         )
+    }
+
+    @Test func questionnaireBreakAutofillDoesNotSwallowSubmitErrors() throws {
+        var autoFillAttempts = 0
+
+        do {
+            try QuestionnaireBreakComplianceSubmitter.submit(
+                verification: .allTaken,
+                hadBreakButtons: false,
+                missedBreaks: []
+            ) {
+                autoFillAttempts += 1
+                throw QuestionnaireBreakTestError.autoFillFailed
+            }
+            Issue.record("Expected auto-fill failure to propagate")
+        } catch QuestionnaireBreakTestError.autoFillFailed {
+            #expect(autoFillAttempts == 1)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test func questionnaireBreakAutofillSkipsWhenExistingBreakButtonsWereUsed() throws {
+        var autoFillAttempts = 0
+
+        try QuestionnaireBreakComplianceSubmitter.submit(
+            verification: .allTaken,
+            hadBreakButtons: true,
+            missedBreaks: []
+        ) {
+            autoFillAttempts += 1
+        }
+
+        #expect(autoFillAttempts == 0)
+    }
+
+    @Test func questionnaireBreakAutofillRunsForForgotBreakPath() throws {
+        var autoFillAttempts = 0
+
+        try QuestionnaireBreakComplianceSubmitter.submit(
+            verification: .forgot,
+            hadBreakButtons: false,
+            missedBreaks: ["morning_break", "lunch", "afternoon_break"]
+        ) {
+            autoFillAttempts += 1
+        }
+
+        #expect(autoFillAttempts == 1)
+    }
+
+    @Test func questionnaireSubmitRunsBreakVerificationBeforeSavingResponses() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let pageURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Jobs/IOSQuestionnairePage.swift")
+        let pageSource = try String(contentsOf: pageURL, encoding: .utf8)
+
+        #expect(!pageSource.contains("try? breakSvc.autoFillBreaksForDay"), "Break auto-fill failures in submit flow must not be swallowed")
+        #expect(pageSource.contains("try handleBreakVerification()"), "Submit flow should fail and show error when break auto-fill fails")
+        #expect(pageSource.contains("private func handleBreakVerification() throws"), "Break verification helper should throw to propagate save failures")
+        let verificationCall = try #require(pageSource.range(of: "try handleBreakVerification()"))
+        let responseSaveCall = try #require(pageSource.range(of: "try service.saveClockOutResponses"))
+        #expect(verificationCall.lowerBound < responseSaveCall.lowerBound, "Break compliance auto-fill should succeed before questionnaire responses are saved")
     }
 
     @Test func supplierChannelCreationFailureShowsLoadError() throws {
