@@ -611,35 +611,39 @@ final class AppCore: ObservableObject {
             if retryAddStatus == errSecSuccess {
                 return keyData.map { String(format: "%02x", $0) }.joined()
             }
-            #if targetEnvironment(macCatalyst)
-            if retryAddStatus == errSecMissingEntitlement {
-                return try catalystFallbackBootstrapKeyHex()
+            if shouldUseLocalBootstrapKeyFallback(for: retryAddStatus) {
+                return try localFallbackBootstrapKeyHex()
             }
-            #endif
             throw CipherKeyError.keychainAccessFailed(retryAddStatus)
-        } else if addStatus == errSecMissingEntitlement {
-            #if targetEnvironment(macCatalyst)
-            return try catalystFallbackBootstrapKeyHex()
-            #else
-            throw CipherKeyError.keychainAccessFailed(addStatus)
-            #endif
+        } else if shouldUseLocalBootstrapKeyFallback(for: addStatus) {
+            return try localFallbackBootstrapKeyHex()
         } else if addStatus != errSecSuccess {
             throw CipherKeyError.keychainAccessFailed(addStatus)
         }
         return keyData.map { String(format: "%02x", $0) }.joined()
     }
 
-    #if targetEnvironment(macCatalyst)
-    /// Catalyst fallback when Keychain is unavailable (e.g. missing entitlement in local dev).
+    nonisolated static func shouldUseLocalBootstrapKeyFallback(for status: OSStatus) -> Bool {
+        guard status == errSecMissingEntitlement else { return false }
+        #if targetEnvironment(simulator) || targetEnvironment(macCatalyst)
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    #if targetEnvironment(simulator) || targetEnvironment(macCatalyst)
+    /// Local-development fallback when Keychain is unavailable (e.g. unsigned simulator
+    /// launch or missing Catalyst entitlement).
     /// Stores a random device key inside the app container to keep DB encryption stable
     /// across launches on the same machine/account.
-    nonisolated private static func catalystFallbackBootstrapKeyHex() throws -> String {
+    nonisolated private static func localFallbackBootstrapKeyHex() throws -> String {
         guard let supportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             throw AppCoreError.noDocumentsDirectory
         }
         let dir = supportURL.appendingPathComponent("WiredPart", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let keyURL = dir.appendingPathComponent("catalyst-bootstrap-key.bin")
+        let keyURL = dir.appendingPathComponent("local-bootstrap-key.bin")
 
         if let data = try? Data(contentsOf: keyURL), data.count == 32 {
             return data.map { String(format: "%02x", $0) }.joined()
@@ -653,6 +657,10 @@ final class AppCore: ObservableObject {
         let keyData = Data(keyBytes)
         try keyData.write(to: keyURL, options: .atomic)
         return keyData.map { String(format: "%02x", $0) }.joined()
+    }
+    #else
+    nonisolated private static func localFallbackBootstrapKeyHex() throws -> String {
+        throw CipherKeyError.keychainAccessFailed(errSecMissingEntitlement)
     }
     #endif
 

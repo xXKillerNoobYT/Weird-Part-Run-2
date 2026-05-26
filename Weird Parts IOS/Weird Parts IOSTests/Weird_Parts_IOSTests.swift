@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Security
 import Testing
 import WiredPartCore
 @testable import Weird_Parts
@@ -58,6 +59,15 @@ struct Weird_Parts_IOSTests {
 
         #expect(keyHex == "8f1df32f4be04d5fcde1e8e6ddf9187f53a4b68370d5aafc56f0d43f2e9732a1")
         #expect(keyHex.count == 64)
+    }
+
+    @Test func simulatorMissingEntitlementCanUseLocalBootstrapKeyFallback() {
+        #if targetEnvironment(simulator) || targetEnvironment(macCatalyst)
+        #expect(AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecMissingEntitlement))
+        #else
+        #expect(!AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecMissingEntitlement))
+        #endif
+        #expect(!AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecAuthFailed))
     }
 
     @MainActor
