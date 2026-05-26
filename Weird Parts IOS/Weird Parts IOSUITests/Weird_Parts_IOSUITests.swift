@@ -918,8 +918,13 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         let dashboardTab = app.buttons["tab_dashboard"]
         if dashboardTab.waitForExistence(timeout: 5) {
             dashboardTab.tap()
-        } else if app.buttons["Dashboard"].waitForExistence(timeout: 2) {
-            app.buttons["Dashboard"].tap()
+        } else {
+            let dashboard = app.tabBars.buttons["Dashboard"].firstMatch
+            if dashboard.waitForExistence(timeout: 2) {
+                dashboard.tap()
+            } else if app.buttons.matching(identifier: "subtab_warehouse-dashboard").firstMatch.waitForExistence(timeout: 2) {
+                app.buttons.matching(identifier: "subtab_warehouse-dashboard").firstMatch.tap()
+            }
         }
 
         let configure = app.buttons["Configure Your Warehouse"]
