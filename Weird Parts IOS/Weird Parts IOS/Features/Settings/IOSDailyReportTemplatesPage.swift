@@ -7,6 +7,7 @@ import WiredPartCore
 /// Configuration stored as JSON in `daily_report_template` setting key.
 struct IOSDailyReportTemplatesPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
 
     // MARK: - Types
 
@@ -50,7 +51,16 @@ struct IOSDailyReportTemplatesPage: View {
 
     @State private var sections: [ReportSection] = []
     @State private var aiInstructions: String = ""
-    @State private var isDirty = false
+    @State private var hasUnsavedChanges = false
+    @State private var showDiscardConfirmation = false
+    @State private var baselineFormSignature = ""
+
+    private var formSignature: String {
+        let sectionSignature = sections.map { section in
+            "\(section.id):\(section.enabled):\(section.locked)"
+        }.joined(separator: ",")
+        return [sectionSignature, aiInstructions].joined(separator: "|")
+    }
 
     var body: some View {
         Group {
@@ -65,7 +75,14 @@ struct IOSDailyReportTemplatesPage: View {
         }
         .navigationTitle("Daily Report Templates")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(hasUnsavedChanges)
+        .interactiveDismissDisabled(hasUnsavedChanges)
         .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                if hasUnsavedChanges {
+                    Button("Back") { showDiscardConfirmation = true }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -98,6 +115,21 @@ struct IOSDailyReportTemplatesPage: View {
         }
         .refreshable { loadSettings() }
         .task { loadSettings() }
+        .onChange(of: formSignature) { _, _ in
+            guard !isLoading else { return }
+            hasUnsavedChanges = formSignature != baselineFormSignature
+        }
+        .confirmationDialog(
+            "Discard changes?",
+            isPresented: $showDiscardConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Discard", role: .destructive) {
+                hasUnsavedChanges = false
+                dismiss()
+            }
+            Button("Keep editing", role: .cancel) {}
+        }
     }
 
     // MARK: - Editor
@@ -168,14 +200,12 @@ struct IOSDailyReportTemplatesPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(!isDirty)
-                .accessibilityHint(isDirty ? "" : "Make changes to the template to enable saving.")
+                .disabled(!hasUnsavedChanges)
+                .accessibilityHint(hasUnsavedChanges ? "" : "Make changes to the template to enable saving.")
             }
         }
         // Fix #149: dismiss keyboard when scrolling template editor
         .scrollDismissesKeyboard(.interactively)
-        .onChange(of: sections) { _, _ in isDirty = true }
-        .onChange(of: aiInstructions) { _, _ in isDirty = true }
     }
 
     // MARK: - Preview
@@ -268,7 +298,7 @@ struct IOSDailyReportTemplatesPage: View {
             aiInstructions = Self.defaultAIInstructions
         }
         isLoading = false
-        isDirty = false
+        resetDirtyTracking()
     }
 
     private func saveSettings() {
@@ -285,10 +315,15 @@ struct IOSDailyReportTemplatesPage: View {
             try service.upsertSetting(key: "daily_report_template", value: json, category: "templates")
             saveError = nil
             successMessage = "Template saved."
-            isDirty = false
+            resetDirtyTracking()
         } catch {
             saveError = userFriendlyError(error, context: "save daily report")
         }
+    }
+
+    private func resetDirtyTracking() {
+        baselineFormSignature = formSignature
+        hasUnsavedChanges = false
     }
 
     // MARK: - Defaults
