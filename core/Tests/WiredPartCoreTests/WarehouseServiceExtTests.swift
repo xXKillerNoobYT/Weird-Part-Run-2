@@ -1301,6 +1301,82 @@ struct WarehouseServiceExtTests {
         #expect(nextBox.jobId == jobId)
     }
 
+    @Test("staging boxes assign and remove staged items without clearing the tag")
+    func testStagingBoxContentsAssignAndRemove() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BOX-01", name: "Box Job")
+        let tagId = try seedStagingTag(env, jobId: jobId, partName: "Boxed EMT")
+        let box = try env.warehouse.createStagingBox(jobId: jobId, size: "normal")
+
+        let contentId = try env.warehouse.assignStagedItemToBox(stagingTagId: tagId, boxId: box.id)
+        #expect(contentId > 0)
+
+        let contents = try env.warehouse.listStagingBoxContents(boxId: box.id)
+        #expect(contents.count == 1)
+        #expect(contents.first?.stagingTagId == tagId)
+        #expect(contents.first?.partName == "Boxed EMT")
+        #expect(try env.warehouse.getStagedItems().contains { $0.id == tagId })
+
+        try env.warehouse.removeStagedItemFromBox(stagingTagId: tagId, boxId: box.id)
+        #expect(try env.warehouse.listStagingBoxContents(boxId: box.id).isEmpty)
+        #expect(try env.warehouse.getStagedItems().contains { $0.id == tagId })
+    }
+
+    @Test("loaded and delivered boxes resolve staged items while preserving content history")
+    func testStagingBoxDeliveryTransitionsResolveStagedItems() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BOX-02", name: "Delivery Job")
+        let tagId = try seedStagingTag(env, jobId: jobId, partName: "Delivery Wire")
+        let box = try env.warehouse.createStagingBox(jobId: jobId, size: "large")
+        _ = try env.warehouse.assignStagedItemToBox(stagingTagId: tagId, boxId: box.id)
+
+        try env.warehouse.updateStagingBoxDeliveryState(boxId: box.id, status: "loaded")
+        #expect(!(try env.warehouse.getStagedItems()).contains { $0.id == tagId })
+        #expect(try env.warehouse.listStagingBoxContents(boxId: box.id).first?.status == "loaded")
+
+        try env.warehouse.updateStagingBoxDeliveryState(boxId: box.id, status: "delivered")
+        let deliveredBox = try env.warehouse.listStagingBoxes(jobId: jobId).first
+        #expect(deliveredBox?.status == "delivered")
+        #expect(deliveredBox?.contentCount == 1)
+        #expect(try env.warehouse.listStagingBoxContents(boxId: box.id).first?.status == "delivered")
+        #expect(!(try env.warehouse.getStagedItems()).contains { $0.id == tagId })
+    }
+
+    @Test("returned-cancelled box restores staged items for resolution")
+    func testReturnedCancelledBoxRestoresStagedItems() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BOX-03", name: "Return Job")
+        let tagId = try seedStagingTag(env, jobId: jobId, partName: "Return Conduit")
+        let box = try env.warehouse.createStagingBox(jobId: jobId, size: "small")
+        _ = try env.warehouse.assignStagedItemToBox(stagingTagId: tagId, boxId: box.id)
+
+        try env.warehouse.updateStagingBoxDeliveryState(boxId: box.id, status: "loaded")
+        #expect(!(try env.warehouse.getStagedItems()).contains { $0.id == tagId })
+
+        try env.warehouse.updateStagingBoxDeliveryState(boxId: box.id, status: "returned_cancelled")
+        #expect(try env.warehouse.getStagedItems().contains { $0.id == tagId })
+        #expect(try env.warehouse.listStagingBoxContents(boxId: box.id).first?.status == "returned_cancelled")
+    }
+
+    @Test("staging box delivery migration exposes status columns and contents table")
+    func testStagingBoxDeliveryMigrationShape() throws {
+        let env = try E2ETestHelpers.setUp()
+        let columns = try env.db.writer.read { db in
+            try db.columns(in: "staging_boxes").map(\.name)
+        }
+        #expect(columns.contains("status"))
+        #expect(columns.contains("loaded_at"))
+        #expect(columns.contains("delivered_at"))
+        #expect(columns.contains("returned_cancelled_at"))
+
+        let contentColumns = try env.db.writer.read { db in
+            try db.columns(in: "staging_box_contents").map(\.name)
+        }
+        #expect(contentColumns.contains("box_id"))
+        #expect(contentColumns.contains("staging_tag_id"))
+        #expect(contentColumns.contains("status"))
+    }
+
     // MARK: - Quantity validation guards (iter 72)
 
     @Test("updateSessionItem throws invalidQuantity for negative receivedQty")
@@ -1309,6 +1385,23 @@ struct WarehouseServiceExtTests {
         #expect(throws: WarehouseService.WarehouseError.invalidQuantity) {
             try env.warehouse.updateSessionItem(itemId: 1, receivedQty: -1)
         }
+    }
+
+    private func seedStagingTag(_ env: E2ETestHelpers.TestEnvironment, jobId: Int64, partName: String) throws -> Int64 {
+        let catId = try E2ETestHelpers.seedCategory(env, name: "Box Test \(UUID().uuidString.prefix(6))")
+        let partId = try E2ETestHelpers.seedPart(env, name: partName, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 4)
+        guard let stockId = try env.parts.getPartStock(partId: partId).first?["id"] as Int64? else {
+            Issue.record("No stock row found for staging box test")
+            throw WarehouseService.WarehouseError.partNotFound(partId)
+        }
+        return try env.warehouse.createStagingTag(
+            stockId: stockId,
+            destinationType: "job",
+            destinationId: jobId,
+            destinationLabel: "Job \(jobId)",
+            taggedBy: env.adminUserId
+        )
     }
 
     @Test("recordScan throws invalidQuantity for zero qty")

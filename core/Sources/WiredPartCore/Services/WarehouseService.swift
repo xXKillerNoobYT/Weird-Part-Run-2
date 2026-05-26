@@ -35,6 +35,11 @@ public final class WarehouseService: Sendable {
         case areaNotFound(Int64)
         case unitNotFound(Int64)
         case levelNotFound(Int64)
+        case sessionItemNotFound(Int64)
+        case jobReturnIntakeNotFound(Int64)
+        case jobReturnItemNotFound(Int64)
+        case stagingBoxNotFound(Int64)
+        case stagingTagNotFound(Int64)
     }
 
     // =========================================================================
@@ -2185,8 +2190,32 @@ public final class WarehouseService: Sendable {
         public let boxSize: String         // small / normal / large
         public let labelText: String       // e.g. "SMITH RES 0412-01"
         public let isFull: Bool
+        public let status: String          // staged / loaded / delivered / returned_cancelled
         public let areaId: Int64?
         public let createdAt: String?
+        public let loadedAt: String?
+        public let deliveredAt: String?
+        public let returnedCancelledAt: String?
+        public let contentCount: Int
+    }
+
+    /// A staged item assigned to a physical box. Rows are retained across
+    /// delivery transitions so loaded/delivered boxes still show historical
+    /// contents even after the active staging tags are resolved.
+    public struct StagingBoxContent: Sendable, Identifiable {
+        public let id: Int64
+        public let boxId: Int64
+        public let stagingTagId: Int64
+        public let status: String
+        public let assignedAt: String?
+        public let removedAt: String?
+        public let partId: Int64
+        public let partName: String
+        public let partCode: String?
+        public let qty: Int
+        public let destinationType: String?
+        public let destinationId: Int64?
+        public let destinationLabel: String?
     }
 
     /// Create a new staging box for a job, auto-generating box_number and label_text.
@@ -2254,8 +2283,13 @@ public final class WarehouseService: Sendable {
                 boxSize: size,
                 labelText: labelText,
                 isFull: false,
+                status: "staged",
                 areaId: areaId,
-                createdAt: nil
+                createdAt: nil,
+                loadedAt: nil,
+                deliveredAt: nil,
+                returnedCancelledAt: nil,
+                contentCount: 0
             )
         }
     }
@@ -2274,7 +2308,12 @@ public final class WarehouseService: Sendable {
 
                 let sql = """
                     SELECT sb.*,
-                           j.job_name, j.job_number
+                           j.job_name, j.job_number,
+                           (
+                               SELECT COUNT(*)
+                               FROM staging_box_contents sbc
+                               WHERE sbc.box_id = sb.id AND sbc.deleted_at IS NULL
+                           ) AS content_count
                     FROM staging_boxes sb
                     LEFT JOIN jobs j ON j.id = sb.job_id AND j.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
@@ -2292,8 +2331,13 @@ public final class WarehouseService: Sendable {
                         boxSize: row["box_size"] ?? "normal",
                         labelText: row["label_text"] ?? "",
                         isFull: (row["is_full"] as Int?) == 1,
+                        status: row["status"] ?? "staged",
                         areaId: row["area_id"] as Int64?,
-                        createdAt: row["created_at"] as String?
+                        createdAt: row["created_at"] as String?,
+                        loadedAt: row["loaded_at"] as String?,
+                        deliveredAt: row["delivered_at"] as String?,
+                        returnedCancelledAt: row["returned_cancelled_at"] as String?,
+                        contentCount: row["content_count"] ?? 0
                     )
                 }
             }
@@ -2374,9 +2418,190 @@ public final class WarehouseService: Sendable {
                 boxSize: size,
                 labelText: labelText,
                 isFull: false,
+                status: "staged",
                 areaId: areaId,
-                createdAt: nil
+                createdAt: nil,
+                loadedAt: nil,
+                deliveredAt: nil,
+                returnedCancelledAt: nil,
+                contentCount: 0
             )
+        }
+    }
+
+    @discardableResult
+    public func assignStagedItemToBox(stagingTagId: Int64, boxId: Int64) throws -> Int64 {
+        try db.writer.write { dbConn in
+            guard try stagingBoxExists(boxId, dbConn: dbConn) else {
+                throw WarehouseError.stagingBoxNotFound(boxId)
+            }
+            guard try activeStagingTagExists(stagingTagId, dbConn: dbConn) else {
+                throw WarehouseError.stagingTagNotFound(stagingTagId)
+            }
+
+            if let existingId = try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM staging_box_contents WHERE staging_tag_id = ? LIMIT 1",
+                arguments: [stagingTagId]
+            ) {
+                try dbConn.execute(
+                    sql: """
+                        UPDATE staging_box_contents
+                        SET box_id = ?, status = 'staged', removed_at = NULL, deleted_at = NULL,
+                            loaded_at = NULL, delivered_at = NULL, returned_cancelled_at = NULL
+                        WHERE id = ?
+                        """,
+                    arguments: [boxId, existingId]
+                )
+                return existingId
+            }
+
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO staging_box_contents (box_id, staging_tag_id, status, assigned_at)
+                    VALUES (?, ?, 'staged', datetime('now'))
+                    """,
+                arguments: [boxId, stagingTagId]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    public func removeStagedItemFromBox(stagingTagId: Int64, boxId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE staging_box_contents
+                    SET deleted_at = datetime('now'), removed_at = datetime('now')
+                    WHERE box_id = ? AND staging_tag_id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [boxId, stagingTagId]
+            )
+        }
+    }
+
+    public func listStagingBoxContents(boxId: Int64? = nil) throws -> [StagingBoxContent] {
+        do {
+            return try db.writer.read { dbConn -> [StagingBoxContent] in
+                var whereClauses = ["sbc.deleted_at IS NULL"]
+                var args: [DatabaseValueConvertible?] = []
+                if let boxId {
+                    whereClauses.append("sbc.box_id = ?")
+                    args.append(boxId)
+                }
+
+                let rows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT sbc.id, sbc.box_id, sbc.staging_tag_id, sbc.status,
+                               sbc.assigned_at, sbc.removed_at,
+                               s.part_id, s.qty,
+                               p.name AS part_name, p.code AS part_code,
+                               pst.destination_type, pst.destination_id, pst.destination_label
+                        FROM staging_box_contents sbc
+                        JOIN pulled_staging_tags pst ON pst.id = sbc.staging_tag_id
+                        JOIN stock s ON s.id = pst.stock_id
+                        LEFT JOIN parts p ON p.id = s.part_id AND p.deleted_at IS NULL
+                        WHERE \(whereClauses.joined(separator: " AND "))
+                        ORDER BY sbc.assigned_at, sbc.id
+                        """,
+                    arguments: StatementArguments(args)
+                )
+
+                return rows.map { row in
+                    StagingBoxContent(
+                        id: row["id"] ?? 0,
+                        boxId: row["box_id"] ?? 0,
+                        stagingTagId: row["staging_tag_id"] ?? 0,
+                        status: row["status"] ?? "staged",
+                        assignedAt: row["assigned_at"] as String?,
+                        removedAt: row["removed_at"] as String?,
+                        partId: row["part_id"] ?? 0,
+                        partName: row["part_name"] ?? "Unknown Part",
+                        partCode: row["part_code"] as String?,
+                        qty: row["qty"] ?? 0,
+                        destinationType: row["destination_type"] as String?,
+                        destinationId: row["destination_id"] as Int64?,
+                        destinationLabel: row["destination_label"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    public func updateStagingBoxDeliveryState(boxId: Int64, status: String) throws {
+        let normalized = status.replacingOccurrences(of: "-", with: "_").lowercased()
+        guard ["staged", "loaded", "delivered", "returned_cancelled"].contains(normalized) else {
+            throw WarehouseError.requiredFieldEmpty
+        }
+
+        try db.writer.write { dbConn in
+            guard try stagingBoxExists(boxId, dbConn: dbConn) else {
+                throw WarehouseError.stagingBoxNotFound(boxId)
+            }
+
+            let timestampColumn: String?
+            switch normalized {
+            case "loaded": timestampColumn = "loaded_at"
+            case "delivered": timestampColumn = "delivered_at"
+            case "returned_cancelled": timestampColumn = "returned_cancelled_at"
+            default: timestampColumn = nil
+            }
+
+            if let timestampColumn {
+                try dbConn.execute(
+                    sql: "UPDATE staging_boxes SET status = ?, \(timestampColumn) = COALESCE(\(timestampColumn), datetime('now')) WHERE id = ? AND deleted_at IS NULL",
+                    arguments: [normalized, boxId]
+                )
+            } else {
+                try dbConn.execute(
+                    sql: "UPDATE staging_boxes SET status = ? WHERE id = ? AND deleted_at IS NULL",
+                    arguments: [normalized, boxId]
+                )
+            }
+
+            try dbConn.execute(
+                sql: """
+                    UPDATE staging_box_contents
+                    SET status = ?,
+                        loaded_at = CASE WHEN ? = 'loaded' THEN COALESCE(loaded_at, datetime('now')) ELSE loaded_at END,
+                        delivered_at = CASE WHEN ? = 'delivered' THEN COALESCE(delivered_at, datetime('now')) ELSE delivered_at END,
+                        returned_cancelled_at = CASE WHEN ? = 'returned_cancelled' THEN COALESCE(returned_cancelled_at, datetime('now')) ELSE returned_cancelled_at END
+                    WHERE box_id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [normalized, normalized, normalized, normalized, boxId]
+            )
+
+            if normalized == "loaded" || normalized == "delivered" {
+                try dbConn.execute(
+                    sql: """
+                        UPDATE pulled_staging_tags
+                        SET deleted_at = COALESCE(deleted_at, datetime('now'))
+                        WHERE id IN (
+                            SELECT staging_tag_id
+                            FROM staging_box_contents
+                            WHERE box_id = ? AND deleted_at IS NULL
+                        )
+                        """,
+                    arguments: [boxId]
+                )
+            } else if normalized == "staged" || normalized == "returned_cancelled" {
+                try dbConn.execute(
+                    sql: """
+                        UPDATE pulled_staging_tags
+                        SET deleted_at = NULL
+                        WHERE id IN (
+                            SELECT staging_tag_id
+                            FROM staging_box_contents
+                            WHERE box_id = ? AND deleted_at IS NULL
+                        )
+                        """,
+                    arguments: [boxId]
+                )
+            }
         }
     }
 
@@ -2390,11 +2615,35 @@ public final class WarehouseService: Sendable {
         }
     }
 
+    private func stagingBoxExists(_ boxId: Int64, dbConn: Database) throws -> Bool {
+        (try Int.fetchOne(
+            dbConn,
+            sql: "SELECT COUNT(*) FROM staging_boxes WHERE id = ? AND deleted_at IS NULL",
+            arguments: [boxId]
+        ) ?? 0) > 0
+    }
+
+    private func activeStagingTagExists(_ stagingTagId: Int64, dbConn: Database) throws -> Bool {
+        (try Int.fetchOne(
+            dbConn,
+            sql: "SELECT COUNT(*) FROM pulled_staging_tags WHERE id = ? AND deleted_at IS NULL",
+            arguments: [stagingTagId]
+        ) ?? 0) > 0
+    }
+
     /// Soft-delete a staging box.
     public func deleteStagingBox(boxId: Int64) throws {
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: "UPDATE staging_boxes SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [boxId]
+            )
+            try dbConn.execute(
+                sql: """
+                    UPDATE staging_box_contents
+                    SET deleted_at = datetime('now'), removed_at = COALESCE(removed_at, datetime('now'))
+                    WHERE box_id = ? AND deleted_at IS NULL
+                    """,
                 arguments: [boxId]
             )
         }
