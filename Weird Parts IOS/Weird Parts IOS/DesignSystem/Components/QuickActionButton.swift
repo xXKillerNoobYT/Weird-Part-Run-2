@@ -13,30 +13,44 @@ struct DSQuickActionButton: View {
     let title: String
     let icon: String
     let color: Color
+    var isLoading: Bool = false
+    var isDisabled: Bool = false
     var action: (() -> Void)? = nil
 
     /// Button size that scales with Dynamic Type.
-    @ScaledMetric(relativeTo: .caption2) private var buttonWidth: CGFloat = 80
-    @ScaledMetric(relativeTo: .caption2) private var buttonHeight: CGFloat = 72
+    @ScaledMetric(relativeTo: .caption2) private var buttonWidth: CGFloat = 88
+    @ScaledMetric(relativeTo: .caption2) private var buttonHeight: CGFloat = 76
 
     var body: some View {
         Button {
+            guard !isLoading && !isDisabled else { return }
             action?()
         } label: {
             VStack(spacing: DS.Space.xs) {
-                Image(systemName: icon)
-                    .font(.title2)
-                    .foregroundStyle(color)
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(height: 28)
+                } else {
+                    Image(systemName: icon)
+                        .font(.title2)
+                        .foregroundStyle(isDisabled ? .secondary : color)
+                }
 
                 Text(title)
                     .dsStyle(.label)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(isDisabled ? .secondary : .primary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
             }
             .frame(width: buttonWidth, height: buttonHeight)
             .dsCard()
+            .opacity(isDisabled ? 0.55 : 1)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(title)
+        .disabled(isLoading || isDisabled)
+        .accessibilityLabel(isLoading ? "\(title), loading" : title)
     }
 }
 
