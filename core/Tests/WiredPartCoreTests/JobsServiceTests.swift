@@ -299,6 +299,48 @@ struct JobsServiceTests {
         #expect(secondEntry?["overtime_hours"] as Double? == 2.0)
     }
 
+    @Test("Clock out deducts unpaid lunch but keeps paid breaks in job and report hours")
+    func testClockOutDeductsOnlyUnpaidBreakMinutes() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BRK-1", name: "Break Math Job")
+
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE labor_entries SET clock_in = datetime('now', '-9 hours') WHERE id = ?",
+                arguments: [laborEntryId]
+            )
+            try db.execute(sql: """
+                INSERT INTO break_records
+                    (user_id, labor_entry_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
+                VALUES
+                    (?, ?, 'break', datetime('now', '-6 hours'), datetime('now', '-5 hours', '-45 minutes'), 15, 1, 0),
+                    (?, ?, 'lunch_unpaid', datetime('now', '-4 hours'), datetime('now', '-3 hours', '-30 minutes'), 30, 0, 0)
+                """, arguments: [env.adminUserId, laborEntryId, env.adminUserId, laborEntryId])
+        }
+
+        try env.jobs.clockOut(laborEntryId: laborEntryId)
+
+        let entry = try env.db.writer.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT regular_hours, overtime_hours FROM labor_entries WHERE id = ?",
+                arguments: [laborEntryId]
+            )
+        }
+        #expect(entry?["regular_hours"] as Double? == 8.0)
+        #expect(entry?["overtime_hours"] as Double? == 0.5)
+
+        let today = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+        let timesheet = try #require(try env.reports.getTimesheetData(startDate: today, endDate: today).first)
+        #expect(timesheet.regularHours == 8.0)
+        #expect(timesheet.overtimeHours == 0.5)
+        #expect(timesheet.totalHours == 8.5)
+
+        let dailySummary = try #require(try env.reports.getDailyReportSummary(date: today).first { $0.id == jobId })
+        #expect(dailySummary.totalHours == 8.5)
+    }
+
     // MARK: - Team Members
 
     @Test("Add and remove team member from job")

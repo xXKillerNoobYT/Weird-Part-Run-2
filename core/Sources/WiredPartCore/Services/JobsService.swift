@@ -1149,10 +1149,12 @@ public final class JobsService: Sendable {
                 FROM labor_entries WHERE id = ?
                 """, arguments: [laborEntryId]) ?? 0
 
-            // Subtract break time (fixes #206)
+            // Only unpaid break/lunch time reduces reportable labor hours.
+            // Paid rest breaks remain job labor and must still count toward overtime.
             let breakMinutes = try Double.fetchOne(dbConn, sql: """
                 SELECT COALESCE(SUM(duration_minutes), 0)
-                FROM break_records WHERE labor_entry_id = ? AND deleted_at IS NULL
+                FROM break_records
+                WHERE labor_entry_id = ? AND is_paid = 0 AND deleted_at IS NULL
                 """, arguments: [laborEntryId]) ?? 0
             let totalHours = max(0, rawHours - (breakMinutes / 60.0))
 
