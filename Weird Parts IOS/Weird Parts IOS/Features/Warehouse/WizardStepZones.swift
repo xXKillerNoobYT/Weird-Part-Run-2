@@ -126,9 +126,11 @@ struct WizardStepZones: View {
 
     private func phonePlacement(dims: (rows: Int, cols: Int)) -> some View {
         VStack(spacing: 0) {
-            palette
+            phonePalette
+                .frame(height: 96)
             canvasScroll(dims: dims)
-            bottomInspector
+                .frame(maxHeight: .infinity)
+            compactPhoneZoneActions
         }
     }
 
@@ -208,6 +210,39 @@ struct WizardStepZones: View {
         .background(Color(.systemGroupedBackground))
     }
 
+    private var phonePalette: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Zones")
+                .font(.headline)
+                .padding(.horizontal)
+                .padding(.top, 8)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(zoneTypes, id: \.id) { type in
+                        HStack(spacing: 6) {
+                            Image(systemName: type.icon)
+                                .font(.subheadline)
+                                .foregroundStyle(zoneColor(type.id))
+                            Text(type.title)
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .lineLimit(1)
+                        }
+                        .frame(minHeight: 44)
+                        .padding(.horizontal, 10)
+                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+                        .draggable("new:\(type.id)")
+                        .accessibilityLabel("Drag \(type.title) zone")
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+            }
+        }
+        .background(Color(.systemGroupedBackground))
+    }
+
     private func canvasScroll(dims: (rows: Int, cols: Int)) -> some View {
         ScrollView([.horizontal, .vertical]) {
             ZoneGridCanvas(
@@ -243,6 +278,70 @@ struct WizardStepZones: View {
         inspectorPanel
             .frame(maxHeight: 164)
             .background(Color(.secondarySystemBackground))
+    }
+
+    @ViewBuilder
+    private var compactPhoneZoneActions: some View {
+        if let zone = selectedZone {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(zoneTitle(zone))
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                    Text("\(zone.zoneTypeDisplay) at R\(zone.gridY + 1)C\(zone.gridX + 1), \(zone.gridWidth)x\(zone.gridHeight)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+
+                Spacer(minLength: 8)
+
+                Button {
+                    resizeZone(zone, width: zone.gridWidth + 1, height: zone.gridHeight + 1)
+                } label: {
+                    Label("Grow", systemImage: "arrow.down.right.and.arrow.up.left")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Grow")
+                .accessibilityIdentifier("zonePhone_grow")
+
+                Button {
+                    zoneBeingEdited = zone
+                } label: {
+                    Label("Edit", systemImage: "pencil")
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Edit")
+
+                Button(role: .destructive) {
+                    deleteTarget = zone
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Delete")
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .background(Color(.secondarySystemBackground))
+        } else {
+            HStack {
+                Image(systemName: "cursorarrow.click.2")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text("Select a zone to edit it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .background(Color(.secondarySystemBackground))
+        }
     }
 
     private var inspectorPanel: some View {
