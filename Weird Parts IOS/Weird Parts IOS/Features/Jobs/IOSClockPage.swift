@@ -1153,8 +1153,8 @@ struct IOSClockPage: View {
                 logger.info("Calling service.clockIn(userId: \(userId), jobId: \(jobId ?? 0))")
 
                 if isShop {
-                    // Clock in to Shop/Warehouse (jobId = 0 or a special "shop" job)
-                    try service.clockIn(userId: userId, jobId: jobId ?? 0, gpsLat: lat, gpsLng: lng)
+                    // Clock in to Shop/Warehouse through the internal warehouse time bucket.
+                    try service.clockInToWarehouse(userId: userId, gpsLat: lat, gpsLng: lng)
                     isShopClockIn = true
                     geofenceManager.stopMonitoring()
                 } else if let jid = jobId {
@@ -1830,10 +1830,10 @@ private struct TodoPickerSheet: View {
         NavigationStack {
             List {
                 if todos.isEmpty {
-                    ContentUnavailableView(
-                        "No To-Dos",
-                        systemImage: "checklist",
-                        description: Text("This job has no active to-dos. Add to-dos in the job's notebook.")
+                    EmptyStateView(
+                        icon: "checklist",
+                        title: "No To-Dos",
+                        message: "This job has no active to-dos. Add to-dos in the job's notebook."
                     )
                 } else {
                     ForEach(todos) { todo in

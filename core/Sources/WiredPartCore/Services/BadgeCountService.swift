@@ -222,11 +222,17 @@ public final class BadgeCountService: Sendable {
             counts.unreadMessages = try safeCount(sql: """
                 SELECT COUNT(*) FROM chat_messages cm
                 JOIN chat_channels cc ON cm.channel_id = cc.id
+                JOIN chat_channel_members ccm
+                  ON ccm.channel_id = cm.channel_id
+                 AND ccm.user_id = ?
+                 AND ccm.left_at IS NULL
+                 AND ccm.deleted_at IS NULL
                 WHERE cm.deleted_at IS NULL
+                  AND cc.is_active = 1
                   AND cc.deleted_at IS NULL
                   AND cm.sender_id != ?
                   AND date(cm.created_at) >= date('now', '-1 day')
-            """, arguments: [uid])
+            """, arguments: [uid, uid])
         }
 
         // Oldest pending date — find the oldest pending/in-review JPO for tint calculation

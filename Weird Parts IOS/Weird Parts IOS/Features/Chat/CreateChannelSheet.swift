@@ -71,10 +71,11 @@ struct CreateChannelSheet: View {
                         .fontWeight(.semibold)
                 }
             }
+            .refreshable {
+                await loadSuppliers()
+            }
             .task {
-                if isSupplier, let service = appCore.partsService {
-                    suppliers = (try? service.listSuppliers()) ?? []
-                }
+                await loadSuppliers()
             }
         }
     }
@@ -118,5 +119,11 @@ struct CreateChannelSheet: View {
             saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
+    }
+
+    @MainActor
+    private func loadSuppliers() async {
+        guard isSupplier, let service = appCore.partsService else { return }
+        suppliers = (try? service.listSuppliers()) ?? []
     }
 }

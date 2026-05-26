@@ -78,6 +78,59 @@ struct ChatServiceTests {
         #expect(messages.count >= 3)
     }
 
+    @Test("sendMessage rejects users who are not channel members")
+    func testSendMessageRejectsNonMember() throws {
+        let env = try E2ETestHelpers.setUp()
+        let outsiderId = try env.auth.createUser(displayName: "Chat Outsider", pin: "2345", email: "outsider@test.com")
+        let channelId = try env.chat.createChannel(
+            name: "Private Channel",
+            channelType: "group",
+            jobId: nil,
+            createdBy: env.adminUserId
+        )
+
+        var threw = false
+        do {
+            _ = try env.chat.sendMessage(channelId: channelId, senderId: outsiderId, content: "I should not be here")
+        } catch ChatService.ChatError.notChannelMember(let rejectedChannelId, let rejectedUserId) {
+            threw = rejectedChannelId == channelId && rejectedUserId == outsiderId
+        } catch {}
+
+        #expect(threw, "sendMessage must reject users who are not active members of the channel")
+    }
+
+    @Test("sendMessage rejects users removed from a channel")
+    func testSendMessageRejectsRemovedMember() throws {
+        let env = try E2ETestHelpers.setUp()
+        let removedUserId = try env.auth.createUser(displayName: "Removed Member", pin: "3456", email: "removed@test.com")
+        let channelId = try env.chat.createChannel(
+            name: "Removal Channel",
+            channelType: "group",
+            jobId: nil,
+            createdBy: env.adminUserId
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO chat_channel_members (channel_id, user_id, role, joined_at)
+                VALUES (?, ?, 'member', datetime('now'))
+                """, arguments: [channelId, removedUserId])
+            try db.execute(sql: """
+                UPDATE chat_channel_members
+                SET left_at = datetime('now')
+                WHERE channel_id = ? AND user_id = ?
+                """, arguments: [channelId, removedUserId])
+        }
+
+        var threw = false
+        do {
+            _ = try env.chat.sendMessage(channelId: channelId, senderId: removedUserId, content: "I was removed")
+        } catch ChatService.ChatError.notChannelMember(let rejectedChannelId, let rejectedUserId) {
+            threw = rejectedChannelId == channelId && rejectedUserId == removedUserId
+        } catch {}
+
+        #expect(threw, "sendMessage must reject users whose channel membership has ended")
+    }
+
     // MARK: - Q&A Threads
 
     @Test("Create and list QA threads")
@@ -96,6 +149,33 @@ struct ChatServiceTests {
         let threads = try env.chat.listQAThreads(status: nil)
         #expect(threads.count >= 1)
         #expect(threads.first?.question == "Where are the 12 AWG connectors?")
+        #expect(threads.first?.askedById == env.adminUserId)
+    }
+
+    @Test("QA thread rows expose backing job due dates for timeline priority color")
+    func testQAThreadRowsExposeJobDueDate() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try env.jobs.createJob(
+            jobNumber: "J-QA-DUE",
+            jobName: "Due Date QA Job",
+            customerName: "Test Customer",
+            status: "active",
+            dueDate: "2026-06-15",
+            createdBy: env.adminUserId
+        )
+
+        let threadId = try env.chat.createQAThread(
+            jobId: jobId,
+            askedBy: env.adminUserId,
+            subject: "Will this badge use the job due date?",
+            priority: "urgent"
+        )
+
+        let allThreads = try env.chat.listQAThreads(status: nil)
+        let jobThreads = try env.chat.listQAThreads(jobId: jobId, status: nil)
+
+        #expect(allThreads.first(where: { $0.id == threadId })?.dueDate == "2026-06-15")
+        #expect(jobThreads.first?.dueDate == "2026-06-15")
     }
 
     @Test("Filter QA threads by job")
@@ -110,6 +190,7 @@ struct ChatServiceTests {
         let job1Threads = try env.chat.listQAThreads(jobId: job1, status: nil)
         #expect(job1Threads.count == 1)
         #expect(job1Threads.first?.question == "Q for Job 1")
+        #expect(job1Threads.first?.askedById == env.adminUserId)
     }
 
     @Test("Escalate and resolve QA thread")
@@ -249,6 +330,35 @@ struct ChatServiceTests {
 
         let messages = try env.chat.getMessages(channelId: channelId)
         #expect(messages.contains(where: { $0.id == msgId }))
+    }
+
+    @Test("sendSupplierMessage rejects non-members")
+    func testSendSupplierMessageRejectsNonMember() throws {
+        let env = try E2ETestHelpers.setUp()
+        let outsiderId = try env.auth.createUser(displayName: "Supplier Outsider", pin: "4567", email: "supplier-outsider@test.com")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "SupplierAuth")
+        let channelId = try env.chat.createSupplierChannel(
+            name: "Supplier Auth Channel",
+            supplierId: supplierId,
+            supplierDisplayName: "SupplierAuth",
+            contactId: nil,
+            role: nil,
+            createdBy: env.adminUserId
+        )
+
+        var threw = false
+        do {
+            _ = try env.chat.sendSupplierMessage(
+                channelId: channelId,
+                senderId: outsiderId,
+                content: "Unauthorized supplier note",
+                direction: "outbound"
+            )
+        } catch ChatService.ChatError.notChannelMember(let rejectedChannelId, let rejectedUserId) {
+            threw = rejectedChannelId == channelId && rejectedUserId == outsiderId
+        } catch {}
+
+        #expect(threw, "sendSupplierMessage must reject senders who are not current channel members")
     }
 
     @Test("addUserToSupplierChannel adds member idempotently")
@@ -469,6 +579,35 @@ struct ChatServiceTests {
         #expect(attachments[0].attachmentType == "photo")
         #expect(attachments[0].fileName == "photo.jpg")
         #expect(attachments[0].fileSize == 204800)
+    }
+
+    @Test("sendMessageWithAttachments rejects non-members")
+    func testSendMessageWithAttachmentsRejectsNonMember() throws {
+        let env = try E2ETestHelpers.setUp()
+        let outsiderId = try env.auth.createUser(displayName: "Attachment Outsider", pin: "5678", email: "attachment-outsider@test.com")
+        let channelId = try env.chat.createChannel(
+            name: "Attachment Private Channel",
+            channelType: "group",
+            jobId: nil,
+            createdBy: env.adminUserId
+        )
+        let att = ChatService.PendingAttachment(type: "file", fileName: "blocked.pdf")
+
+        var threw = false
+        do {
+            _ = try env.chat.sendMessageWithAttachments(
+                channelId: channelId,
+                content: "Blocked attachment",
+                userId: outsiderId,
+                attachments: [att]
+            )
+        } catch ChatService.ChatError.notChannelMember(let rejectedChannelId, let rejectedUserId) {
+            threw = rejectedChannelId == channelId && rejectedUserId == outsiderId
+        } catch {}
+
+        #expect(threw, "sendMessageWithAttachments must reject users who are not current channel members")
+        let messages = try env.chat.getMessages(channelId: channelId)
+        #expect(!messages.contains(where: { $0.content == "Blocked attachment" }))
     }
 
     @Test("getMessageAttachments returns empty for message with no attachments")
@@ -863,14 +1002,18 @@ struct ChatServiceTests {
         let senderId = try env.auth.createUser(displayName: "Sender", pin: "1234", email: "sender@test.com")
         let readerId = try env.auth.createUser(displayName: "Reader", pin: "5678", email: "reader@test.com")
 
-        let channelId = try env.chat.createChannel(name: "Read Test Channel", channelType: "group", createdBy: senderId)
+        // Channel creation is an administrative action gated by manage_chat; markRead itself
+        // remains a participant-level receipt update. Use the seeded admin to create the
+        // fixture channel, then add sender/reader as ordinary members for the read test.
+        let channelId = try env.chat.createChannel(name: "Read Test Channel", channelType: "group", createdBy: env.adminUserId)
 
-        // Reader joins the channel — add them as a member
+        // Sender and reader join the channel — add them as members.
         try env.db.writer.write { db in
             try db.execute(sql: """
                 INSERT INTO chat_channel_members (channel_id, user_id, role, joined_at)
-                VALUES (?, ?, 'member', datetime('now'))
-                """, arguments: [channelId, readerId])
+                VALUES (?, ?, 'member', datetime('now')),
+                       (?, ?, 'member', datetime('now'))
+                """, arguments: [channelId, senderId, channelId, readerId])
         }
 
         // Sender sends 2 messages
@@ -891,7 +1034,16 @@ struct ChatServiceTests {
         let env = try E2ETestHelpers.setUp()
 
         let userId = try env.auth.createUser(displayName: "Mono", pin: "1111", email: "mono@test.com")
-        let channelId = try env.chat.createChannel(name: "Mono Channel", channelType: "group", createdBy: userId)
+        // Channel creation is manage_chat-gated; keep this test focused on markRead
+        // monotonicity by using the seeded admin for fixture setup and the plain user
+        // as the channel participant whose read receipt is updated.
+        let channelId = try env.chat.createChannel(name: "Mono Channel", channelType: "group", createdBy: env.adminUserId)
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO chat_channel_members (channel_id, user_id, role, joined_at)
+                VALUES (?, ?, 'member', datetime('now'))
+                """, arguments: [channelId, userId])
+        }
 
         let msg1 = try env.chat.sendMessage(channelId: channelId, senderId: userId, content: "First")
         let msg2 = try env.chat.sendMessage(channelId: channelId, senderId: userId, content: "Second")
@@ -910,5 +1062,63 @@ struct ChatServiceTests {
                 """, arguments: [channelId, userId])
         }
         #expect(stored == msg2, "markRead must not move the read pointer backwards")
+    }
+
+    // MARK: - Supplier channel membership security
+
+    @Test("listSupplierChannels hides supplier channels after membership is removed")
+    func testListSupplierChannelsRequiresActiveMembership() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Hidden Supplier Membership")
+        let memberId = try env.auth.createUser(displayName: "Removed Supplier Member", pin: "6789", email: "removed-supplier@test.com")
+        let channelId = try env.chat.createSupplierChannel(
+            name: "Hidden Supplier Channel",
+            supplierId: supplierId,
+            supplierDisplayName: "Hidden Supplier Membership",
+            contactId: nil,
+            role: nil,
+            createdBy: env.adminUserId
+        )
+
+        try env.chat.addUserToSupplierChannel(channelId: channelId, userId: memberId)
+        #expect(try env.chat.listSupplierChannels(userId: memberId).contains { $0.channelId == channelId })
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE chat_channel_members
+                SET left_at = datetime('now')
+                WHERE channel_id = ? AND user_id = ?
+                """, arguments: [channelId, memberId])
+        }
+
+        let channelsAfterRemoval = try env.chat.listSupplierChannels(userId: memberId)
+        #expect(channelsAfterRemoval.contains { $0.channelId == channelId } == false,
+                "Supplier channel lists must not expose channels to users whose membership has ended")
+    }
+
+    @Test("listSupplierChannelsForJob requires active channel membership")
+    func testListSupplierChannelsForJobRequiresActiveMembership() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SUP-MEMBERSHIP")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Job Supplier Membership")
+        let outsiderId = try env.auth.createUser(displayName: "Supplier Job Outsider", pin: "7890", email: "supplier-outsider@test.com")
+        let channelId = try env.chat.createSupplierChannel(
+            name: "Job Supplier Private Thread",
+            supplierId: supplierId,
+            supplierDisplayName: "Job Supplier Membership",
+            contactId: nil,
+            role: nil,
+            createdBy: env.adminUserId,
+            jobId: jobId
+        )
+        _ = try env.chat.sendSupplierMessage(channelId: channelId, senderId: env.adminUserId, content: "Private job supplier note", direction: "outbound")
+
+        let outsiderChannels = try env.chat.listSupplierChannelsForJob(jobId: jobId, userId: outsiderId)
+        #expect(outsiderChannels.contains { $0.channelId == channelId } == false,
+                "Job supplier channel lists must not leak private channel rows or unread counts to non-members")
+
+        let adminChannels = try env.chat.listSupplierChannelsForJob(jobId: jobId, userId: env.adminUserId)
+        #expect(adminChannels.contains { $0.channelId == channelId },
+                "Active members should still see their job-linked supplier channels")
     }
 }

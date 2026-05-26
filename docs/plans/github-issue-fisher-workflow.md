@@ -26,6 +26,8 @@ Every run enforces this order:
 
 The runner selects at most three actions per pass. Within a bucket it prefers higher priority labels first, then older updated issues.
 
+Backlog entries are never treated as promotions by the report itself. When the pass reaches backlog because blocked/todo supply fewer than the requested limit, those entries are labeled as non-promotion candidates and require a separate human or approved-routine confirmation of concrete plan/repo evidence before any GitHub or Paperclip mutation.
+
 ## Output
 
 Each run writes:
@@ -46,7 +48,7 @@ Valid issue-moving actions include:
 
 - unblock or replace a blocker on a `blocked` issue;
 - assign or create a small implementation child for a `todo` issue;
-- promote a `backlog` issue only after plan evidence confirms it is still relevant;
+- mark a `backlog` issue as a non-promotion candidate pending separate plan/repo evidence confirmation;
 - file a new GitHub issue only when repo evidence is concrete and not already tracked.
 
 ## Verification

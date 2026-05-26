@@ -462,7 +462,8 @@ struct IOSDispatchPage: View {
                 return
             }
         } catch {
-            // If conflict check fails, proceed anyway
+            actionError = userFriendlyError(error, context: "check time-off conflicts")
+            return
         }
 
         // No conflict — create the schedule entry directly (service layer also validates).

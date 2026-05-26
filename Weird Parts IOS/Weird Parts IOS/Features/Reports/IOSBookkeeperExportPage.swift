@@ -68,6 +68,10 @@ struct IOSBookkeeperExportPage: View {
         .searchable(text: $searchText, prompt: "Search employees or POs...")
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .reportsBookkeeperPageInactive, object: nil)
+        }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
     }
@@ -99,11 +103,11 @@ struct IOSBookkeeperExportPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if laborRows.isEmpty && materialRows.isEmpty {
-            ContentUnavailableView {
-                Label("No Data", systemImage: "doc.richtext")
-            } description: {
-                Text("No labor or material data for the selected period.")
-            }
+            EmptyStateView(
+                icon: "doc.richtext",
+                title: "No Data",
+                message: "No labor or material data for the selected period."
+            )
         } else {
             List {
                 if !laborRows.isEmpty {
@@ -217,5 +221,17 @@ struct IOSBookkeeperExportPage: View {
             loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let materialTotal = materialRows.reduce(0) { $0 + $1.totalAmount }
+        NotificationCenter.default.post(
+            name: .reportsBookkeeperPageActive,
+            object: nil,
+            userInfo: [
+                "context": "Bookkeeper Export Report: \(startDateString) to \(endDateString), \(laborRows.count) labor rows, \(materialRows.count) material rows, material total \(String(format: "$%.2f", materialTotal)), search active: \(!searchText.isEmpty)."
+            ]
+        )
     }
 }

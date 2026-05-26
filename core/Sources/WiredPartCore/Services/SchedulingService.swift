@@ -11,9 +11,11 @@ import GRDB
 /// Ported from: Scheduling & Dispatch feature area (Phases 10, 16)
 public final class SchedulingService: Sendable {
     private let db: AppDatabase
+    private let auth: AuthService
 
-    public init(db: AppDatabase) {
+    public init(db: AppDatabase, auth: AuthService? = nil) {
         self.db = db
+        self.auth = auth ?? AuthService(db: db)
     }
 
     // =========================================================================
@@ -32,9 +34,14 @@ public final class SchedulingService: Sendable {
         /// Fix #207: surfaces the conflict so UI can require cancellation/resolution first.
         case timeOffConflictsWithDispatch(conflicts: Int)
         case invalidDateRange(start: String, end: String)
+        case invalidDate(String)
         case requiredFieldEmpty
         case jobNotFound(Int64)
         case userNotFound(Int64)
+        case insufficientPermissions(required: String)
+        case contractorNotFound(Int64)
+        case subcontractorScheduleNotFound(Int64)
+        case subcontractorScheduleConflict(jobId: Int64, gcId: Int64, date: String)
     }
 
     // =========================================================================
@@ -93,6 +100,106 @@ public final class SchedulingService: Sendable {
         }
     }
 
+    /// One worker's scheduling state for a specific job/date detail view.
+    public struct JobDayAssignmentRow: Sendable, Identifiable {
+        public let id: Int64
+        public let userName: String
+        public let jobName: String
+        public let timeSlot: String
+        public let startTime: String?
+        public let endTime: String?
+        public let status: String
+        public let notes: String?
+
+        public init(
+            id: Int64,
+            userName: String,
+            jobName: String,
+            timeSlot: String,
+            startTime: String?,
+            endTime: String?,
+            status: String,
+            notes: String?
+        ) {
+            self.id = id
+            self.userName = userName
+            self.jobName = jobName
+            self.timeSlot = timeSlot
+            self.startTime = startTime
+            self.endTime = endTime
+            self.status = status
+            self.notes = notes
+        }
+    }
+
+    /// Approved time-off row included in a job/date detail view.
+    public struct JobDayTimeOffRow: Sendable, Identifiable {
+        public let id: Int64
+        public let userName: String
+        public let reason: String?
+
+        public init(id: Int64, userName: String, reason: String?) {
+            self.id = id
+            self.userName = userName
+            self.reason = reason
+        }
+    }
+
+    /// Day-by-day scheduling context for a selected job.
+    public struct JobDayAssignmentDetail: Sendable {
+        public let jobId: Int64
+        public let date: String
+        public let assignedToJob: [JobDayAssignmentRow]
+        public let assignedToOtherJobs: [JobDayAssignmentRow]
+        public let timeOffWorkers: [JobDayTimeOffRow]
+
+        public init(
+            jobId: Int64,
+            date: String,
+            assignedToJob: [JobDayAssignmentRow],
+            assignedToOtherJobs: [JobDayAssignmentRow],
+            timeOffWorkers: [JobDayTimeOffRow]
+        ) {
+            self.jobId = jobId
+            self.date = date
+            self.assignedToJob = assignedToJob
+            self.assignedToOtherJobs = assignedToOtherJobs
+            self.timeOffWorkers = timeOffWorkers
+        }
+    }
+
+    /// A flex-pool dispatch assignment waiting on manager approval.
+    public struct ScheduleChangeApproval: Sendable, Identifiable {
+        public let id: Int64
+        public let jobId: Int64
+        public let userId: Int64
+        public let jobName: String
+        public let userName: String
+        public let dispatchDate: String
+        public let timeSlot: String
+        public let createdAt: String
+
+        public init(
+            id: Int64,
+            jobId: Int64,
+            userId: Int64,
+            jobName: String,
+            userName: String,
+            dispatchDate: String,
+            timeSlot: String,
+            createdAt: String
+        ) {
+            self.id = id
+            self.jobId = jobId
+            self.userId = userId
+            self.jobName = jobName
+            self.userName = userName
+            self.dispatchDate = dispatchDate
+            self.timeSlot = timeSlot
+            self.createdAt = createdAt
+        }
+    }
+
     /// A time-off request row for list views.
     public struct TimeOffRow: Sendable, Identifiable {
         public let id: Int64
@@ -133,25 +240,47 @@ public final class SchedulingService: Sendable {
         }
     }
 
-    /// A subcontractor schedule row for the sub-schedule list.
+    /// A subcontractor schedule row for the sub-schedule list and add/edit forms.
     public struct SubScheduleRow: Sendable, Identifiable {
         public let id: Int64
+        public let jobId: Int64
+        public let gcId: Int64
         public let subName: String
         public let companyName: String
         public let jobName: String
         public let scheduleDate: String
         public let status: String
+        public let arrivalTime: String?
+        public let departureTime: String?
+        public let scopeOfWork: String?
+        public let notes: String?
 
         public init(
-            id: Int64, subName: String, companyName: String,
-            jobName: String, scheduleDate: String, status: String
+            id: Int64,
+            jobId: Int64 = 0,
+            gcId: Int64 = 0,
+            subName: String,
+            companyName: String,
+            jobName: String,
+            scheduleDate: String,
+            status: String,
+            arrivalTime: String? = nil,
+            departureTime: String? = nil,
+            scopeOfWork: String? = nil,
+            notes: String? = nil
         ) {
             self.id = id
+            self.jobId = jobId
+            self.gcId = gcId
             self.subName = subName
             self.companyName = companyName
             self.jobName = jobName
             self.scheduleDate = scheduleDate
             self.status = status
+            self.arrivalTime = arrivalTime
+            self.departureTime = departureTime
+            self.scopeOfWork = scopeOfWork
+            self.notes = notes
         }
     }
 
@@ -302,6 +431,101 @@ public final class SchedulingService: Sendable {
             if isTableNotFoundError(error) { return [] }
             throw error
         }
+    }
+
+    /// Get day-by-day crew context for one job/date.
+    ///
+    /// Used by scheduling UI opened from a pipeline job's calendar action so the
+    /// dispatcher can see who is already assigned to this job, who is already
+    /// committed to another job, and who has approved time off for that day.
+    public func getJobDayAssignmentDetail(jobId: Int64, date: String) throws -> JobDayAssignmentDetail {
+        do {
+            return try db.writer.read { dbConn -> JobDayAssignmentDetail in
+                let dispatchSQL = """
+                    SELECT jd.id, jd.shift_start AS start_time, jd.shift_end AS end_time,
+                           jd.status, jd.notes, COALESCE(jd.time_slot, 'full') AS time_slot,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS user_name,
+                           COALESCE(j.job_name, 'Unassigned') AS job_name
+                    FROM job_dispatch jd
+                    LEFT JOIN users u ON u.id = jd.user_id AND u.deleted_at IS NULL
+                    LEFT JOIN jobs j ON j.id = jd.job_id AND j.deleted_at IS NULL
+                    WHERE jd.dispatch_date = ?
+                      AND jd.job_id = ?
+                      AND jd.deleted_at IS NULL
+                    ORDER BY u.display_name ASC, jd.shift_start ASC
+                    """
+                let assignedToJob = try Row.fetchAll(dbConn, sql: dispatchSQL, arguments: [date, jobId])
+                    .map(Self.makeJobDayAssignmentRow)
+
+                let otherDispatchSQL = """
+                    SELECT jd.id, jd.shift_start AS start_time, jd.shift_end AS end_time,
+                           jd.status, jd.notes, COALESCE(jd.time_slot, 'full') AS time_slot,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS user_name,
+                           COALESCE(j.job_name, 'Unassigned') AS job_name
+                    FROM job_dispatch jd
+                    LEFT JOIN users u ON u.id = jd.user_id AND u.deleted_at IS NULL
+                    LEFT JOIN jobs j ON j.id = jd.job_id AND j.deleted_at IS NULL
+                    WHERE jd.dispatch_date = ?
+                      AND jd.job_id != ?
+                      AND jd.deleted_at IS NULL
+                    ORDER BY u.display_name ASC, jd.shift_start ASC
+                    """
+                let assignedToOtherJobs = try Row.fetchAll(dbConn, sql: otherDispatchSQL, arguments: [date, jobId])
+                    .map(Self.makeJobDayAssignmentRow)
+
+                let timeOffSQL = """
+                    SELECT se.id, se.reason,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS user_name
+                    FROM schedule_exceptions se
+                    LEFT JOIN users u ON u.id = se.user_id AND u.deleted_at IS NULL
+                    WHERE se.exception_type = 'time_off'
+                      AND se.exception_date = ?
+                      AND se.is_approved = 1
+                      AND se.deleted_at IS NULL
+                    ORDER BY user_name ASC
+                    """
+                let timeOffWorkers = try Row.fetchAll(dbConn, sql: timeOffSQL, arguments: [date])
+                    .map { row in
+                        JobDayTimeOffRow(
+                            id: row["id"] ?? 0,
+                            userName: row["user_name"] ?? "Unknown",
+                            reason: row["reason"] as String?
+                        )
+                    }
+
+                return JobDayAssignmentDetail(
+                    jobId: jobId,
+                    date: date,
+                    assignedToJob: assignedToJob,
+                    assignedToOtherJobs: assignedToOtherJobs,
+                    timeOffWorkers: timeOffWorkers
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) {
+                return JobDayAssignmentDetail(
+                    jobId: jobId,
+                    date: date,
+                    assignedToJob: [],
+                    assignedToOtherJobs: [],
+                    timeOffWorkers: []
+                )
+            }
+            throw error
+        }
+    }
+
+    private static func makeJobDayAssignmentRow(_ row: Row) -> JobDayAssignmentRow {
+        JobDayAssignmentRow(
+            id: row["id"] ?? 0,
+            userName: row["user_name"] ?? "Unknown",
+            jobName: row["job_name"] ?? "Unassigned",
+            timeSlot: row["time_slot"] ?? "full",
+            startTime: row["start_time"] as String?,
+            endTime: row["end_time"] as String?,
+            status: row["status"] ?? "scheduled",
+            notes: row["notes"] as String?
+        )
     }
 
     // =========================================================================
@@ -475,6 +699,15 @@ public final class SchedulingService: Sendable {
             throw SchedulingError.invalidStatus(status)
         }
 
+        let requiredPermission = "approve_time_off"
+        let requiresApprovalActor = status == "approved" || status == "denied"
+        if requiresApprovalActor || approvedBy != nil {
+            guard let approvedBy,
+                  try auth.hasPermission(approvedBy, permissionKey: requiredPermission) else {
+                throw SchedulingError.insufficientPermissions(required: requiredPermission)
+            }
+        }
+
         try db.writer.write { dbConn in
             // Verify the row exists and retrieve its request_group so we can
             // update every day in the same multi-day request atomically.
@@ -528,7 +761,7 @@ public final class SchedulingService: Sendable {
 
             // Build a WHERE clause that matches all days of the same request:
             // if request_group is set, target the whole group; otherwise just this row.
-            if status == "approved", let approvedBy {
+            if status == "approved" {
                 if let group = requestGroup {
                     try dbConn.execute(
                         sql: """
@@ -553,7 +786,7 @@ public final class SchedulingService: Sendable {
                     try dbConn.execute(
                         sql: """
                             UPDATE schedule_exceptions
-                            SET is_approved = ?
+                            SET is_approved = ?, approved_by = NULL, approved_at = NULL
                             WHERE request_group = ? AND exception_type = 'time_off' AND deleted_at IS NULL
                             """,
                         arguments: [isApproved, group]
@@ -562,7 +795,7 @@ public final class SchedulingService: Sendable {
                     try dbConn.execute(
                         sql: """
                             UPDATE schedule_exceptions
-                            SET is_approved = ?
+                            SET is_approved = ?, approved_by = NULL, approved_at = NULL
                             WHERE id = ? AND deleted_at IS NULL
                             """,
                         arguments: [isApproved, id]
@@ -609,36 +842,220 @@ public final class SchedulingService: Sendable {
 
     /// Get subcontractor schedule rows for a given date.
     public func getSubSchedule(date: String) throws -> [SubScheduleRow] {
+        let normalizedDate = try Self.normalizeScheduleDateOnly(date)
         do {
             return try db.writer.read { dbConn -> [SubScheduleRow] in
                 let sql = """
                     SELECT ss.id,
+                           ss.job_id,
+                           ss.gc_id,
                            COALESCE(gc.contact_name, gc.company_name, 'Unknown') AS sub_name,
                            COALESCE(gc.company_name, '') AS company_name,
                            COALESCE(j.job_name, 'Unknown Job') AS job_name,
                            ss.scheduled_date AS schedule_date,
-                           COALESCE(ss.status, 'scheduled') AS status
+                           COALESCE(ss.status, 'scheduled') AS status,
+                           ss.arrival_time,
+                           ss.departure_time,
+                           ss.scope_of_work,
+                           ss.notes
                     FROM subcontractor_schedules ss
                     LEFT JOIN general_contractors gc ON gc.id = ss.gc_id AND gc.deleted_at IS NULL
                     LEFT JOIN jobs j ON j.id = ss.job_id AND j.deleted_at IS NULL
                     WHERE ss.scheduled_date = ?
+                      AND ss.deleted_at IS NULL
                     ORDER BY sub_name
                     """
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [date])
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [normalizedDate])
                 return rows.map { row in
                     SubScheduleRow(
                         id: row["id"] ?? 0,
+                        jobId: row["job_id"] ?? 0,
+                        gcId: row["gc_id"] ?? 0,
                         subName: row["sub_name"] ?? "Unknown",
                         companyName: row["company_name"] ?? "",
                         jobName: row["job_name"] ?? "Unknown Job",
-                        scheduleDate: row["schedule_date"] ?? date,
-                        status: row["status"] ?? "scheduled"
+                        scheduleDate: row["schedule_date"] ?? normalizedDate,
+                        status: row["status"] ?? "scheduled",
+                        arrivalTime: row["arrival_time"],
+                        departureTime: row["departure_time"],
+                        scopeOfWork: row["scope_of_work"],
+                        notes: row["notes"]
                     )
                 }
             }
         } catch {
             if isTableNotFoundError(error) { return [] }
             throw error
+        }
+    }
+
+    /// Create a subcontractor schedule row with strict date-only validation.
+    @discardableResult
+    public func createSubcontractorSchedule(
+        jobId: Int64,
+        gcId: Int64,
+        scheduledDate: String,
+        arrivalTime: String? = nil,
+        departureTime: String? = nil,
+        scopeOfWork: String? = nil,
+        status: String = "scheduled",
+        notes: String? = nil,
+        createdBy: Int64? = nil
+    ) throws -> Int64 {
+        let normalizedDate = try Self.normalizeScheduleDateOnly(scheduledDate)
+        let normalizedStatus = try Self.normalizeSubcontractorScheduleStatus(status)
+        let normalizedArrivalTime = Self.normalizeOptionalSubcontractorScheduleText(arrivalTime)
+        let normalizedDepartureTime = Self.normalizeOptionalSubcontractorScheduleText(departureTime)
+        try Self.validateSubcontractorScheduleTimeRange(arrivalTime: normalizedArrivalTime, departureTime: normalizedDepartureTime)
+        let normalizedScopeOfWork = Self.normalizeOptionalSubcontractorScheduleText(scopeOfWork)
+        let normalizedNotes = Self.normalizeOptionalSubcontractorScheduleText(notes)
+
+        return try db.writer.write { dbConn in
+            try validateSubcontractorScheduleParents(dbConn, jobId: jobId, gcId: gcId)
+            try guardNoActiveSubcontractorScheduleConflict(dbConn, jobId: jobId, gcId: gcId, date: normalizedDate)
+
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO subcontractor_schedules
+                    (job_id, gc_id, scheduled_date, arrival_time, departure_time, scope_of_work, status, notes, created_by, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                    """,
+                arguments: [jobId, gcId, normalizedDate, normalizedArrivalTime, normalizedDepartureTime, normalizedScopeOfWork, normalizedStatus, normalizedNotes, createdBy]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Update all editable subcontractor schedule fields used by the add/edit flow.
+    public func updateSubcontractorSchedule(
+        id: Int64,
+        jobId: Int64,
+        gcId: Int64,
+        scheduledDate: String,
+        arrivalTime: String? = nil,
+        departureTime: String? = nil,
+        scopeOfWork: String? = nil,
+        status: String = "scheduled",
+        notes: String? = nil
+    ) throws {
+        let normalizedDate = try Self.normalizeScheduleDateOnly(scheduledDate)
+        let normalizedStatus = try Self.normalizeSubcontractorScheduleStatus(status)
+        let normalizedArrivalTime = Self.normalizeOptionalSubcontractorScheduleText(arrivalTime)
+        let normalizedDepartureTime = Self.normalizeOptionalSubcontractorScheduleText(departureTime)
+        try Self.validateSubcontractorScheduleTimeRange(arrivalTime: normalizedArrivalTime, departureTime: normalizedDepartureTime)
+        let normalizedScopeOfWork = Self.normalizeOptionalSubcontractorScheduleText(scopeOfWork)
+        let normalizedNotes = Self.normalizeOptionalSubcontractorScheduleText(notes)
+
+        try db.writer.write { dbConn in
+            let scheduleExists = (try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COUNT(*) FROM subcontractor_schedules WHERE id = ? AND deleted_at IS NULL",
+                arguments: [id]
+            ) ?? 0) > 0
+            guard scheduleExists else { throw SchedulingError.subcontractorScheduleNotFound(id) }
+
+            try validateSubcontractorScheduleParents(dbConn, jobId: jobId, gcId: gcId)
+
+            let conflictCount = try Int.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT COUNT(*)
+                    FROM subcontractor_schedules
+                    WHERE job_id = ?
+                      AND gc_id = ?
+                      AND scheduled_date = ?
+                      AND deleted_at IS NULL
+                      AND id <> ?
+                    """,
+                arguments: [jobId, gcId, normalizedDate, id]
+            ) ?? 0
+            if conflictCount > 0 {
+                throw SchedulingError.subcontractorScheduleConflict(jobId: jobId, gcId: gcId, date: normalizedDate)
+            }
+
+            try dbConn.execute(
+                sql: """
+                    UPDATE subcontractor_schedules
+                    SET job_id = ?,
+                        gc_id = ?,
+                        scheduled_date = ?,
+                        arrival_time = ?,
+                        departure_time = ?,
+                        scope_of_work = ?,
+                        status = ?,
+                        notes = ?,
+                        updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [jobId, gcId, normalizedDate, normalizedArrivalTime, normalizedDepartureTime, normalizedScopeOfWork, normalizedStatus, normalizedNotes, id]
+            )
+        }
+    }
+
+    /// Backwards-compatible date-only correction helper for existing callers.
+    public func updateSubcontractorScheduleDate(id: Int64, scheduledDate: String) throws {
+        let normalizedDate = try Self.normalizeScheduleDateOnly(scheduledDate)
+
+        try db.writer.write { dbConn in
+            guard let existing = try Row.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT job_id, gc_id
+                    FROM subcontractor_schedules
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [id]
+            ) else {
+                throw SchedulingError.subcontractorScheduleNotFound(id)
+            }
+
+            let jobId: Int64 = existing["job_id"]
+            let gcId: Int64 = existing["gc_id"]
+            try validateSubcontractorScheduleParents(dbConn, jobId: jobId, gcId: gcId)
+
+            let conflictCount = try Int.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT COUNT(*)
+                    FROM subcontractor_schedules
+                    WHERE job_id = ?
+                      AND gc_id = ?
+                      AND scheduled_date = ?
+                      AND deleted_at IS NULL
+                      AND id <> ?
+                    """,
+                arguments: [jobId, gcId, normalizedDate, id]
+            ) ?? 0
+            if conflictCount > 0 {
+                throw SchedulingError.subcontractorScheduleConflict(jobId: jobId, gcId: gcId, date: normalizedDate)
+            }
+
+            try dbConn.execute(
+                sql: """
+                    UPDATE subcontractor_schedules
+                    SET scheduled_date = ?, updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [normalizedDate, id]
+            )
+        }
+    }
+
+    /// Soft-delete a subcontractor schedule so it disappears from scheduling views.
+    public func cancelSubcontractorSchedule(id: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE subcontractor_schedules
+                    SET status = 'cancelled', deleted_at = datetime('now'), updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [id]
+            )
+
+            guard dbConn.changesCount > 0 else {
+                throw SchedulingError.subcontractorScheduleNotFound(id)
+            }
         }
     }
 
@@ -1164,6 +1581,35 @@ public final class SchedulingService: Sendable {
         }
     }
 
+    /// Get time-off counts grouped by date for an inclusive date range.
+    ///
+    /// This is the range-oriented counterpart to `getTimeOffForDate(date:)` for
+    /// list and preview screens. It keeps rolling multi-day calendar loads to a
+    /// single database read instead of issuing one read per day in the range.
+    public func getTimeOffCountsByDate(startDate: String, endDate: String) throws -> [String: Int] {
+        do {
+            return try db.writer.read { dbConn -> [String: Int] in
+                let sql = """
+                    SELECT se.exception_date AS date, COUNT(*) AS count
+                    FROM schedule_exceptions se
+                    WHERE se.exception_date BETWEEN ? AND ?
+                      AND se.exception_type = 'time_off'
+                      AND se.deleted_at IS NULL
+                    GROUP BY se.exception_date
+                    """
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [startDate, endDate])
+                return Dictionary(uniqueKeysWithValues: rows.map { row in
+                    let date: String = row["date"] ?? ""
+                    let count: Int = row["count"] ?? 0
+                    return (date, count)
+                }.filter { !$0.0.isEmpty })
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [:] }
+            throw error
+        }
+    }
+
     // =========================================================================
     // MARK: - 10. Scheduling Stats
     // =========================================================================
@@ -1231,6 +1677,13 @@ public final class SchedulingService: Sendable {
         }
     }
 
+    private static let validShortTermPipelineCategories: Set<String> = [
+        "start_anytime",
+        "schedule_needed",
+        "favorite_gc",
+        "small_job",
+    ]
+
     /// Get the short-term pipeline: active jobs categorized by readiness.
     /// Categories: start_anytime (no blockers), schedule_needed (need dispatch),
     /// favorite_gc (from preferred GCs), small_job (<=2 est. days).
@@ -1244,6 +1697,7 @@ public final class SchedulingService: Sendable {
                            CAST(COALESCE(j.estimated_hours, 0) / 8 AS INTEGER) AS estimated_days,
                            j.notes,
                            j.due_date AS callback_date,
+                           j.short_term_pipeline_category AS manual_pipeline_category,
                            (SELECT COUNT(*) FROM job_dispatch jd
                             WHERE jd.job_id = j.id
                               AND jd.dispatch_date >= date('now')
@@ -1263,10 +1717,15 @@ public final class SchedulingService: Sendable {
                     let futureDispatches: Int = row["future_dispatches"] ?? 0
                     let callbackDate: String? = row["callback_date"] as String?
                     let notes: String? = row["notes"] as String?
+                    let manualCategory: String? = row["manual_pipeline_category"] as String?
 
-                    // Categorize
+                    // Categorize. Manual drag/drop overrides win; otherwise keep the
+                    // derived readiness buckets so existing jobs continue to organize
+                    // themselves without user maintenance.
                     let category: String
-                    if let days = estimatedDays, days <= 2 {
+                    if let manualCategory, Self.validShortTermPipelineCategories.contains(manualCategory) {
+                        category = manualCategory
+                    } else if let days = estimatedDays, days <= 2 {
                         category = "small_job"
                     } else if futureDispatches == 0 {
                         category = "start_anytime"
@@ -1288,6 +1747,31 @@ public final class SchedulingService: Sendable {
         } catch {
             if isTableNotFoundError(error) { return [] }
             throw error
+        }
+    }
+
+    /// Persist a dispatcher-controlled Short-Term Pipeline bucket move.
+    ///
+    /// Drag/drop is a planning override, so it intentionally does not create or
+    /// delete dispatches. Passing one of the four visible section identifiers pins
+    /// the job in that section until another move updates the override.
+    public func updateShortTermPipelineCategory(jobId: Int64, category: String) throws {
+        guard Self.validShortTermPipelineCategories.contains(category) else {
+            throw SchedulingError.invalidStatus(category)
+        }
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE jobs
+                    SET short_term_pipeline_category = ?, updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [category, jobId]
+            )
+            if dbConn.changesCount == 0 {
+                throw SchedulingError.jobNotFound(jobId)
+            }
         }
     }
 
@@ -2050,6 +2534,90 @@ public final class SchedulingService: Sendable {
         }
     }
 
+    /// List flex-pool dispatch assignments awaiting manager approval.
+    public func listPendingScheduleChangeApprovals() throws -> [ScheduleChangeApproval] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT jd.id, jd.job_id, jd.user_id, jd.dispatch_date,
+                           COALESCE(jd.time_slot, 'full') AS time_slot,
+                           COALESCE(jd.created_at, '') AS created_at,
+                           COALESCE(j.job_name, 'Unknown Job') AS job_name,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS user_name
+                    FROM job_dispatch jd
+                    LEFT JOIN jobs j ON j.id = jd.job_id AND j.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = jd.user_id AND u.deleted_at IS NULL
+                    WHERE jd.status = 'pending_approval'
+                      AND jd.deleted_at IS NULL
+                    ORDER BY jd.created_at ASC, jd.id ASC
+                    """)
+                return rows.map { row in
+                    ScheduleChangeApproval(
+                        id: row["id"] ?? 0,
+                        jobId: row["job_id"] ?? 0,
+                        userId: row["user_id"] ?? 0,
+                        jobName: row["job_name"] ?? "Unknown Job",
+                        userName: row["user_name"] ?? "Unknown",
+                        dispatchDate: row["dispatch_date"] ?? "",
+                        timeSlot: row["time_slot"] ?? "full",
+                        createdAt: row["created_at"] ?? ""
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Approve a pending flex-pool dispatch and assign the worker to the job.
+    public func approveScheduleChange(dispatchId: Int64, approvedBy: Int64?) throws {
+        try db.writer.write { dbConn in
+            guard let row = try Row.fetchOne(dbConn, sql: """
+                SELECT id, job_id, user_id
+                FROM job_dispatch
+                WHERE id = ? AND status = 'pending_approval' AND deleted_at IS NULL
+                """, arguments: [dispatchId]) else {
+                throw SchedulingError.timeOffRequestNotFound(dispatchId)
+            }
+
+            let jobId: Int64 = row["job_id"] ?? 0
+            let userId: Int64 = row["user_id"] ?? 0
+
+            try dbConn.execute(sql: """
+                UPDATE jobs
+                SET is_flex_pool = 0,
+                    lead_user_id = ?,
+                    updated_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [userId, jobId])
+
+            try dbConn.execute(sql: """
+                UPDATE job_dispatch
+                SET status = 'scheduled',
+                    dispatched_by = ?,
+                    updated_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [approvedBy, dispatchId])
+        }
+    }
+
+    /// Reject a pending flex-pool dispatch approval without assigning the worker.
+    public func rejectScheduleChange(dispatchId: Int64, rejectedBy: Int64?) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE job_dispatch
+                SET status = 'rejected',
+                    dispatched_by = ?,
+                    updated_at = datetime('now')
+                WHERE id = ? AND status = 'pending_approval' AND deleted_at IS NULL
+                """, arguments: [rejectedBy, dispatchId])
+            if dbConn.changesCount == 0 {
+                throw SchedulingError.timeOffRequestNotFound(dispatchId)
+            }
+        }
+    }
+
     /// Marks a job as flex-pool available (or removes it from the pool).
     ///
     /// - Parameters:
@@ -2105,6 +2673,123 @@ public final class SchedulingService: Sendable {
     // =========================================================================
     // MARK: - Internal Helpers
     // =========================================================================
+
+    /// Normalize a user-entered schedule date without timezone conversion.
+    /// Accepts only a trimmed yyyy-MM-dd calendar date string.
+    private static func normalizeScheduleDateOnly(_ rawDate: String) throws -> String {
+        let value = rawDate.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { throw SchedulingError.requiredFieldEmpty }
+
+        let parts = value.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 3,
+              parts[0].count == 4,
+              parts[1].count == 2,
+              parts[2].count == 2,
+              let year = Int(parts[0]),
+              let month = Int(parts[1]),
+              let day = Int(parts[2]),
+              String(format: "%04d-%02d-%02d", year, month, day) == value,
+              (1...12).contains(month) else {
+            throw SchedulingError.invalidDate(value)
+        }
+
+        let daysInMonth: Int
+        switch month {
+        case 1, 3, 5, 7, 8, 10, 12:
+            daysInMonth = 31
+        case 4, 6, 9, 11:
+            daysInMonth = 30
+        case 2:
+            let isLeapYear = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+            daysInMonth = isLeapYear ? 29 : 28
+        default:
+            throw SchedulingError.invalidDate(value)
+        }
+
+        guard (1...daysInMonth).contains(day) else {
+            throw SchedulingError.invalidDate(value)
+        }
+
+        return value
+    }
+
+    private static func normalizeOptionalSubcontractorScheduleText(_ rawValue: String?) -> String? {
+        guard let rawValue else { return nil }
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    private static func validateSubcontractorScheduleTimeRange(arrivalTime: String?, departureTime: String?) throws {
+        guard let arrivalTime, let departureTime else { return }
+        let arrivalComparable = minutesSinceMidnight(arrivalTime) ?? -1
+        let departureComparable = minutesSinceMidnight(departureTime) ?? -1
+        let isOrdered: Bool
+        if arrivalComparable >= 0 && departureComparable >= 0 {
+            isOrdered = departureComparable > arrivalComparable
+        } else {
+            // Preserve compatibility for legacy/custom time labels while still enforcing
+            // the edit-flow rule when both values are comparable strings.
+            isOrdered = departureTime > arrivalTime
+        }
+        guard isOrdered else {
+            throw SchedulingError.invalidDateRange(start: arrivalTime, end: departureTime)
+        }
+    }
+
+    private static func minutesSinceMidnight(_ time: String) -> Int? {
+        let parts = time.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              let hour = Int(parts[0]),
+              let minute = Int(parts[1]),
+              (0...23).contains(hour),
+              (0...59).contains(minute) else {
+            return nil
+        }
+        return hour * 60 + minute
+    }
+
+    private static func normalizeSubcontractorScheduleStatus(_ rawStatus: String) throws -> String {
+        let value = rawStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let validStatuses: Set<String> = ["scheduled", "confirmed", "in_progress", "completed", "cancelled"]
+        guard validStatuses.contains(value) else {
+            throw SchedulingError.invalidStatus(rawStatus)
+        }
+        return value
+    }
+
+    private func validateSubcontractorScheduleParents(_ dbConn: Database, jobId: Int64, gcId: Int64) throws {
+        let jobExists = (try Int.fetchOne(
+            dbConn,
+            sql: "SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL",
+            arguments: [jobId]
+        ) ?? 0) > 0
+        guard jobExists else { throw SchedulingError.jobNotFound(jobId) }
+
+        let contractorExists = (try Int.fetchOne(
+            dbConn,
+            sql: "SELECT COUNT(*) FROM general_contractors WHERE id = ? AND deleted_at IS NULL",
+            arguments: [gcId]
+        ) ?? 0) > 0
+        guard contractorExists else { throw SchedulingError.contractorNotFound(gcId) }
+    }
+
+    private func guardNoActiveSubcontractorScheduleConflict(_ dbConn: Database, jobId: Int64, gcId: Int64, date: String) throws {
+        let conflictCount = try Int.fetchOne(
+            dbConn,
+            sql: """
+                SELECT COUNT(*)
+                FROM subcontractor_schedules
+                WHERE job_id = ?
+                  AND gc_id = ?
+                  AND scheduled_date = ?
+                  AND deleted_at IS NULL
+                """,
+            arguments: [jobId, gcId, date]
+        ) ?? 0
+        guard conflictCount == 0 else {
+            throw SchedulingError.subcontractorScheduleConflict(jobId: jobId, gcId: gcId, date: date)
+        }
+    }
 
     /// Execute a SELECT COUNT(*) query returning an Int.
     /// Returns 0 if the table does not exist.

@@ -111,7 +111,7 @@ struct IOSEscalationTimeline: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 StatusBadge(text: thread.status.capitalized, color: statusColor(thread.status))
-                StatusBadge(text: thread.priority.capitalized, color: priorityColor(thread.priority))
+                StatusBadge(text: thread.priority.capitalized, color: priorityColor(thread.priority, dueDate: thread.dueDate))
             }
 
             Text(thread.question)
@@ -297,9 +297,10 @@ struct IOSEscalationTimeline: View {
         default: return .secondary
         }
     }
-
-    // TODO: When QAThreadRow gains a dueDate field, replace fallback with TimelinePriorityColor.color(priority:dueDateString:)
-    private func priorityColor(_ priority: String) -> Color {
+    private func priorityColor(_ priority: String, dueDate: String?) -> Color {
+        if dueDate != nil {
+            return TimelinePriorityColor.color(priority: priority, dueDateString: dueDate)
+        }
         return TimelinePriorityColor.fallbackColor(priority: priority)
     }
 }

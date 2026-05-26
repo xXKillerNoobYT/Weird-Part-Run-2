@@ -24,6 +24,168 @@ struct JobsServiceTests {
         #expect(jobs.contains(where: { $0.jobNumber == "J-TEST" }))
     }
 
+    @Test("createJob creates a linked job notebook")
+    func testCreateJobCreatesLinkedNotebook() throws {
+        let env = try E2ETestHelpers.setUp()
+        try env.notebooks.seedDefaultTemplates(createdBy: env.adminUserId)
+
+        let jobId = try env.jobs.createJob(
+            jobNumber: "JN-AUTO-NB",
+            jobName: "Auto Notebook Job",
+            jobType: "residential",
+            createdBy: env.adminUserId
+        )
+
+        let notebooks = try env.notebooks.listNotebooks(notebookType: "job", jobId: jobId)
+        #expect(notebooks.count == 1)
+        #expect(notebooks[0].title.contains("Auto Notebook Job"))
+    }
+
+    @Test("createJob internally seeds templates for create-job user without manage_templates")
+    func testCreateJobSeedsTemplatesWithoutManageTemplatesPermission() throws {
+        let env = try E2ETestHelpers.setUp()
+        let officeUserId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO users (display_name, pin_hash, is_active, created_at, updated_at)
+                VALUES ('Office Create Jobs Only', 'test-hash', 1, datetime('now'), datetime('now'))
+                """)
+            let userId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO user_hats (user_id, hat_id, is_active)
+                SELECT ?, id, 1 FROM hats WHERE name = 'Lead'
+                """, arguments: [userId])
+            return userId
+        }
+        #expect(try env.auth.hasPermission(officeUserId, permissionKey: "create_jobs"))
+        #expect(!(try env.auth.hasPermission(officeUserId, permissionKey: "manage_templates")))
+        try env.db.writer.write { db in
+            try db.execute(sql: "DELETE FROM notebook_templates")
+        }
+
+        let jobId = try env.jobs.createJob(
+            jobNumber: "JN-NO-MANAGE-TEMPLATES",
+            jobName: "Create Only Job",
+            jobType: "service",
+            createdBy: officeUserId
+        )
+
+        let notebooks = try env.notebooks.listNotebooks(notebookType: "job", jobId: jobId)
+        let templateCount = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM notebook_templates WHERE template_type = 'job' AND deleted_at IS NULL") ?? 0
+        }
+        #expect(notebooks.count == 1)
+        #expect(templateCount >= 3)
+    }
+
+    @Test("listJobs aggregates completed labor and job-linked PO line costs without duplication")
+    func testListJobsAggregatesCompletedLaborAndPOLineCosts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LIST-1", name: "Aggregate Job")
+        let secondJpoJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LIST-2", name: "Other Job")
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let categoryId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Primary Part", categoryId: categoryId)
+        let secondPartId = try E2ETestHelpers.seedPart(env, name: "Secondary Part", categoryId: categoryId)
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE users SET pay_rate = ?, deleted_at = NULL, is_active = 1 WHERE id = ?",
+                arguments: [20.0, env.adminUserId]
+            )
+            try db.execute(
+                sql: "UPDATE jobs SET estimated_hours = ?, budget_limit = ? WHERE id = ?",
+                arguments: [12.5, 500.0, jobId]
+            )
+
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, datetime('now', '-8 hours'), datetime('now', '-2 hours'), 4.0, 2.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, datetime('now', '-1 hours'), 10.0, 5.0, 'clocked_in', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+
+            try db.execute(sql: """
+                INSERT INTO job_parts_orders (job_id, order_number, status, requested_by, created_at, updated_at)
+                VALUES (?, 'JPO-LIST-1', 'submitted', ?, datetime('now'), datetime('now'))
+                """, arguments: [jobId, env.adminUserId])
+            let firstJpoId = db.lastInsertedRowID
+
+            try db.execute(sql: """
+                INSERT INTO job_parts_orders (job_id, order_number, status, requested_by, created_at, updated_at)
+                VALUES (?, 'JPO-LIST-2', 'submitted', ?, datetime('now'), datetime('now'))
+                """, arguments: [jobId, env.adminUserId])
+            let secondJpoId = db.lastInsertedRowID
+
+            try db.execute(sql: """
+                INSERT INTO job_parts_orders (job_id, order_number, status, requested_by, created_at, updated_at)
+                VALUES (?, 'JPO-LIST-3', 'submitted', ?, datetime('now'), datetime('now'))
+                """, arguments: [secondJpoJobId, env.adminUserId])
+            let otherJobJpoId = db.lastInsertedRowID
+
+            try db.execute(sql: """
+                INSERT INTO jpo_line_items (jpo_id, part_id, qty_requested, qty_ordered, created_at)
+                VALUES (?, ?, 3, 3, datetime('now'))
+                """, arguments: [firstJpoId, partId])
+            let firstJpoLineId = db.lastInsertedRowID
+
+            try db.execute(sql: """
+                INSERT INTO jpo_line_items (jpo_id, part_id, qty_requested, qty_ordered, created_at)
+                VALUES (?, ?, 1, 1, datetime('now'))
+                """, arguments: [secondJpoId, secondPartId])
+            let secondJpoLineId = db.lastInsertedRowID
+
+            try db.execute(sql: """
+                INSERT INTO jpo_line_items (jpo_id, part_id, qty_requested, qty_ordered, created_at)
+                VALUES (?, ?, 2, 2, datetime('now'))
+                """, arguments: [otherJobJpoId, secondPartId])
+            let otherJobLineId = db.lastInsertedRowID
+
+            try db.execute(sql: """
+                INSERT INTO purchase_orders
+                    (po_number, supplier_id, status, total_cost, submitted_by, created_at, updated_at)
+                VALUES ('PO-LIST-1', ?, 'submitted', 999.0, ?, datetime('now'), datetime('now'))
+                """, arguments: [supplierId, env.adminUserId])
+            let firstPoId = db.lastInsertedRowID
+
+            try db.execute(sql: """
+                INSERT INTO purchase_orders
+                    (po_number, supplier_id, status, total_cost, submitted_by, created_at, updated_at)
+                VALUES ('PO-LIST-2', ?, 'cancelled', 1000.0, ?, datetime('now'), datetime('now'))
+                """, arguments: [supplierId, env.adminUserId])
+            let cancelledPoId = db.lastInsertedRowID
+
+            try db.execute(sql: "INSERT INTO po_jpo_links (po_id, jpo_id, created_at) VALUES (?, ?, datetime('now'))", arguments: [firstPoId, firstJpoId])
+            try db.execute(sql: "INSERT INTO po_jpo_links (po_id, jpo_id, created_at) VALUES (?, ?, datetime('now'))", arguments: [firstPoId, secondJpoId])
+            try db.execute(sql: "INSERT INTO po_jpo_links (po_id, jpo_id, created_at) VALUES (?, ?, datetime('now'))", arguments: [firstPoId, otherJobJpoId])
+
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, jpo_line_id, part_id, qty_ordered, unit_cost, created_at)
+                VALUES (?, ?, ?, 3, 15.0, datetime('now'))
+                """, arguments: [firstPoId, firstJpoLineId, partId])
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, jpo_line_id, part_id, qty_ordered, unit_cost, received_unit_cost, created_at)
+                VALUES (?, ?, ?, 1, 35.0, 40.0, datetime('now'))
+                """, arguments: [firstPoId, secondJpoLineId, secondPartId])
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, jpo_line_id, part_id, qty_ordered, unit_cost, created_at)
+                VALUES (?, ?, ?, 2, 50.0, datetime('now'))
+                """, arguments: [cancelledPoId, otherJobLineId, secondPartId])
+        }
+
+        let jobs = try env.jobs.listJobs()
+        let job = try #require(jobs.first(where: { $0.id == jobId }))
+        let otherJob = try #require(jobs.first(where: { $0.id == secondJpoJobId }))
+        #expect(job.estimatedHours == 12.5)
+        #expect(job.budgetLimit == 500.0)
+        #expect(abs(job.laborHours - 6.0) < 0.0001)
+        #expect(abs(job.actualCost - 225.0) < 0.0001)
+        #expect(abs(otherJob.actualCost) < 0.0001)
+    }
+
     @Test("Get job detail")
     func testGetJobDetail() throws {
         let env = try E2ETestHelpers.setUp()
@@ -68,6 +230,18 @@ struct JobsServiceTests {
         #expect(afterClockOut.first?.clockOut != nil)
     }
 
+    @Test("Warehouse clock in creates current shop entry")
+    func testWarehouseClockInCreatesCurrentShopEntry() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let laborEntryId = try env.jobs.clockInToWarehouse(userId: env.adminUserId)
+        let active = try env.jobs.getActiveClockEntry(userId: env.adminUserId)
+
+        #expect(laborEntryId > 0)
+        #expect(active?.id == laborEntryId)
+        #expect(active?.jobName == "Shop / Warehouse")
+    }
+
     @Test("Labor summary after clock in/out")
     func testLaborSummary() throws {
         let env = try E2ETestHelpers.setUp()
@@ -77,6 +251,52 @@ struct JobsServiceTests {
 
         let summary = try env.jobs.getLaborSummary(jobId: jobId)
         #expect(summary.totalEntries >= 1)
+    }
+
+    @Test("Daily overtime threshold spans multiple labor entries")
+    func testDailyOvertimeThresholdSpansMultipleLaborEntries() throws {
+        let env = try E2ETestHelpers.setUp()
+        let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-1", name: "First OT Job")
+        let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-2", name: "Second OT Job")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES
+                    (
+                        ?,
+                        ?,
+                        date(datetime('now', '-4 hours')) || ' 00:00:00',
+                        date(datetime('now', '-4 hours')) || ' 06:00:00',
+                        6.0,
+                        0.0,
+                        'completed',
+                        datetime('now')
+                    )
+                """, arguments: [env.adminUserId, firstJobId])
+        }
+
+        let secondLaborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: secondJobId)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE labor_entries SET clock_in = datetime('now', '-4 hours') WHERE id = ?",
+                arguments: [secondLaborEntryId]
+            )
+        }
+
+        try env.jobs.clockOut(laborEntryId: secondLaborEntryId)
+
+        let secondEntry = try env.db.writer.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT regular_hours, overtime_hours FROM labor_entries WHERE id = ?",
+                arguments: [secondLaborEntryId]
+            )
+        }
+
+        #expect(secondEntry?["regular_hours"] as Double? == 2.0)
+        #expect(secondEntry?["overtime_hours"] as Double? == 2.0)
     }
 
     // MARK: - Team Members
@@ -142,6 +362,20 @@ struct JobsServiceTests {
         let env = try E2ETestHelpers.setUp()
         let questions = try env.jobs.getActiveQuestions()
         #expect(questions.count >= 0) // May have default questions
+    }
+
+    @Test("Default clock-out questions include daily report prompt")
+    func testDefaultClockOutQuestionsIncludeDailyReportPrompt() throws {
+        let env = try E2ETestHelpers.setUp()
+        let questions = try env.jobs.getActiveQuestions()
+
+        let dailyReportQuestion = questions.first { question in
+            question.questionText.localizedCaseInsensitiveContains("daily report")
+        }
+
+        #expect(dailyReportQuestion != nil)
+        #expect(dailyReportQuestion?.answerType == "text")
+        #expect(dailyReportQuestion?.isRequired == true)
     }
 
     @Test("Create one-time question")
@@ -437,17 +671,66 @@ struct JobsServiceTests {
             sortOrder: 1
         )
 
+        let dailyReportQuestionId = try #require(try env.jobs.getActiveQuestions().first { question in
+            question.questionText.localizedCaseInsensitiveContains("daily report")
+        }?.questionId)
+
         try env.jobs.saveClockOutResponses(
             laborEntryId: laborEntryId,
-            responses: [(questionId: qId, answer: "No issues")]
+            responses: [
+                (questionId: qId, answer: "No issues"),
+                (questionId: dailyReportQuestionId, answer: "Completed panel labeling and staged tomorrow's materials")
+            ]
         )
 
         let responses = try env.jobs.getResponsesForEntry(laborEntryId: laborEntryId)
-        #expect(responses.count == 1)
-        #expect(responses[0].answer == "No issues")
-        #expect(responses[0].questionText == "Any safety concerns?")
+        #expect(responses.count == 2)
+        let safetyResponse = responses.first { $0.questionId == qId }
+        #expect(safetyResponse?.answer == "No issues")
+        #expect(safetyResponse?.questionText == "Any safety concerns?")
 
         try env.jobs.clockOut(laborEntryId: laborEntryId)
+    }
+
+    @Test("saveClockOutDailyReport creates a job-scoped daily report notebook entry")
+    func testSaveClockOutDailyReportCreatesNotebookEntry() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-DR-CLOCK", name: "Clockout Daily Report Job")
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+
+        let entryId = try #require(try env.jobs.saveClockOutDailyReport(
+            laborEntryId: laborEntryId,
+            dailyReport: "  Pulled feeder wire, finished panel labeling, and staged tomorrow's materials.  "
+        ))
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT ne.title, ne.content, ne.entry_type, nb.notebook_type, nb.job_id, nb.created_by
+                FROM notebook_entries ne
+                JOIN notebook_sections ns ON ns.id = ne.section_id
+                JOIN notebooks nb ON nb.id = ns.notebook_id
+                WHERE ne.id = ?
+                """, arguments: [entryId])
+        }
+
+        #expect(row?["entry_type"] as String? == "daily-report")
+        #expect(row?["notebook_type"] as String? == "daily-report")
+        #expect(row?["job_id"] as Int64? == jobId)
+        #expect(row?["created_by"] as Int64? == env.adminUserId)
+        let title = row?["title"] as String? ?? ""
+        let content = row?["content"] as String? ?? ""
+        #expect(title.contains("Daily Report"))
+        #expect(content.contains("Pulled feeder wire, finished panel labeling, and staged tomorrow's materials."))
+    }
+
+    @Test("saveClockOutDailyReport ignores blank clock-out daily report text")
+    func testSaveClockOutDailyReportIgnoresBlankText() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+
+        let entryId = try env.jobs.saveClockOutDailyReport(laborEntryId: laborEntryId, dailyReport: "  \n\t  ")
+        #expect(entryId == nil)
     }
 
     // MARK: - One-Time Questions
@@ -552,14 +835,142 @@ struct JobsServiceTests {
     @Test("listAllJobStages returns global stage definitions")
     func testListAllJobStages() throws {
         let env = try E2ETestHelpers.setUp()
-        // May be empty on fresh DB; should not throw
         let stages = try env.jobs.listAllJobStages()
-        #expect(stages.count >= 0)
-        // If stages exist, they should have valid IDs and names
-        for stage in stages {
-            #expect(stage.id > 0)
-            #expect(!stage.name.isEmpty)
+        #expect(!stages.isEmpty)
+        #expect(stages.map(\.name).contains("Rough-in"))
+    }
+
+    @Test("job stage templates seed default template and new jobs inherit it")
+    func testJobStageTemplateDefaultSeedAndNewJobAssignment() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        let templates = try env.jobs.listJobStageTemplates()
+        #expect(templates.count == 1)
+        #expect(templates[0].name == "Default")
+        #expect(templates[0].isDefault)
+        #expect(templates[0].stageCount == 3)
+
+        let assignedTemplateId: Int64? = try env.db.writer.read { db in
+            try Int64.fetchOne(db, sql: "SELECT stage_template_id FROM jobs WHERE id = ?", arguments: [jobId])
         }
+        #expect(assignedTemplateId == templates[0].id)
+
+        let stages = try env.jobs.listAllJobStages(templateId: templates[0].id)
+        #expect(stages.map(\.name) == ["Rough-in", "Prep/Makeup", "Trim-out"])
+    }
+
+    @Test("job stage templates report active job impact count")
+    func testJobStageTemplateActiveJobImpactCount() throws {
+        let env = try E2ETestHelpers.setUp()
+        _ = try E2ETestHelpers.seedJob(env)
+
+        let defaultTemplate = try #require(try env.jobs.listJobStageTemplates().first(where: { $0.isDefault }))
+
+        #expect(defaultTemplate.activeJobCount == 1)
+    }
+
+    @Test("reordering a template preserves current stage by ID")
+    func testReorderTemplateStagesPreservesCurrentStageById() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let templateId = try env.jobs.createJobStageTemplate(name: "Commercial", stageNames: ["Underground", "Rough", "Trim"])
+        let stages = try env.jobs.listAllJobStages(templateId: templateId)
+        let trimId = try #require(stages.first(where: { $0.name == "Trim" })?.id)
+
+        try env.jobs.assignJobStageTemplate(jobId: jobId, templateId: templateId, currentStageId: trimId)
+        try env.jobs.reorderJobStages(templateId: templateId, orderedStageIds: [trimId, stages[0].id, stages[1].id])
+
+        let statuses = try env.jobs.listJobStages(forJobId: jobId)
+        #expect(statuses.map(\.id) == [trimId, stages[0].id, stages[1].id])
+        #expect(statuses[0].status == "in_progress")
+        #expect(statuses[1].status == "pending")
+        #expect(statuses[2].status == "pending")
+
+        let currentStageId: Int64? = try env.db.writer.read { db in
+            try Int64.fetchOne(db, sql: "SELECT current_stage_id FROM jobs WHERE id = ?", arguments: [jobId])
+        }
+        #expect(currentStageId == trimId)
+    }
+
+    @Test("category mappings are scoped per template")
+    func testStageCategoryMappingsAreTemplateScoped() throws {
+        let env = try E2ETestHelpers.setUp()
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Switchgear")
+        let templateA = try env.jobs.createJobStageTemplate(name: "Residential", stageNames: ["Rough", "Trim"])
+        let templateB = try env.jobs.createJobStageTemplate(name: "Service", stageNames: ["Pickup", "Install"])
+        let roughId = try #require(try env.jobs.listAllJobStages(templateId: templateA).first?.id)
+        let pickupId = try #require(try env.jobs.listAllJobStages(templateId: templateB).first?.id)
+
+        try env.jobs.setJobStageCategoryMapping(templateId: templateA, categoryId: categoryId, stageId: roughId)
+        try env.jobs.setJobStageCategoryMapping(templateId: templateB, categoryId: categoryId, stageId: pickupId)
+
+        let mappingsA = try env.jobs.listJobStageCategoryMappings(templateId: templateA)
+        let mappingsB = try env.jobs.listJobStageCategoryMappings(templateId: templateB)
+        #expect(mappingsA.first?.stageId == roughId)
+        #expect(mappingsB.first?.stageId == pickupId)
+    }
+
+    @Test("archiving a referenced stage is blocked")
+    func testArchiveReferencedStageIsBlocked() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let templateId = try env.jobs.createJobStageTemplate(name: "Blocked Stage", stageNames: ["Rough", "Trim"])
+        let roughId = try #require(try env.jobs.listAllJobStages(templateId: templateId).first?.id)
+        try env.jobs.assignJobStageTemplate(jobId: jobId, templateId: templateId, currentStageId: roughId)
+
+        #expect(throws: JobsService.JobsError.stageInUse(roughId)) {
+            try env.jobs.archiveJobStage(stageId: roughId)
+        }
+    }
+
+    @Test("applying a stage template draft archives renames adds and reorders in one save")
+    func testApplyJobStageTemplateDraftPersistsFullDraft() throws {
+        let env = try E2ETestHelpers.setUp()
+        let templateId = try env.jobs.createJobStageTemplate(name: "Atomic Save", stageNames: ["Rough", "Trim", "Closeout"])
+        let original = try env.jobs.listAllJobStages(templateId: templateId)
+        let roughId = try #require(original.first(where: { $0.name == "Rough" })?.id)
+        let trimId = try #require(original.first(where: { $0.name == "Trim" })?.id)
+
+        try env.jobs.applyJobStageTemplateDraft(
+            templateId: templateId,
+            stages: [
+                JobsService.JobStageTemplateDraftStage(existingId: trimId, name: "Trim Final"),
+                JobsService.JobStageTemplateDraftStage(existingId: nil, name: "Inspection"),
+                JobsService.JobStageTemplateDraftStage(existingId: roughId, name: "Rough-In")
+            ]
+        )
+
+        let saved = try env.jobs.listAllJobStages(templateId: templateId)
+        #expect(saved.map(\.name) == ["Trim Final", "Inspection", "Rough-In"])
+        #expect(saved.map(\.sortOrder) == [1, 2, 3])
+        #expect(!saved.contains { $0.name == "Closeout" })
+    }
+
+    @Test("failed stage template draft save rolls back earlier stage changes")
+    func testApplyJobStageTemplateDraftRollsBackOnFailure() throws {
+        let env = try E2ETestHelpers.setUp()
+        let templateId = try env.jobs.createJobStageTemplate(name: "Atomic Rollback", stageNames: ["Rough", "Trim", "Closeout"])
+        let original = try env.jobs.listAllJobStages(templateId: templateId)
+        let roughId = try #require(original.first(where: { $0.name == "Rough" })?.id)
+        let trimId = try #require(original.first(where: { $0.name == "Trim" })?.id)
+
+        #expect(throws: JobsService.JobsError.invalidStageTemplate(templateId)) {
+            try env.jobs.applyJobStageTemplateDraft(
+                templateId: templateId,
+                stages: [
+                    JobsService.JobStageTemplateDraftStage(existingId: roughId, name: "Rough Renamed"),
+                    JobsService.JobStageTemplateDraftStage(existingId: nil, name: "Inspection"),
+                    JobsService.JobStageTemplateDraftStage(existingId: trimId, name: "Trim Renamed"),
+                    JobsService.JobStageTemplateDraftStage(existingId: trimId, name: "Trim Duplicate")
+                ]
+            )
+        }
+
+        let saved = try env.jobs.listAllJobStages(templateId: templateId)
+        #expect(saved.map(\.id) == original.map(\.id))
+        #expect(saved.map(\.name) == original.map(\.name))
+        #expect(saved.map(\.sortOrder) == original.map(\.sortOrder))
     }
 
     // MARK: - Job Todo Summary
@@ -1451,8 +1862,15 @@ struct JobsServiceTests {
         try env.db.writer.write { db in
             try db.execute(sql: "UPDATE clock_out_questions SET is_active = 0 WHERE id = ?", arguments: [qId])
         }
-        // Should succeed because inactive questions are not enforced
-        try env.jobs.saveClockOutResponses(laborEntryId: laborEntryId, responses: [])
+        let dailyReportQuestionId = try #require(try env.jobs.getActiveQuestions().first { question in
+            question.questionText.localizedCaseInsensitiveContains("daily report")
+        }?.questionId)
+        // Should succeed because the inactive custom question is not enforced; the default Daily Report
+        // prompt remains active/required and must still be answered.
+        try env.jobs.saveClockOutResponses(
+            laborEntryId: laborEntryId,
+            responses: [(questionId: dailyReportQuestionId, answer: "Finished rough-in notes")]
+        )
     }
 
     @Test("setPaymentHold throws invalidAmount for zero amount")

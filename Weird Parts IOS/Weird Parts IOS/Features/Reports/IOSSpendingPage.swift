@@ -65,6 +65,10 @@ struct IOSSpendingPage: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .reportsSpendingPageInactive, object: nil)
+        }
         .onChange(of: dateRange) { loadData() }
         .onChange(of: customStart) { loadData() }
         .onChange(of: customEnd) { loadData() }
@@ -144,11 +148,11 @@ struct IOSSpendingPage: View {
                 .padding()
             }
         } else {
-            ContentUnavailableView {
-                Label("No Spending Data", systemImage: "dollarsign.circle")
-            } description: {
-                Text("No spending data available for the selected period.")
-            }
+            EmptyStateView(
+                icon: "dollarsign.circle",
+                title: "No Spending Data",
+                message: "No spending data available for the selected period."
+            )
         }
     }
 
@@ -220,5 +224,19 @@ struct IOSSpendingPage: View {
             loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let totalSpend = summary.map { formatCurrency($0.totalSpend) } ?? "$0.00"
+        let poCount = summary?.poCount ?? 0
+        let topSupplier = summary?.topSupplierName ?? "none"
+        NotificationCenter.default.post(
+            name: .reportsSpendingPageActive,
+            object: nil,
+            userInfo: [
+                "context": "Spending Report: range \(dateRange.rawValue), period \(selectedDays)d, total spend \(totalSpend), PO count \(poCount), top supplier \(topSupplier)."
+            ]
+        )
     }
 }

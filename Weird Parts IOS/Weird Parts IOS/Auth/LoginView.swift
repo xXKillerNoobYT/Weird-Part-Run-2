@@ -73,27 +73,20 @@ struct LoginView: View {
                             .fontWeight(.semibold)
                             .multilineTextAlignment(.center)
 
-                        SecureField("Enter PIN", text: $pin)
-                            .textContentType(.password)
-                            .keyboardType(.numberPad)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(maxWidth: 320)
-                            .multilineTextAlignment(.center)
-                            .focused($pinFocused)
-                            .onSubmit { attemptLogin() }
-                            .accessibilityIdentifier("loginPINField")
-                            .toolbar {
-                                ToolbarItemGroup(placement: .keyboard) {
-                                    Spacer()
-                                    Button {
-                                        pinFocused = false
-                                    } label: {
-                                        Text("Done")
-                                            .frame(minWidth: 44, minHeight: 44)
-                                    }
-                                    .accessibilityIdentifier("loginPINDoneButton")
-                                }
+                        VStack(alignment: .trailing, spacing: 8) {
+                            pinEntryField
+
+                            #if targetEnvironment(macCatalyst)
+                            Button {
+                                pinFocused = false
+                            } label: {
+                                Text("Done")
+                                    .frame(minWidth: 44, minHeight: 44)
                             }
+                            .accessibilityIdentifier("loginPINDoneButton")
+                            #endif
+                        }
+                        .frame(maxWidth: 320)
                     }
                     .padding()
                     .frame(maxWidth: .infinity)
@@ -215,6 +208,36 @@ struct LoginView: View {
         .onChange(of: selectedUser?.id) { _, newValue in
             pinFocused = newValue != nil
         }
+    }
+
+    @ViewBuilder
+    private var pinEntryField: some View {
+        let field = SecureField("Enter PIN", text: $pin)
+            .textContentType(.password)
+            .keyboardType(.numberPad)
+            .textFieldStyle(.roundedBorder)
+            .multilineTextAlignment(.center)
+            .focused($pinFocused)
+            .onSubmit { attemptLogin() }
+            .accessibilityIdentifier("loginPINField")
+
+        #if targetEnvironment(macCatalyst)
+        field
+        #else
+        field
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button {
+                        pinFocused = false
+                    } label: {
+                        Text("Done")
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .accessibilityIdentifier("loginPINDoneButton")
+                }
+            }
+        #endif
     }
 
     // MARK: - Actions

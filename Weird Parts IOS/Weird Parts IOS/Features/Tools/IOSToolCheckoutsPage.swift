@@ -61,6 +61,8 @@ struct IOSToolCheckoutsPage: View {
                     }
                 }
                 .environmentObject(appCore)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
             case .help:
                 PageHelpSheet(
                     title: "Tool Checkouts Help",
@@ -73,6 +75,8 @@ struct IOSToolCheckoutsPage: View {
                         ("Tips", "Keep an eye on overdue tools. If a tool is overdue, contact the person who has it. Regular checkout tracking prevents lost tools and keeps the team accountable.")
                     ]
                 )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
         }
         .alert("Tool Scanned", isPresented: $showCheckoutConfirm) {
@@ -146,13 +150,13 @@ struct IOSToolCheckoutsPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { Task { await loadData() } }
         } else if filteredCheckouts.isEmpty {
-            ContentUnavailableView {
-                Label("No Checkouts", systemImage: "arrow.up.right.circle")
-            } description: {
-                Text(showActiveOnly
+            EmptyStateView(
+                icon: "arrow.up.right.circle",
+                title: "No Checkouts",
+                message: showActiveOnly
                     ? "No tools are currently checked out."
-                    : "No checkout records found.")
-            }
+                    : "No checkout records found."
+            )
         } else {
             List(filteredCheckouts, id: \.id) { checkout in
                 checkoutRow(checkout)

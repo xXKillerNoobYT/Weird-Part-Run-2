@@ -108,11 +108,11 @@ struct IOSHatsPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredHats.isEmpty {
-            ContentUnavailableView {
-                Label("No Hats", systemImage: "graduationcap")
-            } description: {
-                Text("No roles have been created yet.")
-            }
+            EmptyStateView(
+                icon: "graduationcap",
+                title: "No Hats",
+                message: "No roles have been created yet."
+            )
         } else {
             List(filteredHats, id: \.id) { hat in
                 Button {
@@ -423,7 +423,10 @@ private struct HatDetailSheet: View {
     }
 
     private func removeMember(at offsets: IndexSet) {
-        guard let service = appCore.peopleService else { return }
+        guard let service = appCore.peopleService else {
+            loadError = "People service unavailable"
+            return
+        }
         for index in offsets {
             let member = members[index]
             do {
@@ -478,11 +481,11 @@ private struct AddEmployeeToHatSheet: View {
                 if let error = loadError {
                     ErrorStateView(message: error) { loadEmployees() }
                 } else if availableEmployees.isEmpty {
-                    ContentUnavailableView {
-                        Label("No Employees Available", systemImage: "person.slash")
-                    } description: {
-                        Text("All employees are already assigned to this hat.")
-                    }
+                    EmptyStateView(
+                        icon: "person.slash",
+                        title: "No Employees Available",
+                        message: "All employees are already assigned to this hat."
+                    )
                 } else {
                     List(availableEmployees) { emp in
                         Button {
@@ -545,7 +548,10 @@ private struct AddEmployeeToHatSheet: View {
     }
 
     private func assignEmployee(_ employeeId: Int64) {
-        guard let service = appCore.peopleService else { return }
+        guard let service = appCore.peopleService else {
+            loadError = "People service unavailable"
+            return
+        }
         do {
             try service.toggleHatAssignment(employeeId: employeeId, hatId: hatId, assign: true)
             dismiss()

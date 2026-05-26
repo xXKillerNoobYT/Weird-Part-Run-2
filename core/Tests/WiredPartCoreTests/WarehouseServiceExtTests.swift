@@ -54,6 +54,166 @@ struct WarehouseServiceExtTests {
         #expect(movements.count >= 1)
     }
 
+    @Test("Dashboard smart card summary counts service-backed warehouse slices")
+    func testDashboardSmartCardSummary() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-DASH", supplierId: supplierId, notes: nil)
+
+        _ = try env.warehouse.createMovement(
+            partId: partId,
+            qty: 5,
+            fromLocationType: nil,
+            fromLocationId: nil,
+            toLocationType: "warehouse",
+            toLocationId: 1,
+            movementType: "received",
+            reason: "Dashboard count",
+            performedBy: env.adminUserId
+        )
+        _ = try env.warehouse.startReceivingSession(poId: poId, startedBy: env.adminUserId)
+
+        let stockId: Int64 = try env.db.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: "SELECT id FROM stock WHERE part_id = ? LIMIT 1", arguments: [partId])?["id"] ?? 0
+        }
+        _ = try env.warehouse.createStagingTag(
+            stockId: stockId,
+            destinationType: "job",
+            destinationId: 1,
+            destinationLabel: "Ready",
+            taggedBy: env.adminUserId
+        )
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO warehouse_floor_plans (id, name, width_inches, length_inches)
+                VALUES (1, 'Main', 600, 400)
+                """)
+            try dbConn.execute(sql: """
+                INSERT INTO warehouse_storage_units (id, floor_plan_id, name, unit_type)
+                VALUES (1, 1, 'Shelf A', 'shelf')
+                """)
+            try dbConn.execute(sql: """
+                INSERT INTO warehouse_storage_levels (id, unit_id, level_code, level_order)
+                VALUES (1, 1, 'L1', 1)
+                """)
+            try dbConn.execute(sql: """
+                INSERT INTO warehouse_storage_areas (id, level_id, area_code, area_number)
+                VALUES (1, 1, 'A1', 1)
+                """)
+        }
+        try env.warehouse.setPartConfidence(partId: partId, areaId: 1, percent: 25)
+
+        let summary = try env.warehouse.getDashboardSmartCardSummary()
+        #expect(summary.movesToday >= 1)
+        #expect(summary.activeReceiving == 1)
+        #expect(summary.stagedReady == 1)
+        #expect(summary.auditDue == 1)
+        #expect(summary.lowConfidenceAreas == 1)
+    }
+
+    @Test("Movement query filters by date type completion group and sort order")
+    func testMovementQueryFilters() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let now = Date()
+        let twoDaysAgo = Calendar.current.date(byAdding: .day, value: -2, to: now)!
+        let tenDaysAgo = Calendar.current.date(byAdding: .day, value: -10, to: now)!
+
+        _ = try env.warehouse.createQuickLogMovement(
+            partId: partId,
+            qty: 1,
+            movementType: "received",
+            occurredAt: tenDaysAgo,
+            toLocationType: "warehouse",
+            toLocationId: 1,
+            reason: "Old receive",
+            performedBy: env.adminUserId
+        )
+        _ = try env.warehouse.createQuickLogMovement(
+            partId: partId,
+            qty: 2,
+            movementType: "return",
+            occurredAt: twoDaysAgo,
+            reason: "Recent return",
+            performedBy: env.adminUserId
+        )
+        _ = try env.warehouse.createQuickLogMovement(
+            partId: partId,
+            qty: 3,
+            movementType: "receiving_staged",
+            occurredAt: now,
+            reason: "Active staged",
+            performedBy: env.adminUserId
+        )
+
+        let recentReturns = try env.warehouse.listMovements(
+            movementType: "return_to_supplier",
+            startDate: Calendar.current.date(byAdding: .day, value: -7, to: now),
+            endDate: now,
+            sortDirection: .ascending
+        )
+        #expect(recentReturns.map(\.movementType) == ["return_to_supplier"])
+
+        let completedHistory = try env.warehouse.listMovements(
+            startDate: Calendar.current.date(byAdding: .day, value: -7, to: now),
+            endDate: now,
+            completionFilter: .completed
+        )
+        #expect(completedHistory.contains { $0.reason == "Recent return" })
+        #expect(!completedHistory.contains { $0.reason == "Old receive" })
+        #expect(!completedHistory.contains { $0.reason == "Active staged" })
+
+        let active = try env.warehouse.listMovements(completionFilter: .active)
+        #expect(active.count == 1)
+        #expect(active.first?.movementType == "receiving_staged")
+    }
+
+    @Test("Quick Log persists happened-at and audit trail fields")
+    func testQuickLogPersistence() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let happenedAt = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let movementId = try env.warehouse.createQuickLogMovement(
+            partId: partId,
+            qty: 4,
+            movementType: "consumed",
+            occurredAt: happenedAt,
+            reason: "Already happened",
+            notes: "Logged from quick entry",
+            performedBy: env.adminUserId,
+            verifiedBy: env.adminUserId,
+            scanConfirmed: true,
+            gpsLat: 39.7392,
+            gpsLng: -104.9903
+        )
+
+        let movement = try env.warehouse.getMovement(id: movementId)
+        #expect(movement?.movementType == "consume")
+        #expect(movement?.createdAt == "2023-11-14 22:13:20")
+        #expect(movement?.verifiedBy == env.adminUserId)
+        #expect(movement?.scanConfirmed == true)
+        #expect(movement?.gpsLat == 39.7392)
+        #expect(movement?.gpsLng == -104.9903)
+    }
+
+    @Test("Movement service returns empty defaults when movement table is missing")
+    func testMovementMissingTableDefaults() throws {
+        let env = try E2ETestHelpers.setUp()
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(sql: "DROP TABLE stock_movements")
+        }
+
+        let movements = try env.warehouse.listMovements()
+        let summary = try env.warehouse.getDashboardSmartCardSummary()
+        #expect(movements.isEmpty)
+        #expect(summary.movesToday == 0)
+    }
+
     @Test("Validate movement")
     func testValidateMovement() throws {
         let env = try E2ETestHelpers.setUp()

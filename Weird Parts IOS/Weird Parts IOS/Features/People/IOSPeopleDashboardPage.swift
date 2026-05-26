@@ -42,6 +42,10 @@ struct IOSPeopleDashboardPage: View {
             loadData()
             appCore.onboardingManager?.markCompleted("people-dashboard-view")
         }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .peopleDashboardPageInactive, object: nil)
+        }
         .refreshable { loadData() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -309,5 +313,16 @@ struct IOSPeopleDashboardPage: View {
             loadError = userFriendlyError(error, context: "load people dashboard")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        NotificationCenter.default.post(
+            name: .peopleDashboardPageActive,
+            object: nil,
+            userInfo: [
+                "context": "People Dashboard: \(workingNow.count) working now, \(offToday.count) off today, \(expiringCerts.count) expiring certifications, \(teamAssignments.count) team assignments, \(overdueCustomers.count) overdue customers."
+            ]
+        )
     }
 }

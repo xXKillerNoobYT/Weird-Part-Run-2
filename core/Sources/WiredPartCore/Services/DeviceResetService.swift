@@ -140,6 +140,33 @@ public final class DeviceResetService: Sendable {
         }
     }
 
+    /// Delete all database-owned local files, including local database backups.
+    /// Reset is a full local wipe, so leaving backup snapshots behind preserves
+    /// recoverable user data after the app returns to first-run setup.
+    public static func deleteDatabaseStorage(atPath path: String) throws {
+        try deleteDatabaseFile(atPath: path)
+        try deleteDatabaseFile(atPath: path + ".unencrypted.bak")
+        try deleteDatabaseFile(atPath: path + ".encrypted-tmp")
+
+        let fm = FileManager.default
+        let backupPath = (path as NSString).deletingLastPathComponent + "/Backups"
+        if fm.fileExists(atPath: backupPath) {
+            try fm.removeItem(atPath: backupPath)
+        }
+    }
+
+    /// Clear app-scoped defaults that survive SQLite deletion.
+    /// Passing a custom suite makes the behavior testable without touching
+    /// process-wide defaults.
+    public static func clearSavedAppState(
+        defaults: UserDefaults = .standard,
+        domainName: String? = Bundle.main.bundleIdentifier
+    ) {
+        if let domainName {
+            defaults.removePersistentDomain(forName: domainName)
+        }
+    }
+
     // MARK: - Admin Verification
 
     /// Verify that a user has admin-level permission to approve a reset.

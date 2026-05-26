@@ -12,6 +12,7 @@ import WiredPartCore
 /// 6. Full Breakdown (combined view)
 struct IOSBreakSettingsPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
 
     // MARK: - State
 
@@ -46,6 +47,9 @@ struct IOSBreakSettingsPage: View {
     @State private var breakBonusAmount: Double = 0
     @State private var lunchBonusEnabled = false
     @State private var breakBonusEnabled = false
+    @State private var hasUnsavedChanges = false
+    @State private var showDiscardConfirmation = false
+    @State private var baselineFormSignature = ""
 
     private let stateOptions = [
         "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
@@ -54,6 +58,28 @@ struct IOSBreakSettingsPage: View {
         "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
         "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"
     ]
+
+    private var formSignature: String {
+        [
+            selectedState,
+            String(roundingMinutes),
+            String(roundingEnabled),
+            String(autoFillBreaks),
+            defaultMorningBreak,
+            defaultLunch,
+            defaultAfternoonBreak,
+            String(companyPaidLunchMin),
+            String(companyPaidBreakCount),
+            String(companyPaidBreakMin),
+            String(companyOfferedLunchMin),
+            String(companyOfferedBreakCount),
+            String(companyOfferedBreakMin),
+            String(lunchBonusAmount),
+            String(breakBonusAmount),
+            String(lunchBonusEnabled),
+            String(breakBonusEnabled),
+        ].joined(separator: "|")
+    }
 
     var body: some View {
         Group {
@@ -65,7 +91,14 @@ struct IOSBreakSettingsPage: View {
             }
         }
         .navigationTitle("Break & Lunch")
+        .navigationBarBackButtonHidden(hasUnsavedChanges)
+        .interactiveDismissDisabled(hasUnsavedChanges)
         .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                if hasUnsavedChanges {
+                    Button("Back") { showDiscardConfirmation = true }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -80,6 +113,21 @@ struct IOSBreakSettingsPage: View {
             ])
         }
         .task { loadSettings() }
+        .onChange(of: formSignature) { _, _ in
+            guard !isLoading else { return }
+            hasUnsavedChanges = formSignature != baselineFormSignature
+        }
+        .confirmationDialog(
+            "Discard changes?",
+            isPresented: $showDiscardConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Discard", role: .destructive) {
+                hasUnsavedChanges = false
+                dismiss()
+            }
+            Button("Keep editing", role: .cancel) {}
+        }
     }
 
     private enum ActiveSheet: Identifiable {
@@ -422,6 +470,7 @@ struct IOSBreakSettingsPage: View {
             errorMessage = userFriendlyError(error, context: "load settings")
         }
         isLoading = false
+        resetDirtyTracking()
     }
 
     private func loadPoliciesForState() {
@@ -548,6 +597,7 @@ struct IOSBreakSettingsPage: View {
 
             errorMessage = nil
             successMessage = "Break settings saved successfully."
+            resetDirtyTracking()
 
             // Reload to confirm
             loadSettings()
@@ -555,5 +605,10 @@ struct IOSBreakSettingsPage: View {
             successMessage = nil
             errorMessage = userFriendlyError(error, context: "save settings")
         }
+    }
+
+    private func resetDirtyTracking() {
+        baselineFormSignature = formSignature
+        hasUnsavedChanges = false
     }
 }

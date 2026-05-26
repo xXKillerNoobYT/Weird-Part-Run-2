@@ -1394,7 +1394,11 @@ public final class DashboardService: Sendable {
         issues: String,
         tomorrowNotes: String
     ) throws -> Int64 {
-        try db.writer.write { conn in
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "view_job_reports")
+        }
+
+        return try db.writer.write { conn in
             // Find or create a "Daily Reports" notebook for this user
             var notebookId = try Int64.fetchOne(conn, sql: """
                 SELECT id FROM notebooks
@@ -1465,7 +1469,11 @@ public final class DashboardService: Sendable {
         jobId: Int64?,
         description: String
     ) throws -> Int64 {
-        try db.writer.write { conn in
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "view_jobs")
+        }
+
+        return try db.writer.write { conn in
             // Find or create a "Problem Reports" notebook
             var notebookId = try Int64.fetchOne(conn, sql: """
                 SELECT id FROM notebooks
@@ -1523,7 +1531,7 @@ public final class DashboardService: Sendable {
     // MARK: - Office Dashboard
 
     /// Briefing data generated from overnight and current-day activity.
-    public struct OfficeBriefing: Sendable {
+    public struct OfficeBriefing: Codable, Sendable {
         public let summary: String
         public let generatedAt: Date
         public let highlights: [String]
@@ -1534,6 +1542,32 @@ public final class DashboardService: Sendable {
             self.generatedAt = generatedAt
             self.highlights = highlights
             self.alertCount = alertCount
+        }
+    }
+
+    /// A command-center count card for office managers.
+    public struct OfficeSmartCard: Identifiable, Sendable {
+        public let id: String
+        public let title: String
+        public let count: Int
+        public let subtitle: String
+        public let systemImage: String
+        public let severity: AttentionPriority
+
+        public init(
+            id: String,
+            title: String,
+            count: Int,
+            subtitle: String,
+            systemImage: String,
+            severity: AttentionPriority
+        ) {
+            self.id = id
+            self.title = title
+            self.count = count
+            self.subtitle = subtitle
+            self.systemImage = systemImage
+            self.severity = severity
         }
     }
 
@@ -1615,68 +1649,82 @@ public final class DashboardService: Sendable {
     }
 
     /// Generate a briefing from overnight and current-day activity.
-    public func getOfficeBriefing() throws -> OfficeBriefing {
-        do {
-            return try db.writer.read { dbConn -> OfficeBriefing in
-                let newJPOs = try Int.fetchOne(dbConn, sql: """
-                    SELECT COUNT(*) FROM job_parts_orders
-                    WHERE created_at >= datetime('now', '-12 hours')
-                      AND deleted_at IS NULL
-                    """) ?? 0
-
-                let pendingApprovals = try Int.fetchOne(dbConn, sql: """
-                    SELECT COUNT(*) FROM job_parts_orders
-                    WHERE status = 'submitted' AND deleted_at IS NULL
-                    """) ?? 0
-
-                let clockedInToday = try Int.fetchOne(dbConn, sql: """
-                    SELECT COUNT(DISTINCT user_id) FROM labor_entries
-                    WHERE date(clock_in) = date('now')
-                      AND clock_out IS NULL
-                      AND deleted_at IS NULL
-                    """) ?? 0
-
-                let overdueItems = try Int.fetchOne(dbConn, sql: """
-                    SELECT COUNT(*) FROM purchase_orders
-                    WHERE expected_delivery IS NOT NULL
-                      AND date(expected_delivery) < date('now')
-                      AND status NOT IN ('received', 'cancelled')
-                      AND deleted_at IS NULL
-                    """) ?? 0
-
-                let pendingTimeOff = try Int.fetchOne(dbConn, sql: """
-                    SELECT COUNT(*) FROM schedule_exceptions
-                    WHERE exception_type = 'time_off'
-                      AND is_approved = 0
-                      AND deleted_at IS NULL
-                    """) ?? 0
-
-                var highlights: [String] = []
-                if newJPOs > 0 { highlights.append("\(newJPOs) new job part orders overnight") }
-                if pendingApprovals > 0 { highlights.append("\(pendingApprovals) JPOs awaiting approval") }
-                if clockedInToday > 0 { highlights.append("\(clockedInToday) workers clocked in") }
-                if overdueItems > 0 { highlights.append("\(overdueItems) overdue deliveries") }
-                if pendingTimeOff > 0 { highlights.append("\(pendingTimeOff) time-off requests pending") }
-
-                let deliveryNote = overdueItems > 0
-                    ? "\(overdueItems) deliveries are overdue."
-                    : "all deliveries on track."
-
-                let summary = "Good morning. \(pendingApprovals) items need approval, \(clockedInToday) workers are active, and \(deliveryNote)"
-
-                return OfficeBriefing(
-                    summary: summary,
-                    generatedAt: Date(),
-                    highlights: highlights,
-                    alertCount: pendingApprovals + overdueItems + pendingTimeOff
-                )
-            }
-        } catch {
-            if isTableNotFoundError(error) {
-                return OfficeBriefing(summary: "Dashboard data not yet available.", generatedAt: Date(), highlights: [], alertCount: 0)
-            }
-            throw error
+    public func getOfficeBriefing(
+        userId: Int64? = nil,
+        companyContext: String? = nil,
+        now: Date = Date()
+    ) throws -> OfficeBriefing {
+        let cacheKey = try officeBriefingCacheKey(userId: userId, companyContext: companyContext)
+        if let cached = try cachedOfficeBriefing(forKey: cacheKey, now: now) {
+            return cached
         }
+
+        let briefing = try generateOfficeBriefing(now: now)
+        try cacheOfficeBriefing(briefing, forKey: cacheKey)
+        return briefing
+    }
+
+    /// Fetch the eight smart-card counts for the Office command center.
+    public func getOfficeSmartCards() throws -> [OfficeSmartCard] {
+        let approvalsPending = try pendingOfficeApprovalCount()
+        let workingToday = try safeCount(sql: """
+            SELECT COUNT(DISTINCT user_id) FROM labor_entries
+            WHERE date(clock_in) = date('now')
+              AND clock_out IS NULL
+              AND deleted_at IS NULL
+        """)
+        let jposPending = try safeCount(sql: """
+            SELECT COUNT(*) FROM job_parts_orders
+            WHERE status IN ('submitted', 'pending', 'in_review')
+              AND deleted_at IS NULL
+        """)
+        let paymentOverdue = try safeCount(sql: """
+            SELECT COUNT(*) FROM jobs
+            WHERE status = 'payment_hold'
+              AND deleted_at IS NULL
+        """)
+        let partsBelowMin = try partsBelowMinimumCount()
+        let maintenanceDue = try safeCount(sql: """
+            SELECT COUNT(*) FROM (
+                SELECT tms.id FROM tool_maintenance_schedules tms
+                JOIN tools t ON t.id = tms.tool_id AND t.deleted_at IS NULL
+                WHERE tms.is_enabled = 1
+                  AND tms.next_due_date IS NOT NULL
+                  AND date(tms.next_due_date) <= date('now', '+7 days')
+                  AND tms.deleted_at IS NULL
+                UNION ALL
+                SELECT t.id FROM tools t
+                WHERE t.calibration_due_date IS NOT NULL
+                  AND date(t.calibration_due_date) <= date('now', '+7 days')
+                  AND t.deleted_at IS NULL
+                  AND t.is_active = 1
+            )
+        """)
+        let callbacksOverdue = try safeCount(sql: """
+            SELECT COUNT(*) FROM jobs
+            WHERE due_date IS NOT NULL
+              AND date(due_date) < date('now')
+              AND status NOT IN ('completed', 'cancelled', 'closed')
+              AND deleted_at IS NULL
+        """)
+        let warrantyExpiring = try safeCount(sql: """
+            SELECT COUNT(*) FROM jobs
+            WHERE warranty_end_date IS NOT NULL
+              AND date(warranty_end_date) >= date('now')
+              AND date(warranty_end_date) <= date('now', '+30 days')
+              AND deleted_at IS NULL
+        """)
+
+        return [
+            OfficeSmartCard(id: "approvals_pending", title: "Approvals Pending", count: approvalsPending, subtitle: "Across office queues", systemImage: "checklist", severity: approvalsPending > 0 ? .high : .low),
+            OfficeSmartCard(id: "working_today", title: "Working Today", count: workingToday, subtitle: "Clocked in now", systemImage: "person.2.fill", severity: .low),
+            OfficeSmartCard(id: "jpos_pending", title: "JPOs Pending", count: jposPending, subtitle: "Need review", systemImage: "doc.text.magnifyingglass", severity: jposPending > 0 ? .medium : .low),
+            OfficeSmartCard(id: "payment_overdue", title: "Payment Overdue", count: paymentOverdue, subtitle: "Jobs on hold", systemImage: "dollarsign.circle.fill", severity: paymentOverdue > 0 ? .overdue : .low),
+            OfficeSmartCard(id: "parts_below_min", title: "Parts Below MIN", count: partsBelowMin, subtitle: "Below configured stock", systemImage: "cube.box.fill", severity: partsBelowMin > 0 ? .high : .low),
+            OfficeSmartCard(id: "maintenance_due", title: "Maintenance Due", count: maintenanceDue, subtitle: "Due within 7 days", systemImage: "wrench.and.screwdriver.fill", severity: maintenanceDue > 0 ? .medium : .low),
+            OfficeSmartCard(id: "callbacks_overdue", title: "Callbacks Overdue", count: callbacksOverdue, subtitle: "Past due jobs", systemImage: "phone.badge.clock", severity: callbacksOverdue > 0 ? .overdue : .low),
+            OfficeSmartCard(id: "warranty_expiring", title: "Warranty Expiring", count: warrantyExpiring, subtitle: "Next 30 days", systemImage: "shield.lefthalf.filled", severity: warrantyExpiring > 0 ? .medium : .low)
+        ]
     }
 
     /// Fetch actionable items requiring manager attention, sorted by priority then age.
@@ -1709,6 +1757,41 @@ public final class DashboardService: Sendable {
                     itemType: "jpo_approval",
                     createdAt: created,
                     priority: .from(age: age)
+                ))
+            }
+        } catch {
+            if !isTableNotFoundError(error) { throw error }
+        }
+
+        // Low stock parts
+        do {
+            let parts = try db.writer.read { dbConn -> [Row] in
+                try Row.fetchAll(dbConn, sql: """
+                    SELECT * FROM (
+                        SELECT p.id, p.name, p.min_stock_level,
+                               COALESCE((SELECT SUM(s.qty) FROM stock s WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0)
+                               + COALESCE((SELECT SUM(se.quantity) FROM stock_entries se WHERE se.part_id = p.id AND se.deleted_at IS NULL), 0)
+                               AS total_stock
+                        FROM parts p
+                        WHERE p.deleted_at IS NULL
+                          AND p.is_active = 1
+                          AND p.min_stock_level > 0
+                    )
+                    WHERE total_stock < min_stock_level
+                    ORDER BY total_stock ASC, name ASC
+                    LIMIT 20
+                """)
+            }
+            for row in parts {
+                let stock: Int = row["total_stock"] ?? 0
+                let minStock: Int = row["min_stock_level"] ?? 0
+                items.append(AttentionItem(
+                    id: row["id"] ?? 0,
+                    title: "Part Below MIN: \(row["name"] as String? ?? "Unknown")",
+                    subtitle: "\(stock) on hand; minimum is \(minStock)",
+                    itemType: "low_stock",
+                    createdAt: Date().addingTimeInterval(-2 * 86400),
+                    priority: .high
                 ))
             }
         } catch {
@@ -1770,6 +1853,161 @@ public final class DashboardService: Sendable {
                     itemType: "overdue_po",
                     createdAt: Date().addingTimeInterval(-5 * 86400), // overdue = always red
                     priority: .overdue
+                ))
+            }
+        } catch {
+            if !isTableNotFoundError(error) { throw error }
+        }
+
+        // Open Q&A / field questions
+        do {
+            let questions = try db.writer.read { dbConn -> [Row] in
+                try Row.fetchAll(dbConn, sql: """
+                    SELECT qt.id, qt.subject, qt.created_at,
+                           COALESCE(j.job_name, 'Unknown Job') AS job_name
+                    FROM qa_threads qt
+                    LEFT JOIN jobs j ON j.id = qt.job_id AND j.deleted_at IS NULL
+                    WHERE qt.status NOT IN ('answered', 'closed', 'resolved')
+                      AND qt.deleted_at IS NULL
+                    ORDER BY qt.created_at ASC
+                    LIMIT 20
+                """)
+            }
+            for row in questions {
+                let created = CoreFormatters.parseISO(row["created_at"] as String? ?? "") ?? Date()
+                items.append(AttentionItem(
+                    id: row["id"] ?? 0,
+                    title: "Open Q&A: \(row["subject"] as String? ?? "Question")",
+                    subtitle: row["job_name"] as String? ?? "Unknown Job",
+                    itemType: "open_qa",
+                    createdAt: created,
+                    priority: .from(age: Date().timeIntervalSince(created))
+                ))
+            }
+        } catch {
+            if !isTableNotFoundError(error) { throw error }
+        }
+
+        // Jobs past due / callbacks overdue
+        do {
+            let jobs = try db.writer.read { dbConn -> [Row] in
+                try Row.fetchAll(dbConn, sql: """
+                    SELECT id, job_name, due_date
+                    FROM jobs
+                    WHERE due_date IS NOT NULL
+                      AND date(due_date) < date('now')
+                      AND status NOT IN ('completed', 'cancelled', 'closed')
+                      AND deleted_at IS NULL
+                    ORDER BY due_date ASC
+                    LIMIT 20
+                """)
+            }
+            for row in jobs {
+                items.append(AttentionItem(
+                    id: row["id"] ?? 0,
+                    title: "Callback Overdue: \(row["job_name"] as String? ?? "Unknown Job")",
+                    subtitle: "Due \(row["due_date"] as String? ?? "before today")",
+                    itemType: "overdue_job",
+                    createdAt: Date().addingTimeInterval(-5 * 86400),
+                    priority: .overdue
+                ))
+            }
+        } catch {
+            if !isTableNotFoundError(error) { throw error }
+        }
+
+        // Tool maintenance / calibration due
+        do {
+            let maintenance = try db.writer.read { dbConn -> [Row] in
+                try Row.fetchAll(dbConn, sql: """
+                    SELECT t.id, t.name, MIN(due_date) AS due_date FROM (
+                        SELECT t.id, t.name, tms.next_due_date AS due_date
+                        FROM tool_maintenance_schedules tms
+                        JOIN tools t ON t.id = tms.tool_id AND t.deleted_at IS NULL
+                        WHERE tms.is_enabled = 1
+                          AND tms.next_due_date IS NOT NULL
+                          AND date(tms.next_due_date) <= date('now', '+7 days')
+                          AND tms.deleted_at IS NULL
+                        UNION ALL
+                        SELECT t.id, t.name, t.calibration_due_date AS due_date
+                        FROM tools t
+                        WHERE t.calibration_due_date IS NOT NULL
+                          AND date(t.calibration_due_date) <= date('now', '+7 days')
+                          AND t.deleted_at IS NULL
+                          AND t.is_active = 1
+                    ) t
+                    GROUP BY t.id, t.name
+                    ORDER BY due_date ASC
+                    LIMIT 20
+                """)
+            }
+            for row in maintenance {
+                items.append(AttentionItem(
+                    id: row["id"] ?? 0,
+                    title: "Maintenance Due: \(row["name"] as String? ?? "Tool")",
+                    subtitle: "Due \(row["due_date"] as String? ?? "soon")",
+                    itemType: "maintenance_due",
+                    createdAt: Date().addingTimeInterval(-86400),
+                    priority: .medium
+                ))
+            }
+        } catch {
+            if !isTableNotFoundError(error) { throw error }
+        }
+
+        // Expiring certifications
+        do {
+            let certs = try db.writer.read { dbConn -> [Row] in
+                try Row.fetchAll(dbConn, sql: """
+                    SELECT c.id, c.cert_name, c.expiry_date,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS employee_name
+                    FROM certifications c
+                    LEFT JOIN users u ON u.id = c.user_id AND u.deleted_at IS NULL
+                    WHERE c.expiry_date IS NOT NULL
+                      AND date(c.expiry_date) >= date('now')
+                      AND date(c.expiry_date) <= date('now', '+30 days')
+                      AND c.is_active = 1
+                      AND c.deleted_at IS NULL
+                    ORDER BY c.expiry_date ASC
+                    LIMIT 20
+                """)
+            }
+            for row in certs {
+                items.append(AttentionItem(
+                    id: row["id"] ?? 0,
+                    title: "Certification Expiring: \(row["cert_name"] as String? ?? "Certification")",
+                    subtitle: "\(row["employee_name"] as String? ?? "Unknown") — expires \(row["expiry_date"] as String? ?? "soon")",
+                    itemType: "expiring_cert",
+                    createdAt: Date().addingTimeInterval(-86400),
+                    priority: .medium
+                ))
+            }
+        } catch {
+            if !isTableNotFoundError(error) { throw error }
+        }
+
+        // Warranties expiring soon
+        do {
+            let warranties = try db.writer.read { dbConn -> [Row] in
+                try Row.fetchAll(dbConn, sql: """
+                    SELECT id, job_name, warranty_end_date
+                    FROM jobs
+                    WHERE warranty_end_date IS NOT NULL
+                      AND date(warranty_end_date) >= date('now')
+                      AND date(warranty_end_date) <= date('now', '+30 days')
+                      AND deleted_at IS NULL
+                    ORDER BY warranty_end_date ASC
+                    LIMIT 20
+                """)
+            }
+            for row in warranties {
+                items.append(AttentionItem(
+                    id: row["id"] ?? 0,
+                    title: "Warranty Expiring: \(row["job_name"] as String? ?? "Unknown Job")",
+                    subtitle: "Expires \(row["warranty_end_date"] as String? ?? "soon")",
+                    itemType: "warranty_expiring",
+                    createdAt: Date().addingTimeInterval(-86400),
+                    priority: .medium
                 ))
             }
         } catch {
@@ -1903,6 +2141,223 @@ public final class DashboardService: Sendable {
         } catch {
             if isTableNotFoundError(error) { return 0 }
             throw error
+        }
+    }
+
+    private func pendingOfficeApprovalCount() throws -> Int {
+        let jpo = try safeCount(sql: """
+            SELECT COUNT(*) FROM job_parts_orders
+            WHERE status IN ('submitted', 'pending', 'in_review')
+              AND deleted_at IS NULL
+        """)
+        let timeOff = try safeCount(sql: """
+            SELECT COUNT(DISTINCT COALESCE(request_group, CAST(id AS TEXT)))
+            FROM schedule_exceptions
+            WHERE exception_type = 'time_off'
+              AND is_approved = 0
+              AND deleted_at IS NULL
+        """)
+        let toolEdits = try safeCount(sql: """
+            SELECT COUNT(*) FROM tool_change_log
+            WHERE verification_status = 'pending_verification'
+              AND deleted_at IS NULL
+        """)
+        let deletions = try safeCount(sql: """
+            SELECT COUNT(*) FROM scheduled_deletions
+            WHERE status = 'pending_approval'
+              AND deleted_at IS NULL
+        """)
+        let warrantyClassifications = try safeCount(sql: """
+            SELECT COUNT(*) FROM notebook_entries
+            WHERE work_classification IS NOT NULL
+              AND COALESCE(classification_reviewed, 0) = 0
+              AND deleted_at IS NULL
+        """)
+        let scheduleChanges = try safeCount(sql: """
+            SELECT COUNT(*) FROM job_dispatch
+            WHERE status = 'pending_approval'
+              AND deleted_at IS NULL
+        """)
+        return jpo + timeOff + toolEdits + deletions + warrantyClassifications + scheduleChanges
+    }
+
+    private func partsBelowMinimumCount() throws -> Int {
+        try safeCount(sql: """
+            SELECT COUNT(*) FROM parts p
+            WHERE p.deleted_at IS NULL
+              AND p.is_active = 1
+              AND p.min_stock_level > 0
+              AND (
+                COALESCE((SELECT SUM(s.qty) FROM stock s WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0)
+                + COALESCE((SELECT SUM(se.quantity) FROM stock_entries se WHERE se.part_id = p.id AND se.deleted_at IS NULL), 0)
+              ) < p.min_stock_level
+        """)
+    }
+
+    private func generateOfficeBriefing(now: Date) throws -> OfficeBriefing {
+        let newJPOs = try safeCount(sql: """
+            SELECT COUNT(*) FROM job_parts_orders
+            WHERE created_at >= datetime('now', '-12 hours')
+              AND deleted_at IS NULL
+        """)
+        let pendingApprovals = try safeCount(sql: """
+            SELECT COUNT(*) FROM job_parts_orders
+            WHERE status IN ('submitted', 'pending', 'in_review')
+              AND deleted_at IS NULL
+        """)
+        let activeWorkers = try safeCount(sql: """
+            SELECT COUNT(*) FROM users
+            WHERE is_active = 1
+              AND deleted_at IS NULL
+        """)
+        let clockedInToday = try safeCount(sql: """
+            SELECT COUNT(DISTINCT user_id) FROM labor_entries
+            WHERE date(clock_in) = date('now')
+              AND clock_out IS NULL
+              AND deleted_at IS NULL
+        """)
+        let activeJobs = try safeCount(sql: """
+            SELECT COUNT(*) FROM jobs
+            WHERE status IN ('active', 'scheduled', 'in_progress')
+              AND deleted_at IS NULL
+        """)
+        let overdueJobs = try safeCount(sql: """
+            SELECT COUNT(*) FROM jobs
+            WHERE due_date IS NOT NULL
+              AND date(due_date) < date('now')
+              AND status NOT IN ('completed', 'cancelled', 'closed')
+              AND deleted_at IS NULL
+        """)
+        let openIssues = try safeCount(sql: """
+            SELECT COUNT(*) FROM qa_threads
+            WHERE status NOT IN ('answered', 'closed', 'resolved')
+              AND deleted_at IS NULL
+        """)
+        let overdueDeliveries = try safeCount(sql: """
+            SELECT COUNT(*) FROM purchase_orders
+            WHERE expected_delivery IS NOT NULL
+              AND date(expected_delivery) < date('now')
+              AND status NOT IN ('received', 'cancelled', 'deleted')
+              AND deleted_at IS NULL
+        """)
+        let pendingTimeOff = try safeCount(sql: """
+            SELECT COUNT(DISTINCT COALESCE(request_group, CAST(id AS TEXT)))
+            FROM schedule_exceptions
+            WHERE exception_type = 'time_off'
+              AND is_approved = 0
+              AND deleted_at IS NULL
+        """)
+        let scheduledToday = try safeCount(sql: """
+            SELECT COUNT(DISTINCT user_id) FROM job_dispatch
+            WHERE dispatch_date = date('now')
+              AND deleted_at IS NULL
+        """)
+        let upcomingDeadlines = try safeCount(sql: """
+            SELECT COUNT(*) FROM jobs
+            WHERE due_date IS NOT NULL
+              AND date(due_date) >= date('now')
+              AND date(due_date) <= date('now', '+7 days')
+              AND status NOT IN ('completed', 'cancelled', 'closed')
+              AND deleted_at IS NULL
+        """)
+
+        var highlights: [String] = []
+        highlights.append("\(activeWorkers) active workers; \(clockedInToday) clocked in today")
+        highlights.append("\(activeJobs) active jobs; \(scheduledToday) workers scheduled today")
+        if pendingApprovals > 0 { highlights.append("\(pendingApprovals) approvals need review") }
+        if newJPOs > 0 { highlights.append("\(newJPOs) new job part orders overnight") }
+        if openIssues > 0 { highlights.append("\(openIssues) open field questions or issues") }
+        if overdueJobs > 0 { highlights.append("\(overdueJobs) jobs past due") }
+        if overdueDeliveries > 0 { highlights.append("\(overdueDeliveries) overdue deliveries") }
+        if pendingTimeOff > 0 { highlights.append("\(pendingTimeOff) time-off requests pending") }
+        if upcomingDeadlines > 0 { highlights.append("\(upcomingDeadlines) job deadlines in the next 7 days") }
+
+        let alertCount = pendingApprovals + openIssues + overdueJobs + overdueDeliveries + pendingTimeOff
+        let summary = "Good morning. \(activeWorkers) workers are on the roster, \(activeJobs) jobs are active, \(scheduledToday) workers are scheduled today, and \(alertCount) items need attention."
+
+        return OfficeBriefing(
+            summary: summary,
+            generatedAt: now,
+            highlights: highlights,
+            alertCount: alertCount
+        )
+    }
+
+    private func officeBriefingCacheKey(userId: Int64?, companyContext: String?) throws -> String {
+        let userComponent = userId.map(String.init) ?? "anonymous"
+        let companyComponent = try companyContext ?? primaryCompanyContext()
+        return "office_daily_briefing_cache:user:\(userComponent):company:\(companyComponent)"
+    }
+
+    private func primaryCompanyContext() throws -> String {
+        do {
+            return try db.writer.read { dbConnection in
+                if let primaryProfile = try Row.fetchOne(dbConnection, sql: """
+                    SELECT id, name FROM company_profiles
+                    WHERE deleted_at IS NULL
+                    ORDER BY is_primary DESC, id ASC
+                    LIMIT 1
+                """) {
+                    let id: Int64 = primaryProfile["id"] ?? 0
+                    let name: String = primaryProfile["name"] ?? "company"
+                    return "\(id)-\(name)"
+                }
+                if let businessProfile = try Row.fetchOne(dbConnection, sql: """
+                    SELECT id, company_name FROM business_profiles
+                    WHERE is_active = 1
+                    ORDER BY id ASC
+                    LIMIT 1
+                """) {
+                    let id: Int64 = businessProfile["id"] ?? 0
+                    let name: String = businessProfile["company_name"] ?? "business"
+                    return "\(id)-\(name)"
+                }
+                return "default"
+            }
+        } catch {
+            if isTableNotFoundError(error) { return "default" }
+            throw error
+        }
+    }
+
+    private func cachedOfficeBriefing(forKey key: String, now: Date) throws -> OfficeBriefing? {
+        do {
+            return try db.writer.read { dbConnection in
+                guard let value = try String.fetchOne(
+                    dbConnection,
+                    sql: "SELECT value FROM settings WHERE key = ?",
+                    arguments: [key]
+                ),
+                      let data = value.data(using: .utf8),
+                      let briefing = try? JSONDecoder().decode(OfficeBriefing.self, from: data),
+                      now.timeIntervalSince(briefing.generatedAt) < 3600
+                else {
+                    return nil
+                }
+                return briefing
+            }
+        } catch {
+            if isTableNotFoundError(error) { return nil }
+            throw error
+        }
+    }
+
+    private func cacheOfficeBriefing(_ briefing: OfficeBriefing, forKey key: String) throws {
+        do {
+            try db.writer.write { dbConnection in
+                let data = try JSONEncoder().encode(briefing)
+                let value = String(data: data, encoding: .utf8) ?? "{}"
+                try dbConnection.execute(sql: """
+                    INSERT INTO settings (key, value, category, updated_at)
+                    VALUES (?, ?, 'office_daily_briefing', datetime('now'))
+                    ON CONFLICT(key) DO UPDATE SET
+                        value = excluded.value,
+                        category = excluded.category,
+                        updated_at = datetime('now')
+                """, arguments: [key, value])
+            }
+        } catch {
+            if !isTableNotFoundError(error) { throw error }
         }
     }
 

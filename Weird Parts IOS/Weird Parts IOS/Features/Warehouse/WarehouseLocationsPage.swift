@@ -495,7 +495,10 @@ struct WarehouseLocationsPage: View {
 
     /// Moves a storage unit to a new grid position via drag-and-drop.
     private func moveUnit(unitId: Int64, toGridX gridX: Int, gridY: Int) -> Bool {
-        guard let service = appCore.warehouseService else { return false }
+        guard let service = appCore.warehouseService else {
+            loadError = "Warehouse service unavailable"
+            return false
+        }
         do {
             try service.updateStorageUnit(id: unitId, gridX: gridX, gridY: gridY)
             loadPlanData()
@@ -520,9 +523,21 @@ struct WarehouseLocationsPage: View {
 
         do {
             floorPlans = try service.listFloorPlans()
-            if selectedPlanId == nil {
+            if let selectedPlanId, floorPlans.contains(where: { $0.id == selectedPlanId }) {
+                // Keep the user's current selection when it still exists.
+            } else {
                 selectedPlanId = floorPlans.first?.id
             }
+
+            guard selectedPlanId != nil else {
+                storageUnits = []
+                floorFeatures = []
+                loadError = nil
+                isLoading = false
+                postAIContext()
+                return
+            }
+
             loadPlanData()
         } catch {
             loadError = userFriendlyError(error, context: "load locations")
@@ -531,11 +546,21 @@ struct WarehouseLocationsPage: View {
     }
 
     private func loadPlanData() {
-        guard let service = appCore.warehouseService, let planId = selectedPlanId else {
-            loadError = "Service not available"
+        guard let service = appCore.warehouseService else {
+            loadError = "Warehouse service unavailable"
             isLoading = false
             return
         }
+
+        guard let planId = selectedPlanId else {
+            storageUnits = []
+            floorFeatures = []
+            loadError = nil
+            isLoading = false
+            postAIContext()
+            return
+        }
+
         do {
             storageUnits = try service.listStorageUnits(floorPlanId: planId)
             floorFeatures = try service.listFloorFeatures(floorPlanId: planId)

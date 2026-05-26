@@ -45,13 +45,19 @@ struct IOSAuditSettingsPage: View {
         "spot_check": "Spot Check",
     ]
 
+    @State private var isDirty = false
+
+    private var hasValidSettings: Bool {
+        misplacementPenalty > 0
+    }
+
     var body: some View {
         Group {
             if isLoading {
                 ProgressView("Loading audit settings...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let loadError {
-                ContentUnavailableView("Unable to Load", systemImage: "exclamationmark.triangle", description: Text(loadError))
+                ErrorStateView(message: loadError)
             } else {
                 settingsForm
             }
@@ -156,10 +162,23 @@ struct IOSAuditSettingsPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!isDirty || !hasValidSettings)
+                .accessibilityHint(!hasValidSettings ? "Misplacement penalty must be greater than zero." : (!isDirty ? "Make changes to enable saving." : ""))
             }
         }
         // Fix #149: dismiss keyboard when scrolling audit settings
         .scrollDismissesKeyboard(.interactively)
+        .onChange(of: enableAutoScheduling) { _, _ in isDirty = true }
+        .onChange(of: defaultAuditType) { _, _ in isDirty = true }
+        .onChange(of: maxConcurrentAudits) { _, _ in isDirty = true }
+        .onChange(of: allowSpeedMode) { _, _ in isDirty = true }
+        .onChange(of: speedModeRequiresQR) { _, _ in isDirty = true }
+        .onChange(of: speedModeTimeLimit) { _, _ in isDirty = true }
+        .onChange(of: verificationThreshold) { _, _ in isDirty = true }
+        .onChange(of: misplacementPenalty) { _, _ in isDirty = true }
+        .onChange(of: keepHistoryMonths) { _, _ in isDirty = true }
+        .onChange(of: autoArchive) { _, _ in isDirty = true }
+        .onChange(of: includeInDailyReport) { _, _ in isDirty = true }
     }
 
     // MARK: - Actions
@@ -192,6 +211,7 @@ struct IOSAuditSettingsPage: View {
             loadError = userFriendlyError(error, context: "load")
         }
         isLoading = false
+        isDirty = false
     }
 
     private func saveSettings() {
@@ -216,6 +236,7 @@ struct IOSAuditSettingsPage: View {
             ]
             try service.upsertSettingsMap(data, category: "audit")
             saveError = nil
+            isDirty = false
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }

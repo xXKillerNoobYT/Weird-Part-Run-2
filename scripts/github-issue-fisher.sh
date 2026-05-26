@@ -131,7 +131,7 @@ jq -n \
   | reduce ["blocked","todo","backlog"][] as $bucket ([]; . + ([$groups[] | select(.bucket == $bucket) | .items[]]))
   | .[:$limit]
   | map({
-      type: "move-existing-github-issue",
+      type: (if .bucket == "backlog" then "backlog-candidate-needs-manual-evidence-confirmation" else "move-existing-github-issue" end),
       bucket,
       issue: ("#" + (.number | tostring)),
       title,
@@ -140,7 +140,7 @@ jq -n \
       nextAction: (
         if .bucket == "blocked" then "Resolve or replace the blocker before starting new implementation."
         elif .bucket == "todo" then "Assign the smallest implementation owner or move into an active Paperclip child issue."
-        else "Promote only if plan scan confirms this is still relevant."
+        else "Do not promote from backlog in this report. First confirm concrete plan or repo evidence manually, then create a separate owner-approved follow-up."
         end
       )
     })' > "$ACTIONS_JSON"
@@ -186,6 +186,7 @@ FINDING_COUNT="$(jq 'length' "$FINDINGS_JSON")"
       .[] |
       "### " + .issue + " — " + .title + "\n" +
       "- Bucket: `" + .bucket + "`\n" +
+      "- Action type: `" + .type + "`\n" +
       "- URL: " + .url + "\n" +
       "- Evidence: " + .evidence + "\n" +
       "- Next action: " + .nextAction + "\n"
@@ -204,6 +205,7 @@ FINDING_COUNT="$(jq 'length' "$FINDINGS_JSON")"
   echo
   echo "- This run refuses to proceed when the plan directory is missing or empty."
   echo "- The workflow selects at most 3 actions per run."
+  echo "- Backlog selections are non-promotion candidates until a human or approved routine confirms concrete plan/repo evidence."
   echo "- Reports are evidence; GitHub mutation still requires an explicit follow-up owner or approved routine path."
 } > "$REPORT_MD"
 

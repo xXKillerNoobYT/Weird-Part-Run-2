@@ -27,6 +27,8 @@ public final class WishlistService: Sendable {
         case alreadyProcessed(Int64, String)
         case dismissReasonRequired
         case insufficientPermissions(required: String)
+        case restrictedToAssignedTruckUser(locationId: Int64)
+        case partNotFound(Int64)
 
         public var errorDescription: String? {
             switch self {
@@ -38,6 +40,10 @@ public final class WishlistService: Sendable {
                 "A dismiss reason is required"
             case .insufficientPermissions(let required):
                 "You don't have permission to perform this action (required: \(required))"
+            case .restrictedToAssignedTruckUser(let locationId):
+                "Only the assigned truck user can route a physical audit for truck #\(locationId)"
+            case .partNotFound(let id):
+                "Part #\(id) not found"
             }
         }
     }
@@ -60,6 +66,56 @@ public final class WishlistService: Sendable {
             self.dismissed = dismissed
             self.sentToProcurement = sentToProcurement
             self.total = pending + approved + dismissed + sentToProcurement
+        }
+    }
+
+    /// Result from evaluating one part/location against MIN stock routing rules.
+    public struct BelowMinimumRoutingResult: Sendable {
+        public let partId: Int64
+        public let partName: String
+        public let locationType: String
+        public let locationId: Int64
+        public let currentStock: Int
+        public let minStock: Int
+        public let targetStock: Int
+        public let certaintyScore: Double
+        public let action: String
+        public let quantity: Int
+        public let movementId: Int64?
+        public let wishlistItem: WishlistItem?
+        public let auditSessionId: Int64?
+        public let reusedExistingAction: Bool
+
+        public init(
+            partId: Int64,
+            partName: String,
+            locationType: String,
+            locationId: Int64,
+            currentStock: Int,
+            minStock: Int,
+            targetStock: Int,
+            certaintyScore: Double,
+            action: String,
+            quantity: Int,
+            movementId: Int64? = nil,
+            wishlistItem: WishlistItem? = nil,
+            auditSessionId: Int64? = nil,
+            reusedExistingAction: Bool = false
+        ) {
+            self.partId = partId
+            self.partName = partName
+            self.locationType = locationType
+            self.locationId = locationId
+            self.currentStock = currentStock
+            self.minStock = minStock
+            self.targetStock = targetStock
+            self.certaintyScore = certaintyScore
+            self.action = action
+            self.quantity = quantity
+            self.movementId = movementId
+            self.wishlistItem = wishlistItem
+            self.auditSessionId = auditSessionId
+            self.reusedExistingAction = reusedExistingAction
         }
     }
 
@@ -176,6 +232,222 @@ public final class WishlistService: Sendable {
             try item.insert(dbConn)
             return item
         }
+    }
+
+    // =========================================================================
+    // MARK: - Below-MIN Routing
+    // =========================================================================
+
+    /// Evaluate a part/location against MIN stock and route the operational action.
+    ///
+    /// Routing order:
+    /// 1. If the target location is not below MIN, no action.
+    /// 2. For truck/trailer shortages, pull available shop stock before procurement.
+    /// 3. If shop cannot cover the field shortage and confidence is at least 80%,
+    ///    create/approve one deduped system wishlist item.
+    /// 4. If confidence is below 80%, route one deduped physical-count audit.
+    @discardableResult
+    public func routeBelowMinimumStock(
+        partId: Int64,
+        locationType rawLocationType: String,
+        locationId: Int64,
+        actorUserId: Int64,
+        certaintyOverride: Double? = nil
+    ) throws -> BelowMinimumRoutingResult {
+        let locationType = normalizeLocationType(rawLocationType)
+
+        return try db.writer.write { dbConn in
+            let partName = try fetchPartName(dbConn, partId: partId)
+            let target = try fetchLocationTarget(dbConn, partId: partId, locationType: locationType, locationId: locationId)
+            let currentStock = try currentStock(dbConn, partId: partId, locationType: locationType, locationId: locationId)
+            let certainty = certaintyOverride ?? target.certainty
+            let qtyNeeded = max(0, max(target.targetStock, target.minStock) - currentStock)
+
+            guard target.minStock > 0, currentStock < target.minStock else {
+                return BelowMinimumRoutingResult(
+                    partId: partId,
+                    partName: partName,
+                    locationType: locationType,
+                    locationId: locationId,
+                    currentStock: currentStock,
+                    minStock: target.minStock,
+                    targetStock: target.targetStock,
+                    certaintyScore: certainty,
+                    action: "none",
+                    quantity: 0
+                )
+            }
+
+            let marker = Self.belowMinimumMarker(partId: partId, locationType: locationType, locationId: locationId)
+
+            if locationType == "truck" || locationType == "trailer" {
+                let shopStock = try currentShopStock(dbConn, partId: partId)
+                if shopStock > 0 {
+                    let movementQty = min(qtyNeeded, shopStock)
+                    let movementId = try createShopTransfer(
+                        dbConn,
+                        partId: partId,
+                        quantity: movementQty,
+                        toLocationType: locationType,
+                        toLocationId: locationId,
+                        performedBy: actorUserId,
+                        marker: marker
+                    )
+                    return BelowMinimumRoutingResult(
+                        partId: partId,
+                        partName: partName,
+                        locationType: locationType,
+                        locationId: locationId,
+                        currentStock: currentStock,
+                        minStock: target.minStock,
+                        targetStock: target.targetStock,
+                        certaintyScore: certainty,
+                        action: "shop_transfer",
+                        quantity: movementQty,
+                        movementId: movementId
+                    )
+                }
+            }
+
+            guard certainty >= 0.8 else {
+                try assertCanRoutePhysicalAudit(dbConn, actorUserId: actorUserId, locationType: locationType, locationId: locationId)
+                if let existingAuditId = try existingAuditSessionId(dbConn, marker: marker) {
+                    return BelowMinimumRoutingResult(
+                        partId: partId,
+                        partName: partName,
+                        locationType: locationType,
+                        locationId: locationId,
+                        currentStock: currentStock,
+                        minStock: target.minStock,
+                        targetStock: target.targetStock,
+                        certaintyScore: certainty,
+                        action: "physical_audit",
+                        quantity: qtyNeeded,
+                        auditSessionId: existingAuditId,
+                        reusedExistingAction: true
+                    )
+                }
+
+                let auditId = try createPhysicalAuditSession(
+                    dbConn,
+                    partId: partId,
+                    partName: partName,
+                    locationType: locationType,
+                    locationId: locationId,
+                    startedBy: actorUserId,
+                    marker: marker
+                )
+                return BelowMinimumRoutingResult(
+                    partId: partId,
+                    partName: partName,
+                    locationType: locationType,
+                    locationId: locationId,
+                    currentStock: currentStock,
+                    minStock: target.minStock,
+                    targetStock: target.targetStock,
+                    certaintyScore: certainty,
+                    action: "physical_audit",
+                    quantity: qtyNeeded,
+                    auditSessionId: auditId
+                )
+            }
+
+            guard try partAutoAddsToWishlistWhenLow(dbConn, partId: partId) else {
+                return BelowMinimumRoutingResult(
+                    partId: partId,
+                    partName: partName,
+                    locationType: locationType,
+                    locationId: locationId,
+                    currentStock: currentStock,
+                    minStock: target.minStock,
+                    targetStock: target.targetStock,
+                    certaintyScore: certainty,
+                    action: "none",
+                    quantity: 0
+                )
+            }
+
+            if let existing = try existingWishlistItem(dbConn, marker: marker) {
+                return BelowMinimumRoutingResult(
+                    partId: partId,
+                    partName: partName,
+                    locationType: locationType,
+                    locationId: locationId,
+                    currentStock: currentStock,
+                    minStock: target.minStock,
+                    targetStock: target.targetStock,
+                    certaintyScore: certainty,
+                    action: "wishlist",
+                    quantity: qtyNeeded,
+                    wishlistItem: existing,
+                    reusedExistingAction: true
+                )
+            }
+
+            let item = try createApprovedBelowMinimumWishlist(
+                dbConn,
+                partId: partId,
+                partName: partName,
+                quantity: qtyNeeded,
+                certaintyScore: certainty,
+                locationType: locationType,
+                locationId: locationId,
+                marker: marker
+            )
+            return BelowMinimumRoutingResult(
+                partId: partId,
+                partName: partName,
+                locationType: locationType,
+                locationId: locationId,
+                currentStock: currentStock,
+                minStock: target.minStock,
+                targetStock: target.targetStock,
+                certaintyScore: certainty,
+                action: "wishlist",
+                quantity: qtyNeeded,
+                wishlistItem: item
+            )
+        }
+    }
+
+    /// Generate routing actions for every configured part/location target currently below MIN.
+    @discardableResult
+    public func routeAllBelowMinimumStock(actorUserId: Int64) throws -> [BelowMinimumRoutingResult] {
+        let targets = try db.writer.read { dbConn in
+            try Row.fetchAll(dbConn, sql: """
+                SELECT lst.part_id, lst.location_type, lst.location_id
+                FROM location_stock_targets lst
+                JOIN parts p ON p.id = lst.part_id
+                WHERE lst.deleted_at IS NULL
+                  AND p.deleted_at IS NULL
+                  AND COALESCE(p.is_active, 1) = 1
+                  AND COALESCE(p.auto_add_to_wishlist_when_low, 0) = 1
+                  AND lst.min_stock > 0
+                  AND COALESCE(lst.do_not_restock, 0) = 0
+                ORDER BY lst.part_id, lst.location_type, lst.location_id
+                """)
+                .map { row -> (partId: Int64, locationType: String, locationId: Int64) in
+                    (
+                        partId: row["part_id"] ?? 0,
+                        locationType: row["location_type"] ?? "",
+                        locationId: row["location_id"] ?? 0
+                    )
+                }
+        }
+
+        var results: [BelowMinimumRoutingResult] = []
+        for target in targets {
+            let result = try routeBelowMinimumStock(
+                partId: target.partId,
+                locationType: target.locationType,
+                locationId: target.locationId,
+                actorUserId: actorUserId
+            )
+            if result.action != "none" {
+                results.append(result)
+            }
+        }
+        return results
     }
 
     // =========================================================================
@@ -423,6 +695,319 @@ public final class WishlistService: Sendable {
             if isTableNotFoundError(error) { return 0 }
             throw error
         }
+    }
+
+    private struct BelowMinimumTarget {
+        let minStock: Int
+        let targetStock: Int
+        let certainty: Double
+    }
+
+    private static func belowMinimumMarker(partId: Int64, locationType: String, locationId: Int64) -> String {
+        "[below-min part:\(partId) location:\(locationType):\(locationId)]"
+    }
+
+    private func normalizeLocationType(_ locationType: String) -> String {
+        let trimmed = locationType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return trimmed == "vehicle" ? "truck" : trimmed
+    }
+
+    private func fetchPartName(_ dbConn: Database, partId: Int64) throws -> String {
+        guard let name = try String.fetchOne(
+            dbConn,
+            sql: "SELECT name FROM parts WHERE id = ? AND deleted_at IS NULL AND COALESCE(is_active, 1) = 1",
+            arguments: [partId]
+        ) else {
+            throw WishlistError.partNotFound(partId)
+        }
+        return name
+    }
+
+    private func fetchLocationTarget(
+        _ dbConn: Database,
+        partId: Int64,
+        locationType: String,
+        locationId: Int64
+    ) throws -> BelowMinimumTarget {
+        if let row = try Row.fetchOne(dbConn, sql: """
+            SELECT min_stock, target_stock, certainty_rating
+            FROM location_stock_targets
+            WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL
+            """, arguments: [partId, locationType, locationId]) {
+            return BelowMinimumTarget(
+                minStock: row["min_stock"] ?? 0,
+                targetStock: row["target_stock"] ?? 0,
+                certainty: row["certainty_rating"] ?? 0.0
+            )
+        }
+
+        if let row = try Row.fetchOne(dbConn, sql: """
+            SELECT min_stock_level, target_stock_level
+            FROM parts
+            WHERE id = ? AND deleted_at IS NULL AND COALESCE(is_active, 1) = 1
+            """, arguments: [partId]) {
+            return BelowMinimumTarget(
+                minStock: row["min_stock_level"] ?? 0,
+                targetStock: row["target_stock_level"] ?? 0,
+                certainty: 0.0
+            )
+        }
+
+        throw WishlistError.partNotFound(partId)
+    }
+
+    private func currentStock(
+        _ dbConn: Database,
+        partId: Int64,
+        locationType: String,
+        locationId: Int64
+    ) throws -> Int {
+        try Int.fetchOne(dbConn, sql: """
+            SELECT COALESCE(SUM(qty), 0)
+            FROM stock
+            WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL
+            """, arguments: [partId, locationType, locationId]) ?? 0
+    }
+
+    private func currentShopStock(_ dbConn: Database, partId: Int64) throws -> Int {
+        try Int.fetchOne(dbConn, sql: """
+            SELECT COALESCE(SUM(qty), 0)
+            FROM stock
+            WHERE part_id = ?
+              AND location_type IN ('shop', 'warehouse')
+              AND deleted_at IS NULL
+            """, arguments: [partId]) ?? 0
+    }
+
+    private func createShopTransfer(
+        _ dbConn: Database,
+        partId: Int64,
+        quantity: Int,
+        toLocationType: String,
+        toLocationId: Int64,
+        performedBy: Int64,
+        marker: String
+    ) throws -> Int64 {
+        let sources = try shopSourceLocations(dbConn, partId: partId)
+        var remaining = quantity
+        var firstMovementId: Int64?
+
+        for source in sources where remaining > 0 {
+            let transferQty = min(remaining, source.qty)
+            try dbConn.execute(sql: """
+                INSERT INTO stock_movements
+                (part_id, qty, from_location_type, from_location_id, to_location_type, to_location_id,
+                 movement_type, reason, notes, performed_by, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'Below MIN restock from shop', ?, ?, datetime('now'))
+                """, arguments: [
+                    partId, transferQty, source.locationType, source.locationId,
+                    toLocationType, toLocationId, StockMovement.MovementType.restockFromShop.rawValue,
+                    "\(marker) Generated below-MIN shop restock.", performedBy
+                ])
+            if firstMovementId == nil {
+                firstMovementId = dbConn.lastInsertedRowID
+            }
+
+            try dbConn.execute(sql: """
+                UPDATE stock SET qty = qty - ?, updated_at = datetime('now')
+                WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL
+                """, arguments: [transferQty, partId, source.locationType, source.locationId])
+            remaining -= transferQty
+        }
+
+        try dbConn.execute(sql: """
+            UPDATE stock SET qty = qty + ?, updated_at = datetime('now')
+            WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL
+            """, arguments: [quantity, partId, toLocationType, toLocationId])
+        if dbConn.changesCount == 0 {
+            try dbConn.execute(sql: """
+                INSERT INTO stock (part_id, location_type, location_id, qty, updated_at)
+                VALUES (?, ?, ?, ?, datetime('now'))
+                """, arguments: [partId, toLocationType, toLocationId, quantity])
+        }
+
+        if toLocationType == "truck" {
+            try dbConn.execute(sql: """
+                UPDATE vehicle_stock SET quantity = quantity + ?, updated_at = datetime('now')
+                WHERE part_id = ? AND vehicle_id = ? AND stock_type = 'truck_stock' AND deleted_at IS NULL
+                """, arguments: [quantity, partId, toLocationId])
+            if dbConn.changesCount == 0 {
+                let partName = try fetchPartName(dbConn, partId: partId)
+                try dbConn.execute(sql: """
+                    INSERT INTO vehicle_stock
+                    (vehicle_id, part_id, part_name, quantity, stock_type, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, 'truck_stock', datetime('now'), datetime('now'))
+                    """, arguments: [toLocationId, partId, partName, quantity])
+            }
+        } else if toLocationType == "trailer" {
+            try dbConn.execute(sql: """
+                UPDATE trailer_stock SET quantity = quantity + ?, updated_at = datetime('now')
+                WHERE part_id = ? AND trailer_id = ? AND deleted_at IS NULL
+                """, arguments: [quantity, partId, toLocationId])
+            if dbConn.changesCount == 0 {
+                let partName = try fetchPartName(dbConn, partId: partId)
+                try dbConn.execute(sql: """
+                    INSERT INTO trailer_stock
+                    (trailer_id, part_id, part_name, quantity, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+                    """, arguments: [toLocationId, partId, partName, quantity])
+            }
+        }
+
+        return firstMovementId ?? 0
+    }
+
+    private func shopSourceLocations(_ dbConn: Database, partId: Int64) throws -> [(locationType: String, locationId: Int64, qty: Int)] {
+        let rows = try Row.fetchAll(dbConn, sql: """
+            SELECT location_type, location_id, qty
+            FROM stock
+            WHERE part_id = ?
+              AND location_type IN ('shop', 'warehouse')
+              AND qty > 0
+              AND deleted_at IS NULL
+            ORDER BY CASE location_type WHEN 'shop' THEN 0 ELSE 1 END, location_id
+            """, arguments: [partId])
+        return rows.map { row in
+            (
+                locationType: row["location_type"] ?? "warehouse",
+                locationId: row["location_id"] ?? 1,
+                qty: row["qty"] ?? 0
+            )
+        }
+    }
+
+    private func existingWishlistItem(_ dbConn: Database, marker: String) throws -> WishlistItem? {
+        try WishlistItem.fetchOne(dbConn, sql: """
+            SELECT *
+            FROM wishlist_items
+            WHERE source_type = 'system'
+              AND status IN ('pending', 'approved')
+              AND notes LIKE ?
+            ORDER BY id DESC
+            LIMIT 1
+            """, arguments: ["%\(marker)%"])
+    }
+
+    private func partAutoAddsToWishlistWhenLow(_ dbConn: Database, partId: Int64) throws -> Bool {
+        guard let value = try Int.fetchOne(
+            dbConn,
+            sql: """
+                SELECT auto_add_to_wishlist_when_low
+                FROM parts
+                WHERE id = ? AND deleted_at IS NULL AND COALESCE(is_active, 1) = 1
+                """,
+            arguments: [partId]
+        ) else {
+            throw WishlistError.partNotFound(partId)
+        }
+        return value != 0
+    }
+
+    private func createApprovedBelowMinimumWishlist(
+        _ dbConn: Database,
+        partId: Int64,
+        partName: String,
+        quantity: Int,
+        certaintyScore: Double,
+        locationType: String,
+        locationId: Int64,
+        marker: String
+    ) throws -> WishlistItem {
+        let nowString = Self.nowString()
+        var item = WishlistItem(
+            id: nil,
+            partId: partId,
+            partName: partName,
+            qtySuggested: quantity,
+            reason: "Below MIN at \(locationType) #\(locationId)",
+            priority: "high",
+            sourceType: "system",
+            status: "approved",
+            requestedBy: "System (Below MIN)",
+            approvedBy: "System (Below MIN)",
+            approvedAt: nowString,
+            dismissedBy: nil,
+            dismissedAt: nil,
+            dismissReason: nil,
+            notes: "\(marker) Shop stock unavailable; confidence \(Int(certaintyScore * 100))%.",
+            createdAt: nowString,
+            updatedAt: nowString,
+            autoApproveAt: nil,
+            certaintyScore: certaintyScore
+        )
+        try item.insert(dbConn)
+        return item
+    }
+
+    private func assertCanRoutePhysicalAudit(
+        _ dbConn: Database,
+        actorUserId: Int64,
+        locationType: String,
+        locationId: Int64
+    ) throws {
+        guard try userHasPermission(dbConn, userId: actorUserId, permissionKey: "perform_audit") else {
+            throw WishlistError.insufficientPermissions(required: "perform_audit")
+        }
+
+        guard locationType == "truck" else { return }
+        if try userHasPermission(dbConn, userId: actorUserId, permissionKey: "manage_trucks") { return }
+
+        let isAssigned = try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*)
+            FROM vehicle_assignments
+            WHERE vehicle_id = ? AND user_id = ? AND is_active = 1 AND deleted_at IS NULL
+            """, arguments: [locationId, actorUserId]) ?? 0
+        guard isAssigned > 0 else {
+            throw WishlistError.restrictedToAssignedTruckUser(locationId: locationId)
+        }
+    }
+
+    private func userHasPermission(_ dbConn: Database, userId: Int64, permissionKey: String) throws -> Bool {
+        let count = try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*)
+            FROM user_hats uh
+            JOIN users u ON u.id = uh.user_id
+            JOIN hat_permissions hp ON hp.hat_id = uh.hat_id
+            WHERE uh.user_id = ?
+              AND uh.is_active = 1 AND uh.deleted_at IS NULL
+              AND u.deleted_at IS NULL AND u.is_active = 1
+              AND hp.permission_key = ?
+            LIMIT 1
+            """, arguments: [userId, permissionKey]) ?? 0
+        return count > 0
+    }
+
+    private func existingAuditSessionId(_ dbConn: Database, marker: String) throws -> Int64? {
+        try Int64.fetchOne(dbConn, sql: """
+            SELECT id
+            FROM audit_sessions_v2
+            WHERE session_type = 'physical_count'
+              AND status = 'active'
+              AND notes LIKE ?
+              AND deleted_at IS NULL
+            ORDER BY id DESC
+            LIMIT 1
+            """, arguments: ["%\(marker)%"])
+    }
+
+    private func createPhysicalAuditSession(
+        _ dbConn: Database,
+        partId: Int64,
+        partName: String,
+        locationType: String,
+        locationId: Int64,
+        startedBy: Int64,
+        marker: String
+    ) throws -> Int64 {
+        try dbConn.execute(sql: """
+            INSERT INTO audit_sessions_v2
+            (session_type, started_by, status, notes, started_at)
+            VALUES ('physical_count', ?, 'active', ?, datetime('now'))
+            """, arguments: [
+                startedBy,
+                "\(marker) Count \(partName) (part #\(partId)) at \(locationType) #\(locationId) before wishlist generation."
+            ])
+        return dbConn.lastInsertedRowID
     }
 
     // =========================================================================

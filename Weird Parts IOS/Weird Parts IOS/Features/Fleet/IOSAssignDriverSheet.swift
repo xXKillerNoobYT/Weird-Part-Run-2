@@ -19,8 +19,13 @@ struct IOSAssignDriverSheet: View {
     @State private var isLoading = true
     @State private var isSaving = false
     @State private var loadError: String?
+    @State private var showDiscardConfirmation = false
 
     private let assignmentTypes = ["primary", "secondary", "temporary"]
+
+    private var isDirty: Bool {
+        selectedEmployeeId != nil || assignmentType != "primary" || isTakeHome
+    }
 
     var body: some View {
         NavigationStack {
@@ -31,10 +36,22 @@ struct IOSAssignDriverSheet: View {
             .navigationTitle("Assign Driver")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, prompt: "Search employees...")
-            .interactiveDismissDisabled(isSaving)
+            .dismissSafety(
+                isDirty: isDirty,
+                isSaving: isSaving,
+                showDiscardConfirmation: $showDiscardConfirmation,
+                onDiscard: { dismiss() }
+            )
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        DismissSafety.cancelOrConfirm(
+                            isDirty: isDirty,
+                            isSaving: isSaving,
+                            dismiss: dismiss,
+                            showDiscardConfirmation: $showDiscardConfirmation
+                        )
+                    }
                         .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {

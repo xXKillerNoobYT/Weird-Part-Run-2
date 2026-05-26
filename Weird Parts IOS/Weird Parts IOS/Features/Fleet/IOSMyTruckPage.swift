@@ -66,6 +66,16 @@ struct IOSMyTruckPage: View {
             loadData()
             appCore.onboardingManager?.markCompleted("fleet-my-truck")
         }
+        .onAppear {
+            NotificationCenter.default.post(
+                name: .fleetMyTruckPageActive,
+                object: nil,
+                userInfo: ["context": fleetMyTruckContext]
+            )
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .fleetMyTruckPageInactive, object: nil)
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
@@ -80,6 +90,13 @@ struct IOSMyTruckPage: View {
     }
 
     // MARK: - No Vehicle
+
+    private var fleetMyTruckContext: String {
+        let vehicleName = vehicle?.vehicleName ?? "unassigned"
+        return """
+        page=My Truck; vehicle=\(vehicleName); inventory_tab=\(inventoryTab.rawValue); truck_stock=\(truckStock.count); transfer_items=\(transferItems.count); recent_mileage_logs=\(recentMileage.count); recent_fuel_logs=\(recentFuel.count)
+        """
+    }
 
     private var noVehicleView: some View {
         EmptyStateView(
@@ -402,7 +419,11 @@ struct IOSMyTruckPage: View {
                 )
                 .environmentObject(appCore)
             } else {
-                ContentUnavailableView("No vehicle assigned", systemImage: "car.2", description: Text("Assign a vehicle before logging fuel."))
+                EmptyStateView(
+                    icon: "car.2",
+                    title: "No vehicle assigned",
+                    message: "Assign a vehicle before logging fuel."
+                )
             }
 
         case .reportIssue:
@@ -417,7 +438,11 @@ struct IOSMyTruckPage: View {
                 )
                 .environmentObject(appCore)
             } else {
-                ContentUnavailableView("No vehicle assigned", systemImage: "car.2", description: Text("Assign a vehicle before reporting an issue."))
+                EmptyStateView(
+                    icon: "car.2",
+                    title: "No vehicle assigned",
+                    message: "Assign a vehicle before reporting an issue."
+                )
             }
 
         case .addTransferItem:
@@ -431,7 +456,11 @@ struct IOSMyTruckPage: View {
                 )
                 .environmentObject(appCore)
             } else {
-                ContentUnavailableView("No vehicle assigned", systemImage: "car.2", description: Text("Assign a vehicle before transferring parts."))
+                EmptyStateView(
+                    icon: "car.2",
+                    title: "No vehicle assigned",
+                    message: "Assign a vehicle before transferring parts."
+                )
             }
 
         case .help:
@@ -480,21 +509,15 @@ struct IOSMyTruckPage: View {
                 return
             }
 
-            // Get smart card stats
-            vehicleStats = try fleet.getMyVehicleStats(userId: currentUserId)
-
-            if let stats = vehicleStats {
-                // Load vehicle detail
-                vehicle = try fleet.getVehicleDetail(id: stats.vehicleId)
-
-                // Load inventory by type
-                truckStock = try fleet.getVehicleStock(vehicleId: stats.vehicleId, stockType: "truck_stock")
-                transferItems = try fleet.getVehicleStock(vehicleId: stats.vehicleId, stockType: "transfer")
-
-                // Load recent logs
-                recentMileage = try fleet.listMileageLogs(vehicleId: stats.vehicleId, limit: 5)
-                recentFuel = try fleet.listFuelLogs(vehicleId: stats.vehicleId, limit: 5)
+            if let dashboard = try fleet.getMyTruckDashboard(userId: currentUserId, recentLimit: 5) {
+                vehicleStats = dashboard.stats
+                vehicle = dashboard.vehicle
+                truckStock = dashboard.truckStock
+                transferItems = dashboard.transferItems
+                recentMileage = dashboard.recentMileage
+                recentFuel = dashboard.recentFuel
             } else {
+                vehicleStats = nil
                 vehicle = nil
                 truckStock = []
                 transferItems = []
