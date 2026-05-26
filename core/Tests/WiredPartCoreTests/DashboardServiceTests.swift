@@ -147,6 +147,47 @@ struct DashboardServiceTests {
         #expect(hours.totalHours >= 0)
     }
 
+    @Test("My hours today reads completed break minutes from break records without labor gaps")
+    func testMyHoursTodayBreakMinutesFromBreakRecords() throws {
+        let (env, dash) = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BREAK-01", name: "Break Job")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries (user_id, job_id, clock_in, clock_out, regular_hours, status)
+                VALUES (?, ?, datetime('now','-4 hours'), datetime('now','-1 hour'), 3.0, 'completed')
+                """, arguments: [env.adminUserId, jobId])
+            try db.execute(sql: """
+                INSERT INTO break_records
+                    (user_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
+                VALUES
+                    (?, 'break', datetime('now','-3 hours'), datetime('now','-2 hours','-45 minutes'), 15, 1, 0),
+                    (?, 'lunch_unpaid', datetime('now','-2 hours'), datetime('now','-1 hours','-30 minutes'), 30, 0, 0)
+                """, arguments: [env.adminUserId, env.adminUserId])
+        }
+
+        let hours = try dash.getMyHoursToday(userId: env.adminUserId)
+
+        #expect(hours.breakMinutes == 45)
+    }
+
+    @Test("My hours today includes elapsed minutes for active same-day break record")
+    func testMyHoursTodayIncludesActiveBreakElapsedMinutes() throws {
+        let (env, dash) = try freshEnv()
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO break_records
+                    (user_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
+                VALUES
+                    (?, 'break', datetime('now','-20 minutes'), NULL, NULL, 1, 0)
+                """, arguments: [env.adminUserId])
+        }
+
+        let hours = try dash.getMyHoursToday(userId: env.adminUserId)
+
+        #expect(hours.breakMinutes >= 19)
+        #expect(hours.breakMinutes <= 21)
+    }
+
     @Test("Team clocked in status reflects active clock entry")
     func testTeamClockedIn() throws {
         let (env, dash) = try freshEnv()
