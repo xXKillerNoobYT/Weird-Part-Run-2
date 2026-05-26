@@ -118,8 +118,8 @@ final class AppCore: ObservableObject {
                     // Remove the .unencrypted.bak file after it has been retained for 7 days.
                     AppDatabase.cleanupStaleUnencryptedBackup(atPath: path)
                 } catch {
-                    #if DEBUG
-                    if Self.isRecoverableDebugCipherOpenFailure(error) {
+                    #if DEBUG && targetEnvironment(simulator)
+                    if Self.shouldResetLocalDatabaseAfterCipherOpenFailure(error) {
                         self.logger.warning(
                             "[AppCore] DEBUG SQLCipher open failed with decrypt/notadb; resetting local simulator database and retrying."
                         )
@@ -369,6 +369,14 @@ final class AppCore: ObservableObject {
         return description.contains("file is not a database")
             || description.contains("not a database")
             || description.contains("decrypt")
+    }
+
+    nonisolated static func shouldResetLocalDatabaseAfterCipherOpenFailure(_ error: Error) -> Bool {
+        #if DEBUG && targetEnvironment(simulator)
+        return isRecoverableDebugCipherOpenFailure(error)
+        #else
+        return false
+        #endif
     }
 
     // MARK: - Auth Actions
