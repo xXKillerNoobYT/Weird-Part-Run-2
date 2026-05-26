@@ -7,6 +7,7 @@ import WiredPartCore
 /// footer text, payment terms, delivery notes) via SettingsService.
 struct PDFSettingsPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
     @State private var activeSheet: ActiveSheet?
     @State private var accentColor = "#2563eb"
     @State private var showUnitPrices = true
@@ -16,8 +17,22 @@ struct PDFSettingsPage: View {
     @State private var deliveryNotes = ""
     @State private var saved = false
     @State private var errorMessage: String?
+    @State private var hasUnsavedChanges = false
+    @State private var showDiscardConfirmation = false
+    @State private var baselineFormSignature = ""
 
     private let paymentOptions = ["Net 15", "Net 30", "Net 45", "Net 60", "Due on Receipt", "COD"]
+
+    private var formSignature: String {
+        [
+            accentColor,
+            String(showUnitPrices),
+            String(showExtended),
+            footerText,
+            paymentTerms,
+            deliveryNotes,
+        ].joined(separator: "|")
+    }
 
     var body: some View {
         Form {
@@ -71,7 +86,14 @@ struct PDFSettingsPage: View {
         // Fix #149: dismiss keyboard on scroll
         .scrollDismissesKeyboard(.interactively)
         .navigationTitle("PDF Settings")
+        .navigationBarBackButtonHidden(hasUnsavedChanges)
+        .interactiveDismissDisabled(hasUnsavedChanges)
         .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                if hasUnsavedChanges {
+                    Button("Back") { showDiscardConfirmation = true }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -86,6 +108,20 @@ struct PDFSettingsPage: View {
             ])
         }
         .task { loadPDFSettings() }
+        .onChange(of: formSignature) { _, _ in
+            hasUnsavedChanges = formSignature != baselineFormSignature
+        }
+        .confirmationDialog(
+            "Discard changes?",
+            isPresented: $showDiscardConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Discard", role: .destructive) {
+                hasUnsavedChanges = false
+                dismiss()
+            }
+            Button("Keep editing", role: .cancel) {}
+        }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK") { errorMessage = nil }
         } message: {
@@ -111,6 +147,7 @@ struct PDFSettingsPage: View {
             footerText = pdf.footerText
             paymentTerms = pdf.paymentTerms
             deliveryNotes = pdf.deliveryNotes
+            resetDirtyTracking()
         } catch {
             errorMessage = userFriendlyError(error, context: "load")
         }
@@ -132,6 +169,7 @@ struct PDFSettingsPage: View {
         do {
             _ = try service.updatePDFSettings(settings)
             saved = true
+            resetDirtyTracking()
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(2))
                 saved = false
@@ -139,5 +177,10 @@ struct PDFSettingsPage: View {
         } catch {
             errorMessage = userFriendlyError(error, context: "save")
         }
+    }
+
+    private func resetDirtyTracking() {
+        baselineFormSignature = formSignature
+        hasUnsavedChanges = false
     }
 }
