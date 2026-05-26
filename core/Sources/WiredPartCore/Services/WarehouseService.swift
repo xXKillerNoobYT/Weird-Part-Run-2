@@ -2998,6 +2998,15 @@ public final class WarehouseService: Sendable {
             throw WarehouseError.invalidDimension
         }
         return try db.writer.write { dbConn in
+            try Self.validateZonePlacement(
+                floorPlanId: floorPlanId,
+                excludingZoneId: nil,
+                gridX: gridX,
+                gridY: gridY,
+                gridWidth: gridWidth,
+                gridHeight: gridHeight,
+                dbConn: dbConn
+            )
             var zone = WarehouseZone(
                 floorPlanId: floorPlanId,
                 zoneType: zoneType,
@@ -3037,16 +3046,85 @@ public final class WarehouseService: Sendable {
         if let gridHeight, gridHeight <= 0 { throw WarehouseError.invalidDimension }
         try db.writer.write { dbConn in
             guard var zone = try WarehouseZone.fetchOne(dbConn, key: id) else { return }
+            let nextGridX = gridX ?? zone.gridX
+            let nextGridY = gridY ?? zone.gridY
+            let nextGridWidth = gridWidth ?? zone.gridWidth
+            let nextGridHeight = gridHeight ?? zone.gridHeight
+            try Self.validateZonePlacement(
+                floorPlanId: zone.floorPlanId,
+                excludingZoneId: id,
+                gridX: nextGridX,
+                gridY: nextGridY,
+                gridWidth: nextGridWidth,
+                gridHeight: nextGridHeight,
+                dbConn: dbConn
+            )
             if let v = zoneType { zone.zoneType = v }
             if let v = label { zone.label = v }
             if let v = colorHex { zone.colorHex = v }
-            if let v = gridX { zone.gridX = v }
-            if let v = gridY { zone.gridY = v }
-            if let v = gridWidth { zone.gridWidth = v }
-            if let v = gridHeight { zone.gridHeight = v }
+            zone.gridX = nextGridX
+            zone.gridY = nextGridY
+            zone.gridWidth = nextGridWidth
+            zone.gridHeight = nextGridHeight
             if let v = rotation { zone.rotation = v }
             if let v = zoneOrder { zone.zoneOrder = v }
             try zone.update(dbConn)
+        }
+    }
+
+    private static func validateZonePlacement(
+        floorPlanId: Int64,
+        excludingZoneId: Int64?,
+        gridX: Int,
+        gridY: Int,
+        gridWidth: Int,
+        gridHeight: Int,
+        dbConn: Database
+    ) throws {
+        guard gridX >= 0, gridY >= 0, gridWidth > 0, gridHeight > 0 else {
+            throw WarehouseError.invalidDimension
+        }
+        guard let floorPlan = try WarehouseFloorPlan
+            .filter(Column("id") == floorPlanId && Column("deleted_at") == nil)
+            .fetchOne(dbConn)
+        else {
+            throw WarehouseError.invalidDimension
+        }
+        if let rows = floorPlan.gridRows, let cols = floorPlan.gridCols {
+            guard gridY + gridHeight <= rows, gridX + gridWidth <= cols else {
+                throw WarehouseError.invalidDimension
+            }
+        }
+
+        var query = WarehouseZone
+            .filter(Column("floor_plan_id") == floorPlanId && Column("deleted_at") == nil)
+        if let excludingZoneId {
+            query = query.filter(Column("id") != excludingZoneId)
+        }
+        let zones = try query.fetchAll(dbConn)
+        let candidate = ZoneGridRect(x: gridX, y: gridY, width: gridWidth, height: gridHeight)
+        let hasOverlap = zones.contains { zone in
+            candidate.intersects(ZoneGridRect(
+                x: zone.gridX,
+                y: zone.gridY,
+                width: zone.gridWidth,
+                height: zone.gridHeight
+            ))
+        }
+        guard !hasOverlap else { throw WarehouseError.invalidDimension }
+    }
+
+    private struct ZoneGridRect {
+        let x: Int
+        let y: Int
+        let width: Int
+        let height: Int
+
+        func intersects(_ other: ZoneGridRect) -> Bool {
+            x < other.x + other.width &&
+                x + width > other.x &&
+                y < other.y + other.height &&
+                y + height > other.y
         }
     }
 

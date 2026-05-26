@@ -720,6 +720,81 @@ struct WarehouseServiceExtTests {
         }
     }
 
+    @Test("updateZone keeps adjacent zone visible when resize remains non-overlapping")
+    func updateZone_preservesAdjacentZoneWhenResizeIsValid() throws {
+        let env = try E2ETestHelpers.setUp()
+        let floorPlan = try env.warehouse.createFloorPlan(name: "Two Zone Resize", widthInches: 480, lengthInches: 360)
+        let floorPlanId = floorPlan.id!
+        try env.warehouse.updateFloorPlanGrid(floorPlanId: floorPlanId, rows: 4, cols: 4)
+        let storage = try env.warehouse.addZone(
+            floorPlanId: floorPlanId,
+            zoneType: "storage",
+            label: "Storage",
+            gridX: 0,
+            gridY: 0,
+            gridWidth: 1,
+            gridHeight: 1
+        )
+        let receiving = try env.warehouse.addZone(
+            floorPlanId: floorPlanId,
+            zoneType: "receiving",
+            label: "Receiving",
+            gridX: 2,
+            gridY: 0,
+            gridWidth: 1,
+            gridHeight: 1
+        )
+
+        try env.warehouse.updateZone(id: storage.id!, gridWidth: 2, gridHeight: 2)
+
+        let zones = try env.warehouse.listZones(floorPlanId: floorPlanId)
+        let updatedStorage = try #require(zones.first { $0.id == storage.id })
+        let unchangedReceiving = try #require(zones.first { $0.id == receiving.id })
+        #expect(updatedStorage.gridX == 0)
+        #expect(updatedStorage.gridY == 0)
+        #expect(updatedStorage.gridWidth == 2)
+        #expect(updatedStorage.gridHeight == 2)
+        #expect(unchangedReceiving.gridX == 2)
+        #expect(unchangedReceiving.gridY == 0)
+        #expect(zones.count == 2)
+    }
+
+    @Test("updateZone rejects overlap and leaves original placement unchanged")
+    func updateZone_rejectsOverlapAndPreservesOriginalPlacement() throws {
+        let env = try E2ETestHelpers.setUp()
+        let floorPlan = try env.warehouse.createFloorPlan(name: "Overlap Rejection", widthInches: 480, lengthInches: 360)
+        let floorPlanId = floorPlan.id!
+        try env.warehouse.updateFloorPlanGrid(floorPlanId: floorPlanId, rows: 4, cols: 4)
+        let storage = try env.warehouse.addZone(
+            floorPlanId: floorPlanId,
+            zoneType: "storage",
+            label: "Storage",
+            gridX: 0,
+            gridY: 0,
+            gridWidth: 1,
+            gridHeight: 1
+        )
+        _ = try env.warehouse.addZone(
+            floorPlanId: floorPlanId,
+            zoneType: "receiving",
+            label: "Receiving",
+            gridX: 2,
+            gridY: 0,
+            gridWidth: 1,
+            gridHeight: 1
+        )
+
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            try env.warehouse.updateZone(id: storage.id!, gridWidth: 3, gridHeight: 1)
+        }
+
+        let zones = try env.warehouse.listZones(floorPlanId: floorPlanId)
+        let unchangedStorage = try #require(zones.first { $0.id == storage.id })
+        #expect(unchangedStorage.gridWidth == 1)
+        #expect(unchangedStorage.gridHeight == 1)
+        #expect(zones.count == 2)
+    }
+
     // MARK: - getPartName / getPartCode
 
     @Test("getPartName returns part name for existing part")
