@@ -65,6 +65,14 @@ struct IOSReceiveShipmentPage: View {
                 "Damaged - returning"
             case .wrongPart:
                 "Wrong part"
+            case .jobReturnHolding:
+                "Job return held"
+            case .jobReturnDamagedReview:
+                "Job return damaged review"
+            case .jobReturnSupplierReview:
+                "Job return supplier review"
+            case .jobReturnWrongPartReview:
+                "Job return wrong part review"
             }
         }
         var icon: String {
@@ -75,6 +83,10 @@ struct IOSReceiveShipmentPage: View {
             case .usedWriteOff: "xmark.bin.fill"
             case .damagedReturn: "exclamationmark.triangle.fill"
             case .wrongPart: "questionmark.circle.fill"
+            case .jobReturnHolding: "tray.full.fill"
+            case .jobReturnDamagedReview: "exclamationmark.triangle.fill"
+            case .jobReturnSupplierReview: "arrow.uturn.backward.circle.fill"
+            case .jobReturnWrongPartReview: "questionmark.circle.fill"
             }
         }
         var color: Color {
@@ -87,6 +99,10 @@ struct IOSReceiveShipmentPage: View {
             case .usedWriteOff: .orange
             case .damagedReturn: .red
             case .wrongPart: .red
+            case .jobReturnHolding: .blue
+            case .jobReturnDamagedReview: .red
+            case .jobReturnSupplierReview: .orange
+            case .jobReturnWrongPartReview: .red
             }
         }
     }
