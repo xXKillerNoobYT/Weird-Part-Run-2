@@ -21,6 +21,7 @@ WiredPart is a local-first construction/trade business management app. The curre
 | `paperclip-agentic-execution-loop.md` | **ACTIVE** | Goal -> repo plan -> GitHub issue -> Paperclip issue -> PR/CI/merge -> closeout routing rules for autonomous execution |
 | `dashboard-hub-plan.md` | **ACTIVE** | Dashboard as user hub: 4 tabs (Overview + clock banner, Clock with GPS-sorted jobs + geofencing, Daily Report command center, Fast QR scanner) |
 | `deployment-master-plan.md` | 19/23 | App Store, DMG, NSIS distribution. 4 remaining tasks need physical devices |
+| `plan-first-branch-approval-protocol.md` | **ACTIVE** | Repo-visible plan, branch, owner approval, and GitHub comment-command protocol before feature/update implementation starts |
 | `qr_plan.md` | Reference | QR v2 payload schema, 8 entity types, auto-fill pipeline |
 
 ## Paperclip / GitHub Routing
