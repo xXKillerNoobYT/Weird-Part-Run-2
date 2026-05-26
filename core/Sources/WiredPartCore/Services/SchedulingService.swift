@@ -1113,6 +1113,7 @@ public final class SchedulingService: Sendable {
         jobId: Int64,
         userId: Int64,
         date: String,
+        timeSlot: String = "full",
         notes: String? = nil,
         forceCreateDespiteTimeOff: Bool = false
     ) throws -> Int64 {
@@ -1160,10 +1161,10 @@ public final class SchedulingService: Sendable {
             try dbConn.execute(
                 sql: """
                     INSERT INTO job_dispatch
-                    (job_id, user_id, dispatch_date, notes, status, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, 'scheduled', datetime('now'), datetime('now'))
+                    (job_id, user_id, dispatch_date, notes, time_slot, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 'scheduled', datetime('now'), datetime('now'))
                     """,
-                arguments: [jobId, userId, date, notes]
+                arguments: [jobId, userId, date, notes, timeSlot]
             )
             return dbConn.lastInsertedRowID
         }
