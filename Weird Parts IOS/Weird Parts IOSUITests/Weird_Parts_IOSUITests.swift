@@ -337,6 +337,15 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
     @MainActor
     func testWEI1182WarehouseWizardBreakpointWalkingPathScreenshots() throws {
+        app.terminate()
+        app = XCUIApplication()
+        configureUITestingEnvironment(app)
+        app.launchArguments += [
+            "-UITesting",
+            "-UITestingWarehouseSetupWizard"
+        ]
+        app.launch()
+
         let artifactDirectory = wei1182ArtifactDirectory
         try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
         let existingArtifacts = (try? FileManager.default.contentsOfDirectory(

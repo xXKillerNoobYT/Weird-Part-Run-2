@@ -47,7 +47,10 @@ struct WizardStepWalkingPath: View {
                             .frame(maxWidth: .infinity)
                     }
                 } else {
-                    stopList
+                    VStack(spacing: 0) {
+                        stopList
+                        compactPreviewActions
+                    }
                 }
             }
         }
@@ -120,6 +123,36 @@ struct WizardStepWalkingPath: View {
         }
         .listStyle(.insetGrouped)
         .toolbar { EditButton() }
+    }
+
+    @ViewBuilder
+    private var compactPreviewActions: some View {
+        if isPreviewing {
+            VStack(spacing: 8) {
+                Button {
+                    applyPreview()
+                } label: {
+                    Label("Use suggested order", systemImage: "checkmark.circle")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isSaving)
+                .accessibilityLabel("Use suggested order")
+                .accessibilityIdentifier("walkingPathCompact_useSuggestedOrder")
+
+                Button(role: .destructive) {
+                    clearPath()
+                } label: {
+                    Label("Dismiss preview", systemImage: "trash")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Dismiss preview")
+            }
+            .padding()
+            .background(.regularMaterial)
+        }
     }
 
     private func stopRow(areaId: Int64, index: Int) -> some View {
