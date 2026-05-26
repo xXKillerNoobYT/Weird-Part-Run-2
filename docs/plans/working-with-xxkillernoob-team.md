@@ -12,6 +12,8 @@
 
 ## 1. Non-negotiable rule: plans before feature work
 
+Plan files in the repo must be updated or verified before new feature/update implementation starts.
+
 Before starting any new feature, feature update, workflow change, or risky refactor:
 
 1. Search for an existing plan in `docs/plans/`, `docs/paperclip-handoff.md`, `docs/dev-qa.md`, and related GitHub issues/PRs.
@@ -43,7 +45,7 @@ Meaning:
 - The PR should cite the Paperclip issue and the plan file.
 - If Isaac later says the plan is wrong, stop implementation, update the plan, and resume only after the updated plan is accepted.
 
-### 2.2 External owner / collaborator repos
+### 2.2 External-owner policy / collaborator repos
 
 For repos, features, or product decisions owned by someone else, agents must use a dedicated plan branch and get approval before implementation.
 
@@ -86,6 +88,7 @@ git checkout -B plan/external-owner-job-return-flow origin/main
 Plan branches should usually touch only:
 
 - `docs/plans/*.md`
+- `docs/plan/<slug>` only when a legacy instruction uses that singular shorthand; in this repo, normalize new plan files to `docs/plans/<slug>.md`
 - `docs/dev-qa.md` if questions need owner answers
 - small index/linking docs when needed
 
