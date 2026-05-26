@@ -136,7 +136,14 @@ struct WizardStepZones: View {
         HStack(spacing: 0) {
             palette
                 .frame(width: 176)
-            canvasScroll(dims: dims)
+            if inspector {
+                canvasScroll(dims: dims)
+            } else {
+                VStack(spacing: 0) {
+                    canvasScroll(dims: dims)
+                    compactZoneActions
+                }
+            }
             if inspector {
                 inspectorPanel
                     .frame(width: 260)
@@ -248,6 +255,37 @@ struct WizardStepZones: View {
         inspectorPanel
             .frame(maxHeight: 164)
             .background(Color(.secondarySystemBackground))
+    }
+
+    @ViewBuilder
+    private var compactZoneActions: some View {
+        if let zone = selectedZone {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(zoneTitle(zone))
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                    Text("\(zone.zoneTypeDisplay) at R\(zone.gridY + 1)C\(zone.gridX + 1), \(zone.gridWidth)x\(zone.gridHeight)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button {
+                    resizeZone(zone, width: zone.gridWidth + 1, height: zone.gridHeight + 1)
+                } label: {
+                    Label("Grow", systemImage: "arrow.down.right.and.arrow.up.left")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Grow")
+                .accessibilityIdentifier("zoneCompact_grow")
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 10)
+            .background(Color(.secondarySystemBackground))
+        }
     }
 
     private var inspectorPanel: some View {
