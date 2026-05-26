@@ -726,14 +726,8 @@ final class AppCore: ObservableObject {
         }
     }
 
-    nonisolated private static var uiTestingFixturePIN: String {
-        let configuredPIN = ProcessInfo.processInfo.environment["WEIRD_PARTS_UI_TEST_PIN"] ?? "8396"
-        let isDigitsOnly = configuredPIN.allSatisfy { $0.isNumber }
-        return isDigitsOnly && (4...6).contains(configuredPIN.count) ? configuredPIN : "8396"
-    }
-
     nonisolated static func seedUITestingFixtures(db: AppDatabase, authService: AuthService) throws {
-        let seedResult = try authService.seedFirstAdmin(displayName: "UITest Owner", pin: uiTestingFixturePIN)
+        let seedResult = try authService.seedFirstAdmin(displayName: "UITest Owner", pin: "1234")
         let activeUsers = try authService.getActiveUsers()
         let fixtureUserId = seedResult.user?.id ??
             activeUsers.first(where: { $0.displayName == "UITest Owner" })?.id ??
@@ -905,11 +899,15 @@ final class AppCore: ObservableObject {
 
         if ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard") {
             try seedDispatchBoardUITestingFixtures(db: db)
+            UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
+            UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
         }
 
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
-        UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        if !ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard") {
+            UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        }
 
         seedWEI936OnboardingStateIfRequested(userId: fixtureUserId)
     }
