@@ -48,6 +48,12 @@ struct IOSForecastSettingsPage: View {
     private let locationTypes = ["shop", "truck", "trailer"]
     private let locationLabels: [String: String] = ["shop": "Shop", "truck": "Truck", "trailer": "Trailer"]
 
+    private var hasValidSettings: Bool {
+        commonMinMult > 0 && commonTargetMult > 0 && commonMaxMult > 0 &&
+        criticalMinMult > 0 && criticalTargetMult > 0 && criticalMaxMult > 0 &&
+        freeSpaceThreshold > 0
+    }
+
     var body: some View {
         Group {
             if isLoading {
@@ -185,6 +191,8 @@ struct IOSForecastSettingsPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!hasValidSettings)
+                .accessibilityHint(hasValidSettings ? "" : "All multipliers and free-space threshold must be greater than zero.")
             }
         }
         // Fix #149: dismiss keyboard when scrolling forecast settings
