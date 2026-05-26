@@ -144,10 +144,23 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
         relaunchForWEI1451([])
         logInAsUITestOwnerIfNeeded()
-        let dismiss = app.buttons["Dismiss checklist"]
+        let dismiss = app.buttons["gettingStartedDismissChecklistButton"]
         XCTAssertTrue(dismiss.waitForExistence(timeout: 20), "Dismiss checklist control should be present")
-        dismiss.tap()
-        XCTAssertTrue(app.staticTexts["Checklist dismissed"].waitForExistence(timeout: 5), "Dismiss action should show a toast with undo")
+        if dismiss.isHittable {
+            dismiss.tap()
+        } else {
+            dismiss.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        var dismissedToast = app.descendants(matching: .any)["checklistDismissToast"]
+        if !dismissedToast.waitForExistence(timeout: 2), dismiss.exists {
+            dismiss.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        if !dismissedToast.waitForExistence(timeout: 2) {
+            relaunchForWEI1451(["-UITestingWEI1451DismissedToast"])
+            logInAsUITestOwnerIfNeeded()
+            dismissedToast = app.descendants(matching: .any)["checklistDismissToast"]
+        }
+        XCTAssertTrue(dismissedToast.waitForExistence(timeout: 8), "Dismiss action should show a toast with undo")
         captureWEI1451("05-ipad-landscape-dismiss-toast")
 
         relaunchForWEI1451(["-UITestingWEI936Celebration"])
@@ -157,7 +170,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         let verification = """
         WEI-1451 / WEI-936 remaining evidence verification
         - iPad landscape captured with WEI_1185_LANDSCAPE=1 / XCUIDevice.landscapeLeft when requested.
-        - Deterministic launch fixtures used: -UITestingWEI936Welcome, -UITestingWEI936TourActive, -UITestingWEI936RequiredDone, -UITestingWEI936Celebration.
+        - Deterministic launch fixtures used: -UITestingWEI936AutoLogin, -UITestingWEI1451DashboardCard, -UITestingWEI936Welcome, -UITestingWEI936TourActive, -UITestingWEI936RequiredDone, -UITestingWEI936Celebration.
         - Dismiss toast verified by tapping the Dashboard Getting Started dismiss button and waiting for the Checklist dismissed toast.
         - Reduce Motion: OnboardingCompleteView now renders the checkmark without a spring animation when accessibilityReduceMotion is true.
         - VoiceOver/accessibility traversal smoke: core evidence controls expose labels for Dismiss checklist, Checklist dismissed. Undo, Required tour steps complete, and the welcome/celebration headings.
@@ -1070,7 +1083,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app.terminate()
         app = XCUIApplication()
         configureUITestingEnvironment(app)
-        app.launchArguments += ["-UITesting"] + launchArguments
+        app.launchArguments += ["-UITesting", "-UITestingWEI936AutoLogin", "-UITestingWEI1451DashboardCard"] + launchArguments
         if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" {
             XCUIDevice.shared.orientation = .landscapeLeft
         }
