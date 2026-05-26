@@ -720,6 +720,48 @@ struct WarehouseServiceExtTests {
         }
     }
 
+    @Test("resizeZone preserves adjacent zone and rejects overlap")
+    func updateZone_preservesAdjacentZoneWhenResizeWouldOverlap() throws {
+        let env = try E2ETestHelpers.setUp()
+        let floorPlan = try env.warehouse.createFloorPlan(name: "Two Zone Plan", widthInches: 480, lengthInches: 360)
+        try env.warehouse.updateFloorPlanGrid(floorPlanId: floorPlan.id!, rows: 3, cols: 5)
+
+        let storage = try env.warehouse.addZone(
+            floorPlanId: floorPlan.id!,
+            zoneType: "storage",
+            label: "Storage",
+            gridX: 0,
+            gridY: 0,
+            gridWidth: 1,
+            gridHeight: 1,
+            zoneOrder: 0
+        )
+        let receiving = try env.warehouse.addZone(
+            floorPlanId: floorPlan.id!,
+            zoneType: "receiving",
+            label: "Receiving",
+            gridX: 2,
+            gridY: 0,
+            gridWidth: 1,
+            gridHeight: 1,
+            zoneOrder: 1
+        )
+
+        try env.warehouse.updateZone(id: storage.id!, gridWidth: 2, gridHeight: 2)
+        var zones = try env.warehouse.listZones(floorPlanId: floorPlan.id!)
+        #expect(zones.count == 2)
+        #expect(zones.first(where: { $0.id == receiving.id })?.gridX == 2)
+        #expect(zones.first(where: { $0.id == receiving.id })?.gridY == 0)
+
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            try env.warehouse.updateZone(id: storage.id!, gridWidth: 3, gridHeight: 2)
+        }
+        zones = try env.warehouse.listZones(floorPlanId: floorPlan.id!)
+        #expect(zones.count == 2)
+        #expect(zones.first(where: { $0.id == storage.id })?.gridWidth == 2)
+        #expect(zones.first(where: { $0.id == receiving.id })?.gridX == 2)
+    }
+
     // MARK: - getPartName / getPartCode
 
     @Test("getPartName returns part name for existing part")

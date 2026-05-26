@@ -327,6 +327,10 @@ struct WizardStepZones: View {
     }
 
     private func createZone(type: String, col: Int, row: Int) {
+        guard canPlaceZone(id: nil, col: col, row: row, width: 1, height: 1) else {
+            stepError = "That spot is already occupied or outside the grid."
+            return
+        }
         do {
             let zone = try appCore.warehouseService?.addZone(
                 floorPlanId: floorPlanId,
@@ -347,11 +351,17 @@ struct WizardStepZones: View {
 
     private func moveZone(_ zone: WarehouseZone, col: Int, row: Int) {
         guard let zoneId = zone.id, let dims = gridDimensions else { return }
+        let nextCol = min(col, max(dims.cols - zone.gridWidth, 0))
+        let nextRow = min(row, max(dims.rows - zone.gridHeight, 0))
+        guard canPlaceZone(id: zoneId, col: nextCol, row: nextRow, width: zone.gridWidth, height: zone.gridHeight) else {
+            stepError = "That move would overlap another zone."
+            return
+        }
         do {
             try appCore.warehouseService?.updateZone(
                 id: zoneId,
-                gridX: min(col, max(dims.cols - zone.gridWidth, 0)),
-                gridY: min(row, max(dims.rows - zone.gridHeight, 0))
+                gridX: nextCol,
+                gridY: nextRow
             )
             selectedZoneId = zoneId
             loadData()
@@ -362,11 +372,17 @@ struct WizardStepZones: View {
 
     private func resizeZone(_ zone: WarehouseZone, width: Int, height: Int) {
         guard let zoneId = zone.id, let dims = gridDimensions else { return }
+        let nextWidth = min(width, max(dims.cols - zone.gridX, 1))
+        let nextHeight = min(height, max(dims.rows - zone.gridY, 1))
+        guard canPlaceZone(id: zoneId, col: zone.gridX, row: zone.gridY, width: nextWidth, height: nextHeight) else {
+            stepError = "That resize would overlap another zone."
+            return
+        }
         do {
             try appCore.warehouseService?.updateZone(
                 id: zoneId,
-                gridWidth: min(width, max(dims.cols - zone.gridX, 1)),
-                gridHeight: min(height, max(dims.rows - zone.gridY, 1))
+                gridWidth: nextWidth,
+                gridHeight: nextHeight
             )
             selectedZoneId = zoneId
             loadData()
@@ -385,6 +401,47 @@ struct WizardStepZones: View {
         } catch {
             stepError = userFriendlyError(error, context: "delete zone")
         }
+    }
+
+    private func canPlaceZone(id: Int64?, col: Int, row: Int, width: Int, height: Int) -> Bool {
+        guard let dims = gridDimensions,
+              col >= 0,
+              row >= 0,
+              width > 0,
+              height > 0,
+              col + width <= dims.cols,
+              row + height <= dims.rows
+        else { return false }
+
+        return !zones.contains { other in
+            if let id, other.id == id { return false }
+            return rectanglesOverlap(
+                lhsX: col,
+                lhsY: row,
+                lhsWidth: width,
+                lhsHeight: height,
+                rhsX: other.gridX,
+                rhsY: other.gridY,
+                rhsWidth: other.gridWidth,
+                rhsHeight: other.gridHeight
+            )
+        }
+    }
+
+    private func rectanglesOverlap(
+        lhsX: Int,
+        lhsY: Int,
+        lhsWidth: Int,
+        lhsHeight: Int,
+        rhsX: Int,
+        rhsY: Int,
+        rhsWidth: Int,
+        rhsHeight: Int
+    ) -> Bool {
+        lhsX < rhsX + rhsWidth &&
+            lhsX + lhsWidth > rhsX &&
+            lhsY < rhsY + rhsHeight &&
+            lhsY + lhsHeight > rhsY
     }
 
     private func zoneLayout(for width: CGFloat) -> ZonePlacementLayout {
