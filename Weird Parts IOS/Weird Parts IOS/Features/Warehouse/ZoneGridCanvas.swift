@@ -50,6 +50,7 @@ struct ZoneGridCanvas: View {
             return handleDrop(item, location: location)
         } isTargeted: { _ in }
         .accessibilityElement(children: .contain)
+        .accessibilityLabel(zoneGridAccessibilitySummary)
     }
 
     private var grid: some View {
@@ -221,6 +222,23 @@ struct ZoneGridCanvas: View {
 
     private func zoneExtent(_ cells: Int) -> CGFloat {
         CGFloat(cells) * cellSize + CGFloat(max(cells - 1, 0)) * cellSpacing
+    }
+
+    private var zoneGridAccessibilitySummary: String {
+        guard !zones.isEmpty else {
+            return "Zone grid, \(rows) rows by \(cols) columns, no zones placed"
+        }
+
+        let summaries = zones.map { zone in
+            let clampedX = min(max(zone.gridX, 0), max(cols - 1, 0))
+            let clampedY = min(max(zone.gridY, 0), max(rows - 1, 0))
+            let maxWidth = max(cols - clampedX, 1)
+            let maxHeight = max(rows - clampedY, 1)
+            let width = min(max(zone.gridWidth, 1), maxWidth)
+            let height = min(max(zone.gridHeight, 1), maxHeight)
+            return "\(zoneTitle(zone)) at R\(clampedY + 1)C\(clampedX + 1), \(width)x\(height)"
+        }
+        return "Zone grid, \(summaries.joined(separator: "; "))"
     }
 
     private func zoneTitle(_ zone: WarehouseZone) -> String {

@@ -67,6 +67,8 @@ struct WarehouseOnboardingWizard: View {
     @State private var lengthFeet = 60
 
     private let totalSteps = 10
+    private let resumeProgressIdKey = "warehouseOnboardingWizard.resumeProgressId"
+    private let resumeStepKey = "warehouseOnboardingWizard.resumeStep"
     private let stepLabels = [
         "Phase 1 · Define Size",
         "Phase 1 · Define Zones",
@@ -315,6 +317,7 @@ struct WarehouseOnboardingWizard: View {
                 Button {
                     completedWizardSteps.insert(currentStep)
                     saveProgressToDb()
+                    clearSavedResumeStep()
                     withAnimation { currentStep += 1 }
                 } label: {
                     Text("Skip")
@@ -339,13 +342,15 @@ struct WarehouseOnboardingWizard: View {
         do {
             if let existing = try service.getOnboardingProgress() {
                 progress = existing
-                currentStep = min(existing.currentStep, totalSteps)
                 floorPlanId = existing.floorPlanId
+
+                var restoredCompletedSteps: Set<Int> = []
 
                 // Restore legacy completed steps
                 if existing.step1Complete { completedWizardSteps.insert(1) }
                 if existing.step2Complete { completedWizardSteps.insert(2) }
                 if existing.step3Complete { completedWizardSteps.insert(3) }
+                restoredCompletedSteps = completedWizardSteps
 
                 // Restore completed steps from canonical JSON, falling back to
                 // the legacy step4_progress payload for in-progress sessions.
@@ -354,7 +359,21 @@ struct WarehouseOnboardingWizard: View {
                    let data = completedStepsJSON.data(using: .utf8),
                    let steps = try? JSONDecoder().decode([Int].self, from: data) {
                     completedWizardSteps.formUnion(steps)
+                    restoredCompletedSteps.formUnion(steps)
                 }
+
+                currentStep = savedResumeStep(for: existing)
+                    ?? normalizedResumeStep(
+                        savedStep: existing.currentStep,
+                        completedSteps: restoredCompletedSteps,
+                        hasFloorPlan: existing.floorPlanId != nil
+                    )
+                currentStep = dataBackedResumeStep(
+                    currentStep,
+                    savedStep: existing.currentStep,
+                    floorPlanId: existing.floorPlanId,
+                    service: service
+                )
             }
         } catch {
             loadError = userFriendlyError(error, context: "load warehouse setup")
@@ -391,6 +410,7 @@ struct WarehouseOnboardingWizard: View {
                     )
                 }
                 completedWizardSteps.insert(1)
+                clearSavedResumeStep()
                 withAnimation { currentStep = 2 }
             } catch {
                 loadError = userFriendlyError(error, context: "create floor plan")
@@ -400,6 +420,7 @@ struct WarehouseOnboardingWizard: View {
 
         completedWizardSteps.insert(currentStep)
         saveProgressToDb()
+        clearSavedResumeStep()
         withAnimation { currentStep = min(currentStep + 1, totalSteps) }
     }
 
@@ -429,6 +450,7 @@ struct WarehouseOnboardingWizard: View {
 
     private func saveAndExit() {
         isSaving = true
+        saveResumeStep()
         saveProgressToDb(currentStepForResume: currentStep)
         isSaving = false
         // Only dismiss if save succeeded (loadError is set by saveProgressToDb on failure)
@@ -449,6 +471,7 @@ struct WarehouseOnboardingWizard: View {
         isSaving = true
         do {
             try service.completeOnboarding(id: id)
+            clearSavedResumeStep()
         } catch {
             isSaving = false
             loadError = userFriendlyError(error, context: "complete setup")
@@ -462,6 +485,57 @@ struct WarehouseOnboardingWizard: View {
         let boundedSteps = steps.filter { (1...totalSteps).contains($0) }.sorted()
         let data = (try? JSONEncoder().encode(boundedSteps)) ?? Data("[]".utf8)
         return String(data: data, encoding: .utf8) ?? "[]"
+    }
+
+    private func normalizedResumeStep(
+        savedStep: Int,
+        completedSteps: Set<Int>,
+        hasFloorPlan: Bool
+    ) -> Int {
+        guard hasFloorPlan else { return 1 }
+        let boundedSavedStep = min(max(savedStep, 1), totalSteps)
+        let firstIncompleteStep = (1...totalSteps).first { !completedSteps.contains($0) } ?? totalSteps
+        return min(boundedSavedStep, firstIncompleteStep)
+    }
+
+    private func dataBackedResumeStep(
+        _ proposedStep: Int,
+        savedStep: Int,
+        floorPlanId: Int64?,
+        service: WarehouseService
+    ) -> Int {
+        guard savedStep > 3, let floorPlanId else { return proposedStep }
+        do {
+            let zones = try service.listZones(floorPlanId: floorPlanId)
+            let units = try service.listStorageUnits(floorPlanId: floorPlanId)
+            if !zones.isEmpty && units.isEmpty {
+                return min(proposedStep, 2)
+            }
+        } catch {
+            return proposedStep
+        }
+        return proposedStep
+    }
+
+    private func saveResumeStep() {
+        guard let progressId = progress?.id else { return }
+        UserDefaults.standard.set(Int(progressId), forKey: resumeProgressIdKey)
+        UserDefaults.standard.set(currentStep, forKey: resumeStepKey)
+    }
+
+    private func savedResumeStep(for progress: WarehouseOnboardingProgress) -> Int? {
+        guard let progressId = progress.id else { return nil }
+        let savedProgressId = UserDefaults.standard.integer(forKey: resumeProgressIdKey)
+        let savedStep = UserDefaults.standard.integer(forKey: resumeStepKey)
+        guard savedProgressId == Int(progressId), (1...totalSteps).contains(savedStep) else {
+            return nil
+        }
+        return savedStep
+    }
+
+    private func clearSavedResumeStep() {
+        UserDefaults.standard.removeObject(forKey: resumeProgressIdKey)
+        UserDefaults.standard.removeObject(forKey: resumeStepKey)
     }
 }
 

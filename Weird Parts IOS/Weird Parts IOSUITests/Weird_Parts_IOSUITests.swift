@@ -330,6 +330,13 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app.launch()
         logInAsUITestOwnerIfNeeded()
         openWarehouseSetupWizard()
+        if !app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'R2C2'")).firstMatch.waitForExistence(timeout: 2) {
+            for _ in 0..<8 where !app.staticTexts["Phase 1 · Define Zones"].exists {
+                let back = app.buttons["Back"]
+                guard back.waitForExistence(timeout: 2) else { break }
+                back.tap()
+            }
+        }
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'R2C2'")).firstMatch.waitForExistence(timeout: 10),
                       "Zone placement should persist after leaving and resuming the wizard")
         captureWEI1185("06-storage-persisted-after-resume")
