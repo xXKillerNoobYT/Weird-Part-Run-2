@@ -5,6 +5,14 @@ import Security
 import GRDB
 import os.log
 
+protocol AppCoreBackgroundTaskAuditing: Sendable {
+    nonisolated func startTask(name: String, type: String, deviceId: String?) throws -> Int64
+    nonisolated func completeTask(id: Int64, summary: String?, itemsProcessed: Int) throws
+    nonisolated func failTask(id: Int64, error: String) throws
+}
+
+extension BackgroundTaskService: AppCoreBackgroundTaskAuditing {}
+
 /// Shared application state that owns the database and all services.
 ///
 /// Published as an `@EnvironmentObject` so every view in the tree
@@ -249,50 +257,28 @@ final class AppCore: ObservableObject {
             }
 
             // Run companion auto-discovery cycle in the background (logged)
-            Task.detached { [partsService, backgroundTaskService] in
-                let taskId = try? backgroundTaskService?.startTask(
+            Task.detached { [partsService, backgroundTaskService, logger] in
+                Self.runAuditedBootstrapTask(
                     name: "Companion Auto-Discovery",
-                    type: "companion_discovery"
-                )
-                do {
+                    type: "companion_discovery",
+                    successSummary: "Discovery cycle completed",
+                    backgroundTaskService: backgroundTaskService,
+                    logger: logger
+                ) {
                     try partsService?.runAutoDiscoveryCycle()
-                    if let taskId {
-                        try? backgroundTaskService?.completeTask(
-                            id: taskId,
-                            summary: "Discovery cycle completed"
-                        )
-                    }
-                } catch {
-                    if let taskId {
-                        try? backgroundTaskService?.failTask(
-                            id: taskId,
-                            error: error.localizedDescription
-                        )
-                    }
                 }
             }
 
             // Ensure Office chat channel exists (auto-created system channel)
-            Task.detached { [chatService, backgroundTaskService] in
-                let taskId = try? backgroundTaskService?.startTask(
+            Task.detached { [chatService, backgroundTaskService, logger] in
+                Self.runAuditedBootstrapTask(
                     name: "Office Channel Setup",
-                    type: "system_setup"
-                )
-                do {
+                    type: "system_setup",
+                    successSummary: "Office channel ready",
+                    backgroundTaskService: backgroundTaskService,
+                    logger: logger
+                ) {
                     try chatService?.ensureOfficeChannel()
-                    if let taskId {
-                        try? backgroundTaskService?.completeTask(
-                            id: taskId,
-                            summary: "Office channel ready"
-                        )
-                    }
-                } catch {
-                    if let taskId {
-                        try? backgroundTaskService?.failTask(
-                            id: taskId,
-                            error: error.localizedDescription
-                        )
-                    }
                 }
             }
         } catch {
@@ -409,6 +395,54 @@ final class AppCore: ObservableObject {
         logger.info(
             "[OnboardAI] bootstrap route=\(result.route.rawValue, privacy: .public) latency_ms=\(latencyMs, privacy: .public) availability=\(result.availabilityLabel, privacy: .public) timeout_budget_ms=\(result.timeoutBudgetMs, privacy: .public) did_timeout=\(result.didTimeout, privacy: .public) fallback_model_unavailable=\(result.usedModelUnavailableFallback, privacy: .public) fallback_low_resource=\(result.usedLowResourceFallback, privacy: .public)"
         )
+    }
+
+    nonisolated static func runAuditedBootstrapTask(
+        name: String,
+        type: String,
+        successSummary: String,
+        backgroundTaskService: AppCoreBackgroundTaskAuditing?,
+        logger: Logger,
+        operation: @Sendable () throws -> Void
+    ) {
+        var taskId: Int64?
+
+        if let backgroundTaskService {
+            do {
+                taskId = try backgroundTaskService.startTask(
+                    name: name,
+                    type: type,
+                    deviceId: nil
+                )
+            } catch {
+                logger.error("[AppCore] Failed to start background task audit record task_name=\(name, privacy: .public) task_type=\(type, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            }
+        }
+
+        do {
+            try operation()
+        } catch {
+            logger.error("[AppCore] Bootstrap background task failed task_name=\(name, privacy: .public) task_type=\(type, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            guard let taskId, let backgroundTaskService else { return }
+
+            do {
+                try backgroundTaskService.failTask(id: taskId, error: error.localizedDescription)
+            } catch {
+                logger.error("[AppCore] Failed to mark background task audit record as failed task_name=\(name, privacy: .public) task_type=\(type, privacy: .public) task_id=\(taskId, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            }
+            return
+        }
+
+        guard let taskId, let backgroundTaskService else { return }
+        do {
+            try backgroundTaskService.completeTask(
+                id: taskId,
+                summary: successSummary,
+                itemsProcessed: 0
+            )
+        } catch {
+            logger.error("[AppCore] Failed to complete background task audit record task_name=\(name, privacy: .public) task_type=\(type, privacy: .public) task_id=\(taskId, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Reload theme settings from the database and apply them.
