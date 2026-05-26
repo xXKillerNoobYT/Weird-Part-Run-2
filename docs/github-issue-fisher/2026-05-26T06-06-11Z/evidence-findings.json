@@ -1,0 +1,482 @@
+[
+  {
+    "type": "repo-evidence",
+    "path": "docs/plans/auto-go-unified-loop.md",
+    "line": 118,
+    "excerpt": "- **Out-of-reach tasks** (native device testing, App Store Connect, financial actions, destructive migrations) → `docs/DevTODO/` task file with instructions + optional AI prompt. User tags `done` when complete."
+  },
+  {
+    "type": "repo-evidence",
+    "path": "docs/plans/production-readiness.md",
+    "line": 45,
+    "excerpt": "- If any missing: file a DevTODO item with what's needed."
+  },
+  {
+    "type": "repo-evidence",
+    "path": "docs/plans/github-issue-fisher-workflow.md",
+    "line": 15,
+    "excerpt": "- Repo evidence: active `docs/DevTODO/`, plan markers, and Swift code markers sampled by the runner"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "docs/plans/ios-page-review-tracker.md",
+    "line": 492,
+    "excerpt": "| 31F | Warehouse audit: fix setup stub, finalize/adjust actions, certainty tie-in TODO, platform guards |"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "docs/plans/ios-page-review-tracker.md",
+    "line": 539,
+    "excerpt": "| 35A | Daily report submit stubs: wire TODO buttons + remove service bypass + raw SQL |"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "docs/plans/hunt-fix-verify-loop.md",
+    "line": 76,
+    "excerpt": "- `// TODO` / `// FIXME` / `// HACK` — unfinished work"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "docs/plans/hunt-fix-verify-loop.md",
+    "line": 81,
+    "excerpt": "- `Text(\"TODO\")` / `Text(\"Placeholder\")` — stub UI"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "docs/plans/hunt-fix-verify-loop.md",
+    "line": 134,
+    "excerpt": "8. Code pattern issues (TODOs, dead buttons, etc.)"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "docs/plans/hunt-fix-verify-loop.md",
+    "line": 166,
+    "excerpt": "grep TODO/FIXME       → 0 untracked items"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "docs/plans/github-flow.md",
+    "line": 17,
+    "excerpt": "- **Handles security alerts** — Dependabot, CodeQL, secret scanning. Critical → urgent DevTODO. Low → noted and tracked."
+  },
+  {
+    "type": "repo-evidence",
+    "path": "docs/plans/github-flow.md",
+    "line": 206,
+    "excerpt": "- Existing `docs/DevTODO/` format — used for critical security DevTODOs"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "docs/plans/pre-release-audit-results.md",
+    "line": 54,
+    "excerpt": "| 1.17 | W2. No TODO stub buttons visible to users | PASS | Prompt 04 removed visible stubs; 33E wired all \"Coming Soon\" PO detail stubs |"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "docs/plans/pre-release-testing-checklist.md",
+    "line": 272,
+    "excerpt": "- [ ] W2. No TODO stub buttons visible to users"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "docs/plans/archive/orders-redesign-master-plan.md",
+    "line": 869,
+    "excerpt": "## Remaining Project TODO (Full Roadmap)"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "docs/plans/archive/phase-4-jobs-labor.md",
+    "line": 608,
+    "excerpt": "- `InventoryGridPage.tsx` line 93: `handleSpotCheck` is empty (`// TODO: Navigate to audit page`)"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "docs/plans/security-review.md",
+    "line": 40,
+    "excerpt": "- Grep for disabled auth checks (`// TODO: auth`, `// skip auth`, commented-out `guard user.isAuthenticated`)."
+  },
+  {
+    "type": "repo-evidence",
+    "path": "docs/plans/security-review.md",
+    "line": 66,
+    "excerpt": "- Critical findings (hardcoded secrets, SQL injection risk): also create a DevTODO for immediate user attention."
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/SettingsService.swift",
+    "line": 734,
+    "excerpt": "let decoded = try? JSONDecoder().decode(Set<Int>.self, from: data) {"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/SettingsService.swift",
+    "line": 741,
+    "excerpt": "let decoded = try? JSONDecoder().decode(Set<Int>.self, from: data) {"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/SettingsService.swift",
+    "line": 759,
+    "excerpt": "let completedJSON = (try? JSONEncoder().encode(draft.completedSteps))"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/SettingsService.swift",
+    "line": 761,
+    "excerpt": "let skippedJSON = (try? JSONEncoder().encode(draft.skippedSteps))"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/WarehouseService.swift",
+    "line": 1495,
+    "excerpt": "// Previously used `try?` which silently swallowed any DB error as nil —"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/WarehouseService.swift",
+    "line": 3818,
+    "excerpt": "if let array = try? JSONDecoder().decode([Int].self, from: data) {"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/WarehouseService.swift",
+    "line": 3821,
+    "excerpt": "if let set = try? JSONDecoder().decode(Set<Int>.self, from: data) {"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "Weird Parts IOS/Weird Parts IOS/Sync/IOSSyncManager.swift",
+    "line": 66,
+    "excerpt": "let addr = (try? service.getSettingsByCategory(\"sync\"))?[\"shop_server_address\"]"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "Weird Parts IOS/Weird Parts IOS/Sync/IOSSyncManager.swift",
+    "line": 213,
+    "excerpt": "let companyId = (try? settingsService?.getSettingsByCategory(\"company\"))?[\"company_id\"] ?? \"default\""
+  },
+  {
+    "type": "repo-evidence",
+    "path": "Weird Parts IOS/Weird Parts IOS/Sync/IOSSyncManager.swift",
+    "line": 233,
+    "excerpt": "let companyId = (try? settingsService?.getSettingsByCategory(\"company\"))?[\"company_id\"] ?? \"default\""
+  },
+  {
+    "type": "repo-evidence",
+    "path": "Weird Parts IOS/Weird Parts IOS/Sync/IOSSyncManager.swift",
+    "line": 234,
+    "excerpt": "try? await pm.startPeerSync("
+  },
+  {
+    "type": "repo-evidence",
+    "path": "Weird Parts IOS/Weird Parts IOS/Sync/IOSSyncManager.swift",
+    "line": 333,
+    "excerpt": "pendingChanges = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? 0"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "Weird Parts IOS/Weird Parts IOS/Sync/IOSSyncManager.swift",
+    "line": 340,
+    "excerpt": "let stats = try? ConflictResolver.getConflictStats(db: db)"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "Weird Parts IOS/Weird Parts IOS/Sync/IOSSyncManager.swift",
+    "line": 348,
+    "excerpt": "return (try? ConflictResolver.getUnreviewedConflicts(db: db)) ?? []"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/OrdersService.swift",
+    "line": 1796,
+    "excerpt": "// Link PO to JPO (fixes #203: removed try? to propagate errors)"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/AuthService.swift",
+    "line": 1006,
+    "excerpt": "guard let data = try? JSONEncoder().encode(payload) else {"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/AuthService.swift",
+    "line": 1028,
+    "excerpt": "guard let payload = try? JSONDecoder().decode(TokenPayload.self, from: data) else { return nil }"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "Weird Parts IOS/Weird Parts IOS/AI/IOSAITextEditor.swift",
+    "line": 194,
+    "excerpt": "try? await Task.sleep(for: .milliseconds(800))"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/DailyReportGenerator.swift",
+    "line": 107,
+    "excerpt": "// Previously used `try?` which swallowed real DB errors (schema drift,"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "Weird Parts IOS/Weird Parts IOS/AI/IOSAIAssistantPanel.swift",
+    "line": 122,
+    "excerpt": "try? await Task.sleep(nanoseconds: 400_000_000)"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "Weird Parts IOS/Weird Parts IOS/AI/IOSAIAssistantPanel.swift",
+    "line": 193,
+    "excerpt": "try? await Task.sleep(nanoseconds: 300_000_000)"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "Weird Parts IOS/Weird Parts IOS/AI/IOSAIAssistantPanel.swift",
+    "line": 496,
+    "excerpt": "try? await FoundationModelsService.deleteConversation(cid, from: db)"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "Weird Parts IOS/Weird Parts IOS/AI/IOSAIAssistantPanel.swift",
+    "line": 842,
+    "excerpt": "guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return }"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "Weird Parts IOS/Weird Parts IOS/AI/IOSAIAssistantPanel.swift",
+    "line": 858,
+    "excerpt": "guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return text }"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/PartsService.swift",
+    "line": 1346,
+    "excerpt": "try? logPartChange(partId: partId, userId: nil, userName: nil, action: \"created\", context: \"Catalog\")"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/PartsService.swift",
+    "line": 1380,
+    "excerpt": "let currentRow = try? db.writer.read { dbConn in"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/PartsService.swift",
+    "line": 1454,
+    "excerpt": "try? logPartFieldChanges(partId: id, userId: nil, userName: nil, changes: changes, context: \"Catalog Edit\")"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/PartsService.swift",
+    "line": 3227,
+    "excerpt": "guard let part = try? Part(row: row) else {"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/SchedulingService.swift",
+    "line": 914,
+    "excerpt": "public func checkTimeOffConflict(employeeId: Int64, date: String) throws -> TimeOffEntry? {"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/SchedulingService.swift",
+    "line": 916,
+    "excerpt": "return try db.writer.read { dbConn -> TimeOffEntry? in"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/SchedulingService.swift",
+    "line": 1966,
+    "excerpt": "let ids = try? JSONDecoder().decode([Int64].self, from: data),"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/SchedulingService.swift",
+    "line": 1975,
+    "excerpt": "let allowedTeams = try? JSONDecoder().decode([Int64].self, from: data),"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/SchedulingService.swift",
+    "line": 2067,
+    "excerpt": "guard let data = try? JSONEncoder().encode($0) else { return nil }"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/SchedulingService.swift",
+    "line": 2071,
+    "excerpt": "guard let data = try? JSONEncoder().encode($0) else { return nil }"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "Weird Parts IOS/Weird Parts IOS/Scanning/IOSCameraMatchView.swift",
+    "line": 131,
+    "excerpt": "if let data = try? await item?.loadTransferable(type: Data.self),"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/JobEstimationService.swift",
+    "line": 59,
+    "excerpt": "(try? JSONEncoder().encode(choices)).flatMap { String(data: $0, encoding: .utf8) }"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "Weird Parts IOS/Weird Parts IOS/Scanning/IOSQRScanner.swift",
+    "line": 85,
+    "excerpt": "try? scanner.startScanning()"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/NotebooksService.swift",
+    "line": 1160,
+    "excerpt": "if let items = entry.checklistItems, let data = try? JSONSerialization.data(withJSONObject: items) {"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Services/NotebooksService.swift",
+    "line": 1200,
+    "excerpt": "(try? JSONSerialization.data(withJSONObject: items)).flatMap { String(data: $0, encoding: .utf8) }"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "Weird Parts IOS/Weird Parts IOS/Shared/SkippedModuleHint.swift",
+    "line": 10,
+    "excerpt": "let skipped = try? JSONDecoder().decode(Set<String>.self, from: data) {"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/ChangeTracker.swift",
+    "line": 44,
+    "excerpt": "let changedJSON: String? = changedFields.flatMap { try? jsonEncode($0) }"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/ChangeTracker.swift",
+    "line": 45,
+    "excerpt": "let oldJSON: String? = oldValues.flatMap { try? jsonEncode($0) }"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/LanSyncServer.swift",
+    "line": 484,
+    "excerpt": "let data = (try? encoder.encode(response)) ?? Data()"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/LanSyncServer.swift",
+    "line": 504,
+    "excerpt": "let data = (try? encoder.encode(response)) ?? Data()"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/LanSyncServer.swift",
+    "line": 524,
+    "excerpt": "guard let request = try? JSONDecoder().decode(SyncPushRequest.self, from: plainBody) else {"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/LanSyncServer.swift",
+    "line": 547,
+    "excerpt": "let responseData = (try? encoder.encode(response)) ?? Data()"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/LanSyncServer.swift",
+    "line": 567,
+    "excerpt": "guard let request = try? JSONDecoder().decode(SyncPullRequest.self, from: plainBody) else {"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/LanSyncServer.swift",
+    "line": 594,
+    "excerpt": "let responseData = (try? encoder.encode(response)) ?? Data()"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/LanSyncServer.swift",
+    "line": 613,
+    "excerpt": "guard let keyData = try? SyncCrypto.deriveSharedKeyData("
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/LanSyncServer.swift",
+    "line": 618,
+    "excerpt": "guard let plainBody = try? SyncCrypto.decryptAESGCM(data: body, keyData: keyData) else {"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/LanSyncServer.swift",
+    "line": 632,
+    "excerpt": "guard let encrypted = try? SyncCrypto.encryptAESGCM(data: data, keyData: keyData) else {"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/LanSyncServer.swift",
+    "line": 678,
+    "excerpt": "let data = (try? JSONEncoder().encode(obj))"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/PeerManager.swift",
+    "line": 191,
+    "excerpt": "try? await Task.sleep(for: .seconds(10))"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/PeerManager.swift",
+    "line": 200,
+    "excerpt": "try? await Task.sleep(for: .seconds(5))"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/PeerManager.swift",
+    "line": 457,
+    "excerpt": "if let result = try? JSONDecoder().decode(SyncPushResponse.self, from: plainPushData) {"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/PeerManager.swift",
+    "line": 486,
+    "excerpt": "if let result = try? JSONDecoder().decode(SyncPullResponse.self, from: plainPullData) {"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/PeerManager.swift",
+    "line": 529,
+    "excerpt": "return try? SyncCrypto.deriveSharedKeyData("
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/PeerManager.swift",
+    "line": 549,
+    "excerpt": "if let (data, resp) = try? await URLSession.shared.data(for: req),"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/PeerManager.swift",
+    "line": 552,
+    "excerpt": "let decoded = try? JSONDecoder().decode(SyncKeyResponse.self, from: data),"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/PeerManager.swift",
+    "line": 570,
+    "excerpt": "let encrypted = try? SyncCrypto.encryptAESGCM(data: plain, keyData: keyData) {"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/PeerManager.swift",
+    "line": 585,
+    "excerpt": "let plain = try? SyncCrypto.decryptAESGCM(data: data, keyData: keyData) else {"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/PeerManager.swift",
+    "line": 617,
+    "excerpt": "guard let changes = try? JSONDecoder().decode([IncomingChange].self, from: message.data) else {"
+  },
+  {
+    "type": "repo-evidence",
+    "path": "core/Sources/WiredPartCore/Sync/PeerManager.swift",
+    "line": 659,
+    "excerpt": "if let jsonData = try? JSONSerialization.data(withJSONObject: dict) {"
+  }
+]
