@@ -51,28 +51,40 @@ final class PartsBrandsPageRegressionTests: XCTestCase {
         )
     }
 
-    func testNewSupplierFormCanLinkExistingBrandsDuringCreation() throws {
+    func testNewSupplierCreationCanPromptForBrandPickerAfterSave() throws {
         let source = try Self.readPartsSuppliersPageSource()
 
         XCTAssertTrue(
-            source.contains("@State private var availableBrandsForNewSupplier"),
-            "New supplier flow should load existing brands so the user can choose what the supplier carries while creating it."
+            source.contains("case addSupplierBrands(Int64)"),
+            "PartsSuppliersPage should have a dedicated sheet route for the post-create brand picker."
         )
         XCTAssertTrue(
-            source.contains("Text(\"Brands Carried\")"),
-            "Supplier creation should visibly ask which existing brands this supplier carries."
+            source.contains("SupplierBrandPickerSheet(supplierId: supplierId)"),
+            "The post-create route must present SupplierBrandPickerSheet for the newly created supplier."
         )
         XCTAssertTrue(
-            source.contains("selectedBrandIdsForNewSupplier"),
-            "Supplier creation should keep an explicit selected-brand set for existing brand links."
+            source.contains("onAddBrands?(supplierId)"),
+            "The Add Brands prompt should call through to the parent so the picker opens after dismissal."
         )
         XCTAssertTrue(
+            source.contains("presentAddBrandsPicker(for: supplierId)"),
+            "The parent callback should route post-create brand linking through the guarded presenter."
+        )
+        XCTAssertTrue(
+            source.contains(".alert(\"Add Brands?\", isPresented: $showAddBrandsPrompt)"),
+            "New supplier save flow should show an Add Brands prompt before dismissing."
+        )
+        XCTAssertTrue(
+            source.contains("supplier.brandCount == 0") && source.contains("Label(\"No brands\", systemImage: \"exclamationmark.triangle.fill\")"),
+            "Supplier rows should show an orange no-brands indicator when prompt is skipped."
+        )
+        XCTAssertTrue(
+            source.contains("try service.addBrandSupplier("),
+            "Supplier brand picker should link each selected brand via addBrandSupplier."
+        )
+        XCTAssertFalse(
             source.contains("initialBrandIds: selectedBrandIdsForNewSupplier"),
-            "Supplier creation should pass selected brand ids into an atomic create/link service call."
-        )
-        XCTAssertTrue(
-            source.contains("Task.detached(priority: .userInitiated)") && source.contains("row.brand.isActive == 1"),
-            "Brand loading should stay off the main actor and expose only active, non-deleted brands to the picker."
+            "Post-save picker flow should no longer rely on initialBrandIds at supplier create time."
         )
     }
 
