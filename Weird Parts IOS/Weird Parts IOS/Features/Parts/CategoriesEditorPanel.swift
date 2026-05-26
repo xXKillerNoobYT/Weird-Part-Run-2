@@ -749,6 +749,13 @@ struct ColorBrandSKUEditorSection: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
+                LabeledContent("Type", value: typeName)
+                LabeledContent("Brand", value: brandName)
+                LabeledContent("Color", value: color?.name ?? "Variant #\(colorId)")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
 
             if isLoading {
                 ProgressView("Loading SKU…")
@@ -842,7 +849,7 @@ struct ColorBrandSKUEditorSection: View {
                 errorMessage = "SKU row not found"
             }
         } catch {
-            errorMessage = "Failed to load SKU"
+            errorMessage = userFriendlyError(error, context: "load SKU row")
         }
         isLoading = false
     }
@@ -884,7 +891,7 @@ struct ColorBrandSKUEditorSection: View {
             loadSKU()
             Task { await onRefresh() }
         } catch {
-            errorMessage = "Failed to save SKU"
+            errorMessage = userFriendlyError(error, context: "save SKU row")
         }
         isSaving = false
     }
