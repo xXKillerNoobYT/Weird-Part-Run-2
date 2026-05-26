@@ -592,6 +592,7 @@ private struct IOSJobReturnSortingPage: View {
     @State private var completionMessage: String?
     @State private var isLoading = true
     @State private var isSubmitting = false
+    @State private var isShowingCompletionReview = false
     @State private var activeSheet: ActiveSheet?
 
     private enum ActiveSheet: Identifiable {
@@ -706,14 +707,14 @@ private struct IOSJobReturnSortingPage: View {
 
             Section {
                 Button {
-                    Task { await submitJobReturn() }
+                    isShowingCompletionReview = true
                 } label: {
                     HStack {
                         Spacer()
                         if isSubmitting {
                             ProgressView()
                         } else {
-                            Label("Complete Job Return", systemImage: "checkmark.circle.fill")
+                            Label("Review Job Return", systemImage: "checkmark.circle.fill")
                                 .fontWeight(.semibold)
                         }
                         Spacer()
@@ -750,6 +751,15 @@ private struct IOSJobReturnSortingPage: View {
         } message: {
             Text(completionMessage ?? "")
         }
+        .alert("Complete Job Return?", isPresented: $isShowingCompletionReview) {
+            Button("Cancel", role: .cancel) {}
+            Button("Complete Job Return") {
+                Task { await submitJobReturn() }
+            }
+            .disabled(isSubmitting)
+        } message: {
+            Text(completionReviewMessage)
+        }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .partScanner:
@@ -783,6 +793,25 @@ private struct IOSJobReturnSortingPage: View {
         appCore.currentUser?.id != nil &&
         !returnSource.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         lines.contains { $0.qty > 0 }
+    }
+
+    private var completionReviewMessage: String {
+        let groups = completionGroups(for: lines)
+        let routedSummary = ["Shelved", "Staged", "Write-off", "Supplier/Damage Review", "Wrong Part", "Holding"]
+            .compactMap { label -> String? in
+                let qty = groups[label, default: 0]
+                return qty > 0 ? "\(label): \(qty)" : nil
+            }
+            .joined(separator: "\n")
+        let jobName = selectedJob?.jobName ?? "selected job"
+        let base = routedSummary.isEmpty ? "No return lines are ready." : routedSummary
+        return """
+        Review the sorting outcomes for \(jobName) before committing this return.
+
+        \(base)
+
+        Holding, review, staged, and write-off items stay out of shelf inventory unless explicitly shelved.
+        """
     }
 
     private var filteredJobs: [JobsService.JobListItem] {
