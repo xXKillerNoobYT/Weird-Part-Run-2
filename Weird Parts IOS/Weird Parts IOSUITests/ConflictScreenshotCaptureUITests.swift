@@ -62,20 +62,7 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
         XCTAssertTrue(signIn.waitForExistence(timeout: 5))
         signIn.tap()
 
-        // Auth is async, and the post-login Welcome / Quick Tour modals can
-        // appear after a fixed waitForExistence window expires. Poll
-        // adaptively for up to 30s and dismiss whichever modal is currently
-        // visible, until the sync conflict banner becomes hittable.
-        let welcomeCTA = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Got It'")).firstMatch
-        let skipTour = app.buttons["Skip"]
         let reviewButton = app.buttons["syncConflictBanner"]
-        let pollDeadline = Date().addingTimeInterval(30)
-        while Date() < pollDeadline {
-            if reviewButton.exists && reviewButton.isHittable { break }
-            if welcomeCTA.exists && welcomeCTA.isHittable { welcomeCTA.tap(); continue }
-            if skipTour.exists && skipTour.isHittable { skipTour.tap(); continue }
-            Thread.sleep(forTimeInterval: 0.5)
-        }
 
         // Capture dashboard (post-login, banner visible) before tapping Review,
         // so we always have evidence the seed produced unreviewed conflicts even
@@ -85,10 +72,6 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
 
         XCTAssertTrue(reviewButton.waitForExistence(timeout: 12),
                       "No sync conflict banner found — simulator may have no pending sync conflicts.")
-        // Defense-in-depth: a modal could have re-presented between capture and Review tap.
-        if welcomeCTA.exists && welcomeCTA.isHittable { welcomeCTA.tap() }
-        if skipTour.exists && skipTour.isHittable { skipTour.tap() }
-        _ = reviewButton.waitForExistence(timeout: 4)
         XCTAssertTrue(reviewButton.isHittable, "Sync conflict banner exists but is not hittable before tap")
         reviewButton.tap()
 

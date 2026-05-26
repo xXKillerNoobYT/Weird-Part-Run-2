@@ -909,7 +909,8 @@ final class AppCore: ObservableObject {
 
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
-        UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
+        UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
 
         seedWEI936OnboardingStateIfRequested(userId: fixtureUserId)
     }
