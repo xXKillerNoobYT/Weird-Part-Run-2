@@ -5,9 +5,8 @@ import WiredPartCore
 /// SKU-first editor for a Type's brand + variant catalog rows.
 ///
 /// PE-COLORS Phase 2C replaces the old nested brand -> color picker mental model with
-/// flat `color_brand_skus` rows grouped by variant. Each row shows:
+/// flat `color_brand_skus` rows scoped by selected brand. Each row shows:
 /// - variant chip (color swatch when `hex_code` exists, text-only pill otherwise)
-/// - brand badge
 /// - SKU `part_number`
 ///
 /// Tapping a row opens `ColorBrandSKUEditorSheet` for inline create/edit.
@@ -20,9 +19,9 @@ struct TypeBrandColorSection: View {
 
     @EnvironmentObject private var appCore: AppCore
 
-    @State private var allBrands: [Brand] = []
     @State private var allColors: [PartColor] = []
     @State private var skuRows: [ColorBrandSKUDisplayRow] = []
+    @State private var selectedBrandId: Int64?
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
@@ -54,13 +53,16 @@ struct TypeBrandColorSection: View {
                     .padding()
             } else {
                 generalModeNote
+                brandChipStrip
 
-                if groupedRows.isEmpty {
+                if selectedBrand == nil {
+                    noBrandSelectedState
+                } else if selectedBrandSKURows.isEmpty {
                     emptyState
                 } else {
                     VStack(alignment: .leading, spacing: DS.Space.sm) {
-                        ForEach(groupedRows) { group in
-                            skuGroup(group)
+                        ForEach(selectedBrandSKURows) { row in
+                            skuRow(row)
                         }
                     }
                 }
@@ -71,10 +73,10 @@ struct TypeBrandColorSection: View {
                     Button {
                         activeSheet = .create
                     } label: {
-                        Label("Add SKU Row", systemImage: "plus.circle.fill")
+                        Label("Add SKU", systemImage: "plus.circle.fill")
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(allBrands.isEmpty || allColors.isEmpty)
+                    .disabled(selectedBrand == nil || allColors.isEmpty)
 
                     Button {
                         onAddColor()
@@ -86,24 +88,31 @@ struct TypeBrandColorSection: View {
             }
         }
         .task { await loadSKUData() }
+        .onChange(of: linkedBrandIds) { _ in
+            normalizeSelectedBrand()
+        }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .create:
-                ColorBrandSKUEditorSheet(
-                    mode: .create,
-                    typeId: typeId,
-                    brands: allBrands,
-                    colors: allColors,
-                    onSave: handleSKUSave
-                )
+                if let selectedBrand {
+                    ColorBrandSKUEditorSheet(
+                        mode: .create,
+                        typeId: typeId,
+                        brand: selectedBrand,
+                        colors: allColors,
+                        onSave: handleSKUSave
+                    )
+                }
             case .edit(let row):
-                ColorBrandSKUEditorSheet(
-                    mode: .edit(row),
-                    typeId: typeId,
-                    brands: allBrands,
-                    colors: allColors,
-                    onSave: handleSKUSave
-                )
+                if let brand = linkedBrands.first(where: { $0.id == row.sku.brandId }) {
+                    ColorBrandSKUEditorSheet(
+                        mode: .edit(row),
+                        typeId: typeId,
+                        brand: brand,
+                        colors: allColors,
+                        onSave: handleSKUSave
+                    )
+                }
             }
         }
         .alert("Delete SKU Row?", isPresented: Binding(
@@ -116,7 +125,11 @@ struct TypeBrandColorSection: View {
                 Task { await deleteSKU(row) }
             }
         } message: { row in
-            Text("Delete the SKU row for \(row.brand.name) / \(row.color.name)? The type, brand, and variant records stay intact.")
+            if let selectedBrand {
+                Text("Delete the SKU row for \(selectedBrand.name) / \(row.color.name)? The type, brand, and variant records stay intact.")
+            } else {
+                Text("Delete this SKU row? The type, brand, and variant records stay intact.")
+            }
         }
     }
 
@@ -125,7 +138,7 @@ struct TypeBrandColorSection: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("SKU Rows")
                     .font(.headline)
-                Text("One row per variant + brand. Grouped by variant so part numbers are visible without opening nested pickers.")
+                Text("Select a brand to manage SKU rows for this type. Each row is a variant + part number + optional cost.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -141,6 +154,33 @@ struct TypeBrandColorSection: View {
                     .clipShape(Capsule())
             }
         }
+    }
+
+    private var linkedBrands: [Brand] {
+        hierarchy.categories
+            .flatMap(\.styles)
+            .flatMap(\.types)
+            .first(where: { $0.type.id == typeId })?
+            .brands
+            .sorted(by: { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) ?? []
+    }
+
+    private var linkedBrandIds: [Int64] {
+        linkedBrands.compactMap(\.id)
+    }
+
+    private var selectedBrand: Brand? {
+        guard let selectedBrandId else { return nil }
+        return linkedBrands.first(where: { $0.id == selectedBrandId })
+    }
+
+    private var selectedBrandSKURows: [ColorBrandSKUDisplayRow] {
+        guard let selectedBrandId else { return [] }
+        return skuRows
+            .filter { $0.sku.brandId == selectedBrandId }
+            .sorted { lhs, rhs in
+                lhs.color.name.localizedCaseInsensitiveCompare(rhs.color.name) == .orderedAscending
+            }
     }
 
     private var generalModeNote: some View {
@@ -160,9 +200,67 @@ struct TypeBrandColorSection: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
+    private var brandChipStrip: some View {
+        VStack(alignment: .leading, spacing: DS.Space.xs) {
+            HStack(spacing: DS.Space.xs) {
+                Text("Brands")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                if let selectedBrand {
+                    Text("Selected: \(selectedBrand.name)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if linkedBrands.isEmpty {
+                Text("No brands linked to this type yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: DS.Space.xs) {
+                        ForEach(linkedBrands, id: \.id) { brand in
+                            let isSelected = selectedBrandId == brand.id
+                            Button {
+                                selectedBrandId = isSelected ? nil : brand.id
+                            } label: {
+                                Text(brand.name)
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(isSelected ? Color.accentColor.opacity(0.16) : Color(.secondarySystemGroupedBackground))
+                                    .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+    }
+
+    private var noBrandSelectedState: some View {
+        VStack(alignment: .leading, spacing: DS.Space.sm) {
+            Label("Select a brand to view SKU rows", systemImage: "tag")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+            Text("SKU rows are scoped to a specific type + brand + variant combination.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(DS.Space.md)
+        .background(Color(.secondarySystemGroupedBackground).opacity(0.6))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: DS.Space.sm) {
-            Label("No SKU rows yet", systemImage: "shippingbox")
+            Label("No SKU rows for selected brand", systemImage: "shippingbox")
                 .font(.subheadline)
                 .fontWeight(.semibold)
             Text(emptyStateMessage)
@@ -176,39 +274,9 @@ struct TypeBrandColorSection: View {
     }
 
     private var emptyStateMessage: String {
-        if allBrands.isEmpty { return "Add brands from the Brands tab before creating brand-specific SKU rows." }
+        if linkedBrands.isEmpty { return "Add brands from the Brands tab before creating brand-specific SKU rows." }
         if allColors.isEmpty { return "Create at least one variant/color before creating SKU rows." }
-        return "Use Add SKU Row to connect a variant, a brand, and that brand's manufacturer part number."
-    }
-
-    private var groupedRows: [ColorBrandSKUGroup] {
-        let groups = Dictionary(grouping: skuRows, by: { $0.color.id ?? 0 })
-        return groups.compactMap { _, rows in
-            guard let first = rows.first else { return nil }
-            return ColorBrandSKUGroup(color: first.color, rows: rows.sorted { $0.brand.name.localizedCaseInsensitiveCompare($1.brand.name) == .orderedAscending })
-        }
-        .sorted { $0.color.name.localizedCaseInsensitiveCompare($1.color.name) == .orderedAscending }
-    }
-
-    @ViewBuilder
-    private func skuGroup(_ group: ColorBrandSKUGroup) -> some View {
-        VStack(alignment: .leading, spacing: DS.Space.xs) {
-            HStack(spacing: DS.Space.sm) {
-                variantChip(group.color)
-                Text("\(group.rows.count) brand\(group.rows.count == 1 ? "" : "s")")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(.horizontal, DS.Space.xs)
-
-            ForEach(group.rows) { row in
-                skuRow(row)
-            }
-        }
-        .padding(DS.Space.sm)
-        .background(Color(.secondarySystemGroupedBackground).opacity(0.45))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        return "Use Add SKU to connect a global variant to this selected brand."
     }
 
     @ViewBuilder
@@ -218,7 +286,6 @@ struct TypeBrandColorSection: View {
         } label: {
             HStack(spacing: DS.Space.sm) {
                 variantChip(row.color)
-                brandBadge(row.brand)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(row.partNumberDisplay)
@@ -276,23 +343,6 @@ struct TypeBrandColorSection: View {
         .clipShape(Capsule())
     }
 
-    @ViewBuilder
-    private func brandBadge(_ brand: Brand) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: "tag.fill")
-                .font(.caption2)
-            Text(brand.name)
-                .font(.caption)
-                .fontWeight(.medium)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Color.orange.opacity(0.12))
-        .foregroundStyle(.orange)
-        .clipShape(Capsule())
-    }
-
     // MARK: - Data Loading
 
     private func loadSKUData() async {
@@ -310,26 +360,21 @@ struct TypeBrandColorSection: View {
         }
 
         do {
-            let brands = try service.listBrands().map(\.brand)
             let colors = try service.listColors()
             let skus = try service.getColorBrandSKUsForType(typeId: typeId)
             let colorsById = Dictionary(uniqueKeysWithValues: colors.compactMap { color -> (Int64, PartColor)? in
                 guard let id = color.id else { return nil }
                 return (id, color)
             })
-            let brandsById = Dictionary(uniqueKeysWithValues: brands.compactMap { brand -> (Int64, Brand)? in
-                guard let id = brand.id else { return nil }
-                return (id, brand)
-            })
             let rows = skus.compactMap { sku -> ColorBrandSKUDisplayRow? in
-                guard let color = colorsById[sku.colorId], let brand = brandsById[sku.brandId] else { return nil }
-                return ColorBrandSKUDisplayRow(sku: sku, color: color, brand: brand)
+                guard let color = colorsById[sku.colorId] else { return nil }
+                return ColorBrandSKUDisplayRow(sku: sku, color: color)
             }
 
             await MainActor.run {
-                allBrands = brands
                 allColors = colors
                 skuRows = rows
+                normalizeSelectedBrand()
                 isLoading = false
             }
         } catch {
@@ -345,22 +390,31 @@ struct TypeBrandColorSection: View {
             throw NSError(domain: "TypeBrandColorSection", code: 1, userInfo: [NSLocalizedDescriptionKey: "Parts service not available"])
         }
 
-        try service.linkTypeToBrand(typeId: typeId, brandId: draft.brandId)
         try service.linkTypeToColor(typeId: typeId, colorId: draft.colorId)
 
-        let skuId = try service.upsertColorBrandSKU(
-            colorId: draft.colorId,
-            brandId: draft.brandId,
-            typeId: typeId,
-            partNumber: draft.normalizedPartNumber,
-            unitCost: draft.normalizedUnitCost,
-            clearPartNumber: draft.shouldClearPartNumber,
-            clearUnitCost: draft.shouldClearUnitCost
-        )
+        let skuId: Int64
+        if let original = draft.originalSKU {
+            skuId = try service.upsertColorBrandSKU(
+                colorId: draft.colorId,
+                brandId: draft.brandId,
+                typeId: typeId,
+                partNumber: draft.normalizedPartNumber,
+                unitCost: draft.normalizedUnitCost,
+                clearPartNumber: draft.shouldClearPartNumber,
+                clearUnitCost: draft.shouldClearUnitCost
+            )
 
-        if let original = draft.originalSKU, original.id != skuId,
-           (original.colorId != draft.colorId || original.brandId != draft.brandId) {
-            try service.deleteColorBrandSKU(skuId: original.id)
+            if original.id != skuId, original.colorId != draft.colorId {
+                try deleteSKU(service: service, skuId: original.id)
+            }
+        } else {
+            skuId = try createSKU(
+                service: service,
+                colorId: draft.colorId,
+                brandId: draft.brandId,
+                partNumber: draft.normalizedPartNumber,
+                unitCost: draft.normalizedUnitCost
+            )
         }
 
         await loadSKUData()
@@ -373,19 +427,49 @@ struct TypeBrandColorSection: View {
             return
         }
         do {
-            try service.deleteColorBrandSKU(skuId: row.sku.id)
+            try deleteSKU(service: service, skuId: row.sku.id)
             await loadSKUData()
             await onRefresh()
         } catch {
             await MainActor.run { loadError = userFriendlyError(error, context: "delete SKU row") }
         }
     }
+
+    private func createSKU(
+        service: PartsService,
+        colorId: Int64,
+        brandId: Int64,
+        partNumber: String?,
+        unitCost: Double?
+    ) throws -> Int64 {
+        try service.upsertColorBrandSKU(
+            colorId: colorId,
+            brandId: brandId,
+            typeId: typeId,
+            partNumber: partNumber,
+            unitCost: unitCost
+        )
+    }
+
+    private func deleteSKU(service: PartsService, skuId: Int64) throws {
+        try service.deleteColorBrandSKU(skuId: skuId)
+    }
+
+    private func normalizeSelectedBrand() {
+        if linkedBrands.isEmpty {
+            selectedBrandId = nil
+            return
+        }
+        if let selectedBrandId, linkedBrands.contains(where: { $0.id == selectedBrandId }) {
+            return
+        }
+        selectedBrandId = linkedBrands.first?.id
+    }
 }
 
 private struct ColorBrandSKUDisplayRow: Identifiable, Equatable {
     let sku: PartsService.ColorBrandSKU
     let color: PartColor
-    let brand: Brand
 
     var id: Int64 { sku.id }
 
@@ -397,12 +481,6 @@ private struct ColorBrandSKUDisplayRow: Identifiable, Equatable {
     static func == (lhs: ColorBrandSKUDisplayRow, rhs: ColorBrandSKUDisplayRow) -> Bool {
         lhs.id == rhs.id && lhs.sku.colorId == rhs.sku.colorId && lhs.sku.brandId == rhs.sku.brandId
     }
-}
-
-private struct ColorBrandSKUGroup: Identifiable {
-    let color: PartColor
-    let rows: [ColorBrandSKUDisplayRow]
-    var id: Int64 { color.id ?? 0 }
 }
 
 private struct ColorBrandSKUEditorSheet: View {
@@ -441,33 +519,30 @@ private struct ColorBrandSKUEditorSheet: View {
 
     let mode: Mode
     let typeId: Int64
-    let brands: [Brand]
+    let brand: Brand
     let colors: [PartColor]
     let onSave: (Draft) async throws -> Void
 
     @State private var selectedColorId: Int64
-    @State private var selectedBrandId: Int64
     @State private var partNumber: String
     @State private var unitCostText: String
     @State private var saveError: String?
     @State private var isSaving = false
 
-    init(mode: Mode, typeId: Int64, brands: [Brand], colors: [PartColor], onSave: @escaping (Draft) async throws -> Void) {
+    init(mode: Mode, typeId: Int64, brand: Brand, colors: [PartColor], onSave: @escaping (Draft) async throws -> Void) {
         self.mode = mode
         self.typeId = typeId
-        self.brands = brands
+        self.brand = brand
         self.colors = colors
         self.onSave = onSave
 
         switch mode {
         case .create:
             _selectedColorId = State(initialValue: colors.first(where: { $0.id != nil })?.id ?? 0)
-            _selectedBrandId = State(initialValue: brands.first(where: { $0.id != nil })?.id ?? 0)
             _partNumber = State(initialValue: "")
             _unitCostText = State(initialValue: "")
         case .edit(let row):
             _selectedColorId = State(initialValue: row.sku.colorId)
-            _selectedBrandId = State(initialValue: row.sku.brandId)
             _partNumber = State(initialValue: row.sku.partNumber ?? "")
             _unitCostText = State(initialValue: row.sku.unitCost.map(formatLocalizedDecimal) ?? "")
         }
@@ -501,12 +576,9 @@ private struct ColorBrandSKUEditorSheet: View {
                 }
 
                 Section("Brand") {
-                    Picker("Brand", selection: $selectedBrandId) {
-                        ForEach(selectableBrands, id: \.id) { brand in
-                            Text(brand.name).tag(brand.id!)
-                        }
-                    }
-                    .disabled(selectableBrands.isEmpty)
+                    Text(brand.name)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
                 }
 
                 Section("SKU Details") {
@@ -524,7 +596,7 @@ private struct ColorBrandSKUEditorSheet: View {
                     }
                 }
             }
-            .navigationTitle(isEditing ? "Edit SKU Row" : "Add SKU Row")
+            .navigationTitle(isEditing ? "Edit SKU" : "Add SKU")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -535,7 +607,7 @@ private struct ColorBrandSKUEditorSheet: View {
                     Button(isSaving ? "Saving…" : "Save") {
                         Task { await save() }
                     }
-                    .disabled(isSaving || selectedColorId == 0 || selectedBrandId == 0 || !unitCostIsValid)
+                    .disabled(isSaving || selectedColorId == 0 || !unitCostIsValid)
                 }
             }
         }
@@ -553,10 +625,6 @@ private struct ColorBrandSKUEditorSheet: View {
 
     private var selectableColors: [PartColor] {
         colors.filter { $0.id != nil }
-    }
-
-    private var selectableBrands: [Brand] {
-        brands.filter { $0.id != nil }
     }
 
     private var selectedColor: PartColor? {
@@ -591,12 +659,16 @@ private struct ColorBrandSKUEditorSheet: View {
             saveError = "Unit cost must be a number."
             return
         }
+        guard let brandId = brand.id else {
+            saveError = "Selected brand is invalid."
+            return
+        }
         isSaving = true
         do {
             try await onSave(Draft(
                 originalSKU: originalSKU,
                 colorId: selectedColorId,
-                brandId: selectedBrandId,
+                brandId: brandId,
                 partNumber: partNumber,
                 unitCostText: unitCostText
             ))

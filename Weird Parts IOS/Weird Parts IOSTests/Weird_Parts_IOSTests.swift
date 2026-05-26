@@ -197,6 +197,34 @@ struct Weird_Parts_IOSTests {
         #expect(scannerSource.contains("activeContinuation?.finish()"), "Startup failures should finish the scan stream instead of leaving a dead sheet")
     }
 
+    @Test func dispatchAssignmentConflictCheckFailureShowsActionError() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let dispatchURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Scheduling/IOSDispatchPage.swift")
+        let source = try String(contentsOf: dispatchURL, encoding: .utf8)
+
+        #expect(source.contains("actionError = userFriendlyError(error, context: \"check time-off conflicts\")"))
+        #expect(
+            source.contains("actionError = userFriendlyError(error, context: \"check time-off conflicts\")\n            return"),
+            "Conflict-check failures should stop assignment creation."
+        )
+    }
+
+    @Test func supplierChannelCreationFailureShowsLoadError() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let suppliersURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Parts/PartsSuppliersPage.swift")
+        let source = try String(contentsOf: suppliersURL, encoding: .utf8)
+
+        #expect(source.contains("loadError = userFriendlyError(error, context: \"create supplier channel\")"))
+    }
+
     @Test func uiTestingFixturesSeedJPOFlowDataForQASmoke() throws {
         let db = try AppDatabase.openInMemoryDatabase()
         let auth = AuthService(db: db)

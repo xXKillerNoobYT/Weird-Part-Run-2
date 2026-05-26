@@ -6,6 +6,7 @@ import WiredPartCore
 /// Per-location-type defaults (Shop, Truck, Trailer) stored with `forecast_` prefix.
 struct IOSForecastSettingsPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
 
     // MARK: - State
 
@@ -39,6 +40,9 @@ struct IOSForecastSettingsPage: View {
     @State private var autoRecalcDaily = true
     @State private var recalcHour: Int = 2
     @State private var categorySuggestionMonths: Int = 6
+    @State private var hasUnsavedChanges = false
+    @State private var showDiscardConfirmation = false
+    @State private var baselineFormSignature = ""
 
     private enum ActiveSheet: Identifiable {
         case help
@@ -47,6 +51,36 @@ struct IOSForecastSettingsPage: View {
 
     private let locationTypes = ["shop", "truck", "trailer"]
     private let locationLabels: [String: String] = ["shop": "Shop", "truck": "Truck", "trailer": "Trailer"]
+    private var formSignature: String {
+        let locationSignature = locationTypes.map { loc in
+            [
+                loc,
+                method[loc] ?? "",
+                String(lookbackDays[loc] ?? 0),
+                String(minDataDays[loc] ?? 0),
+                String(apwWindow[loc] ?? 0),
+            ].joined(separator: ":")
+        }.joined(separator: "|")
+        return [
+            locationSignature,
+            String(commonMinMult),
+            String(commonTargetMult),
+            String(commonMaxMult),
+            String(criticalMinMult),
+            String(criticalTargetMult),
+            String(criticalMaxMult),
+            String(freeSpaceThreshold),
+            String(autoRecalcDaily),
+            String(recalcHour),
+            String(categorySuggestionMonths),
+        ].joined(separator: "|")
+    }
+
+    private var hasValidSettings: Bool {
+        commonMinMult > 0 && commonTargetMult > 0 && commonMaxMult > 0 &&
+        criticalMinMult > 0 && criticalTargetMult > 0 && criticalMaxMult > 0 &&
+        freeSpaceThreshold > 0
+    }
 
     var body: some View {
         Group {
@@ -61,7 +95,14 @@ struct IOSForecastSettingsPage: View {
         }
         .navigationTitle("Forecast Config")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(hasUnsavedChanges)
+        .interactiveDismissDisabled(hasUnsavedChanges)
         .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                if hasUnsavedChanges {
+                    Button("Back") { showDiscardConfirmation = true }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -77,6 +118,21 @@ struct IOSForecastSettingsPage: View {
             ])
         }
         .task { loadSettings() }
+        .onChange(of: formSignature) { _, _ in
+            guard !isLoading else { return }
+            hasUnsavedChanges = formSignature != baselineFormSignature
+        }
+        .confirmationDialog(
+            "Discard changes?",
+            isPresented: $showDiscardConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Discard", role: .destructive) {
+                hasUnsavedChanges = false
+                dismiss()
+            }
+            Button("Keep editing", role: .cancel) {}
+        }
     }
 
     // MARK: - Form
@@ -185,6 +241,8 @@ struct IOSForecastSettingsPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!hasValidSettings)
+                .accessibilityHint(hasValidSettings ? "" : "All multipliers and free-space threshold must be greater than zero.")
             }
         }
         // Fix #149: dismiss keyboard when scrolling forecast settings
@@ -236,6 +294,7 @@ struct IOSForecastSettingsPage: View {
             loadError = userFriendlyError(error, context: "load")
         }
         isLoading = false
+        resetDirtyTracking()
     }
 
     private func saveSettings() {
@@ -268,8 +327,14 @@ struct IOSForecastSettingsPage: View {
 
             try service.upsertSettingsMap(data, category: "forecast")
             saveError = nil
+            resetDirtyTracking()
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }
+    }
+
+    private func resetDirtyTracking() {
+        baselineFormSignature = formSignature
+        hasUnsavedChanges = false
     }
 }

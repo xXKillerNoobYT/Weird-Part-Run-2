@@ -11,17 +11,17 @@ struct AuthServiceTests {
         try AppDatabase.openInMemoryDatabase()
     }
 
-    // MARK: - PIN Hashing (PBKDF2)
+    // MARK: - PIN Hashing (scrypt)
 
-    @Test("hashPin produces PBKDF2 prefixed output")
-    func testHashPinPBKDF2Format() throws {
+    @Test("hashPin produces versioned scrypt output")
+    func testHashPinScryptFormat() throws {
         let hash = AuthService.hashPin("1234", salt: "test-salt")
-        #expect(hash.hasPrefix("pbkdf2$"))
+        #expect(hash.hasPrefix("$wp-scrypt$"))
         let parts = hash.split(separator: "$")
-        #expect(parts.count == 3)
-        #expect(parts[0] == "pbkdf2")
-        #expect(parts[1] == "600000")
-        #expect(parts[2].count == 64) // 32 bytes = 64 hex chars
+        #expect(parts.count == 4)
+        #expect(parts[0] == "wp-scrypt")
+        #expect(parts[1] == "N=4096,r=8,p=1,dk=32")
+        #expect(parts[3].count == 64) // 32 bytes = 64 hex chars
     }
 
     @Test("hashPin produces consistent output")
@@ -38,7 +38,7 @@ struct AuthServiceTests {
         #expect(hash1 != hash2)
     }
 
-    @Test("verifyPinLocally returns true for correct PBKDF2 PIN")
+    @Test("verifyPinLocally returns true for correct scrypt PIN")
     func testVerifyPinCorrect() throws {
         let pin = "9876"
         let hash = AuthService.hashPin(pin, salt: "test-salt")
@@ -64,6 +64,27 @@ struct AuthServiceTests {
         let legacyHash = AuthService.iteratedSHA256Pin(pin, salt: salt)
         #expect(AuthService.verifyPinLocally(pin: pin, storedHash: legacyHash, salt: salt))
         #expect(!AuthService.verifyPinLocally(pin: "0000", storedHash: legacyHash, salt: salt))
+    }
+
+    @Test("deriveScryptKey matches RFC 7914 test vector")
+    func testScryptRFCVector() throws {
+        let derived = try #require(
+            AuthService.deriveScryptKey(password: "", salt: "", n: 16, r: 1, p: 1, dkLen: 64)
+        )
+        let derivedHex = derived.map { String(format: "%02x", $0) }.joined()
+        #expect(derivedHex == "77d6576238657b203b19ca42c18a0497f16b4844e3074ae8dfdffa3fede21442fcd0069ded0948f8326a753a0fc81f17e8d3e0fb2e0d3628cf35e20c38d18906")
+    }
+
+    @Test("verifyPinLocally rejects malformed scrypt params")
+    func testVerifyPinRejectsMalformedScryptHash() throws {
+        let malformed = "$wp-scrypt$N=4096,r=8,p=1$YWJjZA==$" + String(repeating: "aa", count: 32)
+        #expect(!AuthService.verifyPinLocally(pin: "1234", storedHash: malformed, salt: nil))
+    }
+
+    @Test("verifyPinLocally rejects oversized scrypt params")
+    func testVerifyPinRejectsOversizedScryptHash() throws {
+        let oversized = "$wp-scrypt$N=2097152,r=8,p=1,dk=32$YWJjZA==$" + String(repeating: "aa", count: 32)
+        #expect(!AuthService.verifyPinLocally(pin: "1234", storedHash: oversized, salt: nil))
     }
 
     // MARK: - Token Generation & Parsing
@@ -442,7 +463,7 @@ struct AuthServiceTests {
         let auth = AuthService(db: db)
         _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
 
-        // Insert a user with iterated SHA-256 (has salt but no pbkdf2$ prefix)
+        // Insert a user with iterated SHA-256 (has salt but no scrypt prefix)
         let oldHash = AuthService.iteratedSHA256Pin("5555", salt: "some-salt")
         try db.writer.write { dbConn in
             try dbConn.execute(
@@ -451,7 +472,7 @@ struct AuthServiceTests {
             )
         }
 
-        // Should count as legacy (not yet PBKDF2)
+        // Should count as legacy (not yet scrypt)
         #expect(try auth.getLegacyHashedUserCount() == 1)
     }
 
@@ -472,7 +493,7 @@ struct AuthServiceTests {
         #expect(try auth.getLegacyHashedUserCount() == 0)
     }
 
-    @Test("getLegacyHashedUserCount drops to 0 after legacy user logs in (upgrades to PBKDF2)")
+    @Test("getLegacyHashedUserCount drops to 0 after legacy user logs in (upgrades to scrypt)")
     func testLegacyCountDecrementOnLogin() throws {
         let db = try freshDB()
         let auth = AuthService(db: db)
@@ -493,26 +514,26 @@ struct AuthServiceTests {
 
         #expect(try auth.getLegacyHashedUserCount() == 1)
 
-        // Login triggers automatic re-hash to PBKDF2
+        // Login triggers automatic re-hash to scrypt
         let result = try auth.authenticateByPin(userId: legacyUserId, pin: "9999")
         #expect(result.success)
         #expect(try auth.getLegacyHashedUserCount() == 0)
 
-        // Verify the stored hash is now PBKDF2 format
+        // Verify the stored hash is now scrypt format
         let updatedHash = try db.writer.read { dbConn -> String? in
             try String.fetchOne(dbConn, sql: "SELECT pin_hash FROM users WHERE id = ?", arguments: [legacyUserId])
         }
-        #expect(updatedHash?.hasPrefix("pbkdf2$") == true)
+        #expect(updatedHash?.hasPrefix("$wp-scrypt$") == true)
     }
 
-    @Test("Iterated SHA-256 user upgrades to PBKDF2 on login")
-    func testIteratedSHA256UpgradesToPBKDF2OnLogin() throws {
+    @Test("Iterated SHA-256 user upgrades to scrypt on login")
+    func testIteratedSHA256UpgradesToScryptOnLogin() throws {
         AuthService.resetAllLoginAttempts()
         let db = try freshDB()
         let auth = AuthService(db: db)
         _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "0000")
 
-        // Insert a user with iterated SHA-256 hash (has salt, but not PBKDF2)
+        // Insert a user with iterated SHA-256 hash (has salt, but not scrypt)
         let salt = AuthService.generateSalt()
         let oldHash = AuthService.iteratedSHA256Pin("7777", salt: salt)
         var userId: Int64 = 0
@@ -528,13 +549,13 @@ struct AuthServiceTests {
         let result = try auth.authenticateByPin(userId: userId, pin: "7777")
         #expect(result.success)
 
-        // Verify upgrade to PBKDF2
+        // Verify upgrade to scrypt
         let updatedHash = try db.writer.read { dbConn -> String? in
             try String.fetchOne(dbConn, sql: "SELECT pin_hash FROM users WHERE id = ?", arguments: [userId])
         }
-        #expect(updatedHash?.hasPrefix("pbkdf2$") == true)
+        #expect(updatedHash?.hasPrefix("$wp-scrypt$") == true)
 
-        // Re-login should still work with the new PBKDF2 hash
+        // Re-login should still work with the new scrypt hash
         let result2 = try auth.authenticateByPin(userId: userId, pin: "7777")
         #expect(result2.success)
     }
