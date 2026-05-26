@@ -4983,7 +4983,7 @@ public final class WarehouseService: Sendable {
         }
         return try db.writer.write { dbConn in
             let partOk = (try Int.fetchOne(dbConn, sql:
-                "SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL",
+                "SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL AND COALESCE(is_active, 1) = 1",
                 arguments: [partId]) ?? 0) > 0
             guard partOk else { throw WarehouseError.partNotFound(partId) }
             let foundAreaOk = try Self.fetchActiveArea(id: foundAtAreaId, dbConn: dbConn) != nil

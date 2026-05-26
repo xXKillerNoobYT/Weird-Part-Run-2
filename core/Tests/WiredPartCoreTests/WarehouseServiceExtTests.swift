@@ -1732,6 +1732,27 @@ struct WarehouseServiceExtTests {
         }
     }
 
+    @Test("logMisplacedPart rejects inactive parts")
+    func testLogMisplacedPart_rejectsInactivePart() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let plan = try env.warehouse.createFloorPlan(name: "MP-INACTIVE", widthInches: 200, lengthInches: 200)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "MP-I1", unitType: "shelf")
+        let level = try env.warehouse.addStorageLevel(unitId: unit.id!, levelCode: "A")
+        let area = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: 1)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET is_active = 0 WHERE id = ?", arguments: [partId])
+        }
+
+        #expect(throws: WarehouseService.WarehouseError.partNotFound(partId)) {
+            try env.warehouse.logMisplacedPart(
+                partId: partId, foundAtAreaId: area.id!, homeAreaId: nil,
+                qtyFound: 1, foundBy: env.adminUserId)
+        }
+    }
+
     @Test("active area lookup searches QR labels and returns empty no-results safely")
     func testSearchActiveAreas() throws {
         let env = try E2ETestHelpers.setUp()

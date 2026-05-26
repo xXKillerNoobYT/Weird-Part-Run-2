@@ -1780,13 +1780,12 @@ private struct MisplacedPartSheet: View {
             let parts = try service.searchParts(query: query, limit: 15)
             partResults = parts.compactMap { part in
                 guard let id = part.id, id > 0, part.deletedAt == nil else { return nil }
-                let stock = (try? service.getPartStockSummary(partId: id).total)
                 return MisplacedLookupPart(
                     id: id,
                     name: part.name,
                     code: part.code,
                     detail: part.manufacturerPartNumber,
-                    totalStock: stock
+                    totalStock: nil
                 )
             }
             partLookupMessage = partResults.isEmpty
@@ -1950,8 +1949,12 @@ private struct MisplacedPartSheet: View {
             errorMessage = "Select where you found it."
             return
         }
-        guard qtyFound >= 1, qtyFound <= 999 else {
+        if qtyFound < 1 {
             errorMessage = "Quantity must be at least 1."
+            return
+        }
+        if qtyFound > 999 {
+            errorMessage = "Quantity must be 999 or less."
             return
         }
         isSaving = true
@@ -1980,7 +1983,7 @@ private struct MisplacedPartSheet: View {
             dismiss()
             onSave()
         } catch {
-            errorMessage = userFriendlyError(error, context: "load audit")
+            errorMessage = userFriendlyError(error, context: "log misplaced part")
         }
         isSaving = false
     }
