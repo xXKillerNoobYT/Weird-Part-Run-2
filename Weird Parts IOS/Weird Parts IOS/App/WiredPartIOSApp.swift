@@ -42,10 +42,6 @@ struct WiredPartIOSApp: App {
         ProcessInfo.processInfo.arguments.contains("-UITestingWarehouseSetupWizard")
     }
 
-    private var shouldForceLoginForUITest: Bool {
-        ProcessInfo.processInfo.arguments.contains("-UITestingForceLogin")
-    }
-
     private var shouldShowWEI936WelcomeFixture: Bool {
         ProcessInfo.processInfo.arguments.contains("-UITestingWEI936Welcome")
     }
@@ -86,7 +82,7 @@ struct WiredPartIOSApp: App {
                     } else if appCore.needsBootstrap {
                         BootstrapView()
                             .environmentObject(appCore)
-                    } else if shouldForceLoginForUITest || appCore.currentUser == nil {
+                    } else if appCore.currentUser == nil {
                         LoginView()
                             .environmentObject(appCore)
                     } else if isAdmin && !hasCompletedCompanySetup {
