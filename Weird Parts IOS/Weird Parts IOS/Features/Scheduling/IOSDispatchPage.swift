@@ -356,10 +356,17 @@ struct IOSDispatchPage: View {
                             RoundedRectangle(cornerRadius: 3)
                                 .fill(slotColor(worker.timeSlot))
                         )
+                        .accessibilityLabel("Move \(worker.employeeName)")
+                        .draggable(DraggableWorker(id: worker.employeeId, name: worker.employeeName))
                 }
             }
         }
         .frame(maxWidth: .infinity, minHeight: 24)
+        .dropDestination(for: DraggableWorker.self) { workers, _ in
+            guard let worker = workers.first else { return false }
+            createAssignment(jobId: row.id, userId: worker.id, date: dayStr, timeSlot: "full")
+            return true
+        }
     }
 
     private func slotColor(_ slot: String) -> Color {
