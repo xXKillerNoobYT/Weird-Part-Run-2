@@ -2888,6 +2888,27 @@ struct SchedulingServiceTests {
         #expect(assignments[0].status == "scheduled")
     }
 
+    @Test("createDispatch persists time slot for weekly dispatch board")
+    func testCreateDispatchPersistsWeeklyDispatchTimeSlot() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-TS-02", name: "Dispatch Time Slot Job")
+
+        _ = try env.scheduling.createDispatch(
+            jobId: jobId,
+            userId: env.adminUserId,
+            date: "2026-10-13",
+            timeSlot: "pm"
+        )
+
+        let assignments = try env.scheduling.getWeeklyDispatchAssignments(
+            weekStart: "2026-10-13",
+            weekEnd: "2026-10-13"
+        )
+        #expect(assignments.count == 1)
+        #expect(assignments[0].timeSlot == "pm")
+        #expect(assignments[0].status == "scheduled")
+    }
+
     // MARK: - Soft-Deleted Dispatch Not Returned
 
     @Test("getMySchedule excludes soft-deleted dispatches")

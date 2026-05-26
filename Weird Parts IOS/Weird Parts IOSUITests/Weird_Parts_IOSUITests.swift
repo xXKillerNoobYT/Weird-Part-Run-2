@@ -24,7 +24,6 @@ import UIKit
 final class Weird_Parts_IOSUITests: XCTestCase {
 
     private var app: XCUIApplication!
-    private static let uiTestingPIN = "8396"
     private var wei1185ArtifactDirectory: URL? {
         if let path = ProcessInfo.processInfo.environment["WEI_1185_ARTIFACT_DIR"], !path.isEmpty {
             return URL(fileURLWithPath: path, isDirectory: true)
@@ -68,7 +67,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         continueAfterFailure = false
 
         app = XCUIApplication()
-        configureUITestingEnvironment(app)
         // Pass a launch argument so the app can detect testing mode
         // (useful for seeding test data or skipping onboarding)
         app.launchArguments += ["-UITesting"]
@@ -82,10 +80,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             XCUIDevice.shared.orientation = .landscapeLeft
         }
         app.launch()
-    }
-
-    private func configureUITestingEnvironment(_ app: XCUIApplication) {
-        app.launchEnvironment["WEIRD_PARTS_UI_TEST_PIN"] = Self.uiTestingPIN
     }
 
     private var shouldOpenPartsCategoriesOnLaunch: Bool {
@@ -176,7 +170,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     func testWEI1251DispatchBoardExistingAssignmentDragDrop() throws {
         app.terminate()
         app = XCUIApplication()
-        configureUITestingEnvironment(app)
         app.launchArguments += [
             "-UITesting",
             "-UITestingDispatchBoard"
@@ -237,7 +230,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     func testWEI1185WarehouseZonePlacementScreenshots() throws {
         app.terminate()
         app = XCUIApplication()
-        configureUITestingEnvironment(app)
         app.launchArguments += [
             "-UITesting",
             "-UITestingWarehouseSetupWizard"
@@ -325,7 +317,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app.buttons["Save & Exit"].tap()
         app.terminate()
         app = XCUIApplication()
-        configureUITestingEnvironment(app)
         app.launchArguments += [
             "-UITesting",
             "-UITestingPreserveDatabase",
@@ -739,16 +730,14 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     func testLoginSignInButtonHittableAtAX5WithKeyboardVisible() throws {
         app.terminate()
         app = XCUIApplication()
-        configureUITestingEnvironment(app)
         app.launchArguments += [
             "-UITesting",
-            "-UITestingForceLogin",
             "-UIPreferredContentSizeCategoryName",
             UIContentSizeCategory.accessibilityExtraExtraExtraLarge.rawValue
         ]
         app.launch()
 
-        let loginView = app.descendants(matching: .any)["loginView"]
+        let loginView = app.otherElements["loginView"]
         guard loginView.waitForExistence(timeout: 30) else {
             throw XCTSkip("Login was not shown; this regression requires a fresh logged-out UI-test launch.")
         }
@@ -763,7 +752,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         XCTAssertTrue(pinField.waitForExistence(timeout: 5),
                       "PIN field should appear after selecting a user")
         pinField.tap()
-        pinField.typeText(Self.uiTestingPIN)
+        pinField.typeText("1234")
 
         let signIn = app.buttons["loginSignInButton"]
         XCTAssertTrue(signIn.waitForExistence(timeout: 5),
@@ -825,7 +814,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         let pinField = app.secureTextFields["loginPINField"]
         XCTAssertTrue(pinField.waitForExistence(timeout: 5), "PIN field should appear")
         pinField.tap()
-        pinField.typeText(Self.uiTestingPIN)
+        pinField.typeText("1234")
 
         let done = app.buttons["loginPINDoneButton"]
         if done.waitForExistence(timeout: 3) && done.isHittable {
@@ -1081,7 +1070,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     private func relaunchForWEI1451(_ launchArguments: [String]) {
         app.terminate()
         app = XCUIApplication()
-        configureUITestingEnvironment(app)
         app.launchArguments += ["-UITesting"] + launchArguments
         if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" {
             XCUIDevice.shared.orientation = .landscapeLeft
@@ -1545,7 +1533,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     func testWEI1303EmployeeDetailTabsMeetMinimumTouchTargets() throws {
         app.terminate()
         app = XCUIApplication()
-        configureUITestingEnvironment(app)
         app.launchArguments += ["-UITesting"]
         app.launch()
 

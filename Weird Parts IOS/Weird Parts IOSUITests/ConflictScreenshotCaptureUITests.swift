@@ -3,7 +3,6 @@ import XCTest
 final class ConflictScreenshotCaptureUITests: XCTestCase {
 
     private var app: XCUIApplication!
-    private static let uiTestingPIN = "8396"
 
     // MARK: - Setup & Teardown
 
@@ -13,7 +12,6 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
         continueAfterFailure = true
 
         app = XCUIApplication()
-        app.launchEnvironment["WEIRD_PARTS_UI_TEST_PIN"] = Self.uiTestingPIN
         // Signal both general UI-testing mode and the specific conflict-capture
         // mode so the app can (now or in the future) seed the required fixtures.
         app.launchArguments += ["-UITesting", "-UITestingConflictCapture"]
@@ -27,7 +25,7 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
     //
     // Prerequisites (must ALL be true on the simulator / device):
     //   1. At least one user row exists in the login list.
-    //   2. That user's PIN matches WEIRD_PARTS_UI_TEST_PIN.
+    //   2. That user's PIN is "1234".
     //   3. The post-login dashboard shows a "Review" button leading to Sync Conflicts.
     //
     // The test is skipped automatically on a clean install so it never blocks CI.
@@ -41,7 +39,7 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
         guard ProcessInfo.processInfo.environment["UI_TEST_CONFLICT_SCREENSHOTS"] == "1" else {
             throw XCTSkip(
                 "Skipped: set the environment variable UI_TEST_CONFLICT_SCREENSHOTS=1 " +
-                "and ensure the simulator has a seeded admin user using WEIRD_PARTS_UI_TEST_PIN with " +
+                "and ensure the simulator has a seeded admin user (PIN 1234) with " +
                 "pending sync conflicts before running this test."
             )
         }
@@ -56,7 +54,7 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
         let pinField = app.secureTextFields["loginPINField"]
         XCTAssertTrue(pinField.waitForExistence(timeout: 5))
         pinField.tap()
-        pinField.typeText(Self.uiTestingPIN)
+        pinField.typeText("1234")
 
         let signIn = app.buttons["loginSignInButton"]
         XCTAssertTrue(signIn.waitForExistence(timeout: 5))
