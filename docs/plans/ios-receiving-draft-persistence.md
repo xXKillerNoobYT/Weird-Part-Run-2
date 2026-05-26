@@ -7,6 +7,12 @@ their work with no warning. This plan adds silent auto-persistence: every quanti
 change is immediately written to the database, so the session can always be resumed
 exactly where it left off.
 
+## Status (2026-05-26 Docs QA)
+- **Implemented:** PE-041 is complete in `IOSReceiveShipmentPage.swift`.
+- **Quantity auto-save:** stepper changes, Reset to Expected, Clear All, and barcode scan increments call `updateSessionItem(itemId:receivedQty:)` in `Task {}` and surface save failures.
+- **Resume behavior:** `loadSessionItems()` restores saved `receivedQty` when present and falls back to `expectedQty` for fresh sessions.
+- **Related fixed findings:** T1-15 (draft loss), T2-13 (per-part receiving barcode scan), and T2-14 (default received qty) are superseded by the shipped receiving implementation.
+
 ## Why We Need This
 - **Real recurring pain** (owner-confirmed): happens regularly in the field
 - Workers scan dozens of items, tap back accidentally, lose everything
@@ -14,9 +20,9 @@ exactly where it left off.
 
 ## Current State
 - `IOSReceiveShipmentPage.swift` holds quantities in `@State private var receivedQtys: [Int64: Int] = [:]`
-- These are only flushed to DB when the user taps "Complete Session"
-- A Back navigation or swipe dismissal discards all unsaved quantities
-- There is already a `showDiscardConfirmation` dialog — but the owner wants auto-save instead
+- Quantity mutations now write through `WarehouseService.updateSessionItem(...)` before completion.
+- A Back navigation or swipe dismissal no longer loses entered quantities because the in-progress session items are already updated.
+- The old discard-confirmation approach was superseded by owner-approved silent autosave.
 
 ## Owner Decisions (Q&A #36 — 2026-04-07)
 - **No confirmation dialog needed** — auto-save draft on every quantity change

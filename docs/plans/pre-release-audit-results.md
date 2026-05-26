@@ -8,6 +8,8 @@
 > **Gap closure:** All 44 items (GAP-001 through GAP-044) complete
 >
 > **Result: 228 PASS / 69 FAIL / 34 PARTIAL = 331 total**
+>
+> **Docs QA note (2026-05-26):** Receiving findings T1-15, T2-13, and T2-14 are fixed/superseded by PE-041 plus completed prompts 61K/61L. Historical audit totals above are not recomputed in this reconciliation pass.
 
 ---
 
@@ -37,7 +39,7 @@
 |---|-------|--------|-------|
 | 1.1 | B1. Every sidebar module expands to show sub-tabs | PASS | Prompt 32A restructured all 13 modules |
 | 1.2 | B2. Every sub-tab navigates to a real page | FAIL | T1-17: 2 broken routes (/orders/parts, /orders/wishlist) — 32A added IOSWishlistPage placeholder but not fully wired |
-| 1.3 | B3. Back button works on every detail page | FAIL | T1-15: Receiving back button discards ALL work with no confirmation |
+| 1.3 | B3. Back button works on every detail page | FIXED | T1-15 superseded for receiving: PE-041 autosaves every quantity mutation and restores saved quantities on reopen (`IOSReceiveShipmentPage.swift`). |
 | 1.4 | B4. Sheet dismiss works on every popup | PASS | Prompt 01 fixed all .sheet conflicts; 32F converted 19 files to ActiveSheet enum |
 | 1.5 | B5. No multiple .sheet() modifiers causing popups to not open | PARTIAL | T2-18: 17 files had multiple .sheet() — most fixed by 32F, but 34A (UI Quality Audit) not yet run |
 | 1.6 | B6. Tab order makes sense (daily use first, admin last) | PASS | Prompt 32A reordered all modules |
@@ -686,14 +688,14 @@
 | T1-12 | PO created with no line items | 6.16 (G2) | — (partial, needs inline editing) |
 | T1-13 | "Submit to Supplier" misleading | — | 33E — DONE (wired real sheets) |
 | T1-14 | Stock shows "Warehouse #1" not names | — | 31G — DONE (location picker) |
-| T1-15 | Receiving Back discards all work | 1.3 (B3) | 35F — NOT STARTED |
+| T1-15 | ~~Receiving Back discards all work~~ — fixed by PE-041 receiving draft persistence | 1.3 (B3) | PE-041 — DONE; `IOSReceiveShipmentPage.swift` saves stepper/reset/clear/barcode quantity changes and restores drafts |
 | T1-16 | Standard date filter bar ZERO implementation | 4.3 (C3), 4.23 (LL5) | 51A — NOT STARTED |
 | T1-17 | 2 broken sidebar routes | 1.2 (B2), 1.7 (B7), 1.8 (B8) | 32A — PARTIAL (placeholder) |
 | T1-18 | AI has ZERO conversation memory | 5.6 | — (architectural, not started) |
 | T1-19 | Only 5 of 87 pages send AI context | 5.4 (S4) | — (needs systematic fix) |
 | T1-20 | AI and help system disconnected | 4.22 (LL4), 5.7 | — (needs bridge) |
 
-**Tier 1 resolved: 5 of 20 (T1-03, T1-11, T1-13, T1-14, T1-17 partial)**
+**Tier 1 resolved: 6 of 20 (T1-03, T1-11, T1-13, T1-14, T1-15, T1-17 partial; historical audit totals above not recomputed)**
 
 ### Tier 2 Issues (25 issues — High Priority)
 
@@ -711,8 +713,8 @@
 | T2-10 | People Dashboard unreachable | 1.9 (B9) | 32A — DONE |
 | T2-11 | Clock out blocked during break | 2.7 (E7) | 33B — PARTIAL |
 | T2-12 | Questionnaire Skip bypasses required | 3.21 | — NOT STARTED |
-| T2-13 | No per-part barcode during receiving | — | — NOT STARTED |
-| T2-14 | Received quantities default to 0 | — | — NOT STARTED |
+| T2-13 | ~~No per-part barcode during receiving~~ — fixed by 61K | — | 61K — DONE; barcode scan matches receiving line items, increments/highlights, and saves quantity |
+| T2-14 | ~~Received quantities default to 0~~ — fixed by 61L/PE-041 | — | 61L — DONE; fresh quantities default to expected qty and saved draft quantities restore on resume |
 | T2-15 | No "Order This" from part detail | — | — NOT STARTED |
 | T2-16 | ~130 silent guard-let-service returns | 7.2 (LL15) | 32C — DONE |
 | T2-17 | 11 empty catch blocks | 7.3 (LL14) | 32B — DONE |
@@ -725,7 +727,7 @@
 | T2-24 | AI no preference learning | 5.9 | — NOT STARTED |
 | T2-25 | AI no proactive suggestions | 5.10 | — NOT STARTED |
 
-**Tier 2 resolved: 10 of 25**
+**Tier 2 resolved: 12 of 25 (T2-13/T2-14 fixed; historical audit totals above not recomputed)**
 
 ### Tier 3 Issues (20 issues — Medium Priority)
 

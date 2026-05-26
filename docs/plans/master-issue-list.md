@@ -3,6 +3,8 @@
 > **Source:** 10 parallel audit agents covering routes, buttons, services, standards, plans, user flows, AI intelligence, discoverability, and 196-item pre-release checklist.
 >
 > **Each issue gets its own Xcode fix prompt.**
+>
+> **Docs QA note (2026-05-26):** T1-15, T2-13, and T2-14 are retained as historical audit findings but are no longer open receiving work. Code evidence in `IOSReceiveShipmentPage.swift` confirms PE-041 draft persistence plus 61K/61L barcode/default-quantity fixes.
 
 ---
 
@@ -31,7 +33,7 @@
 | T1-12 | PO created with no line items — separate page to add parts | Office workers frustrated |
 | T1-13 | "Submit to Supplier" doesn't actually send anything — misleading button name | Users think PO was sent when it wasn't |
 | T1-14 | Stock shows "Warehouse #1" not human-readable names | Can't find parts on shelves |
-| T1-15 | Receiving Back button discards ALL work with no confirmation | One tap = re-enter 20 quantities |
+| T1-15 | ~~Receiving Back button discards ALL work with no confirmation~~ — ✅ **CLOSED** — PE-041 autosaves quantity changes immediately and restores saved quantities on reopen. | Fixed |
 | T1-16 | Standard date filter bar: ZERO implementation anywhere in the app | Can't filter anything by date range |
 | T1-17 | 2 broken sidebar routes (/orders/parts, /orders/wishlist) | Pages unreachable in sidebar layout |
 
@@ -68,8 +70,8 @@
 | T2-10 | People Dashboard unreachable (no tab in NavigationConfig) | 1 page |
 | T2-11 | Clock out blocked during break with no explanation | UX confusion |
 | T2-12 | Questionnaire Skip bypasses required questions | Data integrity |
-| T2-13 | No per-part barcode scan during receiving | Slow receiving |
-| T2-14 | Received quantities default to 0 (should be expected qty) | Extra work |
+| T2-13 | ~~No per-part barcode scan during receiving~~ — ✅ **CLOSED** — 61K added receiving barcode scanning that matches line items, increments quantity, highlights the item, and persists the change. | Fixed |
+| T2-14 | ~~Received quantities default to 0 (should be expected qty)~~ — ✅ **CLOSED** — 61L/PE-041 now default fresh-session quantities to expected qty while preserving saved draft quantities on resume. | Fixed |
 | T2-15 | No "Order This" action from part detail | Dead end |
 
 ### Code Quality
@@ -140,7 +142,7 @@ Write prompts in this order for maximum impact:
 3. T1-18 (AI conversation memory — makes AI actually useful)
 4. T1-04 (Office Dashboard — managers need this daily)
 5. T1-01 (Job Detail dashboard — most viewed page)
-6. T1-15 (Receiving back button — prevents data loss)
+6. ~~T1-15~~ (Receiving back button — fixed by PE-041 autosave/resume)
 7. T2-01+02 (Help buttons visible + on all pages)
 8. T2-20 (First-launch checklist — onboarding)
 9. T2-16 (Silent guard returns — bulk fix)
