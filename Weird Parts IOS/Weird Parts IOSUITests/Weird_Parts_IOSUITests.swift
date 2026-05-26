@@ -334,6 +334,35 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     }
 
     @MainActor
+    func testWEI2475WarehouseLocationsDirectRouteReachesSeededFloorPlan() throws {
+        app.terminate()
+        app = XCUIApplication()
+        configureUITestingEnvironment(app)
+        app.launchArguments += [
+            "-UITesting",
+            "-UITestingWEI936AutoLogin",
+            "-UITestingWarehouseLocations"
+        ]
+        app.launch()
+
+        XCTAssertTrue(
+            app.navigationBars["Warehouse"].waitForExistence(timeout: 30) ||
+                app.staticTexts["Warehouse"].waitForExistence(timeout: 30),
+            "Warehouse module should open without the manual login/PIN route"
+        )
+        XCTAssertTrue(
+            app.buttons["Shelf"].waitForExistence(timeout: 10) ||
+                app.staticTexts["UITesting Shelf A"].waitForExistence(timeout: 10),
+            "Warehouse Locations should render its floor-plan controls or seeded shelf"
+        )
+        XCTAssertTrue(
+            app.staticTexts["UITesting Shelf A"].waitForExistence(timeout: 10) ||
+                app.staticTexts["UITesting Pipe Rack"].waitForExistence(timeout: 10),
+            "Warehouse Locations should show a seeded storage unit for visual QA"
+        )
+    }
+
+    @MainActor
     func testWEI1182WarehouseWizardBreakpointWalkingPathScreenshots() throws {
         let destinationName = ProcessInfo.processInfo.environment["RUN_DESTINATION_DEVICE_NAME"] ?? ""
         if ProcessInfo.processInfo.environment["WEI_1182_LANDSCAPE"] == "1"
