@@ -1738,6 +1738,53 @@ struct WarehouseServiceExtTests {
         #expect(badMovements == 0)
     }
 
+    @Test("completeSession does not add routed PO incoming items to shelf stock")
+    func testCompleteSession_skipsRoutedPOIncomingShelfStock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Routed PO Part", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-PO-STAGE", name: "PO Stage Job")
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-ROUTED-STAGE", supplierId: supplierId, notes: nil)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, part_id, qty_ordered, unit_cost)
+                VALUES (?, ?, 3, 5.0)
+                """, arguments: [poId, partId])
+        }
+
+        let sessionId = try env.warehouse.startReceivingSession(poId: poId, startedBy: env.adminUserId)
+        let item = try #require(try env.warehouse.getSessionItems(sessionId: sessionId).first)
+        try env.warehouse.updateSessionItem(itemId: item.id, receivedQty: 3)
+        _ = try env.warehouse.stageReceivedPartsForJob(
+            partId: partId,
+            qty: 3,
+            jobId: jobId,
+            performedBy: env.adminUserId,
+            notes: "Regression: staged before PO completion"
+        )
+        try env.warehouse.markReceivingSessionItemRouted(
+            itemId: item.id,
+            disposition: .staged,
+            routedQty: 3,
+            routedBy: env.adminUserId
+        )
+
+        try env.warehouse.completeSession(sessionId: sessionId, completedBy: env.adminUserId)
+
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1) == 0)
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "pulled", locationId: jobId) == 3)
+
+        let receivingMovements = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM stock_movements
+                WHERE part_id = ? AND movement_type = 'receiving'
+                """, arguments: [partId]) ?? 0
+        }
+        #expect(receivingMovements == 0)
+    }
+
     // MARK: - Bin/Area assignment + misplaced-parts validation (iter 82)
 
     @Test("assignPartToBin is a no-op on a soft-deleted bin")

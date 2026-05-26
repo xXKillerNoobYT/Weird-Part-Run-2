@@ -135,6 +135,7 @@ extension AppDatabase {
         registerMigration096SubcontractorScheduleSoftDeleteUniqueness(&migrator)
         registerMigration097PartImportAuditSessions(&migrator)
         registerMigration098JobReturnIntakeHolding(&migrator)
+        registerMigration099ReceivingItemRoutingDisposition(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5644,6 +5645,19 @@ extension AppDatabase {
             try db.create(index: "idx_job_return_intakes_job", on: "job_return_intakes", columns: ["source_job_id", "status"])
             try db.create(index: "idx_job_return_items_intake", on: "job_return_intake_items", columns: ["intake_id", "status"])
             try db.create(index: "idx_job_return_items_part", on: "job_return_intake_items", columns: ["part_id", "status"])
+        }
+    }
+
+    private static func registerMigration099ReceivingItemRoutingDisposition(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("099_receiving_item_routing_disposition") { db in
+            try addColumnIfMissing(db, table: "receiving_session_items", column: "routing_disposition", type: .text)
+            try addColumnIfMissing(db, table: "receiving_session_items", column: "routed_qty", type: .integer, defaultValue: 0)
+            try addColumnIfMissing(db, table: "receiving_session_items", column: "routed_by", type: .integer)
+            try addColumnIfMissing(db, table: "receiving_session_items", column: "routed_at", type: .text)
+
+            try db.create(index: "idx_receiving_items_routing_disposition",
+                          on: "receiving_session_items",
+                          columns: ["session_id", "routing_disposition"])
         }
     }
 }
