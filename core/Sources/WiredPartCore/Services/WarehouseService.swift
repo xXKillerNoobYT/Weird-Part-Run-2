@@ -35,6 +35,7 @@ public final class WarehouseService: Sendable {
         case areaNotFound(Int64)
         case unitNotFound(Int64)
         case levelNotFound(Int64)
+        case sessionItemNotFound(Int64)
         case jobReturnIntakeNotFound(Int64)
         case jobReturnItemNotFound(Int64)
     }
@@ -1321,6 +1322,14 @@ public final class WarehouseService: Sendable {
         case jobReturn(intakeItemId: Int64)
     }
 
+    public enum ReceivingRoutingDisposition: String, Sendable, Equatable {
+        case staged
+        case supplierReturn = "supplier_return"
+        case writeOff = "write_off"
+        case wrongPart = "wrong_part"
+        case review
+    }
+
     public struct JobReturnLineInput: Sendable, Equatable {
         public let partId: Int64
         public let qty: Int
@@ -1572,6 +1581,44 @@ public final class WarehouseService: Sendable {
         }
     }
 
+    public func markReceivingSessionItemRouted(
+        itemId: Int64,
+        disposition: ReceivingRoutingDisposition,
+        routedQty: Int,
+        routedBy: Int64
+    ) throws {
+        guard routedQty > 0 else { throw WarehouseError.invalidQuantity }
+        try db.writer.write { dbConn in
+            try Self.requireActiveUser(routedBy, dbConn: dbConn)
+            guard let row = try Row.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT received_qty FROM receiving_session_items
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [itemId]
+            ) else {
+                throw WarehouseError.sessionItemNotFound(itemId)
+            }
+            let receivedQty: Int = row["received_qty"] ?? 0
+            guard receivedQty >= routedQty else {
+                throw WarehouseError.insufficientStock(available: receivedQty, requested: routedQty)
+            }
+
+            try dbConn.execute(
+                sql: """
+                    UPDATE receiving_session_items
+                    SET routing_disposition = ?,
+                        routed_qty = ?,
+                        routed_by = ?,
+                        routed_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [disposition.rawValue, routedQty, routedBy, itemId]
+            )
+        }
+    }
+
     /// Complete a receiving session: update status and create stock movements.
     public func completeSession(sessionId: Int64, completedBy: Int64) throws {
         try db.writer.write { dbConn in
@@ -1607,11 +1654,23 @@ public final class WarehouseService: Sendable {
                 arguments: [sessionId]
             )
 
-            // Create stock movements for each received item
+            // Create shelf stock movements for each received item that was not
+            // already routed to staging, return/review, or write-off.
             let items = try Row.fetchAll(
                 dbConn,
                 sql: """
-                    SELECT rsi.received_qty, rsi.actual_cost,
+                    SELECT rsi.received_qty,
+                           CASE
+                               WHEN rsi.routing_disposition IS NOT NULL
+                                    AND rsi.routing_disposition NOT IN ('shelf', 'restock_shelf', 'used_shelf')
+                               THEN CASE
+                                   WHEN rsi.received_qty - COALESCE(rsi.routed_qty, rsi.received_qty) > 0
+                                   THEN rsi.received_qty - COALESCE(rsi.routed_qty, rsi.received_qty)
+                                   ELSE 0
+                               END
+                               ELSE rsi.received_qty
+                           END AS shelf_qty,
+                           rsi.actual_cost,
                            pli.part_id
                     FROM receiving_session_items rsi
                     JOIN po_line_items pli ON pli.id = rsi.po_line_id
@@ -1622,8 +1681,8 @@ public final class WarehouseService: Sendable {
 
             for item in items {
                 let partId: Int64 = item["part_id"] ?? 0
-                let receivedQty: Int = item["received_qty"] ?? 0
-                guard partId > 0, receivedQty > 0 else { continue }
+                let shelfQty: Int = item["shelf_qty"] ?? 0
+                guard partId > 0, shelfQty > 0 else { continue }
                 let unitCost: Double? = item["actual_cost"] as Double?
 
                 // Insert movement
@@ -1634,7 +1693,7 @@ public final class WarehouseService: Sendable {
                          movement_type, reason, performed_by, unit_cost_at_move, created_at)
                         VALUES (?, ?, 'warehouse', 1, '\(StockMovement.MovementType.receiving.rawValue)', 'PO receiving', ?, ?, datetime('now'))
                         """,
-                    arguments: [partId, receivedQty, completedBy, unitCost]
+                    arguments: [partId, shelfQty, completedBy, unitCost]
                 )
 
                 // Add to warehouse stock
@@ -1644,7 +1703,7 @@ public final class WarehouseService: Sendable {
                         WHERE part_id = ? AND location_type = 'warehouse' AND location_id = 1
                           AND deleted_at IS NULL
                         """,
-                    arguments: [receivedQty, partId]
+                    arguments: [shelfQty, partId]
                 )
                 if dbConn.changesCount == 0 {
                     try dbConn.execute(
@@ -1652,7 +1711,7 @@ public final class WarehouseService: Sendable {
                             INSERT INTO stock (part_id, location_type, location_id, qty, updated_at)
                             VALUES (?, 'warehouse', 1, ?, datetime('now'))
                             """,
-                        arguments: [partId, receivedQty]
+                        arguments: [partId, shelfQty]
                     )
                 }
             }
