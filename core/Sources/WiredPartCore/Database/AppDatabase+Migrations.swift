@@ -134,6 +134,7 @@ extension AppDatabase {
         registerMigration095JobStageTemplates(&migrator)
         registerMigration096SubcontractorScheduleSoftDeleteUniqueness(&migrator)
         registerMigration097PartImportAuditSessions(&migrator)
+        registerMigration098JobReturnIntakeHolding(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5599,6 +5600,50 @@ extension AppDatabase {
                 ON subcontractor_schedules(job_id, gc_id, scheduled_date)
                 WHERE deleted_at IS NULL
                 """)
+        }
+    }
+
+    // MARK: - Migration 098: Job return intake holding
+
+    private static func registerMigration098JobReturnIntakeHolding(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("098_job_return_intake_holding") { db in
+            try db.create(table: "job_return_intakes", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("source_job_id", .integer).notNull().references("jobs")
+                t.column("return_source", .text).notNull().defaults(to: "job")
+                t.column("returned_by", .integer).notNull().references("users")
+                t.column("status", .text).notNull().defaults(to: "holding")
+                t.column("notes", .text)
+                t.column("completed_at", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            }
+
+            try db.create(table: "job_return_intake_items", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("intake_id", .integer).notNull()
+                    .references("job_return_intakes", onDelete: .cascade)
+                t.column("part_id", .integer).notNull().references("parts")
+                t.column("source_job_part_id", .integer).references("job_parts")
+                t.column("supplier_id", .integer).references("suppliers")
+                t.column("po_line_id", .integer).references("po_line_items")
+                t.column("qty_returned", .integer).notNull()
+                t.column("qty_remaining", .integer).notNull()
+                t.column("condition", .text).notNull().defaults(to: "usable")
+                t.column("status", .text).notNull().defaults(to: "holding")
+                t.column("notes", .text)
+                t.column("routed_by", .integer).references("users")
+                t.column("routed_at", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.check(sql: "qty_returned > 0")
+                t.check(sql: "qty_remaining >= 0")
+            }
+
+            try db.create(index: "idx_job_return_intakes_job", on: "job_return_intakes", columns: ["source_job_id", "status"])
+            try db.create(index: "idx_job_return_items_intake", on: "job_return_intake_items", columns: ["intake_id", "status"])
+            try db.create(index: "idx_job_return_items_part", on: "job_return_intake_items", columns: ["part_id", "status"])
         }
     }
 }
