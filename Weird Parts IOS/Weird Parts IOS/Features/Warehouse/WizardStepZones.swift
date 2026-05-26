@@ -138,10 +138,15 @@ struct WizardStepZones: View {
         HStack(spacing: 0) {
             palette
                 .frame(width: 176)
-            canvasScroll(dims: dims)
             if inspector {
+                canvasScroll(dims: dims)
                 inspectorPanel
                     .frame(width: 260)
+            } else {
+                VStack(spacing: 0) {
+                    canvasScroll(dims: dims)
+                    bottomInspector
+                }
             }
         }
     }
@@ -366,6 +371,7 @@ struct WizardStepZones: View {
                         Label("Grow", systemImage: "arrow.down.right.and.arrow.up.left")
                     }
                     .buttonStyle(.bordered)
+                    .accessibilityLabel("Grow")
 
                     Button {
                         zoneBeingEdited = zone
@@ -373,6 +379,7 @@ struct WizardStepZones: View {
                         Label("Edit", systemImage: "pencil")
                     }
                     .buttonStyle(.bordered)
+                    .accessibilityLabel("Edit")
 
                     Button(role: .destructive) {
                         deleteTarget = zone
@@ -380,6 +387,7 @@ struct WizardStepZones: View {
                         Label("Delete", systemImage: "trash")
                     }
                     .buttonStyle(.bordered)
+                    .accessibilityLabel("Delete")
                 }
             } else {
                 EmptyStateView(
@@ -403,6 +411,9 @@ struct WizardStepZones: View {
         do {
             floorPlan = try appCore.warehouseService?.getFloorPlan(id: floorPlanId)
             zones = try appCore.warehouseService?.listZones(floorPlanId: floorPlanId) ?? []
+            if selectedZoneId == nil {
+                selectedZoneId = zones.first?.id
+            }
             if let fp = floorPlan, let rows = fp.gridRows, let cols = fp.gridCols {
                 selectedRows = rows
                 selectedCols = cols

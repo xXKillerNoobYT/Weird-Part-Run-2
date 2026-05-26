@@ -86,58 +86,8 @@ struct WarehouseOnboardingWizard: View {
                 progressBar
                 errorBanner
 
-                TabView(selection: $currentStep) {
-                    step1DefineSpace.tag(1)
-
-                    if let fpId = floorPlanId {
-                        WizardStepZones(
-                            floorPlanId: fpId,
-                            stepError: $loadError
-                        ).tag(2)
-
-                        WarehouseWizardStep2(
-                            floorPlanId: fpId,
-                            stepError: $loadError
-                        ).tag(3)
-
-                        WizardStepPlacement(
-                            floorPlanId: fpId,
-                            stepError: $loadError
-                        ).tag(4)
-
-                        WizardStepShelves(
-                            floorPlanId: fpId,
-                            stepError: $loadError
-                        ).tag(5)
-
-                        WizardStepAreas(
-                            floorPlanId: fpId,
-                            stepError: $loadError
-                        ).tag(6)
-
-                        WizardStepBins(
-                            floorPlanId: fpId,
-                            stepError: $loadError
-                        ).tag(7)
-
-                        walkingPathStep.tag(8)
-
-                        WarehouseWizardStep4(
-                            floorPlanId: fpId,
-                            stepError: $loadError
-                        ).tag(9)
-
-                        WarehouseWizardStep5(
-                            floorPlanId: fpId,
-                            stepError: $loadError
-                        ).tag(10)
-                    } else {
-                        ForEach(2...totalSteps, id: \.self) { step in
-                            incompleteStepView.tag(step)
-                        }
-                    }
-                }
-                .tabViewStyle(.page(indexDisplayMode: .never))
+                activeStepContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .animation(.easeInOut, value: currentStep)
 
                 navigationButtons
@@ -173,6 +123,62 @@ struct WarehouseOnboardingWizard: View {
                 floorPlanId: floorPlanId,
                 stepError: $loadError
             )
+        } else {
+            incompleteStepView
+        }
+    }
+
+    @ViewBuilder
+    private var activeStepContent: some View {
+        if currentStep == 1 {
+            step1DefineSpace
+        } else if let fpId = floorPlanId {
+            switch currentStep {
+            case 2:
+                WizardStepZones(
+                    floorPlanId: fpId,
+                    stepError: $loadError
+                )
+            case 3:
+                WarehouseWizardStep2(
+                    floorPlanId: fpId,
+                    stepError: $loadError
+                )
+            case 4:
+                WizardStepPlacement(
+                    floorPlanId: fpId,
+                    stepError: $loadError
+                )
+            case 5:
+                WizardStepShelves(
+                    floorPlanId: fpId,
+                    stepError: $loadError
+                )
+            case 6:
+                WizardStepAreas(
+                    floorPlanId: fpId,
+                    stepError: $loadError
+                )
+            case 7:
+                WizardStepBins(
+                    floorPlanId: fpId,
+                    stepError: $loadError
+                )
+            case 8:
+                walkingPathStep
+            case 9:
+                WarehouseWizardStep4(
+                    floorPlanId: fpId,
+                    stepError: $loadError
+                )
+            case 10:
+                WarehouseWizardStep5(
+                    floorPlanId: fpId,
+                    stepError: $loadError
+                )
+            default:
+                incompleteStepView
+            }
         } else {
             incompleteStepView
         }
