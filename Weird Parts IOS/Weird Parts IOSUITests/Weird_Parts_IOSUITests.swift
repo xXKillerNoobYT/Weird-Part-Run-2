@@ -75,6 +75,9 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         if shouldOpenPartsCategoriesOnLaunch {
             app.launchArguments += ["-UITestingOpenPartsCategories"]
         }
+        if shouldOpenWarehouseSetupOnLaunch {
+            app.launchArguments += ["-UITestingWarehouseSetupWizard"]
+        }
         if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" {
             XCUIDevice.shared.orientation = .landscapeLeft
         }
@@ -93,6 +96,10 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             "SaveButtonDisabledWhenNameEmpty",
             "SearchFiltersCategoriesTree",
         ].contains { name.contains($0) }
+    }
+
+    private var shouldOpenWarehouseSetupOnLaunch: Bool {
+        name.contains("WEI1182WarehouseWizardBreakpointWalkingPathScreenshots")
     }
 
     /// SwiftUI exposes the page accessibility identifier on the visible child

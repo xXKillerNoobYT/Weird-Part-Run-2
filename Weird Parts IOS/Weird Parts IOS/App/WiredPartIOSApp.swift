@@ -89,6 +89,9 @@ struct WiredPartIOSApp: App {
                     } else if shouldForceLoginForUITest || appCore.currentUser == nil {
                         LoginView()
                             .environmentObject(appCore)
+                    } else if shouldOpenWarehouseSetupForUITest {
+                        WarehouseOnboardingWizard()
+                            .environmentObject(appCore)
                     } else if isAdmin && !hasCompletedCompanySetup {
                         CompanySetupWizard()
                             .environmentObject(appCore)
@@ -97,9 +100,6 @@ struct WiredPartIOSApp: App {
                             .environmentObject(appCore)
                     } else if !hasCompletedOnboarding {
                         OnboardingWalkthroughView()
-                            .environmentObject(appCore)
-                    } else if shouldOpenWarehouseSetupForUITest {
-                        WarehouseOnboardingWizard()
                             .environmentObject(appCore)
                     } else {
                         IOSMainView()
