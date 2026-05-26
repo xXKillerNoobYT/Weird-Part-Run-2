@@ -118,15 +118,28 @@ final class AppCore: ObservableObject {
                     // Remove the .unencrypted.bak file after it has been retained for 7 days.
                     AppDatabase.cleanupStaleUnencryptedBackup(atPath: path)
                 } catch {
+                    #if DEBUG && targetEnvironment(simulator)
+                    if Self.shouldResetLocalDatabaseAfterCipherOpenFailure(error) {
+                        self.logger.warning(
+                            "[AppCore] DEBUG SQLCipher open failed with decrypt/notadb; resetting local simulator database and retrying."
+                        )
+                        try DeviceResetService.deleteDatabaseStorage(atPath: path)
+                        let keyHex = try Self.deviceBootstrapKeyHex()
+                        database = try AppDatabase.openEncryptedDatabase(atPath: path, keyHex: keyHex)
+                    } else {
+                        throw error
+                    }
+                    #else
                     #if !DEBUG
                     // Migration failed — try to restore from backup
                     if let backup = backupPath {
                         try? AppDatabase.restoreDatabase(from: backup, to: path)
                         // Retry with restored DB (old schema, but data preserved)
-                        logger.error("[AppCore] Migration failed, restored from backup. Error: \(error.localizedDescription)")
+                        self.logger.error("[AppCore] Migration failed, restored from backup. Error: \(error.localizedDescription)")
                     }
                     #endif
                     throw error
+                    #endif
                 }
 
                 let auth = AuthService(db: database)
@@ -346,6 +359,24 @@ final class AppCore: ObservableObject {
         Task { @MainActor in
             await bootstrap()
         }
+    }
+
+    nonisolated static func isRecoverableDebugCipherOpenFailure(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        guard nsError.code == 26 else { return false }
+
+        let description = error.localizedDescription.lowercased()
+        return description.contains("file is not a database")
+            || description.contains("not a database")
+            || description.contains("decrypt")
+    }
+
+    nonisolated static func shouldResetLocalDatabaseAfterCipherOpenFailure(_ error: Error) -> Bool {
+        #if DEBUG && targetEnvironment(simulator)
+        return isRecoverableDebugCipherOpenFailure(error)
+        #else
+        return false
+        #endif
     }
 
     // MARK: - Auth Actions

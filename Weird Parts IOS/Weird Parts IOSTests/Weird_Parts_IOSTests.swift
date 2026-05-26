@@ -70,6 +70,36 @@ struct Weird_Parts_IOSTests {
         #expect(!AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecAuthFailed))
     }
 
+    @Test func debugCipherRecoveryOnlyMatchesDecryptNotADB() {
+        let sqlCipherError = NSError(
+            domain: "GRDB.DatabaseError",
+            code: 26,
+            userInfo: [NSLocalizedDescriptionKey: "SQLite error 26: file is not a database - while executing `PRAGMA journal_mode = WAL`"]
+        )
+        let unrelatedDatabaseError = NSError(
+            domain: "GRDB.DatabaseError",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "SQLite error 1: no such table: settings"]
+        )
+
+        #expect(AppCore.isRecoverableDebugCipherOpenFailure(sqlCipherError))
+        #expect(!AppCore.isRecoverableDebugCipherOpenFailure(unrelatedDatabaseError))
+    }
+
+    @Test func debugCipherDatabaseResetGateIsSimulatorOnly() {
+        let sqlCipherError = NSError(
+            domain: "GRDB.DatabaseError",
+            code: 26,
+            userInfo: [NSLocalizedDescriptionKey: "SQLite error 26: file is not a database - while executing `PRAGMA journal_mode = WAL`"]
+        )
+
+        #if DEBUG && targetEnvironment(simulator)
+        #expect(AppCore.shouldResetLocalDatabaseAfterCipherOpenFailure(sqlCipherError))
+        #else
+        #expect(!AppCore.shouldResetLocalDatabaseAfterCipherOpenFailure(sqlCipherError))
+        #endif
+    }
+
     @MainActor
     @Test func bulkHoldSelectionCarriesAllSelectedRowsIntoSheetSnapshot() throws {
         let first = OrdersService.JPOLineRow(
