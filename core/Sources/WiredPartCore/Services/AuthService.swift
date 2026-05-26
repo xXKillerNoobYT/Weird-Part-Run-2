@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(CommonCrypto)
 import CommonCrypto
+#endif
 import CryptoKit
 import GRDB
 import Security
@@ -12,7 +14,7 @@ import os.log
 ///   1. `seedFirstAdmin()` — the very first device in a new company
 ///   2. Sync from another device — all subsequent devices
 ///
-/// PIN verification uses PBKDF2-HMAC-SHA256 hashes stored locally. Session tokens
+/// PIN verification uses versioned scrypt hashes stored locally. Session tokens
 /// are base64-encoded JSON payloads (24-hour expiry).
 ///
 /// Ported from: `src/local/services/auth-service.ts`
@@ -172,11 +174,11 @@ public final class AuthService: Sendable {
             return AuthResult(success: false, user: nil, token: nil, refreshToken: nil, message: "User record missing ID")
         }
 
-        // Migration path: upgrade legacy hashes to PBKDF2 on successful login.
-        // Tier 1 (no salt) and Tier 2 (iterated SHA-256) both get upgraded transparently.
-        let needsUpgrade = user.pinSalt == nil || !Self.isPBKDF2Hash(pinHash)
+        // Migration path: upgrade non-scrypt hashes on successful login.
+        // PBKDF2 and both SHA-256 legacy variants are upgraded transparently.
+        let needsUpgrade = !Self.isScryptHash(pinHash)
         if needsUpgrade {
-            let newSalt = user.pinSalt ?? Self.generateSalt()
+            let newSalt = Self.generateSalt()
             let newHash = Self.hashPin(pin, salt: newSalt)
             let now = Self.currentTimestamp()
             try db.writer.write { dbConn in
@@ -691,10 +693,10 @@ public final class AuthService: Sendable {
 
     // MARK: - PIN Upgrade Tracking
 
-    /// Count of active users NOT yet on the current PBKDF2 KDF.
-    /// Includes both legacy tier 1 (no salt) and tier 2 (iterated SHA-256).
+    /// Count of active users NOT yet on the current scrypt KDF.
+    /// Includes PBKDF2 plus both SHA-256 legacy tiers.
     /// These users will be upgraded automatically on their next successful login.
-    /// Returns 0 once all users have logged in since the PBKDF2 upgrade.
+    /// Returns 0 once all users have logged in since the scrypt upgrade.
     ///
     /// Admins can use this to monitor upgrade progress in the People → Permissions area.
     public func getLegacyHashedUserCount() throws -> Int {
@@ -705,7 +707,7 @@ public final class AuthService: Sendable {
                     SELECT COUNT(*) FROM users
                     WHERE is_active = 1
                       AND deleted_at IS NULL
-                      AND pin_hash NOT LIKE 'pbkdf2$%'
+                      AND pin_hash NOT LIKE '$wp-scrypt$%'
                       AND pin_hash NOT LIKE '$2b$%'
                       AND pin_hash != '__PLACEHOLDER_HASH__'
                     """
@@ -713,9 +715,9 @@ public final class AuthService: Sendable {
         }
     }
 
-    /// Active users not yet on PBKDF2, returned as (id, displayName) pairs.
+    /// Active users not yet on scrypt, returned as (id, displayName) pairs.
     /// Admins can surface these in the People → Permissions area to prompt affected users to log in
-    /// and trigger the automatic PBKDF2 migration.
+    /// and trigger the automatic scrypt migration.
     public func getLegacyHashedUsers() throws -> [(id: Int64, displayName: String)] {
         try db.writer.read { dbConn in
             let rows = try Row.fetchAll(
@@ -724,7 +726,7 @@ public final class AuthService: Sendable {
                     SELECT id, display_name FROM users
                     WHERE is_active = 1
                       AND deleted_at IS NULL
-                      AND pin_hash NOT LIKE 'pbkdf2$%'
+                      AND pin_hash NOT LIKE '$wp-scrypt$%'
                       AND pin_hash NOT LIKE '$2b$%'
                       AND pin_hash != '__PLACEHOLDER_HASH__'
                     ORDER BY display_name
@@ -823,15 +825,21 @@ public final class AuthService: Sendable {
     // MARK: - Internal Helpers
 
     /// Verify a PIN against a stored hash.
-    /// Supports three formats in order of preference:
-    ///   1. PBKDF2  — `pbkdf2$<iterations>$<hex>`  (current, per-user salt in `pin_salt`)
-    ///   2. Iterated SHA-256 — 64-char hex with per-user salt (legacy tier 2)
-    ///   3. Single SHA-256 — 64-char hex with fixed "wiredpart" salt (legacy tier 1, no `pin_salt`)
+    /// Supports four formats in order of preference:
+    ///   1. Scrypt — `$wp-scrypt$N=<n>,r=<r>,p=<p>,dk=<len>$<salt-b64>$<hex>` (current)
+    ///   2. PBKDF2 — `pbkdf2$<iterations>$<hex>` (legacy, per-user salt in `pin_salt`)
+    ///   3. Iterated SHA-256 — 64-char hex with per-user salt (legacy tier 2)
+    ///   4. Single SHA-256 — 64-char hex with fixed "wiredpart" salt (legacy tier 1, no `pin_salt`)
     /// Bcrypt hashes (synced from another system) are not verifiable locally.
     static func verifyPinLocally(pin: String, storedHash: String, salt: String?) -> Bool {
         // Bcrypt — can't verify offline
         if storedHash.hasPrefix("$2b$") || storedHash.hasPrefix("$2a$") {
             return false
+        }
+
+        // Current versioned scrypt format.
+        if storedHash.hasPrefix(scryptPrefix) {
+            return verifyScrypt(pin: pin, storedHash: storedHash)
         }
 
         // PBKDF2 format: pbkdf2$<iterations>$<hex>
@@ -850,36 +858,298 @@ public final class AuthService: Sendable {
         }
     }
 
-    // MARK: - PBKDF2 Hashing (current)
+    // MARK: - Scrypt Hashing (current)
 
-    /// Default PBKDF2 iteration count — OWASP 2023 minimum for HMAC-SHA256.
-    static let pbkdf2Iterations: UInt32 = 600_000
+    private struct ScryptParams {
+        let n: Int
+        let r: Int
+        let p: Int
+        let dkLen: Int
+    }
 
-    /// Hash a PIN with PBKDF2-HMAC-SHA256. Returns `pbkdf2$<iterations>$<hex>`.
-    /// The per-user salt is stored separately in the `pin_salt` column.
+    private static let scryptPrefix = "$wp-scrypt$"
+    static let scryptN: Int = 4_096
+    static let scryptR: Int = 8
+    static let scryptP: Int = 1
+    static let scryptDerivedKeyLength: Int = 32
+    private static let maxScryptN: Int = 1 << 20
+    private static let maxScryptRP: Int = 1 << 20
+    private static let maxScryptDerivedKeyLength: Int = 64
+    private static let maxScryptWorkingBytes: Int = 64 * 1024 * 1024
+    private static let maxScryptSaltLength: Int = 64
+
+    private static let currentScryptParams = ScryptParams(
+        n: scryptN,
+        r: scryptR,
+        p: scryptP,
+        dkLen: scryptDerivedKeyLength
+    )
+
+    /// Hash a PIN with scrypt. Returns `$wp-scrypt$N=<n>,r=<r>,p=<p>,dk=<len>$<salt-b64>$<hex>`.
     static func hashPin(_ pin: String, salt: String) -> String {
         let password = Array(pin.utf8)
         let saltBytes = Array(salt.utf8)
-        var derivedKey = [UInt8](repeating: 0, count: 32) // 256-bit output
-        let status = CCKeyDerivationPBKDF(
-            CCPBKDFAlgorithm(kCCPBKDF2),
-            password, password.count,
-            saltBytes, saltBytes.count,
-            CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
-            pbkdf2Iterations,
-            &derivedKey, derivedKey.count
-        )
-        guard status == kCCSuccess else {
-            // Fallback should never happen — log and use iterated SHA-256
-            Self.logger.error("PBKDF2 failed with status \(status, privacy: .public), falling back to iterated SHA-256")
+        guard let derivedKey = scrypt(password: password, salt: saltBytes, params: currentScryptParams) else {
+            Self.logger.error("scrypt hashing failed, falling back to iterated SHA-256")
             return iteratedSHA256Pin(pin, salt: salt)
         }
+        let saltB64 = Data(saltBytes).base64EncodedString()
         let hex = derivedKey.map { String(format: "%02x", $0) }.joined()
-        return "pbkdf2$\(pbkdf2Iterations)$\(hex)"
+        return "\(scryptPrefix)N=\(currentScryptParams.n),r=\(currentScryptParams.r),p=\(currentScryptParams.p),dk=\(currentScryptParams.dkLen)$\(saltB64)$\(hex)"
     }
+
+    /// Internal helper for RFC test-vector coverage.
+    static func deriveScryptKey(password: String, salt: String, n: Int, r: Int, p: Int, dkLen: Int) -> [UInt8]? {
+        let params = ScryptParams(n: n, r: r, p: p, dkLen: dkLen)
+        return scrypt(password: Array(password.utf8), salt: Array(salt.utf8), params: params)
+    }
+
+    private static func verifyScrypt(pin: String, storedHash: String) -> Bool {
+        guard let parsed = parseScryptHash(storedHash) else { return false }
+        guard let derived = scrypt(password: Array(pin.utf8), salt: parsed.salt, params: parsed.params) else {
+            return false
+        }
+        return constantTimeEqual(derived, parsed.expectedKey)
+    }
+
+    private static func parseScryptHash(_ storedHash: String) -> (params: ScryptParams, salt: [UInt8], expectedKey: [UInt8])? {
+        guard storedHash.hasPrefix(scryptPrefix) else { return nil }
+        let body = String(storedHash.dropFirst(scryptPrefix.count))
+        let parts = body.split(separator: "$", maxSplits: 2, omittingEmptySubsequences: false)
+        guard parts.count == 3 else { return nil }
+        guard let params = parseScryptParams(String(parts[0])) else { return nil }
+        guard let saltData = Data(base64Encoded: String(parts[1])),
+              !saltData.isEmpty,
+              saltData.count <= maxScryptSaltLength else { return nil }
+        guard let expectedKey = hexBytes(String(parts[2])),
+              expectedKey.count == params.dkLen else { return nil }
+        return (params: params, salt: [UInt8](saltData), expectedKey: expectedKey)
+    }
+
+    private static func parseScryptParams(_ raw: String) -> ScryptParams? {
+        var map: [String: Int] = [:]
+        for pair in raw.split(separator: ",", omittingEmptySubsequences: true) {
+            let pieces = pair.split(separator: "=", maxSplits: 1)
+            guard pieces.count == 2, let value = Int(pieces[1]) else { return nil }
+            map[String(pieces[0])] = value
+        }
+        guard let n = map["N"], let r = map["r"], let p = map["p"], let dk = map["dk"] else { return nil }
+        let params = ScryptParams(n: n, r: r, p: p, dkLen: dk)
+        return validateScryptParams(params) ? params : nil
+    }
+
+    private static func validateScryptParams(_ params: ScryptParams) -> Bool {
+        guard params.n > 1,
+              params.r > 0,
+              params.p > 0,
+              params.dkLen > 0,
+              params.n <= maxScryptN,
+              params.r <= maxScryptRP,
+              params.p <= maxScryptRP,
+              params.dkLen <= maxScryptDerivedKeyLength,
+              (params.n & (params.n - 1)) == 0 else { return false }
+        guard let blockSize = safeMultiply(128, params.r),
+              let bSize = safeMultiply(blockSize, params.p),
+              let vSize = safeMultiply(blockSize, params.n) else { return false }
+        guard bSize <= maxScryptWorkingBytes, vSize <= maxScryptWorkingBytes else { return false }
+        return true
+    }
+
+    private static func scrypt(password: [UInt8], salt: [UInt8], params: ScryptParams) -> [UInt8]? {
+        guard validateScryptParams(params) else { return nil }
+        guard let blockSize = safeMultiply(128, params.r),
+              let bSize = safeMultiply(blockSize, params.p),
+              var b = pbkdf2SHA256(password: password, salt: salt, iterations: 1, keyLength: bSize) else {
+            return nil
+        }
+
+        for chunk in 0..<params.p {
+            let start = chunk * blockSize
+            let end = start + blockSize
+            let mixed = romix(Array(b[start..<end]), n: params.n, r: params.r)
+            b.replaceSubrange(start..<end, with: mixed)
+        }
+        return pbkdf2SHA256(password: password, salt: b, iterations: 1, keyLength: params.dkLen)
+    }
+
+    private static func pbkdf2SHA256(password: [UInt8], salt: [UInt8], iterations: Int, keyLength: Int) -> [UInt8]? {
+        guard iterations > 0, keyLength > 0 else { return nil }
+        let hLen = 32
+        let blockCount = (keyLength + hLen - 1) / hLen
+        var derived: [UInt8] = []
+        derived.reserveCapacity(blockCount * hLen)
+
+        for blockIndex in 1...blockCount {
+            var blockInput = salt
+            blockInput.append(UInt8((blockIndex >> 24) & 0xff))
+            blockInput.append(UInt8((blockIndex >> 16) & 0xff))
+            blockInput.append(UInt8((blockIndex >> 8) & 0xff))
+            blockInput.append(UInt8(blockIndex & 0xff))
+
+            var u = hmacSHA256(key: password, data: blockInput)
+            var t = u
+            if iterations > 1 {
+                for _ in 2...iterations {
+                    u = hmacSHA256(key: password, data: u)
+                    for idx in 0..<t.count { t[idx] ^= u[idx] }
+                }
+            }
+            derived.append(contentsOf: t)
+        }
+        return Array(derived.prefix(keyLength))
+    }
+
+    private static func hmacSHA256(key: [UInt8], data: [UInt8]) -> [UInt8] {
+        let symmetricKey = SymmetricKey(data: Data(key))
+        let mac = HMAC<SHA256>.authenticationCode(for: Data(data), using: symmetricKey)
+        return Array(mac)
+    }
+
+    private static func romix(_ block: [UInt8], n: Int, r: Int) -> [UInt8] {
+        var x = block
+        var v: [[UInt8]] = []
+        v.reserveCapacity(n)
+        for _ in 0..<n {
+            v.append(x)
+            x = blockMixSalsa8(x, r: r)
+        }
+        for _ in 0..<n {
+            let j = Int(integerify(x, r: r) & UInt64(n - 1))
+            x = xorBytes(x, v[j])
+            x = blockMixSalsa8(x, r: r)
+        }
+        return x
+    }
+
+    private static func blockMixSalsa8(_ block: [UInt8], r: Int) -> [UInt8] {
+        let chunkSize = 64
+        var x = Array(block[((2 * r - 1) * chunkSize)..<(2 * r * chunkSize)])
+        var y = [UInt8](repeating: 0, count: block.count)
+
+        for i in 0..<(2 * r) {
+            let start = i * chunkSize
+            let end = start + chunkSize
+            x = salsa208(xorBytes(x, Array(block[start..<end])))
+            let outputIndex = (i % 2 == 0) ? (i / 2) : (r + i / 2)
+            let outStart = outputIndex * chunkSize
+            y.replaceSubrange(outStart..<(outStart + chunkSize), with: x)
+        }
+        return y
+    }
+
+    private static func integerify(_ block: [UInt8], r: Int) -> UInt64 {
+        let start = (2 * r - 1) * 64
+        return loadLittleEndianUInt64(block, at: start)
+    }
+
+    private static func salsa208(_ input: [UInt8]) -> [UInt8] {
+        precondition(input.count == 64)
+        var x = [UInt32](repeating: 0, count: 16)
+        var original = [UInt32](repeating: 0, count: 16)
+        for i in 0..<16 {
+            let offset = i * 4
+            let value = loadLittleEndianUInt32(input, at: offset)
+            x[i] = value
+            original[i] = value
+        }
+
+        for _ in stride(from: 0, to: 8, by: 2) {
+            x[4] ^= rotateLeft(x[0] &+ x[12], by: 7)
+            x[8] ^= rotateLeft(x[4] &+ x[0], by: 9)
+            x[12] ^= rotateLeft(x[8] &+ x[4], by: 13)
+            x[0] ^= rotateLeft(x[12] &+ x[8], by: 18)
+
+            x[9] ^= rotateLeft(x[5] &+ x[1], by: 7)
+            x[13] ^= rotateLeft(x[9] &+ x[5], by: 9)
+            x[1] ^= rotateLeft(x[13] &+ x[9], by: 13)
+            x[5] ^= rotateLeft(x[1] &+ x[13], by: 18)
+
+            x[14] ^= rotateLeft(x[10] &+ x[6], by: 7)
+            x[2] ^= rotateLeft(x[14] &+ x[10], by: 9)
+            x[6] ^= rotateLeft(x[2] &+ x[14], by: 13)
+            x[10] ^= rotateLeft(x[6] &+ x[2], by: 18)
+
+            x[3] ^= rotateLeft(x[15] &+ x[11], by: 7)
+            x[7] ^= rotateLeft(x[3] &+ x[15], by: 9)
+            x[11] ^= rotateLeft(x[7] &+ x[3], by: 13)
+            x[15] ^= rotateLeft(x[11] &+ x[7], by: 18)
+
+            x[1] ^= rotateLeft(x[0] &+ x[3], by: 7)
+            x[2] ^= rotateLeft(x[1] &+ x[0], by: 9)
+            x[3] ^= rotateLeft(x[2] &+ x[1], by: 13)
+            x[0] ^= rotateLeft(x[3] &+ x[2], by: 18)
+
+            x[6] ^= rotateLeft(x[5] &+ x[4], by: 7)
+            x[7] ^= rotateLeft(x[6] &+ x[5], by: 9)
+            x[4] ^= rotateLeft(x[7] &+ x[6], by: 13)
+            x[5] ^= rotateLeft(x[4] &+ x[7], by: 18)
+
+            x[11] ^= rotateLeft(x[10] &+ x[9], by: 7)
+            x[8] ^= rotateLeft(x[11] &+ x[10], by: 9)
+            x[9] ^= rotateLeft(x[8] &+ x[11], by: 13)
+            x[10] ^= rotateLeft(x[9] &+ x[8], by: 18)
+
+            x[12] ^= rotateLeft(x[15] &+ x[14], by: 7)
+            x[13] ^= rotateLeft(x[12] &+ x[15], by: 9)
+            x[14] ^= rotateLeft(x[13] &+ x[12], by: 13)
+            x[15] ^= rotateLeft(x[14] &+ x[13], by: 18)
+        }
+
+        var output = [UInt8](repeating: 0, count: 64)
+        for i in 0..<16 {
+            storeLittleEndianUInt32(x[i] &+ original[i], into: &output, at: i * 4)
+        }
+        return output
+    }
+
+    private static func rotateLeft(_ value: UInt32, by count: UInt32) -> UInt32 {
+        (value << count) | (value >> (32 - count))
+    }
+
+    private static func loadLittleEndianUInt32(_ bytes: [UInt8], at offset: Int) -> UInt32 {
+        UInt32(bytes[offset]) |
+        (UInt32(bytes[offset + 1]) << 8) |
+        (UInt32(bytes[offset + 2]) << 16) |
+        (UInt32(bytes[offset + 3]) << 24)
+    }
+
+    private static func loadLittleEndianUInt64(_ bytes: [UInt8], at offset: Int) -> UInt64 {
+        UInt64(bytes[offset]) |
+        (UInt64(bytes[offset + 1]) << 8) |
+        (UInt64(bytes[offset + 2]) << 16) |
+        (UInt64(bytes[offset + 3]) << 24) |
+        (UInt64(bytes[offset + 4]) << 32) |
+        (UInt64(bytes[offset + 5]) << 40) |
+        (UInt64(bytes[offset + 6]) << 48) |
+        (UInt64(bytes[offset + 7]) << 56)
+    }
+
+    private static func storeLittleEndianUInt32(_ value: UInt32, into bytes: inout [UInt8], at offset: Int) {
+        bytes[offset] = UInt8(value & 0xff)
+        bytes[offset + 1] = UInt8((value >> 8) & 0xff)
+        bytes[offset + 2] = UInt8((value >> 16) & 0xff)
+        bytes[offset + 3] = UInt8((value >> 24) & 0xff)
+    }
+
+    private static func xorBytes(_ lhs: [UInt8], _ rhs: [UInt8]) -> [UInt8] {
+        precondition(lhs.count == rhs.count)
+        var result = lhs
+        for index in 0..<result.count {
+            result[index] ^= rhs[index]
+        }
+        return result
+    }
+
+    private static func safeMultiply(_ lhs: Int, _ rhs: Int) -> Int? {
+        let (result, overflow) = lhs.multipliedReportingOverflow(by: rhs)
+        return overflow ? nil : result
+    }
+
+    // MARK: - PBKDF2 Hashing (legacy verification)
 
     /// Verify a PIN against a PBKDF2 hash string.
     private static func verifyPBKDF2(pin: String, storedHash: String, salt: String) -> Bool {
+#if canImport(CommonCrypto)
         let parts = storedHash.split(separator: "$")
         guard parts.count == 3,
               parts[0] == "pbkdf2",
@@ -900,12 +1170,15 @@ public final class AuthService: Sendable {
         )
         guard status == kCCSuccess else { return false }
         return constantTimeEqual(derivedKey, expectedBytes)
+#else
+        return false
+#endif
     }
 
     // MARK: - Legacy Hash Functions (verification only)
 
-    /// Iterated SHA-256 with per-user salt (legacy tier 2, pre-PBKDF2).
-    /// Kept for verifying existing hashes; new hashes use PBKDF2.
+    /// Iterated SHA-256 with per-user salt (legacy tier 2, pre-PBKDF2/scrypt).
+    /// Kept for verifying existing hashes; new hashes use scrypt.
     static func iteratedSHA256Pin(_ pin: String, salt: String) -> String {
         let input = Data((pin + ":" + salt).utf8)
         var hash = SHA256.hash(data: input)
@@ -916,7 +1189,7 @@ public final class AuthService: Sendable {
     }
 
     /// Legacy fixed-salt hash for backward compatibility during migration.
-    /// Used only to verify old PINs before re-hashing with PBKDF2.
+    /// Used only to verify old PINs before re-hashing with scrypt.
     static func legacyHashPin(_ pin: String) -> String {
         let data = Data((pin + ":wiredpart").utf8)
         let digest = SHA256.hash(data: data)
@@ -929,9 +1202,9 @@ public final class AuthService: Sendable {
         return Data(bytes).base64EncodedString()
     }
 
-    /// Check if a stored hash is already using the current PBKDF2 KDF.
-    static func isPBKDF2Hash(_ hash: String) -> Bool {
-        hash.hasPrefix("pbkdf2$")
+    /// Check if a stored hash is already using the current scrypt KDF.
+    static func isScryptHash(_ hash: String) -> Bool {
+        hash.hasPrefix(scryptPrefix)
     }
 
     /// Device-specific signing key. Persisted in the Keychain so tokens survive app

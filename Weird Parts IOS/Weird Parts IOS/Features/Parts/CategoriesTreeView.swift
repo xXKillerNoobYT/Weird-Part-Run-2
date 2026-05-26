@@ -605,6 +605,24 @@ struct CategoriesTreeView: View {
                         .padding(.leading, DS.Space.lg * 4 + 14)
                         .padding(.vertical, DS.Space.xs)
                 }
+                if let realBrandId {
+                    if skuCache[skuCacheKey] == nil {
+                        ProgressView("Loading SKU rows…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, DS.Space.lg * 4 + 14)
+                            .padding(.vertical, DS.Space.xs)
+                    } else if brandSKUs.isEmpty {
+                        ContentUnavailableView {
+                            Label("No SKU Rows Yet", systemImage: "barcode.viewfinder")
+                        } description: {
+                            Text("This type/brand pair has no SKU rows yet.")
+                        }
+                        .padding(.leading, DS.Space.lg * 4 + 14)
+                        .padding(.vertical, DS.Space.xs)
+                        .accessibilityIdentifier("emptySKURows_\(typeId)_\(realBrandId)")
+                    }
+                }
                 ForEach(brandSKUs, id: \.id) { sku in
                     skuRow(sku, brandName: brandNode.name, typeId: typeId)
                 }
