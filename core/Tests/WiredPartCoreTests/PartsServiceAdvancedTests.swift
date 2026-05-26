@@ -481,6 +481,7 @@ struct PartsServiceAdvancedTests {
         }
         let finalCosts = try #require(costs)
         #expect(finalCosts["company_cost_price"] as Double == 10.0)
+        #expect(finalCosts["weighted_avg_cost"] as Double == 25.0)
     }
 
     @Test("previewPartsImportXLSX parses first worksheet through shared import pipeline")

@@ -6238,7 +6238,7 @@ public final class PartsService: Sendable {
                     if let partType = row.fields["part_type"] { clauses.append("part_type = ?"); args.append(partType) }
                     if let description = row.fields["description"] { clauses.append("description = ?"); args.append(description) }
                     if let unit = row.fields["unit_of_measure"] { clauses.append("unit_of_measure = ?"); args.append(unit) }
-                    if let cost { clauses.append("company_cost_price = ?"); args.append(cost); clauses.append("weighted_avg_cost = ?"); args.append(cost) }
+                    if let cost { clauses.append("company_cost_price = ?"); args.append(cost) }
                     if let markup { clauses.append("company_markup_percent = ?"); args.append(markup) }
                     if let shelf = row.fields["shelf_location"] { clauses.append("shelf_location = ?"); args.append(shelf) }
                     if let bin = row.fields["bin_location"] { clauses.append("bin_location = ?"); args.append(bin) }
