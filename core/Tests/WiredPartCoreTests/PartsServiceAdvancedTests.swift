@@ -358,7 +358,81 @@ struct PartsServiceAdvancedTests {
         }
     }
 
+    @Test("commitPartsImportCSV leaves existing pricing unchanged when optional price fields are blank")
+    func testCommitPartsImportCSVBlankOptionalPricingDoesNotOverwriteExistingValues() throws {
+        let env = try E2ETestHelpers.setUp()
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Blank Optional Pricing")
+        _ = try env.parts.createPart(
+            categoryId: categoryId,
+            name: "Existing Blank Price Part",
+            code: "BLANK-PRICE-001",
+            companyCostPrice: 14.75,
+            companyMarkupPercent: 35
+        )
 
+        var preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,cost_price,markup_percent
+        Existing Blank Price Part,BLANK-PRICE-001,Blank Optional Pricing,,
+        """)
+        preview.conflicts = preview.conflicts.map { conflict in
+            var editable = conflict
+            editable.resolution = .update
+            return editable
+        }
+
+        _ = try env.parts.commitPartsImportCSV(preview)
+
+        let updated = try #require(try env.parts.findPartByCode("BLANK-PRICE-001"))
+        #expect(updated.companyCostPrice == 14.75)
+        #expect(updated.companyMarkupPercent == 35)
+    }
+
+    @Test("commitPartsImportCSV accepts explicit zero pricing values")
+    func testCommitPartsImportCSVAcceptsExplicitZeroPricingValues() throws {
+        let env = try E2ETestHelpers.setUp()
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Zero Pricing")
+        _ = try env.parts.createPart(
+            categoryId: categoryId,
+            name: "Existing Zero Price Part",
+            code: "ZERO-PRICE-001",
+            companyCostPrice: 11.25,
+            companyMarkupPercent: 20
+        )
+
+        var preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,cost_price,markup_percent
+        Existing Zero Price Part,ZERO-PRICE-001,Zero Pricing,0,0
+        """)
+        preview.conflicts = preview.conflicts.map { conflict in
+            var editable = conflict
+            editable.resolution = .update
+            return editable
+        }
+
+        _ = try env.parts.commitPartsImportCSV(preview)
+
+        let updated = try #require(try env.parts.findPartByCode("ZERO-PRICE-001"))
+        #expect(updated.companyCostPrice == 0)
+        #expect(updated.companyMarkupPercent == 0)
+    }
+
+    @Test("commitPartsImportCSV round-trips imported company cost through pricing export")
+    func testCommitPartsImportCSVRoundTripsCompanyCostThroughPricingExport() throws {
+        let env = try E2ETestHelpers.setUp()
+        let preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,cost_price,markup_percent
+        Round Trip Cost Part,ROUND-COST-001,Round Trip Pricing,18.75,40
+        """)
+
+        _ = try env.parts.commitPartsImportCSV(preview)
+
+        let imported = try #require(try env.parts.findPartByCode("ROUND-COST-001"))
+        #expect(imported.companyCostPrice == 18.75)
+        #expect(imported.weightedAvgCost == 18.75)
+
+        let export = try env.parts.exportPartsCSV(groups: [.pricing])
+        #expect(export.contains("Round Trip Cost Part,ROUND-COST-001,18.75,40.0,26.25"))
+    }
 
     @Test("previewPartsImportCSV attaches source metadata for audit sessions")
     func testPreviewPartsImportCSVAttachesSourceMetadata() throws {
