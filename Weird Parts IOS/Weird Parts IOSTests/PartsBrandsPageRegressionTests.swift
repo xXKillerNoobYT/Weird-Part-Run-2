@@ -88,6 +88,60 @@ final class PartsBrandsPageRegressionTests: XCTestCase {
         )
     }
 
+    func testWeeklyReviewSheetUsesDirtyDismissSafetyAndBaselineCapture() throws {
+        let source = try Self.readJobsPageSource(named: "IOSWeeklyReviewSheet.swift")
+
+        XCTAssertTrue(
+            source.contains("@State private var showDiscardConfirmation = false"),
+            "Weekly review should track discard confirmation state for cancel flow."
+        )
+        XCTAssertTrue(
+            source.contains("private var isDirty: Bool"),
+            "Weekly review should compute dirty state from editable fields."
+        )
+        XCTAssertTrue(
+            source.contains(".dismissSafety(") &&
+                source.contains("isDirty: isDirty") &&
+                source.contains("isSaving: isSubmitting"),
+            "Weekly review should block swipe dismiss while dirty or submitting."
+        )
+        XCTAssertTrue(
+            source.contains("DismissSafety.cancelOrConfirm("),
+            "Weekly review cancel should confirm before discarding dirty edits."
+        )
+        XCTAssertTrue(
+            source.contains("captureInitialState()") &&
+                source.contains("private func captureInitialState()"),
+            "Weekly review should capture baseline state after load/save so dirty detection resets correctly."
+        )
+    }
+
+    func testTradeResponseSheetUsesDirtyDismissSafety() throws {
+        let source = try Self.readToolsPageSource()
+
+        XCTAssertTrue(
+            source.contains("struct TradeResponseSheet: View {"),
+            "Tools detail page should include TradeResponseSheet."
+        )
+        XCTAssertTrue(
+            source.contains("@State private var showDiscardConfirmation = false"),
+            "Trade response should track discard confirmation state."
+        )
+        XCTAssertTrue(
+            source.contains("private var isDirty: Bool"),
+            "Trade response should compute dirty state from changed condition/notes."
+        )
+        XCTAssertTrue(
+            source.contains(".dismissSafety(") &&
+                source.contains("showDiscardConfirmation: $showDiscardConfirmation"),
+            "Trade response should use shared dismiss safety guard."
+        )
+        XCTAssertTrue(
+            source.contains("DismissSafety.cancelOrConfirm("),
+            "Trade response cancel should confirm before discarding dirty edits."
+        )
+    }
+
     private static func readPartsBrandsPageSource(
         file: StaticString = #filePath
     ) throws -> String {
@@ -98,6 +152,37 @@ final class PartsBrandsPageRegressionTests: XCTestCase {
         file: StaticString = #filePath
     ) throws -> String {
         try readPartsPageSource(named: "PartsSuppliersPage.swift", file: file)
+    }
+
+    private static func readJobsPageSource(
+        named filename: String,
+        file: StaticString = #filePath
+    ) throws -> String {
+        let testFileURL = URL(fileURLWithPath: "\(file)")
+        let projectRoot = testFileURL
+            .deletingLastPathComponent() // Weird Parts IOSTests
+            .deletingLastPathComponent() // Weird Parts IOS
+        let sourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent("Features")
+            .appendingPathComponent("Jobs")
+            .appendingPathComponent(filename)
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private static func readToolsPageSource(
+        file: StaticString = #filePath
+    ) throws -> String {
+        let testFileURL = URL(fileURLWithPath: "\(file)")
+        let projectRoot = testFileURL
+            .deletingLastPathComponent() // Weird Parts IOSTests
+            .deletingLastPathComponent() // Weird Parts IOS
+        let sourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent("Features")
+            .appendingPathComponent("Tools")
+            .appendingPathComponent("IOSToolDetailPage.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 
     private static func readPartsPageSource(named filename: String, file: StaticString = #filePath) throws -> String {
