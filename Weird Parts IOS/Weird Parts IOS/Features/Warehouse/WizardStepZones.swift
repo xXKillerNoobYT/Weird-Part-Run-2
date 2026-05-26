@@ -187,11 +187,16 @@ struct WizardStepZones: View {
                             .minimumScaleFactor(0.75)
                         Spacer()
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(minHeight: 44)
                     .padding(.horizontal, 10)
                     .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+                    .contentShape(RoundedRectangle(cornerRadius: 8))
                     .padding(.horizontal)
                     .draggable("new:\(type.id)")
+                    .onDrag {
+                        NSItemProvider(object: "new:\(type.id)" as NSString)
+                    }
                     .accessibilityLabel("Drag \(type.title) zone")
                 }
 
@@ -267,6 +272,8 @@ struct WizardStepZones: View {
                         Label("Grow", systemImage: "arrow.down.right.and.arrow.up.left")
                     }
                     .buttonStyle(.bordered)
+                    .accessibilityLabel("Grow")
+                    .accessibilityIdentifier("zoneInspector_grow")
 
                     Button {
                         zoneBeingEdited = zone
@@ -274,6 +281,8 @@ struct WizardStepZones: View {
                         Label("Edit", systemImage: "pencil")
                     }
                     .buttonStyle(.bordered)
+                    .accessibilityLabel("Edit")
+                    .accessibilityIdentifier("zoneInspector_edit")
 
                     Button(role: .destructive) {
                         deleteTarget = zone
@@ -281,6 +290,8 @@ struct WizardStepZones: View {
                         Label("Delete", systemImage: "trash")
                     }
                     .buttonStyle(.bordered)
+                    .accessibilityLabel("Delete")
+                    .accessibilityIdentifier("zoneInspector_delete")
                 }
             } else {
                 EmptyStateView(

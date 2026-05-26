@@ -82,7 +82,7 @@ struct ZoneGridCanvas: View {
             return handleDrop(item, row: row, col: col)
         } isTargeted: { _ in }
         .onTapGesture {
-            onSelectZone(nil)
+            onSelectZone(zone(atRow: row, col: col))
         }
         .accessibilityLabel("Empty zone cell R\(row + 1)C\(col + 1)")
     }
@@ -226,6 +226,15 @@ struct ZoneGridCanvas: View {
     private func zoneTitle(_ zone: WarehouseZone) -> String {
         let trimmed = zone.label?.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed?.isEmpty == false ? trimmed! : zone.zoneTypeDisplay
+    }
+
+    private func zone(atRow row: Int, col: Int) -> WarehouseZone? {
+        zones.reversed().first { zone in
+            col >= zone.gridX &&
+                col < zone.gridX + zone.gridWidth &&
+                row >= zone.gridY &&
+                row < zone.gridY + zone.gridHeight
+        }
     }
 
     private func zoneColor(_ type: String) -> Color {
