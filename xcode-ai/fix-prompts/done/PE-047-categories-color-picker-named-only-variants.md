@@ -1,6 +1,6 @@
 # PE-047 — PE-COLORS Phase 2B: CategoriesColorPicker Named-Only Variants
 
-> **Status:** ✅ DONE 2026-05-25 — direct Swift edit (all 5 regression tests pass; copilot/98-5 branch)
+> **Status:** ✅ DONE 2026-05-25 — direct Swift edit (all 5 regression tests pass)
 > **Plan:** `docs/plans/colors-parts-redesign.md` Concept 1 (Variants)
 > **GitHub Issue:** #238 (subsumed #99)
 > **Depends on:** PE-046 (CategoriesTreeView SKU rows), #234 (PartColor.hexCode becomes optional)
