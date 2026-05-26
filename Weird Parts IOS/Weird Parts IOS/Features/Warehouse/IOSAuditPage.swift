@@ -1438,38 +1438,136 @@ private struct MisplacedPartSheet: View {
     let initialAreaId: Int64?
     let onSave: () -> Void
 
-    @State private var selectedPartId: Int64?
-    @State private var foundAtAreaId: Int64?
+    @State private var partQuery = ""
+    @State private var areaQuery = ""
+    @State private var selectedPart: MisplacedLookupPart?
+    @State private var selectedArea: MisplacedLookupArea?
+    @State private var partResults: [MisplacedLookupPart] = []
+    @State private var areaResults: [MisplacedLookupArea] = []
+    @State private var homeOptions: [MisplacedLookupArea] = []
     @State private var homeAreaId: Int64?
     @State private var qtyFound = 1
     @State private var resolution: String = "sort_later"
     @State private var isSaving = false
+    @State private var didConfigureInitialSelection = false
+    @State private var partLookupMessage: LookupMessage?
+    @State private var areaLookupMessage: LookupMessage?
+    @State private var homeLookupMessage: LookupMessage?
     @State private var errorMessage: String?
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Misplaced Part") {
-                    Picker("Part", selection: $selectedPartId) {
-                        Text("Select Part").tag(Int64?.none)
-                        ForEach(uniqueParts, id: \.partId) { item in
-                            Text(item.partCode.map { "\(item.partName) (\($0))" } ?? item.partName)
-                                .tag(Int64?.some(item.partId))
+                if serviceUnavailable {
+                    Section {
+                        InlineStatusView(
+                            systemImage: "wifi.slash",
+                            title: "Service unavailable",
+                            message: "Warehouse services must be available before logging misplaced parts.",
+                            color: .orange
+                        )
+                    }
+                }
+
+                Section("Part found") {
+                    selectedPartSummary
+
+                    HStack {
+                        TextField("Scan or search part", text: $partQuery)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .submitLabel(.search)
+                            .onSubmit(searchParts)
+                        Button {
+                            resolvePartQuery()
+                        } label: {
+                            Label("Scan", systemImage: "barcode.viewfinder")
+                        }
+                        .disabled(isSaving || partQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+
+                    Button {
+                        searchParts()
+                    } label: {
+                        Label("Search Parts", systemImage: "magnifyingglass")
+                    }
+                    .disabled(isSaving || partQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                    if let partLookupMessage {
+                        lookupMessageView(partLookupMessage)
+                    }
+
+                    partResultsView
+                }
+
+                Section("Found at") {
+                    selectedAreaSummary
+
+                    HStack {
+                        TextField("Scan area QR or search location", text: $areaQuery)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .submitLabel(.search)
+                            .onSubmit(searchAreas)
+                        Button {
+                            resolveAreaQuery()
+                        } label: {
+                            Label("Scan", systemImage: "qrcode.viewfinder")
+                        }
+                        .disabled(isSaving || areaQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+
+                    Button {
+                        searchAreas()
+                    } label: {
+                        Label("Search Locations", systemImage: "magnifyingglass")
+                    }
+                    .disabled(isSaving || areaQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                    if let areaLookupMessage {
+                        lookupMessageView(areaLookupMessage)
+                    }
+
+                    areaResultsView
+                }
+
+                Section("Expected home") {
+                    Button {
+                        homeAreaId = nil
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Sort later")
+                                Text("Log safely without guessing the home shelf.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if homeAreaId == nil {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(.blue)
+                                    .accessibilityLabel("Selected")
+                            }
                         }
                     }
-                    Picker("Found At", selection: $foundAtAreaId) {
-                        Text("Select Area").tag(Int64?.none)
-                        ForEach(uniqueAreas, id: \.id) { area in
-                            Text(area.label).tag(Int64?.some(area.id))
+
+                    ForEach(homeOptions) { area in
+                        Button {
+                            homeAreaId = area.id
+                        } label: {
+                            lookupAreaRow(area, selected: homeAreaId == area.id, showsHomeBadge: true)
                         }
                     }
-                    Picker("Correct Location", selection: $homeAreaId) {
-                        Text("Sort Later").tag(Int64?.none)
-                        ForEach(uniqueAreas, id: \.id) { area in
-                            Text(area.label).tag(Int64?.some(area.id))
-                        }
+
+                    if let homeLookupMessage {
+                        lookupMessageView(homeLookupMessage)
                     }
+                }
+
+                Section("Quantity") {
                     Stepper("Quantity: \(qtyFound)", value: $qtyFound, in: 1...999)
+                    TextField("Quantity", value: $qtyFound, format: .number)
+                        .keyboardType(.numberPad)
                 }
 
                 Section("What to do?") {
@@ -1489,9 +1587,12 @@ private struct MisplacedPartSheet: View {
             }
             .navigationTitle("Misplaced Part")
             .navigationBarTitleDisplayMode(.inline)
+            .presentationDetents([.medium, .large])
+            .scrollDismissesKeyboard(.interactively)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isSaving {
@@ -1499,41 +1600,339 @@ private struct MisplacedPartSheet: View {
                     } else {
                         Button("Save") { saveMisplaced() }
                             .fontWeight(.semibold)
-                            .disabled(selectedPartId == nil || foundAtAreaId == nil)
+                            .disabled(!canSave)
+                            .accessibilityHint(saveDisabledReason ?? "Log misplaced part")
                     }
                 }
             }
+            .disabled(isSaving)
             .onAppear(perform: configureInitialSelection)
+            .interactiveDismissDisabled(isSaving)
         }
     }
 
-    private var uniqueParts: [IOSAuditPage.CountingItem] {
+    @ViewBuilder
+    private var selectedPartSummary: some View {
+        if let selectedPart {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top) {
+                    lookupPartText(selectedPart)
+                    Spacer()
+                    Button("Change") {
+                        self.selectedPart = nil
+                        homeOptions = []
+                        homeAreaId = nil
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isSelected)
+            }
+        } else {
+            validationText("Select the part you found.")
+        }
+    }
+
+    @ViewBuilder
+    private var selectedAreaSummary: some View {
+        if let selectedArea {
+            HStack(alignment: .top) {
+                lookupAreaText(selectedArea, showsHomeBadge: false)
+                Spacer()
+                Button("Change") {
+                    self.selectedArea = nil
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isSelected)
+        } else {
+            validationText("Select where you found it.")
+        }
+    }
+
+    @ViewBuilder
+    private var partResultsView: some View {
+        if partResults.isEmpty && selectedPart == nil && partLookupMessage == nil {
+            ForEach(contextPartCandidates) { part in
+                Button {
+                    selectPart(part)
+                } label: {
+                    lookupPartRow(part, selected: false)
+                }
+            }
+        } else {
+            ForEach(partResults) { part in
+                Button {
+                    selectPart(part)
+                } label: {
+                    lookupPartRow(part, selected: selectedPart?.id == part.id)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var areaResultsView: some View {
+        if areaResults.isEmpty && selectedArea == nil && areaLookupMessage == nil {
+            ForEach(contextAreaCandidates) { area in
+                Button {
+                    selectedArea = area
+                    areaLookupMessage = nil
+                } label: {
+                    lookupAreaRow(area, selected: false, showsHomeBadge: false)
+                }
+            }
+        } else {
+            ForEach(areaResults) { area in
+                Button {
+                    selectedArea = area
+                    areaLookupMessage = nil
+                } label: {
+                    lookupAreaRow(area, selected: selectedArea?.id == area.id, showsHomeBadge: false)
+                }
+            }
+        }
+    }
+
+    private var contextPartCandidates: [MisplacedLookupPart] {
         var seen: Set<Int64> = []
-        return candidates.filter { item in
-            guard !seen.contains(item.partId) else { return false }
+        return candidates.compactMap { item in
+            guard !seen.contains(item.partId) else { return nil }
             seen.insert(item.partId)
-            return true
+            return MisplacedLookupPart(
+                id: item.partId,
+                name: item.partName,
+                code: item.partCode,
+                detail: "Audit queue candidate",
+                totalStock: nil
+            )
         }
     }
 
-    private var uniqueAreas: [(id: Int64, label: String)] {
+    private var contextAreaCandidates: [MisplacedLookupArea] {
         var seen: Set<Int64> = []
         return candidates.compactMap { item in
             guard !seen.contains(item.areaId) else { return nil }
             seen.insert(item.areaId)
-            return (item.areaId, item.locationCode)
+            return MisplacedLookupArea(
+                id: item.areaId,
+                label: item.locationCode,
+                detail: "Audit queue location",
+                isHome: false
+            )
         }
     }
 
+    private var canSave: Bool {
+        guard !serviceUnavailable, qtyFound >= 1, qtyFound <= 999 else { return false }
+        guard let partId = selectedPart?.id, partId > 0 else { return false }
+        guard let areaId = selectedArea?.id, areaId > 0 else { return false }
+        return true
+    }
+
+    private var serviceUnavailable: Bool {
+        appCore.warehouseService == nil || appCore.partsService == nil || appCore.currentUser?.id == nil
+    }
+
+    private var saveDisabledReason: String? {
+        if serviceUnavailable { return "Warehouse services are unavailable." }
+        if selectedPart?.id ?? 0 <= 0 { return "Select the part you found." }
+        if selectedArea?.id ?? 0 <= 0 { return "Select where you found it." }
+        if qtyFound < 1 { return "Quantity must be at least 1." }
+        if qtyFound > 999 { return "Quantity must be 999 or less." }
+        return nil
+    }
+
     private func configureInitialSelection() {
-        if selectedPartId == nil {
-            selectedPartId = initialPartId ?? candidates.first?.partId
+        guard !didConfigureInitialSelection else { return }
+        didConfigureInitialSelection = true
+
+        if let initialPartId, initialPartId > 0 {
+            resolvePart(id: initialPartId)
+        } else if !contextPartCandidates.isEmpty {
+            partResults = contextPartCandidates
+            if initialPartId == nil {
+                partLookupMessage = .info("Select the part you found.")
+            }
         }
-        if foundAtAreaId == nil {
-            foundAtAreaId = initialAreaId ?? candidates.first(where: { $0.partId == selectedPartId })?.areaId
+
+        if let initialAreaId, initialAreaId > 0 {
+            resolveArea(id: initialAreaId)
+        } else {
+            areaResults = contextAreaCandidates
+            if initialAreaId == nil {
+                areaLookupMessage = .info("Select where you found it.")
+            }
         }
-        if homeAreaId == nil, resolution != "sort_later" {
-            homeAreaId = candidates.first(where: { $0.partId == selectedPartId })?.areaId
+    }
+
+    private func searchParts() {
+        guard let service = appCore.partsService else {
+            partLookupMessage = .error("Part lookup failed. Try again or scan the label.")
+            return
+        }
+        let query = partQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            partResults = contextPartCandidates
+            partLookupMessage = .info("Search or scan a part label.")
+            return
+        }
+        do {
+            let parts = try service.searchParts(query: query, limit: 15)
+            partResults = parts.compactMap { part in
+                guard let id = part.id, id > 0, part.deletedAt == nil else { return nil }
+                let stock = (try? service.getPartStockSummary(partId: id).total)
+                return MisplacedLookupPart(
+                    id: id,
+                    name: part.name,
+                    code: part.code,
+                    detail: part.manufacturerPartNumber,
+                    totalStock: stock
+                )
+            }
+            partLookupMessage = partResults.isEmpty
+                ? .empty("No matching parts", "Check the label or scan the part QR.")
+                : nil
+        } catch {
+            partResults = []
+            partLookupMessage = .error("Part lookup failed. Try again or scan the label.")
+        }
+    }
+
+    private func resolvePartQuery() {
+        let query = partQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let id = Int64(query), id > 0 {
+            resolvePart(id: id)
+        } else {
+            searchParts()
+        }
+    }
+
+    private func resolvePart(id: Int64) {
+        guard let service = appCore.partsService else {
+            partLookupMessage = .error("Part lookup failed. Try again or scan the label.")
+            return
+        }
+        do {
+            let detail = try service.getPart(id: id)
+            guard let partId = detail.part.id, partId > 0, detail.part.deletedAt == nil else {
+                selectedPart = nil
+                partLookupMessage = .error("That part or location is no longer available. Search again.")
+                return
+            }
+            selectPart(MisplacedLookupPart(
+                id: partId,
+                name: detail.part.name,
+                code: detail.part.code,
+                detail: [detail.brandName, detail.colorName].compactMap { $0 }.joined(separator: " / "),
+                totalStock: detail.totalStock
+            ))
+        } catch {
+            selectedPart = nil
+            partLookupMessage = .error("That part or location is no longer available. Search again.")
+        }
+    }
+
+    private func selectPart(_ part: MisplacedLookupPart) {
+        guard part.id > 0 else {
+            selectedPart = nil
+            partLookupMessage = .error("That part or location is no longer available. Search again.")
+            return
+        }
+        selectedPart = part
+        partLookupMessage = nil
+        loadHomeOptions(for: part.id)
+    }
+
+    private func searchAreas() {
+        guard let service = appCore.warehouseService else {
+            areaLookupMessage = .error("Location lookup failed. Try again or choose from the list.")
+            return
+        }
+        let query = areaQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            areaResults = contextAreaCandidates
+            areaLookupMessage = .info("Search or scan a location code.")
+            return
+        }
+        do {
+            areaResults = try service.searchActiveAreas(query: query, limit: 15).map(MisplacedLookupArea.init(info:))
+            areaLookupMessage = areaResults.isEmpty
+                ? .empty("No warehouse locations found", "Set up storage areas before logging misplaced parts.")
+                : nil
+        } catch {
+            areaResults = []
+            areaLookupMessage = .error("Location lookup failed. Try again or choose from the list.")
+        }
+    }
+
+    private func resolveAreaQuery() {
+        guard let service = appCore.warehouseService else {
+            areaLookupMessage = .error("Location lookup failed. Try again or choose from the list.")
+            return
+        }
+        let query = areaQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            areaLookupMessage = .info("Search or scan a location code.")
+            return
+        }
+        do {
+            if let scan = try service.getLocationByQR(qrCode: query) {
+                selectedArea = MisplacedLookupArea(
+                    id: scan.areaId,
+                    label: scan.fullLocationCode,
+                    detail: "\(scan.unitName) / \(scan.levelName) / \(scan.areaCode)",
+                    isHome: false
+                )
+                areaLookupMessage = nil
+            } else {
+                searchAreas()
+            }
+        } catch {
+            selectedArea = nil
+            areaLookupMessage = .error("Location lookup failed. Try again or choose from the list.")
+        }
+    }
+
+    private func resolveArea(id: Int64) {
+        guard let service = appCore.warehouseService else {
+            areaLookupMessage = .error("Location lookup failed. Try again or choose from the list.")
+            return
+        }
+        do {
+            selectedArea = MisplacedLookupArea(info: try service.getActiveArea(id: id))
+            areaLookupMessage = nil
+        } catch {
+            selectedArea = nil
+            areaLookupMessage = .error("That part or location is no longer available. Search again.")
+        }
+    }
+
+    private func loadHomeOptions(for partId: Int64) {
+        guard let service = appCore.warehouseService else {
+            homeOptions = []
+            homeAreaId = nil
+            homeLookupMessage = .error("Location lookup failed. Try again or choose from the list.")
+            return
+        }
+        do {
+            let assignments = try service.getPartAssignments(partId: partId)
+            homeOptions = assignments.map { assignment in
+                MisplacedLookupArea(
+                    id: assignment.areaId,
+                    label: assignment.fullLocationCode ?? "\(assignment.unitName) \(assignment.levelCode) \(assignment.areaCode)",
+                    detail: "\(assignment.unitName) / \(assignment.levelCode) / \(assignment.areaCode)",
+                    isHome: assignment.isHome
+                )
+            }
+            let homeAssignments = homeOptions.filter(\.isHome)
+            homeAreaId = homeAssignments.count == 1 ? homeAssignments[0].id : nil
+            homeLookupMessage = homeOptions.isEmpty
+                ? .info("No home assignment found. Sort later is selected.")
+                : nil
+        } catch {
+            homeOptions = []
+            homeAreaId = nil
+            homeLookupMessage = .error("Location lookup failed. Try again or choose from the list.")
         }
     }
 
@@ -1543,8 +1942,16 @@ private struct MisplacedPartSheet: View {
             errorMessage = "Service or user unavailable."
             return
         }
-        guard let partId = selectedPartId, let foundAtAreaId else {
-            errorMessage = "Select a part and found-at area before saving."
+        guard let partId = selectedPart?.id, partId > 0 else {
+            errorMessage = "Select the part you found."
+            return
+        }
+        guard let foundAtAreaId = selectedArea?.id, foundAtAreaId > 0 else {
+            errorMessage = "Select where you found it."
+            return
+        }
+        guard qtyFound >= 1, qtyFound <= 999 else {
+            errorMessage = "Quantity must be at least 1."
             return
         }
         isSaving = true
@@ -1576,6 +1983,161 @@ private struct MisplacedPartSheet: View {
             errorMessage = userFriendlyError(error, context: "load audit")
         }
         isSaving = false
+    }
+
+    @ViewBuilder
+    private func lookupMessageView(_ message: LookupMessage) -> some View {
+        switch message {
+        case .info(let text):
+            validationText(text)
+        case .error(let text):
+            InlineStatusView(systemImage: "exclamationmark.triangle", title: text, message: nil, color: .red)
+        case .empty(let title, let detail):
+            InlineStatusView(systemImage: "magnifyingglass", title: title, message: detail, color: .secondary)
+        }
+    }
+
+    private func validationText(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+
+    private func lookupPartRow(_ part: MisplacedLookupPart, selected: Bool) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            lookupPartText(part)
+            Spacer()
+            if selected {
+                Image(systemName: "checkmark")
+                    .foregroundStyle(.blue)
+                    .accessibilityLabel("Selected")
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    private func lookupPartText(_ part: MisplacedLookupPart) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(part.name)
+                .font(.body)
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+            if let code = part.code, !code.isEmpty {
+                Text(code)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            HStack(spacing: 8) {
+                if let detail = part.detail, !detail.isEmpty {
+                    Text(detail)
+                }
+                if let totalStock = part.totalStock {
+                    Text("Stock \(totalStock)")
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private func lookupAreaRow(_ area: MisplacedLookupArea, selected: Bool, showsHomeBadge: Bool) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            lookupAreaText(area, showsHomeBadge: showsHomeBadge)
+            Spacer()
+            if selected {
+                Image(systemName: "checkmark")
+                    .foregroundStyle(.blue)
+                    .accessibilityLabel("Selected")
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    private func lookupAreaText(_ area: MisplacedLookupArea, showsHomeBadge: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(area.label)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                if showsHomeBadge && area.isHome {
+                    Text("Home")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.blue.opacity(0.12), in: Capsule())
+                        .foregroundStyle(.blue)
+                }
+            }
+            if !area.detail.isEmpty {
+                Text(area.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+    }
+}
+
+private struct MisplacedLookupPart: Identifiable, Equatable {
+    let id: Int64
+    let name: String
+    let code: String?
+    let detail: String?
+    let totalStock: Int?
+}
+
+private struct MisplacedLookupArea: Identifiable, Equatable {
+    let id: Int64
+    let label: String
+    let detail: String
+    let isHome: Bool
+
+    init(id: Int64, label: String, detail: String, isHome: Bool) {
+        self.id = id
+        self.label = label
+        self.detail = detail
+        self.isHome = isHome
+    }
+
+    init(info: WarehouseService.ActiveAreaInfo) {
+        self.id = info.id
+        self.label = info.displayLabel
+        self.detail = info.detailLabel
+        self.isHome = false
+    }
+}
+
+private enum LookupMessage: Equatable {
+    case info(String)
+    case error(String)
+    case empty(String, String)
+}
+
+private struct InlineStatusView: View {
+    let systemImage: String
+    let title: String
+    let message: String?
+    let color: Color
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: systemImage)
+                .foregroundStyle(color)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(color)
+                if let message {
+                    Text(message)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
     }
 }
 
