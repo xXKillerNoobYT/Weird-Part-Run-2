@@ -439,6 +439,51 @@ struct PartsServiceAdvancedTests {
         #expect(updated.name == "Updated Name")
     }
 
+    @Test("pricing CSV round-trip keeps company cost and exports weighted avg in a separate column")
+    func testPricingCSVRoundTripPreservesCompanyCost() throws {
+        let env = try E2ETestHelpers.setUp()
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Pricing Round Trip")
+        let partId = try env.parts.createPart(categoryId: categoryId, name: "Round Trip Part", code: "RT-PRICE-001")
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE parts
+                    SET company_cost_price = ?, weighted_avg_cost = ?, company_markup_percent = ?, updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                arguments: [10.0, 25.0, 30.0, partId]
+            )
+        }
+
+        let csv = try env.parts.exportPartsCSV(groups: [.hierarchy, .pricing])
+        #expect(csv.contains("cost_price"))
+        #expect(csv.contains("weighted_avg_cost"))
+
+        var preview = try env.parts.previewPartsImportCSV(csv)
+        #expect(preview.conflicts.count == 1)
+        #expect(preview.conflicts.first?.parsedRow.fields["cost_price"] == "10.0")
+        #expect(preview.conflicts.first?.parsedRow.fields["weighted_avg_cost"] == "25.0")
+        preview.conflicts = preview.conflicts.map { conflict in
+            var editable = conflict
+            editable.resolution = .update
+            return editable
+        }
+
+        _ = try env.parts.commitPartsImportCSV(preview)
+
+        let costs = try env.db.writer.read { db -> Row? in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT company_cost_price, weighted_avg_cost FROM parts WHERE id = ?",
+                arguments: [partId]
+            )
+        }
+        let finalCosts = try #require(costs)
+        #expect(finalCosts["company_cost_price"] as Double == 10.0)
+        #expect(finalCosts["weighted_avg_cost"] as Double == 25.0)
+    }
+
     @Test("previewPartsImportXLSX parses first worksheet through shared import pipeline")
     func testPreviewPartsImportXLSXClassifiesRows() throws {
         let env = try E2ETestHelpers.setUp()
