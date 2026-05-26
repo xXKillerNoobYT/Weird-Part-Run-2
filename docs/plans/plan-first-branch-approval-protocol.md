@@ -4,7 +4,7 @@
 > **Owner:** CTO / engineering coordination
 > **Paperclip:** [WEI-2597](/WEI/issues/WEI-2597)
 > **GitHub:** `xXKillerNoobYT/Weird-Part-Run-2`, branch `plan/WEI-2597-plan-first-protocol`
-> **Obsidian:** Weird-Part-Run-2 project tracking should point back to this repo plan and the Paperclip issue.
+> **Obsidian:** `/Users/IA/Documents/Obsidian Vault/01_projects/Weird-Part-Run-2/Plans/Plan-First Branch and Approval Protocol.md`
 
 ## Purpose
 
