@@ -38,6 +38,10 @@ struct IOSOrganizationThresholdsPage: View {
         var id: String { "help" }
     }
 
+    private var hasValidSettings: Bool {
+        baseDecayRate > 0 && movementDecayFactor > 0
+    }
+
     var body: some View {
         Group {
             if isLoading {
@@ -157,6 +161,8 @@ struct IOSOrganizationThresholdsPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!hasValidSettings)
+                .accessibilityHint(hasValidSettings ? "" : "Base decay rate and movement decay factor must be greater than zero.")
             }
         }
         // Fix #149: dismiss keyboard when scrolling threshold settings
