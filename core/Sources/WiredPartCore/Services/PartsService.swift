@@ -2045,6 +2045,24 @@ public final class PartsService: Sendable {
 
     // MARK: - Brand-Supplier Linking
 
+    /// Add a brand-supplier link with explicit carry status.
+    public func addBrandSupplier(
+        brandId: Int64,
+        supplierId: Int64,
+        status: String = "carry_on_shelf"
+    ) throws {
+        let allowedStatuses = Set(["carry_on_shelf", "need_to_order"])
+        guard allowedStatuses.contains(status) else {
+            throw PartsError.invalidInput("Invalid carry status")
+        }
+        try linkBrandToSupplier(brandId: brandId, supplierId: supplierId)
+        try updateBrandSupplierCarryStatus(
+            brandId: brandId,
+            supplierId: supplierId,
+            carryStatus: status
+        )
+    }
+
     /// Link a supplier to a brand. If a soft-deleted link exists, reactivate it.
     /// Returns the link row ID.
     @discardableResult

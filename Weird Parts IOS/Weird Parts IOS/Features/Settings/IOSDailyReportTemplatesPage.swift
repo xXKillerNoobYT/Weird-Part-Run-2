@@ -50,6 +50,7 @@ struct IOSDailyReportTemplatesPage: View {
 
     @State private var sections: [ReportSection] = []
     @State private var aiInstructions: String = ""
+    @State private var isDirty = false
 
     var body: some View {
         Group {
@@ -167,10 +168,14 @@ struct IOSDailyReportTemplatesPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!isDirty)
+                .accessibilityHint(isDirty ? "" : "Make changes to the template to enable saving.")
             }
         }
         // Fix #149: dismiss keyboard when scrolling template editor
         .scrollDismissesKeyboard(.interactively)
+        .onChange(of: sections) { _, _ in isDirty = true }
+        .onChange(of: aiInstructions) { _, _ in isDirty = true }
     }
 
     // MARK: - Preview
@@ -263,6 +268,7 @@ struct IOSDailyReportTemplatesPage: View {
             aiInstructions = Self.defaultAIInstructions
         }
         isLoading = false
+        isDirty = false
     }
 
     private func saveSettings() {
@@ -279,6 +285,7 @@ struct IOSDailyReportTemplatesPage: View {
             try service.upsertSetting(key: "daily_report_template", value: json, category: "templates")
             saveError = nil
             successMessage = "Template saved."
+            isDirty = false
         } catch {
             saveError = userFriendlyError(error, context: "save daily report")
         }
