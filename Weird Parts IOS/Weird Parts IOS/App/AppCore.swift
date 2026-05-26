@@ -905,11 +905,15 @@ final class AppCore: ObservableObject {
 
         if ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard") {
             try seedDispatchBoardUITestingFixtures(db: db)
+            UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
+            UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
         }
 
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
-        UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        if !ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard") {
+            UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        }
 
         seedWEI936OnboardingStateIfRequested(userId: fixtureUserId)
     }
