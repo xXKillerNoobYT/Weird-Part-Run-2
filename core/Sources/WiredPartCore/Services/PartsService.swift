@@ -6158,6 +6158,19 @@ public final class PartsService: Sendable {
             var skipped = 0
 
             try db.writer.write { dbConn in
+                func parseImportNumeric(_ rawValue: String?, header: String, rowNumber: Int) throws -> Double? {
+                    guard let rawValue else { return nil }
+                    let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return nil }
+                    guard let value = Double(trimmed) else {
+                        throw PartsError.invalidInput("Invalid number for \(header) at row \(rowNumber): \(rawValue)")
+                    }
+                    if value < 0 {
+                        throw PartsError.invalidInput("\(header) cannot be negative at row \(rowNumber)")
+                    }
+                    return value
+                }
+
                 func findOrCreateCategoryInTransaction(_ name: String) throws -> Int64 {
                     if let existing = try Row.fetchOne(dbConn, sql: "SELECT id FROM part_categories WHERE name = ? AND deleted_at IS NULL", arguments: [name]) {
                         return existing["id"]
@@ -6186,8 +6199,8 @@ public final class PartsService: Sendable {
                 func create(_ row: PartsImportParsedRow) throws -> Int64 {
                     let categoryId = try findOrCreateCategoryInTransaction(row.category)
                     let brandId = try findOrCreateBrandInTransaction(row.brand)
-                    let cost = row.fields["cost_price"].flatMap(Double.init) ?? 0
-                    let markup = row.fields["markup_percent"].flatMap(Double.init) ?? 0
+                    let cost = try parseImportNumeric(row.fields["cost_price"], header: "cost_price", rowNumber: row.rowNumber) ?? 0
+                    let markup = try parseImportNumeric(row.fields["markup_percent"], header: "markup_percent", rowNumber: row.rowNumber) ?? 0
                     let partType = row.fields["part_type"] ?? "general"
 
                     try Validators.requireName(row.name, field: "Part name")
@@ -6224,8 +6237,8 @@ public final class PartsService: Sendable {
                     let row = conflict.parsedRow
                     let categoryId = try findOrCreateCategoryInTransaction(row.category)
                     let brandId = try findOrCreateBrandInTransaction(row.brand)
-                    let cost = row.fields["cost_price"].flatMap(Double.init)
-                    let markup = row.fields["markup_percent"].flatMap(Double.init)
+                    let cost = try parseImportNumeric(row.fields["cost_price"], header: "cost_price", rowNumber: row.rowNumber)
+                    let markup = try parseImportNumeric(row.fields["markup_percent"], header: "markup_percent", rowNumber: row.rowNumber)
 
                     var clauses = [
                         "name = ?",
