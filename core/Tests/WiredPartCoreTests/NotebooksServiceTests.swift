@@ -258,6 +258,196 @@ struct NotebooksServiceTests {
         }
     }
 
+    @Test("Block edit locks are visible until their five minute expiry")
+    func testBlockEditLockVisibilityAndExpiry() throws {
+        let env = try E2ETestHelpers.setUp()
+        let nbId = try env.notebooks.createNotebook(
+            title: "Lock Visibility",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId,
+            groupId: nil,
+            name: "Main"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "text",
+            title: "Shared note",
+            content: "Original",
+            createdBy: env.adminUserId
+        )
+
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
+        let lock = try env.notebooks.acquireBlockEditLock(
+            entryId: entryId,
+            userId: env.adminUserId,
+            deviceId: "field-ipad",
+            now: base
+        )
+        #expect(lock.entryId == entryId)
+        #expect(lock.deviceId == "field-ipad")
+
+        let active = try env.notebooks.activeBlockEditLocks(notebookId: nbId, now: base.addingTimeInterval(299))
+        #expect(active.count == 1)
+        #expect(active.first?.entryId == entryId)
+        #expect(active.first?.userName == "TestAdmin")
+
+        let expired = try env.notebooks.activeBlockEditLocks(notebookId: nbId, now: base.addingTimeInterval(301))
+        #expect(expired.isEmpty)
+    }
+
+    @Test("Foundation Models merge preserves conflicts when merge is unavailable")
+    func testFoundationModelsMergeFallbackPreservesConflict() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let nbId = try env.notebooks.createNotebook(
+            title: "Merge Fallback",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId,
+            groupId: nil,
+            name: "Main"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "text",
+            title: "Conflict note",
+            content: "Local text",
+            createdBy: env.adminUserId
+        )
+        let conflictId = try insertNotebookConflict(
+            db: env.db,
+            entryId: entryId,
+            fieldName: "content",
+            localValue: "Local text",
+            remoteValue: "Remote text"
+        )
+
+        let merged = try await env.notebooks.resolveBlockConflictWithFoundationModels(
+            conflictLogId: conflictId,
+            mergeText: { _, _, _ in nil }
+        )
+        #expect(merged == false)
+
+        let row = try await env.db.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: """
+                SELECT ne.content, cl.reviewed, cl.local_value, cl.remote_value
+                FROM notebook_entries ne
+                JOIN _conflict_log cl ON CAST(cl.record_id AS INTEGER) = ne.id
+                WHERE cl.id = ?
+                """, arguments: [conflictId])
+        }
+        #expect(row?["content"] as String? == "Local text")
+        #expect((row?["reviewed"] as Int?) == 0)
+        #expect(row?["local_value"] as String? == "Local text")
+        #expect(row?["remote_value"] as String? == "Remote text")
+    }
+
+    @Test("Foundation Models merge applies merged text and reviews conflict")
+    func testFoundationModelsMergeAppliesMergedText() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let nbId = try env.notebooks.createNotebook(
+            title: "Merge Success",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId,
+            groupId: nil,
+            name: "Main"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "text",
+            title: "Conflict note",
+            content: "Local text",
+            createdBy: env.adminUserId
+        )
+        let conflictId = try insertNotebookConflict(
+            db: env.db,
+            entryId: entryId,
+            fieldName: "content",
+            localValue: "Local text",
+            remoteValue: "Remote text"
+        )
+
+        let merged = try await env.notebooks.resolveBlockConflictWithFoundationModels(
+            conflictLogId: conflictId,
+            mergeText: { local, remote, _ in "\(local) + \(remote)" }
+        )
+        #expect(merged == true)
+
+        let row = try await env.db.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: """
+                SELECT ne.content, cl.reviewed, cl.winner
+                FROM notebook_entries ne
+                JOIN _conflict_log cl ON CAST(cl.record_id AS INTEGER) = ne.id
+                WHERE cl.id = ?
+                """, arguments: [conflictId])
+        }
+        #expect(row?["content"] as String? == "Local text + Remote text")
+        #expect((row?["reviewed"] as Int?) == 1)
+        #expect(row?["winner"] as String? == "ai_merge")
+    }
+
+    @Test("Foundation Models merge preserves conflict when row changes before write")
+    func testFoundationModelsMergeRejectsStaleConflictSnapshot() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let nbId = try env.notebooks.createNotebook(
+            title: "Merge Stale Snapshot",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId,
+            groupId: nil,
+            name: "Main"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "text",
+            title: "Conflict note",
+            content: "Local text",
+            createdBy: env.adminUserId
+        )
+        let conflictId = try insertNotebookConflict(
+            db: env.db,
+            entryId: entryId,
+            fieldName: "content",
+            localValue: "Local text",
+            remoteValue: "Remote text"
+        )
+
+        let merged = try await env.notebooks.resolveBlockConflictWithFoundationModels(
+            conflictLogId: conflictId,
+            mergeText: { _, _, _ in
+                try? await env.db.writer.write { dbConn in
+                    try dbConn.execute(
+                        sql: "UPDATE notebook_entries SET content = ? WHERE id = ?",
+                        arguments: ["Concurrent update", entryId]
+                    )
+                }
+                return "Merged text"
+            }
+        )
+        #expect(merged == false)
+
+        let row = try await env.db.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: """
+                SELECT ne.content, cl.reviewed, cl.winner
+                FROM notebook_entries ne
+                JOIN _conflict_log cl ON CAST(cl.record_id AS INTEGER) = ne.id
+                WHERE cl.id = ?
+                """, arguments: [conflictId])
+        }
+        #expect(row?["content"] as String? == "Concurrent update")
+        #expect((row?["reviewed"] as Int?) == 0)
+        #expect(row?["winner"] as String? == "local")
+    }
+
     // MARK: - 5. Delete Entry (Soft Delete)
 
     @Test("Soft-delete a block entry removes it from hierarchy")
@@ -1981,5 +2171,27 @@ struct NotebooksServiceTests {
         #expect(section.entries.count == 2)
         #expect(section.entries.map { $0.title }.contains("Block 1"))
         #expect(section.entries.map { $0.title }.contains("Block 2"))
+    }
+
+    @discardableResult
+    private func insertNotebookConflict(
+        db: AppDatabase,
+        entryId: Int64,
+        fieldName: String,
+        localValue: String,
+        remoteValue: String
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO _conflict_log
+                    (table_name, record_id, field_name, local_value, remote_value, winner,
+                     local_device, remote_device, local_ts, remote_ts, resolved_at, reviewed)
+                VALUES ('notebook_entries', ?, ?, ?, ?, 'local',
+                        'local-device', 'remote-device',
+                        '2026-05-26T10:00:00Z', '2026-05-26T10:01:00Z',
+                        '2026-05-26T10:02:00Z', 0)
+                """, arguments: ["\(entryId)", fieldName, localValue, remoteValue])
+            return dbConn.lastInsertedRowID
+        }
     }
 }
