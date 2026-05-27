@@ -73,6 +73,9 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         if shouldOpenPartsCategoriesOnLaunch {
             app.launchArguments += ["-UITestingOpenPartsCategories"]
         }
+        if shouldOpenWarehouseSetupOnLaunch {
+            app.launchArguments += ["-UITestingWarehouseSetupWizard"]
+        }
         if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" {
             XCUIDevice.shared.orientation = .landscapeLeft
         }
@@ -87,6 +90,10 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             "SaveButtonDisabledWhenNameEmpty",
             "SearchFiltersCategoriesTree",
         ].contains { name.contains($0) }
+    }
+
+    private var shouldOpenWarehouseSetupOnLaunch: Bool {
+        name.contains("WEI1182WarehouseWizardBreakpointWalkingPathScreenshots")
     }
 
     /// SwiftUI exposes the page accessibility identifier on the visible child
@@ -913,8 +920,13 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         let dashboardTab = app.buttons["tab_dashboard"]
         if dashboardTab.waitForExistence(timeout: 5) {
             dashboardTab.tap()
-        } else if app.buttons["Dashboard"].waitForExistence(timeout: 2) {
-            app.buttons["Dashboard"].tap()
+        } else {
+            let dashboard = app.tabBars.buttons["Dashboard"].firstMatch
+            if dashboard.waitForExistence(timeout: 2) {
+                dashboard.tap()
+            } else if app.buttons.matching(identifier: "subtab_warehouse-dashboard").firstMatch.waitForExistence(timeout: 2) {
+                app.buttons.matching(identifier: "subtab_warehouse-dashboard").firstMatch.tap()
+            }
         }
 
         let configure = app.buttons["Configure Your Warehouse"]

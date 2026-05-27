@@ -2998,6 +2998,17 @@ public final class WarehouseService: Sendable {
             throw WarehouseError.invalidDimension
         }
         return try db.writer.write { dbConn in
+            let floorPlan = try WarehouseFloorPlan.fetchOne(dbConn, key: floorPlanId)
+            try validateZonePlacement(
+                floorPlan: floorPlan,
+                floorPlanId: floorPlanId,
+                excludingZoneId: nil,
+                gridX: gridX,
+                gridY: gridY,
+                gridWidth: gridWidth,
+                gridHeight: gridHeight,
+                dbConn: dbConn
+            )
             var zone = WarehouseZone(
                 floorPlanId: floorPlanId,
                 zoneType: zoneType,
@@ -3037,6 +3048,21 @@ public final class WarehouseService: Sendable {
         if let gridHeight, gridHeight <= 0 { throw WarehouseError.invalidDimension }
         try db.writer.write { dbConn in
             guard var zone = try WarehouseZone.fetchOne(dbConn, key: id) else { return }
+            let nextGridX = gridX ?? zone.gridX
+            let nextGridY = gridY ?? zone.gridY
+            let nextGridWidth = gridWidth ?? zone.gridWidth
+            let nextGridHeight = gridHeight ?? zone.gridHeight
+            let floorPlan = try WarehouseFloorPlan.fetchOne(dbConn, key: zone.floorPlanId)
+            try validateZonePlacement(
+                floorPlan: floorPlan,
+                floorPlanId: zone.floorPlanId,
+                excludingZoneId: id,
+                gridX: nextGridX,
+                gridY: nextGridY,
+                gridWidth: nextGridWidth,
+                gridHeight: nextGridHeight,
+                dbConn: dbConn
+            )
             if let v = zoneType { zone.zoneType = v }
             if let v = label { zone.label = v }
             if let v = colorHex { zone.colorHex = v }
@@ -3048,6 +3074,61 @@ public final class WarehouseService: Sendable {
             if let v = zoneOrder { zone.zoneOrder = v }
             try zone.update(dbConn)
         }
+    }
+
+    private func validateZonePlacement(
+        floorPlan: WarehouseFloorPlan?,
+        floorPlanId: Int64,
+        excludingZoneId: Int64?,
+        gridX: Int,
+        gridY: Int,
+        gridWidth: Int,
+        gridHeight: Int,
+        dbConn: Database
+    ) throws {
+        guard gridX >= 0, gridY >= 0, gridWidth > 0, gridHeight > 0 else {
+            throw WarehouseError.invalidDimension
+        }
+        if let cols = floorPlan?.gridCols, let rows = floorPlan?.gridRows,
+           gridX + gridWidth > cols || gridY + gridHeight > rows {
+            throw WarehouseError.invalidDimension
+        }
+
+        let existingZones = try WarehouseZone
+            .filter(Column("floor_plan_id") == floorPlanId && Column("deleted_at") == nil)
+            .fetchAll(dbConn)
+        let collides = existingZones.contains { other in
+            if let excludingZoneId, other.id == excludingZoneId { return false }
+            return rectanglesOverlap(
+                lhsX: gridX,
+                lhsY: gridY,
+                lhsWidth: gridWidth,
+                lhsHeight: gridHeight,
+                rhsX: other.gridX,
+                rhsY: other.gridY,
+                rhsWidth: other.gridWidth,
+                rhsHeight: other.gridHeight
+            )
+        }
+        if collides {
+            throw WarehouseError.invalidDimension
+        }
+    }
+
+    private func rectanglesOverlap(
+        lhsX: Int,
+        lhsY: Int,
+        lhsWidth: Int,
+        lhsHeight: Int,
+        rhsX: Int,
+        rhsY: Int,
+        rhsWidth: Int,
+        rhsHeight: Int
+    ) -> Bool {
+        lhsX < rhsX + rhsWidth &&
+            lhsX + lhsWidth > rhsX &&
+            lhsY < rhsY + rhsHeight &&
+            lhsY + lhsHeight > rhsY
     }
 
     /// Soft delete a zone.
