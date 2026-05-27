@@ -4,6 +4,7 @@
 > **Last Updated:** 2026-03-27
 > **Scope:** Complete testing strategy covering unit, integration, E2E, UI, performance, and security testing
 > **Standard:** Production-grade quality for enterprise deployment
+> **Paperclip staging update:** This remains the quality gate reference. The stage order and active/planned status live in `docs/plans/staged-paperclip-goals.md`.
 
 ---
 

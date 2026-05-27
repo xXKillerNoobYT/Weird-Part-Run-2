@@ -220,7 +220,7 @@ struct Weird_Parts_IOSTests {
         var autoFillAttempts = 0
 
         do {
-            try QuestionnaireBreakComplianceSubmitter.submit(
+            try IOSQuestionnairePage.QuestionnaireBreakComplianceSubmitter.submit(
                 verification: .allTaken,
                 hadBreakButtons: false,
                 missedBreaks: []
@@ -239,7 +239,7 @@ struct Weird_Parts_IOSTests {
     @Test func questionnaireBreakAutofillSkipsWhenExistingBreakButtonsWereUsed() throws {
         var autoFillAttempts = 0
 
-        try QuestionnaireBreakComplianceSubmitter.submit(
+        try IOSQuestionnairePage.QuestionnaireBreakComplianceSubmitter.submit(
             verification: .allTaken,
             hadBreakButtons: true,
             missedBreaks: []
@@ -253,7 +253,7 @@ struct Weird_Parts_IOSTests {
     @Test func questionnaireBreakAutofillRunsForForgotBreakPath() throws {
         var autoFillAttempts = 0
 
-        try QuestionnaireBreakComplianceSubmitter.submit(
+        try IOSQuestionnairePage.QuestionnaireBreakComplianceSubmitter.submit(
             verification: .forgot,
             hadBreakButtons: false,
             missedBreaks: ["morning_break", "lunch", "afternoon_break"]

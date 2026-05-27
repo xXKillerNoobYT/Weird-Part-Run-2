@@ -134,6 +134,7 @@ extension AppDatabase {
         registerMigration095JobStageTemplates(&migrator)
         registerMigration096SubcontractorScheduleSoftDeleteUniqueness(&migrator)
         registerMigration097PartImportAuditSessions(&migrator)
+        registerMigration098NotebookEntryEditLocks(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5598,7 +5599,27 @@ extension AppDatabase {
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_subcontractor_schedules_active_slot
                 ON subcontractor_schedules(job_id, gc_id, scheduled_date)
                 WHERE deleted_at IS NULL
-                """)
+            """)
+        }
+    }
+
+    // MARK: - Migration 098: Notebook entry edit locks
+
+    private static func registerMigration098NotebookEntryEditLocks(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("098_notebook_entry_edit_locks") { db in
+            try db.create(table: "notebook_entry_edit_locks", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("entry_id", .integer).notNull()
+                    .references("notebook_entries", onDelete: .cascade)
+                t.column("user_id", .integer).notNull()
+                    .references("users", onDelete: .cascade)
+                t.column("device_id", .text).notNull()
+                t.column("locked_at", .text).notNull()
+                t.column("expires_at", .text).notNull()
+            }
+            try db.create(index: "idx_notebook_entry_edit_locks_entry", on: "notebook_entry_edit_locks", columns: ["entry_id"], ifNotExists: true)
+            try db.create(index: "idx_notebook_entry_edit_locks_expiry", on: "notebook_entry_edit_locks", columns: ["expires_at"], ifNotExists: true)
+            try db.create(index: "idx_notebook_entry_edit_locks_owner", on: "notebook_entry_edit_locks", columns: ["entry_id", "user_id", "device_id"], unique: true, ifNotExists: true)
         }
     }
 }
