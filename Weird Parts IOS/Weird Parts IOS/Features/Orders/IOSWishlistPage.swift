@@ -12,6 +12,8 @@ struct IOSWishlistPage: View {
     // MARK: - State
 
     @State private var sections = WishlistService.WishlistSections()
+    @State private var statusCounts = WishlistService.StatusCounts()
+    @State private var selectedStatus: StatusFilter = .all
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var loadError: String?
@@ -31,9 +33,69 @@ struct IOSWishlistPage: View {
         }
     }
 
+    /// Status filter for the smart-card strip.
+    /// `.all` shows every item across all sections.
+    /// Other cases narrow rows to a single `wishlist_items.status` value while
+    /// preserving the 3-section grouping (User Added / Forecast / System).
+    private enum StatusFilter: String, CaseIterable, Identifiable {
+        case all
+        case pending
+        case approved
+        case dismissed
+        case sentToProcurement
+
+        var id: String { rawValue }
+
+        /// User-facing label. Kept short to fit a 96pt-wide card at 375pt viewport.
+        var title: String {
+            switch self {
+            case .all: "All"
+            case .pending: "Pending"
+            case .approved: "Approved"
+            case .dismissed: "Dismissed"
+            case .sentToProcurement: "Procured"
+            }
+        }
+
+        /// Accessibility label — spells out abbreviations for VoiceOver.
+        var accessibilityTitle: String {
+            switch self {
+            case .all: "All items"
+            case .pending: "Pending"
+            case .approved: "Approved"
+            case .dismissed: "Dismissed"
+            case .sentToProcurement: "Sent to procurement"
+            }
+        }
+
+        /// SF Symbol — mirrors the icon vocabulary used in `statusBadge`.
+        var icon: String {
+            switch self {
+            case .all: "tray.full"
+            case .pending: "clock"
+            case .approved: "checkmark.circle"
+            case .dismissed: "xmark.circle"
+            case .sentToProcurement: "shippingbox"
+            }
+        }
+
+        /// The DB `status` string this filter maps to, or `nil` for `.all`
+        /// which means "no filter".
+        var dbStatus: String? {
+            switch self {
+            case .all: nil
+            case .pending: "pending"
+            case .approved: "approved"
+            case .dismissed: "dismissed"
+            case .sentToProcurement: "sent_to_procurement"
+            }
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             OnboardingBanner(pageId: "orders-wishlist")
+            smartCardFilters
             contentView
         }
         .task { appCore.onboardingManager?.markCompleted("wishlist-view") }
@@ -61,6 +123,7 @@ struct IOSWishlistPage: View {
                     title: "Wishlist Help",
                     sections: [
                         ("What This Page Does", "Tracks parts that should be procured. Items can be added manually or generated automatically by forecasting when stock levels need attention."),
+                        ("Status Filters", "The cards at the top filter by status: All, Pending, Approved, Dismissed, and Procured. Each shows a live count. Tap a card to focus on one status — sections collapse automatically when empty."),
                         ("3 Sections", "User Added — items you or your team added manually (auto-approve after 14 days). Forecast Demand — system suggestions based on usage patterns. System Auto-Added — below MIN with no stock at shop."),
                         ("Item Flow", "Pending (needs review) → Approved (ready for procurement) → Sent to Procurement. Dismissed items can be reopened if needed."),
                         ("Dismissing Items", "Swipe left to dismiss. A reason is required so the team knows why an item was passed over."),
@@ -96,6 +159,87 @@ struct IOSWishlistPage: View {
         }
     }
 
+    // MARK: - Smart Card Filters
+
+    /// Horizontal scroll of status filter cards: All / Pending / Approved / Dismissed / Procured.
+    /// Always rendered (no totalCount gate) so users can see status counts even when the
+    /// currently-filtered view is empty — this is the cue that drives them to switch filters.
+    private var smartCardFilters: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(StatusFilter.allCases) { filter in
+                    smartCard(for: filter)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
+        .background(Color(.systemBackground))
+    }
+
+    private func smartCard(for filter: StatusFilter) -> some View {
+        let isSelected = selectedStatus == filter
+        let color = filterColor(filter)
+        let count = filterCount(filter)
+        let isZero = count == 0 && filter != .all
+
+        return Button {
+            Haptics.impact(.light)
+            selectedStatus = filter
+        } label: {
+            VStack(spacing: 4) {
+                HStack(spacing: 4) {
+                    Image(systemName: filter.icon)
+                        .font(.caption)
+                        .accessibilityHidden(true)
+                    Text("\(count)")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                        .monospacedDigit()
+                }
+                Text(filter.title)
+                    .font(.caption2)
+                    .lineLimit(1)
+            }
+            .frame(minWidth: 80, minHeight: 44)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isSelected ? color.opacity(0.18) : Color.secondary.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isSelected ? color : Color.clear, lineWidth: 1.5)
+            )
+            .foregroundStyle(isSelected ? color : (isZero ? Color.secondary : .primary))
+            .opacity(isZero ? 0.55 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(filter.accessibilityTitle), \(count) items")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+
+    private func filterColor(_ filter: StatusFilter) -> Color {
+        switch filter {
+        case .all: .accentColor
+        case .pending: .orange
+        case .approved: .green
+        case .dismissed: .secondary
+        case .sentToProcurement: .purple
+        }
+    }
+
+    private func filterCount(_ filter: StatusFilter) -> Int {
+        switch filter {
+        case .all: statusCounts.total
+        case .pending: statusCounts.pending
+        case .approved: statusCounts.approved
+        case .dismissed: statusCounts.dismissed
+        case .sentToProcurement: statusCounts.sentToProcurement
+        }
+    }
+
     // MARK: - Content View
 
     @ViewBuilder
@@ -111,8 +255,76 @@ struct IOSWishlistPage: View {
                 title: "No Wishlist Items",
                 message: "Add parts to your wishlist to track procurement needs."
             )
+        } else if filteredIsEmpty {
+            filteredEmptyState
         } else {
             sectionsView
+        }
+    }
+
+    /// Empty state when DB has items but the current filter+search combo matches nothing.
+    /// Offers a one-tap "Show All" escape so the user never gets stuck on an empty filter.
+    @ViewBuilder
+    private var filteredEmptyState: some View {
+        let hasSearch = !searchText.isEmpty
+        let isAll = selectedStatus == .all
+
+        VStack(spacing: 12) {
+            Image(systemName: selectedStatus == .all ? "heart.text.clipboard" : selectedStatus.icon)
+                .font(.system(size: 44))
+                .foregroundStyle(.secondary)
+            Text(filteredEmptyTitle(hasSearch: hasSearch, isAll: isAll))
+                .font(.headline)
+                .multilineTextAlignment(.center)
+            Text(filteredEmptyMessage(hasSearch: hasSearch, isAll: isAll))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            if !isAll {
+                Button {
+                    selectedStatus = .all
+                } label: {
+                    Text("Show All")
+                        .fontWeight(.semibold)
+                        .frame(minWidth: 120, minHeight: 44)
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.top, 4)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
+    private func filteredEmptyTitle(hasSearch: Bool, isAll: Bool) -> String {
+        if hasSearch { return "No Matches" }
+        switch selectedStatus {
+        case .all: return "No Wishlist Items"
+        case .pending: return "Nothing Pending"
+        case .approved: return "Nothing Approved"
+        case .dismissed: return "Nothing Dismissed"
+        case .sentToProcurement: return "Nothing Sent to Procurement"
+        }
+    }
+
+    private func filteredEmptyMessage(hasSearch: Bool, isAll: Bool) -> String {
+        if hasSearch {
+            return isAll
+                ? "No items match your search."
+                : "No \(selectedStatus.title.lowercased()) items match your search."
+        }
+        switch selectedStatus {
+        case .all:
+            return "Add parts to your wishlist to track procurement needs."
+        case .pending:
+            return "Everything has been reviewed. New items will appear here when added."
+        case .approved:
+            return "No approved items waiting. Approve a pending item to see it here."
+        case .dismissed:
+            return "Nothing has been dismissed yet."
+        case .sentToProcurement:
+            return "No items have been sent to procurement yet."
         }
     }
 
@@ -178,15 +390,6 @@ struct IOSWishlistPage: View {
                 }
             }
 
-            // Empty search state
-            if filteredUserAdded.isEmpty && filteredForecast.isEmpty && filteredAutoAdded.isEmpty {
-                Section {
-                    Text("No items match your search.")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 20)
-                }
-            }
         }
         .listStyle(.insetGrouped)
     }
@@ -213,20 +416,31 @@ struct IOSWishlistPage: View {
 
     // MARK: - Filtering
 
-    private func applySearch(_ items: [WishlistItem]) -> [WishlistItem] {
-        guard !searchText.isEmpty else { return items }
-        let query = searchText.lowercased()
-        return items.filter {
-            $0.partName.lowercased().contains(query) ||
-            ($0.reason?.lowercased().contains(query) ?? false) ||
-            ($0.notes?.lowercased().contains(query) ?? false) ||
-            ($0.requestedBy?.lowercased().contains(query) ?? false)
+    private func applyFilters(_ items: [WishlistItem]) -> [WishlistItem] {
+        var result = items
+        if let status = selectedStatus.dbStatus {
+            result = result.filter { $0.status == status }
         }
+        if !searchText.isEmpty {
+            let query = searchText.lowercased()
+            result = result.filter {
+                $0.partName.lowercased().contains(query) ||
+                ($0.reason?.lowercased().contains(query) ?? false) ||
+                ($0.notes?.lowercased().contains(query) ?? false) ||
+                ($0.requestedBy?.lowercased().contains(query) ?? false)
+            }
+        }
+        return result
     }
 
-    private var filteredUserAdded: [WishlistItem] { applySearch(sections.userAdded) }
-    private var filteredForecast: [WishlistItem] { applySearch(sections.forecastDemand) }
-    private var filteredAutoAdded: [WishlistItem] { applySearch(sections.autoAdded) }
+    private var filteredUserAdded: [WishlistItem] { applyFilters(sections.userAdded) }
+    private var filteredForecast: [WishlistItem] { applyFilters(sections.forecastDemand) }
+    private var filteredAutoAdded: [WishlistItem] { applyFilters(sections.autoAdded) }
+
+    /// True when the active filter+search combination has nothing to show.
+    private var filteredIsEmpty: Bool {
+        filteredUserAdded.isEmpty && filteredForecast.isEmpty && filteredAutoAdded.isEmpty
+    }
 
     // MARK: - Swipe Actions
 
@@ -509,6 +723,7 @@ struct IOSWishlistPage: View {
                 autoAdded: [updatedItem] + newAutoAdded
             )
         }
+        recomputeStatusCounts()
     }
 
     /// Remove a deleted item from whichever section holds it, with no DB fetch.
@@ -518,6 +733,29 @@ struct IOSWishlistPage: View {
             userAdded: sections.userAdded.filter { $0.id != id },
             forecastDemand: sections.forecastDemand.filter { $0.id != id },
             autoAdded: sections.autoAdded.filter { $0.id != id }
+        )
+        recomputeStatusCounts()
+    }
+
+    /// Recompute status counts from current in-memory sections so smart cards
+    /// stay accurate after partial updates without hitting the DB.
+    private func recomputeStatusCounts() {
+        var pending = 0, approved = 0, dismissed = 0, sent = 0
+        let all = sections.userAdded + sections.forecastDemand + sections.autoAdded
+        for item in all {
+            switch item.status {
+            case "pending": pending += 1
+            case "approved": approved += 1
+            case "dismissed": dismissed += 1
+            case "sent_to_procurement": sent += 1
+            default: break
+            }
+        }
+        statusCounts = WishlistService.StatusCounts(
+            pending: pending,
+            approved: approved,
+            dismissed: dismissed,
+            sentToProcurement: sent
         )
     }
 
@@ -539,8 +777,12 @@ struct IOSWishlistPage: View {
             _ = try? service.processAutoApprovals(byUserId: currentUserId)
             do {
                 let result = try service.getSectionedItems()
+                // Counts are computed independently so card totals reflect ALL items,
+                // not just the currently-filtered subset.
+                let counts = (try? service.getStatusCounts()) ?? WishlistService.StatusCounts()
                 await MainActor.run {
                     sections = result
+                    statusCounts = counts
                     isLoading = false
                     postAIContext()
                 }
@@ -557,6 +799,8 @@ struct IOSWishlistPage: View {
         let context = [
             "Orders wishlist page is open.",
             "User-added items: \(sections.userAdded.count), forecast demand: \(sections.forecastDemand.count), system auto-added: \(sections.autoAdded.count).",
+            "Status counts — pending: \(statusCounts.pending), approved: \(statusCounts.approved), dismissed: \(statusCounts.dismissed), sent to procurement: \(statusCounts.sentToProcurement).",
+            "Active status filter: \(selectedStatus.title).",
             "Filtered visible items: \(filteredUserAdded.count + filteredForecast.count + filteredAutoAdded.count).",
             "Search text is \(searchText.isEmpty ? "empty" : "active").",
             "This context is read-only; explain wishlist sections, approval state, confidence scores, dismissal requirements, and procurement handoff without changing items."

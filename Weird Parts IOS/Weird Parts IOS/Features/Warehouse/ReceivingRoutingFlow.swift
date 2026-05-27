@@ -20,6 +20,14 @@ import WiredPartCore
 /// - Parts for a job go to staging directly
 /// - Used parts cannot be returned to supplier
 /// - Damaged parts cannot go on shelf
+enum ReceivingRoutingValidation {
+    static let missingLinkedPartRouteError = "This receiving item is no longer linked to an active part. Mark it as a wrong part or fix the PO line before routing damaged or used inventory."
+
+    static func missingLinkedPartError(partId: Int64?) -> String? {
+        partId == nil ? missingLinkedPartRouteError : nil
+    }
+}
+
 struct ReceivingRoutingFlow: View {
     @EnvironmentObject private var appCore: AppCore
 
@@ -119,6 +127,9 @@ struct ReceivingRoutingFlow: View {
                     }
                 }
                 .padding()
+            }
+            .refreshable {
+                await refreshCurrentStep()
             }
         }
         .animation(.easeInOut(duration: 0.25), value: currentStep)
@@ -1034,11 +1045,29 @@ struct ReceivingRoutingFlow: View {
         }
     }
 
+    @MainActor
+    private func refreshCurrentStep() async {
+        switch currentStep {
+        case .conditionCheck, .wrongPartCheck, .routeConfirmed:
+            routingError = nil
+        case .jobLinkCheck:
+            await checkJobLink()
+        case .jpoDemandCheck:
+            await checkJPODemand()
+        case .stockLevelCheck:
+            await loadStockLevels()
+        }
+    }
+
     // MARK: - Actions
 
     @MainActor
     private func stageForJob(_ link: WarehouseService.POLineJobLink) async {
-        guard let partId = item.partId else { return }
+        guard let partId = item.partId else {
+            routingError = ReceivingRoutingValidation.missingLinkedPartRouteError
+            isProcessing = false
+            return
+        }
         isProcessing = true
         routingError = nil
 
@@ -1067,7 +1096,11 @@ struct ReceivingRoutingFlow: View {
 
     @MainActor
     private func stageForJPODemand(_ demand: WarehouseService.ActiveJPODemand) async {
-        guard let partId = item.partId else { return }
+        guard let partId = item.partId else {
+            routingError = ReceivingRoutingValidation.missingLinkedPartRouteError
+            isProcessing = false
+            return
+        }
         isProcessing = true
         routingError = nil
 
@@ -1097,8 +1130,12 @@ struct ReceivingRoutingFlow: View {
 
     @MainActor
     private func processDamagedReturn() async {
-        guard let partId = item.partId,
-              let action = selectedDamageAction else { return }
+        guard let partId = item.partId else {
+            routingError = ReceivingRoutingValidation.missingLinkedPartRouteError
+            isProcessing = false
+            return
+        }
+        guard let action = selectedDamageAction else { return }
         isProcessing = true
         routingError = nil
 
@@ -1127,7 +1164,11 @@ struct ReceivingRoutingFlow: View {
 
     @MainActor
     private func processWriteOff() async {
-        guard let partId = item.partId else { return }
+        guard let partId = item.partId else {
+            routingError = ReceivingRoutingValidation.missingLinkedPartRouteError
+            isProcessing = false
+            return
+        }
         isProcessing = true
         routingError = nil
 

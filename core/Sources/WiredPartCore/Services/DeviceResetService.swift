@@ -21,16 +21,19 @@ public final class DeviceResetService: Sendable {
 
     // MARK: - Device Identity
 
-    /// Get the current device's ID from the settings table.
-    /// The device ID is stored as a setting with key "device_id" during sync setup.
+    /// Get the current device's ID from the same production identity source used by sync.
+    /// Older setup flows may persist a settings row, so that value is preferred when present.
+    /// Otherwise fall back to `DeviceIdentity.current`, which is what `ChangeTracker` uses for
+    /// local `_change_log` entries.
     public func getCurrentDeviceId() throws -> String? {
         do {
-            return try db.writer.read { dbConnection in
+            let settingsDeviceId: String? = try db.writer.read { dbConnection in
                 try String.fetchOne(
                     dbConnection,
                     sql: "SELECT value FROM settings WHERE key = 'device_id'"
                 )
             }
+            return settingsDeviceId ?? DeviceIdentity.current
         } catch {
             if isTableNotFoundError(error) { return nil }
             throw error
@@ -130,6 +133,9 @@ public final class DeviceResetService: Sendable {
 
     /// Delete the SQLite database file and its WAL/SHM companions.
     /// This is a static method so it can be called after the DB connection is closed.
+    /// `DeviceIdentity.current` intentionally remains in UserDefaults: it is a static-let identity
+    /// already used by the running process, and reset deactivation is synced under that same ID.
+    /// Clearing it here would not reliably rotate the in-memory identity before app restart.
     public static func deleteDatabaseFile(atPath path: String) throws {
         let fm = FileManager.default
         for suffix in ["", "-wal", "-shm"] {
@@ -137,6 +143,33 @@ public final class DeviceResetService: Sendable {
             if fm.fileExists(atPath: filePath) {
                 try fm.removeItem(atPath: filePath)
             }
+        }
+    }
+
+    /// Delete all database-owned local files, including local database backups.
+    /// Reset is a full local wipe, so leaving backup snapshots behind preserves
+    /// recoverable user data after the app returns to first-run setup.
+    public static func deleteDatabaseStorage(atPath path: String) throws {
+        try deleteDatabaseFile(atPath: path)
+        try deleteDatabaseFile(atPath: path + ".unencrypted.bak")
+        try deleteDatabaseFile(atPath: path + ".encrypted-tmp")
+
+        let fm = FileManager.default
+        let backupPath = (path as NSString).deletingLastPathComponent + "/Backups"
+        if fm.fileExists(atPath: backupPath) {
+            try fm.removeItem(atPath: backupPath)
+        }
+    }
+
+    /// Clear app-scoped defaults that survive SQLite deletion.
+    /// Passing a custom suite makes the behavior testable without touching
+    /// process-wide defaults.
+    public static func clearSavedAppState(
+        defaults: UserDefaults = .standard,
+        domainName: String? = Bundle.main.bundleIdentifier
+    ) {
+        if let domainName {
+            defaults.removePersistentDomain(forName: domainName)
         }
     }
 

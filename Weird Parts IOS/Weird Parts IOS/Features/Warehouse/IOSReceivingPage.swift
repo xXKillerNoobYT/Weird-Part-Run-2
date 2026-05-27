@@ -77,6 +77,9 @@ struct IOSReceivingPage: View {
         .onDisappear {
             NotificationCenter.default.post(name: .warehouseReceivingPageInactive, object: nil)
         }
+        .onChange(of: searchText) { _, _ in postAIContext() }
+        .onChange(of: selectedFilter) { _, _ in postAIContext() }
+        .onChange(of: activeSheet?.id) { _, _ in postAIContext() }
     }
 
     // MARK: - Sheet Content

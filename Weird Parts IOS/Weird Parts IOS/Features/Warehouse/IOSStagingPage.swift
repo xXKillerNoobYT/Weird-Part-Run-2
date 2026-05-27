@@ -185,6 +185,12 @@ struct IOSStagingPage: View {
         .onDisappear {
             NotificationCenter.default.post(name: .warehouseStagingPageInactive, object: nil)
         }
+        .onChange(of: searchText) { _, _ in postAIContext() }
+        .onChange(of: selectedFilter) { _, _ in postAIContext() }
+        .onChange(of: activeTab) { _, _ in postAIContext() }
+        .onChange(of: isSelecting) { _, _ in postAIContext() }
+        .onChange(of: selectedItems) { _, _ in postAIContext() }
+        .onChange(of: activeSheet?.id) { _, _ in postAIContext() }
     }
 
     // MARK: - Items Tab Toolbar

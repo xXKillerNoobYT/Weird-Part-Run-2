@@ -33,6 +33,8 @@ struct IOSDispatchPreferencesPage: View {
     @State private var crewHistoryMonths: Int = 3
     @State private var crewContinuityWeight: String = "medium"
 
+    @State private var isDirty = false
+
     private enum ActiveSheet: Identifiable {
         case help
         var id: String { "help" }
@@ -49,7 +51,7 @@ struct IOSDispatchPreferencesPage: View {
                 ProgressView("Loading dispatch preferences...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let loadError {
-                ContentUnavailableView("Unable to Load", systemImage: "exclamationmark.triangle", description: Text(loadError))
+                ErrorStateView(message: loadError)
             } else {
                 settingsForm
             }
@@ -150,8 +152,21 @@ struct IOSDispatchPreferencesPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!isDirty)
+                .accessibilityHint(isDirty ? "" : "Make changes to enable saving.")
             }
         }
+        .onChange(of: enableAISuggestions) { _, _ in isDirty = true }
+        .onChange(of: enableAILearning) { _, _ in isDirty = true }
+        .onChange(of: showConfidenceScores) { _, _ in isDirty = true }
+        .onChange(of: enableFlexSelfAssign) { _, _ in isDirty = true }
+        .onChange(of: requireManagerApproval) { _, _ in isDirty = true }
+        .onChange(of: startAnytimeTarget) { _, _ in isDirty = true }
+        .onChange(of: scheduleNeededTarget) { _, _ in isDirty = true }
+        .onChange(of: favoriteGCTarget) { _, _ in isDirty = true }
+        .onChange(of: defaultView) { _, _ in isDirty = true }
+        .onChange(of: crewHistoryMonths) { _, _ in isDirty = true }
+        .onChange(of: crewContinuityWeight) { _, _ in isDirty = true }
     }
 
     // MARK: - Actions
@@ -184,6 +199,7 @@ struct IOSDispatchPreferencesPage: View {
             loadError = userFriendlyError(error, context: "load")
         }
         isLoading = false
+        isDirty = false
     }
 
     private func saveSettings() {
@@ -208,6 +224,7 @@ struct IOSDispatchPreferencesPage: View {
             ]
             try service.upsertSettingsMap(data, category: "dispatch")
             saveError = nil
+            isDirty = false
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }

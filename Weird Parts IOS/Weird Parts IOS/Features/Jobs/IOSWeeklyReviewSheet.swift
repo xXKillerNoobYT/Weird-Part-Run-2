@@ -27,6 +27,11 @@ struct IOSWeeklyReviewSheet: View {
     @State private var loadError: String?
     @State private var submitError: String?
     @State private var showingSuccess = false
+    @State private var showDiscardConfirmation = false
+    @State private var initialWorkDays: Int = 5
+    @State private var initialIsOnTrack = true
+    @State private var initialSelectedDelayFactors: Set<String> = []
+    @State private var initialNotes = ""
 
     private let delayFactors = [
         "Weather", "Material delays", "Subcontractor no-show",
@@ -60,6 +65,13 @@ struct IOSWeeklyReviewSheet: View {
         return Double(todosCompleted) / Double(todosTotal)
     }
 
+    private var isDirty: Bool {
+        workDays != initialWorkDays ||
+        isOnTrack != initialIsOnTrack ||
+        selectedDelayFactors != initialSelectedDelayFactors ||
+        notes != initialNotes
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -69,11 +81,7 @@ struct IOSWeeklyReviewSheet: View {
                     ProgressView("Loading week data...")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let error = loadError {
-                    ContentUnavailableView(
-                        "Error",
-                        systemImage: "exclamationmark.triangle",
-                        description: Text(error)
-                    )
+                    ErrorStateView(message: error)
                 } else {
                     formContent
                 }
@@ -83,8 +91,15 @@ struct IOSWeeklyReviewSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .disabled(isSubmitting)
+                    Button("Cancel") {
+                        DismissSafety.cancelOrConfirm(
+                            isDirty: isDirty,
+                            isSaving: isSubmitting,
+                            dismiss: dismiss,
+                            showDiscardConfirmation: $showDiscardConfirmation
+                        )
+                    }
+                    .disabled(isSubmitting)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Submit") { submitReview() }
@@ -92,7 +107,14 @@ struct IOSWeeklyReviewSheet: View {
                         .disabled(isSubmitting || isLoading || loadError != nil)
                 }
             }
-            .interactiveDismissDisabled(isSubmitting)
+            .dismissSafety(
+                isDirty: isDirty,
+                isSaving: isSubmitting,
+                showDiscardConfirmation: $showDiscardConfirmation,
+                title: "Discard weekly review?",
+                message: "You have unsaved review changes. Discard them and close this sheet?",
+                onDiscard: { dismiss() }
+            )
             .task { loadWeekData() }
             .alert("Review Submitted", isPresented: $showingSuccess) {
                 Button("OK") { dismiss() }
@@ -289,6 +311,7 @@ struct IOSWeeklyReviewSheet: View {
             let todoSummary = try jobsService.getJobTodoSummary(jobId: jobId)
             todosCompleted = todoSummary.completedTodos
             todosTotal = todoSummary.totalTodos
+            captureInitialState()
         } catch {
             loadError = userFriendlyError(error, context: "load weekly review")
         }
@@ -340,11 +363,19 @@ struct IOSWeeklyReviewSheet: View {
                 reviewedBy: userId,
                 notes: reviewNotes
             )
+            captureInitialState()
             showingSuccess = true
         } catch {
             submitError = userFriendlyError(error, context: "submit review")
         }
 
         isSubmitting = false
+    }
+
+    private func captureInitialState() {
+        initialWorkDays = workDays
+        initialIsOnTrack = isOnTrack
+        initialSelectedDelayFactors = selectedDelayFactors
+        initialNotes = notes
     }
 }

@@ -1,15 +1,26 @@
-# Xcode
+# Xcode local state and generated build products
 xcuserdata/
 *.xcuserstate
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
 *.xcresult/
 DerivedData/
+DerivedData*/
+**/DerivedData/
+**/DerivedData*/
+**/ModuleCache.noindex/
+**/CompilationCache.noindex/
+**/Index.noindex/
 build/
+**/build/
 
-# Swift Package Manager
+# Swift Package Manager local state and generated dependencies
 .build/
+**/.build/
+**/.build*/
 .swiftpm/
+**/SourcePackages/checkouts/
+**/SourcePackages/repositories/
 Package.resolved
 # Exception: core/Package.resolved is committed to pin duckduckgo/GRDB.swift to a
 # specific revision that compiles cleanly on macOS and Linux (see core/Package.swift).
@@ -35,6 +46,10 @@ Thumbs.db
 # Claude
 .claude/
 
+# Paperclip runtime state
+.paperclip/
+.paperclip-sync/
+
 # Secrets — never commit these
 .env
 .env.*
@@ -43,6 +58,9 @@ token.json
 
 # Temporary files
 .tmp/
+__pycache__/
+**/__pycache__/
+*.py[cod]
 
 # Logs
 *.log

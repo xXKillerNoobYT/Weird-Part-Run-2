@@ -53,6 +53,8 @@ struct IOSToolMaintenancePage: View {
                     ("Tips", "Check this page regularly. Tools stuck in maintenance for a long time may need follow-up with the repair shop. If this list is empty, all tools are in working order.")
                 ]
             )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .refreshable { await loadData() }
         .task { await loadData() }

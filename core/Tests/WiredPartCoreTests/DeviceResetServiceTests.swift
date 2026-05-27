@@ -21,12 +21,12 @@ struct DeviceResetServiceTests {
 
     // MARK: - Device Identity
 
-    @Test("getCurrentDeviceId returns nil when no device_id setting exists")
+    @Test("getCurrentDeviceId falls back to production DeviceIdentity when no device_id setting exists")
     func testNoDeviceId() throws {
         let db = try freshDB()
         let service = DeviceResetService(db: db)
         let deviceId = try service.getCurrentDeviceId()
-        #expect(deviceId == nil)
+        #expect(deviceId == DeviceIdentity.current)
     }
 
     @Test("getCurrentDeviceId returns stored device_id from settings")
@@ -190,6 +190,49 @@ struct DeviceResetServiceTests {
         try service.deactivateCurrentDevice()
     }
 
+    @Test("deactivateCurrentDevice uses production DeviceIdentity when settings device_id is absent")
+    func testDeactivateUsesDeviceIdentityFallback() throws {
+        let db = try freshDB()
+        let productionDeviceId = DeviceIdentity.current
+
+        try db.writer.write { dbConnection in
+            try dbConnection.execute(
+                sql: """
+                    INSERT INTO _device_registry (device_id, device_name, platform, role, is_trusted, is_deactivated, last_seen_at)
+                    VALUES (?, 'Production Mac', 'macos', 'shop', 1, 0, datetime('now'))
+                    """,
+                arguments: [productionDeviceId]
+            )
+        }
+
+        let service = DeviceResetService(db: db)
+        #expect(try service.getCurrentDeviceId() == productionDeviceId)
+
+        try service.deactivateCurrentDevice()
+
+        let result = try db.writer.read { dbConnection in
+            let isDeactivated = try Int.fetchOne(
+                dbConnection,
+                sql: "SELECT is_deactivated FROM _device_registry WHERE device_id = ?",
+                arguments: [productionDeviceId]
+            ) ?? 0
+            let changeDeviceId = try String.fetchOne(
+                dbConnection,
+                sql: """
+                    SELECT device_id FROM _change_log
+                    WHERE table_name = '_device_registry'
+                      AND record_id = 0
+                      AND changed_fields LIKE ?
+                    """,
+                arguments: ["%\(productionDeviceId)%"]
+            )
+            return (isDeactivated, changeDeviceId)
+        }
+
+        #expect(result.0 == 1)
+        #expect(result.1 == productionDeviceId)
+    }
+
     // MARK: - File Deletion
 
     @Test("deleteDatabaseFile removes SQLite file and companions")
@@ -219,6 +262,60 @@ struct DeviceResetServiceTests {
         let path = NSTemporaryDirectory() + "nonexistent-\(UUID().uuidString).sqlite"
         // Should not throw
         try DeviceResetService.deleteDatabaseFile(atPath: path)
+    }
+
+    @Test("deleteDatabaseStorage removes local backups")
+    func testDeleteDatabaseStorageRemovesBackups() throws {
+        let tmpDir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("test-reset-storage-\(UUID().uuidString)", isDirectory: true)
+        let basePath = tmpDir.appendingPathComponent("wiredpart.sqlite").path
+        let backupDir = tmpDir.appendingPathComponent("Backups", isDirectory: true)
+        let fm = FileManager.default
+
+        try fm.createDirectory(at: backupDir, withIntermediateDirectories: true)
+        fm.createFile(atPath: basePath, contents: Data("db".utf8))
+        fm.createFile(atPath: basePath + ".unencrypted.bak", contents: Data("plaintext backup".utf8))
+        fm.createFile(atPath: basePath + ".unencrypted.bak-wal", contents: Data("plaintext wal".utf8))
+        fm.createFile(atPath: basePath + ".encrypted-tmp", contents: Data("tmp db".utf8))
+        fm.createFile(atPath: basePath + ".encrypted-tmp-shm", contents: Data("tmp shm".utf8))
+        fm.createFile(
+            atPath: backupDir.appendingPathComponent("manual.sqlite").path,
+            contents: Data("backup".utf8)
+        )
+
+        try DeviceResetService.deleteDatabaseStorage(atPath: basePath)
+
+        #expect(!fm.fileExists(atPath: basePath))
+        #expect(!fm.fileExists(atPath: basePath + ".unencrypted.bak"))
+        #expect(!fm.fileExists(atPath: basePath + ".unencrypted.bak-wal"))
+        #expect(!fm.fileExists(atPath: basePath + ".encrypted-tmp"))
+        #expect(!fm.fileExists(atPath: basePath + ".encrypted-tmp-shm"))
+        #expect(!fm.fileExists(atPath: backupDir.path))
+
+        try? fm.removeItem(at: tmpDir)
+    }
+
+    @Test("clearSavedAppState removes persisted defaults")
+    func testClearSavedAppStateRemovesDefaults() throws {
+        let suiteName = "DeviceResetServiceTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        defaults.set(true, forKey: "hasCompletedOnboarding")
+        defaults.set(true, forKey: "hasCompletedCompanySetup")
+        defaults.set(Data("draft".utf8), forKey: "partsFlow_counts")
+        defaults.set("device-123", forKey: "com.wiredpart.deviceId")
+        defaults.set(true, forKey: "device_paired")
+
+        DeviceResetService.clearSavedAppState(defaults: defaults, domainName: suiteName)
+
+        #expect(defaults.object(forKey: "hasCompletedOnboarding") == nil)
+        #expect(defaults.object(forKey: "hasCompletedCompanySetup") == nil)
+        #expect(defaults.object(forKey: "partsFlow_counts") == nil)
+        #expect(defaults.object(forKey: "com.wiredpart.deviceId") == nil)
+        #expect(defaults.object(forKey: "device_paired") == nil)
     }
 
     // MARK: - Admin Verification

@@ -137,11 +137,11 @@ struct IOSTimeOffPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredRequests.isEmpty {
-            ContentUnavailableView {
-                Label("No Requests", systemImage: "calendar.badge.clock")
-            } description: {
-                Text("No time-off requests found.")
-            }
+            EmptyStateView(
+                icon: "calendar.badge.clock",
+                title: "No Requests",
+                message: "No time-off requests found."
+            )
         } else {
             List(filteredRequests, id: \.id) { request in
                 requestRow(request)

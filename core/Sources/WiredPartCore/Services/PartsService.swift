@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import CryptoKit
 
 /// Parts & Inventory Service — full CRUD for the parts hierarchy, catalog,
 /// brands, suppliers, pricing, stock, forecasting, companions, and alternatives.
@@ -912,7 +913,8 @@ public final class PartsService: Sendable {
     }
 
     /// Update an existing color.
-    /// For `partNumber`, pass a value to set, pass `""` to clear, or omit to leave unchanged.
+    /// For `hexCode` and `partNumber`, pass a value to set, pass `""` to clear to NULL,
+    /// or omit to leave unchanged.
     public func updateColor(id: Int64, name: String? = nil, hexCode: String? = nil, partNumber: String? = nil, sortOrder: Int? = nil) throws {
         try db.writer.write { dbConn in
             var setClauses: [String] = []
@@ -924,7 +926,7 @@ public final class PartsService: Sendable {
             }
             if let hexCode {
                 setClauses.append("hex_code = ?")
-                args.append(hexCode)
+                args.append(hexCode.isEmpty ? nil : hexCode)
             }
             if let partNumber {
                 // Non-empty string = set the value; empty string = clear to NULL
@@ -1329,6 +1331,7 @@ public final class PartsService: Sendable {
             maxStockLevel: maxStockLevel,
             targetStockLevel: targetStockLevel,
             reorderPoint: reorderPoint,
+            autoAddToWishlistWhenLow: 0,
             notes: notes,
             imageUrl: imageUrl,
             shelfLocation: shelfLocation,
@@ -1454,6 +1457,59 @@ public final class PartsService: Sendable {
                 try? logPartFieldChanges(partId: id, userId: nil, userName: nil, changes: changes, context: "Catalog Edit")
             }
         }
+    }
+
+    public func getAutoAddToWishlistWhenLow(partId: Int64) throws -> Bool {
+        try db.writer.read { dbConn in
+            guard let value = try Int.fetchOne(
+                dbConn,
+                sql: "SELECT auto_add_to_wishlist_when_low FROM parts WHERE id = ? AND deleted_at IS NULL",
+                arguments: [partId]
+            ) else {
+                throw PartsError.partNotFound(partId)
+            }
+            return value != 0
+        }
+    }
+
+    public func setAutoAddToWishlistWhenLow(partId: Int64, enabled: Bool, byUserId: Int64) throws {
+        guard try auth.hasPermission(byUserId, permissionKey: "edit_parts_catalog") else {
+            throw PartsError.insufficientPermissions(required: "edit_parts_catalog")
+        }
+        let oldValue = try db.writer.read { dbConn -> String in
+            guard let value = try Int.fetchOne(
+                dbConn,
+                sql: "SELECT auto_add_to_wishlist_when_low FROM parts WHERE id = ? AND deleted_at IS NULL",
+                arguments: [partId]
+            ) else {
+                throw PartsError.partNotFound(partId)
+            }
+            return value == 0 ? "0" : "1"
+        }
+        let newValue = enabled ? "1" : "0"
+        let changed = try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE parts
+                    SET auto_add_to_wishlist_when_low = ?, updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [enabled ? 1 : 0, partId]
+            )
+            return dbConn.changesCount
+        }
+        guard changed > 0 else { throw PartsError.partNotFound(partId) }
+        guard oldValue != newValue else { return }
+        try? logPartChange(
+            partId: partId,
+            userId: byUserId,
+            userName: nil,
+            action: "updated",
+            fieldName: "auto_add_to_wishlist_when_low",
+            oldValue: oldValue,
+            newValue: newValue,
+            context: "Catalog"
+        )
     }
 
     /// Soft-delete a part.
@@ -1657,7 +1713,8 @@ public final class PartsService: Sendable {
         deliveryMethod: String? = nil,
         deliveryDays: String? = nil,
         accountNumber: String? = nil,
-        notes: String? = nil
+        notes: String? = nil,
+        initialBrandIds: Set<Int64> = []
     ) throws -> Int64 {
         // Fix #213: validate inputs
         try Validators.requireName(name, field: "Supplier name")
@@ -1686,7 +1743,59 @@ public final class PartsService: Sendable {
         )
         record.isActive = 1
         try db.writer.write { dbConn in
+            if !initialBrandIds.isEmpty {
+                let placeholders = Array(repeating: "?", count: initialBrandIds.count).joined(separator: ",")
+                let activeBrandIds = Set(try Int64.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT id FROM brands
+                        WHERE id IN (\(placeholders))
+                          AND is_active = 1
+                          AND deleted_at IS NULL
+                        """,
+                    arguments: StatementArguments(initialBrandIds.sorted())
+                ))
+                guard activeBrandIds.count == initialBrandIds.count else {
+                    let missingBrandId = initialBrandIds.subtracting(activeBrandIds).sorted().first ?? 0
+                    throw PartsError.brandNotFound(missingBrandId)
+                }
+            }
+
             try record.insert(dbConn)
+            guard let supplierId = record.id else {
+                throw PartsError.invalidInput("Failed to get ID after insert")
+            }
+
+            for brandId in initialBrandIds.sorted() {
+                if let existing = try Row.fetchOne(
+                    dbConn,
+                    sql: """
+                        SELECT id FROM brand_supplier_links
+                        WHERE brand_id = ? AND supplier_id = ?
+                        """,
+                    arguments: [brandId, supplierId]
+                ) {
+                    let linkId: Int64 = existing["id"]
+                    try dbConn.execute(
+                        sql: """
+                            UPDATE brand_supplier_links
+                            SET deleted_at = NULL,
+                                is_active = 1,
+                                carry_status = COALESCE(carry_status, 'carry_on_shelf')
+                            WHERE id = ?
+                            """,
+                        arguments: [linkId]
+                    )
+                } else {
+                    try dbConn.execute(
+                        sql: """
+                            INSERT INTO brand_supplier_links (brand_id, supplier_id, is_active, created_at)
+                            VALUES (?, ?, 1, datetime('now'))
+                            """,
+                        arguments: [brandId, supplierId]
+                    )
+                }
+            }
         }
         guard let id = record.id else { throw PartsError.invalidInput("Failed to get ID after insert") }
         return id
@@ -1841,6 +1950,16 @@ public final class PartsService: Sendable {
         public let carryStatus: String  // "carry_on_shelf" | "need_to_order"
     }
 
+    /// A supplier-side brand link row with part count and carry status.
+    public struct SupplierBrandRow: Sendable, Identifiable {
+        public let brandId: Int64
+        public let brandName: String
+        public let partCount: Int
+        public let carryStatus: String  // "carry_on_shelf" | "need_to_order"
+
+        public var id: Int64 { brandId }
+    }
+
     /// Get all suppliers for a brand (via brand_supplier_links).
     public func getBrandSuppliers(brandId: Int64) throws -> [Supplier] {
         do {
@@ -1926,6 +2045,24 @@ public final class PartsService: Sendable {
 
     // MARK: - Brand-Supplier Linking
 
+    /// Add a brand-supplier link with explicit carry status.
+    public func addBrandSupplier(
+        brandId: Int64,
+        supplierId: Int64,
+        status: String = "carry_on_shelf"
+    ) throws {
+        let allowedStatuses = Set(["carry_on_shelf", "need_to_order"])
+        guard allowedStatuses.contains(status) else {
+            throw PartsError.invalidInput("Invalid carry status")
+        }
+        try linkBrandToSupplier(brandId: brandId, supplierId: supplierId)
+        try updateBrandSupplierCarryStatus(
+            brandId: brandId,
+            supplierId: supplierId,
+            carryStatus: status
+        )
+    }
+
     /// Link a supplier to a brand. If a soft-deleted link exists, reactivate it.
     /// Returns the link row ID.
     @discardableResult
@@ -1954,7 +2091,9 @@ public final class PartsService: Sendable {
                 try dbConn.execute(
                     sql: """
                         UPDATE brand_supplier_links
-                        SET deleted_at = NULL, is_active = 1
+                        SET deleted_at = NULL,
+                            is_active = 1,
+                            carry_status = COALESCE(carry_status, 'carry_on_shelf')
                         WHERE id = ?
                         """,
                     arguments: [linkId]
@@ -2005,6 +2144,157 @@ public final class PartsService: Sendable {
         let toRemove = currentIds.subtracting(supplierIds)
         for supplierId in toRemove {
             try unlinkBrandFromSupplier(brandId: brandId, supplierId: supplierId)
+        }
+    }
+
+    /// Get supplier-side brand rows with carry status and part count.
+    public func getSupplierBrandRows(supplierId: Int64) throws -> [SupplierBrandRow] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT b.id AS brand_id,
+                       b.name AS brand_name,
+                       COUNT(DISTINCT ps.part_id) AS part_count,
+                       COALESCE(bsl.carry_status, 'carry_on_shelf') AS carry_status
+                FROM brand_supplier_links bsl
+                JOIN brands b
+                  ON b.id = bsl.brand_id
+                 AND b.is_active = 1
+                 AND b.deleted_at IS NULL
+                LEFT JOIN parts p
+                  ON p.brand_id = b.id
+                 AND p.is_active = 1
+                 AND p.deleted_at IS NULL
+                LEFT JOIN part_supplier_links ps
+                    ON ps.part_id = p.id
+                   AND ps.supplier_id = bsl.supplier_id
+                   AND ps.deleted_at IS NULL
+                WHERE bsl.supplier_id = ?
+                  AND bsl.is_active = 1
+                  AND bsl.deleted_at IS NULL
+                GROUP BY b.id, b.name, bsl.carry_status
+                ORDER BY b.name ASC
+                """, arguments: [supplierId])
+
+            return rows.map { row in
+                SupplierBrandRow(
+                    brandId: row["brand_id"] as Int64? ?? 0,
+                    brandName: row["brand_name"] as String? ?? "",
+                    partCount: row["part_count"] as Int? ?? 0,
+                    carryStatus: row["carry_status"] as String? ?? "carry_on_shelf"
+                )
+            }
+        }
+    }
+
+    /// List active brands that are not currently linked to the supplier.
+    public func listBrandsAvailableForSupplier(supplierId: Int64) throws -> [Brand] {
+        try db.writer.read { dbConn in
+            try Brand.fetchAll(dbConn, sql: """
+                SELECT b.*
+                FROM brands b
+                WHERE b.is_active = 1
+                  AND b.deleted_at IS NULL
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM brand_supplier_links bsl
+                    WHERE bsl.brand_id = b.id
+                      AND bsl.supplier_id = ?
+                      AND bsl.is_active = 1
+                      AND bsl.deleted_at IS NULL
+                  )
+                ORDER BY b.name ASC
+                """, arguments: [supplierId])
+        }
+    }
+
+    /// Set the complete list of brands for a supplier.
+    /// Links brands in `brandIds`, unlinks any not in the list.
+    public func setSupplierBrands(supplierId: Int64, brandIds: Set<Int64>) throws {
+        try db.writer.write { dbConn in
+            let supplierExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM suppliers
+                WHERE id = ? AND is_active = 1 AND deleted_at IS NULL
+                """, arguments: [supplierId]) ?? 0) > 0
+            guard supplierExists else { throw PartsError.supplierNotFound(supplierId) }
+
+            if !brandIds.isEmpty {
+                let placeholders = Array(repeating: "?", count: brandIds.count).joined(separator: ",")
+                let activeBrandCount = try Int.fetchOne(
+                    dbConn,
+                    sql: """
+                        SELECT COUNT(*) FROM brands
+                        WHERE id IN (\(placeholders))
+                          AND is_active = 1
+                          AND deleted_at IS NULL
+                        """,
+                    arguments: StatementArguments(brandIds.sorted())
+                ) ?? 0
+                guard activeBrandCount == brandIds.count else {
+                    let validBrandIds = try Int64.fetchAll(
+                        dbConn,
+                        sql: """
+                            SELECT id FROM brands
+                            WHERE id IN (\(placeholders))
+                              AND is_active = 1
+                              AND deleted_at IS NULL
+                            """,
+                        arguments: StatementArguments(brandIds.sorted())
+                    )
+                    let missingBrandId = brandIds.subtracting(validBrandIds).sorted().first ?? 0
+                    throw PartsError.brandNotFound(missingBrandId)
+                }
+            }
+
+            let currentIds = Set(try Int64.fetchAll(dbConn, sql: """
+                SELECT brand_id FROM brand_supplier_links
+                WHERE supplier_id = ?
+                  AND is_active = 1
+                  AND deleted_at IS NULL
+                """, arguments: [supplierId]))
+
+            for brandId in brandIds.subtracting(currentIds).sorted() {
+                if let existing = try Row.fetchOne(
+                    dbConn,
+                    sql: """
+                        SELECT id FROM brand_supplier_links
+                        WHERE brand_id = ? AND supplier_id = ?
+                        """,
+                    arguments: [brandId, supplierId]
+                ) {
+                    let linkId: Int64 = existing["id"]
+                    try dbConn.execute(
+                        sql: """
+                            UPDATE brand_supplier_links
+                            SET deleted_at = NULL,
+                                is_active = 1,
+                                carry_status = COALESCE(carry_status, 'carry_on_shelf')
+                            WHERE id = ?
+                            """,
+                        arguments: [linkId]
+                    )
+                } else {
+                    try dbConn.execute(
+                        sql: """
+                            INSERT INTO brand_supplier_links (brand_id, supplier_id, is_active, created_at)
+                            VALUES (?, ?, 1, datetime('now'))
+                            """,
+                        arguments: [brandId, supplierId]
+                    )
+                }
+            }
+
+            for brandId in currentIds.subtracting(brandIds).sorted() {
+                try dbConn.execute(
+                    sql: """
+                        UPDATE brand_supplier_links
+                        SET deleted_at = datetime('now'), is_active = 0
+                        WHERE brand_id = ?
+                          AND supplier_id = ?
+                          AND deleted_at IS NULL
+                        """,
+                    arguments: [brandId, supplierId]
+                )
+            }
         }
     }
 
@@ -2832,6 +3122,12 @@ public final class PartsService: Sendable {
 
     /// Update a company cost setting.
     public func updateCompanyCostSetting(key: String, value: String, updatedBy: Int64? = nil) throws {
+        if let updatedBy {
+            try db.writer.read { dbConn in
+                try ServicePermissionGate.requirePermission(dbConn, userId: updatedBy, permissionKey: "parts.manage_company_costs")
+            }
+        }
+
         try db.writer.write { dbConn in
             try dbConn.execute(sql: """
                 INSERT INTO company_cost_settings (setting_key, setting_value, updated_by, updated_at)
@@ -3290,14 +3586,14 @@ public final class PartsService: Sendable {
                     LEFT JOIN (
                         SELECT part_id, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
-                        WHERE movement_type IN ('consume', 'return_to_supplier')
+                        WHERE movement_type IN \(StockMovement.MovementType.sqlList(StockMovement.MovementType.forecastConsumptionTypes))
                           AND created_at >= datetime('now', '-30 days') AND deleted_at IS NULL
                         GROUP BY part_id
                     ) m30 ON m30.part_id = p.id
                     LEFT JOIN (
                         SELECT part_id, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
-                        WHERE movement_type IN ('consume', 'return_to_supplier')
+                        WHERE movement_type IN \(StockMovement.MovementType.sqlList(StockMovement.MovementType.forecastConsumptionTypes))
                           AND created_at >= datetime('now', '-90 days') AND deleted_at IS NULL
                         GROUP BY part_id
                     ) m90 ON m90.part_id = p.id
@@ -3553,14 +3849,14 @@ public final class PartsService: Sendable {
                     LEFT JOIN (
                         SELECT part_id, from_location_type AS lt, from_location_id AS lid, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
-                        WHERE movement_type IN ('consume')
+                        WHERE movement_type IN \(StockMovement.MovementType.sqlList(StockMovement.MovementType.forecastConsumptionTypes))
                           AND created_at >= datetime('now','-30 days') AND deleted_at IS NULL
                         GROUP BY part_id, from_location_type, from_location_id
                     ) c30 ON c30.part_id = combos.part_id AND c30.lt = combos.lt AND c30.lid = combos.lid
                     LEFT JOIN (
                         SELECT part_id, from_location_type AS lt, from_location_id AS lid, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
-                        WHERE movement_type IN ('consume')
+                        WHERE movement_type IN \(StockMovement.MovementType.sqlList(StockMovement.MovementType.forecastConsumptionTypes))
                           AND created_at >= datetime('now','-90 days') AND deleted_at IS NULL
                         GROUP BY part_id, from_location_type, from_location_id
                     ) c90 ON c90.part_id = combos.part_id AND c90.lt = combos.lt AND c90.lid = combos.lid
@@ -3826,7 +4122,7 @@ public final class PartsService: Sendable {
                     let consumed = try Int.fetchOne(dbConn, sql: """
                         SELECT COALESCE(SUM(ABS(qty)), 0) FROM stock_movements
                         WHERE part_id = ? AND from_location_type = ? AND from_location_id = ?
-                          AND movement_type IN ('consume')
+                          AND movement_type IN \(StockMovement.MovementType.sqlList(StockMovement.MovementType.forecastConsumptionTypes))
                           AND created_at >= datetime('now', '-\(windowDays) days')
                           AND deleted_at IS NULL
                         """, arguments: [partId, locType, locId]) ?? 0
@@ -3837,7 +4133,7 @@ public final class PartsService: Sendable {
                     let consumed = try Int.fetchOne(dbConn, sql: """
                         SELECT COALESCE(SUM(ABS(qty)), 0) FROM stock_movements
                         WHERE part_id = ? AND from_location_type = ? AND from_location_id = ?
-                          AND movement_type IN ('consume')
+                          AND movement_type IN \(StockMovement.MovementType.sqlList(StockMovement.MovementType.forecastConsumptionTypes))
                           AND created_at >= datetime('now', '-\(s.aduLookbackDays) days')
                           AND deleted_at IS NULL
                         """, arguments: [partId, locType, locId]) ?? 0
@@ -5547,11 +5843,10 @@ public final class PartsService: Sendable {
                 headers += ["category", "style", "type", "brand", "color"]
             }
             if groups.contains(.pricing) {
-                // Fix #209: use weighted_avg_cost (actual FIFO/LIFO cost) not company_cost_price,
-                // so exported sell prices match what the app displays.
-                columns += ["p.weighted_avg_cost AS cost_price", "p.company_markup_percent AS markup_percent",
+                columns += ["p.company_cost_price AS cost_price", "p.weighted_avg_cost AS weighted_avg_cost",
+                             "p.company_markup_percent AS markup_percent",
                              "ROUND(p.weighted_avg_cost * (1.0 + p.company_markup_percent / 100.0), 2) AS sell_price"]
-                headers += ["cost_price", "markup_percent", "sell_price"]
+                headers += ["cost_price", "weighted_avg_cost", "markup_percent", "sell_price"]
             }
             if groups.contains(.stockLevels) {
                 columns += ["p.min_stock_level AS min_stock", "p.target_stock_level AS target_stock", "p.max_stock_level AS max_stock",
@@ -5654,6 +5949,421 @@ public final class PartsService: Sendable {
                 """, arguments: [name])
             return dbConn.lastInsertedRowID
         }
+    }
+
+    /// One normalized CSV row from the parts importer.
+    public struct PartsImportParsedRow: Sendable {
+        public let rowNumber: Int
+        public let name: String
+        public let code: String?
+        public let category: String
+        public let brand: String?
+        public let fields: [String: String]
+    }
+
+    /// A validation error surfaced during import preview. The row number is 1-based
+    /// and includes the header row, matching spreadsheet line numbers.
+    public struct PartsImportError: Error, Sendable {
+        public let rowNumber: Int
+        public let message: String
+    }
+
+    public enum PartsImportConflictResolution: Sendable {
+        case ask
+        case update
+        case skip
+    }
+
+    /// A duplicate detected during import preview.
+    public struct PartsImportConflict: Sendable {
+        public let parsedRow: PartsImportParsedRow
+        public let existingPartId: Int64
+        public let existingPartName: String
+        public let existingPartCode: String?
+        public var resolution: PartsImportConflictResolution = .ask
+    }
+
+    /// Metadata that ties an import preview/commit to a durable source artifact.
+    public struct PartsImportSourceMetadata: Sendable {
+        public var sourceKind: String
+        public var filename: String?
+        public var sheetName: String?
+        public var sourceHash: String?
+        public var userId: Int64?
+
+        public init(sourceKind: String, filename: String? = nil, sheetName: String? = nil, sourceHash: String? = nil, userId: Int64? = nil) {
+            self.sourceKind = sourceKind
+            self.filename = filename
+            self.sheetName = sheetName
+            self.sourceHash = sourceHash
+            self.userId = userId
+        }
+    }
+
+    /// Preview generated before any import writes occur.
+    public struct PartsImportPreview: Sendable {
+        public var newParts: [PartsImportParsedRow] = []
+        public var conflicts: [PartsImportConflict] = []
+        public var errors: [PartsImportError] = []
+        public var totalRows: Int = 0
+        public var source: PartsImportSourceMetadata?
+
+        public init(newParts: [PartsImportParsedRow] = [], conflicts: [PartsImportConflict] = [], errors: [PartsImportError] = [], totalRows: Int = 0, source: PartsImportSourceMetadata? = nil) {
+            self.newParts = newParts
+            self.conflicts = conflicts
+            self.errors = errors
+            self.totalRows = totalRows
+            self.source = source
+        }
+    }
+
+    /// Result of an atomic import commit.
+    public struct PartsImportCommitResult: Sendable {
+        public let created: Int
+        public let updated: Int
+        public let skipped: Int
+        public let importSessionId: Int64?
+    }
+
+    /// Parse and validate a parts CSV without changing database state.
+    ///
+    /// Required columns: `name`, `category`.
+    /// Optional columns: `code`, `brand`, `cost_price`, `markup_percent`,
+    /// `description`, `unit_of_measure`, `shelf_location`, `bin_location`,
+    /// `part_type`.
+    struct PartsImportTabularRow {
+        let rowNumber: Int
+        let columns: [String]
+    }
+
+    public func previewPartsImportCSV(_ csv: String) throws -> PartsImportPreview {
+        let rows = csv.components(separatedBy: .newlines)
+            .enumerated()
+            .compactMap { offset, line -> PartsImportTabularRow? in
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return nil }
+                return PartsImportTabularRow(
+                    rowNumber: offset + 1,
+                    columns: parseImportCSVLine(trimmed)
+                )
+            }
+        var preview = try previewPartsImportRows(rows, emptyDescription: "CSV file is empty or has no data rows.")
+        preview.source = PartsImportSourceMetadata(
+            sourceKind: "csv",
+            sourceHash: importSourceHash(Data(csv.utf8))
+        )
+        return preview
+    }
+
+    func previewPartsImportRows(_ rows: [PartsImportTabularRow], emptyDescription: String) throws -> PartsImportPreview {
+        guard rows.count > 1 else {
+            throw PartsError.invalidInput(emptyDescription)
+        }
+
+        let headers = rows[0].columns.map { $0.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard let nameIdx = headers.firstIndex(of: "name") else {
+            throw PartsError.invalidInput("CSV must have a 'name' column.")
+        }
+        guard let categoryIdx = headers.firstIndex(of: "category") else {
+            throw PartsError.invalidInput("CSV must have a 'category' column.")
+        }
+        let codeIdx = headers.firstIndex(of: "code")
+        let brandIdx = headers.firstIndex(of: "brand")
+
+        var preview = PartsImportPreview(totalRows: rows.count - 1)
+        for row in rows.dropFirst() {
+            let rowNumber = row.rowNumber
+            let columns = row.columns
+            func value(at index: Int?) -> String? {
+                guard let index, index < columns.count else { return nil }
+                let trimmed = columns[index].trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+
+            guard let name = value(at: nameIdx) else {
+                preview.errors.append(PartsImportError(rowNumber: rowNumber, message: "Missing required name"))
+                continue
+            }
+            guard let category = value(at: categoryIdx) else {
+                preview.errors.append(PartsImportError(rowNumber: rowNumber, message: "Missing required category"))
+                continue
+            }
+
+            var fields: [String: String] = [:]
+            for (index, header) in headers.enumerated() {
+                guard index < columns.count else { continue }
+                guard !["name", "code", "category", "brand"].contains(header) else { continue }
+                let trimmed = columns[index].trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { fields[header] = trimmed }
+            }
+
+            for numericHeader in ["cost_price", "markup_percent"] {
+                if let raw = fields[numericHeader] {
+                    guard let value = Double(raw) else {
+                        preview.errors.append(PartsImportError(rowNumber: rowNumber, message: "Invalid number for \(numericHeader): \(raw)"))
+                        continue
+                    }
+                    if value < 0 {
+                        preview.errors.append(PartsImportError(rowNumber: rowNumber, message: "\(numericHeader) cannot be negative"))
+                        continue
+                    }
+                }
+            }
+            if preview.errors.contains(where: { $0.rowNumber == rowNumber }) { continue }
+
+            let parsed = PartsImportParsedRow(
+                rowNumber: rowNumber,
+                name: name,
+                code: value(at: codeIdx),
+                category: category,
+                brand: value(at: brandIdx),
+                fields: fields
+            )
+
+            let existingPart = try db.writer.read { dbConn -> Part? in
+                if let code = parsed.code, !code.isEmpty,
+                   let byCode = try Part.fetchOne(dbConn, sql: "SELECT * FROM parts WHERE code = ? AND deleted_at IS NULL", arguments: [code]) {
+                    return byCode
+                }
+                return try Part.fetchOne(dbConn, sql: "SELECT * FROM parts WHERE LOWER(name) = LOWER(?) AND deleted_at IS NULL", arguments: [parsed.name])
+            }
+
+            if let existingPart, let id = existingPart.id {
+                preview.conflicts.append(PartsImportConflict(
+                    parsedRow: parsed,
+                    existingPartId: id,
+                    existingPartName: existingPart.name,
+                    existingPartCode: existingPart.code
+                ))
+            } else {
+                preview.newParts.append(parsed)
+            }
+        }
+        return preview
+    }
+
+    /// Commit a clean import preview atomically. If the preview has validation
+    /// errors, no writes are attempted. If any database write fails mid-import,
+    /// GRDB rolls back the entire transaction, preventing partial bad state.
+    public func commitPartsImportCSV(_ preview: PartsImportPreview) throws -> PartsImportCommitResult {
+        let importSessionId = try createImportSessionIfNeeded(for: preview)
+        do {
+            guard preview.errors.isEmpty else {
+                let first = preview.errors[0]
+                throw PartsError.invalidInput("Import has validation errors; first error row \(first.rowNumber): \(first.message)")
+            }
+
+            var created = 0
+            var updated = 0
+            var skipped = 0
+
+            try db.writer.write { dbConn in
+                func findOrCreateCategoryInTransaction(_ name: String) throws -> Int64 {
+                    if let existing = try Row.fetchOne(dbConn, sql: "SELECT id FROM part_categories WHERE name = ? AND deleted_at IS NULL", arguments: [name]) {
+                        return existing["id"]
+                    }
+                    try Validators.requireName(name, field: "Category name")
+                    try dbConn.execute(sql: """
+                        INSERT INTO part_categories (name, sort_order, is_active, created_at, updated_at)
+                        VALUES (?, 0, 1, datetime('now'), datetime('now'))
+                        """, arguments: [name])
+                    return dbConn.lastInsertedRowID
+                }
+
+                func findOrCreateBrandInTransaction(_ name: String?) throws -> Int64? {
+                    guard let name, !name.isEmpty else { return nil }
+                    if let existing = try Row.fetchOne(dbConn, sql: "SELECT id FROM brands WHERE name = ? AND deleted_at IS NULL", arguments: [name]) {
+                        return existing["id"]
+                    }
+                    try Validators.requireName(name, field: "Brand name")
+                    try dbConn.execute(sql: """
+                        INSERT INTO brands (name, is_active, created_at, updated_at)
+                        VALUES (?, 1, datetime('now'), datetime('now'))
+                        """, arguments: [name])
+                    return dbConn.lastInsertedRowID
+                }
+
+                func create(_ row: PartsImportParsedRow) throws -> Int64 {
+                    let categoryId = try findOrCreateCategoryInTransaction(row.category)
+                    let brandId = try findOrCreateBrandInTransaction(row.brand)
+                    let cost = row.fields["cost_price"].flatMap(Double.init) ?? 0
+                    let markup = row.fields["markup_percent"].flatMap(Double.init) ?? 0
+                    let partType = row.fields["part_type"] ?? "general"
+
+                    try Validators.requireName(row.name, field: "Part name")
+                    try Validators.requireText(row.code, field: "Part code", limit: Validators.Limits.code)
+                    try Validators.requireNonNegative(cost, field: "Cost price")
+                    try Validators.requireNonNegative(markup, field: "Markup percent")
+
+                    try dbConn.execute(sql: """
+                        INSERT INTO parts (
+                            category_id, brand_id, part_type, code, name, description,
+                            unit_of_measure, company_cost_price, weighted_avg_cost,
+                            company_markup_percent, shelf_location, bin_location,
+                            auto_add_to_wishlist_when_low, is_deprecated, is_qr_tagged,
+                            is_active, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 1, datetime('now'), datetime('now'))
+                        """, arguments: [
+                            categoryId,
+                            brandId,
+                            partType,
+                            row.code,
+                            row.name,
+                            row.fields["description"],
+                            row.fields["unit_of_measure"],
+                            cost,
+                            cost,
+                            markup,
+                            row.fields["shelf_location"],
+                            row.fields["bin_location"]
+                        ])
+                    return dbConn.lastInsertedRowID
+                }
+
+                func update(_ conflict: PartsImportConflict) throws {
+                    let row = conflict.parsedRow
+                    let categoryId = try findOrCreateCategoryInTransaction(row.category)
+                    let brandId = try findOrCreateBrandInTransaction(row.brand)
+                    let cost = row.fields["cost_price"].flatMap(Double.init)
+                    let markup = row.fields["markup_percent"].flatMap(Double.init)
+
+                    var clauses = [
+                        "name = ?",
+                        "code = ?",
+                        "category_id = ?",
+                        "brand_id = ?"
+                    ]
+                    var args: [DatabaseValueConvertible?] = [row.name, row.code, categoryId, brandId]
+
+                    if let partType = row.fields["part_type"] { clauses.append("part_type = ?"); args.append(partType) }
+                    if let description = row.fields["description"] { clauses.append("description = ?"); args.append(description) }
+                    if let unit = row.fields["unit_of_measure"] { clauses.append("unit_of_measure = ?"); args.append(unit) }
+                    if let cost { clauses.append("company_cost_price = ?"); args.append(cost) }
+                    if let markup { clauses.append("company_markup_percent = ?"); args.append(markup) }
+                    if let shelf = row.fields["shelf_location"] { clauses.append("shelf_location = ?"); args.append(shelf) }
+                    if let bin = row.fields["bin_location"] { clauses.append("bin_location = ?"); args.append(bin) }
+                    clauses.append("updated_at = datetime('now')")
+                    args.append(conflict.existingPartId)
+
+                    try dbConn.execute(sql: "UPDATE parts SET \(clauses.joined(separator: ", ")) WHERE id = ? AND deleted_at IS NULL", arguments: StatementArguments(args))
+                }
+
+                for row in preview.newParts {
+                    let partId = try create(row)
+                    try recordImportRowEvidence(dbConn, sessionId: importSessionId, row: row, action: "created", partId: partId)
+                    created += 1
+                }
+                for conflict in preview.conflicts {
+                    switch conflict.resolution {
+                    case .update:
+                        try update(conflict)
+                        try recordImportRowEvidence(dbConn, sessionId: importSessionId, row: conflict.parsedRow, action: "updated", partId: conflict.existingPartId)
+                        updated += 1
+                    case .skip, .ask:
+                        skipped += 1
+                    }
+                }
+            }
+
+            try finishImportSessionIfNeeded(id: importSessionId, status: "committed", created: created, updated: updated, skipped: skipped, error: nil)
+            return PartsImportCommitResult(created: created, updated: updated, skipped: skipped, importSessionId: importSessionId)
+        } catch {
+            try? finishImportSessionIfNeeded(id: importSessionId, status: "failed", created: 0, updated: 0, skipped: 0, error: String(describing: error))
+            throw error
+        }
+    }
+
+    private func createImportSessionIfNeeded(for preview: PartsImportPreview) throws -> Int64? {
+        guard let source = preview.source else { return nil }
+        return try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO part_import_sessions (
+                    source_kind, filename, source_hash, user_id, status, total_rows, started_at
+                ) VALUES (?, ?, ?, ?, 'pending', ?, datetime('now'))
+                """, arguments: [source.sourceKind, source.filename, source.sourceHash, source.userId, preview.totalRows])
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    private func finishImportSessionIfNeeded(id: Int64?, status: String, created: Int, updated: Int, skipped: Int, error: String?) throws {
+        guard let id else { return }
+        try db.writer.write { dbConn in
+            if status == "committed" {
+                try dbConn.execute(sql: """
+                    UPDATE part_import_sessions
+                    SET status = ?, created_count = ?, updated_count = ?, skipped_count = ?, committed_at = datetime('now'), error_message = NULL
+                    WHERE id = ?
+                    """, arguments: [status, created, updated, skipped, id])
+            } else {
+                try dbConn.execute(sql: """
+                    UPDATE part_import_sessions
+                    SET status = ?, created_count = ?, updated_count = ?, skipped_count = ?, failed_at = datetime('now'), error_message = ?
+                    WHERE id = ?
+                    """, arguments: [status, created, updated, skipped, error, id])
+            }
+        }
+    }
+
+    private func recordImportRowEvidence(_ dbConn: Database, sessionId: Int64?, row: PartsImportParsedRow, action: String, partId: Int64) throws {
+        guard let sessionId else { return }
+        try dbConn.execute(sql: """
+            INSERT INTO part_import_row_evidence (
+                session_id, row_number, action, part_id, source_name, source_code,
+                source_category, source_brand, row_payload_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """, arguments: [
+                sessionId,
+                row.rowNumber,
+                action,
+                partId,
+                row.name,
+                row.code,
+                row.category,
+                row.brand,
+                importRowPayloadJSON(row)
+            ])
+    }
+
+    private func importRowPayloadJSON(_ row: PartsImportParsedRow) -> String {
+        let payload: [String: Any] = [
+            "rowNumber": row.rowNumber,
+            "name": row.name,
+            "code": row.code as Any,
+            "category": row.category,
+            "brand": row.brand as Any,
+            "fields": row.fields
+        ]
+        guard JSONSerialization.isValidJSONObject(payload),
+              let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+              let json = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return json
+    }
+
+    func importSourceHash(_ data: Data) -> String {
+        let digest = SHA256.hash(data: data)
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        return "sha256:\(hex)"
+    }
+
+    private func parseImportCSVLine(_ line: String) -> [String] {
+        var fields: [String] = []
+        var current = ""
+        var inQuotes = false
+        var iterator = line.makeIterator()
+        while let char = iterator.next() {
+            if char == "\"" {
+                inQuotes.toggle()
+            } else if char == "," && !inQuotes {
+                fields.append(current)
+                current = ""
+            } else {
+                current.append(char)
+            }
+        }
+        fields.append(current)
+        return fields
     }
 
     // =========================================================================
@@ -5838,6 +6548,12 @@ public final class PartsService: Sendable {
 
     /// Approve a scheduled deletion — performs the actual soft delete.
     public func approveScheduledDeletion(id: Int64, approvedBy: Int64?) throws {
+        if let approvedBy {
+            try db.writer.read { dbConn in
+                try ServicePermissionGate.requirePermission(dbConn, userId: approvedBy, permissionKey: "parts.approve_scheduled_deletion")
+            }
+        }
+
         try db.writer.write { db in
             let row = try Row.fetchOne(db, sql: "SELECT * FROM scheduled_deletions WHERE id = ?", arguments: [id])
             guard let row else { return }
@@ -5931,7 +6647,7 @@ public final class PartsService: Sendable {
             let receivedRow = try Row.fetchOne(dbConn, sql: """
                 SELECT COALESCE(SUM(qty), 0) AS total_received
                 FROM stock_movements
-                WHERE supplier_id = ? AND movement_type = 'receipt' AND deleted_at IS NULL
+                WHERE supplier_id = ? AND movement_type = '\(StockMovement.MovementType.receipt.rawValue)' AND deleted_at IS NULL
                 """, arguments: [supplierId])
             let totalReceived: Int = receivedRow?["total_received"] ?? 0
 
@@ -5939,7 +6655,7 @@ public final class PartsService: Sendable {
             let returnedRow = try Row.fetchOne(dbConn, sql: """
                 SELECT COALESCE(SUM(qty), 0) AS total_returned
                 FROM stock_movements
-                WHERE supplier_id = ? AND movement_type = 'return' AND deleted_at IS NULL
+                WHERE supplier_id = ? AND movement_type = '\(StockMovement.MovementType.stockReturn.rawValue)' AND deleted_at IS NULL
                 AND from_location_type IN ('warehouse', 'staging')
                 AND to_location_type = 'supplier'
                 """, arguments: [supplierId])
@@ -6330,7 +7046,7 @@ public final class PartsService: Sendable {
                 return TraceStep(
                     movementId: row["id"],
                     date: row["created_at"] ?? "",
-                    movementType: row["movement_type"] ?? "transfer",
+                    movementType: row["movement_type"] ?? StockMovement.MovementType.transfer.rawValue,
                     fromLocation: describeLocation(type: fromType),
                     toLocation: describeLocation(type: toType),
                     qty: row["qty"],
@@ -6361,7 +7077,7 @@ public final class PartsService: Sendable {
                 return TraceStep(
                     movementId: row["id"],
                     date: row["created_at"] ?? "",
-                    movementType: row["movement_type"] ?? "transfer",
+                    movementType: row["movement_type"] ?? StockMovement.MovementType.transfer.rawValue,
                     fromLocation: describeLocation(type: fromType),
                     toLocation: describeLocation(type: toType),
                     qty: row["qty"],
@@ -6945,6 +7661,23 @@ public final class PartsService: Sendable {
         }
     }
 
+    /// Fetch all active SKUs for a type across all brands in one read.
+    public func getColorBrandSKUsForType(typeId: Int64) throws -> [ColorBrandSKU] {
+        do {
+            return try db.writer.read { dbConn in
+                try Row.fetchAll(dbConn, sql: """
+                    SELECT * FROM color_brand_skus
+                    WHERE type_id = ? AND deleted_at IS NULL
+                    ORDER BY color_id, brand_id, created_at ASC
+                    """, arguments: [typeId])
+                    .map(colorBrandSKUFromRow)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
     /// Fetch all active SKUs for a given color (across all types and brands).
     public func getSKUsForColor(colorId: Int64) throws -> [ColorBrandSKU] {
         do {
@@ -6964,13 +7697,17 @@ public final class PartsService: Sendable {
 
     /// Create or update a SKU for a (color, brand, type) triple.
     /// If a row already exists (even soft-deleted), reactivates and updates it.
+    /// Pass `clearPartNumber`/`clearUnitCost` when a nil value should clear the stored nullable field.
     @discardableResult
     public func upsertColorBrandSKU(
         colorId: Int64,
         brandId: Int64,
         typeId: Int64,
         partNumber: String? = nil,
-        unitCost: Double? = nil
+        unitCost: Double? = nil,
+        stockQty: Int? = nil,
+        clearPartNumber: Bool = false,
+        clearUnitCost: Bool = false
     ) throws -> Int64 {
         do {
             return try db.writer.write { dbConn in
@@ -6982,20 +7719,21 @@ public final class PartsService: Sendable {
                     let skuId: Int64 = existing["id"]
                     try dbConn.execute(sql: """
                         UPDATE color_brand_skus
-                        SET part_number = COALESCE(?, part_number),
-                            unit_cost = COALESCE(?, unit_cost),
+                        SET part_number = CASE WHEN ? THEN NULL ELSE COALESCE(?, part_number) END,
+                            unit_cost = CASE WHEN ? THEN NULL ELSE COALESCE(?, unit_cost) END,
+                            stock_qty = COALESCE(?, stock_qty),
                             is_active = 1, deleted_at = NULL,
                             updated_at = datetime('now')
                         WHERE id = ?
-                        """, arguments: [partNumber, unitCost, skuId])
+                        """, arguments: [clearPartNumber ? 1 : 0, partNumber, clearUnitCost ? 1 : 0, unitCost, stockQty, skuId])
                     return skuId
                 }
                 // Insert new row
                 try dbConn.execute(sql: """
                     INSERT INTO color_brand_skus
-                        (color_id, brand_id, type_id, part_number, unit_cost)
-                    VALUES (?, ?, ?, ?, ?)
-                    """, arguments: [colorId, brandId, typeId, partNumber, unitCost])
+                        (color_id, brand_id, type_id, part_number, unit_cost, stock_qty)
+                    VALUES (?, ?, ?, ?, ?, COALESCE(?, 0))
+                    """, arguments: [colorId, brandId, typeId, partNumber, unitCost, stockQty])
                 return dbConn.lastInsertedRowID
             }
         } catch {
@@ -7008,7 +7746,8 @@ public final class PartsService: Sendable {
     public func updateColorBrandSKU(
         skuId: Int64,
         partNumber: String? = nil,
-        unitCost: Double? = nil
+        unitCost: Double? = nil,
+        stockQty: Int? = nil
     ) throws {
         do {
             try db.writer.write { dbConn in
@@ -7016,9 +7755,10 @@ public final class PartsService: Sendable {
                     UPDATE color_brand_skus
                     SET part_number = COALESCE(?, part_number),
                         unit_cost = COALESCE(?, unit_cost),
+                        stock_qty = COALESCE(?, stock_qty),
                         updated_at = datetime('now')
                     WHERE id = ? AND deleted_at IS NULL
-                    """, arguments: [partNumber, unitCost, skuId])
+                    """, arguments: [partNumber, unitCost, stockQty, skuId])
             }
         } catch {
             if isTableNotFoundError(error) { return }

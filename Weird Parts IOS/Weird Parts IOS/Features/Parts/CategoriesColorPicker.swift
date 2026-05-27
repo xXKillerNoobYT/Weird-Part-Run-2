@@ -1,8 +1,8 @@
 import SwiftUI
 import WiredPartCore
 
-/// Color picker for a specific type — selecting a color creates a Part
-/// in the catalog with the full hierarchy path (category, style, type, brand, color).
+/// Variant picker for a specific type — selecting a shared `part_colors` row creates a Part
+/// in the catalog with the full hierarchy path (category, style, type, brand, variant).
 struct CategoriesColorPicker: View {
     let typeId: Int64
     let brandId: Int64?
@@ -14,7 +14,7 @@ struct CategoriesColorPicker: View {
     @State private var isLoading = true
     @State private var loadError: String?
     private enum ActiveSheet: String, Identifiable {
-        case addColor
+        case addVariant
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet?
@@ -28,13 +28,13 @@ struct CategoriesColorPicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
             HStack {
-                Text("Colors")
+                Text("Shared variants")
                     .font(.headline)
                 Spacer()
                 Button {
-                    activeSheet = .addColor
+                    activeSheet = .addVariant
                 } label: {
-                    Label("New Color", systemImage: "plus")
+                    Label("Add New Variant", systemImage: "plus")
                         .font(.caption)
                 }
             }
@@ -48,13 +48,13 @@ struct CategoriesColorPicker: View {
                     .frame(maxWidth: .infinity)
                     .padding()
             } else if allColors.isEmpty {
-                Text("No colors in the system. Add a color to create catalog entries.")
+                Text("No variants in the shared pool. Add a variant to create catalog entries.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                // Color grid
+                // Shared part_colors pool — not scoped to this type/brand.
                 LazyVGrid(columns: [
-                    GridItem(.adaptive(minimum: 100, maximum: 160), spacing: DS.Space.sm)
+                    GridItem(.adaptive(minimum: 120, maximum: 180), spacing: DS.Space.sm)
                 ], spacing: DS.Space.sm) {
                     ForEach(allColors, id: \.id) { color in
                         colorTile(color)
@@ -71,7 +71,7 @@ struct CategoriesColorPicker: View {
         .task { await loadColors() }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
-            case .addColor:
+            case .addVariant:
                 ColorFormSheet(color: nil) {
                     await loadColors()
                     await onRefresh()
@@ -117,19 +117,7 @@ struct CategoriesColorPicker: View {
                                     .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
                             )
                     } else {
-                        // "None" / no-color indicator
-                        Circle()
-                            .fill(Color(.secondarySystemGroupedBackground))
-                            .frame(width: 36, height: 36)
-                            .overlay(
-                                Circle()
-                                    .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
-                            )
-                            .overlay {
-                                Image(systemName: "nosign")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
+                        namedOnlyPill(color.name)
                     }
                     if isLinked || wasJustAdded {
                         Image(systemName: "checkmark")
@@ -156,6 +144,26 @@ struct CategoriesColorPicker: View {
         .buttonStyle(.plain)
         .contentShape(Rectangle())
         .disabled(isLinked)
+    }
+
+    private var namedOnlyPillForeground: Color { .secondary }
+
+    /// Named-only variant rows have `hex_code = NULL`; render as text pills instead of color chips.
+    private func namedOnlyPill(_ name: String) -> some View {
+        Text(name.isEmpty ? "Named-only variant" : name)
+            .font(.caption.weight(.semibold))
+            .lineLimit(1)
+            .foregroundStyle(namedOnlyPillForeground)
+            .padding(.horizontal, DS.Space.sm)
+            .frame(minHeight: 36)
+            .background(
+                Capsule()
+                    .fill(Color(.tertiarySystemGroupedBackground))
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(Color.primary.opacity(0.16), lineWidth: 1)
+            )
     }
 
     // MARK: - Helpers
@@ -205,13 +213,7 @@ struct CategoriesColorPicker: View {
             return
         }
         do {
-            var colors = try service.listColors()
-
-            // Ensure a "None" color option is always available
-            if !colors.contains(where: { $0.name.lowercased() == "none" }) {
-                let noneColor = PartColor(name: "None", sortOrder: -1)
-                colors.insert(noneColor, at: 0)
-            }
+            let colors = try service.listColors()
 
             // Find which colors are already linked to this brand+type via brandNodes
             var linked = Set<Int64>()

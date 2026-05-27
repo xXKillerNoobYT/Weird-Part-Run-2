@@ -196,10 +196,10 @@ struct WizardStepZones: View {
                 }
 
                 if zones.isEmpty {
-                    ContentUnavailableView(
-                        "No Zones",
-                        systemImage: "rectangle.3.group",
-                        description: Text("Drag a zone type onto the grid.")
+                    EmptyStateView(
+                        icon: "rectangle.3.group",
+                        title: "No Zones",
+                        message: "Drag a zone type onto the grid."
                     )
                     .padding(.top, 24)
                 }
@@ -283,10 +283,10 @@ struct WizardStepZones: View {
                     .buttonStyle(.bordered)
                 }
             } else {
-                ContentUnavailableView(
-                    "Select a Zone",
-                    systemImage: "cursorarrow.click.2",
-                    description: Text("Tap a placed zone to edit or delete it.")
+                EmptyStateView(
+                    icon: "cursorarrow.click.2",
+                    title: "Select a Zone",
+                    message: "Tap a placed zone to edit or delete it."
                 )
             }
 

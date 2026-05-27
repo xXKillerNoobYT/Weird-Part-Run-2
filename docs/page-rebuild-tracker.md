@@ -1,14 +1,24 @@
-# Page-by-Page Rebuild Tracker
+# Historical Page-by-Page Rebuild Tracker
 
 **Agent:** page-rebuild-enforcer
 **Schedule:** Daily at 4:00 PM
 **Skill:** `xcode-ai/skills/page-rebuild-enforcer/SKILL.md`
 **GitHub Issues:** #52-#66 (Program Review)
 
+
+## Scope note added 2026-05-23 for GH#649 / WEI-2005
+
+This tracker is a historical 44-page rebuild/pass-fail matrix from the page-rebuild-enforcer run. It is not the current full iOS page inventory and must not be used as proof that every current user-facing app page has passed human-visible QA. The live app now has a broader page/flow surface, and current beta-readiness verification is tracked forward in:
+
+- `docs/plans/ux-audit-page-gap-list-2026-05-23.md` — reconciliation of design/prompt completion versus remaining usability confidence.
+- `docs/testing/wei-1944-full-app-usability-verification-matrix.md` — current full-app usability verification matrix and evidence requirements.
+
+Use the historical 44/44 result only as evidence that the older rebuild queue was drained. Use the WEI-1944 matrix for current page-by-page/manual simulator verification status.
+
 ---
 
-## Current Page: Open Issue Queue (all 44 pages complete)
-## Status: PASS — 44/44 pages complete. Run 2026-04-15: **#149 PARTIAL + #148 FIXED** — (1) Keyboard dismiss sweep: added `.scrollDismissesKeyboard(.interactively)` to 22 files across Auth, Settings, Scheduling, Dashboard, People, Orders, and Warehouse (went from 3 → 25 files with keyboard dismiss coverage). Files fixed: IOSMovementWizard, CompanySetupWizard, BusinessProfileSetupView, CreateScheduleEntrySheet, IOSScheduleConfigPage, DashboardDailyReportPage, IOSContractorDetailPage, IOSDailyReportTemplatesPage, IOSContactDetailPage, IOSCustomerDetailPage, IOSEmployeeDetailPage (×3 lists), IOSBreakSettingsPage, CreateDispatchSheet, IOSAuditSettingsPage, IOSOrganizationThresholdsPage, IOSForecastSettingsPage, IOSClockOutQuestionsPage, IOSReportTemplatesPage, IOSPreTripChecklistPage, CompanyProfilesPage, IOSJPOCreationPage, CreatePOSheet. (2) **#148 FIXED** — IOSMovementWizard now has Save & Exit button (top-right toolbar): saves wizard draft state to UserDefaults as JSON (step, locations, parts, reason, notes, reference), restores on re-entry with a dismissible "Draft restored" banner, clears on successful execute. WizardPart made Codable. 1258/1258 tests pass. Previous run 2026-04-14: **#184 + #191 FIXED** — JSON injection fix + unauthenticated key exchange. 4 new tests. 1241/1241 passing.
+## Current Page: Historical open-issue queue rebuild pass (44-page scope complete)
+## Status: HISTORICAL PASS — 44/44 pages in the April 2026 rebuild matrix complete. Run 2026-04-15: **#149 PARTIAL + #148 FIXED** — (1) Keyboard dismiss sweep: added `.scrollDismissesKeyboard(.interactively)` to 22 files across Auth, Settings, Scheduling, Dashboard, People, Orders, and Warehouse (went from 3 → 25 files with keyboard dismiss coverage). Files fixed: IOSMovementWizard, CompanySetupWizard, BusinessProfileSetupView, CreateScheduleEntrySheet, IOSScheduleConfigPage, DashboardDailyReportPage, IOSContractorDetailPage, IOSDailyReportTemplatesPage, IOSContactDetailPage, IOSCustomerDetailPage, IOSEmployeeDetailPage (×3 lists), IOSBreakSettingsPage, CreateDispatchSheet, IOSAuditSettingsPage, IOSOrganizationThresholdsPage, IOSForecastSettingsPage, IOSClockOutQuestionsPage, IOSReportTemplatesPage, IOSPreTripChecklistPage, CompanyProfilesPage, IOSJPOCreationPage, CreatePOSheet. (2) **#148 FIXED** — IOSMovementWizard now has Save & Exit button (top-right toolbar): saves wizard draft state to UserDefaults as JSON (step, locations, parts, reason, notes, reference), restores on re-entry with a dismissible "Draft restored" banner, clears on successful execute. WizardPart made Codable. 1258/1258 tests pass. Previous run 2026-04-14: **#184 + #191 FIXED** — JSON injection fix + unauthenticated key exchange. 4 new tests. 1241/1241 passing.
 
 ---
 
@@ -90,14 +100,16 @@ _Legend: ? = Not started, 🔄 = In Progress, ✅ = Pass, ❌ = Blocked_
 
 ---
 
-## Summary
+## Historical Summary
 | Metric | Count |
 |--------|-------|
-| Total Pages | 44 |
-| Completed | 44 |
-| In Progress | 0 |
-| Not Started | 0 |
-| Blocked | 0 |
+| Historical rebuild matrix pages | 44 |
+| Historical rebuild matrix completed | 44 |
+| In Progress in this historical matrix | 0 |
+| Not Started in this historical matrix | 0 |
+| Blocked in this historical matrix | 0 |
+
+Current full-app QA status lives in `docs/testing/wei-1944-full-app-usability-verification-matrix.md`; this file intentionally does not count the expanded current app page inventory.
 
 ---
 

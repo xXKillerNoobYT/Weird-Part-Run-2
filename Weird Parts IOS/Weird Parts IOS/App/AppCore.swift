@@ -151,7 +151,7 @@ final class AppCore: ObservableObject {
                     people: PeopleService(db: database),
                     scheduling: SchedulingService(db: database),
                     chat: ChatService(db: database),
-                    notebooks: NotebooksService(db: database),
+                    notebooks: NotebooksService(db: database, auth: auth),
                     reports: ReportsService(db: database),
                     tools: ToolsService(db: database),
                     dashboard: DashboardService(db: database),
@@ -213,6 +213,15 @@ final class AppCore: ObservableObject {
                 needsBootstrap = false
                 needsOnboarding = false
             }
+
+            if uiTestingMode && ProcessInfo.processInfo.arguments.contains("-UITestingWEI936AutoLogin"),
+               let uiTestUser = result.users.first(where: { $0.displayName == "UITest Owner" }),
+               let userId = uiTestUser.id {
+                currentUser = uiTestUser
+                permissions = (try? result.auth.getUserPermissions(userId)) ?? []
+                onboardingManager = OnboardingProgressManager(userId: userId)
+                badgeCountManager.setUserId(userId)
+            }
             isReady = true
             await evaluateOnboardAIRuntimeIfEnabled()
 
@@ -246,6 +255,33 @@ final class AppCore: ObservableObject {
             Task.detached { [backgroundTaskService] in
                 _ = try? backgroundTaskService?.cleanupStaleTasks()
                 _ = try? backgroundTaskService?.cleanupOldEntries()
+            }
+
+            // Run scheduled Tools maintenance on launch so expired trades and
+            // confidence-score decay are handled even when users do not open a tool detail page.
+            Task.detached { [toolsService, backgroundTaskService] in
+                let taskId = try? backgroundTaskService?.startTask(
+                    name: "Tools Scheduled Maintenance",
+                    type: "tools_maintenance"
+                )
+                do {
+                    let result = try toolsService?.runScheduledMaintenance()
+                    if let taskId {
+                        let expiredTrades = result?.expiredTrades ?? 0
+                        let updatedScores = result?.updatedConfidenceScores ?? 0
+                        try? backgroundTaskService?.completeTask(
+                            id: taskId,
+                            summary: "Expired \(expiredTrades) trade(s); updated \(updatedScores) confidence score(s)"
+                        )
+                    }
+                } catch {
+                    if let taskId {
+                        try? backgroundTaskService?.failTask(
+                            id: taskId,
+                            error: error.localizedDescription
+                        )
+                    }
+                }
             }
 
             // Run companion auto-discovery cycle in the background (logged)
@@ -296,6 +332,10 @@ final class AppCore: ObservableObject {
                 }
             }
         } catch {
+            let nsError = error as NSError
+            logger.error(
+                "[AppCore] bootstrap failed domain=\(nsError.domain, privacy: .public) code=\(nsError.code, privacy: .public) description=\(error.localizedDescription, privacy: .public)"
+            )
             loadError = userFriendlyError(error, context: "start app")
         }
     }
@@ -461,17 +501,18 @@ final class AppCore: ObservableObject {
         badgeCountService = nil
         db = nil
 
-        // 3. Delete the database file
-        try DeviceResetService.deleteDatabaseFile(atPath: dbPath)
+        // 3. Delete the database files and local backups
+        try DeviceResetService.deleteDatabaseStorage(atPath: dbPath)
 
-        // 4. Clear saved session and all onboarding UserDefaults flags so the
-        //    fresh DB is not skipped by stale "already completed" flags.
+        // 4. Clear saved session and app-scoped UserDefaults state so reset
+        //    cannot inherit drafts, sync flags, or onboarding progress.
         currentUser = nil
         currentToken = nil
         permissions = []
-        UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
-        UserDefaults.standard.removeObject(forKey: "hasCompletedCompanySetup")
-        UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        onboardingManager = nil
+        onboardAIRuntimeBootstrap = nil
+        badgeCountManager.setUserId(nil)
+        DeviceResetService.clearSavedAppState()
 
         // 5. Re-bootstrap — will detect no users/profile and set needsOnboarding = true
         isReady = false
@@ -497,7 +538,15 @@ final class AppCore: ObservableObject {
     ///
     /// User PIN changes do not re-key the app database. Startup must open the DB
     /// before any user can enter a PIN, so the persistent DB key remains device-bound.
-    nonisolated static func deviceBootstrapKeyHex() throws -> String {
+    nonisolated static func deviceBootstrapKeyHex(
+        processArguments: [String] = ProcessInfo.processInfo.arguments
+    ) throws -> String {
+        let uiTestingLaunchFlag = "-UITesting"
+        let uiTestingDatabaseKeyHex = "8f1df32f4be04d5fcde1e8e6ddf9187f53a4b68370d5aafc56f0d43f2e9732a1"
+        if processArguments.contains(uiTestingLaunchFlag) {
+            return uiTestingDatabaseKeyHex
+        }
+
         let service = "com.wiredpart.dbcipher.bootstrap-key"
         let account = "device-bootstrap-key"
 
@@ -514,6 +563,15 @@ final class AppCore: ObservableObject {
         if readStatus == errSecSuccess, let data = result as? Data, data.count == 32 {
             return data.map { String(format: "%02x", $0) }.joined()
         }
+        if readStatus == errSecSuccess {
+            // Self-heal legacy/corrupt keychain entries so startup can recover.
+            let deleteQuery: [CFString: Any] = [
+                kSecClass: kSecClassGenericPassword,
+                kSecAttrService: service,
+                kSecAttrAccount: account
+            ]
+            _ = SecItemDelete(deleteQuery as CFDictionary)
+        }
 
         // Generate 32 fresh random bytes.
         var keyBytes = [UInt8](repeating: 0, count: 32)
@@ -523,13 +581,17 @@ final class AppCore: ObservableObject {
         }
         let keyData = Data(keyBytes)
 
-        let addQuery: [CFString: Any] = [
+        var addQuery: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
             kSecAttrAccount: account,
-            kSecValueData: keyData,
-            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            kSecValueData: keyData
         ]
+        #if !targetEnvironment(macCatalyst)
+        // kSecAttrAccessible is an iOS-style accessibility class. On Catalyst
+        // this can fail with errSecParam on first launch, which blocks DB setup.
+        addQuery[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        #endif
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
         if addStatus == errSecDuplicateItem {
             // Another thread or launch already stored a bootstrap key — read and return it
@@ -539,12 +601,60 @@ final class AppCore: ObservableObject {
             if rereadStatus == errSecSuccess, let data = existing as? Data, data.count == 32 {
                 return data.map { String(format: "%02x", $0) }.joined()
             }
-            throw CipherKeyError.keychainAccessFailed(rereadStatus)
+            let deleteQuery: [CFString: Any] = [
+                kSecClass: kSecClassGenericPassword,
+                kSecAttrService: service,
+                kSecAttrAccount: account
+            ]
+            _ = SecItemDelete(deleteQuery as CFDictionary)
+            let retryAddStatus = SecItemAdd(addQuery as CFDictionary, nil)
+            if retryAddStatus == errSecSuccess {
+                return keyData.map { String(format: "%02x", $0) }.joined()
+            }
+            #if targetEnvironment(macCatalyst)
+            if retryAddStatus == errSecMissingEntitlement {
+                return try catalystFallbackBootstrapKeyHex()
+            }
+            #endif
+            throw CipherKeyError.keychainAccessFailed(retryAddStatus)
+        } else if addStatus == errSecMissingEntitlement {
+            #if targetEnvironment(macCatalyst)
+            return try catalystFallbackBootstrapKeyHex()
+            #else
+            throw CipherKeyError.keychainAccessFailed(addStatus)
+            #endif
         } else if addStatus != errSecSuccess {
             throw CipherKeyError.keychainAccessFailed(addStatus)
         }
         return keyData.map { String(format: "%02x", $0) }.joined()
     }
+
+    #if targetEnvironment(macCatalyst)
+    /// Catalyst fallback when Keychain is unavailable (e.g. missing entitlement in local dev).
+    /// Stores a random device key inside the app container to keep DB encryption stable
+    /// across launches on the same machine/account.
+    nonisolated private static func catalystFallbackBootstrapKeyHex() throws -> String {
+        guard let supportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            throw AppCoreError.noDocumentsDirectory
+        }
+        let dir = supportURL.appendingPathComponent("WiredPart", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let keyURL = dir.appendingPathComponent("catalyst-bootstrap-key.bin")
+
+        if let data = try? Data(contentsOf: keyURL), data.count == 32 {
+            return data.map { String(format: "%02x", $0) }.joined()
+        }
+
+        var keyBytes = [UInt8](repeating: 0, count: 32)
+        let rc = SecRandomCopyBytes(kSecRandomDefault, 32, &keyBytes)
+        guard rc == errSecSuccess else {
+            throw CipherKeyError.bootstrapKeyGenerationFailed(rc)
+        }
+        let keyData = Data(keyBytes)
+        try keyData.write(to: keyURL, options: .atomic)
+        return keyData.map { String(format: "%02x", $0) }.joined()
+    }
+    #endif
 
     // MARK: - PIN Change
 
@@ -579,6 +689,17 @@ final class AppCore: ObservableObject {
         }
     }
 
+    enum UITestBootstrapError: LocalizedError {
+        case partCategoryMissing
+
+        var errorDescription: String? {
+            switch self {
+            case .partCategoryMissing:
+                "UI test bootstrap failed because the required active part category fixture is missing."
+            }
+        }
+    }
+
     /// Returns the path to the SQLite database file in the app's documents directory.
     /// On iOS this is the sandboxed Documents folder.
     nonisolated static func databasePath() throws -> String {
@@ -605,8 +726,12 @@ final class AppCore: ObservableObject {
         }
     }
 
-    nonisolated private static func seedUITestingFixtures(db: AppDatabase, authService: AuthService) throws {
-        _ = try authService.seedFirstAdmin(displayName: "UITest Owner", pin: "1234")
+    nonisolated static func seedUITestingFixtures(db: AppDatabase, authService: AuthService) throws {
+        let seedResult = try authService.seedFirstAdmin(displayName: "UITest Owner", pin: "1234")
+        let activeUsers = try authService.getActiveUsers()
+        let fixtureUserId = seedResult.user?.id ??
+            activeUsers.first(where: { $0.displayName == "UITest Owner" })?.id ??
+            activeUsers.first?.id
 
         let now = ISO8601DateFormatter().string(from: Date())
         let longNotesLocal = String(repeating: "LOCAL_NOTES_SEGMENT_", count: 22)
@@ -640,10 +765,268 @@ final class AppCore: ObservableObject {
                     """,
                 arguments: ["parts", "2001", "unit_cost", "17.45", "21.90", "remote", "UITEST-LOCAL", "UITEST-REMOTE", now, now]
             )
+
+            // WEI-1752 / WEI-881 QA fixture: the -UITesting runtime must expose a
+            // selectable active job, at least one category, and a deterministic JPO
+            // with 2+ selectable line items so the bulk hold/chat smoke can run
+            // without manual simulator database surgery.
+            if let userId = fixtureUserId {
+                try dbConn.execute(
+                    sql: """
+                        INSERT OR IGNORE INTO part_categories
+                        (name, description, sort_order, is_active, created_at, updated_at)
+                        VALUES ('UITesting Electrical', 'Deterministic UI smoke fixture category', 0, 1, datetime('now'), datetime('now'))
+                        """
+                )
+                try dbConn.execute(
+                    sql: """
+                        UPDATE part_categories
+                        SET is_active = 1, deleted_at = NULL, updated_at = datetime('now')
+                        WHERE name = 'UITesting Electrical'
+                        """
+                )
+                guard let categoryId = try Int64.fetchOne(
+                    dbConn,
+                    sql: "SELECT id FROM part_categories WHERE name = 'UITesting Electrical' AND deleted_at IS NULL AND is_active = 1"
+                ) else {
+                    throw UITestBootstrapError.partCategoryMissing
+                }
+
+                let fixtureParts: [(code: String, name: String, description: String)] = [
+                    ("UITEST-QA-CONDUIT", "UITesting QA Conduit", "Selectable conduit line for bulk JPO hold QA"),
+                    ("UITEST-QA-WIRE", "UITesting QA Wire", "Selectable wire line for bulk JPO hold QA")
+                ]
+                for part in fixtureParts {
+                    try dbConn.execute(
+                        sql: """
+                            INSERT OR IGNORE INTO parts
+                            (category_id, part_type, code, name, description, unit_of_measure,
+                             company_cost_price, company_markup_percent, is_active, deleted_at,
+                             created_at, updated_at)
+                            VALUES (?, 'general', ?, ?, ?, 'each', 1.0, 0.0, 1, NULL, datetime('now'), datetime('now'))
+                            """,
+                        arguments: [categoryId, part.code, part.name, part.description]
+                    )
+                    try dbConn.execute(
+                        sql: """
+                            UPDATE parts
+                            SET category_id = ?, name = ?, description = ?, unit_of_measure = 'each',
+                                is_active = 1, deleted_at = NULL, updated_at = datetime('now')
+                            WHERE code = ?
+                            """,
+                        arguments: [categoryId, part.name, part.description, part.code]
+                    )
+                }
+
+                try dbConn.execute(
+                    sql: """
+                        INSERT OR IGNORE INTO jobs
+                        (job_number, job_name, customer_name, status, priority, job_type,
+                         lead_user_id, created_by, notes, created_at, updated_at)
+                        VALUES ('UITEST-JPO-001', 'UITesting JPO Smoke Job', 'UITesting Customer',
+                                'active', 'normal', 'service', ?, ?,
+                                'Deterministic active job for WEI-881 bulk hold smoke', datetime('now'), datetime('now'))
+                        """,
+                    arguments: [userId, userId]
+                )
+                try dbConn.execute(
+                    sql: """
+                        UPDATE jobs
+                        SET job_name = 'UITesting JPO Smoke Job', customer_name = 'UITesting Customer',
+                            status = 'active', priority = 'normal', job_type = 'service',
+                            lead_user_id = ?, created_by = ?, deleted_at = NULL, updated_at = datetime('now')
+                        WHERE job_number = 'UITEST-JPO-001'
+                        """,
+                    arguments: [userId, userId]
+                )
+                let jobId = try Int64.fetchOne(
+                    dbConn,
+                    sql: "SELECT id FROM jobs WHERE job_number = 'UITEST-JPO-001' AND deleted_at IS NULL"
+                )!
+
+                try dbConn.execute(
+                    sql: """
+                        INSERT OR IGNORE INTO job_parts_orders
+                        (job_id, order_number, status, priority, order_type, requested_by, notes,
+                         created_at, updated_at)
+                        VALUES (?, 'UITEST-JPO-001', 'draft', 'normal', 'job', ?,
+                                'Deterministic JPO with selectable lines for WEI-881 smoke', datetime('now'), datetime('now'))
+                        """,
+                    arguments: [jobId, userId]
+                )
+                try dbConn.execute(
+                    sql: """
+                        UPDATE job_parts_orders
+                        SET job_id = ?, status = 'draft', priority = 'normal', order_type = 'job',
+                            requested_by = ?, deleted_at = NULL, updated_at = datetime('now')
+                        WHERE order_number = 'UITEST-JPO-001'
+                        """,
+                    arguments: [jobId, userId]
+                )
+                let jpoId = try Int64.fetchOne(
+                    dbConn,
+                    sql: "SELECT id FROM job_parts_orders WHERE order_number = 'UITEST-JPO-001' AND deleted_at IS NULL"
+                )!
+
+                for partCode in fixtureParts.map(\.code) {
+                    let partId = try Int64.fetchOne(
+                        dbConn,
+                        sql: "SELECT id FROM parts WHERE code = ? AND deleted_at IS NULL",
+                        arguments: [partCode]
+                    )!
+                    let existingLineCount = try Int.fetchOne(
+                        dbConn,
+                        sql: """
+                            SELECT COUNT(*) FROM jpo_line_items
+                            WHERE jpo_id = ? AND part_id = ? AND deleted_at IS NULL
+                            """,
+                        arguments: [jpoId, partId]
+                    ) ?? 0
+                    if existingLineCount == 0 {
+                        try dbConn.execute(
+                            sql: """
+                                INSERT INTO jpo_line_items
+                                (jpo_id, part_id, qty_requested, qty_ordered, qty_received, priority,
+                                 notes, deleted_at, created_at)
+                                VALUES (?, ?, 2, 0, 0, 'normal', 'UITesting selectable bulk-hold line', NULL, datetime('now'))
+                                """,
+                            arguments: [jpoId, partId]
+                        )
+                    }
+                }
+            }
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard") {
+            try seedDispatchBoardUITestingFixtures(db: db)
+            UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
+            UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
         }
 
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
-        UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        if !ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard") {
+            UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        }
+
+        seedWEI936OnboardingStateIfRequested(userId: fixtureUserId)
+    }
+
+    nonisolated private static func seedWEI936OnboardingStateIfRequested(userId: Int64?) {
+        let args = ProcessInfo.processInfo.arguments
+        guard args.contains("-UITestingWEI936TourActive") ||
+            args.contains("-UITestingWEI936RequiredDone") ||
+            args.contains("-UITestingWEI936DismissedChecklist") else { return }
+
+        UserDefaults.standard.removeObject(forKey: "onboarding_checklist_dismissed")
+
+        if let userId {
+            let storageKey = "onboarding_progress_\(userId)"
+            UserDefaults.standard.set(true, forKey: storageKey + "_active")
+
+            var completedTasks: Set<String> = []
+            if args.contains("-UITestingWEI936TourActive") {
+                completedTasks.insert("dashboard-view-kpis")
+            }
+            if args.contains("-UITestingWEI936RequiredDone") {
+                completedTasks.formUnion(["dashboard-view-kpis", "dashboard-tap-kpi"])
+            }
+            if let data = try? JSONEncoder().encode(completedTasks) {
+                UserDefaults.standard.set(data, forKey: storageKey)
+            }
+        }
+
+        if args.contains("-UITestingWEI936DismissedChecklist") {
+            UserDefaults.standard.set(true, forKey: "onboarding_checklist_dismissed")
+        }
+    }
+
+    nonisolated private static func seedDispatchBoardUITestingFixtures(db: AppDatabase) throws {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+
+        let calendar = Calendar.current
+        let today = Date()
+        let weekStart = calendar.date(
+            from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)
+        ) ?? today
+        let sourceDate = formatter.string(from: weekStart)
+        let targetDate = formatter.string(from: calendar.date(byAdding: .day, value: 1, to: weekStart) ?? today)
+        let conflictDate = formatter.string(from: calendar.date(byAdding: .day, value: 2, to: weekStart) ?? today)
+
+        try db.writer.write { dbConn in
+            let ownerId = try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM users WHERE display_name = ? AND deleted_at IS NULL LIMIT 1",
+                arguments: ["UITest Owner"]
+            ) ?? 1
+
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO users (display_name, pin_hash, pin_salt, is_active, created_at, updated_at)
+                    SELECT ?, ?, ?, 1, datetime('now'), datetime('now')
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM users WHERE display_name = ? AND deleted_at IS NULL
+                    )
+                    """,
+                arguments: ["UITest Spare Worker", "uitest-hash", "uitest-salt", "UITest Spare Worker"]
+            )
+
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO jobs (job_number, job_name, status, priority, job_type, created_by, created_at, updated_at)
+                    VALUES (?, ?, 'active', 'normal', 'service', ?, datetime('now'), datetime('now'))
+                    ON CONFLICT(job_number) DO UPDATE SET
+                        job_name = excluded.job_name,
+                        status = 'active',
+                        deleted_at = NULL,
+                        updated_at = datetime('now')
+                    """,
+                arguments: ["UITEST-DISPATCH-A", "UITest Source Dispatch Job", ownerId]
+            )
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO jobs (job_number, job_name, status, priority, job_type, created_by, created_at, updated_at)
+                    VALUES (?, ?, 'active', 'normal', 'service', ?, datetime('now'), datetime('now'))
+                    ON CONFLICT(job_number) DO UPDATE SET
+                        job_name = excluded.job_name,
+                        status = 'active',
+                        deleted_at = NULL,
+                        updated_at = datetime('now')
+                    """,
+                arguments: ["UITEST-DISPATCH-B", "UITest Target Dispatch Job", ownerId]
+            )
+
+            let sourceJobId = try Int64.fetchOne(dbConn, sql: "SELECT id FROM jobs WHERE job_number = ?", arguments: ["UITEST-DISPATCH-A"]) ?? 0
+            let targetJobId = try Int64.fetchOne(dbConn, sql: "SELECT id FROM jobs WHERE job_number = ?", arguments: ["UITEST-DISPATCH-B"]) ?? 0
+
+            try dbConn.execute(
+                sql: "DELETE FROM job_dispatch WHERE job_id IN (?, ?) OR user_id = ?",
+                arguments: [sourceJobId, targetJobId, ownerId]
+            )
+            try dbConn.execute(
+                sql: "DELETE FROM schedule_exceptions WHERE user_id = ?",
+                arguments: [ownerId]
+            )
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO job_dispatch
+                    (job_id, user_id, dispatch_date, role_on_job, status, dispatched_by, time_slot, created_at, updated_at)
+                    VALUES (?, ?, ?, 'worker', 'scheduled', ?, 'am', datetime('now'), datetime('now'))
+                    """,
+                arguments: [sourceJobId, ownerId, sourceDate, ownerId]
+            )
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO schedule_exceptions
+                    (user_id, exception_date, exception_type, reason, is_approved, created_at)
+                    VALUES (?, ?, 'time_off', 'UITest approved PTO', 1, datetime('now'))
+                    """,
+                arguments: [ownerId, conflictDate]
+            )
+        }
+        UserDefaults.standard.set(targetDate, forKey: "uiTestingDispatchTargetDate")
     }
 }

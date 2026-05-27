@@ -58,6 +58,10 @@ struct IOSProfitabilityPage: View {
             .searchable(text: $searchText, prompt: "Search jobs...")
             .refreshable { loadData() }
             .task { loadData() }
+            .onAppear { postPageContext() }
+            .onDisappear {
+                NotificationCenter.default.post(name: .reportsProfitabilityPageInactive, object: nil)
+            }
             .onChange(of: dateRange) { loadData() }
             .onChange(of: customStart) { loadData() }
             .onChange(of: customEnd) { loadData() }
@@ -73,11 +77,11 @@ struct IOSProfitabilityPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredRows.isEmpty {
-            ContentUnavailableView {
-                Label("No Data", systemImage: "chart.line.uptrend.xyaxis")
-            } description: {
-                Text("No profitability data available.")
-            }
+            EmptyStateView(
+                icon: "chart.line.uptrend.xyaxis",
+                title: "No Data",
+                message: "No profitability data available."
+            )
         } else {
             List(filteredRows, id: \.id) { row in
                 profitRow(row)
@@ -171,5 +175,17 @@ struct IOSProfitabilityPage: View {
             loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        let totalProfit = rows.reduce(0) { $0 + $1.profit }
+        NotificationCenter.default.post(
+            name: .reportsProfitabilityPageActive,
+            object: nil,
+            userInfo: [
+                "context": "Profitability Report: range \(dateRange.rawValue), \(rows.count) jobs, \(filteredRows.count) visible, total profit \(formatCurrency(totalProfit)), search active: \(!searchText.isEmpty)."
+            ]
+        )
     }
 }

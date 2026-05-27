@@ -29,6 +29,16 @@ struct IOSTelematicsPage: View {
             .searchable(text: $searchText, prompt: "Search vehicles...")
             .refreshable { loadData() }
             .task { loadData() }
+            .onAppear {
+                NotificationCenter.default.post(
+                    name: .fleetTelematicsPageActive,
+                    object: nil,
+                    userInfo: ["context": fleetTelematicsContext]
+                )
+            }
+            .onDisappear {
+                NotificationCenter.default.post(name: .fleetTelematicsPageInactive, object: nil)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
@@ -52,6 +62,11 @@ struct IOSTelematicsPage: View {
 
     // MARK: - Location List
 
+    private var fleetTelematicsContext: String {
+        let searchState = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "none" : "active"
+        return "page=Fleet Telematics; total_locations=\(locations.count); visible_locations=\(filteredLocations.count); search=\(searchState)"
+    }
+
     @ViewBuilder
     private var locationList: some View {
         if isLoading {
@@ -60,11 +75,11 @@ struct IOSTelematicsPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredLocations.isEmpty {
-            ContentUnavailableView {
-                Label("No GPS Data", systemImage: "location.slash")
-            } description: {
-                Text("Vehicle location data will appear here once drivers submit GPS updates from their mobile devices.")
-            }
+            EmptyStateView(
+                icon: "location.slash",
+                title: "No GPS Data",
+                message: "Vehicle location data will appear here once drivers submit GPS updates from their mobile devices."
+            )
         } else {
             List(filteredLocations, id: \.id) { location in
                 locationRow(location)

@@ -1,7 +1,7 @@
 # AI Page Context Coverage Inventory
 
-Issue: WEI-1112 / WEI-1194 / GitHub #86 T1-19
-Updated: 2026-05-14
+Issue: WEI-1112 / WEI-1194 / GitHub #86 T1-19 / GH #650 / WEI-1995
+Updated: 2026-05-23
 
 ## Success Condition
 
@@ -9,11 +9,19 @@ Complete the 87-page page-context coverage set by adding read-only page-active/p
 
 ## Current Coverage
 
-Implemented page-context notifications observed by `IOSAIAssistantPanel`: 47 page contexts.
+Implemented page-context notifications observed by `IOSAIAssistantPanel`: 60+ page contexts, including People/Office/Reports and Fleet recovery slices.
+Help registry mappings are maintained for every observed active-page tracker ID, including the recovered Fleet tab entries.
 
-Help registry mappings with matching help entries: 46 page contexts.
+Known gap: none in the currently observed AI page-context set. Remaining work is additional unobserved functional pages, not broken mappings.
 
-Known gap: `settingsPageActive` is observed by the AI panel and active-page tracker, but `HelpContentRegistry` does not yet contain a `settings-app-config` entry. That should be handled in the settings slice rather than mapped to a missing help entry.
+## GH #650 Representative Coverage Table
+
+| Related issue | Representative page(s) | HelpContentRegistry result | Page-context freshness result | Evidence |
+| --- | --- | --- | --- | --- |
+| #571 Settings registry gap | Settings / App Config | `settingsPageActive` maps to `settings-app-config`, and `settings-app-config` has a dedicated `HelpEntry`. | Context is reposted from `SettingsRouter` on appear and reflects selected settings navigation. | Static guard passes; coverage table row for Settings. |
+| #582 Fleet registry gaps | Fleet Dashboard, Vehicles, Trailers, Maintenance, Mileage, Fuel, Inspections, Tracking, My Truck | All mapped Fleet page IDs now have dedicated help entries, including the six previously missing secondary Fleet pages. | Fleet pages already post active/inactive context on appear/disappear; visible-count/search/filter freshness is covered by their page context payloads where available. | `scripts/verify-ai-help-context-coverage.py`; Fleet rows below. |
+| #569 Jobs/Warehouse stale contexts | Job Reports, Labor, Warehouse Movements, Receiving, Staging, Returns, Tools | Existing Jobs/Warehouse page IDs continue to resolve to help entries. | Search/filter/tab/selection/sheet state included in context now reposts via `.onChange` on the representative stale-state pages called out by #569. | Source-level `.onChange` guards plus xcodebuild validation. |
+| #554 Clock-out questionnaire stale context | Clock-Out Questionnaire | `questionnairePageActive` maps to `jobs-questionnaire`, which has dedicated help. | Answers, Daily Report text, break verification, missed breaks, companion votes, and submitting state now repost context when edited. | `IOSQuestionnairePage` `.onChange` guards plus xcodebuild validation. |
 
 ## Covered Pages
 
@@ -61,11 +69,33 @@ Known gap: `settingsPageActive` is observed by the AI panel and active-page trac
 | Warehouse | Warehouse Leaderboard | `warehouseLeaderboardPageActive` | `warehouse-leaderboard` |
 | Scheduling | Dispatch | `dispatchPageActive` | `scheduling-dispatch` |
 | Scheduling | Schedule Calendar | `scheduleCalendarPageActive` | `scheduling-calendar` |
+| People | People Dashboard | `peopleDashboardPageActive` | `people-dashboard` |
 | People | Employees | `employeesPageActive` | `people-employees` |
+| People | Customers | `customersPageActive` | `people-customers` |
+| People | Contacts | `contactsPageActive` | `people-contacts` |
+| Office | Office Dashboard | `officeDashboardPageActive` | `office-dashboard` |
+| Office | Unified Approvals | `officeApprovalsPageActive` | `office-approvals` |
+| Office | Spending Dashboard | `officeSpendingPageActive` | `office-spending` |
+| Reports | Labor Overview | `reportsLaborPageActive` | `reports-labor` |
+| Reports | Spending | `reportsSpendingPageActive` | `reports-spending` |
+| Reports | Profitability | `reportsProfitabilityPageActive` | `reports-profitability` |
+| Reports | Timesheets | `reportsTimesheetsPageActive` | `reports-timesheets` |
+| Reports | Pre-Billing | `reportsPrebillingPageActive` | `reports-prebilling` |
+| Reports | Bookkeeper Export | `reportsBookkeeperPageActive` | `reports-bookkeeper` |
+| Reports | Daily Reports Summary | `reportsDailySummaryPageActive` | `reports-daily-summary` |
 | Fleet | Vehicles | `vehiclesPageActive` | `fleet-vehicles` |
+| Fleet | Dashboard | `fleetDashboardPageActive` | `fleet-dashboard` |
+| Fleet | Trailers | `fleetTrailersPageActive` | `fleet-trailers` |
+| Fleet | Maintenance | `fleetMaintenancePageActive` | `fleet-maintenance` |
+| Fleet | Mileage | `fleetMileagePageActive` | `fleet-mileage` |
+| Fleet | Fuel | `fleetFuelPageActive` | `fleet-fuel` |
+| Fleet | Inspections | `fleetInspectionsPageActive` | `fleet-inspections` |
+| Fleet | Tracking | `fleetTrackingPageActive` | `fleet-tracking` |
+| Fleet | Telematics | `fleetTelematicsPageActive` | `fleet-telematics` |
+| Fleet | My Truck | `fleetMyTruckPageActive` | `fleet-my-truck` |
 | Tools | Tool Registry | `toolRegistryPageActive` | `tools-registry` |
 | Notebooks | Notebooks List | `notebooksListPageActive` | `notebooks-all` |
-| Settings | Settings/App Config observer only | `settingsPageActive` | missing help entry |
+| Settings | App Config | `settingsPageActive` | `settings-app-config` |
 
 ## WEI-1194 Slice
 
@@ -124,10 +154,69 @@ Added the jobs completion page-context slice:
 
 All payloads are read-only summaries of visible state, selected filters, lifecycle state, and available entry points. They do not expose mutating commands, action IDs, or write intents.
 
+## People/Office/Reports Slice
+
+Added the next People, Office, and Reports page-context slice:
+
+- `IOSPeopleDashboardPage`: working-now, off-today, certification, team assignment, and overdue customer counts.
+- `IOSCustomersPage`: loaded/visible customer counts and search state.
+- `IOSContactsPage`: active/inactive contact counts, selected type filter, sort, and search state.
+- `IOSOfficeDashboardPage`: smart card, attention item, schedule, financial snapshot, and background task row counts.
+- `IOSUnifiedApprovalsPage`: pending/visible approval counts, selected filter, and search state.
+- `IOSSpendingDashboardPage`: selected range, parts cost, labor hours, active job count, and total job count.
+- `IOSLaborOverviewPage`: selected range, total/overtime hours, active worker count, and visible row count.
+- `IOSSpendingPage`: selected range/period, total spend, PO count, and top supplier.
+- `IOSProfitabilityPage`: selected range, loaded/visible job counts, total profit, and search state.
+- `IOSTimesheetsPage`: selected dates, employee count, visible row count, total hours, and overtime.
+- `IOSPreBillingPage`: selected dates, job count, visible row count, regular hours, and overtime.
+- `IOSBookkeeperExportPage`: selected dates, labor/material row counts, material total, and search state.
+- `IOSDailyReportsSummaryPage`: selected date, job/visible row counts, worker count, and total hours.
+
+All payloads are read-only summaries of visible state, selected filters, lifecycle state, and report totals. They do not expose mutating commands, action IDs, or write intents.
+
+## Settings Gap Closure Slice
+
+Closed the known settings mapping gap:
+
+- `AppConfigPage`: auto-lock, stale-data warning, archive retention, warranty default, payment tracking, validation, saved/error state.
+
+The payload is a read-only summary of visible settings and validation state. It does not expose mutating commands, action IDs, or write intents.
+
 ## Next Highest-Traffic Remaining Slices
 
-1. People/Office/Reports: Contacts, customers, contractors, teams, office dashboard, approvals, spending, warehouse exec, all report pages.
-2. Settings: add missing help entries and page context for the high-use settings pages before mapping them to help content.
+1. People/Office/Reports tail: contractors, teams, hats, permissions, office manage-jobs, warehouse exec, estimation settings, pipeline, teams, reports router, and specialized fleet/scheduling/warehouse report pages.
+
+## WEI-1112 Productivity Restart Slice
+
+Added the two missing active/inactive context posts required to bring declared page-active notifications to full feature-page emission coverage:
+
+- `IOSUnifiedApprovalsPage`: `officeApprovalsPageActive` / `officeApprovalsPageInactive` with read-only summary of total/visible pending approvals, selected filter, search state, and pending counts by approval type.
+- `SettingsRouter`: `settingsPageActive` / `settingsPageInactive` with read-only summary of selected settings tab and sync scope classification.
+
+All payloads remain read-only summaries and avoid mutating commands, IDs for write actions, or workflow state changes.
+
+## WEI-1112 Fleet Primary Tabs Slice
+
+Added the next high-traffic Fleet coverage slice across the primary Fleet tabs:
+
+- `IOSFleetDashboardPage`: `fleetDashboardPageActive` / `fleetDashboardPageInactive` with read-only KPI, maintenance, and trailer summary counts.
+- `IOSMaintenancePage`: `fleetMaintenancePageActive` / `fleetMaintenancePageInactive` with total/visible records, date range, and search state.
+- `IOSMileagePage`: `fleetMileagePageActive` / `fleetMileagePageInactive` with total/visible logs, date range, and search state.
+- `IOSFuelPage`: `fleetFuelPageActive` / `fleetFuelPageInactive` with total/visible logs, date range, and search state.
+- `IOSTrailersPage`: `fleetTrailersPageActive` / `fleetTrailersPageInactive` with total/visible trailers and search state.
+- `IOSInspectionsPage`: `fleetInspectionsPageActive` / `fleetInspectionsPageInactive` with total/visible inspections and search state.
+- `IOSTelematicsPage`: `fleetTelematicsPageActive` / `fleetTelematicsPageInactive` with total/visible locations and search state.
+- `IOSMyTruckPage`: `fleetMyTruckPageActive` / `fleetMyTruckPageInactive` with assigned vehicle, selected inventory tab, and read-only count summaries.
+
+Also wired these notifications through `IOSAIAssistantPanel` context observers/navigation-context prompt assembly and active page tracker IDs. Existing `fleetTrackingPageActive` router-tab context remains supported for the FleetRouter tracking tab.
+
+All payloads remain read-only summaries and avoid mutating commands, write action IDs, or workflow state changes.
+
+## Next Highest-Traffic Remaining Slices
+
+1. Fleet secondary pages and deep links: trailer locations, truck tools, and detail-heavy flows still need explicit inventory decisions (context post vs N/A).
+2. People area long-tail pages: contractors, teams, hats, permissions, and detail flows require the same explicit inventory/mapping treatment.
+3. Settings help parity: add missing `settings-app-config` help entry before mapping settings context to help content.
 
 ## Validation
 
@@ -155,6 +244,33 @@ Validated jobs completion slice in the shared workspace on 2026-05-14:
 - Jobs completion notification names are declared, posted by their pages, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
 - Help registry mapping check returned no missing mapped page IDs.
 - `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was warnings only.
+
+Validated People/Office/Reports slice in the shared workspace on 2026-05-15:
+
+- People/Office/Reports notification names are declared, posted by their pages, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
+- Help registry mapping check returned no missing mapped page IDs.
+- `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was pre-existing warnings only.
+
+Validated Settings gap closure slice in the clean WEI-1112 settings worktree on 2026-05-15:
+
+- `settingsPageActive` is posted by `AppConfigPage`, observed by `IOSAIAssistantPanel`, tracked for active help page selection, and mapped in `HelpContentRegistry`.
+- Help registry mapping check returned no missing mapped page IDs.
+- First build exposed a recovered-branch compile issue in `IOSOfficeDashboardPage` background task status rows; the page now uses existing `BackgroundTaskService.TaskLogEntry` data instead of unavailable types.
+- `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was pre-existing warnings only.
+
+Validated WEI-1112 productivity restart slice in the shared workspace on 2026-05-17:
+
+- Static inventory check confirms parity: declared page-active notifications = 60, pages posting page-active notifications = 60, missing = 0.
+- `rg` confirmation shows new posts in `IOSUnifiedApprovalsPage` and `SettingsRouter`.
+- `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed. Remaining output was warnings only.
+
+Validated WEI-1112 Fleet primary tabs slice in the shared workspace on 2026-05-17:
+
+- Static parity checks on the recovered main-based branch reported declared page-active notifications = 57 and AI panel observers = 57, with no undeclared references or missing observers. One router-tab notification (`fleetTrackingPageActive`) is emitted through `FleetRouter` indirection rather than a literal `post(name: .fleetTrackingPageActive)` call.
+- Fleet notification names are declared, posted by their pages, observed by `IOSAIAssistantPanel`, and tracked for active page selection.
+- Help mapping is limited to help entries that currently exist; dedicated help-entry extraction remains for Fleet tabs beyond Dashboard and Maintenance.
+- First build attempt hit Swift type-checker complexity in `IOSAIAssistantPanel` active-page tracker; resolved by splitting/consolidating Fleet tracker observers.
+- `xcodebuild -project "Weird Parts IOS/Weird Parts.xcodeproj" -scheme "Weird Parts" -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` passed after the split. Remaining output was warnings only.
 
 Static validation:
 

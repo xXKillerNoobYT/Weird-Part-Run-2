@@ -48,6 +48,8 @@ struct IOSToolKitsPage: View {
                         ("Tips", "Before heading to a job site, check that your kit shows 'Complete'. If it says 'Incomplete', open the kit detail to see which tools are missing and track them down before you leave.")
                     ]
                 )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
             .refreshable { await loadData() }
             .task { await loadData() }
@@ -63,11 +65,11 @@ struct IOSToolKitsPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { Task { await loadData() } }
         } else if filteredKits.isEmpty {
-            ContentUnavailableView {
-                Label("No Kits", systemImage: "bag")
-            } description: {
-                Text("No tool kits found.")
-            }
+            EmptyStateView(
+                icon: "bag",
+                title: "No Kits",
+                message: "No tool kits found."
+            )
         } else {
             List(filteredKits) { kit in
                 kitRow(kit)

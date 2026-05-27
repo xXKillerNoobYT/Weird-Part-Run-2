@@ -298,7 +298,7 @@ struct ReportsServiceTests {
             partId: partId, qty: 3,
             fromLocationType: "warehouse", fromLocationId: 1,
             toLocationType: nil, toLocationId: nil,
-            movementType: "pull",
+            movementType: StockMovement.MovementType.pull.rawValue,
             performedBy: env.adminUserId,
             unitCostAtMove: 5.0
         )
@@ -491,6 +491,50 @@ struct ReportsServiceTests {
         let row = rows.first(where: { $0.id == jobId })
         #expect(row != nil)
         #expect(row?.regularHours ?? 0.0 >= 4.0)
+    }
+
+    @Test("getPreBillingData excludes labor from locked billing periods")
+    func testPreBillingDataExcludesLockedBillingPeriods() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-PB-LOCKED", name: "Locked Billing Job")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO billing_periods
+                (job_id, period_start, period_end, locked_at, locked_by, created_at)
+                VALUES (?, '2026-04-01', '2026-04-30', '2026-05-05 09:00:00', ?, datetime('now'))
+                """, arguments: [jobId, env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-04-15 07:00:00', '2026-04-15 11:00:00', 4.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+        }
+
+        let rows = try env.reports.getPreBillingData(startDate: "2026-04-01", endDate: "2026-04-30")
+
+        #expect(rows.allSatisfy { $0.id != jobId })
+    }
+
+    @Test("getPreBillingData excludes labor from company-wide locked billing periods")
+    func testPreBillingDataExcludesCompanyWideLockedBillingPeriods() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-PB-COMPANY-LOCKED", name: "Company Locked Billing Job")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO billing_periods
+                (job_id, period_start, period_end, locked_at, locked_by, created_at)
+                VALUES (NULL, '2026-05-01', '2026-05-31', '2026-06-01 09:00:00', ?, datetime('now'))
+                """, arguments: [env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-05-15 07:00:00', '2026-05-15 11:00:00', 4.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+        }
+
+        let rows = try env.reports.getPreBillingData(startDate: "2026-05-01", endDate: "2026-05-31")
+
+        #expect(rows.allSatisfy { $0.id != jobId })
     }
 
     @Test("getDailyReportSummary aggregates labor entries for a specific date")

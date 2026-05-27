@@ -94,6 +94,10 @@ Errors are learning opportunities. When something breaks:
 
 **GitHub Issues is the single source of truth** for all bugs, features, and improvements. Every unfixed problem MUST have a GitHub issue. Every fix should reference and close its issue.
 
+## GitHub Account Context
+
+This repo is currently under the user's personal GitHub account (`xXKillerNoobYT`), not a GitHub organization. Do not assume organization teams, organization policy pages, organization-level settings, or organization Copilot controls exist. Verify the repo owner before applying GitHub admin instructions. If a requested control is organization-only, document it as not applicable unless/until the user transfers the repo to an organization; use repo-level or user-account-level settings where available. See `docs/github-account-context.md`.
+
 **Rules:**
 
 1. **Find something broken? File it.** Every bug, gap, or missing feature gets a GitHub issue with: title prefix `[Area][Type]`, description of what's wrong, impact, and fix approach.

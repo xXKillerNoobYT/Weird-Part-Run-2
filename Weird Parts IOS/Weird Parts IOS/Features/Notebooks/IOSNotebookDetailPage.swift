@@ -4,6 +4,7 @@ import WiredPartCore
 /// Notebook detail page with hierarchical structure: Groups → Sections → Block Entries.
 struct IOSNotebookDetailPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let notebookId: Int64
 
     // MARK: - State
@@ -21,6 +22,8 @@ struct IOSNotebookDetailPage: View {
     @State private var panelSchedule = PanelSchedule()
     @State private var blockConflicts: [NotebookBlockConflict] = []
     @State private var pendingDelete: PendingDelete?
+    @State private var selectedPageId: Int64?
+    @State private var compactPageId: Int64?
 
     // MARK: - PendingDelete
 
@@ -65,6 +68,7 @@ struct IOSNotebookDetailPage: View {
         case editGroup(groupId: Int64, name: String)
         case panelScheduleEditor
         case conflictResolution
+        case notebookSections
         case help
 
         var id: String {
@@ -77,6 +81,7 @@ struct IOSNotebookDetailPage: View {
             case .editGroup(let id, _): return "editGroup-\(id)"
             case .panelScheduleEditor: return "panelSchedule"
             case .conflictResolution: return "conflictResolution"
+            case .notebookSections: return "notebookSections"
             case .help: return "help"
             }
         }
@@ -92,11 +97,22 @@ struct IOSNotebookDetailPage: View {
             } else if let error = loadError {
                 ErrorStateView(message: error) { loadData() }
             } else {
-                contentList
+                notebookShell
             }
         }
         .navigationTitle(notebook?.title ?? "Notebook")
         .toolbar {
+            if horizontalSizeClass == .compact {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        activeSheet = .notebookSections
+                    } label: {
+                        Image(systemName: "sidebar.left")
+                    }
+                    .frame(width: 44, height: 44)
+                    .accessibilityLabel("Notebook sections")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button {
@@ -112,7 +128,10 @@ struct IOSNotebookDetailPage: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .frame(width: 44, height: 44)
                 .accessibilityLabel("Add content")
+                .accessibilityIdentifier("notebookToolbar_addBlock")
+                .disabled(isReadOnly)
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
@@ -146,206 +165,648 @@ struct IOSNotebookDetailPage: View {
         .task { loadData() }
     }
 
-    // MARK: - Content List
+    // MARK: - Responsive Shell
 
-    private var contentList: some View {
-        List {
-            if let error = actionError {
-                Section {
-                    Text(error).foregroundStyle(.red).font(.caption)
-                }
+    private var isReadOnly: Bool {
+        notebook?.status == "locked" || notebook?.status == "archived"
+    }
+
+    private struct NotebookPage: Identifiable {
+        let id: Int64
+        let section: NotebooksService.SectionWithEntries
+        let groupName: String?
+        let derivedPreview: String
+        let updatedText: String?
+
+        var title: String { section.name }
+        var blockCountText: String {
+            "\(section.entries.count) block\(section.entries.count == 1 ? "" : "s")"
+        }
+    }
+
+    @ViewBuilder
+    private var notebookShell: some View {
+        if horizontalSizeClass == .regular {
+            HStack(spacing: 0) {
+                pageSidebar
+                    .frame(width: 320)
+                    .background(Color(.secondarySystemGroupedBackground))
+                Divider()
+                selectedPageSurface
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .background(Color(.systemGroupedBackground))
+        } else {
+            if compactPageId == nil {
+                compactPageList
+            } else {
+                compactSelectedPageSurface
+            }
+        }
+    }
 
-            // Sync Conflict Banner (62J)
-            if !blockConflicts.isEmpty {
-                Section {
+    private var notebookPages: [NotebookPage] {
+        var pages: [NotebookPage] = []
+        hierarchy?.groups.forEach { group in
+            group.sections.forEach { section in
+                pages.append(makeNotebookPage(section: section, groupName: group.name))
+            }
+        }
+        hierarchy?.ungroupedSections.forEach { section in
+            pages.append(makeNotebookPage(section: section, groupName: nil))
+        }
+        return pages
+    }
+
+    private var selectedPage: NotebookPage? {
+        let pages = notebookPages
+        if let selectedPageId, let page = pages.first(where: { $0.id == selectedPageId }) {
+            return page
+        }
+        return pages.first
+    }
+
+    private func makeNotebookPage(section: NotebooksService.SectionWithEntries, groupName: String?) -> NotebookPage {
+        NotebookPage(
+            id: section.id,
+            section: section,
+            groupName: groupName,
+            derivedPreview: derivedPreview(for: section),
+            updatedText: updatedText(for: section)
+        )
+    }
+
+    private func selectPage(_ page: NotebookPage, compact: Bool = false) {
+        selectedPageId = page.id
+        if compact {
+            compactPageId = page.id
+        }
+    }
+
+    private var pageSidebar: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                notebookSummaryCard
+                if !blockConflicts.isEmpty {
                     Button {
                         activeSheet = .conflictResolution
                     } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.white)
-                                .font(.title3)
-                                .accessibilityHidden(true)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("\(blockConflicts.count) Sync Conflict\(blockConflicts.count == 1 ? "" : "s")")
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .foregroundStyle(.white)
-                                Text("Tap to review and resolve")
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.85))
+                        Label("Open conflicts", systemImage: "exclamationmark.triangle")
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("notebookSidebar_openConflicts")
+                }
+                Text("Pages")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 4)
+                if notebookPages.isEmpty {
+                    Text("No pages yet. Create a section to start this notebook.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    pageSidebarGroups
+                }
+            }
+            .padding(14)
+        }
+        .accessibilityIdentifier("notebookPageSidebar")
+    }
+
+    @ViewBuilder
+    private var pageSidebarGroups: some View {
+        if let groups = hierarchy?.groups, !groups.isEmpty {
+            ForEach(groups) { group in
+                pageGroupHeader(group)
+                ForEach(group.sections) { section in
+                    let page = makeNotebookPage(section: section, groupName: group.name)
+                    pageSidebarRow(page, compact: false)
+                }
+            }
+        }
+        if let sections = hierarchy?.ungroupedSections, !sections.isEmpty {
+            Text("Ungrouped")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.top, 4)
+            ForEach(sections) { section in
+                let page = makeNotebookPage(section: section, groupName: nil)
+                pageSidebarRow(page, compact: false)
+            }
+        }
+    }
+
+    private func pageGroupHeader(_ group: NotebooksService.SectionGroupWithChildren) -> some View {
+        HStack(spacing: 8) {
+            Text(group.name)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            Spacer()
+            Menu {
+                Button { activeSheet = .editGroup(groupId: group.id, name: group.name) } label: {
+                    Label("Rename Group", systemImage: "pencil")
+                }
+                Button { activeSheet = .addSection(groupId: group.id) } label: {
+                    Label("Add Section", systemImage: "plus")
+                }
+                Button(role: .destructive) { pendingDelete = .group(group.id) } label: {
+                    Label("Delete Group", systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .frame(width: 44, height: 44)
+            }
+            .disabled(isReadOnly)
+            .accessibilityLabel("Group actions for \(group.name)")
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 4)
+    }
+
+    private func pageSidebarRow(_ page: NotebookPage, compact: Bool) -> some View {
+        let isSelected = selectedPage?.id == page.id
+        return Button {
+            selectPage(page, compact: compact)
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "doc.text")
+                        .frame(width: 20)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(page.title)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                        Text(page.derivedPreview)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                        HStack(spacing: 6) {
+                            Text(page.blockCountText)
+                            if let groupName = page.groupName {
+                                Text("•")
+                                Text(groupName)
                             }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundStyle(.white.opacity(0.7))
-                                .accessibilityHidden(true)
+                            if let updatedText = page.updatedText {
+                                Text("•")
+                                Text(updatedText)
+                            }
                         }
-                        .padding(12)
-                        .background(Color.orange)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
                     }
-                    .buttonStyle(.plain)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                }
-            }
-
-            // Manager Review Section (45D)
-            if isWarrantyJob && appCore.hasPermission("manage_jobs") && !todosNeedingReview.isEmpty {
-                Section {
-                    ForEach(todosNeedingReview) { entry in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(entry.title ?? entry.content)
-                                    .font(.subheadline)
-                                Text("Classified as: \(entry.workClassification ?? "unset")")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button("Approve") {
-                                approveClassification(entryId: entry.id)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.green)
-                            .controlSize(.small)
+                    Spacer()
+                    Menu {
+                        Button { activeSheet = .editSection(sectionId: page.id, name: page.title) } label: {
+                            Label("Rename Page", systemImage: "pencil")
                         }
-                    }
-                } header: {
-                    Text("Needs Review (\(todosNeedingReview.count))")
-                }
-            }
-
-            // Section Groups (collapsible)
-            if let groups = hierarchy?.groups, !groups.isEmpty {
-                ForEach(groups) { groupItem in
-                    Section {
-                        DisclosureGroup(
-                            isExpanded: groupBinding(groupItem.id)
-                        ) {
-                            ForEach(groupItem.sections) { sectionItem in
-                                sectionRow(sectionItem)
-                            }
-                            Button {
-                                activeSheet = .addSection(groupId: groupItem.id)
-                            } label: {
-                                Label("Add Section", systemImage: "plus")
-                                    .font(.caption)
-                                    .foregroundStyle(.blue)
-                            }
-                        } label: {
-                            HStack {
-                                Image(systemName: "folder.fill")
-                                    .foregroundStyle(.orange)
-                                    .accessibilityHidden(true)
-                                Text(groupItem.name).font(.headline)
-                                Spacer()
-                                Text("\(groupItem.sections.count) sections")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                            .contextMenu {
-                                Button {
-                                    activeSheet = .editGroup(groupId: groupItem.id, name: groupItem.name)
-                                } label: {
-                                    Label("Rename", systemImage: "pencil")
-                                }
-                                Button {
-                                    activeSheet = .addSection(groupId: groupItem.id)
-                                } label: {
-                                    Label("Add Section", systemImage: "plus")
-                                }
-                                Button(role: .destructive) {
-                                    pendingDelete = .group(groupItem.id)
-                                } label: {
-                                    Label("Delete Group", systemImage: "trash")
-                                }
-                            }
+                        Button { activeSheet = .addEntry(sectionId: page.id) } label: {
+                            Label("Add Block", systemImage: "plus.circle")
                         }
+                        Button(role: .destructive) { pendingDelete = .section(page.id) } label: {
+                            Label("Delete Page", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .frame(width: 44, height: 44)
                     }
+                    .disabled(isReadOnly)
+                    .accessibilityLabel("Page actions for \(page.title)")
                 }
             }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isSelected ? Color.accentColor.opacity(0.14) : Color(.systemBackground))
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabelForPageRow(page, isSelected: isSelected))
+        .accessibilityIdentifier("notebookPageRow_\(page.id)")
+    }
 
-            // Ungrouped sections
-            if let ungrouped = hierarchy?.ungroupedSections, !ungrouped.isEmpty {
-                Section {
-                    ForEach(ungrouped) { sectionItem in
-                        sectionRow(sectionItem)
-                    }
-                } header: {
-                    Text("Pages")
-                }
+    private func sidebarRow(id: String, title: String, systemImage: String, badge: String?, isSelected: Bool) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .frame(width: 20)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.subheadline)
+                .lineLimit(2)
+            Spacer()
+            if let badge {
+                Text(badge)
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.secondary.opacity(0.15)))
             }
+        }
+        .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+        .frame(minHeight: 44)
+        .padding(.horizontal, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isSelected ? Color.accentColor.opacity(0.14) : Color.clear)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabelForSidebarRow(title: title, badge: badge, isSelected: isSelected))
+        .accessibilityIdentifier("notebookSidebar_\(id)")
+    }
 
-            // Empty state
-            if hierarchy?.groups.isEmpty == true && hierarchy?.ungroupedSections.isEmpty == true {
+    private var compactPageList: some View {
+        List {
+            actionErrorSection
+            syncConflictBannerSection
+            managerReviewSection
+            if notebookPages.isEmpty {
                 Section {
                     EmptyStateView(
                         icon: "note.text",
-                        title: "No Content",
-                        message: "Add section groups and sections to organize this notebook."
+                        title: "No pages yet",
+                        message: "Create a section to start this notebook."
                     )
-                }
-            }
-
-            // Legacy entries (entries without sections from before the hierarchy)
-            let legacyEntries = notebook?.entries ?? []
-            if !legacyEntries.isEmpty && hierarchy?.groups.isEmpty == true && hierarchy?.ungroupedSections.isEmpty == true {
-                Section {
-                    ForEach(legacyEntries) { entry in
-                        entryRow(entry)
-                    }
-                } header: {
-                    Text("Entries")
-                }
-            }
-
-            // Panel Schedule Builder (for panel_schedule notebooks)
-            if notebook?.notebookType == "panel_schedule" {
-                Section("Panel Schedule") {
                     Button {
-                        activeSheet = .panelScheduleEditor
+                        activeSheet = .addSection(groupId: nil)
                     } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "bolt.fill")
-                                .foregroundStyle(.yellow)
-                                .frame(width: 28)
-                                .accessibilityHidden(true)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Open Panel Schedule Builder")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                Text("Edit circuit breaker assignments")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                                .accessibilityHidden(true)
-                        }
+                        Label("Create page", systemImage: "doc.badge.plus")
+                            .frame(minHeight: 44)
                     }
-                    .buttonStyle(.plain)
+                    .disabled(isReadOnly)
+                }
+            } else {
+                Section("Pages") {
+                    ForEach(notebookPages) { page in
+                        pageSidebarRow(page, compact: true)
+                    }
                 }
             }
-
-            // Info section
-            Section {
-                if let nb = notebook {
-                    detailRow("Type", nb.notebookType)
-                    if let created = nb.createdAt {
-                        detailRow("Created", String(created.prefix(10)))
-                    }
-                    if let jobName = nb.jobName {
-                        detailRow("Job", jobName)
-                    }
-                }
-            } header: {
-                Text("Notebook Info")
-            }
+            panelScheduleSection
+            notebookInfoSection
         }
         .listStyle(.insetGrouped)
+        .accessibilityIdentifier("notebookCompactPageList")
+    }
+
+    private var selectedPageSurface: some View {
+        List {
+            selectedPageContentSections
+        }
+        .listStyle(.insetGrouped)
+        .accessibilityIdentifier("notebookSelectedPageSurface")
+    }
+
+    private var compactSelectedPageSurface: some View {
+        List {
+            Section {
+                Button {
+                    compactPageId = nil
+                } label: {
+                    Label("Back to pages", systemImage: "chevron.left")
+                        .frame(minHeight: 44)
+                }
+            }
+            selectedPageContentSections
+        }
+        .listStyle(.insetGrouped)
+        .accessibilityIdentifier("notebookCompactSelectedPageSurface")
+    }
+
+    @ViewBuilder
+    private var selectedPageContentSections: some View {
+        actionErrorSection
+        syncConflictBannerSection
+        managerReviewSection
+        if let page = selectedPage {
+            selectedPageHeader(page)
+            Section {
+                if page.section.entries.isEmpty {
+                    EmptyStateView(
+                        icon: "text.badge.plus",
+                        title: "Empty page",
+                        message: "This page has no blocks yet. Add the first block when you're ready."
+                    )
+                } else {
+                    ForEach(page.section.entries) { entry in
+                        entryRow(entry)
+                    }
+                }
+                Button {
+                    activeSheet = .addEntry(sectionId: page.id)
+                } label: {
+                    Label("Add Block", systemImage: "plus.circle")
+                        .frame(minHeight: 44)
+                }
+                .disabled(isReadOnly)
+            } header: {
+                Text("Page Blocks")
+            } footer: {
+                Text("Showing only the selected page's blocks, not the whole notebook.")
+            }
+        } else {
+            Section {
+                EmptyStateView(
+                    icon: "note.text",
+                    title: "No pages yet",
+                    message: "Create a section to organize this job notebook."
+                )
+                Button {
+                    activeSheet = .addSection(groupId: nil)
+                } label: {
+                    Label("Create page", systemImage: "doc.badge.plus")
+                        .frame(minHeight: 44)
+                }
+                .disabled(isReadOnly)
+            }
+        }
+        legacyEntriesSection
+        panelScheduleSection
+        notebookInfoSection
+    }
+
+    private func selectedPageHeader(_ page: NotebookPage) -> some View {
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(page.title)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(page.derivedPreview)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    statusBadge(notebook?.status ?? "active")
+                    Text(page.blockCountText)
+                    if let groupName = page.groupName {
+                        Text("• \(groupName)")
+                    }
+                    if let updatedText = page.updatedText {
+                        Text("• \(updatedText)")
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    Button {
+                        activeSheet = .editSection(sectionId: page.id, name: page.title)
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                            .frame(minHeight: 44)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isReadOnly)
+                    Button {
+                        activeSheet = .addEntry(sectionId: page.id)
+                    } label: {
+                        Label("Add Block", systemImage: "plus.circle")
+                            .frame(minHeight: 44)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isReadOnly)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
+    @ViewBuilder
+    private var actionErrorSection: some View {
+        if let error = actionError {
+            Section {
+                Text(error).foregroundStyle(.red).font(.caption)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var syncConflictBannerSection: some View {
+        if !blockConflicts.isEmpty {
+            Section {
+                Button {
+                    activeSheet = .conflictResolution
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.white)
+                            .font(.title3)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(blockConflicts.count) Sync Conflict\(blockConflicts.count == 1 ? "" : "s")")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.white)
+                            Text("Tap to review and resolve")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.85))
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.7))
+                            .accessibilityHidden(true)
+                    }
+                    .padding(12)
+                    .background(Color.orange)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var managerReviewSection: some View {
+        if isWarrantyJob && appCore.hasPermission("manage_jobs") && !todosNeedingReview.isEmpty {
+            Section {
+                ForEach(todosNeedingReview) { entry in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(entry.title ?? entry.content)
+                                .font(.subheadline)
+                            Text("Classified as: \(entry.workClassification ?? "unset")")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Approve") {
+                            approveClassification(entryId: entry.id)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.green)
+                        .controlSize(.small)
+                    }
+                    .frame(minHeight: 44)
+                }
+            } header: {
+                Text("Needs Review (\(todosNeedingReview.count))")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var legacyEntriesSection: some View {
+        let legacyEntries = notebook?.entries ?? []
+        if !legacyEntries.isEmpty && notebookPages.isEmpty {
+            Section {
+                ForEach(legacyEntries) { entry in
+                    entryRow(entry)
+                }
+            } header: {
+                Text("Entries")
+            } footer: {
+                Text("Legacy entries are shown only when this notebook has no pages yet.")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var panelScheduleSection: some View {
+        if notebook?.notebookType == "panel_schedule" {
+            Section("Panel Schedule") {
+                Button {
+                    activeSheet = .panelScheduleEditor
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "bolt.fill")
+                            .foregroundStyle(.yellow)
+                            .frame(width: 28)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Open Panel Schedule Builder")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text("Edit circuit breaker assignments")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                    }
+                    .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var notebookInfoSection: some View {
+        Section {
+            if let nb = notebook {
+                detailRow("Type", nb.notebookType)
+                detailRow("Status", nb.status.capitalized)
+                if let created = nb.createdAt {
+                    detailRow("Created", String(created.prefix(10)))
+                }
+                if let updated = nb.updatedAt {
+                    detailRow("Updated", String(updated.prefix(10)))
+                }
+                if let jobName = nb.jobName {
+                    detailRow("Job", jobName)
+                }
+            }
+        } header: {
+            Text("Notebook Info")
+        }
+    }
+
+    private var notebookSummaryCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(notebook?.jobName ?? "Job notebook", systemImage: "hammer")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+            Text(notebook?.title ?? "Notebook")
+                .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                statusBadge(notebook?.status ?? "active")
+                if let updated = notebook?.updatedAt {
+                    Text("Updated \(String(updated.prefix(10)))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var allEntries: [NotebooksService.NotebookEntryRow] {
+        var entries: [NotebooksService.NotebookEntryRow] = notebook?.entries ?? []
+        hierarchy?.groups.forEach { group in
+            group.sections.forEach { entries.append(contentsOf: $0.entries) }
+        }
+        hierarchy?.ungroupedSections.forEach { entries.append(contentsOf: $0.entries) }
+        return entries
+    }
+
+    private var todoBadgeText: String? {
+        let count = allEntries.filter { $0.blockType == "todo" && !$0.isCompleted }.count
+        return count > 0 ? "\(count)" : nil
+    }
+
+    private func derivedPreview(for section: NotebooksService.SectionWithEntries) -> String {
+        for entry in section.entries {
+            let title = (entry.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !title.isEmpty { return title }
+            let content = entry.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !content.isEmpty { return content }
+        }
+        return "This page has no blocks yet."
+    }
+
+    private func updatedText(for section: NotebooksService.SectionWithEntries) -> String? {
+        section.entries.compactMap(\.createdAt).last.map { "Updated \(String($0.prefix(10)))" }
+    }
+
+    private func accessibilityLabelForPageRow(_ page: NotebookPage, isSelected: Bool) -> String {
+        [page.title, page.derivedPreview, page.blockCountText, isSelected ? "selected" : nil]
+            .compactMap { $0 }
+            .joined(separator: ", ")
+    }
+
+    private func accessibilityLabelForSidebarRow(title: String, badge: String?, isSelected: Bool) -> String {
+        [title, badge.map { "\($0) items" }, isSelected ? "selected" : nil]
+            .compactMap { $0 }
+            .joined(separator: ", ")
+    }
+
+    // MARK: - Content List
+
+    private func statusBadge(_ status: String) -> some View {
+        let color: Color = switch status {
+        case "active": .green
+        case "locked": .red
+        case "archived": .secondary
+        default: .secondary
+        }
+        return Text(status.capitalized)
+            .font(.caption2)
+            .fontWeight(.semibold)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(color.opacity(0.15)))
+            .foregroundStyle(color)
     }
 
     // MARK: - Section Row
@@ -363,7 +824,9 @@ struct IOSNotebookDetailPage: View {
                 Label("Add Block", systemImage: "plus.circle")
                     .font(.caption)
                     .foregroundStyle(.blue)
+                    .frame(minHeight: 44)
             }
+            .disabled(isReadOnly)
         } label: {
             HStack {
                 Image(systemName: "doc.text")
@@ -398,7 +861,8 @@ struct IOSNotebookDetailPage: View {
 
     @ViewBuilder
     private func entryRow(_ entry: NotebooksService.NotebookEntryRow) -> some View {
-        Group {
+        HStack(alignment: .top, spacing: 8) {
+            Group {
             switch entry.blockType {
             case "heading":
                 Text(entry.title ?? entry.content)
@@ -560,6 +1024,18 @@ struct IOSNotebookDetailPage: View {
                     }
                 }
             }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                activeSheet = .editEntry(entry)
+            } label: {
+                Image(systemName: "pencil.circle")
+                    .imageScale(.large)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Edit block")
+            .accessibilityHint("Opens this block for editing while preserving change history")
         }
         .contextMenu {
             Button {
@@ -771,6 +1247,66 @@ struct IOSNotebookDetailPage: View {
                 }
             )
 
+        case .notebookSections:
+            NavigationStack {
+                List {
+                    Section {
+                        notebookSummaryCard
+                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    }
+                    Section("Notebook") {
+                        sidebarRow(id: "overview", title: "Overview", systemImage: "doc.text", badge: nil, isSelected: true)
+                        sidebarRow(id: "dailyLogs", title: "Daily Logs", systemImage: "calendar", badge: nil, isSelected: false)
+                        sidebarRow(id: "todos", title: "To-Dos", systemImage: "checklist", badge: todoBadgeText, isSelected: false)
+                        sidebarRow(id: "photos", title: "Photos", systemImage: "photo.on.rectangle", badge: nil, isSelected: false)
+                        sidebarRow(id: "panelSchedules", title: "Panel Schedules", systemImage: "bolt.rectangle", badge: nil, isSelected: false)
+                        if !blockConflicts.isEmpty {
+                            sidebarRow(id: "openConflicts", title: "Open conflicts", systemImage: "exclamationmark.triangle", badge: "\(blockConflicts.count)", isSelected: false)
+                        }
+                    }
+                    if let groups = hierarchy?.groups, !groups.isEmpty {
+                        Section("Sections") {
+                            ForEach(groups) { group in
+                                Text(group.name)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                ForEach(group.sections) { section in
+                                    sidebarRow(
+                                        id: "section_\(section.id)",
+                                        title: section.name,
+                                        systemImage: "doc.text",
+                                        badge: "\(section.entries.count)",
+                                        isSelected: false
+                                    )
+                                    .accessibilityIdentifier("notebookSectionSheet_section_\(section.id)")
+                                }
+                            }
+                        }
+                    }
+                    if let sections = hierarchy?.ungroupedSections, !sections.isEmpty {
+                        Section("Pages") {
+                            ForEach(sections) { section in
+                                sidebarRow(
+                                    id: "section_\(section.id)",
+                                    title: section.name,
+                                    systemImage: "doc.text",
+                                    badge: "\(section.entries.count)",
+                                    isSelected: false
+                                )
+                                .accessibilityIdentifier("notebookSectionSheet_section_\(section.id)")
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("Notebook Sections")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { activeSheet = nil }
+                    }
+                }
+            }
+
         case .help:
             PageHelpSheet(title: "Notebook Detail Help", sections: [
                 ("What This Page Does", "Shows the full contents of a notebook organized into section groups, sections, and block entries. This is where you read, add, and edit all the content within a notebook."),
@@ -805,6 +1341,15 @@ struct IOSNotebookDetailPage: View {
                 hierarchy?.groups.forEach { g in ids.append(contentsOf: g.sections.map(\.id)) }
                 hierarchy?.ungroupedSections.forEach { s in ids.append(s.id) }
                 expandedSections = Set(ids)
+            }
+            let currentPages = notebookPages
+            if let selectedPageId, !currentPages.contains(where: { $0.id == selectedPageId }) {
+                self.selectedPageId = currentPages.first?.id
+            } else if selectedPageId == nil {
+                selectedPageId = currentPages.first?.id
+            }
+            if let compactPageId, !currentPages.contains(where: { $0.id == compactPageId }) {
+                self.compactPageId = nil
             }
             // Check for sync conflicts on this notebook's entries (62J)
             blockConflicts = (try? service.detectBlockConflicts(notebookId: notebookId)) ?? []
@@ -864,6 +1409,10 @@ struct IOSNotebookDetailPage: View {
             loadError = "Service not available"
             return
         }
+        guard let userId = appCore.currentUser?.id else {
+            loadError = "Not logged in. Please log in and try again."
+            return
+        }
         guard let notebookId = notebook?.id else {
             loadError = "No notebook loaded"
             return
@@ -877,15 +1426,16 @@ struct IOSNotebookDetailPage: View {
         do {
             if let existingEntryId = findPanelScheduleEntryId() {
                 // Update existing panel schedule entry
-                try service.updateBlockEntry(entryId: existingEntryId, content: nil, blockData: jsonString)
+                try service.updateBlockEntry(
+                    entryId: existingEntryId,
+                    content: nil,
+                    blockData: jsonString,
+                    updatedBy: userId
+                )
             } else {
                 // Create new panel_schedule block entry in the first available section
                 guard let sectionId = try findOrCreateDefaultSectionId(service: service, notebookId: notebookId) else {
                     loadError = "No section available for panel schedule"
-                    return
-                }
-                guard let userId = appCore.currentUser?.id else {
-                    loadError = "Not logged in. Please log in and try again."
                     return
                 }
                 _ = try service.createBlockEntry(
