@@ -426,7 +426,7 @@ struct NotebooksServiceTests {
             mergeText: { _, _, _ in
                 try? await env.db.writer.write { dbConn in
                     try dbConn.execute(
-                        sql: "UPDATE notebook_entries SET content = ?, updated_at = datetime('now', '+1 second') WHERE id = ?",
+                        sql: "UPDATE notebook_entries SET content = ? WHERE id = ?",
                         arguments: ["Concurrent update", entryId]
                     )
                 }

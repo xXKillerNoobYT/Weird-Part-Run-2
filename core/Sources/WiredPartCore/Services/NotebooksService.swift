@@ -1915,8 +1915,9 @@ public final class NotebooksService: Sendable {
                     WHERE id = ?
                       AND deleted_at IS NULL
                       AND updated_at IS ?
+                      AND COALESCE("\(pending.fieldName)", '') = ?
                     """,
-                arguments: [merged, pending.recordId, pending.entryUpdatedAt]
+                arguments: [merged, pending.recordId, pending.entryUpdatedAt, pending.local]
             )
             guard dbConn.changesCount > 0 else { return false }
             try dbConn.execute(
