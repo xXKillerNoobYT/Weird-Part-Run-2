@@ -256,7 +256,7 @@ struct Weird_Parts_IOSTests {
         )
     }
 
-    @Test func questionnaireBreakAutofillDoesNotSwallowSubmitErrors() throws {
+    @Test @MainActor func questionnaireBreakAutofillDoesNotSwallowSubmitErrors() throws {
         var autoFillAttempts = 0
 
         do {
@@ -276,7 +276,7 @@ struct Weird_Parts_IOSTests {
         }
     }
 
-    @Test func questionnaireBreakAutofillSkipsWhenExistingBreakButtonsWereUsed() throws {
+    @Test @MainActor func questionnaireBreakAutofillSkipsWhenExistingBreakButtonsWereUsed() throws {
         var autoFillAttempts = 0
 
         try QuestionnaireBreakComplianceSubmitter.submit(
@@ -290,7 +290,7 @@ struct Weird_Parts_IOSTests {
         #expect(autoFillAttempts == 0)
     }
 
-    @Test func questionnaireBreakAutofillRunsForForgotBreakPath() throws {
+    @Test @MainActor func questionnaireBreakAutofillRunsForForgotBreakPath() throws {
         var autoFillAttempts = 0
 
         try QuestionnaireBreakComplianceSubmitter.submit(

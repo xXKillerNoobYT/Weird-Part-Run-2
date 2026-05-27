@@ -431,7 +431,7 @@ struct PartsServiceAdvancedTests {
         #expect(imported.weightedAvgCost == 18.75)
 
         let export = try env.parts.exportPartsCSV(groups: [.pricing])
-        #expect(export.contains("Round Trip Cost Part,ROUND-COST-001,18.75,40.0,26.25"))
+        #expect(export.contains("Round Trip Cost Part,ROUND-COST-001,18.75,18.75,40.0,26.25"))
     }
 
     @Test("previewPartsImportCSV attaches source metadata for audit sessions")
