@@ -3616,6 +3616,94 @@ public final class WarehouseService: Sendable {
         }
     }
 
+    /// Active storage area lookup row with enough labels for search-driven UI.
+    public struct ActiveAreaInfo: Sendable, Identifiable, Equatable {
+        public let id: Int64
+        public let fullLocationCode: String?
+        public let unitName: String
+        public let levelCode: String
+        public let levelName: String?
+        public let areaCode: String
+        public let areaNumber: Int
+
+        public var displayLabel: String {
+            if let fullLocationCode, !fullLocationCode.isEmpty {
+                return fullLocationCode
+            }
+            return "\(unitName) \(levelName ?? levelCode) \(areaCode)"
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        public var detailLabel: String {
+            "\(unitName) / \(levelName ?? levelCode) / Area \(areaNumber)"
+        }
+    }
+
+    /// Look up one non-deleted storage area by id.
+    public func getActiveArea(id: Int64) throws -> ActiveAreaInfo {
+        guard id > 0 else { throw WarehouseError.areaNotFound(id) }
+        return try db.writer.read { dbConn in
+            guard let area = try Self.fetchActiveArea(id: id, dbConn: dbConn) else {
+                throw WarehouseError.areaNotFound(id)
+            }
+            return area
+        }
+    }
+
+    /// Search active storage areas by QR/full location code or hierarchy labels.
+    public func searchActiveAreas(query: String, limit: Int = 20) throws -> [ActiveAreaInfo] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let cappedLimit = max(1, min(limit, 50))
+        let pattern = "%\(trimmed)%"
+        return try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT sa.id, sa.full_location_code, sa.area_code, sa.area_number,
+                       su.name AS unit_name,
+                       sl.level_code, sl.level_name
+                FROM warehouse_storage_areas sa
+                JOIN warehouse_storage_levels sl ON sl.id = sa.level_id AND sl.deleted_at IS NULL
+                JOIN warehouse_storage_units su ON su.id = sl.unit_id AND su.deleted_at IS NULL
+                WHERE sa.deleted_at IS NULL
+                  AND (
+                    sa.full_location_code LIKE ?
+                    OR sa.area_code LIKE ?
+                    OR su.name LIKE ?
+                    OR sl.level_code LIKE ?
+                    OR sl.level_name LIKE ?
+                  )
+                ORDER BY su.name, sl.level_order, sa.area_number
+                LIMIT ?
+                """, arguments: [pattern, pattern, pattern, pattern, pattern, cappedLimit])
+            return rows.map(Self.activeAreaInfo(from:))
+        }
+    }
+
+    private static func fetchActiveArea(id: Int64, dbConn: Database) throws -> ActiveAreaInfo? {
+        guard let row = try Row.fetchOne(dbConn, sql: """
+            SELECT sa.id, sa.full_location_code, sa.area_code, sa.area_number,
+                   su.name AS unit_name,
+                   sl.level_code, sl.level_name
+            FROM warehouse_storage_areas sa
+            JOIN warehouse_storage_levels sl ON sl.id = sa.level_id AND sl.deleted_at IS NULL
+            JOIN warehouse_storage_units su ON su.id = sl.unit_id AND su.deleted_at IS NULL
+            WHERE sa.id = ? AND sa.deleted_at IS NULL
+            """, arguments: [id]) else { return nil }
+        return activeAreaInfo(from: row)
+    }
+
+    private static func activeAreaInfo(from row: Row) -> ActiveAreaInfo {
+        ActiveAreaInfo(
+            id: row["id"],
+            fullLocationCode: row["full_location_code"],
+            unitName: row["unit_name"] ?? "",
+            levelCode: row["level_code"] ?? "",
+            levelName: row["level_name"],
+            areaCode: row["area_code"] ?? "",
+            areaNumber: row["area_number"] ?? 0
+        )
+    }
+
     /// Soft delete a storage area.
     public func deleteStorageArea(id: Int64) throws {
         try db.writer.write { dbConn in
@@ -3752,9 +3840,9 @@ public final class WarehouseService: Sendable {
                        sa.area_code, sa.full_location_code,
                        su.name as unit_name, sl.level_code
                 FROM warehouse_part_assignments pa
-                JOIN warehouse_storage_areas sa ON sa.id = pa.area_id
-                JOIN warehouse_storage_levels sl ON sl.id = sa.level_id
-                JOIN warehouse_storage_units su ON su.id = sl.unit_id
+                JOIN warehouse_storage_areas sa ON sa.id = pa.area_id AND sa.deleted_at IS NULL
+                JOIN warehouse_storage_levels sl ON sl.id = sa.level_id AND sl.deleted_at IS NULL
+                JOIN warehouse_storage_units su ON su.id = sl.unit_id AND su.deleted_at IS NULL
                 WHERE pa.part_id = ? AND pa.deleted_at IS NULL
                 ORDER BY pa.is_home DESC, su.name, sl.level_order, sa.area_number
                 """, arguments: [partId])
@@ -4888,7 +4976,22 @@ public final class WarehouseService: Sendable {
         foundBy: Int64
     ) throws -> MisplacedPartsLog {
         guard qtyFound > 0 else { throw WarehouseError.invalidQuantity }
+        guard partId > 0 else { throw WarehouseError.partNotFound(partId) }
+        guard foundAtAreaId > 0 else { throw WarehouseError.areaNotFound(foundAtAreaId) }
+        if let homeAreaId {
+            guard homeAreaId > 0 else { throw WarehouseError.areaNotFound(homeAreaId) }
+        }
         return try db.writer.write { dbConn in
+            let partOk = (try Int.fetchOne(dbConn, sql:
+                "SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL AND COALESCE(is_active, 1) = 1",
+                arguments: [partId]) ?? 0) > 0
+            guard partOk else { throw WarehouseError.partNotFound(partId) }
+            let foundAreaOk = try Self.fetchActiveArea(id: foundAtAreaId, dbConn: dbConn) != nil
+            guard foundAreaOk else { throw WarehouseError.areaNotFound(foundAtAreaId) }
+            if let homeAreaId {
+                let homeAreaOk = try Self.fetchActiveArea(id: homeAreaId, dbConn: dbConn) != nil
+                guard homeAreaOk else { throw WarehouseError.areaNotFound(homeAreaId) }
+            }
             // Guard: reporter must be a non-tombstoned user — orphan foundBy would
             // produce Unknown-user entries in the misplaced-parts dashboard.
             let userOk = (try Int.fetchOne(dbConn, sql:
