@@ -1452,8 +1452,6 @@ public final class JobsService: Sendable {
     /// Get today's clock entries for a user, grouped by job with optional to-do names.
     public func getTodaysClockEntries(userId: Int64) throws -> [JobClockGroup] {
         do { return try db.writer.read { dbConn -> [JobClockGroup] in
-            let todayPrefix = String(CoreFormatters.nowISO().prefix(10))
-
             let rows = try Row.fetchAll(dbConn, sql: """
                 SELECT le.id, le.job_id, j.job_name, le.clock_in, le.clock_out,
                        le.linked_todo_id, le.work_type,
@@ -1462,10 +1460,10 @@ public final class JobsService: Sendable {
                 LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
                 LEFT JOIN notebook_entries ne ON ne.id = le.linked_todo_id AND ne.deleted_at IS NULL
                 WHERE le.user_id = ?
-                  AND le.clock_in LIKE ?
+                  AND \(Self.localDateSQL("le.clock_in")) = date('now', 'localtime')
                   AND le.deleted_at IS NULL
                 ORDER BY le.clock_in ASC
-                """, arguments: [userId, "\(todayPrefix)%"])
+                """, arguments: [userId])
 
             var groupMap: [Int64: [ClockEntrySummary]] = [:]
             var groupOrder: [Int64] = []
@@ -1480,8 +1478,8 @@ public final class JobsService: Sendable {
                 let todoName: String? = row["todo_name"] as String?
                 let wType: String = row["work_type"] ?? "new_work"
 
-                let startDate = CoreFormatters.parseISO(clockInStr) ?? Date()
-                let endDate: Date? = clockOutStr.flatMap { CoreFormatters.parseISO($0) }
+                let startDate = CoreFormatters.parseDateTime(clockInStr) ?? Date()
+                let endDate: Date? = clockOutStr.flatMap { CoreFormatters.parseDateTime($0) }
 
                 let summary = ClockEntrySummary(
                     id: entryId,

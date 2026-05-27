@@ -467,6 +467,32 @@ struct JobsServiceTests {
         #expect(groups.first?.jobId == jobId)
     }
 
+    @Test("Today's clock entries use local-day completed labor")
+    func testGetTodaysClockEntriesUsesLocalOperationalDayForCompletedLabor() throws {
+        try withMountainTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CLOCK-LOCAL", name: "Local Clock Job")
+            let clockIn = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 22, minute: 30))
+            let clockOut = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 23, minute: 30))
+
+            try env.db.writer.write { db in
+                try db.execute(sql: "DELETE FROM labor_entries")
+                try db.execute(sql: """
+                    INSERT INTO labor_entries
+                        (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                    VALUES (?, ?, ?, ?, 1.0, 0.0, 'completed', datetime('now'))
+                    """, arguments: [env.adminUserId, jobId, clockIn, clockOut])
+            }
+
+            let groups = try env.jobs.getTodaysClockEntries(userId: env.adminUserId)
+            let group = try #require(groups.first(where: { $0.jobId == jobId }))
+
+            #expect(group.jobName == "Local Clock Job")
+            #expect(group.entries.count == 1)
+            #expect(abs(group.totalDuration - 3600) < 1)
+        }
+    }
+
     // MARK: - Report Detail & Review
 
     @Test("Get report detail and mark reviewed")
