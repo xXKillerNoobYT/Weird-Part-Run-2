@@ -3,8 +3,22 @@ import Testing
 import GRDB
 @testable import WiredPartCore
 
-@Suite("ReportsService Tests")
+@Suite("ReportsService Tests", .serialized)
 struct ReportsServiceTests {
+    private func withDenverTimeZone(_ work: () throws -> Void) throws {
+        let originalTZ = getenv("TZ").map { String(cString: $0) }
+        setenv("TZ", "America/Denver", 1)
+        tzset()
+        defer {
+            if let originalTZ {
+                setenv("TZ", originalTZ, 1)
+            } else {
+                unsetenv("TZ")
+            }
+            tzset()
+        }
+        try work()
+    }
 
     // MARK: - Timesheet
 
@@ -22,9 +36,32 @@ struct ReportsServiceTests {
         let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
         try env.jobs.clockOut(laborEntryId: laborEntryId)
 
-        let today = ISO8601DateFormatter().string(from: Date()).prefix(10)
-        let data = try env.reports.getTimesheetData(startDate: String(today), endDate: String(today))
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let today = formatter.string(from: Date())
+        let data = try env.reports.getTimesheetData(startDate: today, endDate: today)
         #expect(data.count >= 1)
+    }
+
+    @Test("Timesheet data buckets UTC evening clock-in into local work day")
+    func testTimesheetUsesLocalOperationalDayForUtcClockIn() throws {
+        try withDenverTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LOCAL-TS", name: "Local Timesheet Job")
+            try env.db.writer.write { db in
+                try db.execute(sql: """
+                    INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                    VALUES (?, ?, '2026-03-06 03:30:00', '2026-03-06 04:30:00', 1.0, 0.0, 'completed', datetime('now'))
+                    """, arguments: [env.adminUserId, jobId])
+            }
+
+            let localDayRows = try env.reports.getTimesheetData(startDate: "2026-03-05", endDate: "2026-03-05")
+
+            #expect(localDayRows.count == 1)
+            #expect(localDayRows.first?.daysWorked == 1)
+            #expect(abs((localDayRows.first?.totalHours ?? 0) - 1.0) < 0.01)
+        }
     }
 
     // MARK: - Daily Report Summary
@@ -34,6 +71,28 @@ struct ReportsServiceTests {
         let env = try E2ETestHelpers.setUp()
         let summary = try env.reports.getDailyReportSummary(date: "2026-03-29")
         #expect(summary.isEmpty)
+    }
+
+    @Test("Daily report summary buckets UTC evening clock-in into local work day")
+    func testDailyReportSummaryUsesLocalOperationalDayForUtcClockIn() throws {
+        try withDenverTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LOCAL-DR", name: "Local Daily Report Job")
+            try env.db.writer.write { db in
+                try db.execute(sql: """
+                    INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                    VALUES (?, ?, '2026-03-06 03:30:00', '2026-03-06 04:30:00', 1.5, 0.0, 'completed', datetime('now'))
+                    """, arguments: [env.adminUserId, jobId])
+            }
+
+            let rows = try env.reports.getDailyReportSummary(date: "2026-03-05")
+            let row = rows.first(where: { $0.id == jobId })
+
+            #expect(row != nil)
+            #expect(row?.workerCount == 1)
+            #expect(abs((row?.totalHours ?? 0) - 1.5) < 0.01)
+        }
     }
 
     // MARK: - Spending
