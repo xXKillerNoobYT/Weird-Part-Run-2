@@ -1871,10 +1871,10 @@ public final class NotebooksService: Sendable {
             return result.success ? result.text : nil
         }
     ) async throws -> Bool {
-        let pending = try await db.writer.read { dbConn -> (recordId: String, fieldName: String, local: String, remote: String, context: String?)? in
+        let pending = try await db.writer.read { dbConn -> (recordId: Int64, fieldName: String, local: String, remote: String, context: String?, entryUpdatedAt: String?)? in
             guard let row = try Row.fetchOne(dbConn, sql: """
                 SELECT cl.record_id, cl.field_name, cl.local_value, cl.remote_value,
-                       ne.title AS entry_title, ne.block_type
+                       ne.title AS entry_title, ne.block_type, ne.updated_at AS entry_updated_at
                 FROM _conflict_log cl
                 LEFT JOIN notebook_entries ne ON CAST(cl.record_id AS INTEGER) = ne.id
                 WHERE cl.id = ? AND cl.reviewed = 0
@@ -1884,6 +1884,7 @@ public final class NotebooksService: Sendable {
 
             let fieldName: String = row["field_name"] ?? ""
             guard Self.foundationMergeFields.contains(fieldName) else { return nil }
+            guard let recordId = Int64(row["record_id"] as String? ?? "") else { return nil }
             let local = row["local_value"] as String? ?? ""
             let remote = row["remote_value"] as String? ?? ""
             let context = [
@@ -1891,11 +1892,12 @@ public final class NotebooksService: Sendable {
                 row["block_type"] as String?
             ].compactMap { $0 }.joined(separator: " / ")
             return (
-                recordId: row["record_id"] ?? "0",
+                recordId: recordId,
                 fieldName: fieldName,
                 local: local,
                 remote: remote,
-                context: context.isEmpty ? nil : context
+                context: context.isEmpty ? nil : context,
+                entryUpdatedAt: row["entry_updated_at"]
             )
         }
 
@@ -1905,17 +1907,25 @@ public final class NotebooksService: Sendable {
             return false
         }
 
-        try await db.writer.write { dbConn in
+        let applied = try await db.writer.write { dbConn -> Bool in
             try dbConn.execute(
-                sql: "UPDATE notebook_entries SET \"\(pending.fieldName)\" = ?, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
-                arguments: [merged, pending.recordId]
+                sql: """
+                    UPDATE notebook_entries
+                    SET "\(pending.fieldName)" = ?, updated_at = datetime('now')
+                    WHERE id = ?
+                      AND deleted_at IS NULL
+                      AND updated_at IS ?
+                    """,
+                arguments: [merged, pending.recordId, pending.entryUpdatedAt]
             )
+            guard dbConn.changesCount > 0 else { return false }
             try dbConn.execute(
                 sql: "UPDATE _conflict_log SET winner = 'ai_merge', reviewed = 1 WHERE id = ?",
                 arguments: [conflictLogId]
             )
+            return true
         }
-        return true
+        return applied
     }
 
     /// Bulk-resolve all unreviewed conflicts for a notebook, keeping the specified version.

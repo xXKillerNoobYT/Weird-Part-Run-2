@@ -15,6 +15,7 @@ struct IOSNotebookDetailPage: View {
     @State private var loadError: String?
     @State private var actionError: String?
     @State private var activeSheet: ActiveSheet?
+    @State private var activeEditLockEntryId: Int64?
     @State private var expandedGroups: Set<Int64> = []
     @State private var expandedSections: Set<Int64> = []
     @State private var isWarrantyJob = false
@@ -141,7 +142,12 @@ struct IOSNotebookDetailPage: View {
                 .accessibilityLabel("Help")
             }
         }
-        .sheet(item: $activeSheet) { sheet in
+        .sheet(item: $activeSheet, onDismiss: {
+            if let entryId = activeEditLockEntryId {
+                releaseEditLock(entryId: entryId)
+                activeEditLockEntryId = nil
+            }
+        }) { sheet in
             sheetContent(for: sheet)
                 .environmentObject(appCore)
         }
@@ -1209,6 +1215,7 @@ struct IOSNotebookDetailPage: View {
                 editingEntry: entry,
                 onSave: {
                     releaseEditLock(entryId: entry.id)
+                    activeEditLockEntryId = nil
                     loadData()
                 }
             )
@@ -1610,10 +1617,12 @@ struct IOSNotebookDetailPage: View {
         }
         do {
             _ = try service.acquireBlockEditLock(entryId: entry.id, userId: userId)
+            activeEditLockEntryId = entry.id
             activeSheet = .editEntry(entry)
             activeEditLocks = (try? service.activeBlockEditLocks(notebookId: notebookId)) ?? activeEditLocks
         } catch {
             actionError = userFriendlyError(error, context: "start editing")
+            activeEditLockEntryId = entry.id
             activeSheet = .editEntry(entry)
         }
     }

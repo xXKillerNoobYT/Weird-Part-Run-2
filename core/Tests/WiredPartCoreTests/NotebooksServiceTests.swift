@@ -393,6 +393,61 @@ struct NotebooksServiceTests {
         #expect(row?["winner"] as String? == "ai_merge")
     }
 
+    @Test("Foundation Models merge preserves conflict when row changes before write")
+    func testFoundationModelsMergeRejectsStaleConflictSnapshot() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let nbId = try env.notebooks.createNotebook(
+            title: "Merge Stale Snapshot",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId,
+            groupId: nil,
+            name: "Main"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "text",
+            title: "Conflict note",
+            content: "Local text",
+            createdBy: env.adminUserId
+        )
+        let conflictId = try insertNotebookConflict(
+            db: env.db,
+            entryId: entryId,
+            fieldName: "content",
+            localValue: "Local text",
+            remoteValue: "Remote text"
+        )
+
+        let merged = try await env.notebooks.resolveBlockConflictWithFoundationModels(
+            conflictLogId: conflictId,
+            mergeText: { _, _, _ in
+                try? await env.db.writer.write { dbConn in
+                    try dbConn.execute(
+                        sql: "UPDATE notebook_entries SET content = ?, updated_at = datetime('now', '+1 second') WHERE id = ?",
+                        arguments: ["Concurrent update", entryId]
+                    )
+                }
+                return "Merged text"
+            }
+        )
+        #expect(merged == false)
+
+        let row = try await env.db.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: """
+                SELECT ne.content, cl.reviewed, cl.winner
+                FROM notebook_entries ne
+                JOIN _conflict_log cl ON CAST(cl.record_id AS INTEGER) = ne.id
+                WHERE cl.id = ?
+                """, arguments: [conflictId])
+        }
+        #expect(row?["content"] as String? == "Concurrent update")
+        #expect((row?["reviewed"] as Int?) == 0)
+        #expect(row?["winner"] as String? == "local")
+    }
+
     // MARK: - 5. Delete Entry (Soft Delete)
 
     @Test("Soft-delete a block entry removes it from hierarchy")
