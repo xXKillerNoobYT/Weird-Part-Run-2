@@ -1168,7 +1168,7 @@ public final class JobsService: Sendable {
                   AND id != ?
                   AND status = 'completed'
                   AND deleted_at IS NULL
-                  AND date(clock_in) = date(?)
+                  AND \(Self.localDateSQL("clock_in")) = date(?, 'localtime')
                   AND clock_in < ?
                 """, arguments: [userId, laborEntryId, clockIn, clockIn]) ?? 0
             let remainingRegularHours = max(0, 8.0 - priorWorkedHours)
@@ -2218,7 +2218,7 @@ public final class JobsService: Sendable {
             sql: """
                 SELECT COALESCE(SUM(regular_hours + overtime_hours), 0)
                 FROM labor_entries
-                WHERE date(clock_in) = date('now') AND deleted_at IS NULL
+                WHERE \(Self.localDateSQL("clock_in")) = date('now', 'localtime') AND deleted_at IS NULL
                 """
         )
 
@@ -2417,6 +2417,11 @@ public final class JobsService: Sendable {
             if isTableNotFoundError(error) { return [] }
             throw error
         }
+    }
+
+    /// Detect whether a GRDB/SQLite error indicates a missing table.
+    private static func localDateSQL(_ expression: String) -> String {
+        "CASE WHEN length(\(expression)) <= 10 THEN date(\(expression)) ELSE date(\(expression), 'localtime') END"
     }
 
     /// Detect whether a GRDB/SQLite error indicates a missing table.

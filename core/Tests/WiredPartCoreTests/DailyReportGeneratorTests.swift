@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#endif
 import Testing
 import GRDB
 @testable import WiredPartCore
@@ -153,5 +156,63 @@ struct DailyReportGeneratorTests {
         // date match; the critical regression check is that generateReport doesn't
         // silently drop errors as empty results.
         #expect(report.jobId == jobId)
+    }
+
+    @Test("Generate report buckets UTC end-of-day labor into local report date")
+    func testGenerateReportUsesLocalClockInDateBucket() throws {
+        try withMountainTimeZone {
+            let (env, gen) = try freshEnv()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LOCAL-DRG", name: "Local Daily Report")
+
+            try env.db.writer.write { db in
+                try db.execute(sql: """
+                    INSERT INTO labor_entries
+                        (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                    VALUES (?, ?, '2026-02-01 02:30:00', '2026-02-01 04:30:00', 2.0, 0.0, 'completed', datetime('now'))
+                    """, arguments: [env.adminUserId, jobId])
+            }
+
+            let date = try #require(Self.dayFormatter.date(from: "2026-01-31"))
+            let report = try gen.generateReport(userId: env.adminUserId, jobId: jobId, date: date)
+
+            #expect(report.clockIn == "2026-02-01 02:30:00")
+            #expect(report.totalHours == 2.0)
+        }
+    }
+
+    @Test("Today's jobs buckets UTC end-of-day labor into local work date")
+    func testTodaysJobsUsesLocalClockInDateBucket() throws {
+        try withMountainTimeZone {
+            let (env, gen) = try freshEnv()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LOCAL-JOBS", name: "Local Jobs")
+
+            try env.db.writer.write { db in
+                try db.execute(sql: """
+                    INSERT INTO labor_entries
+                        (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                    VALUES (?, ?, '2026-02-01 02:30:00', '2026-02-01 04:30:00', 2.0, 0.0, 'completed', datetime('now'))
+                    """, arguments: [env.adminUserId, jobId])
+            }
+
+            let date = try #require(Self.dayFormatter.date(from: "2026-01-31"))
+            let jobs = try gen.getTodaysJobs(userId: env.adminUserId, date: date)
+
+            #expect(jobs.contains { $0.jobId == jobId && abs($0.hours - 2.0) < 0.001 })
+        }
+    }
+
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone(identifier: "America/Denver")
+        return formatter
+    }()
+
+    private func withMountainTimeZone<T>(_ body: () throws -> T) rethrows -> T {
+        #if canImport(Darwin)
+        setenv("TZ", "America/Denver", 1)
+        tzset()
+        #endif
+        return try body()
     }
 }
