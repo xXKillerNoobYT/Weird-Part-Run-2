@@ -3,6 +3,8 @@
 > **What this is.** A single onboarding document for the AI agent at [paperclipai.net](https://paperclipai.net) taking over autonomous development of the WiredPart project from Claude Code. Read this top-to-bottom before doing any work. Every section ends with pointers to deeper reference docs — read those when the moment calls for them, not all upfront.
 >
 > **Authored by Claude (final session, 2026-05-08).** All facts in §5 (state) are accurate as of that date; verify with `git log` / `gh issue list` / heartbeat-file freshness before assuming.
+>
+> **Paperclip staging update (2026-05-26):** For execution order, use `docs/plans/staged-paperclip-goals.md`. Stage 1 is the only active Paperclip implementation stage; later stages in this handoff are planning/backlog until Isaac/Paperclip promotes them.
 
 ---
 

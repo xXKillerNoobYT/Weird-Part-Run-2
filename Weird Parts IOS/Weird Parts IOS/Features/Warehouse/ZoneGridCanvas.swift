@@ -34,6 +34,7 @@ struct ZoneGridCanvas: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             grid
+                .zIndex(0)
 
             ForEach(zones, id: \.id) { zone in
                 zoneView(zone)
@@ -145,10 +146,11 @@ struct ZoneGridCanvas: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(zoneTitle(zone)), \(zone.zoneTypeDisplay), starts at R\(clampedY + 1)C\(clampedX + 1), \(width) by \(height) cells")
         .accessibilityHint("Tap to select. Long press and drag to move.")
-        .position(
-            x: CGFloat(clampedX) * cellStride + zoneExtent(width) / 2,
-            y: CGFloat(clampedY) * cellStride + zoneExtent(height) / 2
+        .offset(
+            x: CGFloat(clampedX) * cellStride,
+            y: CGFloat(clampedY) * cellStride
         )
+        .zIndex(isSelected ? 2 : 1)
     }
 
     private func zoneDragPreview(_ zone: WarehouseZone) -> some View {

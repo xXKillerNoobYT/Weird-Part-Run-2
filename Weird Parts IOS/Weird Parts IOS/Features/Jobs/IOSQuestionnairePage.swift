@@ -386,6 +386,8 @@ struct IOSQuestionnairePage: View {
             dismiss()
         } catch QuestionnaireBreakComplianceError.serviceUnavailable {
             errorMessage = "Break service not available"
+        } catch QuestionnaireBreakComplianceError.userUnavailable {
+            errorMessage = "User session not available"
         } catch {
             errorMessage = userFriendlyError(error, context: "complete questionnaire")
         }
@@ -396,9 +398,11 @@ struct IOSQuestionnairePage: View {
     /// - "Yes, all taken" + no break buttons used → auto-fill at defaults
     /// - "Forgot" or "Partial" → report missed breaks to office
     private func handleBreakVerification() throws {
-        guard let breakSvc = appCore.breakService,
-              let userId = appCore.currentUser?.id else {
+        guard let breakSvc = appCore.breakService else {
             throw QuestionnaireBreakComplianceError.serviceUnavailable
+        }
+        guard let userId = appCore.currentUser?.id else {
+            throw QuestionnaireBreakComplianceError.userUnavailable
         }
 
         try QuestionnaireBreakComplianceSubmitter.submit(
@@ -485,35 +489,36 @@ struct IOSQuestionnairePage: View {
             userInfo: ["context": context]
         )
     }
-}
 
-enum QuestionnaireBreakVerification: String, CaseIterable {
-    case allTaken = "Yes, all"
-    case forgot = "I forgot / didn't"
-    case partial = "Partial"
-}
+    enum QuestionnaireBreakVerification: String, CaseIterable {
+        case allTaken = "Yes, all"
+        case forgot = "I forgot / didn't"
+        case partial = "Partial"
+    }
 
-enum QuestionnaireBreakComplianceError: Error {
-    case serviceUnavailable
-}
+    enum QuestionnaireBreakComplianceError: Error {
+        case serviceUnavailable
+        case userUnavailable
+    }
 
-enum QuestionnaireBreakComplianceSubmitter {
-    static func submit(
-        verification: QuestionnaireBreakVerification,
-        hadBreakButtons: Bool,
-        missedBreaks: Set<String>,
-        autoFillBreaks: () throws -> Void
-    ) throws {
-        switch verification {
-        case .allTaken:
-            if !hadBreakButtons {
+    enum QuestionnaireBreakComplianceSubmitter {
+        static func submit(
+            verification: QuestionnaireBreakVerification,
+            hadBreakButtons: Bool,
+            missedBreaks: Set<String>,
+            autoFillBreaks: () throws -> Void
+        ) throws {
+            switch verification {
+            case .allTaken:
+                if !hadBreakButtons {
+                    try autoFillBreaks()
+                }
+            case .forgot:
                 try autoFillBreaks()
-            }
-        case .forgot:
-            try autoFillBreaks()
-        case .partial:
-            if !missedBreaks.isEmpty {
-                try autoFillBreaks()
+            case .partial:
+                if !missedBreaks.isEmpty {
+                    try autoFillBreaks()
+                }
             }
         }
     }
