@@ -130,10 +130,11 @@ render_link() {
   fi
 }
 
+_issues_file=$(mktemp); _agents_file=$(mktemp)
+printf '%s' "$ISSUES_JSON" > "$_issues_file"
+printf '%s' "$AGENTS_JSON" > "$_agents_file"
+
 COMMENT_BODY="$(
-  _issues_file=$(mktemp); _agents_file=$(mktemp)
-  printf '%s' "$ISSUES_JSON" > "$_issues_file"
-  printf '%s' "$AGENTS_JSON" > "$_agents_file"
   jq -nr \
     --slurpfile issues "$_issues_file" \
     --slurpfile agents "$_agents_file" \
