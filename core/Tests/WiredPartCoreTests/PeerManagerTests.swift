@@ -141,6 +141,67 @@ struct PeerManagerTests {
         await pm.stopPeerSync()
     }
 
+    @Test("LAN sync base URL is built from host and discovered port")
+    func testLANSyncBaseURLUsesPeerHostAndPort() throws {
+        let peer = DiscoveredPeer(
+            deviceId: "dev-url",
+            deviceName: "Office Mac",
+            companyId: "co",
+            host: "192.168.1.50",
+            port: 51943
+        )
+
+        let baseURL = try PeerManager.makeLANSyncBaseURL(for: peer)
+
+        #expect(baseURL.absoluteString == "http://192.168.1.50:51943")
+        #expect(baseURL.appendingPathComponent("sync/pull").absoluteString == "http://192.168.1.50:51943/sync/pull")
+    }
+
+    @Test("LAN sync base URL normalizes bracketless IPv6")
+    func testLANSyncBaseURLNormalizesIPv6() throws {
+        let peer = DiscoveredPeer(
+            deviceId: "dev-ipv6",
+            deviceName: "Office Mac",
+            companyId: "co",
+            host: "fe80::1",
+            port: 51943
+        )
+
+        let baseURL = try PeerManager.makeLANSyncBaseURL(for: peer)
+
+        #expect(baseURL.absoluteString == "http://[fe80::1]:51943")
+    }
+
+    @Test("LAN sync base URL rejects incomplete Bonjour endpoint data")
+    func testLANSyncBaseURLRejectsMissingPort() {
+        let peer = DiscoveredPeer(
+            deviceId: "dev-bad",
+            deviceName: "Office Mac",
+            companyId: "co",
+            host: "WiredPart-dev-bad",
+            port: 0
+        )
+
+        #expect(throws: URLError.self) {
+            _ = try PeerManager.makeLANSyncBaseURL(for: peer)
+        }
+    }
+
+    @Test("LAN sync base URL rejects raw Bonjour service instance hosts")
+    func testLANSyncBaseURLRejectsRawBonjourInstanceName() {
+        let peer = DiscoveredPeer(
+            deviceId: "dev-bonjour",
+            deviceName: "Office Mac",
+            companyId: "co",
+            host: "WiredPart-dev-bonjour",
+            port: 51943
+        )
+
+        #expect(throws: URLError.self) {
+            _ = try PeerManager.makeLANSyncBaseURL(for: peer)
+        }
+    }
+
     @Test("PeerSyncResult stores all fields correctly")
     func testPeerSyncResult() {
         let result = PeerSyncResult(

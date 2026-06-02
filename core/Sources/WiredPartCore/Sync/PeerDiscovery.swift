@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import os.log
+import Darwin
 
 // MARK: - DiscoveredPeer
 
@@ -53,7 +54,7 @@ public struct DiscoveredPeer: Sendable, Identifiable {
 /// and advertise WiredPart devices on the local network.
 ///
 /// Service type: `_wiredpart._tcp`
-/// TXT records: `device_id`, `device_name`, `company_id`, `version`
+/// TXT records: `device_id`, `device_name`, `company_id`, `version`, `sync_port`
 /// Instance name: `WiredPart-{device_id[0..<8]}`
 ///
 /// Filtering: Only peers from the same company are reported.
@@ -93,6 +94,7 @@ public final class PeerDiscovery: @unchecked Sendable {
     private var listener: NWListener?
     private var peers: [String: DiscoveredPeer] = [:]  // keyed by device_id
     private var isRunning = false
+    private var browseGeneration = 0
 
     public init(
         deviceId: String,
@@ -143,7 +145,8 @@ public final class PeerDiscovery: @unchecked Sendable {
             "device_id": deviceId,
             "device_name": deviceName,
             "company_id": companyId,
-            "version": "1.0.0"
+            "version": "1.0.0",
+            "sync_port": String(port)
         ]
 
         // Build TXT record
@@ -210,10 +213,12 @@ public final class PeerDiscovery: @unchecked Sendable {
     }
 
     private func handleBrowseResults(_ results: Set<NWBrowser.Result>) {
-        var updatedPeers: [String: DiscoveredPeer] = [:]
+        browseGeneration += 1
+        let generation = browseGeneration
+        var seenPeerIds: Set<String> = []
 
         for result in results {
-            guard case .service(let name, _, _, _) = result.endpoint else {
+            guard case .service(let name, let type, let domain, _) = result.endpoint else {
                 continue
             }
 
@@ -227,31 +232,45 @@ public final class PeerDiscovery: @unchecked Sendable {
             let peerDeviceName = txtDict["device_name"] ?? name
             let peerCompanyId = txtDict["company_id"] ?? ""
             let peerVersion = txtDict["version"] ?? "unknown"
+            let peerPort = UInt16(txtDict["sync_port"] ?? "") ?? 0
 
             // Filter: skip self
             guard peerDeviceId != deviceId else { continue }
             // Filter: same company only
             guard peerCompanyId == companyId else { continue }
+            seenPeerIds.insert(peerDeviceId)
 
-            // Extract host/port from the endpoint
-            // NWBrowser results don't directly expose IP/port — those are
-            // resolved when a connection is made. For our purposes we store
-            // the service name; the peer manager will connect using the
-            // NWEndpoint directly or resolve the service.
-            let peer = DiscoveredPeer(
-                deviceId: peerDeviceId,
-                deviceName: peerDeviceName,
-                companyId: peerCompanyId,
-                host: name,  // Service name — resolved at connection time
-                port: port,  // Advertised port from TXT
-                version: peerVersion,
-                transport: "lan"
-            )
-            updatedPeers[peerDeviceId] = peer
+            resolveBonjourService(
+                name: name,
+                type: type,
+                domain: domain,
+                fallbackPort: peerPort,
+                generation: generation
+            ) { [weak self] endpoint in
+                guard let self, let endpoint else { return }
+                self.queue.async { [weak self] in
+                    guard let self, self.isRunning, self.browseGeneration == generation else { return }
+                    let peer = DiscoveredPeer(
+                        deviceId: peerDeviceId,
+                        deviceName: peerDeviceName,
+                        companyId: peerCompanyId,
+                        host: endpoint.host,
+                        port: endpoint.port,
+                        version: peerVersion,
+                        transport: "lan"
+                    )
+                    self.peers[peerDeviceId] = peer
+                    self.notifyPeersChangedFromQueue()
+                }
+            }
         }
 
-        peers = updatedPeers
-        let snapshot = Array(updatedPeers.values)
+        peers = peers.filter { seenPeerIds.contains($0.key) }
+        notifyPeersChangedFromQueue()
+    }
+
+    private func notifyPeersChangedFromQueue() {
+        let snapshot = Array(peers.values)
         // Fix #187: capture the callback under the lock so it can't race with a reassignment.
         let callback = callbackLock.withLock { _onPeersChanged }
         if let callback {
@@ -260,5 +279,107 @@ public final class PeerDiscovery: @unchecked Sendable {
             }
         }
     }
+
+    private func resolveBonjourService(
+        name: String,
+        type: String,
+        domain: String,
+        fallbackPort: UInt16,
+        generation: Int,
+        completion: @escaping @Sendable (ResolvedBonjourEndpoint?) -> Void
+    ) {
+        Task.detached(priority: .utility) {
+            let resolved = BonjourServiceResolver.resolve(
+                name: name,
+                type: type,
+                domain: domain,
+                fallbackPort: fallbackPort,
+                timeout: 3
+            )
+            completion(resolved)
+        }
+    }
 }
 
+private struct ResolvedBonjourEndpoint: Sendable {
+    let host: String
+    let port: UInt16
+}
+
+private final class BonjourServiceResolver: NSObject, NetServiceDelegate {
+    private var resolvedEndpoint: ResolvedBonjourEndpoint?
+    private var finished = false
+    private let fallbackPort: UInt16
+
+    private init(fallbackPort: UInt16) {
+        self.fallbackPort = fallbackPort
+    }
+
+    static func resolve(
+        name: String,
+        type: String,
+        domain: String,
+        fallbackPort: UInt16,
+        timeout: TimeInterval
+    ) -> ResolvedBonjourEndpoint? {
+        let resolver = BonjourServiceResolver(fallbackPort: fallbackPort)
+        let service = NetService(
+            domain: normalizeDNSLabel(domain.isEmpty ? "local" : domain),
+            type: normalizeDNSLabel(type),
+            name: name
+        )
+        service.delegate = resolver
+        service.resolve(withTimeout: timeout)
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while !resolver.finished && Date() < deadline {
+            RunLoop.current.run(mode: .default, before: min(deadline, Date().addingTimeInterval(0.05)))
+        }
+
+        service.stop()
+        service.delegate = nil
+        return resolver.resolvedEndpoint
+    }
+
+    private static func normalizeDNSLabel(_ value: String) -> String {
+        value.hasSuffix(".") ? value : "\(value)."
+    }
+
+    func netServiceDidResolveAddress(_ sender: NetService) {
+        let resolvedPort = UInt16(exactly: sender.port) ?? fallbackPort
+        guard resolvedPort > 0 else {
+            finished = true
+            return
+        }
+
+        if let host = sender.addresses?.compactMap(Self.host(from:)).first {
+            resolvedEndpoint = ResolvedBonjourEndpoint(host: host, port: resolvedPort)
+        }
+        finished = true
+    }
+
+    func netService(_ sender: NetService, didNotResolve errorDict: [String : NSNumber]) {
+        finished = true
+    }
+
+    private static func host(from address: Data) -> String? {
+        address.withUnsafeBytes { rawBuffer -> String? in
+            guard let baseAddress = rawBuffer.baseAddress else { return nil }
+            let sockaddrPointer = baseAddress.assumingMemoryBound(to: sockaddr.self)
+            var hostBuffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            let result = getnameinfo(
+                sockaddrPointer,
+                socklen_t(address.count),
+                &hostBuffer,
+                socklen_t(hostBuffer.count),
+                nil,
+                0,
+                NI_NUMERICHOST
+            )
+            guard result == 0 else { return nil }
+            let count = hostBuffer.firstIndex(of: 0) ?? hostBuffer.count
+            let bytes = hostBuffer.prefix(count).map { UInt8(bitPattern: $0) }
+            return String(decoding: bytes, as: UTF8.self)
+        }
+    }
+}
