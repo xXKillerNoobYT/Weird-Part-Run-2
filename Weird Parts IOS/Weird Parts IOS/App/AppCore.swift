@@ -251,7 +251,7 @@ final class AppCore: ObservableObject {
                 syncManager.setupAppLifecycleSync()
 
                 // Auto-sync on launch if configured
-                if syncManager.isSyncAvailable {
+                if syncManager.isSyncAvailable && syncManager.isAutoSyncEnabled {
                     Task { [syncManager] in
                         await syncManager.syncNow()
                         syncManager.startPeerDiscovery()

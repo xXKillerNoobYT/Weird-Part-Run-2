@@ -60,6 +60,11 @@ final class IOSSyncManager {
         return hasServer || btEnabled
     }
 
+    /// Whether automatic launch/foreground sync is enabled by settings.
+    var isAutoSyncEnabled: Bool {
+        (try? settingsService?.isAutoSyncEnabled()) ?? true
+    }
+
     /// The configured shop server address from settings, or nil.
     private var serverAddress: String? {
         guard let service = settingsService else { return nil }
@@ -494,7 +499,7 @@ final class IOSSyncManager {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, self.isSyncAvailable else { return }
+                guard let self, self.isSyncAvailable, self.isAutoSyncEnabled else { return }
                 await self.syncNow()
             }
         }
