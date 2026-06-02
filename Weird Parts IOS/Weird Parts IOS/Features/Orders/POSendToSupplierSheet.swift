@@ -1,5 +1,6 @@
 import SwiftUI
 import MessageUI
+import WiredPartCore
 
 // MARK: - POSendToSupplierSheet
 //
@@ -524,8 +525,8 @@ struct POSendToSupplierSheet: View {
     }
 
     private func fetchSiblingPOs() {
-        guard let supplierId = po.supplierId,
-              let svc = appCore.ordersService else { return }
+        let supplierId = po.supplierId
+        guard let svc = appCore.ordersService else { return }
         siblingPOsLoading = true
         Task {
             let results = (try? svc.listSendablePOs(supplierId: supplierId, excludingId: po.id)) ?? []

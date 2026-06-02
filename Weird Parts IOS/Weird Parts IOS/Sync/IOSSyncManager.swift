@@ -206,7 +206,8 @@ final class IOSSyncManager {
         isScanning = true
 
         // Start multipeer if BT is enabled
-        if UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled") {
+        let bluetoothDiscoveryEnabled = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
+        if bluetoothDiscoveryEnabled {
             if multipeerManager == nil {
                 let deviceId = DeviceIdentity.current
                 let deviceName = UIDevice.current.name
@@ -231,12 +232,31 @@ final class IOSSyncManager {
                 let deviceId = DeviceIdentity.current
                 let deviceName = UIDevice.current.name
                 let companyId = (try? settingsService?.getSettingsByCategory("company"))?["company_id"] ?? "default"
-                try? await pm.startPeerSync(
-                    deviceId: deviceId,
-                    deviceName: deviceName,
-                    companyId: companyId
-                )
+                do {
+                    try await pm.startPeerSync(
+                        deviceId: deviceId,
+                        deviceName: deviceName,
+                        companyId: companyId
+                    )
+                } catch {
+                    handleLanPeerDiscoveryStartupFailure(
+                        error,
+                        hasActiveMultipeerDiscovery: bluetoothDiscoveryEnabled
+                    )
+                }
             }
+        }
+    }
+
+    func handleLanPeerDiscoveryStartupFailure(
+        _ error: Error,
+        hasActiveMultipeerDiscovery: Bool
+    ) {
+        logger.error("[IOSSyncManager] LAN peer discovery failed to start: \(error.localizedDescription)")
+        syncStatus = .error
+        errorMessage = "LAN peer discovery failed: \(error.localizedDescription)"
+        if !hasActiveMultipeerDiscovery {
+            isScanning = false
         }
     }
 

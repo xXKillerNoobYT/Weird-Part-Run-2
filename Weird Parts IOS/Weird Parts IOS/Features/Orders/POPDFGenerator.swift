@@ -1,9 +1,11 @@
 import UIKit
+import WiredPartCore
 
 // MARK: - PO PDF Generator
 
 /// Renders a Purchase Order to a PDF suitable for emailing to a supplier.
 /// Letter-size (612 × 792 pt), single or multi-page.
+@MainActor
 struct POPDFGenerator {
 
     let po: OrdersService.PODetail
@@ -123,12 +125,13 @@ struct POPDFGenerator {
             y += 12
 
             // ── Line items table ─────────────────────────────────────────────
+            let tableWidth = contentW
             let cols: [(label: String, width: CGFloat, right: Bool)] = [
-                ("Part / Description",    contentW * 0.40, false),
-                ("Job",                   contentW * 0.22, false),
-                ("Qty",                   contentW * 0.08, true),
-                ("Unit Price",            contentW * 0.15, true),
-                ("Line Total",            contentW * 0.15, true)
+                ("Part / Description",    tableWidth * 0.40, false),
+                ("Job",                   tableWidth * 0.22, false),
+                ("Qty",                   tableWidth * 0.08, true),
+                ("Unit Price",            tableWidth * 0.15, true),
+                ("Line Total",            tableWidth * 0.15, true)
             ]
             let rowH: CGFloat = 18
 
@@ -140,9 +143,9 @@ struct POPDFGenerator {
 
             func drawTableHeader() {
                 colorHeader.setFill()
-                UIBezierPath(rect: CGRect(x: margin, y: y, width: contentW, height: rowH)).fill()
+                UIBezierPath(rect: CGRect(x: margin, y: y, width: tableWidth, height: rowH)).fill()
                 colorBorder.setStroke()
-                UIBezierPath(rect: CGRect(x: margin, y: y, width: contentW, height: rowH)).stroke()
+                UIBezierPath(rect: CGRect(x: margin, y: y, width: tableWidth, height: rowH)).stroke()
                 for (i, col) in cols.enumerated() {
                     let attr: [NSAttributedString.Key: Any] = [
                         .font: fontCellB, .foregroundColor: colorPrimary
