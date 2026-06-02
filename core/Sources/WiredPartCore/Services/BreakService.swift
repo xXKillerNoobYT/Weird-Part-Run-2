@@ -283,10 +283,12 @@ public final class BreakService: Sendable {
         let dateStr = Self.formatDateUTC(date)  // must match the UTC date used in getBreakRecordsForDay
 
         do { try db.writer.write { dbConn in
-            // Auto-fill morning break if missing
-            let hasBreak = existing.contains { $0.breakType == "break" }
-            if !hasBreak {
-                if let morningTime = settings.defaultMorningBreak {
+            // Auto-fill morning break if missing — evaluated independently of afternoon (#727)
+            if let morningTime = settings.defaultMorningBreak {
+                let hasMorningBreak = existing.contains {
+                    $0.breakType == "break" && $0.startedAt.hasPrefix("\(dateStr)T\(morningTime)")
+                }
+                if !hasMorningBreak {
                     let startStr = "\(dateStr)T\(morningTime):00"
                     var record = BreakRecord(
                         id: nil, userId: userId, laborEntryId: laborEntryId,
@@ -298,8 +300,14 @@ public final class BreakService: Sendable {
                     )
                     try record.insert(dbConn)
                 }
+            }
 
-                if let afternoonTime = settings.defaultAfternoonBreak {
+            // Auto-fill afternoon break if missing — evaluated independently of morning (#727)
+            if let afternoonTime = settings.defaultAfternoonBreak {
+                let hasAfternoonBreak = existing.contains {
+                    $0.breakType == "break" && $0.startedAt.hasPrefix("\(dateStr)T\(afternoonTime)")
+                }
+                if !hasAfternoonBreak {
                     let startStr = "\(dateStr)T\(afternoonTime):00"
                     var record = BreakRecord(
                         id: nil, userId: userId, laborEntryId: laborEntryId,
