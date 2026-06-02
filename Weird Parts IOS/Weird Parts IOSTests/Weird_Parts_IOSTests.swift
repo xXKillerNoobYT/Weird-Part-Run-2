@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Security
 import Testing
 import WiredPartCore
 @testable import Weird_Parts
@@ -61,6 +62,45 @@ struct Weird_Parts_IOSTests {
 
         #expect(keyHex == "8f1df32f4be04d5fcde1e8e6ddf9187f53a4b68370d5aafc56f0d43f2e9732a1")
         #expect(keyHex.count == 64)
+    }
+
+    @Test func simulatorMissingEntitlementCanUseLocalBootstrapKeyFallback() {
+        #if targetEnvironment(simulator) || targetEnvironment(macCatalyst)
+        #expect(AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecMissingEntitlement))
+        #else
+        #expect(!AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecMissingEntitlement))
+        #endif
+        #expect(!AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecAuthFailed))
+    }
+
+    @Test func debugCipherRecoveryOnlyMatchesDecryptNotADB() {
+        let sqlCipherError = NSError(
+            domain: "GRDB.DatabaseError",
+            code: 26,
+            userInfo: [NSLocalizedDescriptionKey: "SQLite error 26: file is not a database - while executing `PRAGMA journal_mode = WAL`"]
+        )
+        let unrelatedDatabaseError = NSError(
+            domain: "GRDB.DatabaseError",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "SQLite error 1: no such table: settings"]
+        )
+
+        #expect(AppCore.isRecoverableDebugCipherOpenFailure(sqlCipherError))
+        #expect(!AppCore.isRecoverableDebugCipherOpenFailure(unrelatedDatabaseError))
+    }
+
+    @Test func debugCipherDatabaseResetGateIsSimulatorOnly() {
+        let sqlCipherError = NSError(
+            domain: "GRDB.DatabaseError",
+            code: 26,
+            userInfo: [NSLocalizedDescriptionKey: "SQLite error 26: file is not a database - while executing `PRAGMA journal_mode = WAL`"]
+        )
+
+        #if DEBUG && targetEnvironment(simulator)
+        #expect(AppCore.shouldResetLocalDatabaseAfterCipherOpenFailure(sqlCipherError))
+        #else
+        #expect(!AppCore.shouldResetLocalDatabaseAfterCipherOpenFailure(sqlCipherError))
+        #endif
     }
 
     @MainActor
@@ -216,11 +256,11 @@ struct Weird_Parts_IOSTests {
         )
     }
 
-    @Test func questionnaireBreakAutofillDoesNotSwallowSubmitErrors() throws {
+    @Test @MainActor func questionnaireBreakAutofillDoesNotSwallowSubmitErrors() throws {
         var autoFillAttempts = 0
 
         do {
-            try QuestionnaireBreakComplianceSubmitter.submit(
+            try IOSQuestionnairePage.QuestionnaireBreakComplianceSubmitter.submit(
                 verification: .allTaken,
                 hadBreakButtons: false,
                 missedBreaks: []
@@ -236,10 +276,10 @@ struct Weird_Parts_IOSTests {
         }
     }
 
-    @Test func questionnaireBreakAutofillSkipsWhenExistingBreakButtonsWereUsed() throws {
+    @Test @MainActor func questionnaireBreakAutofillSkipsWhenExistingBreakButtonsWereUsed() throws {
         var autoFillAttempts = 0
 
-        try QuestionnaireBreakComplianceSubmitter.submit(
+        try IOSQuestionnairePage.QuestionnaireBreakComplianceSubmitter.submit(
             verification: .allTaken,
             hadBreakButtons: true,
             missedBreaks: []
@@ -250,10 +290,10 @@ struct Weird_Parts_IOSTests {
         #expect(autoFillAttempts == 0)
     }
 
-    @Test func questionnaireBreakAutofillRunsForForgotBreakPath() throws {
+    @Test @MainActor func questionnaireBreakAutofillRunsForForgotBreakPath() throws {
         var autoFillAttempts = 0
 
-        try QuestionnaireBreakComplianceSubmitter.submit(
+        try IOSQuestionnairePage.QuestionnaireBreakComplianceSubmitter.submit(
             verification: .forgot,
             hadBreakButtons: false,
             missedBreaks: ["morning_break", "lunch", "afternoon_break"]

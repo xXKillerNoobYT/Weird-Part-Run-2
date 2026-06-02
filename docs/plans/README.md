@@ -1,8 +1,8 @@
 # WiredPart — Plans Directory
 
 > **Last updated:** 2026-05-26
-> **Current work:** Field-test beta stabilization for the native iOS app
-> **Coordination plan:** `paperclip-agentic-execution-loop.md`
+> **Current authority:** `staged-paperclip-goals.md`
+> **Active Paperclip stage:** Stage 1, app shell, identity, local DB, onboarding, and navigation
 
 ---
 
@@ -19,9 +19,12 @@ WiredPart is a local-first construction/trade business management app. The curre
 | Plan | Status | Description |
 |------|--------|-------------|
 | `paperclip-agentic-execution-loop.md` | **ACTIVE** | Goal -> repo plan -> GitHub issue -> Paperclip issue -> PR/CI/merge -> closeout routing rules for autonomous execution |
-| `dashboard-hub-plan.md` | **ACTIVE** | Dashboard as user hub: 4 tabs (Overview + clock banner, Clock with GPS-sorted jobs + geofencing, Daily Report command center, Fast QR scanner) |
-| `deployment-master-plan.md` | 19/23 | App Store, DMG, NSIS distribution. 4 remaining tasks need physical devices |
+| `staged-paperclip-goals.md` | **ACTIVE AUTHORITY** | Dependency-first Paperclip execution index: north star, Stage 1 active focus, Stages 2-10 planned, `[R]` required dependencies, high-priority report exports, promotion rule, quality gates, and GitHub/backlog handles. |
+| `dashboard-hub-plan.md` | Planned | Dashboard as user hub: 4 tabs. Do not treat as active implementation until its stage is promoted. |
+| `deployment-master-plan.md` | Planned | App Store, DMG, NSIS distribution. 4 remaining tasks need physical devices; execution waits for the deployment stage. |
 | `qr_plan.md` | Reference | QR v2 payload schema, 8 entity types, auto-fill pipeline |
+
+Historical plan files may say "active" or "current" based on older sessions. For Paperclip execution, `staged-paperclip-goals.md` wins.
 
 ## Paperclip / GitHub Routing
 

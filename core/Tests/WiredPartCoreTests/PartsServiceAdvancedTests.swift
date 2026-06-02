@@ -273,6 +273,38 @@ struct PartsServiceAdvancedTests {
         #expect(preview.errors.map(\.rowNumber).contains(5))
     }
 
+    @Test("previewPartsImportCSV reports invalid cost_price and markup_percent values with row and column context")
+    func testPreviewPartsImportCSVRejectsInvalidNumericValues() throws {
+        let env = try E2ETestHelpers.setUp()
+        let csv = """
+        name,code,category,cost_price,markup_percent
+        Bad Price Part,BAD-001,Test,N/A,forty
+        """
+
+        let preview = try env.parts.previewPartsImportCSV(csv)
+
+        #expect(preview.newParts.isEmpty)
+        #expect(preview.errors.count == 2)
+        #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid number for cost_price: N/A" })
+        #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid number for markup_percent: forty" })
+    }
+
+    @Test("previewPartsImportCSV keeps rows with valid numeric pricing fields")
+    func testPreviewPartsImportCSVAcceptsValidNumericValues() throws {
+        let env = try E2ETestHelpers.setUp()
+        let csv = """
+        name,code,category,cost_price,markup_percent
+        Good Price Part,GOOD-001,Test,12.50,40
+        """
+
+        let preview = try env.parts.previewPartsImportCSV(csv)
+
+        #expect(preview.errors.isEmpty)
+        #expect(preview.newParts.count == 1)
+        #expect(preview.newParts.first?.fields["cost_price"] == "12.50")
+        #expect(preview.newParts.first?.fields["markup_percent"] == "40")
+    }
+
     @Test("commitPartsImportCSV rejects preview errors before writing partial state")
     func testCommitPartsImportCSVRejectsErrorsWithoutPartialWrites() throws {
         let env = try E2ETestHelpers.setUp()
@@ -297,7 +329,110 @@ struct PartsServiceAdvancedTests {
         }
     }
 
+    @Test("commitPartsImportCSV does not silently coerce invalid pricing values to zero")
+    func testCommitPartsImportCSVRejectsTamperedInvalidNumericValues() throws {
+        let env = try E2ETestHelpers.setUp()
+        let preview = PartsService.PartsImportPreview(
+            newParts: [
+                PartsService.PartsImportParsedRow(
+                    rowNumber: 2,
+                    name: "Tampered Bad Price",
+                    code: "BAD-TAMPER-001",
+                    category: "Tamper Category",
+                    brand: nil,
+                    fields: [
+                        "cost_price": "N/A",
+                        "markup_percent": "forty"
+                    ]
+                )
+            ],
+            totalRows: 1
+        )
 
+        do {
+            _ = try env.parts.commitPartsImportCSV(preview)
+            Issue.record("commitPartsImportCSV should reject invalid numeric fields instead of coercing them to zero")
+        } catch {
+            #expect("\(error)".contains("Invalid number for cost_price at row 2"))
+            #expect(try env.parts.findPartByCode("BAD-TAMPER-001") == nil)
+        }
+    }
+
+    @Test("commitPartsImportCSV leaves existing pricing unchanged when optional price fields are blank")
+    func testCommitPartsImportCSVBlankOptionalPricingDoesNotOverwriteExistingValues() throws {
+        let env = try E2ETestHelpers.setUp()
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Blank Optional Pricing")
+        _ = try env.parts.createPart(
+            categoryId: categoryId,
+            name: "Existing Blank Price Part",
+            code: "BLANK-PRICE-001",
+            companyCostPrice: 14.75,
+            companyMarkupPercent: 35
+        )
+
+        var preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,cost_price,markup_percent
+        Existing Blank Price Part,BLANK-PRICE-001,Blank Optional Pricing,,
+        """)
+        preview.conflicts = preview.conflicts.map { conflict in
+            var editable = conflict
+            editable.resolution = .update
+            return editable
+        }
+
+        _ = try env.parts.commitPartsImportCSV(preview)
+
+        let updated = try #require(try env.parts.findPartByCode("BLANK-PRICE-001"))
+        #expect(updated.companyCostPrice == 14.75)
+        #expect(updated.companyMarkupPercent == 35)
+    }
+
+    @Test("commitPartsImportCSV accepts explicit zero pricing values")
+    func testCommitPartsImportCSVAcceptsExplicitZeroPricingValues() throws {
+        let env = try E2ETestHelpers.setUp()
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Zero Pricing")
+        _ = try env.parts.createPart(
+            categoryId: categoryId,
+            name: "Existing Zero Price Part",
+            code: "ZERO-PRICE-001",
+            companyCostPrice: 11.25,
+            companyMarkupPercent: 20
+        )
+
+        var preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,cost_price,markup_percent
+        Existing Zero Price Part,ZERO-PRICE-001,Zero Pricing,0,0
+        """)
+        preview.conflicts = preview.conflicts.map { conflict in
+            var editable = conflict
+            editable.resolution = .update
+            return editable
+        }
+
+        _ = try env.parts.commitPartsImportCSV(preview)
+
+        let updated = try #require(try env.parts.findPartByCode("ZERO-PRICE-001"))
+        #expect(updated.companyCostPrice == 0)
+        #expect(updated.companyMarkupPercent == 0)
+    }
+
+    @Test("commitPartsImportCSV round-trips imported company cost through pricing export")
+    func testCommitPartsImportCSVRoundTripsCompanyCostThroughPricingExport() throws {
+        let env = try E2ETestHelpers.setUp()
+        let preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,cost_price,markup_percent
+        Round Trip Cost Part,ROUND-COST-001,Round Trip Pricing,18.75,40
+        """)
+
+        _ = try env.parts.commitPartsImportCSV(preview)
+
+        let imported = try #require(try env.parts.findPartByCode("ROUND-COST-001"))
+        #expect(imported.companyCostPrice == 18.75)
+        #expect(imported.weightedAvgCost == 18.75)
+
+        let export = try env.parts.exportPartsCSV(groups: [.pricing])
+        #expect(export.contains("Round Trip Cost Part,ROUND-COST-001,18.75,18.75,40.0,26.25"))
+    }
 
     @Test("previewPartsImportCSV attaches source metadata for audit sessions")
     func testPreviewPartsImportCSVAttachesSourceMetadata() throws {

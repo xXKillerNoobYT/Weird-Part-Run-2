@@ -78,9 +78,13 @@ struct IOSPODetailPage: View {
         case contactCreator
         case help
         case editLineItem(OrdersService.POLineRow)
+        case sendToSupplier                             // #750
 
         var id: String { String(describing: self) }
     }
+
+    // Contacts fetched for the send-to-supplier sheet (#750)
+    @State private var supplierContacts: [PartsService.SupplierContact] = []
 
     var body: some View {
         Group {
@@ -209,6 +213,16 @@ struct IOSPODetailPage: View {
         case .editLineItem(let lineItem):
             POLineEditSheet(lineItem: lineItem) { newQty, newPrice in
                 Task { await saveLineEdit(lineId: lineItem.id, quantity: newQty, unitPrice: newPrice) }
+            }
+        case .sendToSupplier:
+            if let po {
+                POSendToSupplierSheet(
+                    po: po,
+                    supplierContacts: supplierContacts
+                ) {
+                    Task { await loadData() }   // refresh PO status after confirmed send
+                }
+                .environmentObject(appCore)
             }
         case .help:
             PageHelpSheet(
@@ -895,6 +909,35 @@ struct IOSPODetailPage: View {
                                         }
                                         .buttonStyle(.plain)
                                     }
+                                }
+                            }
+                        }
+
+                        // Sent-to-supplier confirmation badge (#750)
+                        if let sentAt = po.sentToSupplierAt {
+                            Section("Sent to Supplier") {
+                                HStack(spacing: 8) {
+                                    Image(systemName: po.emailRequestType == "pricing" ? "tag.fill" : "envelope.badge.fill")
+                                        .font(.title2)
+                                        .foregroundStyle(po.emailRequestType == "pricing" ? .orange : .green)
+                                        .accessibilityHidden(true)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(po.emailRequestType == "pricing"
+                                             ? "Pricing request sent to \(po.supplierName)"
+                                             : "PO sent to \(po.supplierName)")
+                                            .font(.subheadline).fontWeight(.medium)
+                                        Text(sentAt.prefix(10))
+                                            .font(.caption2).foregroundStyle(.secondary)
+                                        if let ref = po.supplierConfirmationNum, !ref.isEmpty {
+                                            Text("Confirmation: \(ref)")
+                                                .font(.caption2).foregroundStyle(.secondary)
+                                        }
+                                        if let groupId = po.sendGroupId {
+                                            Text("Group: \(groupId.prefix(8))…")
+                                                .font(.caption2).foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    Spacer()
                                 }
                             }
                         }
@@ -1951,8 +1994,8 @@ struct IOSPODetailPage: View {
             switch status {
             case "draft":
                 HStack(spacing: 8) {
-                    actionButton("Mark as Submitted", icon: "checkmark.circle.fill", color: .blue) {
-                        showSubmitConfirmation = true
+                    actionButton("Send to Supplier", icon: "envelope.badge.fill", color: .blue) {
+                        loadSupplierContactsThen { activeSheet = .sendToSupplier }
                     }
                     actionButton("Delete Draft", icon: "trash", color: .red) {
                         showDeleteConfirmation = true
@@ -1964,9 +2007,14 @@ struct IOSPODetailPage: View {
 
             case "submitted":
                 HStack(spacing: 8) {
+                    actionButton("Send to Supplier", icon: "envelope.badge.fill", color: .green) {
+                        loadSupplierContactsThen { activeSheet = .sendToSupplier }
+                    }
                     actionButton("Mark Ordered", icon: "checkmark.circle.fill", color: .blue) {
                         await transitionPO(to: "ordered")
                     }
+                }
+                HStack(spacing: 8) {
                     actionButton("Drafting / Unclear", icon: "questionmark.circle", color: .yellow) {
                         await transitionPO(to: "drafting")
                     }
@@ -2184,6 +2232,22 @@ struct IOSPODetailPage: View {
 
     private func formatCurrency(_ value: Double) -> String {
         Formatters.formatCurrency(value)
+    }
+
+    /// Fetches supplier contacts then calls the given closure — used to populate
+    /// the send-to-supplier sheet before presenting it. (#750)
+    private func loadSupplierContactsThen(_ next: @escaping () -> Void) {
+        guard let supplierId = po?.supplierId,
+              let partsService = appCore.partsService else {
+            next()
+            return
+        }
+        Task {
+            if let contacts = try? partsService.getSupplierContacts(supplierId: supplierId) {
+                await MainActor.run { supplierContacts = contacts }
+            }
+            await MainActor.run { next() }
+        }
     }
 
     private func loadData() {

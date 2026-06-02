@@ -29,7 +29,7 @@ struct WizardStepWalkingPath: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if proxy.size.width >= 1100 {
                     HStack(spacing: 0) {
-                        stopList
+                        stopList()
                             .frame(minWidth: 360, idealWidth: 420, maxWidth: 460)
                         Divider()
                         previewPanel
@@ -40,14 +40,17 @@ struct WizardStepWalkingPath: View {
                     }
                 } else if proxy.size.width >= 700 {
                     HStack(spacing: 0) {
-                        stopList
+                        stopList()
                             .frame(minWidth: 320, maxWidth: 420)
                         Divider()
                         previewPanel
                             .frame(maxWidth: .infinity)
                     }
                 } else {
-                    stopList
+                    stopList(showPreviewActions: false)
+                        .safeAreaInset(edge: .bottom, spacing: 0) {
+                            compactPreviewActions
+                        }
                 }
             }
         }
@@ -61,7 +64,7 @@ struct WizardStepWalkingPath: View {
         }
     }
 
-    private var stopList: some View {
+    private func stopList(showPreviewActions: Bool = true) -> some View {
         List {
             Section {
                 if displayedStops.isEmpty {
@@ -101,7 +104,7 @@ struct WizardStepWalkingPath: View {
                     Label("Suggest path", systemImage: "sparkles")
                 }
 
-                if isPreviewing {
+                if isPreviewing && showPreviewActions {
                     Button {
                         applyPreview()
                     } label: {
@@ -120,6 +123,36 @@ struct WizardStepWalkingPath: View {
         }
         .listStyle(.insetGrouped)
         .toolbar { EditButton() }
+    }
+
+    @ViewBuilder
+    private var compactPreviewActions: some View {
+        if isPreviewing {
+            VStack(spacing: 8) {
+                Button {
+                    applyPreview()
+                } label: {
+                    Label("Use suggested order", systemImage: "checkmark.circle")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isSaving)
+                .accessibilityLabel("Use suggested order")
+                .accessibilityIdentifier("walkingPathCompact_useSuggestedOrder")
+
+                Button(role: .destructive) {
+                    clearPath()
+                } label: {
+                    Label("Dismiss preview", systemImage: "trash")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Dismiss preview")
+            }
+            .padding()
+            .background(.regularMaterial)
+        }
     }
 
     private func stopRow(areaId: Int64, index: Int) -> some View {

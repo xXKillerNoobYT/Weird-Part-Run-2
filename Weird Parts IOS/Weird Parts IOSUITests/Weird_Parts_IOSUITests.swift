@@ -73,6 +73,9 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         if shouldOpenPartsCategoriesOnLaunch {
             app.launchArguments += ["-UITestingOpenPartsCategories"]
         }
+        if shouldOpenWarehouseSetupOnLaunch {
+            app.launchArguments += ["-UITestingWarehouseSetupWizard"]
+        }
         if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" {
             XCUIDevice.shared.orientation = .landscapeLeft
         }
@@ -87,6 +90,10 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             "SaveButtonDisabledWhenNameEmpty",
             "SearchFiltersCategoriesTree",
         ].contains { name.contains($0) }
+    }
+
+    private var shouldOpenWarehouseSetupOnLaunch: Bool {
+        name.contains("WEI1182WarehouseWizardBreakpointWalkingPathScreenshots")
     }
 
     /// SwiftUI exposes the page accessibility identifier on the visible child
@@ -328,6 +335,12 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
     @MainActor
     func testWEI1182WarehouseWizardBreakpointWalkingPathScreenshots() throws {
+        let destinationName = ProcessInfo.processInfo.environment["RUN_DESTINATION_DEVICE_NAME"] ?? ""
+        if ProcessInfo.processInfo.environment["WEI_1182_LANDSCAPE"] == "1"
+            || destinationName.contains("iPad Pro 13-inch") {
+            XCUIDevice.shared.orientation = .landscapeLeft
+        }
+
         let artifactDirectory = wei1182ArtifactDirectory
         try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
         let existingArtifacts = (try? FileManager.default.contentsOfDirectory(
@@ -376,7 +389,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             NSPredicate(format: "label CONTAINS 'Storage' AND label CONTAINS 'starts at R1C1'")
         ).firstMatch
         XCTAssertTrue(placedStorage.waitForExistence(timeout: 8), "Dropped Storage zone should render on the grid")
-        r1c1.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        placedStorage.tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Storage at R1C1'")).firstMatch.waitForExistence(timeout: 5),
                       "Tapping Storage should select the Storage zone before resizing")
 
@@ -907,8 +920,13 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         let dashboardTab = app.buttons["tab_dashboard"]
         if dashboardTab.waitForExistence(timeout: 5) {
             dashboardTab.tap()
-        } else if app.buttons["Dashboard"].waitForExistence(timeout: 2) {
-            app.buttons["Dashboard"].tap()
+        } else {
+            let dashboard = app.tabBars.buttons["Dashboard"].firstMatch
+            if dashboard.waitForExistence(timeout: 2) {
+                dashboard.tap()
+            } else if app.buttons.matching(identifier: "subtab_warehouse-dashboard").firstMatch.waitForExistence(timeout: 2) {
+                app.buttons.matching(identifier: "subtab_warehouse-dashboard").firstMatch.tap()
+            }
         }
 
         let configure = app.buttons["Configure Your Warehouse"]
