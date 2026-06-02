@@ -515,7 +515,7 @@ struct DashboardDailyReportPage: View {
                 }
             }
         } catch {
-            setFastActionError(error, context: "update lunch")
+            await setFastActionError(error, context: "update lunch")
         }
 
         await loadData()
@@ -564,7 +564,7 @@ struct DashboardDailyReportPage: View {
                 }
             }
         } catch {
-            setFastActionError(error, context: "update break")
+            await setFastActionError(error, context: "update break")
         }
 
         await loadData()
@@ -595,7 +595,7 @@ struct DashboardDailyReportPage: View {
                     : (.info, "Supply run ended", "The run marker was closed on this labor entry.")
             }
         } catch {
-            setFastActionError(error, context: "toggle supply run")
+            await setFastActionError(error, context: "toggle supply run")
         }
 
         await loadData()

@@ -961,7 +961,7 @@ final class AppCore: ObservableObject {
         let service = WarehouseService(db: db)
         let planName = "UITesting Warehouse Floor Plan"
         let plan = try service.listFloorPlans().first { $0.name == planName }
-            ?? service.createFloorPlan(name: planName, widthInches: 720, lengthInches: 480)
+            ?? (try service.createFloorPlan(name: planName, widthInches: 720, lengthInches: 480))
 
         guard let planId = plan.id else { return }
         try service.updateFloorPlanGrid(floorPlanId: planId, rows: 3, cols: 5)
