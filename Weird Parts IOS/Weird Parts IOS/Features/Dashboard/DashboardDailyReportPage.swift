@@ -40,6 +40,13 @@ struct DashboardDailyReportPage: View {
         case help
         var id: String { rawValue }
     }
+
+    /// Break types for fast action buttons
+    private enum FastActionBreak {
+        case lunch, regularBreak, supplyRun
+    }
+
+    @State private var pendingFastAction: FastActionBreak?
     @State private var activeSheet: ActiveSheet?
 
     private let refreshTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
@@ -158,6 +165,27 @@ struct DashboardDailyReportPage: View {
                     ]
                 )
             }
+        }
+        .confirmationDialog(
+            pendingFastAction == .lunch ? "Start Lunch?" :
+            pendingFastAction == .supplyRun ? "Start Supply Run?" : "Start Break?",
+            isPresented: Binding(
+                get: { pendingFastAction != nil },
+                set: { if !$0 { pendingFastAction = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let action = pendingFastAction {
+                Button(action == .lunch ? "Start Lunch" :
+                       action == .supplyRun ? "Start Supply Run" : "Start Break") {
+                    startFastActionBreak(action)
+                }
+                Button("Cancel", role: .cancel) { pendingFastAction = nil }
+            }
+        } message: {
+            Text(pendingFastAction == .supplyRun
+                 ? "Records a supply-run break. Geofence auto-ends it when you return."
+                 : "Records a break start. Tap End Break when you return.")
         }
     }
 
@@ -346,10 +374,10 @@ struct DashboardDailyReportPage: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: DS.Space.md) {
                 DSQuickActionButton(title: "Lunch", icon: "fork.knife", color: .green) {
-                    startLunchOrBreak()
+                    pendingFastAction = .lunch
                 }
                 DSQuickActionButton(title: "Break", icon: "cup.and.saucer.fill", color: .purple) {
-                    startLunchOrBreak()
+                    pendingFastAction = .regularBreak
                 }
                 DSQuickActionButton(title: "Problem", icon: "exclamationmark.triangle.fill", color: .red) {
                     activeSheet = .reportProblem
@@ -358,9 +386,7 @@ struct DashboardDailyReportPage: View {
                     activeSheet = .submitReport
                 }
                 DSQuickActionButton(title: "Supply Run", icon: "truck.box.fill", color: .blue) {
-                    // Geofencing (12D) handles supply run transitions automatically.
-                    // This button clocks out as a quick action.
-                    startLunchOrBreak()
+                    pendingFastAction = .supplyRun
                 }
             }
         }
@@ -380,6 +406,29 @@ struct DashboardDailyReportPage: View {
             Task { await loadData() }
         } catch {
             loadError = userFriendlyError(error, context: "load daily report")
+        }
+    }
+
+    /// Records the appropriate break type without clocking out (#856-858).
+    private func startFastActionBreak(_ breakAction: FastActionBreak) {
+        guard let breakService = appCore.breakService,
+              let userId = appCore.currentUser?.id else {
+            loadError = "Break service not available"
+            return
+        }
+        let breakType: String
+        switch breakAction {
+        case .lunch:        breakType = "lunch_paid"
+        case .regularBreak: breakType = "break"
+        case .supplyRun:    breakType = "supply_run"
+        }
+        do {
+            _ = try breakService.startBreak(userId: userId, breakType: breakType)
+            pendingFastAction = nil
+            Task { await loadData() }
+        } catch {
+            loadError = userFriendlyError(error, context: "start break")
+            pendingFastAction = nil
         }
     }
 

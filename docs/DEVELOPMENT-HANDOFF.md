@@ -2,6 +2,7 @@
 
 > Last updated: 2026-03-10
 > Audience: Any coding agent or developer picking up work from current state.
+> Paperclip staging update: This file is historical implementation context. For current execution order, use `docs/plans/staged-paperclip-goals.md`; Stage 1 is active and later stages are planned until promoted.
 
 ---
 
@@ -17,7 +18,9 @@ Do not begin coding until all five are reviewed.
 
 ---
 
-## 2) Current Priority Stack
+## 2) Historical Priority Stack
+
+The stack below reflects the March 2026 handoff. It does not override the Paperclip staged index.
 
 ### Priority 0 — Production Readiness Hotfix Pack
 Implement these first:

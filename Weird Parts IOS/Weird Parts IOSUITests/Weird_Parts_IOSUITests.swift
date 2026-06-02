@@ -24,7 +24,6 @@ import UIKit
 final class Weird_Parts_IOSUITests: XCTestCase {
 
     private var app: XCUIApplication!
-    private static let uiTestingPIN = "8396"
     private var wei1185ArtifactDirectory: URL? {
         if let path = ProcessInfo.processInfo.environment["WEI_1185_ARTIFACT_DIR"], !path.isEmpty {
             return URL(fileURLWithPath: path, isDirectory: true)
@@ -68,21 +67,19 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         continueAfterFailure = false
 
         app = XCUIApplication()
-        configureUITestingEnvironment(app)
         // Pass a launch argument so the app can detect testing mode
         // (useful for seeding test data or skipping onboarding)
         app.launchArguments += ["-UITesting"]
         if shouldOpenPartsCategoriesOnLaunch {
             app.launchArguments += ["-UITestingOpenPartsCategories"]
         }
+        if shouldOpenWarehouseSetupOnLaunch {
+            app.launchArguments += ["-UITestingWarehouseSetupWizard"]
+        }
         if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" {
             XCUIDevice.shared.orientation = .landscapeLeft
         }
         app.launch()
-    }
-
-    private func configureUITestingEnvironment(_ app: XCUIApplication) {
-        app.launchEnvironment["WEIRD_PARTS_UI_TEST_PIN"] = Self.uiTestingPIN
     }
 
     private var shouldOpenPartsCategoriesOnLaunch: Bool {
@@ -93,6 +90,10 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             "SaveButtonDisabledWhenNameEmpty",
             "SearchFiltersCategoriesTree",
         ].contains { name.contains($0) }
+    }
+
+    private var shouldOpenWarehouseSetupOnLaunch: Bool {
+        name.contains("WEI1182WarehouseWizardBreakpointWalkingPathScreenshots")
     }
 
     /// SwiftUI exposes the page accessibility identifier on the visible child
@@ -169,7 +170,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     func testWEI1251DispatchBoardExistingAssignmentDragDrop() throws {
         app.terminate()
         app = XCUIApplication()
-        configureUITestingEnvironment(app)
         app.launchArguments += [
             "-UITesting",
             "-UITestingDispatchBoard"
@@ -230,7 +230,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     func testWEI1185WarehouseZonePlacementScreenshots() throws {
         app.terminate()
         app = XCUIApplication()
-        configureUITestingEnvironment(app)
         app.launchArguments += [
             "-UITesting",
             "-UITestingWarehouseSetupWizard"
@@ -318,7 +317,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app.buttons["Save & Exit"].tap()
         app.terminate()
         app = XCUIApplication()
-        configureUITestingEnvironment(app)
         app.launchArguments += [
             "-UITesting",
             "-UITestingPreserveDatabase",
@@ -337,6 +335,12 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
     @MainActor
     func testWEI1182WarehouseWizardBreakpointWalkingPathScreenshots() throws {
+        let destinationName = ProcessInfo.processInfo.environment["RUN_DESTINATION_DEVICE_NAME"] ?? ""
+        if ProcessInfo.processInfo.environment["WEI_1182_LANDSCAPE"] == "1"
+            || destinationName.contains("iPad Pro 13-inch") {
+            XCUIDevice.shared.orientation = .landscapeLeft
+        }
+
         let artifactDirectory = wei1182ArtifactDirectory
         try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
         let existingArtifacts = (try? FileManager.default.contentsOfDirectory(
@@ -385,7 +389,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             NSPredicate(format: "label CONTAINS 'Storage' AND label CONTAINS 'starts at R1C1'")
         ).firstMatch
         XCTAssertTrue(placedStorage.waitForExistence(timeout: 8), "Dropped Storage zone should render on the grid")
-        r1c1.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        placedStorage.tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Storage at R1C1'")).firstMatch.waitForExistence(timeout: 5),
                       "Tapping Storage should select the Storage zone before resizing")
 
@@ -732,16 +736,14 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     func testLoginSignInButtonHittableAtAX5WithKeyboardVisible() throws {
         app.terminate()
         app = XCUIApplication()
-        configureUITestingEnvironment(app)
         app.launchArguments += [
             "-UITesting",
-            "-UITestingForceLogin",
             "-UIPreferredContentSizeCategoryName",
             UIContentSizeCategory.accessibilityExtraExtraExtraLarge.rawValue
         ]
         app.launch()
 
-        let loginView = app.descendants(matching: .any)["loginView"]
+        let loginView = app.otherElements["loginView"]
         guard loginView.waitForExistence(timeout: 30) else {
             throw XCTSkip("Login was not shown; this regression requires a fresh logged-out UI-test launch.")
         }
@@ -756,7 +758,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         XCTAssertTrue(pinField.waitForExistence(timeout: 5),
                       "PIN field should appear after selecting a user")
         pinField.tap()
-        pinField.typeText(Self.uiTestingPIN)
+        pinField.typeText("1234")
 
         let signIn = app.buttons["loginSignInButton"]
         XCTAssertTrue(signIn.waitForExistence(timeout: 5),
@@ -818,7 +820,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         let pinField = app.secureTextFields["loginPINField"]
         XCTAssertTrue(pinField.waitForExistence(timeout: 5), "PIN field should appear")
         pinField.tap()
-        pinField.typeText(Self.uiTestingPIN)
+        pinField.typeText("1234")
 
         let done = app.buttons["loginPINDoneButton"]
         if done.waitForExistence(timeout: 3) && done.isHittable {
@@ -918,8 +920,13 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         let dashboardTab = app.buttons["tab_dashboard"]
         if dashboardTab.waitForExistence(timeout: 5) {
             dashboardTab.tap()
-        } else if app.buttons["Dashboard"].waitForExistence(timeout: 2) {
-            app.buttons["Dashboard"].tap()
+        } else {
+            let dashboard = app.tabBars.buttons["Dashboard"].firstMatch
+            if dashboard.waitForExistence(timeout: 2) {
+                dashboard.tap()
+            } else if app.buttons.matching(identifier: "subtab_warehouse-dashboard").firstMatch.waitForExistence(timeout: 2) {
+                app.buttons.matching(identifier: "subtab_warehouse-dashboard").firstMatch.tap()
+            }
         }
 
         let configure = app.buttons["Configure Your Warehouse"]
@@ -1069,7 +1076,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     private func relaunchForWEI1451(_ launchArguments: [String]) {
         app.terminate()
         app = XCUIApplication()
-        configureUITestingEnvironment(app)
         app.launchArguments += ["-UITesting"] + launchArguments
         if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" {
             XCUIDevice.shared.orientation = .landscapeLeft
@@ -1533,7 +1539,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     func testWEI1303EmployeeDetailTabsMeetMinimumTouchTargets() throws {
         app.terminate()
         app = XCUIApplication()
-        configureUITestingEnvironment(app)
         app.launchArguments += ["-UITesting"]
         app.launch()
 

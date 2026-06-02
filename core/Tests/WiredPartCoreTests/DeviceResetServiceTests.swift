@@ -21,12 +21,12 @@ struct DeviceResetServiceTests {
 
     // MARK: - Device Identity
 
-    @Test("getCurrentDeviceId returns nil when no device_id setting exists")
+    @Test("getCurrentDeviceId falls back to production DeviceIdentity when no device_id setting exists")
     func testNoDeviceId() throws {
         let db = try freshDB()
         let service = DeviceResetService(db: db)
         let deviceId = try service.getCurrentDeviceId()
-        #expect(deviceId == nil)
+        #expect(deviceId == DeviceIdentity.current)
     }
 
     @Test("getCurrentDeviceId returns stored device_id from settings")
@@ -188,6 +188,49 @@ struct DeviceResetServiceTests {
         let service = DeviceResetService(db: db)
         // Should not throw
         try service.deactivateCurrentDevice()
+    }
+
+    @Test("deactivateCurrentDevice uses production DeviceIdentity when settings device_id is absent")
+    func testDeactivateUsesDeviceIdentityFallback() throws {
+        let db = try freshDB()
+        let productionDeviceId = DeviceIdentity.current
+
+        try db.writer.write { dbConnection in
+            try dbConnection.execute(
+                sql: """
+                    INSERT INTO _device_registry (device_id, device_name, platform, role, is_trusted, is_deactivated, last_seen_at)
+                    VALUES (?, 'Production Mac', 'macos', 'shop', 1, 0, datetime('now'))
+                    """,
+                arguments: [productionDeviceId]
+            )
+        }
+
+        let service = DeviceResetService(db: db)
+        #expect(try service.getCurrentDeviceId() == productionDeviceId)
+
+        try service.deactivateCurrentDevice()
+
+        let result = try db.writer.read { dbConnection in
+            let isDeactivated = try Int.fetchOne(
+                dbConnection,
+                sql: "SELECT is_deactivated FROM _device_registry WHERE device_id = ?",
+                arguments: [productionDeviceId]
+            ) ?? 0
+            let changeDeviceId = try String.fetchOne(
+                dbConnection,
+                sql: """
+                    SELECT device_id FROM _change_log
+                    WHERE table_name = '_device_registry'
+                      AND record_id = 0
+                      AND changed_fields LIKE ?
+                    """,
+                arguments: ["%\(productionDeviceId)%"]
+            )
+            return (isDeactivated, changeDeviceId)
+        }
+
+        #expect(result.0 == 1)
+        #expect(result.1 == productionDeviceId)
     }
 
     // MARK: - File Deletion

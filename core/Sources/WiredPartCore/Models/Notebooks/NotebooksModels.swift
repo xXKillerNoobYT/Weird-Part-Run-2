@@ -367,6 +367,37 @@ public struct NotebookBlockConflict: Identifiable, Sendable {
     }
 }
 
+// MARK: - NotebookEntryEditLock
+
+/// Advisory lock for a notebook block currently being edited on a device.
+public struct NotebookEntryEditLock: Identifiable, Sendable {
+    public let id: Int64
+    public let entryId: Int64
+    public let userId: Int64
+    public let userName: String
+    public let deviceId: String
+    public let lockedAt: String
+    public let expiresAt: String
+
+    public init(
+        id: Int64,
+        entryId: Int64,
+        userId: Int64,
+        userName: String,
+        deviceId: String,
+        lockedAt: String,
+        expiresAt: String
+    ) {
+        self.id = id
+        self.entryId = entryId
+        self.userId = userId
+        self.userName = userName
+        self.deviceId = deviceId
+        self.lockedAt = lockedAt
+        self.expiresAt = expiresAt
+    }
+}
+
 // MARK: - TaskOrderLink
 
 public struct TaskOrderLink: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
