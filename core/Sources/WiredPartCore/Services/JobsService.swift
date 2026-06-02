@@ -711,25 +711,27 @@ public final class JobsService: Sendable {
                 """) {
                 try dbConn.execute(sql: "UPDATE jobs SET stage_template_id = ? WHERE id = ?", arguments: [defaultTemplateId, jobId])
             }
-            let notebookCreatorId: Int64?
+            // Resolve notebook creator: prefer explicit createdBy, then first active user, then fallback to 1
+            // so that notebook auto-creation is never silently skipped (fixes #626)
+            let notebookCreatorId: Int64
             if let createdBy {
                 notebookCreatorId = createdBy
-            } else {
-                notebookCreatorId = try Int64.fetchOne(dbConn, sql: """
+            } else if let firstUser = try Int64.fetchOne(dbConn, sql: """
                     SELECT id FROM users
                     WHERE deleted_at IS NULL
                     ORDER BY id ASC LIMIT 1
-                    """)
+                    """) {
+                notebookCreatorId = firstUser
+            } else {
+                notebookCreatorId = 1
             }
-            if let notebookCreatorId {
-                _ = try notebooks.ensureJobNotebook(
-                    dbConn: dbConn,
-                    jobId: jobId,
-                    jobName: jobName,
-                    jobType: jobType,
-                    createdBy: notebookCreatorId
-                )
-            }
+            _ = try notebooks.ensureJobNotebook(
+                dbConn: dbConn,
+                jobId: jobId,
+                jobName: jobName,
+                jobType: jobType,
+                createdBy: notebookCreatorId
+            )
             return jobId
         }
     }
