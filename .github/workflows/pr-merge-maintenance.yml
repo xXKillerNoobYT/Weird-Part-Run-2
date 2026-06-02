@@ -1,42 +1,50 @@
 name: PR Merge Maintenance
 
+# Fires:
+#   - When a push lands on main (a merge just happened → rebase the next PR)
+#   - When a check suite completes on any PR branch (scan finished → maybe merge now)
+#   - Hourly schedule as a safety net
+#   - Manual dispatch for one-off runs / debugging
+#
+# ONE PR per run: rebase → wait for scan → fix if failing → merge → triggers next.
+
 on:
+  push:
+    branches: [main]
+  check_suite:
+    types: [completed]
   schedule:
     - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Log intended actions without updating branches or auto-merge"
+        description: "Log intended actions without updating branches or merging"
         type: boolean
         required: true
         default: true
-      max_prs:
-        description: "Maximum open PRs targeting main to inspect (defaults to 50 for manual runs)"
-        type: number
-        required: true
-        default: 50
+
+# Only one instance at a time — no parallel runs racing on the same PR.
+concurrency:
+  group: pr-merge-maintenance
+  cancel-in-progress: false
 
 permissions:
   contents: write
   pull-requests: write
 
-concurrency:
-  group: pr-merge-maintenance
-  cancel-in-progress: false
-
 jobs:
   maintain-prs:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
       PR_MAINTENANCE_BASE: main
-      PR_MAINTENANCE_MAX_PRS: ${{ github.event_name == 'schedule' && '20' || github.event.inputs.max_prs || '50' }}
-      PR_MAINTENANCE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true' && '1' || '0' }}
+      PR_MAINTENANCE_MAX_PRS: "20"
+      PR_MAINTENANCE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true && '1' || '0' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Maintain merge backlog
+      - name: Process next PR (one at a time)
         run: scripts/pr-merge-maintenance.sh "${{ github.repository }}"
