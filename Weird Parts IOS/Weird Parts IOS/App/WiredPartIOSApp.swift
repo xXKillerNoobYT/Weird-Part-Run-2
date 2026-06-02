@@ -42,6 +42,14 @@ struct WiredPartIOSApp: App {
         ProcessInfo.processInfo.arguments.contains("-UITestingWarehouseSetupWizard")
     }
 
+    private var shouldShowWEI936WelcomeFixture: Bool {
+        ProcessInfo.processInfo.arguments.contains("-UITestingWEI936Welcome")
+    }
+
+    private var shouldShowWEI936CelebrationFixture: Bool {
+        ProcessInfo.processInfo.arguments.contains("-UITestingWEI936Celebration")
+    }
+
     /// Resolved color scheme from the user's theme setting.
     private var resolvedColorScheme: ColorScheme? {
         switch appCore.theme.themeMode {
@@ -60,7 +68,15 @@ struct WiredPartIOSApp: App {
         WindowGroup {
             Group {
                 if appCore.isReady {
-                    if appCore.needsOnboarding {
+                    if shouldShowWEI936WelcomeFixture {
+                        OnboardingWelcomeView()
+                            .environmentObject(appCore)
+                    } else if shouldShowWEI936CelebrationFixture {
+                        NavigationStack {
+                            OnboardingCompleteView()
+                                .environmentObject(appCore)
+                        }
+                    } else if appCore.needsOnboarding {
                         OnboardingWelcomeView()
                             .environmentObject(appCore)
                     } else if appCore.needsBootstrap {
@@ -68,6 +84,9 @@ struct WiredPartIOSApp: App {
                             .environmentObject(appCore)
                     } else if appCore.currentUser == nil {
                         LoginView()
+                            .environmentObject(appCore)
+                    } else if shouldOpenWarehouseSetupForUITest {
+                        WarehouseOnboardingWizard()
                             .environmentObject(appCore)
                     } else if isAdmin && !hasCompletedCompanySetup {
                         CompanySetupWizard()
@@ -77,9 +96,6 @@ struct WiredPartIOSApp: App {
                             .environmentObject(appCore)
                     } else if !hasCompletedOnboarding {
                         OnboardingWalkthroughView()
-                            .environmentObject(appCore)
-                    } else if shouldOpenWarehouseSetupForUITest {
-                        WarehouseOnboardingWizard()
                             .environmentObject(appCore)
                     } else {
                         IOSMainView()

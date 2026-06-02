@@ -7,6 +7,7 @@ import WiredPartCore
 /// Configuration stored as JSON in `daily_report_template` setting key.
 struct IOSDailyReportTemplatesPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
 
     // MARK: - Types
 
@@ -50,6 +51,16 @@ struct IOSDailyReportTemplatesPage: View {
 
     @State private var sections: [ReportSection] = []
     @State private var aiInstructions: String = ""
+    @State private var hasUnsavedChanges = false
+    @State private var showDiscardConfirmation = false
+    @State private var baselineFormSignature = ""
+
+    private var formSignature: String {
+        let sectionSignature = sections.map { section in
+            "\(section.id):\(section.enabled):\(section.locked)"
+        }.joined(separator: ",")
+        return [sectionSignature, aiInstructions].joined(separator: "|")
+    }
 
     var body: some View {
         Group {
@@ -57,14 +68,21 @@ struct IOSDailyReportTemplatesPage: View {
                 ProgressView("Loading template...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let loadError {
-                ContentUnavailableView("Unable to Load", systemImage: "exclamationmark.triangle", description: Text(loadError))
+                ErrorStateView(message: loadError)
             } else {
                 templateEditor
             }
         }
         .navigationTitle("Daily Report Templates")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(hasUnsavedChanges)
+        .interactiveDismissDisabled(hasUnsavedChanges)
         .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                if hasUnsavedChanges {
+                    Button("Back") { showDiscardConfirmation = true }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -97,6 +115,21 @@ struct IOSDailyReportTemplatesPage: View {
         }
         .refreshable { loadSettings() }
         .task { loadSettings() }
+        .onChange(of: formSignature) { _, _ in
+            guard !isLoading else { return }
+            hasUnsavedChanges = formSignature != baselineFormSignature
+        }
+        .confirmationDialog(
+            "Discard changes?",
+            isPresented: $showDiscardConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Discard", role: .destructive) {
+                hasUnsavedChanges = false
+                dismiss()
+            }
+            Button("Keep editing", role: .cancel) {}
+        }
     }
 
     // MARK: - Editor
@@ -167,6 +200,8 @@ struct IOSDailyReportTemplatesPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!hasUnsavedChanges)
+                .accessibilityHint(hasUnsavedChanges ? "" : "Make changes to the template to enable saving.")
             }
         }
         // Fix #149: dismiss keyboard when scrolling template editor
@@ -181,10 +216,10 @@ struct IOSDailyReportTemplatesPage: View {
         // so the preview doesn't render an empty list with no explanation.
         let enabledSections = sections.filter(\.enabled)
         if enabledSections.isEmpty {
-            ContentUnavailableView(
-                "No Sections Enabled",
-                systemImage: "doc.text.magnifyingglass",
-                description: Text("Enable at least one section in the template editor to preview it here.")
+            EmptyStateView(
+                icon: "doc.text.magnifyingglass",
+                title: "No Sections Enabled",
+                message: "Enable at least one section in the template editor to preview it here."
             )
         } else {
         List {
@@ -263,6 +298,7 @@ struct IOSDailyReportTemplatesPage: View {
             aiInstructions = Self.defaultAIInstructions
         }
         isLoading = false
+        resetDirtyTracking()
     }
 
     private func saveSettings() {
@@ -279,9 +315,15 @@ struct IOSDailyReportTemplatesPage: View {
             try service.upsertSetting(key: "daily_report_template", value: json, category: "templates")
             saveError = nil
             successMessage = "Template saved."
+            resetDirtyTracking()
         } catch {
             saveError = userFriendlyError(error, context: "save daily report")
         }
+    }
+
+    private func resetDirtyTracking() {
+        baselineFormSignature = formSignature
+        hasUnsavedChanges = false
     }
 
     // MARK: - Defaults

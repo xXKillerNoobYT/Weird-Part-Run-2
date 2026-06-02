@@ -167,6 +167,44 @@ public final class PeopleService: Sendable {
         }
     }
 
+    /// A recent clock/session row for the employee activity tab.
+    public struct EmployeeActivityItem: Sendable, Identifiable {
+        public let id: Int64
+        public let jobId: Int64
+        public let jobNumber: String
+        public let jobName: String
+        public let clockIn: String
+        public let clockOut: String?
+        public let status: String
+        public let regularHours: Double
+        public let overtimeHours: Double
+        public let workType: String?
+
+        public init(
+            id: Int64,
+            jobId: Int64,
+            jobNumber: String,
+            jobName: String,
+            clockIn: String,
+            clockOut: String?,
+            status: String,
+            regularHours: Double,
+            overtimeHours: Double,
+            workType: String?
+        ) {
+            self.id = id
+            self.jobId = jobId
+            self.jobNumber = jobNumber
+            self.jobName = jobName
+            self.clockIn = clockIn
+            self.clockOut = clockOut
+            self.status = status
+            self.regularHours = regularHours
+            self.overtimeHours = overtimeHours
+            self.workType = workType
+        }
+    }
+
     /// A customer row for list views.
     public struct CustomerListItem: Sendable, Identifiable {
         public let id: Int64
@@ -469,6 +507,53 @@ public final class PeopleService: Sendable {
         return result
     }
 
+    /// Fetch recent job sessions worked by an employee for the Employee Detail activity tab.
+    public func getEmployeeRecentActivity(id: Int64, limit: Int = 20) throws -> [EmployeeActivityItem] {
+        do {
+            return try db.writer.read { dbConn -> [EmployeeActivityItem] in
+                let rows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT le.id,
+                               le.job_id,
+                               COALESCE(j.job_number, '') AS job_number,
+                               COALESCE(j.job_name, 'Unknown job') AS job_name,
+                               le.clock_in,
+                               le.clock_out,
+                               le.status,
+                               le.regular_hours,
+                               le.overtime_hours,
+                               le.work_type
+                        FROM labor_entries le
+                        LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
+                        WHERE le.user_id = ?
+                          AND le.deleted_at IS NULL
+                        ORDER BY le.clock_in DESC, le.id DESC
+                        LIMIT ?
+                        """,
+                    arguments: [id, max(1, limit)]
+                )
+                return rows.map { row in
+                    EmployeeActivityItem(
+                        id: row["id"] ?? 0,
+                        jobId: row["job_id"] ?? 0,
+                        jobNumber: row["job_number"] ?? "",
+                        jobName: row["job_name"] ?? "Unknown job",
+                        clockIn: row["clock_in"] ?? "",
+                        clockOut: row["clock_out"] as String?,
+                        status: row["status"] ?? "clocked_in",
+                        regularHours: row["regular_hours"] ?? 0.0,
+                        overtimeHours: row["overtime_hours"] ?? 0.0,
+                        workType: row["work_type"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
     /// Fetch active certifications for a specific employee.
     public func getEmployeeCertifications(userId: Int64) throws -> [Certification] {
         do {
@@ -765,6 +850,28 @@ public final class PeopleService: Sendable {
                         memberCount: row["member_count"] ?? 0
                     )
                 }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// List active team IDs for a user. Used by team list filters so "My Teams"
+    /// only shows teams where the signed-in user has an active membership.
+    public func listTeamIdsForUser(userId: Int64) throws -> Set<Int64> {
+        do {
+            return try db.writer.read { dbConn -> Set<Int64> in
+                let ids = try Int64.fetchAll(dbConn, sql: """
+                    SELECT tm.team_id
+                    FROM employee_team_members tm
+                    JOIN employee_teams t ON t.id = tm.team_id
+                    WHERE tm.user_id = ?
+                      AND tm.deleted_at IS NULL
+                      AND t.deleted_at IS NULL
+                      AND t.is_active = 1
+                    """, arguments: [userId])
+                return Set(ids)
             }
         } catch {
             if isTableNotFoundError(error) { return [] }
@@ -1368,7 +1475,7 @@ public final class PeopleService: Sendable {
         public let offReason: String?
     }
 
-    /// Certification expiring soon.
+    /// Certification compliance alert for expired or soon-expiring certifications.
     public struct CertificationAlert: Sendable, Identifiable {
         public let id: Int64
         public let employeeName: String
@@ -1464,11 +1571,15 @@ public final class PeopleService: Sendable {
         }
     }
 
-    /// Get certifications expiring within a given number of days.
+    /// Get active certifications that are expired or will expire within a given number of days.
+    ///
+    /// The compliance dashboard treats already-expired certifications as the most
+    /// urgent subset of expiring alerts, so the lower date bound is intentionally
+    /// unbounded while the upper bound remains today + withinDays.
     public func getExpiringCertifications(withinDays: Int = 30) throws -> [CertificationAlert] {
         let today = Date()
-        let futureDate = Calendar.current.date(byAdding: .day, value: withinDays, to: today) ?? today.addingTimeInterval(Double(withinDays) * 86400)
-        let todayStr = formatDateYMD(today)
+        let lookaheadDays = max(0, withinDays)
+        let futureDate = Calendar.current.date(byAdding: .day, value: lookaheadDays, to: today) ?? today.addingTimeInterval(Double(lookaheadDays) * 86400)
         let futureStr = formatDateYMD(futureDate)
 
         do {
@@ -1479,17 +1590,19 @@ public final class PeopleService: Sendable {
                            ec.cert_name,
                            ec.expiry_date
                     FROM certifications ec
-                    LEFT JOIN users u ON u.id = ec.user_id AND u.deleted_at IS NULL
-                    WHERE ec.expiry_date >= ? AND ec.expiry_date <= ?
+                    INNER JOIN users u ON u.id = ec.user_id
+                    WHERE ec.expiry_date IS NOT NULL
+                      AND ec.expiry_date <= ?
+                      AND ec.is_active = 1
                       AND ec.deleted_at IS NULL
+                      AND u.is_active = 1
+                      AND u.deleted_at IS NULL
                     ORDER BY ec.expiry_date ASC
-                    """, arguments: [todayStr, futureStr])
+                    """, arguments: [futureStr])
 
                 return rows.compactMap { row -> CertificationAlert? in
                     let expiryStr: String = row["expiry_date"] ?? ""
-                    let f = DateFormatter()
-                    f.dateFormat = "yyyy-MM-dd"
-                    guard let expiryDate = f.date(from: expiryStr) else { return nil }
+                    guard let expiryDate = parseDateYMD(expiryStr) else { return nil }
                     return CertificationAlert(
                         id: row["id"] ?? 0,
                         employeeName: row["employee_name"] ?? "Unknown",
@@ -1723,6 +1836,10 @@ public final class PeopleService: Sendable {
                 SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [createdBy]) ?? 0) > 0
             guard userExists else { throw PeopleError.userNotFound(createdBy) }
+            // Intentionally validate parent/user tombstones before permission gating so
+            // this write path preserves the PeopleError semantics covered by the
+            // service tests; do not reorder without updating those API guarantees.
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_people")
             try dbConn.execute(sql: """
                 INSERT INTO customer_communications (customer_id, comm_type, content, created_by)
                 VALUES (?, ?, ?, ?)
@@ -1847,6 +1964,10 @@ public final class PeopleService: Sendable {
                 SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [createdBy]) ?? 0) > 0
             guard userExists else { throw PeopleError.userNotFound(createdBy) }
+            // Intentionally validate parent/user tombstones before permission gating so
+            // this write path preserves the PeopleError semantics covered by the
+            // service tests; do not reorder without updating those API guarantees.
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_people")
             try dbConn.execute(sql: """
                 INSERT INTO contractor_notes (contractor_id, content, created_by)
                 VALUES (?, ?, ?)
@@ -2156,6 +2277,10 @@ public final class PeopleService: Sendable {
         customerId: Int64, jobId: Int64?, amount: Double, dueDate: String,
         invoiceNumber: String?, createdBy: Int64
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_people")
+        }
+
         guard amount > 0 else { throw PeopleError.invalidAmount(amount) }
         guard !dueDate.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw PeopleError.requiredFieldEmpty("dueDate")

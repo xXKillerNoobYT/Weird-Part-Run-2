@@ -61,6 +61,10 @@ struct IOSLaborOverviewPage: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear { postPageContext() }
+        .onDisappear {
+            NotificationCenter.default.post(name: .reportsLaborPageInactive, object: nil)
+        }
         .onChange(of: dateRange) { loadData() }
         .onChange(of: customStart) { loadData() }
         .onChange(of: customEnd) { loadData() }
@@ -78,10 +82,10 @@ struct IOSLaborOverviewPage: View {
         // Fix #219: when there's genuinely no labor data, show a clear empty state
         // instead of a page full of "0.0 hrs" stat rows that implies something loaded.
         if totalHours == 0 && timesheetRows.isEmpty {
-            ContentUnavailableView(
-                "No Labor This Week",
-                systemImage: "clock.badge.questionmark",
-                description: Text("No time was clocked this week. Labor entries will appear here once employees start clocking in.")
+            EmptyStateView(
+                icon: "clock.badge.questionmark",
+                title: "No Labor This Week",
+                message: "No time was clocked this week. Labor entries will appear here once employees start clocking in."
             )
         } else {
             List {
@@ -175,5 +179,16 @@ struct IOSLaborOverviewPage: View {
             loadError = userFriendlyError(error, context: "load labor data")
         }
         isLoading = false
+        postPageContext()
+    }
+
+    private func postPageContext() {
+        NotificationCenter.default.post(
+            name: .reportsLaborPageActive,
+            object: nil,
+            userInfo: [
+                "context": "Labor Overview Report: range \(dateRange.rawValue), \(String(format: "%.1f", totalHours)) total hours, \(String(format: "%.1f", totalOvertime)) overtime, \(uniqueWorkers) active workers, \(filteredTimesheetRows.count) visible rows."
+            ]
+        )
     }
 }

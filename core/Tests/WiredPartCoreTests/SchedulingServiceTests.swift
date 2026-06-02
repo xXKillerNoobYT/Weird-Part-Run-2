@@ -52,6 +52,55 @@ struct SchedulingServiceTests {
         #expect(schedule[0].userName == "TestAdmin")
     }
 
+    @Test("getJobDayAssignmentDetail separates selected-job crew, other-job crew, and time-off workers")
+    func testGetJobDayAssignmentDetail() throws {
+        let env = try E2ETestHelpers.setUp()
+        let targetJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-DETAIL-01", name: "Target Detail Job")
+        let otherJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-DETAIL-02", name: "Other Detail Job")
+        let otherUserId = try env.auth.createUser(displayName: "OtherWorker", pin: "1234")
+        let timeOffUserId = try env.auth.createUser(displayName: "TimeOffWorker", pin: "1234")
+
+        _ = try env.scheduling.createScheduleEntry(
+            userId: env.adminUserId,
+            jobId: targetJobId,
+            date: "2026-06-15",
+            startTime: "08:00",
+            endTime: "17:00",
+            notes: "target crew",
+            timeSlot: "full"
+        )
+        _ = try env.scheduling.createScheduleEntry(
+            userId: otherUserId,
+            jobId: otherJobId,
+            date: "2026-06-15",
+            startTime: "08:00",
+            endTime: "12:00",
+            notes: "already booked elsewhere",
+            timeSlot: "am"
+        )
+        let requestId = try env.scheduling.createTimeOffRequest(
+            userId: timeOffUserId,
+            startDate: "2026-06-15",
+            endDate: "2026-06-15",
+            reason: "Vacation"
+        )
+        try env.scheduling.updateTimeOffStatus(
+            id: requestId,
+            status: "approved",
+            approvedBy: env.adminUserId
+        )
+
+        let detail = try env.scheduling.getJobDayAssignmentDetail(jobId: targetJobId, date: "2026-06-15")
+
+        #expect(detail.date == "2026-06-15")
+        #expect(detail.jobId == targetJobId)
+        #expect(detail.assignedToJob.map(\.userName) == ["TestAdmin"])
+        #expect(detail.assignedToOtherJobs.map(\.userName) == ["OtherWorker"])
+        #expect(detail.assignedToOtherJobs.first?.jobName == "Other Detail Job")
+        #expect(detail.timeOffWorkers.map(\.userName) == ["TimeOffWorker"])
+        #expect(detail.timeOffWorkers.first?.reason == "Vacation")
+    }
+
     // MARK: - 2. Submit Time-Off Request
 
     @Test("createTimeOffRequest inserts a pending time-off entry")
@@ -121,6 +170,47 @@ struct SchedulingServiceTests {
         #expect(requests[0].approvedByName == "TestAdmin")
     }
 
+    @Test("updateTimeOffStatus throws insufficientPermissions when actor lacks approve_time_off")
+    func testUpdateTimeOffStatusRequiresApproveTimeOffPermission() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let workerId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO users (display_name, pin_hash, is_active)
+                VALUES ('WorkerUser', 'hash123', 1)
+                """)
+            let userId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO user_hats (user_id, hat_id, is_active)
+                SELECT ?, id, 1 FROM hats WHERE name = 'Worker'
+                """, arguments: [userId])
+            return userId
+        }
+
+        let requestId = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2026-09-02",
+            endDate: "2026-09-02",
+            reason: "Permission gate regression"
+        )
+
+        #expect(throws: SchedulingService.SchedulingError.insufficientPermissions(required: "approve_time_off")) {
+            try env.scheduling.updateTimeOffStatus(
+                id: requestId,
+                status: "approved",
+                approvedBy: workerId
+            )
+        }
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT is_approved, approved_by FROM schedule_exceptions WHERE id = ?
+                """, arguments: [requestId])
+        }
+        #expect(row?["is_approved"] as Int? == 0)
+        #expect((row?["approved_by"] as Int64?) == nil)
+    }
+
     // MARK: - 4. Reject Time-Off
 
     @Test("updateTimeOffStatus rejects (denies) a pending time-off request")
@@ -136,7 +226,8 @@ struct SchedulingServiceTests {
 
         try env.scheduling.updateTimeOffStatus(
             id: requestId,
-            status: "denied"
+            status: "denied",
+            approvedBy: env.adminUserId
         )
 
         // Denied requests have is_approved = 0, same as pending.
@@ -144,6 +235,13 @@ struct SchedulingServiceTests {
         let all = try env.scheduling.listTimeOffRequests(userId: env.adminUserId)
         #expect(all.count == 1)
         #expect(all[0].status == "pending") // is_approved = 0 maps to "pending" in the query
+
+        #expect(throws: SchedulingService.SchedulingError.insufficientPermissions(required: "approve_time_off")) {
+            try env.scheduling.updateTimeOffStatus(
+                id: requestId,
+                status: "denied"
+            )
+        }
     }
 
     @Test("updateTimeOffStatus throws for non-existent request")
@@ -151,7 +249,7 @@ struct SchedulingServiceTests {
         let env = try E2ETestHelpers.setUp()
 
         #expect(throws: SchedulingService.SchedulingError.self) {
-            try env.scheduling.updateTimeOffStatus(id: 9999, status: "approved")
+            try env.scheduling.updateTimeOffStatus(id: 9999, status: "approved", approvedBy: env.adminUserId)
         }
     }
 
@@ -287,6 +385,53 @@ struct SchedulingServiceTests {
         let env = try E2ETestHelpers.setUp()
         let entries = try env.scheduling.getTimeOffForDate(date: "2026-01-01")
         #expect(entries.isEmpty)
+    }
+
+    @Test("getTimeOffCountsByDate returns grouped counts for an inclusive range")
+    func testGetTimeOffCountsByDate() throws {
+        let env = try E2ETestHelpers.setUp()
+        let secondUserId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO users (display_name, pin_hash, is_active)
+                VALUES ('Worker Beta', 'hash777', 1)
+                """)
+            return db.lastInsertedRowID
+        }
+
+        _ = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2026-07-10",
+            endDate: "2026-07-10",
+            reason: "Admin off"
+        )
+        _ = try env.scheduling.createTimeOffRequest(
+            userId: secondUserId,
+            startDate: "2026-07-10",
+            endDate: "2026-07-10",
+            reason: "Worker off"
+        )
+        _ = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2026-07-12",
+            endDate: "2026-07-12",
+            reason: "Follow-up off"
+        )
+        _ = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2026-07-20",
+            endDate: "2026-07-20",
+            reason: "Outside range"
+        )
+
+        let counts = try env.scheduling.getTimeOffCountsByDate(
+            startDate: "2026-07-10",
+            endDate: "2026-07-16"
+        )
+
+        #expect(counts["2026-07-10"] == 2)
+        #expect(counts["2026-07-12"] == 1)
+        #expect(counts["2026-07-20"] == nil)
+        #expect(counts["2026-07-11"] == nil)
     }
 
     // MARK: - 8. Get Dispatch Board for Date
@@ -1197,6 +1342,310 @@ struct SchedulingServiceTests {
         #expect(subs.isEmpty)
     }
 
+    @Test("createSubcontractorSchedule stores an exact trimmed date-only value")
+    func testCreateSubcontractorScheduleDateOnlyRoundTrip() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let gcId = try seedSchedulingContractor(env, contactName: "Trimmed Sub", companyName: "Trim Co")
+
+        let scheduleId = try env.scheduling.createSubcontractorSchedule(
+            jobId: jobId,
+            gcId: gcId,
+            scheduledDate: " 2026-09-15 ",
+            arrivalTime: "08:00",
+            departureTime: "12:00",
+            scopeOfWork: "Rough-in",
+            status: "scheduled",
+            notes: "Use side gate",
+            createdBy: env.adminUserId
+        )
+
+        #expect(scheduleId > 0)
+        let subs = try env.scheduling.getSubSchedule(date: "2026-09-15")
+        #expect(subs.count == 1)
+        #expect(subs[0].scheduleDate == "2026-09-15")
+        #expect(subs[0].jobId == jobId)
+        #expect(subs[0].gcId == gcId)
+        #expect(subs[0].subName == "Trimmed Sub")
+        #expect(subs[0].arrivalTime == "08:00")
+        #expect(subs[0].departureTime == "12:00")
+        #expect(subs[0].scopeOfWork == "Rough-in")
+        #expect(subs[0].notes == "Use side gate")
+    }
+
+    @Test("updateSubcontractorSchedule edits the date, timing, status, scope, and notes")
+    func testUpdateSubcontractorScheduleEditsAllFormFields() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let gcId = try seedSchedulingContractor(env, contactName: "Edit Sub", companyName: "Edit Co")
+        let scheduleId = try env.scheduling.createSubcontractorSchedule(
+            jobId: jobId,
+            gcId: gcId,
+            scheduledDate: "2026-09-15",
+            arrivalTime: "08:00",
+            departureTime: "12:00",
+            scopeOfWork: "Old scope",
+            status: "scheduled",
+            notes: "Old notes",
+            createdBy: env.adminUserId
+        )
+
+        try env.scheduling.updateSubcontractorSchedule(
+            id: scheduleId,
+            jobId: jobId,
+            gcId: gcId,
+            scheduledDate: " 2026-09-16 ",
+            arrivalTime: "09:15",
+            departureTime: "14:45",
+            scopeOfWork: "Install trim",
+            status: "confirmed",
+            notes: "Bring ladder"
+        )
+
+        #expect(try env.scheduling.getSubSchedule(date: "2026-09-15").isEmpty)
+        let edited = try env.scheduling.getSubSchedule(date: "2026-09-16")
+        #expect(edited.count == 1)
+        #expect(edited[0].id == scheduleId)
+        #expect(edited[0].scheduleDate == "2026-09-16")
+        #expect(edited[0].arrivalTime == "09:15")
+        #expect(edited[0].departureTime == "14:45")
+        #expect(edited[0].scopeOfWork == "Install trim")
+        #expect(edited[0].status == "confirmed")
+        #expect(edited[0].notes == "Bring ladder")
+    }
+
+    @Test("subcontractor schedule rejects departure before arrival")
+    func testSubcontractorScheduleRejectsDepartureBeforeArrival() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let gcId = try seedSchedulingContractor(env, contactName: "Bad Time Sub", companyName: "Bad Time Co")
+
+        #expect(throws: SchedulingService.SchedulingError.invalidDateRange(start: "17:00", end: "08:00")) {
+            _ = try env.scheduling.createSubcontractorSchedule(
+                jobId: jobId,
+                gcId: gcId,
+                scheduledDate: "2026-09-15",
+                arrivalTime: "17:00",
+                departureTime: "08:00",
+                scopeOfWork: nil,
+                status: "scheduled",
+                notes: nil,
+                createdBy: nil
+            )
+        }
+    }
+
+    @Test("subcontractor schedule date validation rejects timestamps instead of shifting days")
+    func testSubcontractorScheduleRejectsNonDateOnlyInput() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let gcId = try seedSchedulingContractor(env, contactName: "Timestamp Sub", companyName: "Time Co")
+
+        #expect(throws: SchedulingService.SchedulingError.invalidDate("2026-09-15T00:30:00Z")) {
+            _ = try env.scheduling.createSubcontractorSchedule(
+                jobId: jobId,
+                gcId: gcId,
+                scheduledDate: "2026-09-15T00:30:00Z",
+                arrivalTime: nil,
+                departureTime: nil,
+                scopeOfWork: nil,
+                status: "scheduled",
+                notes: nil,
+                createdBy: nil
+            )
+        }
+    }
+
+    @Test("getSubSchedule excludes soft-deleted subcontractor schedules")
+    func testGetSubScheduleExcludesDeletedRows() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let gcId = try seedSchedulingContractor(env, contactName: "Deleted Sub", companyName: "Gone Co")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO subcontractor_schedules (job_id, gc_id, scheduled_date, status, deleted_at, created_at)
+                VALUES (?, ?, '2026-09-15', 'scheduled', datetime('now'), datetime('now'))
+                """, arguments: [jobId, gcId])
+        }
+
+        let subs = try env.scheduling.getSubSchedule(date: "2026-09-15")
+        #expect(subs.isEmpty)
+    }
+
+    @Test("createSubcontractorSchedule guards deleted jobs and contractors")
+    func testCreateSubcontractorScheduleGuardsDeletedJobAndContractor() throws {
+        let env = try E2ETestHelpers.setUp()
+        let liveJobId = try E2ETestHelpers.seedJob(env)
+        let deletedJobId = try E2ETestHelpers.seedJob(env, jobNumber: "DEL-1", name: "Deleted Job")
+        let liveGcId = try seedSchedulingContractor(env, contactName: "Live Sub", companyName: "Live Co")
+        let deletedGcId = try seedSchedulingContractor(env, contactName: "Deleted Sub", companyName: "Deleted Co")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?", arguments: [deletedJobId])
+            try db.execute(sql: "UPDATE general_contractors SET deleted_at = datetime('now') WHERE id = ?", arguments: [deletedGcId])
+        }
+
+        #expect(throws: SchedulingService.SchedulingError.jobNotFound(deletedJobId)) {
+            _ = try env.scheduling.createSubcontractorSchedule(
+                jobId: deletedJobId,
+                gcId: liveGcId,
+                scheduledDate: "2026-09-15",
+                arrivalTime: nil,
+                departureTime: nil,
+                scopeOfWork: nil,
+                status: "scheduled",
+                notes: nil,
+                createdBy: nil
+            )
+        }
+
+        #expect(throws: SchedulingService.SchedulingError.contractorNotFound(deletedGcId)) {
+            _ = try env.scheduling.createSubcontractorSchedule(
+                jobId: liveJobId,
+                gcId: deletedGcId,
+                scheduledDate: "2026-09-15",
+                arrivalTime: nil,
+                departureTime: nil,
+                scopeOfWork: nil,
+                status: "scheduled",
+                notes: nil,
+                createdBy: nil
+            )
+        }
+    }
+
+    @Test("createSubcontractorSchedule surfaces duplicate active date conflicts")
+    func testCreateSubcontractorScheduleDuplicateConflict() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let gcId = try seedSchedulingContractor(env, contactName: "Duplicate Sub", companyName: "Dup Co")
+
+        _ = try env.scheduling.createSubcontractorSchedule(
+            jobId: jobId,
+            gcId: gcId,
+            scheduledDate: "2026-09-15",
+            arrivalTime: nil,
+            departureTime: nil,
+            scopeOfWork: nil,
+            status: "scheduled",
+            notes: nil,
+            createdBy: nil
+        )
+
+        #expect(throws: SchedulingService.SchedulingError.subcontractorScheduleConflict(jobId: jobId, gcId: gcId, date: "2026-09-15")) {
+            _ = try env.scheduling.createSubcontractorSchedule(
+                jobId: jobId,
+                gcId: gcId,
+                scheduledDate: "2026-09-15",
+                arrivalTime: nil,
+                departureTime: nil,
+                scopeOfWork: nil,
+                status: "scheduled",
+                notes: nil,
+                createdBy: nil
+            )
+        }
+    }
+
+    @Test("updateSubcontractorScheduleDate reschedules without UTC date shifts")
+    func testUpdateSubcontractorScheduleDateCorrection() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let gcId = try seedSchedulingContractor(env, contactName: "Reschedule Sub", companyName: "Move Co")
+        let scheduleId = try env.scheduling.createSubcontractorSchedule(
+            jobId: jobId,
+            gcId: gcId,
+            scheduledDate: "2026-09-15",
+            arrivalTime: nil,
+            departureTime: nil,
+            scopeOfWork: nil,
+            status: "scheduled",
+            notes: nil,
+            createdBy: nil
+        )
+
+        try env.scheduling.updateSubcontractorScheduleDate(id: scheduleId, scheduledDate: " 2026-09-16 ")
+
+        #expect(try env.scheduling.getSubSchedule(date: "2026-09-15").isEmpty)
+        let moved = try env.scheduling.getSubSchedule(date: "2026-09-16")
+        #expect(moved.count == 1)
+        #expect(moved[0].scheduleDate == "2026-09-16")
+    }
+
+    @Test("cancelSubcontractorSchedule soft-deletes the row")
+    func testCancelSubcontractorScheduleSoftDeletesRow() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let gcId = try seedSchedulingContractor(env, contactName: "Cancel Sub", companyName: "Cancel Co")
+        let scheduleId = try env.scheduling.createSubcontractorSchedule(
+            jobId: jobId,
+            gcId: gcId,
+            scheduledDate: "2026-09-15",
+            arrivalTime: nil,
+            departureTime: nil,
+            scopeOfWork: nil,
+            status: "scheduled",
+            notes: nil,
+            createdBy: nil
+        )
+
+        try env.scheduling.cancelSubcontractorSchedule(id: scheduleId)
+
+        #expect(try env.scheduling.getSubSchedule(date: "2026-09-15").isEmpty)
+        let deletedAt: String? = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT deleted_at FROM subcontractor_schedules WHERE id = ?", arguments: [scheduleId])
+        }
+        #expect(deletedAt != nil)
+    }
+
+    @Test("cancelSubcontractorSchedule frees the job, subcontractor, and date for rescheduling")
+    func testCancelSubcontractorScheduleAllowsRescheduleSameSlot() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let gcId = try seedSchedulingContractor(env, contactName: "Reusable Sub", companyName: "Reusable Co")
+        let cancelledScheduleId = try env.scheduling.createSubcontractorSchedule(
+            jobId: jobId,
+            gcId: gcId,
+            scheduledDate: "2026-09-15",
+            arrivalTime: nil,
+            departureTime: nil,
+            scopeOfWork: nil,
+            status: "scheduled",
+            notes: nil,
+            createdBy: nil
+        )
+
+        try env.scheduling.cancelSubcontractorSchedule(id: cancelledScheduleId)
+
+        let newScheduleId = try env.scheduling.createSubcontractorSchedule(
+            jobId: jobId,
+            gcId: gcId,
+            scheduledDate: "2026-09-15",
+            arrivalTime: "10:00",
+            departureTime: nil,
+            scopeOfWork: "Rescheduled work",
+            status: "scheduled",
+            notes: nil,
+            createdBy: env.adminUserId
+        )
+
+        #expect(newScheduleId != cancelledScheduleId)
+        let visibleRows = try env.scheduling.getSubSchedule(date: "2026-09-15")
+        #expect(visibleRows.map(\.id) == [newScheduleId])
+        #expect(visibleRows[0].arrivalTime == "10:00")
+    }
+
+    private func seedSchedulingContractor(_ env: E2ETestHelpers.TestEnvironment, contactName: String, companyName: String) throws -> Int64 {
+        try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO general_contractors (contact_name, company_name, created_at)
+                VALUES (?, ?, datetime('now'))
+                """, arguments: [contactName, companyName])
+            return db.lastInsertedRowID
+        }
+    }
+
     // MARK: - Pipeline Category Logic
 
     @Test("getShortTermPipeline categorizes small jobs (<=2 est days)")
@@ -1259,6 +1708,27 @@ struct SchedulingServiceTests {
         #expect(item?.pipelineCategory == "schedule_needed")
     }
 
+    @Test("updateShortTermPipelineCategory persists a manual drag/drop category override")
+    func testUpdateShortTermPipelineCategoryPersistsOverride() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO jobs (job_name, job_number, status, estimated_hours, deleted_at, created_at, updated_at)
+                VALUES ('Dragged Pipeline Job', 'J-DRAG-01', 'active', 40, NULL, datetime('now'), datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+
+        #expect(try env.scheduling.getShortTermPipeline().first(where: { $0.id == jobId })?.pipelineCategory == "start_anytime")
+
+        try env.scheduling.updateShortTermPipelineCategory(jobId: jobId, category: "favorite_gc")
+
+        let pipeline = try env.scheduling.getShortTermPipeline()
+        let item = pipeline.first(where: { $0.id == jobId })
+        #expect(item != nil)
+        #expect(item?.pipelineCategory == "favorite_gc")
+    }
+
     // MARK: - updateTimeOffStatus Cancelled
 
     @Test("updateTimeOffStatus with cancelled status")
@@ -1273,7 +1743,7 @@ struct SchedulingServiceTests {
         )
 
         // Should not throw — "cancelled" is a valid status
-        try env.scheduling.updateTimeOffStatus(id: requestId, status: "cancelled")
+        try env.scheduling.updateTimeOffStatus(id: requestId, status: "cancelled", approvedBy: env.adminUserId)
 
         // After cancelling, is_approved = 0, which maps to "pending" in the query
         let requests = try env.scheduling.listTimeOffRequests(userId: env.adminUserId)
@@ -1479,6 +1949,43 @@ struct SchedulingServiceTests {
                 """, arguments: [jobId, env.adminUserId])
         }
         #expect(status == "pending_approval")
+    }
+
+    @Test("pending schedule approvals can be listed and approved")
+    func testPendingScheduleApprovalListAndApprove() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT OR REPLACE INTO settings (key, value) VALUES ('flex_pool_requires_approval', '1')
+                """)
+        }
+
+        try env.scheduling.markJobFlexPool(jobId: jobId, isFlexPool: true)
+        try env.scheduling.claimFlexJob(jobId: jobId, userId: env.adminUserId)
+
+        let pending = try env.scheduling.listPendingScheduleChangeApprovals()
+        #expect(pending.count == 1)
+        #expect(pending[0].jobName == "Test Job")
+        #expect(pending[0].userName == "TestAdmin")
+
+        try env.scheduling.approveScheduleChange(dispatchId: pending[0].id, approvedBy: env.adminUserId)
+
+        let approved = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT jd.status, j.lead_user_id, j.is_flex_pool
+                FROM job_dispatch jd
+                JOIN jobs j ON j.id = jd.job_id
+                WHERE jd.id = ?
+                """, arguments: [pending[0].id])
+        }
+        #expect(approved?["status"] as String? == "scheduled")
+        #expect(approved?["lead_user_id"] as Int64? == env.adminUserId)
+        #expect(approved?["is_flex_pool"] as Int? == 0)
+
+        let afterApproval = try env.scheduling.listPendingScheduleChangeApprovals()
+        #expect(afterApproval.isEmpty)
     }
 
     // MARK: - createTimeOffRequest Invalid Date
@@ -1925,7 +2432,8 @@ struct SchedulingServiceTests {
         // Deny the legacy row (hits the else branch at L488)
         try env.scheduling.updateTimeOffStatus(
             id: legacyId,
-            status: "denied"
+            status: "denied",
+            approvedBy: env.adminUserId
         )
 
         // Verify is_approved is still 0
@@ -2380,6 +2888,27 @@ struct SchedulingServiceTests {
         #expect(assignments[0].status == "scheduled")
     }
 
+    @Test("createDispatch persists time slot for weekly dispatch board")
+    func testCreateDispatchPersistsWeeklyDispatchTimeSlot() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-TS-02", name: "Dispatch Time Slot Job")
+
+        _ = try env.scheduling.createDispatch(
+            jobId: jobId,
+            userId: env.adminUserId,
+            date: "2026-10-13",
+            timeSlot: "pm"
+        )
+
+        let assignments = try env.scheduling.getWeeklyDispatchAssignments(
+            weekStart: "2026-10-13",
+            weekEnd: "2026-10-13"
+        )
+        #expect(assignments.count == 1)
+        #expect(assignments[0].timeSlot == "pm")
+        #expect(assignments[0].status == "scheduled")
+    }
+
     // MARK: - Soft-Deleted Dispatch Not Returned
 
     @Test("getMySchedule excludes soft-deleted dispatches")
@@ -2457,6 +2986,24 @@ struct SchedulingServiceTests {
         #expect(entries.isEmpty)
     }
 
+    @Test("checkTimeOffConflict ignores pending time-off")
+    func testCheckTimeOffConflictIgnoresPendingTimeOff() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        _ = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2026-12-21",
+            endDate: "2026-12-21",
+            reason: "Pending PTO"
+        )
+
+        let conflict = try env.scheduling.checkTimeOffConflict(
+            employeeId: env.adminUserId,
+            date: "2026-12-21"
+        )
+        #expect(conflict == nil)
+    }
+
     @Test("checkTimeOffConflict ignores soft-deleted time-off")
     func testCheckTimeOffConflictIgnoresSoftDeleted() throws {
         let env = try E2ETestHelpers.setUp()
@@ -2525,12 +3072,13 @@ struct SchedulingServiceTests {
             status: "pending"
         )
 
-        // Verify it's back to pending
+        // Verify it's back to pending and no stale approver is surfaced
         let requests = try env.scheduling.listTimeOffRequests(
             userId: env.adminUserId,
             status: "pending"
         )
         #expect(requests.count == 1)
+        #expect(requests.first?.approvedByName == nil)
     }
 
     // MARK: - Crew Utilization Caps at 1.0
@@ -3273,7 +3821,8 @@ struct SchedulingServiceTests {
         )
         try env.scheduling.updateTimeOffStatus(
             id: requestId,
-            status: "denied"
+            status: "denied",
+            approvedBy: env.adminUserId
         )
 
         let dispatchId = try env.scheduling.createDispatch(

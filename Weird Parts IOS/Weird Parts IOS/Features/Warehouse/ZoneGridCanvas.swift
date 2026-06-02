@@ -34,6 +34,7 @@ struct ZoneGridCanvas: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             grid
+                .zIndex(0)
 
             ForEach(zones, id: \.id) { zone in
                 zoneView(zone)
@@ -82,7 +83,7 @@ struct ZoneGridCanvas: View {
             return handleDrop(item, row: row, col: col)
         } isTargeted: { _ in }
         .onTapGesture {
-            onSelectZone(nil)
+            onSelectZone(zone(atRow: row, col: col))
         }
         .accessibilityLabel("Empty zone cell R\(row + 1)C\(col + 1)")
     }
@@ -132,10 +133,6 @@ struct ZoneGridCanvas: View {
             }
         }
         .frame(width: zoneExtent(width) - 1, height: zoneExtent(height) - 1)
-        .position(
-            x: CGFloat(clampedX) * cellStride + zoneExtent(width) / 2,
-            y: CGFloat(clampedY) * cellStride + zoneExtent(height) / 2
-        )
         .contentShape(Rectangle())
         .onTapGesture {
             onSelectZone(zone)
@@ -149,6 +146,11 @@ struct ZoneGridCanvas: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(zoneTitle(zone)), \(zone.zoneTypeDisplay), starts at R\(clampedY + 1)C\(clampedX + 1), \(width) by \(height) cells")
         .accessibilityHint("Tap to select. Long press and drag to move.")
+        .offset(
+            x: CGFloat(clampedX) * cellStride,
+            y: CGFloat(clampedY) * cellStride
+        )
+        .zIndex(isSelected ? 2 : 1)
     }
 
     private func zoneDragPreview(_ zone: WarehouseZone) -> some View {
@@ -226,6 +228,15 @@ struct ZoneGridCanvas: View {
     private func zoneTitle(_ zone: WarehouseZone) -> String {
         let trimmed = zone.label?.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed?.isEmpty == false ? trimmed! : zone.zoneTypeDisplay
+    }
+
+    private func zone(atRow row: Int, col: Int) -> WarehouseZone? {
+        zones.reversed().first { zone in
+            col >= zone.gridX &&
+                col < zone.gridX + zone.gridWidth &&
+                row >= zone.gridY &&
+                row < zone.gridY + zone.gridHeight
+        }
     }
 
     private func zoneColor(_ type: String) -> Color {

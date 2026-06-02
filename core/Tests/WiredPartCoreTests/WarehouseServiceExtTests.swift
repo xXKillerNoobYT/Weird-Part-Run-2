@@ -54,6 +54,166 @@ struct WarehouseServiceExtTests {
         #expect(movements.count >= 1)
     }
 
+    @Test("Dashboard smart card summary counts service-backed warehouse slices")
+    func testDashboardSmartCardSummary() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-DASH", supplierId: supplierId, notes: nil)
+
+        _ = try env.warehouse.createMovement(
+            partId: partId,
+            qty: 5,
+            fromLocationType: nil,
+            fromLocationId: nil,
+            toLocationType: "warehouse",
+            toLocationId: 1,
+            movementType: "received",
+            reason: "Dashboard count",
+            performedBy: env.adminUserId
+        )
+        _ = try env.warehouse.startReceivingSession(poId: poId, startedBy: env.adminUserId)
+
+        let stockId: Int64 = try env.db.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: "SELECT id FROM stock WHERE part_id = ? LIMIT 1", arguments: [partId])?["id"] ?? 0
+        }
+        _ = try env.warehouse.createStagingTag(
+            stockId: stockId,
+            destinationType: "job",
+            destinationId: 1,
+            destinationLabel: "Ready",
+            taggedBy: env.adminUserId
+        )
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO warehouse_floor_plans (id, name, width_inches, length_inches)
+                VALUES (1, 'Main', 600, 400)
+                """)
+            try dbConn.execute(sql: """
+                INSERT INTO warehouse_storage_units (id, floor_plan_id, name, unit_type)
+                VALUES (1, 1, 'Shelf A', 'shelf')
+                """)
+            try dbConn.execute(sql: """
+                INSERT INTO warehouse_storage_levels (id, unit_id, level_code, level_order)
+                VALUES (1, 1, 'L1', 1)
+                """)
+            try dbConn.execute(sql: """
+                INSERT INTO warehouse_storage_areas (id, level_id, area_code, area_number)
+                VALUES (1, 1, 'A1', 1)
+                """)
+        }
+        try env.warehouse.setPartConfidence(partId: partId, areaId: 1, percent: 25)
+
+        let summary = try env.warehouse.getDashboardSmartCardSummary()
+        #expect(summary.movesToday >= 1)
+        #expect(summary.activeReceiving == 1)
+        #expect(summary.stagedReady == 1)
+        #expect(summary.auditDue == 1)
+        #expect(summary.lowConfidenceAreas == 1)
+    }
+
+    @Test("Movement query filters by date type completion group and sort order")
+    func testMovementQueryFilters() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let now = Date()
+        let twoDaysAgo = Calendar.current.date(byAdding: .day, value: -2, to: now)!
+        let tenDaysAgo = Calendar.current.date(byAdding: .day, value: -10, to: now)!
+
+        _ = try env.warehouse.createQuickLogMovement(
+            partId: partId,
+            qty: 1,
+            movementType: "received",
+            occurredAt: tenDaysAgo,
+            toLocationType: "warehouse",
+            toLocationId: 1,
+            reason: "Old receive",
+            performedBy: env.adminUserId
+        )
+        _ = try env.warehouse.createQuickLogMovement(
+            partId: partId,
+            qty: 2,
+            movementType: "return",
+            occurredAt: twoDaysAgo,
+            reason: "Recent return",
+            performedBy: env.adminUserId
+        )
+        _ = try env.warehouse.createQuickLogMovement(
+            partId: partId,
+            qty: 3,
+            movementType: "receiving_staged",
+            occurredAt: now,
+            reason: "Active staged",
+            performedBy: env.adminUserId
+        )
+
+        let recentReturns = try env.warehouse.listMovements(
+            movementType: "return_to_supplier",
+            startDate: Calendar.current.date(byAdding: .day, value: -7, to: now),
+            endDate: now,
+            sortDirection: .ascending
+        )
+        #expect(recentReturns.map(\.movementType) == ["return_to_supplier"])
+
+        let completedHistory = try env.warehouse.listMovements(
+            startDate: Calendar.current.date(byAdding: .day, value: -7, to: now),
+            endDate: now,
+            completionFilter: .completed
+        )
+        #expect(completedHistory.contains { $0.reason == "Recent return" })
+        #expect(!completedHistory.contains { $0.reason == "Old receive" })
+        #expect(!completedHistory.contains { $0.reason == "Active staged" })
+
+        let active = try env.warehouse.listMovements(completionFilter: .active)
+        #expect(active.count == 1)
+        #expect(active.first?.movementType == "receiving_staged")
+    }
+
+    @Test("Quick Log persists happened-at and audit trail fields")
+    func testQuickLogPersistence() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let happenedAt = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let movementId = try env.warehouse.createQuickLogMovement(
+            partId: partId,
+            qty: 4,
+            movementType: "consumed",
+            occurredAt: happenedAt,
+            reason: "Already happened",
+            notes: "Logged from quick entry",
+            performedBy: env.adminUserId,
+            verifiedBy: env.adminUserId,
+            scanConfirmed: true,
+            gpsLat: 39.7392,
+            gpsLng: -104.9903
+        )
+
+        let movement = try env.warehouse.getMovement(id: movementId)
+        #expect(movement?.movementType == "consume")
+        #expect(movement?.createdAt == "2023-11-14 22:13:20")
+        #expect(movement?.verifiedBy == env.adminUserId)
+        #expect(movement?.scanConfirmed == true)
+        #expect(movement?.gpsLat == 39.7392)
+        #expect(movement?.gpsLng == -104.9903)
+    }
+
+    @Test("Movement service returns empty defaults when movement table is missing")
+    func testMovementMissingTableDefaults() throws {
+        let env = try E2ETestHelpers.setUp()
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(sql: "DROP TABLE stock_movements")
+        }
+
+        let movements = try env.warehouse.listMovements()
+        let summary = try env.warehouse.getDashboardSmartCardSummary()
+        #expect(movements.isEmpty)
+        #expect(summary.movesToday == 0)
+    }
+
     @Test("Validate movement")
     func testValidateMovement() throws {
         let env = try E2ETestHelpers.setUp()
@@ -558,6 +718,48 @@ struct WarehouseServiceExtTests {
         #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
             try env.warehouse.updateZone(id: zone.id!, gridY: -1)
         }
+    }
+
+    @Test("resizeZone preserves adjacent zone and rejects overlap")
+    func updateZone_preservesAdjacentZoneWhenResizeWouldOverlap() throws {
+        let env = try E2ETestHelpers.setUp()
+        let floorPlan = try env.warehouse.createFloorPlan(name: "Two Zone Plan", widthInches: 480, lengthInches: 360)
+        try env.warehouse.updateFloorPlanGrid(floorPlanId: floorPlan.id!, rows: 3, cols: 5)
+
+        let storage = try env.warehouse.addZone(
+            floorPlanId: floorPlan.id!,
+            zoneType: "storage",
+            label: "Storage",
+            gridX: 0,
+            gridY: 0,
+            gridWidth: 1,
+            gridHeight: 1,
+            zoneOrder: 0
+        )
+        let receiving = try env.warehouse.addZone(
+            floorPlanId: floorPlan.id!,
+            zoneType: "receiving",
+            label: "Receiving",
+            gridX: 2,
+            gridY: 0,
+            gridWidth: 1,
+            gridHeight: 1,
+            zoneOrder: 1
+        )
+
+        try env.warehouse.updateZone(id: storage.id!, gridWidth: 2, gridHeight: 2)
+        var zones = try env.warehouse.listZones(floorPlanId: floorPlan.id!)
+        #expect(zones.count == 2)
+        #expect(zones.first(where: { $0.id == receiving.id })?.gridX == 2)
+        #expect(zones.first(where: { $0.id == receiving.id })?.gridY == 0)
+
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            try env.warehouse.updateZone(id: storage.id!, gridWidth: 3, gridHeight: 2)
+        }
+        zones = try env.warehouse.listZones(floorPlanId: floorPlan.id!)
+        #expect(zones.count == 2)
+        #expect(zones.first(where: { $0.id == storage.id })?.gridWidth == 2)
+        #expect(zones.first(where: { $0.id == receiving.id })?.gridX == 2)
     }
 
     // MARK: - getPartName / getPartCode
@@ -1510,6 +1712,102 @@ struct WarehouseServiceExtTests {
                 partId: partId, foundAtAreaId: area.id!, homeAreaId: nil,
                 qtyFound: 1, foundBy: env.adminUserId)
         }
+    }
+
+    @Test("logMisplacedPart rejects placeholder part and area ids without inserting")
+    func testLogMisplacedPart_rejectsPlaceholderIdsWithoutInsert() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let plan = try env.warehouse.createFloorPlan(name: "MP-ZERO", widthInches: 200, lengthInches: 200)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "MP-Z1", unitType: "shelf")
+        let level = try env.warehouse.addStorageLevel(unitId: unit.id!, levelCode: "A")
+        let area = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: 1)
+
+        #expect(throws: WarehouseService.WarehouseError.partNotFound(0)) {
+            try env.warehouse.logMisplacedPart(
+                partId: 0, foundAtAreaId: area.id!, homeAreaId: nil,
+                qtyFound: 1, foundBy: env.adminUserId)
+        }
+        #expect(throws: WarehouseService.WarehouseError.areaNotFound(0)) {
+            try env.warehouse.logMisplacedPart(
+                partId: partId, foundAtAreaId: 0, homeAreaId: nil,
+                qtyFound: 1, foundBy: env.adminUserId)
+        }
+
+        let logCount = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM misplaced_parts_log") ?? 0
+        }
+        #expect(logCount == 0)
+    }
+
+    @Test("logMisplacedPart rejects missing or deleted part and area ids")
+    func testLogMisplacedPart_rejectsMissingOrDeletedRequiredRecords() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let plan = try env.warehouse.createFloorPlan(name: "MP-STALE", widthInches: 200, lengthInches: 200)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "MP-S2", unitType: "shelf")
+        let level = try env.warehouse.addStorageLevel(unitId: unit.id!, levelCode: "A")
+        let area = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: 1)
+
+        #expect(throws: WarehouseService.WarehouseError.partNotFound(999_991)) {
+            try env.warehouse.logMisplacedPart(
+                partId: 999_991, foundAtAreaId: area.id!, homeAreaId: nil,
+                qtyFound: 1, foundBy: env.adminUserId)
+        }
+        #expect(throws: WarehouseService.WarehouseError.areaNotFound(999_992)) {
+            try env.warehouse.logMisplacedPart(
+                partId: partId, foundAtAreaId: 999_992, homeAreaId: nil,
+                qtyFound: 1, foundBy: env.adminUserId)
+        }
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET deleted_at = datetime('now') WHERE id = ?", arguments: [partId])
+            try db.execute(sql: "UPDATE warehouse_storage_areas SET deleted_at = datetime('now') WHERE id = ?", arguments: [area.id!])
+        }
+
+        #expect(throws: WarehouseService.WarehouseError.partNotFound(partId)) {
+            try env.warehouse.logMisplacedPart(
+                partId: partId, foundAtAreaId: area.id!, homeAreaId: nil,
+                qtyFound: 1, foundBy: env.adminUserId)
+        }
+    }
+
+    @Test("logMisplacedPart rejects inactive parts")
+    func testLogMisplacedPart_rejectsInactivePart() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let plan = try env.warehouse.createFloorPlan(name: "MP-INACTIVE", widthInches: 200, lengthInches: 200)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "MP-I1", unitType: "shelf")
+        let level = try env.warehouse.addStorageLevel(unitId: unit.id!, levelCode: "A")
+        let area = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: 1)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET is_active = 0 WHERE id = ?", arguments: [partId])
+        }
+
+        #expect(throws: WarehouseService.WarehouseError.partNotFound(partId)) {
+            try env.warehouse.logMisplacedPart(
+                partId: partId, foundAtAreaId: area.id!, homeAreaId: nil,
+                qtyFound: 1, foundBy: env.adminUserId)
+        }
+    }
+
+    @Test("active area lookup searches QR labels and returns empty no-results safely")
+    func testSearchActiveAreas() throws {
+        let env = try E2ETestHelpers.setUp()
+        let plan = try env.warehouse.createFloorPlan(name: "AREA-LOOKUP", widthInches: 200, lengthInches: 200)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "Search Rack", unitType: "shelf")
+        let level = try env.warehouse.addStorageLevel(unitId: unit.id!, levelCode: "B")
+        let area = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: 3)
+
+        let results = try env.warehouse.searchActiveAreas(query: area.fullLocationCode ?? "Search Rack", limit: 10)
+        #expect(results.contains { $0.id == area.id! })
+
+        let noResults = try env.warehouse.searchActiveAreas(query: "definitely-not-a-location", limit: 10)
+        #expect(noResults.isEmpty)
     }
 
     @Test("submitMultiUserCount rejects negative quantity")

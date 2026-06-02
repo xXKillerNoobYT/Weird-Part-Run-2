@@ -21,11 +21,21 @@ struct PartsCategoriesPage: View {
     @State private var expandedStyles: Set<Int64> = []
     @State private var expandedTypes: Set<Int64> = []
     @State private var expandedBrands: Set<Int64> = []
+    @State private var generalBrandSelectionByType: [Int64: Bool] = [:]
 
     private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
     var body: some View {
         VStack(spacing: 0) {
+            // Dedicated page marker for UI tests. Keep this on its own tiny
+            // element instead of the root VStack; applying the identifier to
+            // the root container causes SwiftUI to export the same identifier
+            // on descendants, masking child controls such as
+            // `createFirstCategoryButton`.
+            Color.clear
+                .frame(width: 1, height: 1)
+                .accessibilityIdentifier("partsCategoriesPage")
+
             OnboardingBanner(pageId: "parts-categories")
 
             Group {
@@ -48,7 +58,6 @@ struct PartsCategoriesPage: View {
             // This prevents stale data from persisting after sheet edits.
             .id(dataVersion)
         }
-        .accessibilityIdentifier("partsCategoriesPage")
         .background(DS.Background.page)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -103,6 +112,7 @@ struct PartsCategoriesPage: View {
             CategoriesEditorPanel(
                 selection: selection,
                 hierarchy: hierarchy,
+                generalBrandSelectionByType: $generalBrandSelectionByType,
                 onRefresh: { await loadHierarchy() }
             )
             .frame(minWidth: 300, idealWidth: 400, maxWidth: .infinity)
@@ -127,6 +137,7 @@ struct PartsCategoriesPage: View {
                 CategoriesEditorPanel(
                     selection: sel,
                     hierarchy: hierarchy,
+                    generalBrandSelectionByType: $generalBrandSelectionByType,
                     onRefresh: { await loadHierarchy() }
                 )
                 .navigationTitle("Details")
@@ -187,6 +198,12 @@ extension TreeSelection: Hashable {
             hasher.combine(colorId)
             hasher.combine(typeId)
             hasher.combine(brandId)
+        case .sku(let skuId, let typeId, let brandId, let colorId):
+            hasher.combine(5)
+            hasher.combine(skuId)
+            hasher.combine(typeId)
+            hasher.combine(brandId)
+            hasher.combine(colorId)
         }
     }
 }
@@ -194,4 +211,3 @@ extension TreeSelection: Hashable {
 #Preview {
     PartsCategoriesPage()
 }
-

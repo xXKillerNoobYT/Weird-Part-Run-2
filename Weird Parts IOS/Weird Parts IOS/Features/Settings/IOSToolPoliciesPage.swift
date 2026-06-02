@@ -33,6 +33,8 @@ struct IOSToolPoliciesPage: View {
     @State private var tradeTimeoutDays: Int = 7
     @State private var requireTradeCondition = true
 
+    @State private var isDirty = false
+
     private enum ActiveSheet: Identifiable {
         case help
         var id: String { "help" }
@@ -44,7 +46,7 @@ struct IOSToolPoliciesPage: View {
                 ProgressView("Loading tool policies...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let loadError {
-                ContentUnavailableView("Unable to Load", systemImage: "exclamationmark.triangle", description: Text(loadError))
+                ErrorStateView(message: loadError)
             } else {
                 settingsForm
             }
@@ -135,8 +137,21 @@ struct IOSToolPoliciesPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!isDirty)
+                .accessibilityHint(isDirty ? "" : "Make changes to enable saving.")
             }
         }
+        .onChange(of: maxCheckoutDays) { _, _ in isDirty = true }
+        .onChange(of: overdueNotificationDays) { _, _ in isDirty = true }
+        .onChange(of: autoExtendOnActiveJob) { _, _ in isDirty = true }
+        .onChange(of: requireCheckoutCondition) { _, _ in isDirty = true }
+        .onChange(of: requireReturnCondition) { _, _ in isDirty = true }
+        .onChange(of: requireDamagePhoto) { _, _ in isDirty = true }
+        .onChange(of: maintenanceAfterCheckouts) { _, _ in isDirty = true }
+        .onChange(of: maintenanceReminderDays) { _, _ in isDirty = true }
+        .onChange(of: allowTrades) { _, _ in isDirty = true }
+        .onChange(of: tradeTimeoutDays) { _, _ in isDirty = true }
+        .onChange(of: requireTradeCondition) { _, _ in isDirty = true }
     }
 
     // MARK: - Actions
@@ -169,6 +184,7 @@ struct IOSToolPoliciesPage: View {
             loadError = userFriendlyError(error, context: "load")
         }
         isLoading = false
+        isDirty = false
     }
 
     private func saveSettings() {
@@ -193,6 +209,7 @@ struct IOSToolPoliciesPage: View {
             ]
             try service.upsertSettingsMap(data, category: "tool_policy")
             saveError = nil
+            isDirty = false
         } catch {
             saveError = userFriendlyError(error, context: "save order")
         }

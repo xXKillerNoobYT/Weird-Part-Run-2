@@ -17,11 +17,13 @@ struct FormSheet<Content: View>: View {
     @Binding var isSaving: Bool
     var isValid: Bool = true
     var saveLabel: String = "Save"
+    var isDirty: Bool = false
     var onSave: () -> Void
     var onCancel: (() -> Void)?
     @ViewBuilder let content: Content
 
     @Environment(\.dismiss) private var dismiss
+    @State private var showDiscardConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -36,7 +38,12 @@ struct FormSheet<Content: View>: View {
                         if let onCancel {
                             onCancel()
                         } else {
-                            dismiss()
+                            DismissSafety.cancelOrConfirm(
+                                isDirty: isDirty,
+                                isSaving: isSaving,
+                                dismiss: dismiss,
+                                showDiscardConfirmation: $showDiscardConfirmation
+                            )
                         }
                     }
                     .disabled(isSaving)
@@ -49,7 +56,12 @@ struct FormSheet<Content: View>: View {
                     .disabled(!isValid || isSaving)
                 }
             }
-            .interactiveDismissDisabled(isSaving)
+            .dismissSafety(
+                isDirty: isDirty,
+                isSaving: isSaving,
+                showDiscardConfirmation: $showDiscardConfirmation,
+                onDiscard: { dismiss() }
+            )
         }
     }
 }

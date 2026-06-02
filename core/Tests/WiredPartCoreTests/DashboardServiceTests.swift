@@ -493,6 +493,110 @@ struct DashboardServiceTests {
         #expect(briefing.summary.hasPrefix("Good morning."))
     }
 
+    @Test("getOfficeSmartCards returns command center counts")
+    func testOfficeSmartCardsCommandCenterCounts() throws {
+        let (env, dash) = try freshEnv()
+        let categoryId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Low Stock Coupling", categoryId: categoryId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OFFICE-CARDS", name: "Office Cards Job")
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET min_stock_level = 10 WHERE id = ?", arguments: [partId])
+            try db.execute(sql: """
+                INSERT INTO labor_entries (user_id, job_id, clock_in, work_type)
+                VALUES (?, ?, datetime('now'), 'regular')
+                """, arguments: [env.adminUserId, jobId])
+            try db.execute(sql: """
+                INSERT INTO job_parts_orders (job_id, order_number, status, order_type, requested_by)
+                VALUES (?, 'JPO-OFFICE-CARDS', 'submitted', 'job', ?)
+                """, arguments: [jobId, env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO purchase_orders (po_number, supplier_id, status, expected_delivery, submitted_by)
+                VALUES ('PO-OFFICE-CARDS', ?, 'submitted', date('now', '-1 day'), ?)
+                """, arguments: [supplierId, env.adminUserId])
+            try db.execute(sql: """
+                UPDATE jobs
+                SET status = 'payment_hold',
+                    due_date = date('now', '-1 day'),
+                    warranty_end_date = date('now', '+10 days')
+                WHERE id = ?
+                """, arguments: [jobId])
+            try db.execute(sql: """
+                INSERT INTO tool_maintenance_types (name)
+                VALUES ('Office Card Calibration')
+                """)
+            let maintenanceTypeId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO tools (tool_number, name, category, calibration_due_date)
+                VALUES ('TOOL-OFFICE-CARDS', 'Office Card Meter', 'meter', date('now', '+2 days'))
+                """)
+            let toolId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO tool_maintenance_schedules (tool_id, maintenance_type_id, next_due_date)
+                VALUES (?, ?, date('now', '+2 days'))
+                """, arguments: [toolId, maintenanceTypeId])
+        }
+
+        let cards = Dictionary(uniqueKeysWithValues: try dash.getOfficeSmartCards().map { ($0.id, $0.count) })
+        #expect(cards["approvals_pending"] == 1)
+        #expect(cards["working_today"] == 1)
+        #expect(cards["jpos_pending"] == 1)
+        #expect(cards["payment_overdue"] == 1)
+        #expect(cards["parts_below_min"] == 1)
+        #expect(cards["maintenance_due"] == 2)
+        #expect(cards["callbacks_overdue"] == 1)
+        #expect(cards["warranty_expiring"] == 1)
+    }
+
+    @Test("getAttentionItems includes command center attention sources")
+    func testAttentionItemsIncludeCommandCenterSources() throws {
+        let (env, dash) = try freshEnv()
+        let categoryId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Attention Low Stock Part", categoryId: categoryId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-ATTENTION-SOURCES", name: "Attention Sources Job")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET min_stock_level = 5 WHERE id = ?", arguments: [partId])
+            try db.execute(sql: """
+                INSERT INTO qa_threads (job_id, asked_by, subject, status, priority)
+                VALUES (?, ?, 'Need office decision', 'open', 'normal')
+                """, arguments: [jobId, env.adminUserId])
+            try db.execute(sql: """
+                UPDATE jobs
+                SET due_date = date('now', '-1 day'),
+                    warranty_end_date = date('now', '+20 days')
+                WHERE id = ?
+                """, arguments: [jobId])
+            try db.execute(sql: """
+                INSERT INTO certifications (user_id, cert_type, cert_name, expiry_date, is_active)
+                VALUES (?, 'safety', 'Lift Cert', date('now', '+15 days'), 1)
+                """, arguments: [env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO tool_maintenance_types (name)
+                VALUES ('Attention Maintenance')
+                """)
+            let maintenanceTypeId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO tools (tool_number, name, category)
+                VALUES ('TOOL-ATTENTION', 'Attention Meter', 'meter')
+                """)
+            let toolId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO tool_maintenance_schedules (tool_id, maintenance_type_id, next_due_date)
+                VALUES (?, ?, date('now', '+1 day'))
+                """, arguments: [toolId, maintenanceTypeId])
+        }
+
+        let itemTypes = Set(try dash.getAttentionItems().map(\.itemType))
+        #expect(itemTypes.contains("low_stock"))
+        #expect(itemTypes.contains("open_qa"))
+        #expect(itemTypes.contains("overdue_job"))
+        #expect(itemTypes.contains("maintenance_due"))
+        #expect(itemTypes.contains("expiring_cert"))
+        #expect(itemTypes.contains("warranty_expiring"))
+    }
+
     // MARK: - Financial Snapshot
 
     @Test("getFinancialSnapshot returns zeroes on fresh DB")

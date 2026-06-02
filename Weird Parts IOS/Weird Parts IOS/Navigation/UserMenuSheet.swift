@@ -12,6 +12,7 @@ struct UserMenuSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var showLogoutConfirm: Bool
 
+    @AppStorage("onboarding_checklist_dismissed") private var checklistDismissed = false
     @State private var searchText = ""
 
     // MARK: - Section Definitions
@@ -164,6 +165,9 @@ struct UserMenuSheet: View {
                 MenuItem(id: "settings-report-templates", label: "Report Templates", icon: "doc.on.doc.fill",
                          tabId: "settings-report-templates", permission: nil,
                          keywords: ["report", "templates", "format", "layout", "custom"]),
+                MenuItem(id: "settings-job-stage-templates", label: "Job Stage Templates", icon: "list.bullet.rectangle.portrait.fill",
+                         tabId: "settings-job-stage-templates", permission: "manage_settings",
+                         keywords: ["job", "stage", "stages", "workflow", "templates", "rough", "trim", "reorder"]),
                 MenuItem(id: "settings-clockout", label: "Clock-Out Questions", icon: "questionmark.circle.fill",
                          tabId: "settings-clockout", permission: nil,
                          keywords: ["clock out", "questions", "survey", "end shift", "checkout"]),
@@ -215,6 +219,26 @@ struct UserMenuSheet: View {
             List {
                 // User profile header
                 userProfileSection
+
+                // Keep the dismissed first-launch setup checklist recoverable at
+                // the top of Settings. At very large Dynamic Type sizes, nested
+                // Settings > App Config can fall below the initial viewport; this
+                // direct action stays reachable and has an exact UI-test label.
+                Section {
+                    Button {
+                        checklistDismissed = false
+                        if let manager = appCore.onboardingManager {
+                            manager.resetProgress()
+                            manager.isOnboardingActive = true
+                        }
+                        dismiss()
+                    } label: {
+                        Label("Restart setup checklist", systemImage: "arrow.counterclockwise.circle.fill")
+                    }
+                    .accessibilityHint("Shows the Getting Started checklist on the dashboard again and restarts the guided app tour.")
+                } header: {
+                    Label("Getting Started", systemImage: "sparkles")
+                }
 
                 // Navigation style picker
                 Section {

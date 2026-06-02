@@ -28,10 +28,10 @@ struct IOSContactDetailPage: View {
             } else if let contact {
                 contactDetail(contact)
             } else {
-                ContentUnavailableView(
-                    "Contact Not Found",
-                    systemImage: "person.crop.circle.badge.questionmark",
-                    description: Text("This contact may have been deleted.")
+                EmptyStateView(
+                    icon: "person.crop.circle.badge.questionmark",
+                    title: "Contact Not Found",
+                    message: "This contact may have been deleted."
                 )
             }
         }
@@ -161,7 +161,7 @@ struct ContactTypeBadge: View {
     }
 }
 
-// MARK: - Edit Contact Sheet (placeholder)
+// MARK: - Edit Contact Sheet
 
 /// Simple edit sheet for updating contact info.
 private struct EditContactSheet: View {
@@ -235,7 +235,10 @@ private struct EditContactSheet: View {
     }
 
     private func loadContact() {
-        guard let service = appCore.peopleService else { return }
+        guard let service = appCore.peopleService else {
+            errorMessage = "People service unavailable"
+            return
+        }
         do {
             if let c = try service.getContact(id: contactId) {
                 firstName = c.firstName

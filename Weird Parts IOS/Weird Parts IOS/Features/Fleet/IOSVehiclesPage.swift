@@ -13,8 +13,10 @@ struct IOSVehiclesPage: View {
     // MARK: - State
 
     @State private var vehicles: [FleetService.VehicleListItem] = []
-    @State private var allVehicles: [FleetService.VehicleListItem] = []
-    @State private var isLoading = true
+    @State private var statusCounts = FleetService.VehicleStatusCounts()
+    @State private var isInitialLoading = true
+    @State private var isRefreshing = false
+    @State private var hasLoadedOnce = false
     @State private var searchText = ""
     @State private var statusFilter = "all"
     @State private var loadError: String?
@@ -112,8 +114,7 @@ struct IOSVehiclesPage: View {
     // MARK: - Status Picker
 
     private func countForStatus(_ status: String) -> Int {
-        if status == "all" { return allVehicles.count }
-        return allVehicles.filter { $0.status == status }.count
+        statusCounts.count(for: status)
     }
 
     private var statusPicker: some View {
@@ -139,27 +140,44 @@ struct IOSVehiclesPage: View {
 
     @ViewBuilder
     private var vehicleList: some View {
-        if isLoading {
-            ProgressView("Loading vehicles...")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error = loadError {
-            ErrorStateView(message: error) { loadData() }
-        } else if filteredVehicles.isEmpty {
-            EmptyStateView(
-                icon: "car",
-                title: "No Vehicles",
-                message: searchText.isEmpty ? "Add your first vehicle to get started." : "No vehicles match your criteria.",
-                actionLabel: searchText.isEmpty ? "Add Vehicle" : nil
-            ) {
-                activeSheet = .createVehicle
-            }
-        } else {
-            List(filteredVehicles, id: \.id) { vehicle in
-                NavigationLink(destination: IOSVehicleDetailPage(vehicleId: vehicle.id)) {
-                    vehicleRow(vehicle)
+        Group {
+            if isInitialLoading {
+                ProgressView("Loading vehicles...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ErrorStateView(message: error) { loadData() }
+            } else if filteredVehicles.isEmpty {
+                EmptyStateView(
+                    icon: "car",
+                    title: "No Vehicles",
+                    message: searchText.isEmpty ? "Add your first vehicle to get started." : "No vehicles match your criteria.",
+                    actionLabel: searchText.isEmpty ? "Add Vehicle" : nil
+                ) {
+                    activeSheet = .createVehicle
                 }
+            } else {
+                List(filteredVehicles, id: \.id) { vehicle in
+                    NavigationLink(destination: IOSVehicleDetailPage(vehicleId: vehicle.id)) {
+                        vehicleRow(vehicle)
+                    }
+                }
+                .listStyle(.insetGrouped)
             }
-            .listStyle(.insetGrouped)
+        }
+        .overlay(alignment: .top) {
+            refreshingOverlay
+        }
+    }
+
+    @ViewBuilder
+    private var refreshingOverlay: some View {
+        if isRefreshing {
+            ProgressView()
+                .progressViewStyle(.linear)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .transition(.opacity)
+                .accessibilityLabel("Refreshing vehicles")
         }
     }
 
@@ -264,19 +282,32 @@ struct IOSVehiclesPage: View {
     private func loadData() {
         guard let service = appCore.fleetService else {
             loadError = "Service not available"
-            isLoading = false
+            hasLoadedOnce = true
+            isInitialLoading = false
+            isRefreshing = false
             return
         }
-        isLoading = vehicles.isEmpty
-        loadError = nil
-        do {
-            allVehicles = try service.listVehicles(status: nil)
-            vehicles = statusFilter == "all"
-                ? allVehicles
-                : allVehicles.filter { $0.status == statusFilter }
-        } catch {
-            loadError = userFriendlyError(error, context: "load vehicles")
+
+        if hasLoadedOnce {
+            isRefreshing = true
+        } else {
+            isInitialLoading = true
         }
-        isLoading = false
+
+        DispatchQueue.main.async {
+            defer {
+                self.hasLoadedOnce = true
+                self.isInitialLoading = false
+                self.isRefreshing = false
+            }
+
+            self.loadError = nil
+            do {
+                self.statusCounts = try service.getVehicleStatusCounts()
+                self.vehicles = try service.listVehicles(status: self.statusFilter == "all" ? nil : self.statusFilter)
+            } catch {
+                self.loadError = userFriendlyError(error, context: "load vehicles")
+            }
+        }
     }
 }

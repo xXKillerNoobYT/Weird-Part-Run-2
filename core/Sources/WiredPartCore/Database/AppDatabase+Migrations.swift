@@ -122,6 +122,21 @@ extension AppDatabase {
         registerMigration083WarehouseWalkingPaths(&migrator)
         registerMigration084WarehouseOnboardingCompletedSteps(&migrator)
         registerMigration085AuditSessionEvents(&migrator)
+        registerMigration086PartAutoWishlistOptIn(&migrator)
+        registerMigration087ServicePermissionGateBackfill(&migrator)
+        registerMigration088FleetInspectionDashboardLookupIndex(&migrator)
+        registerMigration089VehicleLocationLogs(&migrator)
+        registerMigration090NotebookClassificationPermissions(&migrator)
+        registerMigration091MultiUserAuditResolutionColumns(&migrator)
+        registerMigration092VehicleLocationLatestLookupIndex(&migrator)
+        registerMigration093DailyReportClockOutQuestion(&migrator)
+        registerMigration094ShortTermPipelineCategoryOverride(&migrator)
+        registerMigration095JobStageTemplates(&migrator)
+        registerMigration096SubcontractorScheduleSoftDeleteUniqueness(&migrator)
+        registerMigration097PartImportAuditSessions(&migrator)
+        registerMigration098NotebookEntryEditLocks(&migrator)
+        registerMigration099POSupplierTransmission(&migrator)
+        registerMigration100POEmailRequestType(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -1828,8 +1843,12 @@ extension AppDatabase {
                 t.column("deleted_at", .text)
                 t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
-                t.uniqueKey(["job_id", "gc_id", "scheduled_date"])
             }
+            try db.execute(sql: """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_subcontractor_schedules_active_slot
+                ON subcontractor_schedules(job_id, gc_id, scheduled_date)
+                WHERE deleted_at IS NULL
+                """)
         }
     }
 }
@@ -5117,6 +5136,164 @@ extension AppDatabase {
         }
     }
 
+    private static func registerMigration086PartAutoWishlistOptIn(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("086_part_auto_wishlist_opt_in") { db in
+            try addColumnIfMissing(
+                db,
+                table: "parts",
+                column: "auto_add_to_wishlist_when_low",
+                type: .integer,
+                defaultValue: 0
+            )
+        }
+    }
+
+
+    private static func registerMigration087ServicePermissionGateBackfill(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("087_service_permission_gate_backfill") { db in
+            let permissionGrants: [(key: String, hats: [String])] = [
+                ("manage_chat", ["Admin", "Manager"]),
+                ("moderate_chat", ["Admin", "Manager", "Office"]),
+                ("send_rfi", ["Admin", "Manager", "Lead", "Office"]),
+                ("manage_orders", ["Admin", "Manager", "Office"]),
+                ("manage_notebooks", ["Admin", "Manager", "Lead", "Office"]),
+                ("manage_templates", ["Admin", "Manager", "Office"]),
+                ("view_job_reports", ["Admin", "Manager", "Lead", "Office"]),
+                ("view_jobs", ["Admin", "Manager", "Lead", "Office", "Worker"]),
+                ("manage_fleet", ["Admin", "Manager"]),
+                ("manage_people", ["Admin", "Manager", "Office"]),
+                ("view_reports", ["Admin", "Manager", "Office"]),
+                ("approve_time_off", ["Admin", "Manager", "Office"]),
+                ("move_stock_warehouse", ["Admin", "Manager", "Lead", "Worker"]),
+                ("perform_audit", ["Admin", "Manager", "Lead", "Worker"]),
+                ("manage_warehouse", ["Admin", "Manager", "Lead"]),
+                ("manage_tools", ["Admin", "Manager"]),
+                ("checkout_tools", ["Admin", "Manager", "Lead", "Worker"]),
+                ("maintain_tools", ["Admin", "Manager", "Lead"]),
+                ("create_jobs", ["Admin", "Manager", "Lead", "Office"]),
+                ("forecasting.approve_recommendation", ["Admin", "Manager"]),
+                ("forecasting.dismiss_recommendation", ["Admin", "Manager"]),
+                ("parts.manage_company_costs", ["Admin", "Manager"]),
+                ("parts.approve_scheduled_deletion", ["Admin", "Manager"]),
+            ]
+
+            for grant in permissionGrants {
+                for hatName in grant.hats {
+                    try db.execute(sql: """
+                        INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+                        SELECT id, ? FROM hats WHERE name = ?
+                        """, arguments: [grant.key, hatName])
+                }
+            }
+        }
+    }
+
+    private static func registerMigration088FleetInspectionDashboardLookupIndex(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("088_fleet_inspection_dashboard_index") { db in
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_ir_vehicle_performed_at
+                ON inspection_records(vehicle_id, performed_at)
+                """)
+        }
+    }
+
+    private static func registerMigration089VehicleLocationLogs(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("089_vehicle_location_logs") { db in
+            try db.create(table: "vehicle_location_logs", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("vehicle_id", .integer).notNull()
+                    .references("vehicles", onDelete: .cascade)
+                t.column("user_id", .integer)
+                    .references("users")
+                t.column("latitude", .double)
+                t.column("longitude", .double)
+                t.column("speed", .double)
+                t.column("status", .text).notNull().defaults(to: "unknown")
+                t.column("recorded_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("deleted_at", .text)
+            }
+
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_vll_vehicle
+                ON vehicle_location_logs(vehicle_id)
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_vll_latest_active
+                ON vehicle_location_logs(vehicle_id, id)
+                WHERE deleted_at IS NULL
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_vll_recorded_at
+                ON vehicle_location_logs(recorded_at)
+                """)
+        }
+    }
+
+    private static func registerMigration090NotebookClassificationPermissions(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("090_notebook_classification_permissions") { db in
+            let permissionGrants: [(key: String, hatNames: [String])] = [
+                ("notebooks.classify_todo", ["Admin", "Manager", "Lead", "Worker"]),
+                ("notebooks.reclassify_todo", ["Admin", "Manager"]),
+                ("notebooks.review_classification", ["Admin", "Manager"]),
+            ]
+
+            for grant in permissionGrants {
+                for hatName in grant.hatNames {
+                    try db.execute(sql: """
+                        INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+                        SELECT id, ? FROM hats WHERE name = ?
+                        """, arguments: [grant.key, hatName])
+                }
+            }
+        }
+    }
+
+    private static func registerMigration091MultiUserAuditResolutionColumns(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("091_multi_user_audit_resolution_columns") { db in
+            // MultiUserAuditAssignment encodes these resolution fields when
+            // assignments are inserted or updated. Migration 059 created the
+            // table without them, so fresh and upgraded databases both need
+            // a guarded add-column pass before any assignment rows are saved.
+            try addColumnIfMissing(
+                db,
+                table: "multi_user_audit_assignments",
+                column: "resolved_quantity",
+                type: .integer
+            )
+            try addColumnIfMissing(
+                db,
+                table: "multi_user_audit_assignments",
+                column: "resolution_method",
+                type: .text
+            )
+            try addColumnIfMissing(
+                db,
+                table: "multi_user_audit_assignments",
+                column: "resolved_by",
+                type: .integer
+            )
+            try addColumnIfMissing(
+                db,
+                table: "multi_user_audit_assignments",
+                column: "resolved_at",
+                type: .text
+            )
+        }
+    }
+
+    private static func registerMigration092VehicleLocationLatestLookupIndex(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("092_vehicle_location_latest_lookup_index") { db in
+            // FleetService.listTelematicsData reads the latest non-deleted GPS row per vehicle.
+            // Migration 089 creates the table and basic indexes; this covering partial index
+            // preserves the intended PR #535 lookup performance on current main without
+            // reusing the stale 083 migration slot from the old stacked branch.
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_vll_vehicle_deleted_id
+                ON vehicle_location_logs(vehicle_id, deleted_at, id)
+                """)
+        }
+    }
+
     private static func registerMigration075CompanionFeedbackNullableSuggestionId(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("075_companion_feedback_nullable_suggestion_id") { db in
             try db.execute(sql: """
@@ -5179,4 +5356,302 @@ extension AppDatabase {
             }
         }
     }
+
+    // MARK: - Migration 093: Daily Report clock-out prompt
+
+    private static func registerMigration093DailyReportClockOutQuestion(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("093_daily_report_clock_out_question") { db in
+            let existingCount = try Int.fetchOne(
+                db,
+                sql: """
+                    SELECT COUNT(*)
+                    FROM clock_out_questions
+                    WHERE lower(question_text) LIKE '%daily report%'
+                      AND is_active = 1
+                    """
+            ) ?? 0
+            guard existingCount == 0 else { return }
+
+            let nextSortOrder = (try Int.fetchOne(
+                db,
+                sql: "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM clock_out_questions"
+            ) ?? 1)
+
+            try db.execute(
+                sql: """
+                    INSERT INTO clock_out_questions
+                        (question_text, answer_type, is_required, sort_order, is_active, created_at, updated_at)
+                    VALUES (?, 'text', 1, ?, 1, datetime('now'), datetime('now'))
+                    """,
+                arguments: ["Daily Report: What did you accomplish today, and what should the office know for tomorrow?", nextSortOrder]
+            )
+        }
+    }
+
+    // MARK: - Migration 094: Short-term pipeline manual category override
+
+    private static func registerMigration094ShortTermPipelineCategoryOverride(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("094_short_term_pipeline_category_override") { db in
+            // GH #616: allow dispatchers to drag jobs between Short-Term Pipeline
+            // columns/sections and have that planning choice survive reloads. When
+            // NULL, SchedulingService keeps using the derived readiness category.
+            try addColumnIfMissing(
+                db,
+                table: "jobs",
+                column: "short_term_pipeline_category",
+                type: .text
+            )
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_jobs_short_term_pipeline_category
+                ON jobs(short_term_pipeline_category)
+                WHERE deleted_at IS NULL
+                """)
+        }
+    }
+
+    // MARK: - Migration 095: Job Stage Templates
+
+    private static func registerMigration095JobStageTemplates(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("095_job_stage_templates") { db in
+            try db.create(table: "job_stage_templates") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("name", .text).notNull()
+                t.column("is_default", .integer).notNull().defaults(to: 0)
+                t.column("archived_at", .text)
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            }
+            try db.execute(sql: """
+                CREATE UNIQUE INDEX idx_job_stage_templates_one_default
+                ON job_stage_templates(is_default)
+                WHERE is_default = 1 AND archived_at IS NULL
+                """)
+            try db.execute(sql: """
+                INSERT INTO job_stage_templates (name, is_default, created_at, updated_at)
+                VALUES ('Default', 1, datetime('now'), datetime('now'))
+                """)
+            let defaultTemplateId = db.lastInsertedRowID
+
+            let stageColumns = try db.columns(in: "job_stages").map(\.name)
+            if !stageColumns.contains("template_id") {
+                try db.alter(table: "job_stages") { t in
+                    t.add(column: "template_id", .integer).references("job_stage_templates")
+                }
+            }
+            if !stageColumns.contains("updated_at") {
+                try db.alter(table: "job_stages") { t in
+                    t.add(column: "updated_at", .text)
+                }
+            }
+            try db.execute(sql: "UPDATE job_stages SET template_id = ? WHERE template_id IS NULL", arguments: [defaultTemplateId])
+            try db.execute(sql: "UPDATE job_stages SET updated_at = COALESCE(updated_at, created_at, datetime('now'))")
+            // Legacy installs could have duplicate active sort_order values before
+            // templates existed. Normalize deterministically before enforcing one
+            // active stage per (template, sort_order), preserving user-visible order
+            // by sorting first on the old sort_order and then on stable row id.
+            try db.execute(sql: """
+                WITH ordered AS (
+                    SELECT id,
+                           ROW_NUMBER() OVER (PARTITION BY template_id ORDER BY sort_order ASC, id ASC) AS normalized_sort_order
+                    FROM job_stages
+                    WHERE deleted_at IS NULL AND template_id IS NOT NULL
+                )
+                UPDATE job_stages
+                SET sort_order = (SELECT normalized_sort_order FROM ordered WHERE ordered.id = job_stages.id),
+                    updated_at = datetime('now')
+                WHERE id IN (SELECT id FROM ordered)
+                """)
+            try db.execute(sql: """
+                CREATE UNIQUE INDEX idx_job_stages_template_sort_active
+                ON job_stages(template_id, sort_order)
+                WHERE deleted_at IS NULL
+                """)
+
+            let jobColumns = try db.columns(in: "jobs").map(\.name)
+            if !jobColumns.contains("stage_template_id") {
+                try db.alter(table: "jobs") { t in
+                    t.add(column: "stage_template_id", .integer).references("job_stage_templates")
+                }
+            }
+            try db.execute(sql: "UPDATE jobs SET stage_template_id = ? WHERE stage_template_id IS NULL", arguments: [defaultTemplateId])
+            try db.execute(sql: "CREATE INDEX idx_jobs_stage_template ON jobs(stage_template_id)")
+
+            let mappingColumns = try db.columns(in: "job_stage_category_map").map(\.name)
+            if !mappingColumns.contains("template_id") {
+                try db.alter(table: "job_stage_category_map") { t in
+                    t.add(column: "template_id", .integer).references("job_stage_templates")
+                }
+            }
+            if !mappingColumns.contains("updated_at") {
+                try db.alter(table: "job_stage_category_map") { t in
+                    t.add(column: "updated_at", .text)
+                }
+            }
+            try db.execute(sql: """
+                UPDATE job_stage_category_map
+                SET template_id = COALESCE(
+                    template_id,
+                    (SELECT template_id FROM job_stages WHERE job_stages.id = job_stage_category_map.stage_id),
+                    ?
+                ),
+                updated_at = COALESCE(updated_at, created_at, datetime('now'))
+                """, arguments: [defaultTemplateId])
+            // Legacy category mappings were only unique per (stage, category).
+            // After all existing stages move under the default template, multiple
+            // stages can point the same category at the same template. Keep the
+            // earliest row so category ownership remains deterministic before the
+            // template/category unique index is created.
+            try db.execute(sql: """
+                DELETE FROM job_stage_category_map
+                WHERE template_id IS NOT NULL
+                  AND id NOT IN (
+                      SELECT MIN(id)
+                      FROM job_stage_category_map
+                      WHERE template_id IS NOT NULL
+                      GROUP BY template_id, category_id
+                  )
+                """)
+            try db.execute(sql: """
+                CREATE UNIQUE INDEX idx_jscm_template_category
+                ON job_stage_category_map(template_id, category_id)
+                """)
+            try db.execute(sql: "CREATE INDEX idx_jscm_template ON job_stage_category_map(template_id)")
+        }
+    }
+
+
+    // MARK: - Migration 097: Part import audit sessions
+
+    private static func registerMigration097PartImportAuditSessions(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("097_part_import_audit_sessions") { db in
+            try db.create(table: "part_import_sessions", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("source_kind", .text).notNull()
+                t.column("filename", .text)
+                t.column("source_hash", .text)
+                t.column("user_id", .integer).references("users")
+                t.column("status", .text).notNull().defaults(to: "pending")
+                t.column("total_rows", .integer).notNull().defaults(to: 0)
+                t.column("created_count", .integer).notNull().defaults(to: 0)
+                t.column("updated_count", .integer).notNull().defaults(to: 0)
+                t.column("skipped_count", .integer).notNull().defaults(to: 0)
+                t.column("error_message", .text)
+                t.column("started_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("committed_at", .text)
+                t.column("failed_at", .text)
+            }
+            try db.create(table: "part_import_row_evidence", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("session_id", .integer).notNull()
+                    .references("part_import_sessions", onDelete: .cascade)
+                t.column("row_number", .integer).notNull()
+                t.column("action", .text).notNull()
+                t.column("part_id", .integer).references("parts")
+                t.column("source_name", .text).notNull()
+                t.column("source_code", .text)
+                t.column("source_category", .text).notNull()
+                t.column("source_brand", .text)
+                t.column("row_payload_json", .text).notNull()
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_part_import_sessions_source_hash", on: "part_import_sessions", columns: ["source_hash"])
+            try db.create(index: "idx_part_import_sessions_started", on: "part_import_sessions", columns: ["started_at"])
+            try db.create(index: "idx_part_import_row_evidence_session", on: "part_import_row_evidence", columns: ["session_id", "row_number"])
+        }
+    }
+
+    // MARK: - Migration 096: Subcontractor schedule active-slot uniqueness
+
+    private static func registerMigration096SubcontractorScheduleSoftDeleteUniqueness(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("096_subcontractor_schedule_soft_delete_uniqueness") { db in
+            // GH #612: cancelled subcontractor schedules are soft-deleted and must
+            // not keep blocking the same job/sub/date from being scheduled again.
+            // The original table-level UNIQUE(job_id, gc_id, scheduled_date) still
+            // applied to deleted rows, so rebuild the table without that constraint
+            // and replace it with a partial unique index on active rows only.
+            try db.execute(sql: "DROP INDEX IF EXISTS idx_subcontractor_schedules_active_slot")
+            try db.execute(sql: "ALTER TABLE subcontractor_schedules RENAME TO subcontractor_schedules_old")
+            try db.create(table: "subcontractor_schedules") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("job_id", .integer).notNull()
+                    .references("jobs", onDelete: .cascade)
+                t.column("gc_id", .integer).notNull()
+                    .references("general_contractors", onDelete: .cascade)
+                t.column("scheduled_date", .text).notNull()
+                t.column("arrival_time", .text)
+                t.column("departure_time", .text)
+                t.column("scope_of_work", .text)
+                t.column("status", .text).defaults(to: "scheduled")
+                t.column("notes", .text)
+                t.column("created_by", .integer).references("users")
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
+            }
+            try db.execute(sql: """
+                INSERT INTO subcontractor_schedules
+                    (id, job_id, gc_id, scheduled_date, arrival_time, departure_time,
+                     scope_of_work, status, notes, created_by, deleted_at, created_at, updated_at)
+                SELECT id, job_id, gc_id, scheduled_date, arrival_time, departure_time,
+                       scope_of_work, status, notes, created_by, deleted_at, created_at, updated_at
+                FROM subcontractor_schedules_old
+                """)
+            try db.drop(table: "subcontractor_schedules_old")
+            try db.execute(sql: """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_subcontractor_schedules_active_slot
+                ON subcontractor_schedules(job_id, gc_id, scheduled_date)
+                WHERE deleted_at IS NULL
+            """)
+        }
+    }
+
+    // MARK: - Migration 098: Notebook entry edit locks
+
+    private static func registerMigration098NotebookEntryEditLocks(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("098_notebook_entry_edit_locks") { db in
+            try db.create(table: "notebook_entry_edit_locks", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("entry_id", .integer).notNull()
+                    .references("notebook_entries", onDelete: .cascade)
+                t.column("user_id", .integer).notNull()
+                    .references("users", onDelete: .cascade)
+                t.column("device_id", .text).notNull()
+                t.column("locked_at", .text).notNull()
+                t.column("expires_at", .text).notNull()
+            }
+            try db.create(index: "idx_notebook_entry_edit_locks_entry", on: "notebook_entry_edit_locks", columns: ["entry_id"], ifNotExists: true)
+            try db.create(index: "idx_notebook_entry_edit_locks_expiry", on: "notebook_entry_edit_locks", columns: ["expires_at"], ifNotExists: true)
+            try db.create(index: "idx_notebook_entry_edit_locks_owner", on: "notebook_entry_edit_locks", columns: ["entry_id", "user_id", "device_id"], unique: true, ifNotExists: true)
+        }
+    }
+
+    private static func registerMigration099POSupplierTransmission(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("099_po_supplier_transmission") { db in
+            // Track when/how a PO was sent to the supplier and any confirmation reference (#750)
+            try db.alter(table: "purchase_orders") { t in
+                t.add(column: "sent_to_supplier_at",       .text)    // ISO datetime when user confirmed send
+                t.add(column: "sent_by_user_id",           .integer) // FK to users
+                t.add(column: "supplier_confirmation_num", .text)    // Optional PO# / reference from supplier
+            }
+        }
+    }
 }
+
+// MARK: - Migration 100: PO email_request_type + grouping_key
+
+private func registerMigration100POEmailRequestType(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("100_po_email_request_type") { db in
+        // 'order' = standard order request (default)
+        // 'pricing' = pricing / quote request — no commitment to buy
+        try db.alter(table: "purchase_orders") { t in
+            t.add(column: "email_request_type", .text)
+                .defaults(to: "order")
+                .notNull()
+        }
+        // Optional: a grouping key so multiple POs sent together share an identifier
+        try db.alter(table: "purchase_orders") { t in
+            t.add(column: "send_group_id", .text)
+        }
+    }
+}
+

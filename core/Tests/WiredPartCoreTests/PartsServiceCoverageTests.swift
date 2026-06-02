@@ -742,6 +742,36 @@ struct PartsServiceCoverageTests {
         try env.parts.recalculateForecasts()
     }
 
+    @Test("recalculateForecasts counts canonical warehouse consumption movement types")
+    func testRecalculateForecastsCountsCanonicalConsumptionMovementTypes() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "ForecastMovementTypes")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Forecast Movement Type Part", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-FORECAST", name: "Forecast Regression Job")
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 100)
+
+        try env.warehouse.createMovement(
+            partId: partId,
+            qty: 12,
+            fromLocationType: "warehouse",
+            fromLocationId: 1,
+            toLocationType: "job",
+            toLocationId: jobId,
+            movementType: StockMovement.MovementType.jobPull.rawValue,
+            reason: "Forecast regression",
+            performedBy: env.adminUserId,
+            jobId: jobId
+        )
+
+        try env.parts.recalculateForecasts()
+
+        let part = try env.db.writer.read { db in
+            try Part.fetchOne(db, key: partId)
+        }
+        #expect(abs((part?.forecastAdu30 ?? 0) - 0.4) < 0.0001)
+        #expect(abs((part?.forecastAdu90 ?? 0) - (12.0 / 90.0)) < 0.0001)
+    }
+
     // MARK: - listLocationStockTargets
 
     @Test("listLocationStockTargets returns empty for part with no targets")
