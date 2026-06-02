@@ -135,6 +135,8 @@ extension AppDatabase {
         registerMigration096SubcontractorScheduleSoftDeleteUniqueness(&migrator)
         registerMigration097PartImportAuditSessions(&migrator)
         registerMigration098NotebookEntryEditLocks(&migrator)
+        registerMigration099POSupplierTransmission(&migrator)
+        registerMigration100POEmailRequestType(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5622,4 +5624,34 @@ extension AppDatabase {
             try db.create(index: "idx_notebook_entry_edit_locks_owner", on: "notebook_entry_edit_locks", columns: ["entry_id", "user_id", "device_id"], unique: true, ifNotExists: true)
         }
     }
+
+    private static func registerMigration099POSupplierTransmission(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("099_po_supplier_transmission") { db in
+            // Track when/how a PO was sent to the supplier and any confirmation reference (#750)
+            try db.alter(table: "purchase_orders") { t in
+                t.add(column: "sent_to_supplier_at",       .text)    // ISO datetime when user confirmed send
+                t.add(column: "sent_by_user_id",           .integer) // FK to users
+                t.add(column: "supplier_confirmation_num", .text)    // Optional PO# / reference from supplier
+            }
+        }
+    }
 }
+
+// MARK: - Migration 100: PO email_request_type + grouping_key
+
+private func registerMigration100POEmailRequestType(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("100_po_email_request_type") { db in
+        // 'order' = standard order request (default)
+        // 'pricing' = pricing / quote request — no commitment to buy
+        try db.alter(table: "purchase_orders") { t in
+            t.add(column: "email_request_type", .text)
+                .defaults(to: "order")
+                .notNull()
+        }
+        // Optional: a grouping key so multiple POs sent together share an identifier
+        try db.alter(table: "purchase_orders") { t in
+            t.add(column: "send_group_id", .text)
+        }
+    }
+}
+
