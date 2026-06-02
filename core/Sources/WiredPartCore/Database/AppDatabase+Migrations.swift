@@ -135,6 +135,7 @@ extension AppDatabase {
         registerMigration096SubcontractorScheduleSoftDeleteUniqueness(&migrator)
         registerMigration097PartImportAuditSessions(&migrator)
         registerMigration098NotebookEntryEditLocks(&migrator)
+        registerMigration099POSupplierTransmission(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5620,6 +5621,17 @@ extension AppDatabase {
             try db.create(index: "idx_notebook_entry_edit_locks_entry", on: "notebook_entry_edit_locks", columns: ["entry_id"], ifNotExists: true)
             try db.create(index: "idx_notebook_entry_edit_locks_expiry", on: "notebook_entry_edit_locks", columns: ["expires_at"], ifNotExists: true)
             try db.create(index: "idx_notebook_entry_edit_locks_owner", on: "notebook_entry_edit_locks", columns: ["entry_id", "user_id", "device_id"], unique: true, ifNotExists: true)
+        }
+    }
+
+    private static func registerMigration099POSupplierTransmission(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("099_po_supplier_transmission") { db in
+            // Track when/how a PO was sent to the supplier and any confirmation reference (#750)
+            try db.alter(table: "purchase_orders") { t in
+                t.add(column: "sent_to_supplier_at",       .text)    // ISO datetime when user confirmed send
+                t.add(column: "sent_by_user_id",           .integer) // FK to users
+                t.add(column: "supplier_confirmation_num", .text)    // Optional PO# / reference from supplier
+            }
         }
     }
 }

@@ -449,6 +449,9 @@ public final class OrdersService: Sendable {
         public let supplierNotes: String?
         public let submittedBy: Int64?
         public let submittedByName: String?
+        public let sentToSupplierAt: String?          // populated after user confirms send (#750)
+        public let sentByUserId: Int64?
+        public let supplierConfirmationNum: String?
         public let deletedAt: String?
         public let createdAt: String?
         public let updatedAt: String?
@@ -462,6 +465,7 @@ public final class OrdersService: Sendable {
             subtotal: Double?, taxAmount: Double?, shippingCost: Double?, totalCost: Double?,
             notes: String?, internalNotes: String?, supplierNotes: String?,
             submittedBy: Int64?, submittedByName: String?,
+            sentToSupplierAt: String?, sentByUserId: Int64?, supplierConfirmationNum: String?,
             deletedAt: String?, createdAt: String?, updatedAt: String?,
             lines: [POLineRow], linkedJPOIds: [Int64]
         ) {
@@ -484,6 +488,9 @@ public final class OrdersService: Sendable {
             self.supplierNotes = supplierNotes
             self.submittedBy = submittedBy
             self.submittedByName = submittedByName
+            self.sentToSupplierAt = sentToSupplierAt
+            self.sentByUserId = sentByUserId
+            self.supplierConfirmationNum = supplierConfirmationNum
             self.deletedAt = deletedAt
             self.createdAt = createdAt
             self.updatedAt = updatedAt
@@ -3084,6 +3091,9 @@ public final class OrdersService: Sendable {
                 supplierNotes: row["supplier_notes"] as String?,
                 submittedBy: row["submitted_by"] as Int64?,
                 submittedByName: row["submitted_by_name"] as String?,
+                sentToSupplierAt: row["sent_to_supplier_at"] as String?,
+                sentByUserId: row["sent_by_user_id"] as Int64?,
+                supplierConfirmationNum: row["supplier_confirmation_num"] as String?,
                 deletedAt: row["deleted_at"] as String?,
                 createdAt: row["created_at"] as String?,
                 updatedAt: row["updated_at"] as String?,
@@ -3093,6 +3103,30 @@ public final class OrdersService: Sendable {
         }
         guard let result else { throw OrdersError.purchaseOrderNotFound(id) }
         return result
+    }
+
+    /// Mark a PO as sent to the supplier — records timestamp, acting user, and optional supplier confirmation number.
+    /// Also advances status from "submitted" → "ordered" since confirmation of send = order placed. (#750)
+    public func markPOSentToSupplier(
+        id: Int64,
+        sentByUserId: Int64,
+        confirmationNumber: String? = nil
+    ) throws {
+        try db.writer.write { dbConn in
+            let now = ISO8601DateFormatter().string(from: Date())
+            try dbConn.execute(
+                sql: """
+                    UPDATE purchase_orders
+                    SET sent_to_supplier_at       = ?,
+                        sent_by_user_id           = ?,
+                        supplier_confirmation_num = ?,
+                        status                    = CASE WHEN status = 'submitted' THEN 'ordered' ELSE status END,
+                        updated_at                = ?
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [now, sentByUserId, confirmationNumber, now, id]
+            )
+        }
     }
 
     /// Create a new purchase order. Returns the inserted row ID.
