@@ -449,9 +449,13 @@ public final class OrdersService: Sendable {
         public let supplierNotes: String?
         public let submittedBy: Int64?
         public let submittedByName: String?
-        public let sentToSupplierAt: String?          // populated after user confirms send (#750)
+        public let sentToSupplierAt: String?
         public let sentByUserId: Int64?
         public let supplierConfirmationNum: String?
+        /// 'order' or 'pricing' — set at send time. (#750 v2)
+        public let emailRequestType: String
+        /// UUID shared by all POs sent together in one grouped email. (#750 v2)
+        public let sendGroupId: String?
         public let deletedAt: String?
         public let createdAt: String?
         public let updatedAt: String?
@@ -466,7 +470,8 @@ public final class OrdersService: Sendable {
             notes: String?, internalNotes: String?, supplierNotes: String?,
             submittedBy: Int64?, submittedByName: String?,
             sentToSupplierAt: String?, sentByUserId: Int64?, supplierConfirmationNum: String?,
-            deletedAt: String?, createdAt: String?, updatedAt: String?,
+ emailRequestType: String, sendGroupId: String?,
+ deletedAt: String?, createdAt: String?,updatedAt: String?,
             lines: [POLineRow], linkedJPOIds: [Int64]
         ) {
             self.id = id
@@ -491,6 +496,8 @@ public final class OrdersService: Sendable {
             self.sentToSupplierAt = sentToSupplierAt
             self.sentByUserId = sentByUserId
             self.supplierConfirmationNum = supplierConfirmationNum
+            self.emailRequestType = emailRequestType
+            self.sendGroupId = sendGroupId
             self.deletedAt = deletedAt
             self.createdAt = createdAt
             self.updatedAt = updatedAt
@@ -3094,6 +3101,8 @@ public final class OrdersService: Sendable {
                 sentToSupplierAt: row["sent_to_supplier_at"] as String?,
                 sentByUserId: row["sent_by_user_id"] as Int64?,
                 supplierConfirmationNum: row["supplier_confirmation_num"] as String?,
+                emailRequestType: (row["email_request_type"] as String?) ?? "order",
+                sendGroupId: row["send_group_id"] as String?,
                 deletedAt: row["deleted_at"] as String?,
                 createdAt: row["created_at"] as String?,
                 updatedAt: row["updated_at"] as String?,
@@ -3105,12 +3114,42 @@ public final class OrdersService: Sendable {
         return result
     }
 
+    /// Returns other draft/submitted POs for the same supplier — used in grouped send flow. (#750 v2)
+    public func listSendablePOs(supplierId: Int64, excludingId: Int64) throws -> [POListItem] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT po.id, po.po_number, po.status, po.total_cost, po.order_date,
+                       COALESCE(s.name, 'Unknown Supplier') AS supplier_name,
+                       COALESCE((SELECT COUNT(*) FROM po_line_items pl
+                                 WHERE pl.po_id = po.id AND pl.deleted_at IS NULL), 0) AS line_count
+                FROM purchase_orders po
+                LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL
+                WHERE po.supplier_id = ?
+                  AND po.id != ?
+                  AND po.status IN ('draft', 'submitted')
+                  AND po.deleted_at IS NULL
+                ORDER BY po.created_at DESC
+                LIMIT 50
+                """, arguments: [supplierId, excludingId])
+            return rows.map {
+                POListItem(
+                    id: $0["id"] ?? 0, poNumber: $0["po_number"] ?? "",
+                    supplierName: $0["supplier_name"] ?? "", status: $0["status"] ?? "draft",
+                    totalCost: $0["total_cost"] as Double?, lineCount: $0["line_count"] ?? 0,
+                    orderDate: $0["order_date"] as String?
+                )
+            }
+        }
+    }
+
     /// Mark a PO as sent to the supplier — records timestamp, acting user, and optional supplier confirmation number.
     /// Also advances status from "submitted" → "ordered" since confirmation of send = order placed. (#750)
     public func markPOSentToSupplier(
         id: Int64,
         sentByUserId: Int64,
-        confirmationNumber: String? = nil
+        confirmationNumber: String? = nil,
+        emailRequestType: String = "order",
+        sendGroupId: String? = nil
     ) throws {
         try db.writer.write { dbConn in
             let now = ISO8601DateFormatter().string(from: Date())
@@ -3120,11 +3159,13 @@ public final class OrdersService: Sendable {
                     SET sent_to_supplier_at       = ?,
                         sent_by_user_id           = ?,
                         supplier_confirmation_num = ?,
+                        email_request_type        = ?,
+                        send_group_id             = COALESCE(?, send_group_id),
                         status                    = CASE WHEN status = 'submitted' THEN 'ordered' ELSE status END,
                         updated_at                = ?
                     WHERE id = ? AND deleted_at IS NULL
                     """,
-                arguments: [now, sentByUserId, confirmationNumber, now, id]
+                arguments: [now, sentByUserId, confirmationNumber, emailRequestType, sendGroupId, now, id]
             )
         }
     }

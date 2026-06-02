@@ -917,12 +917,14 @@ struct IOSPODetailPage: View {
                         if let sentAt = po.sentToSupplierAt {
                             Section("Sent to Supplier") {
                                 HStack(spacing: 8) {
-                                    Image(systemName: "envelope.badge.fill")
+                                    Image(systemName: po.emailRequestType == "pricing" ? "tag.fill" : "envelope.badge.fill")
                                         .font(.title2)
-                                        .foregroundStyle(.green)
+                                        .foregroundStyle(po.emailRequestType == "pricing" ? .orange : .green)
                                         .accessibilityHidden(true)
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text("PO sent to \(po.supplierName)")
+                                        Text(po.emailRequestType == "pricing"
+                                             ? "Pricing request sent to \(po.supplierName)"
+                                             : "PO sent to \(po.supplierName)")
                                             .font(.subheadline).fontWeight(.medium)
                                         Text(sentAt.prefix(10))
                                             .font(.caption2).foregroundStyle(.secondary)
@@ -930,10 +932,13 @@ struct IOSPODetailPage: View {
                                             Text("Confirmation: \(ref)")
                                                 .font(.caption2).foregroundStyle(.secondary)
                                         }
+                                        if let groupId = po.sendGroupId {
+                                            Text("Group: \(groupId.prefix(8))…")
+                                                .font(.caption2).foregroundStyle(.secondary)
+                                        }
                                     }
                                     Spacer()
                                 }
-                                .foregroundStyle(.green)
                             }
                         }
                     }

@@ -136,6 +136,7 @@ extension AppDatabase {
         registerMigration097PartImportAuditSessions(&migrator)
         registerMigration098NotebookEntryEditLocks(&migrator)
         registerMigration099POSupplierTransmission(&migrator)
+        registerMigration100POEmailRequestType(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5635,3 +5636,22 @@ extension AppDatabase {
         }
     }
 }
+
+// MARK: - Migration 100: PO email_request_type + grouping_key
+
+private func registerMigration100POEmailRequestType(_ migrator: inout DatabaseMigrator) {
+    migrator.registerMigration("100_po_email_request_type") { db in
+        // 'order' = standard order request (default)
+        // 'pricing' = pricing / quote request — no commitment to buy
+        try db.alter(table: "purchase_orders") { t in
+            t.add(column: "email_request_type", .text)
+                .defaults(to: "order")
+                .notNull()
+        }
+        // Optional: a grouping key so multiple POs sent together share an identifier
+        try db.alter(table: "purchase_orders") { t in
+            t.add(column: "send_group_id", .text)
+        }
+    }
+}
+
