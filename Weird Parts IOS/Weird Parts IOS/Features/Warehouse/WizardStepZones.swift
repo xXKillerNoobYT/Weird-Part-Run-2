@@ -136,7 +136,14 @@ struct WizardStepZones: View {
         HStack(spacing: 0) {
             palette
                 .frame(width: 176)
-            canvasScroll(dims: dims)
+            if inspector {
+                canvasScroll(dims: dims)
+            } else {
+                VStack(spacing: 0) {
+                    canvasScroll(dims: dims)
+                    compactZoneActions
+                }
+            }
             if inspector {
                 inspectorPanel
                     .frame(width: 260)
@@ -187,11 +194,16 @@ struct WizardStepZones: View {
                             .minimumScaleFactor(0.75)
                         Spacer()
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(minHeight: 44)
                     .padding(.horizontal, 10)
                     .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+                    .contentShape(RoundedRectangle(cornerRadius: 8))
                     .padding(.horizontal)
                     .draggable("new:\(type.id)")
+                    .onDrag {
+                        NSItemProvider(object: "new:\(type.id)" as NSString)
+                    }
                     .accessibilityLabel("Drag \(type.title) zone")
                 }
 
@@ -245,6 +257,37 @@ struct WizardStepZones: View {
             .background(Color(.secondarySystemBackground))
     }
 
+    @ViewBuilder
+    private var compactZoneActions: some View {
+        if let zone = selectedZone {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(zoneTitle(zone))
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                    Text("\(zone.zoneTypeDisplay) at R\(zone.gridY + 1)C\(zone.gridX + 1), \(zone.gridWidth)x\(zone.gridHeight)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button {
+                    resizeZone(zone, width: zone.gridWidth + 1, height: zone.gridHeight + 1)
+                } label: {
+                    Label("Grow", systemImage: "arrow.down.right.and.arrow.up.left")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Grow")
+                .accessibilityIdentifier("zoneCompact_grow")
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 10)
+            .background(Color(.secondarySystemBackground))
+        }
+    }
+
     private var inspectorPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let zone = selectedZone {
@@ -267,6 +310,8 @@ struct WizardStepZones: View {
                         Label("Grow", systemImage: "arrow.down.right.and.arrow.up.left")
                     }
                     .buttonStyle(.bordered)
+                    .accessibilityLabel("Grow")
+                    .accessibilityIdentifier("zoneInspector_grow")
 
                     Button {
                         zoneBeingEdited = zone
@@ -274,6 +319,8 @@ struct WizardStepZones: View {
                         Label("Edit", systemImage: "pencil")
                     }
                     .buttonStyle(.bordered)
+                    .accessibilityLabel("Edit")
+                    .accessibilityIdentifier("zoneInspector_edit")
 
                     Button(role: .destructive) {
                         deleteTarget = zone
@@ -281,6 +328,8 @@ struct WizardStepZones: View {
                         Label("Delete", systemImage: "trash")
                     }
                     .buttonStyle(.bordered)
+                    .accessibilityLabel("Delete")
+                    .accessibilityIdentifier("zoneInspector_delete")
                 }
             } else {
                 EmptyStateView(
@@ -327,6 +376,10 @@ struct WizardStepZones: View {
     }
 
     private func createZone(type: String, col: Int, row: Int) {
+        guard canPlaceZone(id: nil, col: col, row: row, width: 1, height: 1) else {
+            stepError = "That spot is already occupied or outside the grid."
+            return
+        }
         do {
             let zone = try appCore.warehouseService?.addZone(
                 floorPlanId: floorPlanId,
@@ -347,11 +400,17 @@ struct WizardStepZones: View {
 
     private func moveZone(_ zone: WarehouseZone, col: Int, row: Int) {
         guard let zoneId = zone.id, let dims = gridDimensions else { return }
+        let nextCol = min(col, max(dims.cols - zone.gridWidth, 0))
+        let nextRow = min(row, max(dims.rows - zone.gridHeight, 0))
+        guard canPlaceZone(id: zoneId, col: nextCol, row: nextRow, width: zone.gridWidth, height: zone.gridHeight) else {
+            stepError = "That move would overlap another zone."
+            return
+        }
         do {
             try appCore.warehouseService?.updateZone(
                 id: zoneId,
-                gridX: min(col, max(dims.cols - zone.gridWidth, 0)),
-                gridY: min(row, max(dims.rows - zone.gridHeight, 0))
+                gridX: nextCol,
+                gridY: nextRow
             )
             selectedZoneId = zoneId
             loadData()
@@ -362,11 +421,17 @@ struct WizardStepZones: View {
 
     private func resizeZone(_ zone: WarehouseZone, width: Int, height: Int) {
         guard let zoneId = zone.id, let dims = gridDimensions else { return }
+        let nextWidth = min(width, max(dims.cols - zone.gridX, 1))
+        let nextHeight = min(height, max(dims.rows - zone.gridY, 1))
+        guard canPlaceZone(id: zoneId, col: zone.gridX, row: zone.gridY, width: nextWidth, height: nextHeight) else {
+            stepError = "That resize would overlap another zone."
+            return
+        }
         do {
             try appCore.warehouseService?.updateZone(
                 id: zoneId,
-                gridWidth: min(width, max(dims.cols - zone.gridX, 1)),
-                gridHeight: min(height, max(dims.rows - zone.gridY, 1))
+                gridWidth: nextWidth,
+                gridHeight: nextHeight
             )
             selectedZoneId = zoneId
             loadData()
@@ -385,6 +450,47 @@ struct WizardStepZones: View {
         } catch {
             stepError = userFriendlyError(error, context: "delete zone")
         }
+    }
+
+    private func canPlaceZone(id: Int64?, col: Int, row: Int, width: Int, height: Int) -> Bool {
+        guard let dims = gridDimensions,
+              col >= 0,
+              row >= 0,
+              width > 0,
+              height > 0,
+              col + width <= dims.cols,
+              row + height <= dims.rows
+        else { return false }
+
+        return !zones.contains { other in
+            if let id, other.id == id { return false }
+            return rectanglesOverlap(
+                lhsX: col,
+                lhsY: row,
+                lhsWidth: width,
+                lhsHeight: height,
+                rhsX: other.gridX,
+                rhsY: other.gridY,
+                rhsWidth: other.gridWidth,
+                rhsHeight: other.gridHeight
+            )
+        }
+    }
+
+    private func rectanglesOverlap(
+        lhsX: Int,
+        lhsY: Int,
+        lhsWidth: Int,
+        lhsHeight: Int,
+        rhsX: Int,
+        rhsY: Int,
+        rhsWidth: Int,
+        rhsHeight: Int
+    ) -> Bool {
+        lhsX < rhsX + rhsWidth &&
+            lhsX + lhsWidth > rhsX &&
+            lhsY < rhsY + rhsHeight &&
+            lhsY + lhsHeight > rhsY
     }
 
     private func zoneLayout(for width: CGFloat) -> ZonePlacementLayout {

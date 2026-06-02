@@ -1447,6 +1447,8 @@ public final class AuthService: Sendable {
                 "wishlist.auto_approve",
                 // Forecasting / recommendation pipeline
                 "forecasting.approve_recommendation", "forecasting.dismiss_recommendation",
+                // Parts scheduled deletion approval
+                "parts.approve_scheduled_deletion",
                 // Notebook work classification audit controls
                 "notebooks.classify_todo", "notebooks.reclassify_todo", "notebooks.review_classification",
             ],
@@ -1474,6 +1476,8 @@ public final class AuthService: Sendable {
                 "wishlist.auto_approve",
                 // Forecasting / recommendation pipeline
                 "forecasting.approve_recommendation", "forecasting.dismiss_recommendation",
+                // Parts scheduled deletion approval
+                "parts.approve_scheduled_deletion",
                 // Notebook work classification audit controls
                 "notebooks.classify_todo", "notebooks.reclassify_todo", "notebooks.review_classification",
             ],

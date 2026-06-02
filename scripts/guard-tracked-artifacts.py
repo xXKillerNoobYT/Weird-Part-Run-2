@@ -28,6 +28,8 @@ BLOCKED_EXAMPLES = [
     "Weird Parts IOS/ModuleCache.noindex/Session.modulevalidation",
     "Weird Parts IOS/CompilationCache.noindex/generic/lock",
     "Weird Parts IOS/Index.noindex/DataStore/v5/records",
+    "docs/github-issue-fisher/2026-05-26T06-06-11Z/report.md",
+    "docs/github-issue-fisher/latest-report.md",
 ]
 
 ALLOWED_EXAMPLES = [
@@ -39,6 +41,7 @@ ALLOWED_EXAMPLES = [
     ".github/workflows/artifact-guard.yml",
     "Weird Parts IOS/AppDelegate.swift",
     "docs/build-notes.md",
+    "docs/github-issue-fisher/.gitkeep",
 ]
 
 
@@ -69,6 +72,9 @@ def is_blocked(path: str) -> bool:
 
     if parts[0] == ".paperclip":
         return True
+
+    if len(parts) >= 2 and parts[0] == "docs" and parts[1] == "github-issue-fisher":
+        return normalized != "docs/github-issue-fisher/.gitkeep"
 
     for part in parts:
         if part.startswith("DerivedData"):

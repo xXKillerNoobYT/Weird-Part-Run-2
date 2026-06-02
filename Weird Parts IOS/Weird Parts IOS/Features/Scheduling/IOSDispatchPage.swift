@@ -356,10 +356,23 @@ struct IOSDispatchPage: View {
                             RoundedRectangle(cornerRadius: 3)
                                 .fill(slotColor(worker.timeSlot))
                         )
+                        .accessibilityLabel("Move \(worker.employeeName)")
+                        .draggable(DraggableWorker(id: worker.employeeId, name: worker.employeeName))
+                        .onDrag {
+                            NSItemProvider(object: "\(worker.employeeId)|\(worker.employeeName)" as NSString)
+                        }
                 }
             }
         }
         .frame(maxWidth: .infinity, minHeight: 24)
+        .dropDestination(for: DraggableWorker.self) { workers, _ in
+            guard let worker = workers.first else { return false }
+            createAssignment(jobId: row.id, userId: worker.id, date: dayStr, timeSlot: "full")
+            return true
+        }
+        .onDrop(of: [UTType.plainText], isTargeted: nil) { providers in
+            handlePlainTextDrop(providers: providers, onJobId: row.id, date: dayStr)
+        }
     }
 
     private func slotColor(_ slot: String) -> Color {
@@ -385,35 +398,35 @@ struct IOSDispatchPage: View {
             }
             .padding(.horizontal, 8)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(unassignedWorkers, id: \.id) { worker in
-                        Button {
-                            selectedWorkerId = worker.id
-                            selectedJobId = nil
-                            selectedDate = dateString(Date())
-                            activeSheet = .assign
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "line.3.horizontal")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .accessibilityHidden(true)
-                                Text(worker.name)
-                                    .font(.caption)
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color.red.opacity(0.1))
-                            .foregroundStyle(.primary)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+            HStack(spacing: 8) {
+                ForEach(unassignedWorkers, id: \.id) { worker in
+                    HStack(spacing: 4) {
+                        Image(systemName: "line.3.horizontal")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        Text(worker.name)
+                            .font(.caption)
+                            .draggable(DraggableWorker(id: worker.id, name: worker.name))
+                            .onDrag {
+                                NSItemProvider(object: "\(worker.id)|\(worker.name)" as NSString)
                         }
-                        .buttonStyle(.plain)
-                        .draggable(DraggableWorker(id: worker.id, name: worker.name))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.red.opacity(0.1))
+                    .foregroundStyle(.primary)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .contentShape(RoundedRectangle(cornerRadius: 6))
+                    .onTapGesture {
+                        selectedWorkerId = worker.id
+                        selectedJobId = nil
+                        selectedDate = dateString(Date())
+                        activeSheet = .assign
                     }
                 }
-                .padding(.horizontal, 8)
             }
+            .padding(.horizontal, 8)
         }
         .padding(.bottom, 8)
     }
@@ -435,6 +448,33 @@ struct IOSDispatchPage: View {
         }
 
         createAssignment(jobId: jobId, userId: worker.id, date: dropDate, timeSlot: "full")
+    }
+
+    private func handlePlainTextDrop(
+        providers: [NSItemProvider],
+        onJobId jobId: Int64,
+        date explicitDate: String? = nil
+    ) -> Bool {
+        guard let provider = providers.first(where: { $0.canLoadObject(ofClass: NSString.self) }) else {
+            return false
+        }
+        provider.loadObject(ofClass: NSString.self) { object, _ in
+            guard let payloadObject = object as? NSString else { return }
+            let payload = payloadObject as String
+            guard let separator = payload.firstIndex(of: "|"),
+                  let userId = Int64(payload[..<separator]) else {
+                return
+            }
+            let name = String(payload[payload.index(after: separator)...])
+            DispatchQueue.main.async {
+                if let explicitDate {
+                    createAssignment(jobId: jobId, userId: userId, date: explicitDate, timeSlot: "full")
+                } else {
+                    handleDrop(worker: DraggableWorker(id: userId, name: name), onJobId: jobId)
+                }
+            }
+        }
+        return true
     }
 
     // MARK: - Assignment Logic
@@ -466,11 +506,11 @@ struct IOSDispatchPage: View {
             return
         }
 
-        // No conflict — create the schedule entry directly (service layer also validates).
+        // No conflict — write to the dispatch table that powers this board.
         do {
-            _ = try service.createScheduleEntry(
-                userId: userId,
+            _ = try service.createDispatch(
                 jobId: jobId,
+                userId: userId,
                 date: date,
                 timeSlot: timeSlot
             )
@@ -486,9 +526,9 @@ struct IOSDispatchPage: View {
             return
         }
         do {
-            _ = try service.createScheduleEntry(
-                userId: userId,
+            _ = try service.createDispatch(
                 jobId: jobId,
+                userId: userId,
                 date: date,
                 timeSlot: timeSlot,
                 forceCreateDespiteTimeOff: true
