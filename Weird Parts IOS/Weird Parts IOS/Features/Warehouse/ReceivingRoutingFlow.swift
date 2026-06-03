@@ -1085,6 +1085,12 @@ struct ReceivingRoutingFlow: View {
                 performedBy: userId,
                 notes: "Received via PO, staged for \(link.jobName)"
             )
+            try service.markReceivingSessionItemRouted(
+                itemId: item.id,
+                disposition: .staged,
+                routedQty: receivedQty,
+                routedBy: userId
+            )
             isProcessing = false
             withAnimation { currentStep = .routeConfirmed }
             onRouteComplete(.stageForJob(jobId: link.jobId, jobName: link.jobName, jpoId: link.jpoId))
@@ -1118,6 +1124,12 @@ struct ReceivingRoutingFlow: View {
                 jobId: demand.jobId,
                 performedBy: userId,
                 notes: "Cross-job staging from receiving for \(demand.jobName)"
+            )
+            try service.markReceivingSessionItemRouted(
+                itemId: item.id,
+                disposition: .staged,
+                routedQty: qtyToStage,
+                routedBy: userId
             )
             isProcessing = false
             withAnimation { currentStep = .routeConfirmed }
@@ -1153,6 +1165,12 @@ struct ReceivingRoutingFlow: View {
                 performedBy: userId,
                 notes: "Damaged on arrival, requesting \(action.rawValue.lowercased())"
             )
+            try service.markReceivingSessionItemRouted(
+                itemId: item.id,
+                disposition: .supplierReturn,
+                routedQty: receivedQty,
+                routedBy: userId
+            )
             isProcessing = false
             withAnimation { currentStep = .routeConfirmed }
             onRouteComplete(.damagedReturn)
@@ -1185,6 +1203,12 @@ struct ReceivingRoutingFlow: View {
                 reason: "Used part, stock at target",
                 performedBy: userId,
                 notes: "Used part received, not needed for stock"
+            )
+            try service.markReceivingSessionItemRouted(
+                itemId: item.id,
+                disposition: .writeOff,
+                routedQty: receivedQty,
+                routedBy: userId
             )
             isProcessing = false
             withAnimation { currentStep = .routeConfirmed }
