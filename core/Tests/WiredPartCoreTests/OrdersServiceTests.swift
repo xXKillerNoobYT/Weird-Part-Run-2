@@ -169,7 +169,7 @@ struct OrdersServiceTests {
         #expect(detail.lines.first?.unitPrice == 1.25)
     }
 
-    @Test("Update PO status supports submitted lifecycle before ordered")
+    @Test("Update PO status keeps submitted internal until supplier send is recorded")
     func testUpdatePOStatus() throws {
         let env = try E2ETestHelpers.setUp()
         let supplierId = try E2ETestHelpers.seedSupplier(env)
@@ -178,10 +178,75 @@ struct OrdersServiceTests {
         try env.orders.updatePOStatus(id: poId, status: "submitted", userId: env.adminUserId)
         var detail = try env.orders.getPODetail(id: poId)
         #expect(detail.status == "submitted")
+        #expect(detail.sentToSupplierAt == nil)
 
-        try env.orders.updatePOStatus(id: poId, status: "ordered", userId: env.adminUserId)
+        #expect(throws: OrdersService.OrdersError.invalidStatusTransition(entity: "PO", from: "submitted", to: "ordered")) {
+            try env.orders.updatePOStatus(id: poId, status: "ordered", userId: env.adminUserId)
+        }
+
+        try env.orders.markPOSentToSupplier(
+            id: poId,
+            sentByUserId: env.adminUserId,
+            confirmationNumber: "SUP-CONF-1"
+        )
         detail = try env.orders.getPODetail(id: poId)
         #expect(detail.status == "ordered")
+        #expect(detail.sentToSupplierAt != nil)
+        #expect(detail.sentByUserId == env.adminUserId)
+        #expect(detail.supplierConfirmationNum == "SUP-CONF-1")
+    }
+
+    @Test("Confirming an order send records transmission before advancing draft PO to ordered")
+    func testMarkPOSentToSupplierAdvancesDraftOrderWithAudit() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-SEND-DRAFT", supplierId: supplierId, notes: nil)
+
+        try env.orders.markPOSentToSupplier(
+            id: poId,
+            sentByUserId: env.adminUserId,
+            confirmationNumber: "SUP-CONF-DRAFT",
+            emailRequestType: "order",
+            sendGroupId: "group-1"
+        )
+
+        let detail = try env.orders.getPODetail(id: poId)
+        #expect(detail.status == "ordered")
+        #expect(detail.sentToSupplierAt != nil)
+        #expect(detail.sentByUserId == env.adminUserId)
+        #expect(detail.supplierConfirmationNum == "SUP-CONF-DRAFT")
+        #expect(detail.emailRequestType == "order")
+        #expect(detail.sendGroupId == "group-1")
+
+        let historyCount = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM order_status_history
+                WHERE entity_type = 'purchase_order'
+                  AND entity_id = ?
+                  AND old_status = 'draft'
+                  AND new_status = 'ordered'
+                  AND changed_by = ?
+                """, arguments: [poId, env.adminUserId]) ?? 0
+        }
+        #expect(historyCount == 1)
+    }
+
+    @Test("Pricing request records supplier transmission without ordering PO")
+    func testMarkPOSentToSupplierPricingDoesNotAdvanceStatus() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-PRICE-REQ", supplierId: supplierId, notes: nil)
+
+        try env.orders.markPOSentToSupplier(
+            id: poId,
+            sentByUserId: env.adminUserId,
+            emailRequestType: "pricing"
+        )
+
+        let detail = try env.orders.getPODetail(id: poId)
+        #expect(detail.status == "draft")
+        #expect(detail.sentToSupplierAt != nil)
+        #expect(detail.emailRequestType == "pricing")
     }
 
     @Test("Update PO status supports cancellation from active states")
@@ -791,8 +856,7 @@ struct OrdersServiceTests {
         let partId = try E2ETestHelpers.seedPart(env, name: "Lock Line Part", categoryId: catId)
         let lineId = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 5, unitPrice: 1.00)
 
-        // Move PO out of draft (draft → ordered is valid; "sent" removed in #205)
-        try env.orders.updatePOStatus(id: poId, status: "ordered", userId: env.adminUserId)
+        try env.orders.markPOSentToSupplier(id: poId, sentByUserId: env.adminUserId)
 
         #expect(throws: (any Error).self) {
             try env.orders.updatePOLineItem(lineId: lineId, quantity: 10, unitPrice: 2.00)
