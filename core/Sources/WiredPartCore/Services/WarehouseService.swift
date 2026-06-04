@@ -416,6 +416,22 @@ public final class WarehouseService: Sendable {
         }
     }
 
+    public struct LedgerLocationSummary: Sendable, Equatable {
+        public let locationType: String
+        public let locationId: Int64
+        public let qty: Int
+        public let displayName: String
+    }
+
+    public struct InventoryLedger: Sendable {
+        public let partId: Int64
+        public let partName: String
+        public let partCode: String?
+        public let totalQty: Int
+        public let locations: [LedgerLocationSummary]
+        public let movements: [MovementRow]
+    }
+
     /// Legacy sort order for movement list queries.
     public enum MovementSortOrder: Sendable, Equatable {
         case newestFirst
@@ -719,6 +735,95 @@ public final class WarehouseService: Sendable {
         }
     }
 
+    /// Current stock by location plus immutable movement history for a part.
+    public func getInventoryLedger(partId: Int64, movementLimit: Int = 100) throws -> InventoryLedger? {
+        do {
+            return try db.writer.read { dbConn -> InventoryLedger? in
+                guard let part = try Row.fetchOne(
+                    dbConn,
+                    sql: "SELECT id, name, code FROM parts WHERE id = ? AND deleted_at IS NULL",
+                    arguments: [partId]
+                ) else {
+                    return nil
+                }
+
+                let locationRows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT location_type, location_id, COALESCE(SUM(qty), 0) AS qty
+                        FROM stock
+                        WHERE part_id = ? AND deleted_at IS NULL AND qty > 0
+                        GROUP BY location_type, location_id
+                        ORDER BY location_type, location_id
+                        """,
+                    arguments: [partId]
+                )
+                let locations = locationRows.map { row in
+                    let locationType: String = row["location_type"]
+                    let locationId: Int64 = row["location_id"]
+                    let qty: Int = row["qty"]
+                    return LedgerLocationSummary(
+                        locationType: locationType,
+                        locationId: locationId,
+                        qty: qty,
+                        displayName: Self.locationDisplayName(type: locationType, id: locationId)
+                    )
+                }
+                let totalQty = locations.reduce(0) { $0 + $1.qty }
+
+                let movementRows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT sm.*,
+                               p.name AS part_name,
+                               COALESCE(u.display_name, u.email, 'Unknown') AS performed_by_name
+                        FROM stock_movements sm
+                        LEFT JOIN parts p ON p.id = sm.part_id AND p.deleted_at IS NULL
+                        LEFT JOIN users u ON u.id = sm.performed_by AND u.deleted_at IS NULL
+                        WHERE sm.part_id = ? AND sm.deleted_at IS NULL
+                        ORDER BY sm.created_at DESC, sm.id DESC
+                        LIMIT ?
+                        """,
+                    arguments: [partId, movementLimit]
+                )
+                let movements = movementRows.map { row in
+                    MovementRow(
+                        id: row["id"] as Int64,
+                        partId: row["part_id"] as Int64,
+                        partName: (row["part_name"] as String?) ?? "Unknown Part",
+                        qty: row["qty"] as Int,
+                        fromLocationType: row["from_location_type"] as String?,
+                        fromLocationId: row["from_location_id"] as Int64?,
+                        toLocationType: row["to_location_type"] as String?,
+                        toLocationId: row["to_location_id"] as Int64?,
+                        movementType: row["movement_type"] as String,
+                        reason: row["reason"] as String?,
+                        notes: row["notes"] as String?,
+                        performedBy: row["performed_by"] as Int64,
+                        performedByName: row["performed_by_name"] as String?,
+                        verifiedBy: row["verified_by"] as Int64?,
+                        scanConfirmed: ((row["scan_confirmed"] as Int?) ?? 0) == 1,
+                        gpsLat: row["gps_lat"] as Double?,
+                        gpsLng: row["gps_lng"] as Double?,
+                        createdAt: row["created_at"] as String?
+                    )
+                }
+
+                return InventoryLedger(
+                    partId: part["id"],
+                    partName: part["name"],
+                    partCode: part["code"] as String?,
+                    totalQty: totalQty,
+                    locations: locations,
+                    movements: movements
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) { return nil }
+            throw error
+        }
+    }
+
     /// Record a new stock movement and adjust stock accordingly.
     ///
     /// - Returns: The new movement's row ID.
@@ -777,6 +882,11 @@ public final class WarehouseService: Sendable {
                     """, arguments: [jid]) ?? 0) > 0
                 guard jobExists else { throw WarehouseError.jobNotFound(jid) }
             }
+
+            try Self.validateStockMutationPath(
+                fromLocationType: fromLocationType,
+                toLocationType: toLocationType
+            )
 
             try dbConn.execute(
                 sql: """
@@ -966,6 +1076,11 @@ public final class WarehouseService: Sendable {
                         """, arguments: [jid]) ?? 0) > 0
                     guard jobExists else { throw WarehouseError.jobNotFound(jid) }
                 }
+
+                try Self.validateStockMutationPath(
+                    fromLocationType: m.fromLocationType,
+                    toLocationType: m.toLocationType
+                )
 
                 try dbConn.execute(sql: """
                     INSERT INTO stock_movements
@@ -3743,6 +3858,14 @@ public final class WarehouseService: Sendable {
             return StockMovement.MovementType.stockReturn.rawValue
         }
         return StockMovement.MovementType.transfer.rawValue
+    }
+
+    private static func validateStockMutationPath(fromLocationType: String?, toLocationType: String?) throws {
+        guard let fromLocationType, let toLocationType else { return }
+        let pathKey = "\(fromLocationType)→\(toLocationType)"
+        guard validPaths.contains(pathKey) else {
+            throw WarehouseError.invalidMovementPath(from: fromLocationType, to: toLocationType)
+        }
     }
 
     /// Build a human-readable display name for a location.
