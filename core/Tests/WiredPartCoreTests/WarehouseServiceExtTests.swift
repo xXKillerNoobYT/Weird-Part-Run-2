@@ -201,6 +201,121 @@ struct WarehouseServiceExtTests {
         #expect(movement?.gpsLng == -104.9903)
     }
 
+    @Test("Inventory ledger summarizes warehouse truck and job stock with audit movements")
+    func testInventoryLedgerTracksMovementWorkflow() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Ledger Part", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 20, locationType: "warehouse", locationId: 1)
+        _ = try env.warehouse.executeMovement(
+            partId: partId,
+            qty: 7,
+            fromLocationType: "warehouse",
+            fromLocationId: 1,
+            toLocationType: "truck",
+            toLocationId: 42,
+            reason: "Load truck",
+            performedBy: env.adminUserId
+        )
+        _ = try env.warehouse.executeMovement(
+            partId: partId,
+            qty: 3,
+            fromLocationType: "truck",
+            fromLocationId: 42,
+            toLocationType: "job",
+            toLocationId: jobId,
+            reason: "Deliver to job",
+            performedBy: env.adminUserId,
+            jobId: jobId
+        )
+
+        let ledger = try #require(try env.warehouse.getInventoryLedger(partId: partId))
+        #expect(ledger.partName == "Ledger Part")
+        #expect(ledger.totalQty == 20)
+        #expect(ledger.locations.contains {
+            $0.locationType == "warehouse" && $0.locationId == 1 && $0.qty == 13
+        })
+        #expect(ledger.locations.contains {
+            $0.locationType == "truck" && $0.locationId == 42 && $0.qty == 4
+        })
+        #expect(ledger.locations.contains {
+            $0.locationType == "job" && $0.locationId == jobId && $0.qty == 3
+        })
+        #expect(ledger.movements.count == 3)
+        #expect(ledger.movements.contains {
+            $0.fromLocationType == "truck" && $0.toLocationType == "job" && $0.qty == 3
+        })
+    }
+
+    @Test("Invalid movement paths do not mutate quantities or leave ledger rows")
+    func testInvalidMovementPathRollsBackStockAndAudit() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10, locationType: "warehouse", locationId: 1)
+
+        #expect(throws: WarehouseService.WarehouseError.invalidMovementPath(from: "job", to: "warehouse")) {
+            try env.warehouse.createMovement(
+                partId: partId,
+                qty: 2,
+                fromLocationType: "job",
+                fromLocationId: 88,
+                toLocationType: "warehouse",
+                toLocationId: 1,
+                movementType: "transfer",
+                reason: "Invalid shortcut",
+                performedBy: env.adminUserId
+            )
+        }
+
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1) == 10)
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "job", locationId: 88) == 0)
+        let ledger = try #require(try env.warehouse.getInventoryLedger(partId: partId))
+        #expect(ledger.movements.count == 1)
+        #expect(!ledger.movements.contains { $0.reason == "Invalid shortcut" })
+    }
+
+    @Test("Batch movements validate paths atomically")
+    func testBatchMovementInvalidPathRollsBack() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10, locationType: "warehouse", locationId: 1)
+
+        #expect(throws: WarehouseService.WarehouseError.invalidMovementPath(from: "job", to: "warehouse")) {
+            try env.warehouse.createBatchMovements(
+                movements: [
+                    .init(
+                        partId: partId,
+                        qty: 2,
+                        fromLocationType: "warehouse",
+                        fromLocationId: 1,
+                        toLocationType: "truck",
+                        toLocationId: 42,
+                        movementType: "transfer"
+                    ),
+                    .init(
+                        partId: partId,
+                        qty: 1,
+                        fromLocationType: "job",
+                        fromLocationId: 99,
+                        toLocationType: "warehouse",
+                        toLocationId: 1,
+                        movementType: "transfer"
+                    ),
+                ],
+                performedBy: env.adminUserId
+            )
+        }
+
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1) == 10)
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "truck", locationId: 42) == 0)
+        let ledger = try #require(try env.warehouse.getInventoryLedger(partId: partId))
+        #expect(ledger.movements.count == 1)
+    }
+
     @Test("Movement service returns empty defaults when movement table is missing")
     func testMovementMissingTableDefaults() throws {
         let env = try E2ETestHelpers.setUp()
