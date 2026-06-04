@@ -452,6 +452,7 @@ struct PartsCatalogPage: View {
             .padding(.horizontal)
             .padding(.vertical, 8)
         }
+        .accessibilityIdentifier("partsCatalogFilterStrip")
         .background(Color(.secondarySystemGroupedBackground))
     }
 
@@ -519,6 +520,7 @@ struct PartsCatalogPage: View {
                     : Color.clear, lineWidth: 1)
             )
         }
+        .accessibilityIdentifier("partsCatalogFilter_\(label)")
     }
 
     // MARK: - Sort Header
@@ -584,6 +586,7 @@ struct PartsCatalogPage: View {
                     partRow(part)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("partsCatalogPartRow_\(part.code ?? String(part.id))")
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     Button(role: .destructive) {
                         partToDelete = part

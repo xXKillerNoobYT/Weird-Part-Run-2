@@ -1615,6 +1615,33 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     // MARK: - Test 7: App Launch Performance
 
     @MainActor
+    func testCatalogWireFindPath375Fixture() throws {
+        navigateToCatalog()
+
+        let searchField = catalogSearchField()
+        XCTAssertTrue(searchField.waitForExistence(timeout: 10), "Catalog search field should be visible")
+        searchField.tap()
+        searchField.typeText("wire")
+        if app.keyboards.buttons["Search"].waitForExistence(timeout: 2) {
+            app.keyboards.buttons["Search"].tap()
+        }
+
+        let wireRow = app.buttons["partsCatalogPartRow_UITEST-QA-WIRE"]
+        XCTAssertTrue(
+            wireRow.waitForExistence(timeout: 10),
+            "Keyword search should find the seeded electrical wire part"
+        )
+    }
+
+    private func catalogSearchField() -> XCUIElement {
+        let identified = app.textFields["partsCatalogSearchField"]
+        if identified.exists {
+            return identified
+        }
+        return app.textFields["Search parts by name, code, or brand..."]
+    }
+
+    @MainActor
     func testLaunchPerformance() throws {
         measure(metrics: [XCTApplicationLaunchMetric()]) {
             XCUIApplication().launch()
