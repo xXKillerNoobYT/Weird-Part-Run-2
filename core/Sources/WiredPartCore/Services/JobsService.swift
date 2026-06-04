@@ -1478,8 +1478,8 @@ public final class JobsService: Sendable {
                 let todoName: String? = row["todo_name"] as String?
                 let wType: String = row["work_type"] ?? "new_work"
 
-                let startDate = CoreFormatters.parseDateTime(clockInStr) ?? Date()
-                let endDate: Date? = clockOutStr.flatMap { CoreFormatters.parseDateTime($0) }
+                let startDate = Self.parseSQLiteUTCDateTime(clockInStr) ?? Date()
+                let endDate: Date? = clockOutStr.flatMap { Self.parseSQLiteUTCDateTime($0) }
 
                 let summary = ClockEntrySummary(
                     id: entryId,
@@ -2417,7 +2417,19 @@ public final class JobsService: Sendable {
         }
     }
 
-    /// Detect whether a GRDB/SQLite error indicates a missing table.
+    private static let sqliteUTCDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return formatter
+    }()
+
+    private static func parseSQLiteUTCDateTime(_ string: String) -> Date? {
+        if let date = CoreFormatters.parseISO(string) { return date }
+        return sqliteUTCDateFormatter.date(from: string)
+    }
+
+    /// Convert SQLite datetime/date text into the current local operational day.
     private static func localDateSQL(_ expression: String) -> String {
         "CASE WHEN length(\(expression)) <= 10 THEN date(\(expression)) ELSE date(\(expression), 'localtime') END"
     }

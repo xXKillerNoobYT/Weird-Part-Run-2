@@ -1,12 +1,14 @@
 import Foundation
 #if canImport(Darwin)
 import Darwin
+#elseif canImport(Glibc)
+import Glibc
 #endif
 import Testing
 import GRDB
 @testable import WiredPartCore
 
-@Suite("JobEstimationService Tests")
+@Suite("JobEstimationService Tests", .serialized)
 struct JobEstimationServiceTests {
 
     private func freshEnv() throws -> (E2ETestHelpers.TestEnvironment, JobEstimationService) {
@@ -383,9 +385,18 @@ struct JobEstimationServiceTests {
     }
 
     private func withMountainTimeZone<T>(_ body: () throws -> T) rethrows -> T {
-        #if canImport(Darwin)
+        #if canImport(Darwin) || canImport(Glibc)
+        let originalTZ = getenv("TZ").map { String(cString: $0) }
         setenv("TZ", "America/Denver", 1)
         tzset()
+        defer {
+            if let originalTZ {
+                setenv("TZ", originalTZ, 1)
+            } else {
+                unsetenv("TZ")
+            }
+            tzset()
+        }
         #endif
         return try body()
     }
