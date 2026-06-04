@@ -1260,6 +1260,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                     }
                 }
             }
+        }
 
         let catalogButton = app.buttons["subtab_parts-catalog"]
         if catalogButton.waitForExistence(timeout: 5) {
