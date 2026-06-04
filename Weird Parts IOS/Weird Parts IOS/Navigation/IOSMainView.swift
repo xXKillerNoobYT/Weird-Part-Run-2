@@ -595,6 +595,7 @@ struct IOSMainView: View {
                                 Label(module.label, systemImage: module.icon)
                             }
                             .badge(badgeManager.badge(for: module.id))
+                            .accessibilityIdentifier("moreModule_\(module.id)")
                         }
                     }
                 }

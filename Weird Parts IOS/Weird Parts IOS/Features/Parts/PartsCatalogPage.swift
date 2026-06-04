@@ -34,6 +34,7 @@ struct PartsCatalogPage: View {
     @State private var selectedColorId: Int64?
     @State private var selectedBrandId: Int64?
     @State private var lowStockOnly = false
+    @State private var suppressedNLFilterSearch: String?
 
     // MARK: - Sorting
     @State private var sortField: SortField = .name
@@ -118,9 +119,14 @@ struct PartsCatalogPage: View {
                 paginationBar
             }
         }
+        .accessibilityIdentifier("partsCatalogPage")
         .onChange(of: searchText) { _, newValue in
             let trimmed = newValue.trimmingCharacters(in: .whitespaces)
-            let parsed = parseNaturalLanguageSearch(trimmed)
+            if let suppressedNLFilterSearch, suppressedNLFilterSearch != trimmed {
+                self.suppressedNLFilterSearch = nil
+            }
+
+            let parsed = activeNLSearchResult(for: trimmed)
 
             if parsed.hasStructuredFilters {
                 selectedCategoryId = parsed.categoryId
@@ -318,6 +324,7 @@ struct PartsCatalogPage: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled()
                 .submitLabel(.search)
+                .accessibilityIdentifier("partsCatalogSearchField")
 
             if !searchText.isEmpty {
                 Button {
@@ -1000,9 +1007,20 @@ struct PartsCatalogPage: View {
         return result
     }
 
+    private func activeNLSearchResult(for text: String) -> NLSearchResult {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard suppressedNLFilterSearch != trimmed else {
+            var result = NLSearchResult()
+            result.textSearch = trimmed
+            return result
+        }
+
+        return parseNaturalLanguageSearch(trimmed)
+    }
+
     @ViewBuilder
     private var nlFilterBanner: some View {
-        let parsed = parseNaturalLanguageSearch(searchText)
+        let parsed = activeNLSearchResult(for: searchText)
         if parsed.hasStructuredFilters {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles")
@@ -1014,8 +1032,8 @@ struct PartsCatalogPage: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button("Clear filters") {
+                    suppressedNLFilterSearch = searchText.trimmingCharacters(in: .whitespaces)
                     clearAllFilters()
-                    searchText = ""
                 }
                 .font(.caption2)
                 .foregroundStyle(.blue)
@@ -1073,7 +1091,7 @@ struct PartsCatalogPage: View {
         do {
             let offset = (currentPage - 1) * pageSize
 
-            let parsed = parseNaturalLanguageSearch(searchText)
+            let parsed = activeNLSearchResult(for: searchText)
             let effectiveSearchText = parsed.hasStructuredFilters ? parsed.textSearch : searchText.trimmingCharacters(in: .whitespaces)
 
             let catalogSort: PartsService.CatalogSortField = switch sortField {

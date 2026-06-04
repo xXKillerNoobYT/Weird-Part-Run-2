@@ -1241,6 +1241,56 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         }
     }
 
+    /// Navigates from the main tab bar to the Parts > Catalog page.
+    private func navigateToCatalog() {
+        let partsTab = app.tabBars.buttons["Parts"]
+        if partsTab.waitForExistence(timeout: 10) {
+            partsTab.tap()
+        } else {
+            let moreTab = app.tabBars.buttons["More"]
+            if moreTab.waitForExistence(timeout: 5) {
+                moreTab.tap()
+                let partsModule = app.buttons["moreModule_parts"]
+                if partsModule.waitForExistence(timeout: 5) {
+                    partsModule.tap()
+                } else {
+                    let partsCell = app.cells.staticTexts["Parts"]
+                    if partsCell.waitForExistence(timeout: 5) {
+                        partsCell.tap()
+                    }
+                }
+            }
+
+        let catalogButton = app.buttons["subtab_parts-catalog"]
+        if catalogButton.waitForExistence(timeout: 5) {
+            catalogButton.tap()
+        } else {
+            let legacyCatalogButton = app.buttons["subTab_parts-catalog"]
+            if legacyCatalogButton.waitForExistence(timeout: 2) {
+                legacyCatalogButton.tap()
+            } else {
+                let catalogLabelButton = app.buttons["Catalog"]
+                if catalogLabelButton.waitForExistence(timeout: 5) {
+                    catalogLabelButton.tap()
+                } else {
+                    let catalogText = app.staticTexts["Catalog"]
+                    if catalogText.waitForExistence(timeout: 3) {
+                        catalogText.tap()
+                    }
+                }
+            }
+        }
+
+        XCTAssertTrue(
+            app.otherElements["partsCatalogPage"].waitForExistence(timeout: 10)
+            ||
+            app.staticTexts["Smart search applied filters"].waitForExistence(timeout: 10)
+            || app.textFields["partsCatalogSearchField"].waitForExistence(timeout: 10)
+            || app.textFields["Search parts by name, code, or brand..."].waitForExistence(timeout: 10),
+            "Catalog page should appear after navigation"
+        )
+    }
+
     // MARK: - Helper: Wait for loading to complete
 
     /// Waits for the loading indicator to disappear, indicating data has loaded.
