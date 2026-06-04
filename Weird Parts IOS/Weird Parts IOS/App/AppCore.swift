@@ -227,7 +227,9 @@ final class AppCore: ObservableObject {
                 needsOnboarding = false
             }
 
-            if uiTestingMode && ProcessInfo.processInfo.arguments.contains("-UITestingWEI936AutoLogin"),
+            if uiTestingMode &&
+               ProcessInfo.processInfo.arguments.contains("-UITestingWEI936AutoLogin") &&
+               !ProcessInfo.processInfo.arguments.contains("-UITestingForceLogin"),
                let uiTestUser = result.users.first(where: { $0.displayName == "UITest Owner" }),
                let userId = uiTestUser.id {
                 currentUser = uiTestUser
@@ -936,6 +938,10 @@ final class AppCore: ObservableObject {
             }
         }
 
+        if ProcessInfo.processInfo.arguments.contains("-UITestingWarehouseLocations") {
+            try seedWarehouseLocationsUITestingFixtures(db: db)
+        }
+
         if ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard") {
             try seedDispatchBoardUITestingFixtures(db: db)
             UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
@@ -949,6 +955,68 @@ final class AppCore: ObservableObject {
         }
 
         seedWEI936OnboardingStateIfRequested(userId: fixtureUserId)
+    }
+
+    nonisolated private static func seedWarehouseLocationsUITestingFixtures(db: AppDatabase) throws {
+        let service = WarehouseService(db: db)
+        let planName = "UITesting Warehouse Floor Plan"
+        let plan = try service.listFloorPlans().first { $0.name == planName }
+            ?? (try service.createFloorPlan(name: planName, widthInches: 720, lengthInches: 480))
+
+        guard let planId = plan.id else { return }
+        try service.updateFloorPlanGrid(floorPlanId: planId, rows: 3, cols: 5)
+
+        if try service.listZones(floorPlanId: planId).isEmpty {
+            _ = try service.addZone(
+                floorPlanId: planId,
+                zoneType: "storage",
+                label: "UITesting Storage",
+                colorHex: "#2563EB",
+                gridX: 0,
+                gridY: 0,
+                gridWidth: 2,
+                gridHeight: 2
+            )
+        }
+
+        let existingUnits = try service.listStorageUnits(floorPlanId: planId)
+        if existingUnits.isEmpty {
+            let shelf = try service.createStorageUnit(
+                floorPlanId: planId,
+                name: "UITesting Shelf A",
+                unitType: "shelf",
+                levels: 2,
+                areasPerLevel: 3
+            )
+            if let shelfId = shelf.id {
+                try service.updateStorageUnit(
+                    id: shelfId,
+                    gridX: 0,
+                    gridY: 0,
+                    gridWidth: 1,
+                    gridHeight: 2,
+                    frontFace: "south"
+                )
+            }
+
+            let rack = try service.createStorageUnit(
+                floorPlanId: planId,
+                name: "UITesting Pipe Rack",
+                unitType: "rack",
+                levels: 1,
+                areasPerLevel: 4
+            )
+            if let rackId = rack.id {
+                try service.updateStorageUnit(
+                    id: rackId,
+                    gridX: 2,
+                    gridY: 1,
+                    gridWidth: 2,
+                    gridHeight: 1,
+                    frontFace: "east"
+                )
+            }
+        }
     }
 
     nonisolated private static func seedWEI936OnboardingStateIfRequested(userId: Int64?) {

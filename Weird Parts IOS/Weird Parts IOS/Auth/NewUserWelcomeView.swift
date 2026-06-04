@@ -8,9 +8,14 @@ struct NewUserWelcomeView: View {
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
 
     var body: some View {
-        if !hasSeenWelcome {
+        if !hasSeenWelcome && !shouldSuppressForWarehouseLocationsUITest {
             welcomeOverlay
         }
+    }
+
+    private var shouldSuppressForWarehouseLocationsUITest: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-UITesting") && args.contains("-UITestingWarehouseLocations")
     }
 
     private var welcomeOverlay: some View {
