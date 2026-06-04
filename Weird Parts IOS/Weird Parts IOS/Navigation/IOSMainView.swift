@@ -56,7 +56,7 @@ struct IOSMainView: View {
     /// Filtered modules in the user's preferred order.
     private var orderedModules: [AppModule] {
         let modules = tabPrefs.orderedModules(from: filteredModules)
-        guard isUITestingOpenPartsCategories else { return modules }
+        guard isUITestingOpenPartsRoute else { return modules }
 
         // UI tests for Parts > Categories should validate the feature, not the
         // compact "More" list traversal. In testing only, pin Parts into the
@@ -75,6 +75,15 @@ struct IOSMainView: View {
     private var isUITestingOpenPartsCategories: Bool {
         let args = ProcessInfo.processInfo.arguments
         return args.contains("-UITesting") && args.contains("-UITestingOpenPartsCategories")
+    }
+
+    private var isUITestingOpenPartsCatalog: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-UITesting") && args.contains("-UITestingOpenPartsCatalog")
+    }
+
+    private var isUITestingOpenPartsRoute: Bool {
+        isUITestingOpenPartsCategories || isUITestingOpenPartsCatalog
     }
 
     /// First 4 ordered modules shown as dedicated bottom tabs.
@@ -130,10 +139,10 @@ struct IOSMainView: View {
         }
         .onAppear {
             tabPrefs.load(userId: appCore.currentUser?.id)
-            if isUITestingOpenPartsCategories {
+            if isUITestingOpenPartsRoute {
                 selectedModuleId = "parts"
                 expandedModuleId = "parts"
-                selectedTabPath = "/parts/categories"
+                selectedTabPath = isUITestingOpenPartsCatalog ? "/parts/catalog" : "/parts/categories"
             }
             badgeManager.refresh()
         }
@@ -699,7 +708,9 @@ struct ModuleHostView: View {
         }
         .onAppear {
             applyNavigationRequest(navigationRequest)
-            if isUITestingOpenPartsCategories, module.id == "parts" {
+            if isUITestingOpenPartsCatalog, module.id == "parts" {
+                selectedTabId = "parts-catalog"
+            } else if isUITestingOpenPartsCategories, module.id == "parts" {
                 selectedTabId = "parts-categories"
             } else if selectedTabId.isEmpty, let first = visibleTabsList.first {
                 selectedTabId = first.id
@@ -716,6 +727,11 @@ struct ModuleHostView: View {
     private var isUITestingOpenPartsCategories: Bool {
         let args = ProcessInfo.processInfo.arguments
         return args.contains("-UITesting") && args.contains("-UITestingOpenPartsCategories")
+    }
+
+    private var isUITestingOpenPartsCatalog: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-UITesting") && args.contains("-UITestingOpenPartsCatalog")
     }
 
     private var currentPath: String {

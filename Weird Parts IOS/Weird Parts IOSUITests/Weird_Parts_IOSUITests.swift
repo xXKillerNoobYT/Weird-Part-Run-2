@@ -73,6 +73,9 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         if shouldOpenPartsCategoriesOnLaunch {
             app.launchArguments += ["-UITestingOpenPartsCategories"]
         }
+        if shouldOpenPartsCatalogOnLaunch {
+            app.launchArguments += ["-UITestingWEI936AutoLogin", "-UITestingOpenPartsCatalog"]
+        }
         if shouldOpenWarehouseSetupOnLaunch {
             app.launchArguments += ["-UITestingWarehouseSetupWizard"]
         }
@@ -96,12 +99,20 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         name.contains("WEI1182WarehouseWizardBreakpointWalkingPathScreenshots")
     }
 
+    private var shouldOpenPartsCatalogOnLaunch: Bool {
+        name.contains("CatalogWireFindPath375Fixture")
+    }
+
     /// SwiftUI exposes the page accessibility identifier on the visible child
     /// elements instead of a stable `Other` container on compact iPhone. Query
     /// all descendants so navigation assertions prove the page is visible
     /// without depending on the exported accessibility role.
     private var partsCategoriesPage: XCUIElement {
         app.descendants(matching: .any)["partsCategoriesPage"]
+    }
+
+    private var partsCatalogPage: XCUIElement {
+        app.descendants(matching: .any)["partsCatalogPage"]
     }
 
     private var categoryFormSheet: XCUIElement {
@@ -778,6 +789,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             app.buttons["Dashboard"].exists && app.buttons["Dashboard"].isHittable ||
             app.buttons["tab_parts"].exists && app.buttons["tab_parts"].isHittable ||
             app.buttons["Parts"].exists && app.buttons["Parts"].isHittable ||
+            partsCatalogPage.exists ||
             partsCategoriesPage.exists ||
             app.buttons["tab_warehouse"].exists && app.buttons["tab_warehouse"].isHittable ||
             app.buttons["Warehouse"].exists && app.buttons["Warehouse"].isHittable ||
@@ -804,6 +816,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
                           app.buttons["Dashboard"].exists ||
                           app.buttons["tab_parts"].exists ||
                           app.buttons["Parts"].exists ||
+                          partsCatalogPage.exists ||
                           partsCategoriesPage.exists ||
                           app.buttons["tab_warehouse"].exists ||
                           app.buttons["Warehouse"].exists ||
@@ -1243,6 +1256,12 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
     /// Navigates from the main tab bar to the Parts > Catalog page.
     private func navigateToCatalog() {
+        logInAsUITestOwnerIfNeeded()
+        dismissTransientOnboardingOverlays()
+        if waitForCatalogPage(timeout: 8) {
+            return
+        }
+
         let partsTab = app.tabBars.buttons["Parts"]
         if partsTab.waitForExistence(timeout: 10) {
             partsTab.tap()
@@ -1282,14 +1301,19 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             }
         }
 
-        XCTAssertTrue(
-            app.otherElements["partsCatalogPage"].waitForExistence(timeout: 10)
-            ||
-            app.staticTexts["Smart search applied filters"].waitForExistence(timeout: 10)
-            || app.textFields["partsCatalogSearchField"].waitForExistence(timeout: 10)
-            || app.textFields["Search parts by name, code, or brand..."].waitForExistence(timeout: 10),
-            "Catalog page should appear after navigation"
-        )
+        if !waitForCatalogPage(timeout: 10) {
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = "catalog-navigation-failure"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            XCTFail("Catalog page should appear after navigation")
+        }
+    }
+
+    private func waitForCatalogPage(timeout: TimeInterval) -> Bool {
+        partsCatalogPage.waitForExistence(timeout: timeout)
+        || catalogSearchField().waitForExistence(timeout: timeout)
+        || app.staticTexts["Smart search applied filters"].waitForExistence(timeout: timeout)
     }
 
     // MARK: - Helper: Wait for loading to complete
