@@ -5983,6 +5983,144 @@ public final class PartsService: Sendable {
         public var resolution: PartsImportConflictResolution = .ask
     }
 
+    public enum PartsImportSourceKind: String, Sendable {
+        case csv
+        case xlsx
+        case digitalPDFText = "digital_pdf_text"
+        case ocr
+        case vision
+    }
+
+    public enum PartsImportEvidenceKind: String, Sendable {
+        case cell
+        case row
+        case textBlock = "text_block"
+        case boundingBox = "bounding_box"
+        case sourceHash = "source_hash"
+    }
+
+    /// Source evidence points back to where extracted import data came from.
+    public struct PartsImportSourceEvidence: Sendable {
+        public var kind: PartsImportEvidenceKind
+        public var sheetName: String?
+        public var pageNumber: Int?
+        public var rowNumber: Int?
+        public var columnName: String?
+        public var text: String?
+        public var confidence: Double?
+        public var boundingBox: [Double]?
+
+        public init(kind: PartsImportEvidenceKind, sheetName: String? = nil, pageNumber: Int? = nil, rowNumber: Int? = nil, columnName: String? = nil, text: String? = nil, confidence: Double? = nil, boundingBox: [Double]? = nil) {
+            self.kind = kind
+            self.sheetName = sheetName
+            self.pageNumber = pageNumber
+            self.rowNumber = rowNumber
+            self.columnName = columnName
+            self.text = text
+            self.confidence = confidence
+            self.boundingBox = boundingBox
+        }
+    }
+
+    /// A source-agnostic row extracted by deterministic parsers before WEI field mapping.
+    public struct PartsImportDraftRow: Sendable {
+        public var rowNumber: Int
+        public var columns: [String]
+        public var evidence: [PartsImportSourceEvidence]
+
+        public init(rowNumber: Int, columns: [String], evidence: [PartsImportSourceEvidence] = []) {
+            self.rowNumber = rowNumber
+            self.columns = columns
+            self.evidence = evidence
+        }
+    }
+
+    /// A source-agnostic extracted table. OCR/vision adapters can populate evidence
+    /// without committing rows until later stages add parser implementations.
+    public struct PartsImportExtractedTable: Sendable {
+        public var id: String
+        public var sourceKind: PartsImportSourceKind
+        public var sourceName: String?
+        public var sheetName: String?
+        public var pageNumber: Int?
+        public var headerRowNumber: Int?
+        public var rows: [PartsImportDraftRow]
+        public var evidence: [PartsImportSourceEvidence]
+
+        public init(id: String, sourceKind: PartsImportSourceKind, sourceName: String? = nil, sheetName: String? = nil, pageNumber: Int? = nil, headerRowNumber: Int? = nil, rows: [PartsImportDraftRow], evidence: [PartsImportSourceEvidence] = []) {
+            self.id = id
+            self.sourceKind = sourceKind
+            self.sourceName = sourceName
+            self.sheetName = sheetName
+            self.pageNumber = pageNumber
+            self.headerRowNumber = headerRowNumber
+            self.rows = rows
+            self.evidence = evidence
+        }
+    }
+
+    public struct PartsImportMappingProposal: Sendable {
+        public var sourceColumn: String
+        public var targetField: String
+        public var confidence: Double
+        public var reason: String?
+
+        public init(sourceColumn: String, targetField: String, confidence: Double, reason: String? = nil) {
+            self.sourceColumn = sourceColumn
+            self.targetField = targetField
+            self.confidence = confidence
+            self.reason = reason
+        }
+    }
+
+    public enum PartsImportPreviewDecision: String, Sendable {
+        case create
+        case update
+        case skip
+        case conflict
+        case reject
+    }
+
+    public struct PartsImportWorkbookSheetMetadata: Sendable {
+        public var index: Int
+        public var name: String
+        public var relationshipId: String?
+        public var path: String
+        public var rowCount: Int
+        public var columnCount: Int
+
+        public init(index: Int, name: String, relationshipId: String? = nil, path: String, rowCount: Int = 0, columnCount: Int = 0) {
+            self.index = index
+            self.name = name
+            self.relationshipId = relationshipId
+            self.path = path
+            self.rowCount = rowCount
+            self.columnCount = columnCount
+        }
+    }
+
+    public struct PartsImportParserMetadata: Sendable {
+        public var parserName: String
+        public var parserVersion: String
+        public var sourceKind: PartsImportSourceKind
+        public var sourceHash: String?
+        public var rowCount: Int
+        public var columnCount: Int
+        public var sheetMetadata: [PartsImportWorkbookSheetMetadata]
+        public var boundedArchiveProtectionsApplied: Bool
+
+        public init(parserName: String, parserVersion: String, sourceKind: PartsImportSourceKind, sourceHash: String? = nil, rowCount: Int = 0, columnCount: Int = 0, sheetMetadata: [PartsImportWorkbookSheetMetadata] = [], boundedArchiveProtectionsApplied: Bool = false) {
+            self.parserName = parserName
+            self.parserVersion = parserVersion
+            self.sourceKind = sourceKind
+            self.sourceHash = sourceHash
+            self.rowCount = rowCount
+            self.columnCount = columnCount
+            self.sheetMetadata = sheetMetadata
+            self.boundedArchiveProtectionsApplied = boundedArchiveProtectionsApplied
+        }
+    }
+
     /// Metadata that ties an import preview/commit to a durable source artifact.
     public struct PartsImportSourceMetadata: Sendable {
         public var sourceKind: String
@@ -5990,13 +6128,17 @@ public final class PartsService: Sendable {
         public var sheetName: String?
         public var sourceHash: String?
         public var userId: Int64?
+        public var parserMetadata: PartsImportParserMetadata?
+        public var evidence: [PartsImportSourceEvidence]
 
-        public init(sourceKind: String, filename: String? = nil, sheetName: String? = nil, sourceHash: String? = nil, userId: Int64? = nil) {
+        public init(sourceKind: String, filename: String? = nil, sheetName: String? = nil, sourceHash: String? = nil, userId: Int64? = nil, parserMetadata: PartsImportParserMetadata? = nil, evidence: [PartsImportSourceEvidence] = []) {
             self.sourceKind = sourceKind
             self.filename = filename
             self.sheetName = sheetName
             self.sourceHash = sourceHash
             self.userId = userId
+            self.parserMetadata = parserMetadata
+            self.evidence = evidence
         }
     }
 
@@ -6037,21 +6179,12 @@ public final class PartsService: Sendable {
     }
 
     public func previewPartsImportCSV(_ csv: String) throws -> PartsImportPreview {
-        let rows = csv.components(separatedBy: .newlines)
-            .enumerated()
-            .compactMap { offset, line -> PartsImportTabularRow? in
-                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return nil }
-                return PartsImportTabularRow(
-                    rowNumber: offset + 1,
-                    columns: parseImportCSVLine(trimmed)
-                )
-            }
+        let parsedSource = PartsImportCSVAdapter(service: self).parse(csv)
+        let rows = parsedSource.table.rows.map {
+            PartsImportTabularRow(rowNumber: $0.rowNumber, columns: $0.columns)
+        }
         var preview = try previewPartsImportRows(rows, emptyDescription: "CSV file is empty or has no data rows.")
-        preview.source = PartsImportSourceMetadata(
-            sourceKind: "csv",
-            sourceHash: importSourceHash(Data(csv.utf8))
-        )
+        preview.source = parsedSource.source
         return preview
     }
 
@@ -6360,7 +6493,57 @@ public final class PartsService: Sendable {
         return "sha256:\(hex)"
     }
 
-    private func parseImportCSVLine(_ line: String) -> [String] {
+    struct PartsImportParsedSource {
+        let table: PartsImportExtractedTable
+        let source: PartsImportSourceMetadata
+    }
+
+    struct PartsImportCSVAdapter {
+        let service: PartsService
+
+        func parse(_ csv: String) -> PartsImportParsedSource {
+            let hash = service.importSourceHash(Data(csv.utf8))
+            let rows = csv.components(separatedBy: .newlines)
+                .enumerated()
+                .compactMap { offset, line -> PartsImportDraftRow? in
+                    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return nil }
+                    let rowNumber = offset + 1
+                    return PartsImportDraftRow(
+                        rowNumber: rowNumber,
+                        columns: service.parseImportCSVLine(trimmed),
+                        evidence: [
+                            PartsImportSourceEvidence(kind: .row, rowNumber: rowNumber, text: trimmed)
+                        ]
+                    )
+                }
+            let columnCount = rows.map(\.columns.count).max() ?? 0
+            let table = PartsImportExtractedTable(
+                id: "csv:table:1",
+                sourceKind: .csv,
+                headerRowNumber: rows.first?.rowNumber,
+                rows: rows,
+                evidence: [PartsImportSourceEvidence(kind: .sourceHash, text: hash)]
+            )
+            let parserMetadata = PartsImportParserMetadata(
+                parserName: "wiredpart.csv",
+                parserVersion: "1",
+                sourceKind: .csv,
+                sourceHash: hash,
+                rowCount: rows.count,
+                columnCount: columnCount
+            )
+            let source = PartsImportSourceMetadata(
+                sourceKind: PartsImportSourceKind.csv.rawValue,
+                sourceHash: hash,
+                parserMetadata: parserMetadata,
+                evidence: table.evidence
+            )
+            return PartsImportParsedSource(table: table, source: source)
+        }
+    }
+
+    fileprivate func parseImportCSVLine(_ line: String) -> [String] {
         var fields: [String] = []
         var current = ""
         var inQuotes = false
