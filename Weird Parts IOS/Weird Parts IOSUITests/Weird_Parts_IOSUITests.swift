@@ -1257,6 +1257,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     /// Navigates from the main tab bar to the Parts > Catalog page.
     private func navigateToCatalog() {
         logInAsUITestOwnerIfNeeded()
+        ensureLoginScreenDismissedForCatalogRoute()
         dismissTransientOnboardingOverlays()
         if waitForCatalogPage(timeout: 8) {
             return
@@ -1314,6 +1315,47 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         partsCatalogPage.waitForExistence(timeout: timeout)
         || catalogSearchField().waitForExistence(timeout: timeout)
         || app.staticTexts["Smart search applied filters"].waitForExistence(timeout: timeout)
+    }
+
+    private func ensureLoginScreenDismissedForCatalogRoute() {
+        let loginView = app.descendants(matching: .any)["loginView"]
+        guard loginView.exists else { return }
+
+        let userRows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'loginUserRow_'"))
+        if userRows.firstMatch.waitForExistence(timeout: 10) {
+            userRows.firstMatch.tap()
+        } else {
+            let ownerRow = app.buttons["loginUserRow_1"]
+            XCTAssertTrue(ownerRow.waitForExistence(timeout: 5), "UITest Owner row should be available before catalog navigation")
+            ownerRow.tap()
+        }
+
+        let pinField = app.secureTextFields["loginPINField"]
+        XCTAssertTrue(pinField.waitForExistence(timeout: 5), "PIN field should appear before catalog navigation")
+        pinField.tap()
+        pinField.typeText("1234")
+
+        let done = app.buttons["loginPINDoneButton"]
+        if done.waitForExistence(timeout: 2), done.isHittable {
+            done.tap()
+        }
+
+        let signIn = app.buttons["loginSignInButton"]
+        XCTAssertTrue(signIn.waitForExistence(timeout: 5), "Sign In should be available before catalog navigation")
+        XCTAssertTrue(signIn.isHittable, "Sign In should be hittable before catalog navigation")
+        signIn.tap()
+
+        let shellReady = NSPredicate { _, _ in
+            !loginView.exists ||
+            self.partsCatalogPage.exists ||
+            self.app.buttons["tab_parts"].exists ||
+            self.app.buttons["Parts"].exists ||
+            self.app.buttons["tab_dashboard"].exists ||
+            self.app.buttons["Dashboard"].exists
+        }
+        expectation(for: shellReady, evaluatedWith: app)
+        waitForExpectations(timeout: 20)
+        XCTAssertFalse(loginView.exists, "Catalog navigation should not continue while still on the login screen")
     }
 
     // MARK: - Helper: Wait for loading to complete
