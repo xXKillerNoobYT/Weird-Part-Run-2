@@ -423,6 +423,32 @@ struct JobsServiceTests {
         #expect(parts.count >= 1)
     }
 
+    @Test("job notes are timestamped and attributed through job notebook")
+    func testJobNotesAreTimestampedAndAttributed() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try env.jobs.createJob(
+            jobNumber: "J-NOTES",
+            jobName: "Notes Job",
+            notes: "Initial field note",
+            createdBy: env.adminUserId
+        )
+
+        _ = try env.jobs.addJobNote(
+            jobId: jobId,
+            title: "Field update",
+            content: "Crew finished rough-in walkthrough.",
+            createdBy: env.adminUserId
+        )
+
+        let notes = try env.jobs.listJobNotes(jobId: jobId)
+        #expect(notes.count >= 2)
+        #expect(notes.contains { $0.title == "Initial job note" && $0.content == "Initial field note" })
+        let update = try #require(notes.first { $0.title == "Field update" })
+        #expect(update.authorId == env.adminUserId)
+        #expect(!update.authorName.isEmpty)
+        #expect(update.createdAt != nil)
+    }
+
     // MARK: - Job Stages
 
     @Test("List job stages")
@@ -431,6 +457,55 @@ struct JobsServiceTests {
         let jobId = try E2ETestHelpers.seedJob(env)
         let stages = try env.jobs.listJobStages(forJobId: jobId)
         #expect(stages.count >= 0)
+    }
+
+    @Test("updateJobStage records attributed stage-change audit")
+    func testUpdateJobStageRecordsAudit() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let templateId = try #require(try env.jobs.listJobStageTemplates().first?.id)
+        let stages = try env.jobs.listAllJobStages(templateId: templateId)
+        let roughId = try #require(stages.first(where: { $0.name == "Rough-in" })?.id)
+        let trimId = try #require(stages.first(where: { $0.name == "Trim-out" })?.id)
+
+        try env.jobs.updateJobStage(jobId: jobId, stageId: roughId, changedBy: env.adminUserId)
+        try env.jobs.updateJobStage(jobId: jobId, stageId: trimId, changedBy: env.adminUserId, note: "Crew moved to trim.")
+
+        let currentStageId: Int64? = try env.db.writer.read { db in
+            try Int64.fetchOne(db, sql: "SELECT current_stage_id FROM jobs WHERE id = ?", arguments: [jobId])
+        }
+        let auditNotes = try env.jobs.listJobNotes(jobId: jobId).filter { $0.entryType == "stage_change" }
+        #expect(currentStageId == trimId)
+        #expect(auditNotes.count == 2)
+        #expect(auditNotes.contains { $0.title.contains("Rough-in -> Trim-out") && $0.content == "Crew moved to trim." })
+        #expect(auditNotes.allSatisfy { $0.authorId == env.adminUserId && $0.createdAt != nil })
+    }
+
+    @Test("job inventory movement feed reads Stage 3 job-linked stock movements")
+    func testJobInventoryMovementFeedReadsLinkedMovements() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let categoryId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Job Wire", categoryId: categoryId)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO stock_movements
+                    (part_id, qty, from_location_type, from_location_id, to_location_type, to_location_id,
+                     movement_type, reason, notes, performed_by, job_id, created_at)
+                VALUES (?, 4, 'warehouse', 1, 'job', ?, ?, 'Job pull', 'Pulled for install',
+                        ?, ?, datetime('now'))
+                """, arguments: [partId, jobId, StockMovement.MovementType.jobPull.rawValue, env.adminUserId, jobId])
+        }
+
+        let movements = try env.jobs.listJobInventoryMovements(jobId: jobId)
+        let movement = try #require(movements.first)
+        #expect(movement.partId == partId)
+        #expect(movement.partName == "Job Wire")
+        #expect(movement.qty == 4)
+        #expect(movement.movementType == StockMovement.MovementType.jobPull.rawValue)
+        #expect(movement.notes == "Pulled for install")
+        #expect(movement.performedByName == env.adminUser.displayName)
     }
 
     // MARK: - Active Clock Entry
