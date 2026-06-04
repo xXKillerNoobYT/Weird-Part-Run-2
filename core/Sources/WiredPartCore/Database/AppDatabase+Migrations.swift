@@ -134,12 +134,12 @@ extension AppDatabase {
         registerMigration095JobStageTemplates(&migrator)
         registerMigration096SubcontractorScheduleSoftDeleteUniqueness(&migrator)
         registerMigration097PartImportAuditSessions(&migrator)
+        registerMigration098JobReturnIntakeHolding(&migrator)
         registerMigration098NotebookEntryEditLocks(&migrator)
         registerMigration099POSupplierTransmission(&migrator)
+        registerMigration099ReceivingItemRoutingDisposition(&migrator)
         registerMigration100POEmailRequestType(&migrator)
-        registerMigration101JobReturnIntakeHolding(&migrator)
-        registerMigration102ReceivingItemRoutingDisposition(&migrator)
-        registerMigration103StagingBoxContentsAndDeliveryState(&migrator)
+        registerMigration100StagingBoxContentsAndDeliveryState(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5639,10 +5639,10 @@ extension AppDatabase {
         }
     }
 
-    // MARK: - Migration 101: Job return intake holding
+    // MARK: - Migration 098: Job return intake holding
 
-    private static func registerMigration101JobReturnIntakeHolding(_ migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("101_job_return_intake_holding") { db in
+    private static func registerMigration098JobReturnIntakeHolding(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("098_job_return_intake_holding") { db in
             try db.create(table: "job_return_intakes", ifNotExists: true) { t in
                 t.autoIncrementedPrimaryKey("id")
                 t.column("source_job_id", .integer).notNull().references("jobs")
@@ -5683,8 +5683,8 @@ extension AppDatabase {
         }
     }
 
-    private static func registerMigration102ReceivingItemRoutingDisposition(_ migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("102_receiving_item_routing_disposition") { db in
+    private static func registerMigration099ReceivingItemRoutingDisposition(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("099_receiving_item_routing_disposition") { db in
             try addColumnIfMissing(db, table: "receiving_session_items", column: "routing_disposition", type: .text)
             try addColumnIfMissing(db, table: "receiving_session_items", column: "routed_qty", type: .integer, defaultValue: 0)
             try addColumnIfMissing(db, table: "receiving_session_items", column: "routed_by", type: .integer)
@@ -5696,8 +5696,8 @@ extension AppDatabase {
         }
     }
 
-    private static func registerMigration103StagingBoxContentsAndDeliveryState(_ migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("103_staging_box_contents_delivery_state") { db in
+    private static func registerMigration100StagingBoxContentsAndDeliveryState(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("100_staging_box_contents_delivery_state") { db in
             try addColumnIfMissing(db, table: "staging_boxes", column: "status", type: .text, defaultValue: "staged")
             try addColumnIfMissing(db, table: "staging_boxes", column: "loaded_at", type: .text)
             try addColumnIfMissing(db, table: "staging_boxes", column: "delivered_at", type: .text)

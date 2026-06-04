@@ -1780,12 +1780,13 @@ private struct MisplacedPartSheet: View {
             let parts = try service.searchParts(query: query, limit: 15)
             partResults = parts.compactMap { part in
                 guard let id = part.id, id > 0, part.deletedAt == nil else { return nil }
+                let stock = (try? service.getPartStockSummary(partId: id).total)
                 return MisplacedLookupPart(
                     id: id,
                     name: part.name,
                     code: part.code,
                     detail: part.manufacturerPartNumber,
-                    totalStock: nil
+                    totalStock: stock
                 )
             }
             partLookupMessage = partResults.isEmpty
