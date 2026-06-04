@@ -141,12 +141,12 @@ public final class ReportsService: Sendable {
                            COALESCE(SUM(le.regular_hours), 0) AS regular_hours,
                            COALESCE(SUM(le.overtime_hours), 0) AS overtime_hours,
                            COALESCE(SUM(le.regular_hours), 0) + COALESCE(SUM(le.overtime_hours), 0) AS total_hours,
-                           COUNT(DISTINCT date(le.clock_in)) AS days_worked
+                           COUNT(DISTINCT \(Self.localDateSQL("le.clock_in"))) AS days_worked
                     FROM labor_entries le
                     LEFT JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
                     WHERE le.deleted_at IS NULL
-                      AND date(le.clock_in) >= date(?)
-                      AND date(le.clock_in) <= date(?)
+                      AND \(Self.localDateSQL("le.clock_in")) >= date(?)
+                      AND \(Self.localDateSQL("le.clock_in")) <= date(?)
                     GROUP BY le.user_id
                     ORDER BY user_name ASC
                     """
@@ -191,7 +191,7 @@ public final class ReportsService: Sendable {
                     JOIN jobs j ON j.id = le.job_id
                     WHERE le.deleted_at IS NULL
                       AND j.deleted_at IS NULL
-                      AND date(le.clock_in) = date(?)
+                      AND \(Self.localDateSQL("le.clock_in")) = date(?)
                     GROUP BY j.id
                     ORDER BY j.job_name ASC
                     """
@@ -376,7 +376,7 @@ public final class ReportsService: Sendable {
                            COALESCE(SUM(le.overtime_hours), 0) AS overtime_hours
                     FROM jobs j
                     LEFT JOIN labor_entries le ON le.job_id = j.id
-                        AND date(le.clock_in) >= ? AND date(le.clock_in) <= ?
+                        AND \(Self.localDateSQL("le.clock_in")) >= ? AND \(Self.localDateSQL("le.clock_in")) <= ?
                         AND le.deleted_at IS NULL
                         AND NOT EXISTS (
                             SELECT 1
@@ -384,8 +384,8 @@ public final class ReportsService: Sendable {
                             WHERE (bp.job_id = le.job_id OR bp.job_id IS NULL)
                               AND bp.locked_at IS NOT NULL
                               AND bp.deleted_at IS NULL
-                              AND date(le.clock_in) >= date(bp.period_start)
-                              AND date(le.clock_in) <= date(bp.period_end)
+                              AND \(Self.localDateSQL("le.clock_in")) >= date(bp.period_start)
+                              AND \(Self.localDateSQL("le.clock_in")) <= date(bp.period_end)
                         )
                     WHERE j.deleted_at IS NULL
                     GROUP BY j.id
@@ -458,7 +458,7 @@ public final class ReportsService: Sendable {
                            COALESCE(SUM(le.overtime_hours), 0) AS overtime_hours
                     FROM users u
                     JOIN labor_entries le ON le.user_id = u.id
-                    WHERE date(le.clock_in) >= ? AND date(le.clock_in) <= ?
+                    WHERE \(Self.localDateSQL("le.clock_in")) >= ? AND \(Self.localDateSQL("le.clock_in")) <= ?
                       AND le.deleted_at IS NULL
                     GROUP BY u.id
                     ORDER BY name
@@ -531,7 +531,7 @@ public final class ReportsService: Sendable {
                 SELECT COUNT(*) FROM labor_entries
                 WHERE status = 'clocked_in'
                   AND deleted_at IS NULL
-                  AND date(clock_in) >= date('now', 'start of month')
+                  AND \(Self.localDateSQL("clock_in")) >= date('now', 'localtime', 'start of month')
                 """
         )
 
@@ -540,7 +540,7 @@ public final class ReportsService: Sendable {
                 SELECT COALESCE(SUM(regular_hours + overtime_hours), 0)
                 FROM labor_entries
                 WHERE deleted_at IS NULL
-                  AND date(clock_in) >= date('now', 'start of month')
+                  AND \(Self.localDateSQL("clock_in")) >= date('now', 'localtime', 'start of month')
                 """
         )
 
@@ -706,7 +706,7 @@ public final class ReportsService: Sendable {
             return try db.writer.read { dbConn -> [[String]] in
                 let rows = try Row.fetchAll(dbConn, sql: """
                     SELECT COALESCE(u.display_name, u.email, 'Unknown') AS employee_name,
-                           date(le.clock_in) AS date,
+                           \(Self.localDateSQL("le.clock_in")) AS date,
                            ROUND(le.regular_hours + le.overtime_hours, 2) AS hours,
                            COALESCE(j.job_name, '') AS job_name,
                            COALESCE(le.status, '') AS activity_type,
@@ -717,7 +717,7 @@ public final class ReportsService: Sendable {
                     LEFT JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
                     LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
                     WHERE le.deleted_at IS NULL
-                      AND date(le.clock_in) >= ? AND date(le.clock_in) <= ?
+                      AND \(Self.localDateSQL("le.clock_in")) >= ? AND \(Self.localDateSQL("le.clock_in")) <= ?
                     ORDER BY le.clock_in DESC, employee_name
                     """, arguments: [startStr, endStr])
                 return rows.map { row in
@@ -793,7 +793,7 @@ public final class ReportsService: Sendable {
                                      FROM labor_entries le
                                      LEFT JOIN users u2 ON u2.id = le.user_id
                                      WHERE le.job_id = j.id AND le.deleted_at IS NULL
-                                       AND date(le.clock_in) >= ? AND date(le.clock_in) <= ?), 0) AS labor_cost,
+                                       AND \(Self.localDateSQL("le.clock_in")) >= ? AND \(Self.localDateSQL("le.clock_in")) <= ?), 0) AS labor_cost,
                            COALESCE((SELECT SUM(ABS(sm.qty) * COALESCE(sm.unit_cost_at_move, 0))
                                      FROM stock_movements sm
                                      WHERE sm.job_id = j.id AND sm.deleted_at IS NULL
@@ -933,6 +933,10 @@ public final class ReportsService: Sendable {
             if isTableNotFoundError(error) { return [] }
             throw error
         }
+    }
+
+    private static func localDateSQL(_ expression: String) -> String {
+        "CASE WHEN length(\(expression)) <= 10 THEN date(\(expression)) ELSE date(\(expression), 'localtime') END"
     }
 
     /// Detect whether a GRDB/SQLite error indicates a missing table.

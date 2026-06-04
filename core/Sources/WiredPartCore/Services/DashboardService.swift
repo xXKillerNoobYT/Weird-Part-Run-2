@@ -588,7 +588,7 @@ public final class DashboardService: Sendable {
                 var totalHours = try Double.fetchOne(conn, sql: """
                     SELECT COALESCE(SUM(regular_hours + overtime_hours), 0)
                     FROM labor_entries
-                    WHERE user_id = ? AND date(clock_in) = date('now') AND deleted_at IS NULL
+                    WHERE user_id = ? AND \(Self.localDateSQL("clock_in")) = date('now', 'localtime') AND deleted_at IS NULL
                     """, arguments: [userId]) ?? 0
 
                 // Active clock-in session
@@ -630,7 +630,7 @@ public final class DashboardService: Sendable {
                            ) AS total_hours
                     FROM labor_entries le
                     LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
-                    WHERE le.user_id = ? AND date(le.clock_in) = date('now') AND le.deleted_at IS NULL
+                    WHERE le.user_id = ? AND \(Self.localDateSQL("le.clock_in")) = date('now', 'localtime') AND le.deleted_at IS NULL
                     GROUP BY le.job_id
                     ORDER BY total_hours DESC
                     """, arguments: [userId])
@@ -656,7 +656,7 @@ public final class DashboardService: Sendable {
                     ), 0)
                     FROM break_records
                     WHERE user_id = ?
-                      AND date(started_at) = date('now')
+                      AND \(Self.localDateSQL("started_at")) = date('now', 'localtime')
                       AND deleted_at IS NULL
                     """, arguments: [userId]) ?? 0
 
@@ -803,11 +803,11 @@ public final class DashboardService: Sendable {
                     let dateStr = isoFormatter.string(from: date)
                     let regular = try Double.fetchOne(conn, sql: """
                         SELECT COALESCE(SUM(regular_hours), 0) FROM labor_entries
-                        WHERE date(clock_in) = ? AND deleted_at IS NULL
+                        WHERE \(Self.localDateSQL("clock_in")) = ? AND deleted_at IS NULL
                         """, arguments: [dateStr]) ?? 0
                     let overtime = try Double.fetchOne(conn, sql: """
                         SELECT COALESCE(SUM(overtime_hours), 0) FROM labor_entries
-                        WHERE date(clock_in) = ? AND deleted_at IS NULL
+                        WHERE \(Self.localDateSQL("clock_in")) = ? AND deleted_at IS NULL
                         """, arguments: [dateStr]) ?? 0
                     results.append(LaborDayRow(dateString: dateStr, regularHours: regular, overtimeHours: overtime))
                 }
@@ -1665,7 +1665,7 @@ public final class DashboardService: Sendable {
         let approvalsPending = try pendingOfficeApprovalCount()
         let workingToday = try safeCount(sql: """
             SELECT COUNT(DISTINCT user_id) FROM labor_entries
-            WHERE date(clock_in) = date('now')
+            WHERE \(Self.localDateSQL("clock_in")) = date('now', 'localtime')
               AND clock_out IS NULL
               AND deleted_at IS NULL
         """)
@@ -2208,7 +2208,7 @@ public final class DashboardService: Sendable {
         """)
         let clockedInToday = try safeCount(sql: """
             SELECT COUNT(DISTINCT user_id) FROM labor_entries
-            WHERE date(clock_in) = date('now')
+            WHERE \(Self.localDateSQL("clock_in")) = date('now', 'localtime')
               AND clock_out IS NULL
               AND deleted_at IS NULL
         """)
@@ -2363,6 +2363,10 @@ public final class DashboardService: Sendable {
     public func processQRScan(_ rawString: String) throws -> QRAutoFillResult {
         let autoFill = QRAutoFillService(db: db)
         return try autoFill.processQRScan(rawString)
+    }
+
+    private static func localDateSQL(_ expression: String) -> String {
+        "CASE WHEN length(\(expression)) <= 10 THEN date(\(expression)) ELSE date(\(expression), 'localtime') END"
     }
 
     /// Detect whether a GRDB/SQLite error indicates a missing table.
