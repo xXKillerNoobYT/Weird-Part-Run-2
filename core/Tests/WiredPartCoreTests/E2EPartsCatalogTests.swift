@@ -118,6 +118,22 @@ struct E2EPartsCatalogTests {
         #expect(conduitResults.count == 1)
     }
 
+    @Test("Search parts excludes inactive catalog rows")
+    func testPartSearchExcludesInactiveParts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let activeId = try env.parts.createPart(categoryId: catId, name: "Search Active Fuse", code: "SEARCH-ACTIVE")
+        let inactiveId = try env.parts.createPart(categoryId: catId, name: "Search Inactive Fuse", code: "SEARCH-INACTIVE")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET is_active = 0 WHERE id = ?", arguments: [inactiveId])
+        }
+
+        let results = try env.parts.searchParts(query: "Search")
+        #expect(results.contains { $0.id == activeId })
+        #expect(!results.contains { $0.id == inactiveId })
+    }
+
     @Test("Part list with filters")
     func testPartListFilters() throws {
         let env = try E2ETestHelpers.setUp()
@@ -130,6 +146,27 @@ struct E2EPartsCatalogTests {
         let wireOnly = try env.parts.listParts(categoryId: cat1)
         #expect(wireOnly.count == 1)
         #expect(wireOnly[0].part.name == "Wire Part")
+    }
+
+    @Test("Part list filters compose category supplier and keyword")
+    func testPartListFiltersByCategorySupplierAndKeyword() throws {
+        let env = try E2ETestHelpers.setUp()
+        let wireCategoryId = try env.parts.createCategory(name: "Filter Wire")
+        let conduitCategoryId = try env.parts.createCategory(name: "Filter Conduit")
+        let targetSupplierId = try env.parts.createSupplier(name: "Filter Target Supply")
+        let otherSupplierId = try env.parts.createSupplier(name: "Filter Other Supply")
+
+        let targetPartId = try env.parts.createPart(categoryId: wireCategoryId, name: "Filter Target Breaker", code: "FILTER-TARGET")
+        let wrongSupplierPartId = try env.parts.createPart(categoryId: wireCategoryId, name: "Filter Target Other Supplier", code: "FILTER-OTHER-SUP")
+        let wrongCategoryPartId = try env.parts.createPart(categoryId: conduitCategoryId, name: "Filter Target Conduit", code: "FILTER-OTHER-CAT")
+
+        _ = try env.parts.addPartSupplierLink(partId: targetPartId, supplierId: targetSupplierId, supplierPartNumber: "TARGET-001", costPrice: 12)
+        _ = try env.parts.addPartSupplierLink(partId: wrongSupplierPartId, supplierId: otherSupplierId, supplierPartNumber: "OTHER-001", costPrice: 13)
+        _ = try env.parts.addPartSupplierLink(partId: wrongCategoryPartId, supplierId: targetSupplierId, supplierPartNumber: "TARGET-002", costPrice: 14)
+
+        let results = try env.parts.listParts(search: "Filter Target", categoryId: wireCategoryId, supplierId: targetSupplierId)
+        #expect(results.count == 1)
+        #expect(results[0].part.id == targetPartId)
     }
 
     // MARK: - Brands & Suppliers
@@ -316,6 +353,23 @@ struct E2EPartsCatalogTests {
         #expect(csv.contains("CSV-001"))
     }
 
+    @Test("Parts CSV export excludes inactive catalog rows")
+    func testCSVExportExcludesInactiveParts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "CSVActiveOnly")
+        _ = try env.parts.createPart(categoryId: catId, name: "CSV Active Part", code: "CSV-ACTIVE")
+        let inactiveId = try env.parts.createPart(categoryId: catId, name: "CSV Inactive Part", code: "CSV-INACTIVE")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET is_active = 0 WHERE id = ?", arguments: [inactiveId])
+        }
+
+        let csv = try env.parts.exportPartsCSV(groups: [.hierarchy])
+        #expect(csv.contains("CSV Active Part"))
+        #expect(!csv.contains("CSV Inactive Part"))
+        #expect(!csv.contains("CSV-INACTIVE"))
+    }
+
     // MARK: - Color Part Numbers (#46)
 
     @Test("Create color with part number and fetch it back")
@@ -374,6 +428,22 @@ struct E2EPartsCatalogTests {
         try env.parts.updateSupplierPartNumber(linkId: linkId, supplierPartNumber: "SUP-XYZ-789")
         let updated = try env.parts.getPartSuppliers(partId: partId)
         #expect(updated[0].supplierPartNumber == "SUP-XYZ-789")
+    }
+
+    @Test("Part supports multiple supplier associations")
+    func testPartSupportsMultipleSuppliers() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let primarySupplierId = try env.parts.createSupplier(name: "Multi Supplier Primary")
+        let backupSupplierId = try env.parts.createSupplier(name: "Multi Supplier Backup")
+
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: primarySupplierId, supplierPartNumber: "MS-PRI", costPrice: 10.50, isPreferred: true)
+        _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: backupSupplierId, supplierPartNumber: "MS-BAK", costPrice: 11.25)
+
+        let links = try env.parts.getPartSuppliers(partId: partId)
+        #expect(links.count == 2)
+        #expect(Set(links.map(\.supplierId)) == Set([primarySupplierId, backupSupplierId]))
     }
 
     @Test("Search parts by color part number")
