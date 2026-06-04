@@ -117,6 +117,34 @@ struct SettingsServiceTests {
         #expect(!syncable.contains { $0.key == "last_backup_time" })
     }
 
+    @Test("isAutoSyncEnabled defaults to true")
+    func testAutoSyncDefaultsEnabled() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        #expect(try svc.isAutoSyncEnabled() == true)
+    }
+
+    @Test("isAutoSyncEnabled respects explicit false")
+    func testAutoSyncExplicitFalse() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        try svc.upsertSetting(key: "auto_sync", value: "false", category: "sync")
+
+        #expect(try svc.isAutoSyncEnabled() == false)
+    }
+
+    @Test("isAutoSyncEnabled treats explicit true as enabled")
+    func testAutoSyncExplicitTrue() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        try svc.upsertSetting(key: "auto_sync", value: "true", category: "sync")
+
+        #expect(try svc.isAutoSyncEnabled() == true)
+    }
+
     // MARK: - Theme
 
     @Test("getTheme returns defaults when no settings exist")

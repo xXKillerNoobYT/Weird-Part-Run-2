@@ -641,27 +641,23 @@ public final class DashboardService: Sendable {
                     )
                 }
 
-                // Break minutes (gaps between consecutive entries)
+                // Break minutes are sourced from the Clock page break/lunch records.
                 let breakMinutes = try Int.fetchOne(conn, sql: """
-                    SELECT COALESCE(SUM(gap_minutes), 0) FROM (
-                        SELECT CAST((julianday(le2.clock_in) - julianday(le1.clock_out)) * 1440 AS INTEGER) AS gap_minutes
-                        FROM labor_entries le1
-                        JOIN labor_entries le2
-                            ON le2.user_id = le1.user_id
-                            AND le2.clock_in > le1.clock_out
-                            AND le2.deleted_at IS NULL
-                            AND date(le2.clock_in) = date('now')
-                        WHERE le1.user_id = ? AND le1.clock_out IS NOT NULL AND le1.deleted_at IS NULL
-                            AND date(le1.clock_in) = date('now')
-                            AND NOT EXISTS (
-                                SELECT 1 FROM labor_entries le3
-                                WHERE le3.user_id = le1.user_id
-                                    AND le3.clock_in > le1.clock_out
-                                    AND le3.clock_in < le2.clock_in
-                                    AND le3.deleted_at IS NULL
-                                    AND date(le3.clock_in) = date('now')
-                            )
-                    )
+                    SELECT COALESCE(SUM(
+                        CASE
+                            WHEN ended_at IS NOT NULL THEN
+                                COALESCE(
+                                    duration_minutes,
+                                    CAST((julianday(ended_at) - julianday(started_at)) * 1440 AS INTEGER)
+                                )
+                            ELSE
+                                CAST((julianday('now') - julianday(started_at)) * 1440 AS INTEGER)
+                        END
+                    ), 0)
+                    FROM break_records
+                    WHERE user_id = ?
+                      AND date(started_at) = date('now')
+                      AND deleted_at IS NULL
                     """, arguments: [userId]) ?? 0
 
                 return MyHoursToday(

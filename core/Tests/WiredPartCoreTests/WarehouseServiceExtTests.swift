@@ -1051,6 +1051,153 @@ struct WarehouseServiceExtTests {
         #expect(movementId > 0)
     }
 
+    @Test("Job Return intake holds returned items outside shelf stock until confirmed")
+    func testJobReturnIntakeHoldsOutsideShelfStockUntilConfirmed() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        let intakeId = try env.warehouse.createJobReturnIntake(
+            sourceJobId: jobId,
+            returnSource: "crew_return",
+            returnedBy: env.adminUserId,
+            lines: [
+                .init(partId: partId, qty: 4, condition: "usable", notes: "Unused material from job"),
+            ],
+            notes: "End-of-job cleanup"
+        )
+        #expect(intakeId > 0)
+
+        let holdingItems = try env.warehouse.getJobReturnHoldingItems(jobId: jobId)
+        #expect(holdingItems.count == 1)
+        #expect(holdingItems.first?.qtyRemaining == 4)
+        #expect(holdingItems.first?.poLineId == nil)
+
+        let shelfBefore = try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1)
+        #expect(shelfBefore == 0)
+
+        guard let holdingItem = holdingItems.first else { return }
+        let route = try env.warehouse.suggestReceivingRoute(
+            partId: partId,
+            condition: holdingItem.condition,
+            source: .jobReturn(intakeItemId: holdingItem.id)
+        )
+        if case .jobReturnHolding(let routedItemId, _) = route {
+            #expect(routedItemId == holdingItem.id)
+        } else {
+            #expect(Bool(false), "Usable job returns should stay in return holding before explicit shelf confirmation")
+        }
+
+        _ = try env.warehouse.confirmJobReturnShelfRoute(
+            intakeItemId: holdingItem.id,
+            qty: 4,
+            performedBy: env.adminUserId
+        )
+
+        let shelfAfter = try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1)
+        #expect(shelfAfter == 4)
+
+        let remainingHolding = try env.warehouse.getJobReturnHoldingItems(jobId: jobId)
+        #expect(remainingHolding.isEmpty)
+    }
+
+    @Test("Job Return damaged and wrong-part outcomes stay in review without shelf stock")
+    func testJobReturnReviewOutcomesDoNotAffectShelfStock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let damagedPartId = try E2ETestHelpers.seedPart(env, name: "Damaged Return Part", categoryId: catId)
+        let wrongPartId = try E2ETestHelpers.seedPart(env, name: "Wrong Return Part", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        _ = try env.warehouse.createJobReturnIntake(
+            sourceJobId: jobId,
+            returnSource: "truck_cleanout",
+            returnedBy: env.adminUserId,
+            lines: [
+                .init(partId: damagedPartId, qty: 2, condition: "damaged"),
+                .init(partId: wrongPartId, qty: 1, condition: "wrong_part"),
+            ]
+        )
+
+        let holdingItems = try env.warehouse.getJobReturnHoldingItems(jobId: jobId)
+        #expect(Set(holdingItems.map(\.status)) == Set(["damaged_review", "wrong_part_review"]))
+
+        let damaged = holdingItems.first { $0.partId == damagedPartId }
+        let wrong = holdingItems.first { $0.partId == wrongPartId }
+        if let damaged {
+            let route = try env.warehouse.suggestReceivingRoute(
+                partId: damagedPartId,
+                condition: "damaged",
+                source: .jobReturn(intakeItemId: damaged.id)
+            )
+            if case .jobReturnDamagedReview(let itemId) = route {
+                #expect(itemId == damaged.id)
+            } else {
+                #expect(Bool(false), "Damaged job returns without supplier data should use damaged review")
+            }
+        }
+        if let wrong {
+            let route = try env.warehouse.suggestReceivingRoute(
+                partId: wrongPartId,
+                condition: "wrong_part",
+                source: .jobReturn(intakeItemId: wrong.id)
+            )
+            if case .jobReturnWrongPartReview(let itemId) = route {
+                #expect(itemId == wrong.id)
+            } else {
+                #expect(Bool(false), "Wrong job returns should use wrong-part review")
+            }
+        }
+
+        #expect(try env.warehouse.getStockQty(partId: damagedPartId, locationType: "warehouse", locationId: 1) == 0)
+        #expect(try env.warehouse.getStockQty(partId: wrongPartId, locationType: "warehouse", locationId: 1) == 0)
+    }
+
+    @Test("Job Return staging and write-off routes do not affect shelf stock")
+    func testJobReturnStagingAndWriteOffDoNotAffectShelfStock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let stagedPartId = try E2ETestHelpers.seedPart(env, name: "Returned Stage Part", categoryId: catId)
+        let writeOffPartId = try E2ETestHelpers.seedPart(env, name: "Returned Write-Off Part", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        _ = try env.warehouse.createJobReturnIntake(
+            sourceJobId: jobId,
+            returnSource: "job_box",
+            returnedBy: env.adminUserId,
+            lines: [
+                .init(partId: stagedPartId, qty: 3),
+                .init(partId: writeOffPartId, qty: 2),
+            ]
+        )
+        let holdingItems = try env.warehouse.getJobReturnHoldingItems(jobId: jobId)
+        guard let staged = holdingItems.first(where: { $0.partId == stagedPartId }),
+              let writeOff = holdingItems.first(where: { $0.partId == writeOffPartId })
+        else { return }
+
+        _ = try env.warehouse.confirmJobReturnStagingRoute(
+            intakeItemId: staged.id,
+            qty: 3,
+            jobId: jobId,
+            performedBy: env.adminUserId
+        )
+        _ = try env.warehouse.writeOffJobReturnItem(
+            intakeItemId: writeOff.id,
+            qty: 2,
+            reason: "Not reusable",
+            performedBy: env.adminUserId
+        )
+
+        #expect(try env.warehouse.getStockQty(partId: stagedPartId, locationType: "warehouse", locationId: 1) == 0)
+        #expect(try env.warehouse.getStockQty(partId: writeOffPartId, locationType: "warehouse", locationId: 1) == 0)
+        #expect(try env.warehouse.getStockQty(partId: stagedPartId, locationType: "pulled", locationId: jobId) == 3)
+
+        let movements = try env.warehouse.listMovements(limit: 20)
+        #expect(movements.contains { $0.partId == stagedPartId && $0.movementType == "receiving_staged" })
+        #expect(movements.contains { $0.partId == writeOffPartId && $0.movementType == "write_off" })
+    }
+
     // MARK: - Storage Hierarchy: createStorageUnit, deleteStorageLevel, deleteStorageArea, assignPartToBin
 
     @Test("createStorageUnit builds full hierarchy with levels and areas")
@@ -1343,6 +1490,82 @@ struct WarehouseServiceExtTests {
         #expect(nextBox.jobId == jobId)
     }
 
+    @Test("staging boxes assign and remove staged items without clearing the tag")
+    func testStagingBoxContentsAssignAndRemove() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BOX-01", name: "Box Job")
+        let tagId = try seedStagingTag(env, jobId: jobId, partName: "Boxed EMT")
+        let box = try env.warehouse.createStagingBox(jobId: jobId, size: "normal")
+
+        let contentId = try env.warehouse.assignStagedItemToBox(stagingTagId: tagId, boxId: box.id)
+        #expect(contentId > 0)
+
+        let contents = try env.warehouse.listStagingBoxContents(boxId: box.id)
+        #expect(contents.count == 1)
+        #expect(contents.first?.stagingTagId == tagId)
+        #expect(contents.first?.partName == "Boxed EMT")
+        #expect(try env.warehouse.getStagedItems().contains { $0.id == tagId })
+
+        try env.warehouse.removeStagedItemFromBox(stagingTagId: tagId, boxId: box.id)
+        #expect(try env.warehouse.listStagingBoxContents(boxId: box.id).isEmpty)
+        #expect(try env.warehouse.getStagedItems().contains { $0.id == tagId })
+    }
+
+    @Test("loaded and delivered boxes resolve staged items while preserving content history")
+    func testStagingBoxDeliveryTransitionsResolveStagedItems() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BOX-02", name: "Delivery Job")
+        let tagId = try seedStagingTag(env, jobId: jobId, partName: "Delivery Wire")
+        let box = try env.warehouse.createStagingBox(jobId: jobId, size: "large")
+        _ = try env.warehouse.assignStagedItemToBox(stagingTagId: tagId, boxId: box.id)
+
+        try env.warehouse.updateStagingBoxDeliveryState(boxId: box.id, status: "loaded")
+        #expect(!(try env.warehouse.getStagedItems()).contains { $0.id == tagId })
+        #expect(try env.warehouse.listStagingBoxContents(boxId: box.id).first?.status == "loaded")
+
+        try env.warehouse.updateStagingBoxDeliveryState(boxId: box.id, status: "delivered")
+        let deliveredBox = try env.warehouse.listStagingBoxes(jobId: jobId).first
+        #expect(deliveredBox?.status == "delivered")
+        #expect(deliveredBox?.contentCount == 1)
+        #expect(try env.warehouse.listStagingBoxContents(boxId: box.id).first?.status == "delivered")
+        #expect(!(try env.warehouse.getStagedItems()).contains { $0.id == tagId })
+    }
+
+    @Test("returned-cancelled box restores staged items for resolution")
+    func testReturnedCancelledBoxRestoresStagedItems() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BOX-03", name: "Return Job")
+        let tagId = try seedStagingTag(env, jobId: jobId, partName: "Return Conduit")
+        let box = try env.warehouse.createStagingBox(jobId: jobId, size: "small")
+        _ = try env.warehouse.assignStagedItemToBox(stagingTagId: tagId, boxId: box.id)
+
+        try env.warehouse.updateStagingBoxDeliveryState(boxId: box.id, status: "loaded")
+        #expect(!(try env.warehouse.getStagedItems()).contains { $0.id == tagId })
+
+        try env.warehouse.updateStagingBoxDeliveryState(boxId: box.id, status: "returned_cancelled")
+        #expect(try env.warehouse.getStagedItems().contains { $0.id == tagId })
+        #expect(try env.warehouse.listStagingBoxContents(boxId: box.id).first?.status == "returned_cancelled")
+    }
+
+    @Test("staging box delivery migration exposes status columns and contents table")
+    func testStagingBoxDeliveryMigrationShape() throws {
+        let env = try E2ETestHelpers.setUp()
+        let columns = try env.db.writer.read { db in
+            try db.columns(in: "staging_boxes").map(\.name)
+        }
+        #expect(columns.contains("status"))
+        #expect(columns.contains("loaded_at"))
+        #expect(columns.contains("delivered_at"))
+        #expect(columns.contains("returned_cancelled_at"))
+
+        let contentColumns = try env.db.writer.read { db in
+            try db.columns(in: "staging_box_contents").map(\.name)
+        }
+        #expect(contentColumns.contains("box_id"))
+        #expect(contentColumns.contains("staging_tag_id"))
+        #expect(contentColumns.contains("status"))
+    }
+
     // MARK: - Quantity validation guards (iter 72)
 
     @Test("updateSessionItem throws invalidQuantity for negative receivedQty")
@@ -1351,6 +1574,23 @@ struct WarehouseServiceExtTests {
         #expect(throws: WarehouseService.WarehouseError.invalidQuantity) {
             try env.warehouse.updateSessionItem(itemId: 1, receivedQty: -1)
         }
+    }
+
+    private func seedStagingTag(_ env: E2ETestHelpers.TestEnvironment, jobId: Int64, partName: String) throws -> Int64 {
+        let catId = try E2ETestHelpers.seedCategory(env, name: "Box Test \(UUID().uuidString.prefix(6))")
+        let partId = try E2ETestHelpers.seedPart(env, name: partName, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 4)
+        guard let stockId = try env.parts.getPartStock(partId: partId).first?["id"] as Int64? else {
+            Issue.record("No stock row found for staging box test")
+            throw WarehouseService.WarehouseError.partNotFound(partId)
+        }
+        return try env.warehouse.createStagingTag(
+            stockId: stockId,
+            destinationType: "job",
+            destinationId: jobId,
+            destinationLabel: "Job \(jobId)",
+            taggedBy: env.adminUserId
+        )
     }
 
     @Test("recordScan throws invalidQuantity for zero qty")
@@ -1631,6 +1871,53 @@ struct WarehouseServiceExtTests {
             try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM stock_movements WHERE part_id = 0") ?? 0
         }
         #expect(badMovements == 0)
+    }
+
+    @Test("completeSession does not add routed PO incoming items to shelf stock")
+    func testCompleteSession_skipsRoutedPOIncomingShelfStock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Routed PO Part", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-PO-STAGE", name: "PO Stage Job")
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-ROUTED-STAGE", supplierId: supplierId, notes: nil)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, part_id, qty_ordered, unit_cost)
+                VALUES (?, ?, 3, 5.0)
+                """, arguments: [poId, partId])
+        }
+
+        let sessionId = try env.warehouse.startReceivingSession(poId: poId, startedBy: env.adminUserId)
+        let item = try #require(try env.warehouse.getSessionItems(sessionId: sessionId).first)
+        try env.warehouse.updateSessionItem(itemId: item.id, receivedQty: 3)
+        _ = try env.warehouse.stageReceivedPartsForJob(
+            partId: partId,
+            qty: 3,
+            jobId: jobId,
+            performedBy: env.adminUserId,
+            notes: "Regression: staged before PO completion"
+        )
+        try env.warehouse.markReceivingSessionItemRouted(
+            itemId: item.id,
+            disposition: .staged,
+            routedQty: 3,
+            routedBy: env.adminUserId
+        )
+
+        try env.warehouse.completeSession(sessionId: sessionId, completedBy: env.adminUserId)
+
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1) == 0)
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "pulled", locationId: jobId) == 3)
+
+        let receivingMovements = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM stock_movements
+                WHERE part_id = ? AND movement_type = 'receiving'
+                """, arguments: [partId]) ?? 0
+        }
+        #expect(receivingMovements == 0)
     }
 
     // MARK: - Bin/Area assignment + misplaced-parts validation (iter 82)

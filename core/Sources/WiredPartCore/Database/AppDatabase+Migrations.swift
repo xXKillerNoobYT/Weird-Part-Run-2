@@ -134,9 +134,12 @@ extension AppDatabase {
         registerMigration095JobStageTemplates(&migrator)
         registerMigration096SubcontractorScheduleSoftDeleteUniqueness(&migrator)
         registerMigration097PartImportAuditSessions(&migrator)
+        registerMigration098JobReturnIntakeHolding(&migrator)
         registerMigration098NotebookEntryEditLocks(&migrator)
         registerMigration099POSupplierTransmission(&migrator)
+        registerMigration099ReceivingItemRoutingDisposition(&migrator)
         registerMigration100POEmailRequestType(&migrator)
+        registerMigration100StagingBoxContentsAndDeliveryState(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5633,6 +5636,97 @@ extension AppDatabase {
                 t.add(column: "sent_by_user_id",           .integer) // FK to users
                 t.add(column: "supplier_confirmation_num", .text)    // Optional PO# / reference from supplier
             }
+        }
+    }
+
+    // MARK: - Migration 098: Job return intake holding
+
+    private static func registerMigration098JobReturnIntakeHolding(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("098_job_return_intake_holding") { db in
+            try db.create(table: "job_return_intakes", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("source_job_id", .integer).notNull().references("jobs")
+                t.column("return_source", .text).notNull().defaults(to: "job")
+                t.column("returned_by", .integer).notNull().references("users")
+                t.column("status", .text).notNull().defaults(to: "holding")
+                t.column("notes", .text)
+                t.column("completed_at", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            }
+
+            try db.create(table: "job_return_intake_items", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("intake_id", .integer).notNull()
+                    .references("job_return_intakes", onDelete: .cascade)
+                t.column("part_id", .integer).notNull().references("parts")
+                t.column("source_job_part_id", .integer).references("job_parts")
+                t.column("supplier_id", .integer).references("suppliers")
+                t.column("po_line_id", .integer).references("po_line_items")
+                t.column("qty_returned", .integer).notNull()
+                t.column("qty_remaining", .integer).notNull()
+                t.column("condition", .text).notNull().defaults(to: "usable")
+                t.column("status", .text).notNull().defaults(to: "holding")
+                t.column("notes", .text)
+                t.column("routed_by", .integer).references("users")
+                t.column("routed_at", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.check(sql: "qty_returned > 0")
+                t.check(sql: "qty_remaining >= 0")
+            }
+
+            try db.create(index: "idx_job_return_intakes_job", on: "job_return_intakes", columns: ["source_job_id", "status"])
+            try db.create(index: "idx_job_return_items_intake", on: "job_return_intake_items", columns: ["intake_id", "status"])
+            try db.create(index: "idx_job_return_items_part", on: "job_return_intake_items", columns: ["part_id", "status"])
+        }
+    }
+
+    private static func registerMigration099ReceivingItemRoutingDisposition(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("099_receiving_item_routing_disposition") { db in
+            try addColumnIfMissing(db, table: "receiving_session_items", column: "routing_disposition", type: .text)
+            try addColumnIfMissing(db, table: "receiving_session_items", column: "routed_qty", type: .integer, defaultValue: 0)
+            try addColumnIfMissing(db, table: "receiving_session_items", column: "routed_by", type: .integer)
+            try addColumnIfMissing(db, table: "receiving_session_items", column: "routed_at", type: .text)
+
+            try db.create(index: "idx_receiving_items_routing_disposition",
+                          on: "receiving_session_items",
+                          columns: ["session_id", "routing_disposition"])
+        }
+    }
+
+    private static func registerMigration100StagingBoxContentsAndDeliveryState(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("100_staging_box_contents_delivery_state") { db in
+            try addColumnIfMissing(db, table: "staging_boxes", column: "status", type: .text, defaultValue: "staged")
+            try addColumnIfMissing(db, table: "staging_boxes", column: "loaded_at", type: .text)
+            try addColumnIfMissing(db, table: "staging_boxes", column: "delivered_at", type: .text)
+            try addColumnIfMissing(db, table: "staging_boxes", column: "returned_cancelled_at", type: .text)
+            try db.execute(sql: "UPDATE staging_boxes SET status = 'staged' WHERE status IS NULL OR status = ''")
+
+            try db.create(table: "staging_box_contents", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("box_id", .integer).notNull()
+                    .references("staging_boxes", onDelete: .cascade)
+                t.column("staging_tag_id", .integer).notNull()
+                    .references("pulled_staging_tags", onDelete: .cascade)
+                t.column("status", .text).notNull()
+                    .defaults(to: "staged")
+                t.column("assigned_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+                t.column("removed_at", .text)
+                t.column("loaded_at", .text)
+                t.column("delivered_at", .text)
+                t.column("returned_cancelled_at", .text)
+                t.column("deleted_at", .text)
+            }
+
+            try db.create(index: "idx_staging_box_contents_box",
+                          on: "staging_box_contents",
+                          columns: ["box_id"])
+            try db.create(index: "idx_staging_box_contents_tag",
+                          on: "staging_box_contents",
+                          columns: ["staging_tag_id"])
         }
     }
 }

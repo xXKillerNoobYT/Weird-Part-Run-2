@@ -152,6 +152,15 @@ public final class SettingsService: Sendable {
         }
     }
 
+    /// Whether automatic background/launch sync is enabled.
+    ///
+    /// Missing settings default to enabled so existing configured sync installs
+    /// keep their prior behavior; only an explicit "false" opts out.
+    public func isAutoSyncEnabled() throws -> Bool {
+        let value = try getSettingsByCategory("sync")["auto_sync"]
+        return value != "false"
+    }
+
     /// Bulk upsert a dictionary of key->value pairs under one category.
     ///
     /// This must be a single database write transaction so a mid-map failure cannot
