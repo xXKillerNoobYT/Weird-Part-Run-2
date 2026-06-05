@@ -27,6 +27,10 @@ private func insertPoweredVote(
 // MARK: - Helper: Build a minimal XLSX workbook for import tests
 
 private func makeMinimalXLSX(sheetName: String, rows: [[String]], rowNumbers: [Int]? = nil) throws -> Data {
+    try makeMinimalXLSX(sheets: [(sheetName, rows, rowNumbers)])
+}
+
+private func makeMinimalXLSX(sheets: [(name: String, rows: [[String]], rowNumbers: [Int]?)]) throws -> Data {
     func escapeXML(_ value: String) -> String {
         value
             .replacingOccurrences(of: "&", with: "&amp;")
@@ -47,43 +51,58 @@ private func makeMinimalXLSX(sheetName: String, rows: [[String]], rowNumbers: [I
         return result
     }
 
+    let sheetContentTypes = sheets.enumerated().map { offset, _ in
+        "  <Override PartName=\"/xl/worksheets/sheet\(offset + 1).xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>"
+    }.joined(separator: "\n")
     let contentTypesXML = """
     <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
       <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
       <Default Extension="xml" ContentType="application/xml"/>
       <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-      <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+    \(sheetContentTypes)
     </Types>
     """
 
+    let sheetListXML = sheets.enumerated().map { offset, sheet in
+        "<sheet name=\"\(escapeXML(sheet.name))\" sheetId=\"\(offset + 1)\" r:id=\"rId\(offset + 1)\"/>"
+    }.joined()
     let workbookXML = """
     <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-      <sheets><sheet name="\(escapeXML(sheetName))" sheetId="1" r:id="rId1"/></sheets>
+      <sheets>\(sheetListXML)</sheets>
     </workbook>
     """
 
+    let relationships = sheets.enumerated().map { offset, _ in
+        "  <Relationship Id=\"rId\(offset + 1)\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet\(offset + 1).xml\"/>"
+    }.joined(separator: "\n")
     let workbookRelationshipsXML = """
     <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-      <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+    \(relationships)
     </Relationships>
     """
 
-    let rowXML: String = rows.enumerated().map { rowIndex, values in
-        let spreadsheetRow = rowNumbers?[rowIndex] ?? rowIndex + 1
-        let cells: String = values.enumerated().map { columnIndex, value in
-            "<c r=\"\(columnName(columnIndex))\(spreadsheetRow)\" t=\"inlineStr\"><is><t>\(escapeXML(value))</t></is></c>"
+    func worksheetXML(rows: [[String]], rowNumbers: [Int]?) -> String {
+        let rowXML: String = rows.enumerated().map { rowIndex, values in
+            let spreadsheetRow = rowNumbers?[rowIndex] ?? rowIndex + 1
+            let cells: String = values.enumerated().map { columnIndex, value in
+                "<c r=\"\(columnName(columnIndex))\(spreadsheetRow)\" t=\"inlineStr\"><is><t>\(escapeXML(value))</t></is></c>"
+            }.joined()
+            return "<row r=\"\(spreadsheetRow)\">\(cells)</row>"
         }.joined()
-        return "<row r=\"\(spreadsheetRow)\">\(cells)</row>"
-    }.joined()
-    let worksheetXML = """
-    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-    <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-      <sheetData>\(rowXML)</sheetData>
-    </worksheet>
-    """
+        return """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+          <sheetData>\(rowXML)</sheetData>
+        </worksheet>
+        """
+    }
+
+    let worksheetEntries = sheets.enumerated().map { offset, sheet in
+        ("xl/worksheets/sheet\(offset + 1).xml", Data(worksheetXML(rows: sheet.rows, rowNumbers: sheet.rowNumbers).utf8))
+    }
 
     let temporaryURL = FileManager.default.temporaryDirectory
         .appendingPathComponent("xlsx-test-\(UUID().uuidString).xlsx")
@@ -93,9 +112,8 @@ private func makeMinimalXLSX(sheetName: String, rows: [[String]], rowNumbers: [I
     let entries: [(String, Data)] = [
         ("[Content_Types].xml", Data(contentTypesXML.utf8)),
         ("xl/workbook.xml", Data(workbookXML.utf8)),
-        ("xl/_rels/workbook.xml.rels", Data(workbookRelationshipsXML.utf8)),
-        ("xl/worksheets/sheet1.xml", Data(worksheetXML.utf8))
-    ]
+        ("xl/_rels/workbook.xml.rels", Data(workbookRelationshipsXML.utf8))
+    ] + worksheetEntries
     for (path, data) in entries {
         try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(data.count)) { position, size in
             data.subdata(in: Int(position)..<Int(position) + size)
@@ -448,6 +466,12 @@ struct PartsServiceAdvancedTests {
         #expect(source.filename == nil)
         #expect(source.sourceHash?.hasPrefix("sha256:") == true)
         #expect(source.sourceHash?.count == 71)
+        #expect(source.parserMetadata?.parserName == "wiredpart.csv")
+        #expect(source.parserMetadata?.sourceKind == .csv)
+        #expect(source.parserMetadata?.sourceHash == source.sourceHash)
+        #expect(source.parserMetadata?.rowCount == 2)
+        #expect(source.parserMetadata?.columnCount == 3)
+        #expect(source.evidence.contains(where: { $0.kind == .sourceHash }) == true)
     }
 
     @Test("previewPartsImportXLSX attaches source metadata for audit sessions")
@@ -465,6 +489,126 @@ struct PartsServiceAdvancedTests {
         #expect(source.filename == nil)
         #expect(source.sourceHash?.hasPrefix("sha256:") == true)
         #expect(source.sourceHash?.count == 71)
+        #expect(source.parserMetadata?.parserName == "wiredpart.xlsx")
+        #expect(source.parserMetadata?.sourceKind == .xlsx)
+        #expect(source.parserMetadata?.sourceHash == source.sourceHash)
+        #expect(source.parserMetadata?.boundedArchiveProtectionsApplied == true)
+        #expect(source.parserMetadata?.sheetMetadata.first?.name == "Audit")
+        #expect(source.parserMetadata?.sheetMetadata.first?.rowCount == 2)
+        #expect(source.parserMetadata?.sheetMetadata.first?.columnCount == 3)
+    }
+
+    @Test("shared import source contracts cover future parser source kinds")
+    func testSharedImportSourceContractsCoverFutureParserKinds() {
+        let kinds: Set<PartsService.PartsImportSourceKind> = [.csv, .xlsx, .digitalPDFText, .ocr, .vision]
+        #expect(kinds.map(\.rawValue).contains("digital_pdf_text"))
+        #expect(kinds.count == 5)
+
+        let evidence = PartsService.PartsImportSourceEvidence(
+            kind: .boundingBox,
+            pageNumber: 2,
+            text: "OCR cell",
+            confidence: 0.92,
+            boundingBox: [1, 2, 3, 4]
+        )
+        let draftRow = PartsService.PartsImportDraftRow(rowNumber: 7, columns: ["Part", "Cost"], evidence: [evidence])
+        let table = PartsService.PartsImportExtractedTable(
+            id: "vision:page:2",
+            sourceKind: .vision,
+            pageNumber: 2,
+            headerRowNumber: 7,
+            rows: [draftRow],
+            evidence: [evidence]
+        )
+
+        #expect(table.sourceKind == .vision)
+        #expect(table.rows.first?.evidence.first?.kind == .boundingBox)
+        #expect(PartsService.PartsImportPreviewDecision.conflict.rawValue == "conflict")
+    }
+
+    @Test("CSV and XLSX adapters produce compatible preview rows and source hashes")
+    func testCSVAndXLSXAdapterParity() throws {
+        let env = try E2ETestHelpers.setUp()
+        let csv = """
+        name,code,category,brand,cost_price
+        Adapter Parity Part,PAR-001,Parity Category,Parity Brand,10.5
+        """
+        let xlsx = try makeMinimalXLSX(sheetName: "Parity", rows: [
+            ["name", "code", "category", "brand", "cost_price"],
+            ["Adapter Parity Part", "PAR-001", "Parity Category", "Parity Brand", "10.5"]
+        ])
+
+        let csvPreview = try env.parts.previewPartsImportCSV(csv)
+        let xlsxPreview = try env.parts.previewPartsImportXLSX(xlsx)
+
+        #expect(csvPreview.newParts.count == 1)
+        #expect(xlsxPreview.newParts.count == 1)
+        #expect(csvPreview.newParts.first?.fields == xlsxPreview.newParts.first?.fields)
+        #expect(csvPreview.newParts.first?.name == xlsxPreview.newParts.first?.name)
+        #expect(csvPreview.source?.parserMetadata?.sourceKind == .csv)
+        #expect(xlsxPreview.source?.parserMetadata?.sourceKind == .xlsx)
+        #expect(csvPreview.source?.sourceHash?.hasPrefix("sha256:") == true)
+        #expect(xlsxPreview.source?.sourceHash?.hasPrefix("sha256:") == true)
+    }
+
+    @Test("preview adapters do not create import sessions or row evidence")
+    func testImportPreviewAdaptersDoNotWriteAuditTables() throws {
+        let env = try E2ETestHelpers.setUp()
+        let beforeSessions = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM part_import_sessions") ?? -1
+        }
+        let beforeEvidence = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM part_import_row_evidence") ?? -1
+        }
+
+        _ = try env.parts.previewPartsImportCSV("""
+        name,code,category
+        Preview CSV Only,PREVIEW-CSV-001,Preview Category
+        """)
+        let xlsx = try makeMinimalXLSX(sheetName: "Preview", rows: [
+            ["name", "code", "category"],
+            ["Preview XLSX Only", "PREVIEW-XLSX-001", "Preview Category"]
+        ])
+        _ = try env.parts.previewPartsImportXLSX(xlsx)
+
+        let afterSessions = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM part_import_sessions") ?? -1
+        }
+        let afterEvidence = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM part_import_row_evidence") ?? -1
+        }
+        #expect(afterSessions == beforeSessions)
+        #expect(afterEvidence == beforeEvidence)
+        #expect(try env.parts.findPartByCode("PREVIEW-CSV-001") == nil)
+        #expect(try env.parts.findPartByCode("PREVIEW-XLSX-001") == nil)
+    }
+
+    @Test("XLSX adapter exposes workbook sheet metadata while preserving first sheet preview behavior")
+    func testPreviewPartsImportXLSXExposesWorkbookSheetMetadata() throws {
+        let env = try E2ETestHelpers.setUp()
+        let xlsx = try makeMinimalXLSX(sheets: [
+            ("First", [
+                ["name", "code", "category"],
+                ["First Sheet Part", "FIRST-XLSX-001", "First Category"]
+            ], nil),
+            ("Second", [
+                ["name", "code", "category", "cost_price"],
+                ["Second Sheet Part", "SECOND-XLSX-001", "Second Category", "42"]
+            ], nil)
+        ])
+
+        let preview = try env.parts.previewPartsImportXLSX(xlsx)
+        let metadata = try #require(preview.source?.parserMetadata)
+
+        #expect(preview.newParts.count == 1)
+        #expect(preview.newParts.first?.code == "FIRST-XLSX-001")
+        #expect(preview.source?.sheetName == "First")
+        #expect(metadata.sheetMetadata.count == 2)
+        #expect(metadata.sheetMetadata.map(\.name) == ["First", "Second"])
+        #expect(metadata.sheetMetadata[0].path == "xl/worksheets/sheet1.xml")
+        #expect(metadata.sheetMetadata[1].path == "xl/worksheets/sheet2.xml")
+        #expect(metadata.sheetMetadata[1].rowCount == 2)
+        #expect(metadata.sheetMetadata[1].columnCount == 4)
     }
 
     @Test("commitPartsImportCSV records durable import session and accepted row evidence")
