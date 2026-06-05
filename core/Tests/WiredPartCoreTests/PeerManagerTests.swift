@@ -136,6 +136,7 @@ struct PeerManagerTests {
         let result = await pm.syncWithPeer(peer)
         #expect(result.success == false)
         #expect(result.error != nil)
+        #expect(result.error?.contains("LAN sync encryption key exchange failed") == true)
         #expect(result.peerDeviceId == "unreachable-dev")
 
         await pm.stopPeerSync()

@@ -33,6 +33,26 @@ public struct PeerSyncResult: Sendable {
     }
 }
 
+public enum PeerSyncSecurityError: Error, LocalizedError, Sendable {
+    case keyExchangeRequired(peerDeviceId: String)
+    case sharedKeyDerivationFailed(peerDeviceId: String)
+    case encryptionFailed
+    case decryptionFailed
+
+    public var errorDescription: String? {
+        switch self {
+        case .keyExchangeRequired(let peerDeviceId):
+            return "LAN sync encryption key exchange failed for peer \(peerDeviceId)"
+        case .sharedKeyDerivationFailed(let peerDeviceId):
+            return "LAN sync shared key derivation failed for peer \(peerDeviceId)"
+        case .encryptionFailed:
+            return "LAN sync payload encryption failed"
+        case .decryptionFailed:
+            return "LAN sync response decryption failed"
+        }
+    }
+}
+
 // MARK: - Peer Manager State
 
 /// Snapshot of the peer manager's current state.
@@ -428,8 +448,9 @@ public actor PeerManager {
         let baseURL = "http://\(peer.host):\(peer.port)"
         let lastSyncAt = state.lastPeerSyncs[peer.deviceId]?.syncedAt
 
-        // Resolve shared key for this peer (fetches /sync/key once then caches)
-        let sharedKeyData = await resolveSharedKey(baseURL: baseURL, peerDeviceId: peer.deviceId)
+        // Resolve shared key for this peer (fetches /sync/key once then caches).
+        // LAN sync must fail closed: no plaintext fallback when key negotiation fails.
+        let sharedKeyData = try await resolveSharedKey(baseURL: baseURL, peerDeviceId: peer.deviceId)
 
         // 1. Push our changes
         if !enrichedChanges.isEmpty {
@@ -449,11 +470,11 @@ public actor PeerManager {
             var urlRequest = URLRequest(url: pushURL)
             urlRequest.httpMethod = "POST"
             urlRequest.timeoutInterval = 30
-            applyPayload(&urlRequest, plain: plainPushBody, sharedKeyData: sharedKeyData)
+            try applyPayload(&urlRequest, plain: plainPushBody, sharedKeyData: sharedKeyData)
 
             let (pushData, pushResp) = try await URLSession.shared.data(for: urlRequest)
             if let httpResp = pushResp as? HTTPURLResponse, httpResp.statusCode == 200 {
-                let plainPushData = decrypt(pushData, sharedKeyData: sharedKeyData)
+                let plainPushData = try decrypt(pushData, sharedKeyData: sharedKeyData)
                 if let result = try? JSONDecoder().decode(SyncPushResponse.self, from: plainPushData) {
                     pushed = result.accepted
                     let syncedIds = pendingChanges.compactMap { $0.id }
@@ -478,11 +499,11 @@ public actor PeerManager {
         var pullURLRequest = URLRequest(url: pullURL)
         pullURLRequest.httpMethod = "POST"
         pullURLRequest.timeoutInterval = 30
-        applyPayload(&pullURLRequest, plain: plainPullBody, sharedKeyData: sharedKeyData)
+        try applyPayload(&pullURLRequest, plain: plainPullBody, sharedKeyData: sharedKeyData)
 
         let (pullData, pullResp) = try await URLSession.shared.data(for: pullURLRequest)
         if let httpResp = pullResp as? HTTPURLResponse, httpResp.statusCode == 200 {
-            let plainPullData = decrypt(pullData, sharedKeyData: sharedKeyData)
+            let plainPullData = try decrypt(pullData, sharedKeyData: sharedKeyData)
             if let result = try? JSONDecoder().decode(SyncPullResponse.self, from: plainPullData) {
                 pulled = result.changes.count
 
@@ -513,8 +534,8 @@ public actor PeerManager {
     // MARK: - Private: Payload Encryption Helpers
 
     /// Fetch the peer's X25519 KA public key from GET /sync/key (cached).
-    /// Returns nil if the peer doesn't support encryption (old version or network error).
-    private func resolveSharedKey(baseURL: String, peerDeviceId: String) async -> Data? {
+    /// Throws if the peer doesn't support encryption or key derivation fails.
+    private func resolveSharedKey(baseURL: String, peerDeviceId: String) async throws -> Data {
         // Use cached peer KA public key if available
         let peerKAKey: String
         if let cached = peerKAPublicKeys[peerDeviceId], !cached.isEmpty {
@@ -522,14 +543,19 @@ public actor PeerManager {
         } else if let fetched = await fetchPeerKAPublicKey(baseURL: baseURL, peerDeviceId: peerDeviceId) {
             peerKAKey = fetched
         } else {
-            // Peer doesn't support encryption — sync will proceed unencrypted (logged in fetchPeerKAPublicKey)
-            return nil
+            throw PeerSyncSecurityError.keyExchangeRequired(peerDeviceId: peerDeviceId)
         }
-        guard !peerKAKey.isEmpty, !kaPrivateKeyB64.isEmpty else { return nil }
-        return try? SyncCrypto.deriveSharedKeyData(
-            ourPrivateKeyB64: kaPrivateKeyB64,
-            theirPublicKeyB64: peerKAKey
-        )
+        guard !peerKAKey.isEmpty, !kaPrivateKeyB64.isEmpty else {
+            throw PeerSyncSecurityError.sharedKeyDerivationFailed(peerDeviceId: peerDeviceId)
+        }
+        do {
+            return try SyncCrypto.deriveSharedKeyData(
+                ourPrivateKeyB64: kaPrivateKeyB64,
+                theirPublicKeyB64: peerKAKey
+            )
+        } catch {
+            throw PeerSyncSecurityError.sharedKeyDerivationFailed(peerDeviceId: peerDeviceId)
+        }
     }
 
     /// Call GET /sync/key on the peer to get their X25519 KA public key.
@@ -554,38 +580,35 @@ public actor PeerManager {
             peerKAPublicKeys[peerDeviceId] = decoded.key
             return decoded.key
         }
-        logger.warning("Peer \(String(peerDeviceId.prefix(8)), privacy: .public)... does not support encryption — sync will be unencrypted over LAN")
+        logger.warning("Peer \(String(peerDeviceId.prefix(8)), privacy: .public)... failed LAN sync key exchange; refusing plaintext fallback")
         peerKAPublicKeys[peerDeviceId] = ""
         return nil
     }
 
-    /// Attach encrypted or plaintext body + headers to a URLRequest.
-    /// If sharedKeyData is nil, sends plaintext JSON (backward compat).
+    /// Attach encrypted body + headers to a URLRequest.
     private func applyPayload(
         _ request: inout URLRequest,
         plain: Data,
-        sharedKeyData: Data?
-    ) {
-        if let keyData = sharedKeyData,
-           let encrypted = try? SyncCrypto.encryptAESGCM(data: plain, keyData: keyData) {
+        sharedKeyData: Data
+    ) throws {
+        do {
+            let encrypted = try SyncCrypto.encryptAESGCM(data: plain, keyData: sharedKeyData)
             request.httpBody = encrypted
             request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
             request.setValue("1", forHTTPHeaderField: "X-Sync-Encrypted")
             request.setValue(kaPublicKeyB64, forHTTPHeaderField: "X-Sync-Sender-Key")
-        } else {
-            request.httpBody = plain
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        } catch {
+            throw PeerSyncSecurityError.encryptionFailed
         }
     }
 
-    /// Decrypt a response body if a shared key was used for this request.
-    /// Falls back to the raw data if decryption isn't needed or fails.
-    private func decrypt(_ data: Data, sharedKeyData: Data?) -> Data {
-        guard let keyData = sharedKeyData,
-              let plain = try? SyncCrypto.decryptAESGCM(data: data, keyData: keyData) else {
-            return data
+    /// Decrypt an encrypted response body. Never falls back to plaintext.
+    private func decrypt(_ data: Data, sharedKeyData: Data) throws -> Data {
+        do {
+            return try SyncCrypto.decryptAESGCM(data: data, keyData: sharedKeyData)
+        } catch {
+            throw PeerSyncSecurityError.decryptionFailed
         }
-        return plain
     }
 
     // MARK: - Private: Inbox Processing

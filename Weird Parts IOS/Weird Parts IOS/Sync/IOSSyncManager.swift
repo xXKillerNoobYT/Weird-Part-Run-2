@@ -169,7 +169,7 @@ final class IOSSyncManager {
             }
             let failed = results.filter { !$0.success }
             if !failed.isEmpty, errorMessage == nil {
-                errorMessage = "Sync failed with \(failed.count) peer(s)"
+                errorMessage = failed.compactMap(\.error).first ?? "Sync failed with \(failed.count) peer(s)"
             }
         }
 

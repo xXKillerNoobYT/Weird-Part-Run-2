@@ -510,13 +510,13 @@ public final class LanSyncServer: Sendable {
         headers: [String: String],
         state: SyncServerState
     ) async -> (Int, Data) {
-        // Decrypt body if sender used payload encryption
+        // LAN sync carries operational data; reject plaintext instead of downgrade.
         let (plainBody, sharedKeyData) = await decryptIfNeeded(
             body: body,
             headers: headers,
             state: state
         )
-        guard let plainBody else {
+        guard let plainBody, let sharedKeyData else {
             let json = #"{"error":"decryption_failed"}"#
             return (400, Data(json.utf8))
         }
@@ -553,13 +553,13 @@ public final class LanSyncServer: Sendable {
         headers: [String: String],
         state: SyncServerState
     ) async -> (Int, Data) {
-        // Decrypt body if sender used payload encryption
+        // LAN sync carries operational data; reject plaintext instead of downgrade.
         let (plainBody, sharedKeyData) = await decryptIfNeeded(
             body: body,
             headers: headers,
             state: state
         )
-        guard let plainBody else {
+        guard let plainBody, let sharedKeyData else {
             let json = #"{"error":"decryption_failed"}"#
             return (400, Data(json.utf8))
         }
@@ -595,10 +595,10 @@ public final class LanSyncServer: Sendable {
         return encryptIfNeeded(responseData, sharedKeyData: sharedKeyData)
     }
 
-    /// Decrypt the body if the request carries encryption headers.
+    /// Decrypt the body when the request carries required encryption headers.
     /// Returns the plain body and the shared key data (for response encryption),
     /// or (nil, nil) if decryption was attempted but failed.
-    /// If the request is not encrypted, returns (body, nil) unchanged.
+    /// If the request is not encrypted, returns (nil, nil) so callers fail closed.
     private static func decryptIfNeeded(
         body: Data,
         headers: [String: String],
@@ -607,7 +607,7 @@ public final class LanSyncServer: Sendable {
         guard headers["x-sync-encrypted"] == "1",
               let senderKAKey = headers["x-sync-sender-key"],
               !senderKAKey.isEmpty else {
-            return (body, nil)  // Not encrypted — pass through
+            return (nil, nil)
         }
         let ourPrivateKey = state.kaPrivateKeyB64
         guard let keyData = try? SyncCrypto.deriveSharedKeyData(
@@ -621,16 +621,9 @@ public final class LanSyncServer: Sendable {
         return (plainBody, keyData)
     }
 
-    /// Encrypt response data if a shared key is available (i.e. request was encrypted).
-    /// If no shared key: request arrived unencrypted, so plaintext response is expected.
-    /// If encryption fails with a key present: fail-closed (500) rather than leaking plaintext.
-    private static func encryptIfNeeded(_ data: Data, sharedKeyData: Data?) -> (Int, Data) {
-        guard let keyData = sharedKeyData else {
-            // No shared key — plaintext session, plaintext response is correct.
-            return (200, data)
-        }
-        guard let encrypted = try? SyncCrypto.encryptAESGCM(data: data, keyData: keyData) else {
-            // Encryption failed despite having a key — fail closed, never send plaintext.
+    /// Encrypt response data. If encryption fails, fail closed rather than leaking plaintext.
+    private static func encryptIfNeeded(_ data: Data, sharedKeyData: Data) -> (Int, Data) {
+        guard let encrypted = try? SyncCrypto.encryptAESGCM(data: data, keyData: sharedKeyData) else {
             let errorJson = #"{"error":"encryption_failed"}"#
             return (500, Data(errorJson.utf8))
         }
