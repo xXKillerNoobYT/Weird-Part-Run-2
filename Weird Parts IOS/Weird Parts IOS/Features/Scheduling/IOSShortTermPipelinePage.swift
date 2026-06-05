@@ -298,10 +298,10 @@ struct IOSShortTermPipelinePage: View {
         do {
             try service.markCallbackComplete(jobId: jobId, notes: notes)
             loadData()
+            activeSheet = nil
         } catch {
-            loadError = userFriendlyError(error, context: "load pipeline data")
+            loadError = userFriendlyError(error, context: "complete callback")
         }
-        activeSheet = nil
     }
 
     private func snoozeCallback(jobId: Int64, days: Int) {
@@ -313,10 +313,10 @@ struct IOSShortTermPipelinePage: View {
         do {
             try service.snoozeCallback(jobId: jobId, until: Formatters.localDateFormatter.string(from: target))
             loadData()
+            activeSheet = nil
         } catch {
-            loadError = userFriendlyError(error, context: "load pipeline data")
+            loadError = userFriendlyError(error, context: "snooze callback")
         }
-        activeSheet = nil
     }
 
     // MARK: - Data Loading

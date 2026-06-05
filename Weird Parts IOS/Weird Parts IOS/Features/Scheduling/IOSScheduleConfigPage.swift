@@ -486,10 +486,10 @@ struct IOSScheduleConfigPage: View {
                 overtimeRule: data.overtimeRule
             )
             shiftTemplates = (try? svc.getShiftTemplates()) ?? []
+            activeSheet = nil
         } catch {
             saveError = userFriendlyError(error, context: "save shift template")
         }
-        activeSheet = nil
     }
 
     private func deleteShiftTemplate(_ id: Int64) {
@@ -497,10 +497,10 @@ struct IOSScheduleConfigPage: View {
         do {
             try svc.deleteShiftTemplate(id: id)
             shiftTemplates = (try? svc.getShiftTemplates()) ?? []
+            activeSheet = nil
         } catch {
             saveError = userFriendlyError(error, context: "delete shift template")
         }
-        activeSheet = nil
     }
 
     private func saveHoliday(_ data: HolidayEditSheet.HolidayData) {
@@ -511,10 +511,10 @@ struct IOSScheduleConfigPage: View {
                 isPaid: data.isPaid, isRecurring: data.isRecurring
             )
             holidays = (try? svc.getHolidays()) ?? []
+            activeSheet = nil
         } catch {
             saveError = userFriendlyError(error, context: "save holiday")
         }
-        activeSheet = nil
     }
 
     private func deleteHoliday(_ id: Int64) {
@@ -522,10 +522,10 @@ struct IOSScheduleConfigPage: View {
         do {
             try svc.deleteHoliday(id: id)
             holidays = (try? svc.getHolidays()) ?? []
+            activeSheet = nil
         } catch {
             saveError = userFriendlyError(error, context: "delete holiday")
         }
-        activeSheet = nil
     }
 }
 
