@@ -610,7 +610,7 @@ public final class AuthService: Sendable {
         public let status: String
     }
 
-    /// Summary of an active (trusted) session.
+    /// Summary of an active local auth session.
     public struct ActiveSession: Sendable {
         public let id: String
         public let userId: String
@@ -648,21 +648,25 @@ public final class AuthService: Sendable {
         }
     }
 
-    /// List active (trusted, non-deactivated) sessions from the device registry.
+    /// List active local auth sessions that can be revoked by force logout.
     public func listActiveSessions() throws -> [ActiveSession] {
         do {
             return try db.writer.read { dbConnection in
+                let nowMs = Date().timeIntervalSince1970 * 1000
                 let rows = try Row.fetchAll(dbConnection, sql: """
-                    SELECT dr.rowid AS id, dr.device_id, dr.created_at,
-                           COALESCE(dr.device_name, 'Unknown') AS user_name
-                    FROM _device_registry dr
-                    WHERE dr.is_trusted = 1 AND dr.is_deactivated = 0
-                    ORDER BY dr.last_seen_at DESC
-                """)
+                    SELECT ats.token_id AS id, ats.user_id, ats.created_at,
+                           COALESCE(u.display_name, 'Unknown') AS user_name
+                    FROM auth_token_sessions ats
+                    LEFT JOIN users u ON u.id = ats.user_id AND u.deleted_at IS NULL
+                    WHERE ats.token_type = 'local_refresh'
+                      AND ats.revoked_at IS NULL
+                      AND ats.expires_at_ms > ?
+                    ORDER BY ats.created_at DESC
+                """, arguments: [nowMs])
                 return rows.map { row in
                     ActiveSession(
-                        id: "\(row["id"] as Int64? ?? 0)",
-                        userId: row["device_id"] as? String ?? "unknown",
+                        id: row["id"] as? String ?? "",
+                        userId: "\(row["user_id"] as Int64? ?? 0)",
                         userName: row["user_name"] as? String ?? "Unknown",
                         createdAt: row["created_at"] as? String ?? "Unknown"
                     )
@@ -674,13 +678,11 @@ public final class AuthService: Sendable {
         }
     }
 
-    /// Force-deactivate a session by its rowid in the device registry.
+    /// Force-revoke a local auth session by refresh-token id.
     public func deactivateSession(sessionId: String) throws {
         try db.writer.write { dbConnection in
-            try dbConnection.execute(
-                sql: "UPDATE _device_registry SET is_deactivated = 1 WHERE rowid = ?",
-                arguments: [sessionId]
-            )
+            let now = Self.currentTimestamp()
+            try Self.revokeTokenFamily(rootRefreshId: sessionId, in: dbConnection, revokedAt: now)
         }
     }
 
@@ -1363,6 +1365,36 @@ public final class AuthService: Sendable {
         try dbConn.execute(
             sql: "UPDATE auth_token_sessions SET revoked_at = ? WHERE token_id = ?",
             arguments: [revokedAt, tokenId]
+        )
+    }
+
+    private static func revokeTokenFamily(rootRefreshId: String, in dbConn: Database, revokedAt: String) throws {
+        try dbConn.execute(
+            sql: """
+                WITH RECURSIVE refresh_family(token_id) AS (
+                    SELECT token_id
+                    FROM auth_token_sessions
+                    WHERE token_id = ? AND token_type = 'local_refresh'
+                    UNION ALL
+                    SELECT child.token_id
+                    FROM auth_token_sessions child
+                    JOIN refresh_family parent ON child.parent_refresh_id = parent.token_id
+                    WHERE child.token_type = 'local_refresh'
+                ),
+                tokens_to_revoke(token_id) AS (
+                    SELECT token_id FROM refresh_family
+                    UNION
+                    SELECT ats.token_id
+                    FROM auth_token_sessions ats
+                    JOIN refresh_family family ON ats.parent_refresh_id = family.token_id
+                    WHERE ats.token_type = 'local_access'
+                )
+                UPDATE auth_token_sessions
+                SET revoked_at = ?
+                WHERE token_id IN (SELECT token_id FROM tokens_to_revoke)
+                  AND revoked_at IS NULL
+                """,
+            arguments: [rootRefreshId, revokedAt]
         )
     }
 
