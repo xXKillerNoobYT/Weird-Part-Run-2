@@ -1,9 +1,14 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 import Testing
 import GRDB
 @testable import WiredPartCore
 
-@Suite("JobsService Tests")
+@Suite("JobsService Tests", .serialized)
 struct JobsServiceTests {
 
     // MARK: - Job CRUD
@@ -255,48 +260,43 @@ struct JobsServiceTests {
 
     @Test("Daily overtime threshold spans multiple labor entries")
     func testDailyOvertimeThresholdSpansMultipleLaborEntries() throws {
-        let env = try E2ETestHelpers.setUp()
-        let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-1", name: "First OT Job")
-        let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-2", name: "Second OT Job")
+        try withMountainTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-1", name: "First OT Job")
+            let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-2", name: "Second OT Job")
 
-        try env.db.writer.write { db in
-            try db.execute(sql: """
-                INSERT INTO labor_entries
-                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
-                VALUES
-                    (
-                        ?,
-                        ?,
-                        date(datetime('now', '-4 hours')) || ' 00:00:00',
-                        date(datetime('now', '-4 hours')) || ' 06:00:00',
-                        6.0,
-                        0.0,
-                        'completed',
-                        datetime('now')
-                    )
-                """, arguments: [env.adminUserId, firstJobId])
+            let firstClockIn = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 8, minute: 0))
+            let firstClockOut = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 14, minute: 0))
+
+            try env.db.writer.write { db in
+                try db.execute(sql: """
+                    INSERT INTO labor_entries
+                        (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                    VALUES (?, ?, ?, ?, 6.0, 0.0, 'completed', datetime('now'))
+                    """, arguments: [env.adminUserId, firstJobId, firstClockIn, firstClockOut])
+            }
+
+            let secondLaborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: secondJobId)
+            try env.db.writer.write { db in
+                try db.execute(
+                    sql: "UPDATE labor_entries SET clock_in = datetime('now', '-4 hours'), clock_out = NULL WHERE id = ?",
+                    arguments: [secondLaborEntryId]
+                )
+            }
+
+            try env.jobs.clockOut(laborEntryId: secondLaborEntryId)
+
+            let secondEntry = try env.db.writer.read { db in
+                try Row.fetchOne(
+                    db,
+                    sql: "SELECT regular_hours, overtime_hours FROM labor_entries WHERE id = ?",
+                    arguments: [secondLaborEntryId]
+                )
+            }
+
+            #expect(secondEntry?["regular_hours"] as Double? == 2.0)
+            #expect(secondEntry?["overtime_hours"] as Double? == 2.0)
         }
-
-        let secondLaborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: secondJobId)
-        try env.db.writer.write { db in
-            try db.execute(
-                sql: "UPDATE labor_entries SET clock_in = datetime('now', '-4 hours') WHERE id = ?",
-                arguments: [secondLaborEntryId]
-            )
-        }
-
-        try env.jobs.clockOut(laborEntryId: secondLaborEntryId)
-
-        let secondEntry = try env.db.writer.read { db in
-            try Row.fetchOne(
-                db,
-                sql: "SELECT regular_hours, overtime_hours FROM labor_entries WHERE id = ?",
-                arguments: [secondLaborEntryId]
-            )
-        }
-
-        #expect(secondEntry?["regular_hours"] as Double? == 2.0)
-        #expect(secondEntry?["overtime_hours"] as Double? == 2.0)
     }
 
     // MARK: - Team Members
@@ -544,6 +544,32 @@ struct JobsServiceTests {
         #expect(groups.first?.jobId == jobId)
     }
 
+    @Test("Today's clock entries use local-day completed labor")
+    func testGetTodaysClockEntriesUsesLocalOperationalDayForCompletedLabor() throws {
+        try withMountainTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CLOCK-LOCAL", name: "Local Clock Job")
+            let clockIn = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 22, minute: 30))
+            let clockOut = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 23, minute: 30))
+
+            try env.db.writer.write { db in
+                try db.execute(sql: "DELETE FROM labor_entries")
+                try db.execute(sql: """
+                    INSERT INTO labor_entries
+                        (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                    VALUES (?, ?, ?, ?, 1.0, 0.0, 'completed', datetime('now'))
+                    """, arguments: [env.adminUserId, jobId, clockIn, clockOut])
+            }
+
+            let groups = try env.jobs.getTodaysClockEntries(userId: env.adminUserId)
+            let group = try #require(groups.first(where: { $0.jobId == jobId }))
+
+            #expect(group.jobName == "Local Clock Job")
+            #expect(group.entries.count == 1)
+            #expect(abs(group.totalDuration - 3600) < 1)
+        }
+    }
+
     // MARK: - Report Detail & Review
 
     @Test("Get report detail and mark reviewed")
@@ -601,6 +627,28 @@ struct JobsServiceTests {
         #expect(kpis.activeJobs >= 1)
     }
 
+    @Test("Jobs dashboard KPIs bucket UTC end-of-day labor into local today")
+    func testJobsDashboardKPIsUseLocalClockInDateBucket() throws {
+        try withMountainTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-KPI-LOCAL", name: "Local KPI")
+            let clockIn = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 23, minute: 30))
+
+            try env.db.writer.write { db in
+                try db.execute(sql: "DELETE FROM labor_entries")
+                try db.execute(sql: """
+                    INSERT INTO labor_entries
+                        (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                    VALUES (?, ?, ?, ?, 3.0, 0.0, 'completed', datetime('now'))
+                    """, arguments: [env.adminUserId, jobId, clockIn, clockIn])
+            }
+
+            let kpis = try env.jobs.getJobsDashboardKPIs()
+
+            #expect(kpis.todayLaborHours == 3.0)
+        }
+    }
+
     // MARK: - Supply Run Toggle & Labor Notes
 
     @Test("Toggle supply run updates labor entry notes")
@@ -619,6 +667,40 @@ struct JobsServiceTests {
         #expect(notesAfter?.contains("supply_run_start") == true)
 
         try env.jobs.clockOut(laborEntryId: laborEntryId)
+    }
+
+    private static let utcTimestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return formatter
+    }()
+
+    private static func localToday(hour: Int, minute: Int) throws -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "America/Denver"))
+        var components = calendar.dateComponents([.year, .month, .day], from: Date())
+        components.hour = hour
+        components.minute = minute
+        components.second = 0
+        return try #require(calendar.date(from: components))
+    }
+
+    private func withMountainTimeZone<T>(_ body: () throws -> T) rethrows -> T {
+        #if canImport(Darwin) || canImport(Glibc)
+        let originalTZ = getenv("TZ").map { String(cString: $0) }
+        setenv("TZ", "America/Denver", 1)
+        tzset()
+        defer {
+            if let originalTZ {
+                setenv("TZ", originalTZ, 1)
+            } else {
+                unsetenv("TZ")
+            }
+            tzset()
+        }
+        #endif
+        return try body()
     }
 
     // MARK: - Jobs for Customer

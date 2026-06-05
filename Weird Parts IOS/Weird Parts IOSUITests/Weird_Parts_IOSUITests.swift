@@ -334,6 +334,56 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     }
 
     @MainActor
+    func testWEI2475WarehouseLocationsDirectRouteReachesSeededFloorPlan() throws {
+        app.terminate()
+        app = XCUIApplication()
+        configureUITestingEnvironment(app)
+        app.launchArguments += [
+            "-UITesting",
+            "-UITestingWEI936AutoLogin",
+            "-UITestingWarehouseLocations"
+        ]
+        app.launch()
+
+        XCTAssertTrue(
+            app.navigationBars["Warehouse"].waitForExistence(timeout: 30) ||
+                app.staticTexts["Warehouse"].waitForExistence(timeout: 30),
+            "Warehouse module should open without the manual login/PIN route"
+        )
+        XCTAssertTrue(
+            app.buttons["Shelving"].waitForExistence(timeout: 10) ||
+                app.staticTexts["UITesting Shelf A"].waitForExistence(timeout: 10),
+            "Warehouse Locations should render its floor-plan controls or seeded shelf"
+        )
+        let requiredToolbarItems = [
+            "shelving", "gang_box", "pipe_rack", "pallet_rack", "wall_mount", "floor_area",
+            "cabinet", "packout", "tool_bag", "parts_bin", "crate", "custom"
+        ]
+        for unitType in requiredToolbarItems {
+            let button = app.buttons["warehouse-unit-type-\(unitType)"]
+            XCTAssertTrue(button.waitForExistence(timeout: 10), "\(unitType) toolbar item should be present")
+            XCTAssertTrue(button.isHittable, "\(unitType) toolbar item should be reachable at iPhone width")
+        }
+        let packoutToolbarButton = app.buttons["warehouse-unit-type-packout"]
+        packoutToolbarButton.tap()
+        XCTAssertTrue(
+            app.textFields.firstMatch.waitForExistence(timeout: 8),
+            "Packout Set toolbar action should open the add-unit sheet with a name field"
+        )
+        XCTAssertTrue(
+            app.buttons["East"].waitForExistence(timeout: 3) ||
+                app.buttons["West"].waitForExistence(timeout: 3),
+            "Add Packout Set sheet should expose Front Face controls"
+        )
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(
+            app.staticTexts["UITesting Shelf A"].waitForExistence(timeout: 10) ||
+                app.staticTexts["UITesting Pipe Rack"].waitForExistence(timeout: 10),
+            "Warehouse Locations should show a seeded storage unit for visual QA"
+        )
+    }
+
+    @MainActor
     func testWEI1182WarehouseWizardBreakpointWalkingPathScreenshots() throws {
         let destinationName = ProcessInfo.processInfo.environment["RUN_DESTINATION_DEVICE_NAME"] ?? ""
         if ProcessInfo.processInfo.environment["WEI_1182_LANDSCAPE"] == "1"

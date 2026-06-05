@@ -1329,7 +1329,7 @@ public final class JobsService: Sendable {
                   AND id != ?
                   AND status = 'completed'
                   AND deleted_at IS NULL
-                  AND date(clock_in) = date(?)
+                  AND \(Self.localDateSQL("clock_in")) = date(?, 'localtime')
                   AND clock_in < ?
                 """, arguments: [userId, laborEntryId, clockIn, clockIn]) ?? 0
             let remainingRegularHours = max(0, 8.0 - priorWorkedHours)
@@ -1613,8 +1613,6 @@ public final class JobsService: Sendable {
     /// Get today's clock entries for a user, grouped by job with optional to-do names.
     public func getTodaysClockEntries(userId: Int64) throws -> [JobClockGroup] {
         do { return try db.writer.read { dbConn -> [JobClockGroup] in
-            let todayPrefix = String(CoreFormatters.nowISO().prefix(10))
-
             let rows = try Row.fetchAll(dbConn, sql: """
                 SELECT le.id, le.job_id, j.job_name, le.clock_in, le.clock_out,
                        le.linked_todo_id, le.work_type,
@@ -1623,10 +1621,10 @@ public final class JobsService: Sendable {
                 LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
                 LEFT JOIN notebook_entries ne ON ne.id = le.linked_todo_id AND ne.deleted_at IS NULL
                 WHERE le.user_id = ?
-                  AND le.clock_in LIKE ?
+                  AND \(Self.localDateSQL("le.clock_in")) = date('now', 'localtime')
                   AND le.deleted_at IS NULL
                 ORDER BY le.clock_in ASC
-                """, arguments: [userId, "\(todayPrefix)%"])
+                """, arguments: [userId])
 
             var groupMap: [Int64: [ClockEntrySummary]] = [:]
             var groupOrder: [Int64] = []
@@ -1641,8 +1639,8 @@ public final class JobsService: Sendable {
                 let todoName: String? = row["todo_name"] as String?
                 let wType: String = row["work_type"] ?? "new_work"
 
-                let startDate = CoreFormatters.parseISO(clockInStr) ?? Date()
-                let endDate: Date? = clockOutStr.flatMap { CoreFormatters.parseISO($0) }
+                let startDate = Self.parseSQLiteUTCDateTime(clockInStr) ?? Date()
+                let endDate: Date? = clockOutStr.flatMap { Self.parseSQLiteUTCDateTime($0) }
 
                 let summary = ClockEntrySummary(
                     id: entryId,
@@ -2379,7 +2377,7 @@ public final class JobsService: Sendable {
             sql: """
                 SELECT COALESCE(SUM(regular_hours + overtime_hours), 0)
                 FROM labor_entries
-                WHERE date(clock_in) = date('now') AND deleted_at IS NULL
+                WHERE \(Self.localDateSQL("clock_in")) = date('now', 'localtime') AND deleted_at IS NULL
                 """
         )
 
@@ -2578,6 +2576,23 @@ public final class JobsService: Sendable {
             if isTableNotFoundError(error) { return [] }
             throw error
         }
+    }
+
+    private static let sqliteUTCDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return formatter
+    }()
+
+    private static func parseSQLiteUTCDateTime(_ string: String) -> Date? {
+        if let date = CoreFormatters.parseISO(string) { return date }
+        return sqliteUTCDateFormatter.date(from: string)
+    }
+
+    /// Convert SQLite datetime/date text into the current local operational day.
+    private static func localDateSQL(_ expression: String) -> String {
+        "CASE WHEN length(\(expression)) <= 10 THEN date(\(expression)) ELSE date(\(expression), 'localtime') END"
     }
 
     /// Detect whether a GRDB/SQLite error indicates a missing table.

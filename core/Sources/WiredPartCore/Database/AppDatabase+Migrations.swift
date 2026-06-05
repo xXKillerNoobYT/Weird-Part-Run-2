@@ -5748,4 +5748,3 @@ private func registerMigration100POEmailRequestType(_ migrator: inout DatabaseMi
         }
     }
 }
-
