@@ -843,10 +843,10 @@ public final class JobEstimationService: Sendable {
 
             let avgHoursPerDay = try Double.fetchOne(dbConn, sql: """
                 SELECT AVG(daily_hours) FROM (
-                    SELECT date(clock_in) as work_date, SUM(regular_hours + overtime_hours) as daily_hours
+                    SELECT \(Self.localDateSQL("clock_in")) as work_date, SUM(regular_hours + overtime_hours) as daily_hours
                     FROM labor_entries
                     WHERE clock_in >= ? AND deleted_at IS NULL AND (regular_hours + overtime_hours) > 0
-                    GROUP BY user_id, date(clock_in)
+                    GROUP BY user_id, \(Self.localDateSQL("clock_in"))
                 )
                 """, arguments: [sinceDate]) ?? 8.0
 
@@ -875,6 +875,10 @@ public final class JobEstimationService: Sendable {
     // =========================================================================
 
     private static func nowString() -> String { CoreFormatters.nowISO() }
+
+    private static func localDateSQL(_ expression: String) -> String {
+        "CASE WHEN length(\(expression)) <= 10 THEN date(\(expression)) ELSE date(\(expression), 'localtime') END"
+    }
 
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)

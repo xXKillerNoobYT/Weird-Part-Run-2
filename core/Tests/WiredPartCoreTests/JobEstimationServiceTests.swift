@@ -1,9 +1,14 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 import Testing
 import GRDB
 @testable import WiredPartCore
 
-@Suite("JobEstimationService Tests")
+@Suite("JobEstimationService Tests", .serialized)
 struct JobEstimationServiceTests {
 
     private func freshEnv() throws -> (E2ETestHelpers.TestEnvironment, JobEstimationService) {
@@ -306,12 +311,94 @@ struct JobEstimationServiceTests {
         #expect(capacity >= 0)
     }
 
+    @Test("Monthly capacity groups UTC-split labor by local work date")
+    func testMonthlyCapacityUsesLocalClockInDateBucket() throws {
+        try withMountainTimeZone {
+            let (env, est) = try freshEnv()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CAP-LOCAL", name: "Local Capacity")
+            let utcFormatter = Self.utcTimestampFormatter
+
+            let firstClockIn = utcFormatter.string(from: try Self.localToday(hour: 16, minute: 30))
+            let secondClockIn = utcFormatter.string(from: try Self.localToday(hour: 18, minute: 30))
+
+            try env.db.writer.write { db in
+                try db.execute(sql: "DELETE FROM labor_entries")
+                try db.execute(sql: """
+                    INSERT INTO labor_entries
+                        (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                    VALUES
+                        (?, ?, ?, ?, 4.0, 0.0, 'completed', datetime('now')),
+                        (?, ?, ?, ?, 4.0, 0.0, 'completed', datetime('now'))
+                    """, arguments: [
+                        env.adminUserId, jobId, firstClockIn, firstClockIn,
+                        env.adminUserId, jobId, secondClockIn, secondClockIn
+                    ])
+            }
+
+            let workerCount = try env.db.writer.read { db in
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM users WHERE deleted_at IS NULL") ?? 1
+            }
+
+            let capacity = try est.calculateMonthlyCapacity()
+            let expected = Double(workerCount * Self.weekdaysInCurrentMonth())
+
+            #expect(abs(capacity - expected) < 0.001)
+        }
+    }
+
     @Test("Historical average query")
     func testHistoricalAverage() throws {
         let (_, est) = try freshEnv()
         let avg = try est.getHistoricalAverage()
         // May be nil if no historical data
         #expect(avg == nil || avg!.avgDays >= 0)
+    }
+
+    private static let utcTimestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return formatter
+    }()
+
+    private static func localToday(hour: Int, minute: Int) throws -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "America/Denver"))
+        var components = calendar.dateComponents([.year, .month, .day], from: Date())
+        components.hour = hour
+        components.minute = minute
+        components.second = 0
+        return try #require(calendar.date(from: components))
+    }
+
+    private static func weekdaysInCurrentMonth() -> Int {
+        let calendar = Calendar.current
+        let now = Date()
+        let range = calendar.range(of: .day, in: .month, for: now) ?? 1..<31
+        return range.reduce(0) { count, day in
+            var components = calendar.dateComponents([.year, .month], from: now)
+            components.day = day
+            guard let date = calendar.date(from: components) else { return count }
+            let weekday = calendar.component(.weekday, from: date)
+            return count + (weekday >= 2 && weekday <= 6 ? 1 : 0)
+        }
+    }
+
+    private func withMountainTimeZone<T>(_ body: () throws -> T) rethrows -> T {
+        #if canImport(Darwin) || canImport(Glibc)
+        let originalTZ = getenv("TZ").map { String(cString: $0) }
+        setenv("TZ", "America/Denver", 1)
+        tzset()
+        defer {
+            if let originalTZ {
+                setenv("TZ", originalTZ, 1)
+            } else {
+                unsetenv("TZ")
+            }
+            tzset()
+        }
+        #endif
+        return try body()
     }
 
     @Test("Regression: getHistoricalAverage finds jobs with status 'completed' (not 'complete')")
