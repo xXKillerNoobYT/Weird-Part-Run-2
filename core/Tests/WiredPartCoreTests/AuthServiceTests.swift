@@ -714,27 +714,30 @@ struct AuthServiceTests {
         #expect(sessions.isEmpty)
     }
 
-    @Test("deactivateSession marks a session as deactivated")
-    func testDeactivateSession() throws {
+    @Test("deactivateSession revokes a session token family")
+    func testDeactivateSessionRevokesTokenFamily() throws {
         let db = try freshDB()
         let auth = AuthService(db: db)
-
-        let rowId = try db.writer.write { dbConn -> Int64 in
-            try dbConn.execute(sql: """
-                INSERT INTO _device_registry (device_id, device_name, is_trusted, is_deactivated, last_seen_at)
-                VALUES ('abc-device-123', 'iPhone 14', 1, 0, datetime('now'))
-            """)
-            return dbConn.lastInsertedRowID
-        }
+        let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
+        let accessToken = try #require(seed.token)
+        let refreshToken = try #require(seed.refreshToken)
 
         var sessions = try auth.listActiveSessions()
         #expect(sessions.count == 1)
-        #expect(sessions[0].userId == "abc-device-123")
+        #expect(sessions[0].userId == "\(seed.user!.id!)")
+        #expect(sessions[0].userName == "Admin")
 
-        try auth.deactivateSession(sessionId: "\(rowId)")
+        try auth.deactivateSession(sessionId: sessions[0].id)
 
         sessions = try auth.listActiveSessions()
         #expect(sessions.isEmpty)
+
+        #expect(throws: AuthService.AuthError.sessionRevoked) {
+            _ = try auth.getLocalUserProfile(token: accessToken)
+        }
+        #expect(throws: AuthService.AuthError.sessionRevoked) {
+            _ = try auth.refreshLocalSession(refreshToken: refreshToken)
+        }
     }
 
     @Test("listRegisteredDevices shows Unassigned for soft-deleted assigned user")
