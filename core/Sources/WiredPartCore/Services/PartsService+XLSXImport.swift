@@ -6,7 +6,7 @@ extension PartsService {
     ///
     /// XLSX rows are normalized into the same draft row path used by CSV import so duplicate
     /// detection, validation, conflict generation, and atomic commit behavior stay shared.
-    public func previewPartsImportXLSX(_ data: Data) throws -> PartsImportPreview {
+    public func previewPartsImportXLSX(_ data: Data, supplierId: Int64? = nil) throws -> PartsImportPreview {
         let workbook = try PartsImportXLSXReader(data: data).readFirstWorksheet()
         guard workbook.rows.count > 1 else {
             throw PartsError.invalidInput("XLSX sheet '\(workbook.sheetName)' is empty or has no data rows.")
@@ -16,7 +16,9 @@ extension PartsService {
         do {
             preview = try previewPartsImportRows(
                 workbook.rows.map { PartsImportTabularRow(rowNumber: $0.rowNumber, columns: $0.columns) },
-                emptyDescription: "XLSX sheet '\(workbook.sheetName)' is empty or has no data rows."
+                emptyDescription: "XLSX sheet '\(workbook.sheetName)' is empty or has no data rows.",
+                sourceKind: "xlsx",
+                supplierId: supplierId
             )
         } catch PartsError.invalidInput(let message) {
             throw PartsError.invalidInput("XLSX sheet '\(workbook.sheetName)' row 1: \(message)")
@@ -31,7 +33,12 @@ extension PartsService {
         preview.source = PartsImportSourceMetadata(
             sourceKind: "xlsx",
             sheetName: workbook.sheetName,
-            sourceHash: importSourceHash(data)
+            sourceHash: importSourceHash(data),
+            supplierId: supplierId,
+            headerFingerprint: preview.source?.headerFingerprint,
+            sourceHeaders: preview.source?.sourceHeaders ?? [],
+            acceptedColumnMapping: preview.source?.acceptedColumnMapping ?? [:],
+            savedMappingId: preview.source?.savedMappingId
         )
         return preview
     }

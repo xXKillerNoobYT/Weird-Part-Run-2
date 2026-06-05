@@ -140,6 +140,7 @@ extension AppDatabase {
         registerMigration099ReceivingItemRoutingDisposition(&migrator)
         registerMigration100POEmailRequestType(&migrator)
         registerMigration100StagingBoxContentsAndDeliveryState(&migrator)
+        registerMigration101PartImportSavedMappings(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5727,6 +5728,38 @@ extension AppDatabase {
             try db.create(index: "idx_staging_box_contents_tag",
                           on: "staging_box_contents",
                           columns: ["staging_tag_id"])
+        }
+    }
+
+    // MARK: - Migration 101: Saved part import mappings
+
+    private static func registerMigration101PartImportSavedMappings(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("101_part_import_saved_mappings") { db in
+            try db.create(table: "part_import_saved_mappings", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("supplier_id", .integer).references("suppliers", onDelete: .setNull)
+                t.column("source_kind", .text).notNull()
+                t.column("header_fingerprint", .text).notNull()
+                t.column("schema_version", .integer).notNull()
+                t.column("column_mapping_json", .text).notNull()
+                t.column("source_headers_json", .text).notNull()
+                t.column("accepted_by", .integer).references("users")
+                t.column("use_count", .integer).notNull().defaults(to: 0)
+                t.column("last_used_at", .text)
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("deleted_at", .text)
+            }
+            try db.execute(sql: """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_part_import_saved_mappings_lookup
+                ON part_import_saved_mappings (
+                    COALESCE(supplier_id, -1),
+                    source_kind,
+                    header_fingerprint,
+                    schema_version
+                )
+                WHERE deleted_at IS NULL
+                """)
         }
     }
 }

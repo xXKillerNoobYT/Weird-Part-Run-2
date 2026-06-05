@@ -714,6 +714,99 @@ struct PartsServiceAdvancedTests {
         #expect(try env.parts.findPartByCode("NO-NAME") == nil)
     }
 
+    @Test("commitPartsImportCSV persists saved supplier mapping only after successful commit")
+    func testCommitPartsImportCSVPersistsSavedSupplierMappingAfterCommit() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Mapping Supplier")
+
+        let previewOnly = try env.parts.previewPartsImportCSV("""
+        Part Name,Vendor Code,Category
+        Preview Only,PV-001,Preview Category
+        """, supplierId: supplierId)
+        let previewFingerprint = try #require(previewOnly.source?.headerFingerprint)
+        #expect(try env.parts.findSavedPartsImportMapping(supplierId: supplierId, sourceKind: "csv", headerFingerprint: previewFingerprint) == nil)
+
+        let result = try env.parts.commitPartsImportCSV(previewOnly)
+        #expect(result.created == 1)
+
+        let saved = try #require(try env.parts.findSavedPartsImportMapping(supplierId: supplierId, sourceKind: "csv", headerFingerprint: previewFingerprint))
+        #expect(saved.supplierId == supplierId)
+        #expect(saved.columnMapping["Part Name"] == "name")
+        #expect(saved.columnMapping["Vendor Code"] == "supplier_part_number")
+        #expect(saved.schemaVersion == PartsService.PartsImportSourceMetadata.mappingSchemaVersion)
+    }
+
+    @Test("accepted mapping flow saves mapping without committing preview rows")
+    func testAcceptedPartsImportMappingFlowPersistsMapping() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Accepted Mapping Supplier")
+
+        let saved = try env.parts.saveAcceptedPartsImportMapping(
+            supplierId: supplierId,
+            sourceKind: "csv",
+            sourceHeaders: ["Item", "Vendor Part", "Group"],
+            columnMapping: ["Item": "name", "Vendor Part": "supplier_part_number", "Group": "category"],
+            acceptedBy: env.adminUserId
+        )
+
+        let lookup = try #require(try env.parts.findSavedPartsImportMapping(
+            supplierId: supplierId,
+            sourceKind: "csv",
+            headerFingerprint: saved.headerFingerprint
+        ))
+        #expect(lookup.id == saved.id)
+        #expect(lookup.columnMapping["Vendor Part"] == "supplier_part_number")
+        #expect(try env.parts.findPartByCode("Vendor Part") == nil)
+    }
+
+    @Test("previewPartsImportCSV prefers supplier part number matches before internal code")
+    func testPreviewPartsImportCSVPrefersSupplierAwareMatch() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Supplier Match")
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Supplier Match Category")
+        let supplierPartId = try env.parts.createPart(categoryId: categoryId, name: "Supplier Existing", code: "SUP-INTERNAL")
+        let codePartId = try env.parts.createPart(categoryId: categoryId, name: "Code Existing", code: "CODE-MATCH")
+        _ = try env.parts.addPartSupplierLink(partId: supplierPartId, supplierId: supplierId, supplierPartNumber: "V-100")
+
+        let preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,supplier_part_number
+        Supplier Replacement,CODE-MATCH,Supplier Match Category,V-100
+        """, supplierId: supplierId)
+
+        let decision = try #require(preview.decisions.first)
+        #expect(decision.classification == .update)
+        #expect(decision.existingPartId == supplierPartId)
+        #expect(decision.existingPartId != codePartId)
+        #expect(decision.matchReason == "supplier_part_number")
+        #expect(preview.conflicts.first?.existingPartId == supplierPartId)
+    }
+
+    @Test("previewPartsImportCSV classifies duplicate, ambiguous, conflict, and quarantined rows")
+    func testPreviewPartsImportCSVClassifiesStage2Decisions() throws {
+        let env = try E2ETestHelpers.setUp()
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Decision Category")
+        _ = try env.parts.createPart(categoryId: categoryId, name: "Same Part", code: "SAME-001")
+        _ = try env.parts.createPart(categoryId: categoryId, name: "Ambiguous Part")
+        _ = try env.parts.createPart(categoryId: categoryId, name: "Ambiguous Part")
+
+        let preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,cost_price
+        Same Part,SAME-001,Decision Category,
+        Changed Name,SAME-001,Decision Category,
+        Ambiguous Part,,Decision Category,
+        Bad Cost,BAD-001,Decision Category,not-a-number
+        New Part,NEW-DEC-001,Decision Category,
+        """)
+
+        let decisionsByRow = Dictionary(uniqueKeysWithValues: preview.decisions.map { ($0.rowNumber, $0.classification) })
+        #expect(decisionsByRow[2] == .duplicateSkip)
+        #expect(decisionsByRow[3] == .update)
+        #expect(decisionsByRow[4] == .conflictReview)
+        #expect(decisionsByRow[5] == .quarantined)
+        #expect(decisionsByRow[6] == .new)
+        #expect(preview.errors.contains { $0.rowNumber == 5 })
+    }
+
     // MARK: - approveScheduledDeletion
 
     @Test("approveScheduledDeletion soft-deletes the entity and marks schedule approved")
