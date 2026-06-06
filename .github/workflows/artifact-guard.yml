@@ -15,6 +15,14 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
     timeout-minutes: 5
     steps:
+      - name: Verify self-hosted macOS runner
+        shell: bash
+        run: |
+          test "$RUNNER_OS" = "macOS"
+          test "$(uname -s)" = "Darwin"
+          echo "Runner: $RUNNER_NAME"
+          echo "Architecture: $RUNNER_ARCH"
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
