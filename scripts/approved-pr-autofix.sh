@@ -43,6 +43,12 @@ run_or_log() {
   "$@"
 }
 
+dry_run_exit_action() {
+  local description="$1"
+  echo "dry-run: would $description"
+  exit 0
+}
+
 comment_pr() {
   local number="$1" body="$2"
   run_or_log gh pr comment "$number" --repo "$REPO" --body "$body" >/dev/null 2>&1 || true
@@ -231,6 +237,7 @@ while IFS= read -r pr; do
   # Conflicts/dirty branches get one bounded repair attempt.
   if [[ "$mergeable" == "CONFLICTING" || "$merge_state" == "DIRTY" ]]; then
     mode="merge-conflict"
+    [[ "$DRY_RUN" == "1" ]] && dry_run_exit_action "attempt $mode repair for approved PR #$number at head $head_sha"
     comment_pr "$number" "🛠️ **$MARKER**\n\nAttempt $((attempts + 1))/$MAX_ATTEMPTS for head \`$head_sha\`. Mode: $mode. The PR is approved but has merge conflicts/dirty merge state; trying one bounded Codex repair on the self-hosted Mac runner."
     checkout_pr_branch "$number" "$head_branch"
     set +e
@@ -251,6 +258,7 @@ while IFS= read -r pr; do
 
   if [[ "$failing" -gt 0 ]]; then
     mode="failing-checks"
+    [[ "$DRY_RUN" == "1" ]] && dry_run_exit_action "attempt $mode repair for approved PR #$number at head $head_sha"
     failures="$(check_summary_for_sha "$head_sha")"
     fp="$(failure_fingerprint "$failures")"
     comment_pr "$number" "🛠️ **$MARKER**\n\nAttempt $((attempts + 1))/$MAX_ATTEMPTS for head \`$head_sha\`. Mode: $mode. Failure fingerprint: \`$fp\`. Trying one bounded Codex repair on the self-hosted Mac runner."
