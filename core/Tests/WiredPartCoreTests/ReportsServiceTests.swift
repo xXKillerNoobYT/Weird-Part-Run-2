@@ -115,6 +115,53 @@ struct ReportsServiceTests {
         #expect(updated?["status"] as String? == "completed")
     }
 
+    @Test("Timesheet correction allocates overtime from current settings instead of request buckets")
+    func testTimesheetCorrectionUsesOvertimeSettingsForAdjustedHours() throws {
+        try withDenverTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CORR-OT", name: "Correction Overtime Job")
+            _ = try env.jobs.updateOvertimeSettings(
+                calculationRule: "daily_only",
+                dailyThresholdHours: 6.0,
+                updatedBy: env.adminUserId
+            )
+            let laborEntryId = try env.db.writer.write { db -> Int64 in
+                try db.execute(sql: """
+                    INSERT INTO labor_entries
+                        (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                    VALUES
+                        (?, ?, '2026-03-05T14:00:00Z', '2026-03-05T18:00:00Z', 4.0, 0.0, 'completed', datetime('now')),
+                        (?, ?, '2026-03-05T18:30:00Z', '2026-03-05T20:30:00Z', 2.0, 0.0, 'completed', datetime('now'))
+                    """, arguments: [env.adminUserId, jobId, env.adminUserId, jobId])
+                return db.lastInsertedRowID
+            }
+
+            let record = try env.reports.saveTimesheetCorrection(
+                ReportsService.TimesheetCorrectionRequest(
+                    laborEntryId: laborEntryId,
+                    adjustedClockIn: "2026-03-05T18:30:00Z",
+                    adjustedClockOut: "2026-03-05T22:30:00Z",
+                    adjustedRegularHours: 4.0,
+                    adjustedOvertimeHours: 0.0,
+                    reason: "Corrected by manager after reviewing dispatch notes.",
+                    actorUserId: env.adminUserId
+                )
+            )
+
+            #expect(record.adjustedRegularHours == 2.0)
+            #expect(record.adjustedOvertimeHours == 2.0)
+
+            let updated = try env.db.writer.read { db in
+                try Row.fetchOne(db, sql: """
+                    SELECT regular_hours, overtime_hours
+                    FROM labor_entries WHERE id = ?
+                    """, arguments: [laborEntryId])
+            }
+            #expect(updated?["regular_hours"] as Double? == 2.0)
+            #expect(updated?["overtime_hours"] as Double? == 2.0)
+        }
+    }
+
     @Test("Timesheet correction history loads by reviewed work period")
     func testTimesheetCorrectionHistoryLoadsByWorkPeriod() throws {
         let env = try E2ETestHelpers.setUp()

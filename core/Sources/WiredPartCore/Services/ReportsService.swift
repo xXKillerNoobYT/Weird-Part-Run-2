@@ -431,6 +431,19 @@ public final class ReportsService: Sendable {
                 let originalRegular: Double = original["regular_hours"] ?? 0
                 let originalOvertime: Double = original["overtime_hours"] ?? 0
                 let changedAt = CoreFormatters.nowISO()
+                let adjustedTotalHours = try Self.correctedBillableHours(
+                    dbConn: dbConn,
+                    laborEntryId: request.laborEntryId,
+                    adjustedIn: adjustedIn,
+                    adjustedOut: adjustedOut
+                )
+                let allocation = try Self.allocateCorrectedOvertimeHours(
+                    dbConn: dbConn,
+                    userId: employeeUserId,
+                    laborEntryId: request.laborEntryId,
+                    clockInTimestamp: request.adjustedClockIn,
+                    totalHours: adjustedTotalHours
+                )
 
                 try dbConn.execute(sql: """
                     UPDATE labor_entries
@@ -444,8 +457,8 @@ public final class ReportsService: Sendable {
                     """, arguments: [
                     request.adjustedClockIn,
                     request.adjustedClockOut,
-                    request.adjustedRegularHours,
-                    request.adjustedOvertimeHours,
+                    allocation.regular,
+                    allocation.overtime,
                     request.actorUserId,
                     request.laborEntryId
                 ])
@@ -460,7 +473,7 @@ public final class ReportsService: Sendable {
                     """, arguments: [
                     request.laborEntryId, employeeUserId, jobId, originalClockIn, originalClockOut,
                     request.adjustedClockIn, request.adjustedClockOut, originalRegular, originalOvertime,
-                    request.adjustedRegularHours, request.adjustedOvertimeHours, trimmedReason,
+                    allocation.regular, allocation.overtime, trimmedReason,
                     request.actorUserId, changedAt
                 ])
 
@@ -1278,6 +1291,137 @@ public final class ReportsService: Sendable {
 
     private static func localDateSQL(_ expression: String) -> String {
         "CASE WHEN length(\(expression)) <= 10 THEN date(\(expression)) ELSE date(\(expression), 'localtime') END"
+    }
+
+    private static func correctedBillableHours(
+        dbConn: Database,
+        laborEntryId: Int64,
+        adjustedIn: Date,
+        adjustedOut: Date
+    ) throws -> Double {
+        let rawHours = max(0, adjustedOut.timeIntervalSince(adjustedIn) / 3600.0)
+        let unpaidBreakMinutes = try Double.fetchOne(dbConn, sql: """
+            SELECT COALESCE(SUM(duration_minutes), 0)
+            FROM break_records
+            WHERE labor_entry_id = ? AND COALESCE(is_paid, 1) = 0 AND deleted_at IS NULL
+            """, arguments: [laborEntryId]) ?? 0
+        return max(0, rawHours - (unpaidBreakMinutes / 60.0))
+    }
+
+    private static func fetchOvertimeSettings(_ dbConn: Database) throws -> OvertimeSettings {
+        if let settings = try OvertimeSettings.fetchOne(
+            dbConn,
+            sql: "SELECT * FROM overtime_settings ORDER BY id LIMIT 1"
+        ) {
+            return settings
+        }
+        return OvertimeSettings(
+            id: nil,
+            calculationRule: "daily_only",
+            dailyThresholdHours: 8.0,
+            weeklyThresholdHours: nil,
+            weekStartWeekday: 2,
+            updatedBy: nil,
+            updatedAt: nil
+        )
+    }
+
+    private static func allocateCorrectedOvertimeHours(
+        dbConn: Database,
+        userId: Int64,
+        laborEntryId: Int64,
+        clockInTimestamp: String,
+        totalHours: Double
+    ) throws -> (regular: Double, overtime: Double) {
+        let settings = try fetchOvertimeSettings(dbConn)
+        let dailyPriorHours = try priorCompletedHours(
+            dbConn: dbConn,
+            userId: userId,
+            laborEntryId: laborEntryId,
+            whereSQL: "\(localDateSQL("clock_in")) = date(?, 'localtime') AND clock_in < ?",
+            arguments: [clockInTimestamp, clockInTimestamp]
+        )
+        let dailyRemaining = max(0, settings.dailyThresholdHours - dailyPriorHours)
+
+        let weeklyRemaining: Double
+        if let weeklyThresholdHours = settings.weeklyThresholdHours,
+           let clockInDate = CoreFormatters.parseDateTime(clockInTimestamp) {
+            let interval = localWeekInterval(containing: clockInDate, weekStartWeekday: settings.weekStartWeekday)
+            let weekStart = sqliteUTCTimestamp(interval.start)
+            let weekEnd = sqliteUTCTimestamp(interval.end)
+            let weeklyPriorHours = try priorCompletedHours(
+                dbConn: dbConn,
+                userId: userId,
+                laborEntryId: laborEntryId,
+                whereSQL: "clock_in >= ? AND clock_in < ? AND clock_in < ?",
+                arguments: [weekStart, weekEnd, clockInTimestamp]
+            )
+            weeklyRemaining = max(0, weeklyThresholdHours - weeklyPriorHours)
+        } else {
+            weeklyRemaining = Double.greatestFiniteMagnitude
+        }
+
+        let regularCapacity: Double
+        switch settings.calculationRule {
+        case "weekly_only":
+            regularCapacity = weeklyRemaining
+        case "daily_and_weekly":
+            regularCapacity = min(dailyRemaining, weeklyRemaining)
+        default:
+            regularCapacity = dailyRemaining
+        }
+
+        let regularHours = min(totalHours, max(0, regularCapacity))
+        let overtimeHours = max(0, totalHours - regularHours)
+        return (roundHours(regularHours), roundHours(overtimeHours))
+    }
+
+    private static func priorCompletedHours(
+        dbConn: Database,
+        userId: Int64,
+        laborEntryId: Int64,
+        whereSQL: String,
+        arguments: StatementArguments
+    ) throws -> Double {
+        var allArguments: StatementArguments = [userId, laborEntryId]
+        allArguments += arguments
+        return try Double.fetchOne(dbConn, sql: """
+            SELECT COALESCE(SUM(regular_hours + overtime_hours), 0)
+            FROM labor_entries
+            WHERE user_id = ?
+              AND id != ?
+              AND status = 'completed'
+              AND deleted_at IS NULL
+              AND \(whereSQL)
+            """, arguments: allArguments) ?? 0
+    }
+
+    private static func localWeekInterval(containing date: Date, weekStartWeekday: Int) -> DateInterval {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone.current
+        calendar.firstWeekday = weekStartWeekday
+
+        let dayStart = calendar.startOfDay(for: date)
+        let weekday = calendar.component(.weekday, from: dayStart)
+        let daysSinceStart = (weekday - weekStartWeekday + 7) % 7
+        let start = calendar.date(byAdding: .day, value: -daysSinceStart, to: dayStart) ?? dayStart
+        let end = calendar.date(byAdding: .day, value: 7, to: start) ?? start.addingTimeInterval(7 * 24 * 60 * 60)
+        return DateInterval(start: start, end: end)
+    }
+
+    private static func sqliteUTCTimestamp(_ date: Date) -> String {
+        sqliteUTCDateFormatter.string(from: date)
+    }
+
+    private static let sqliteUTCDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return formatter
+    }()
+
+    private static func roundHours(_ value: Double) -> Double {
+        (value * 100).rounded() / 100
     }
 
     private static func timesheetCorrectionAuditSQL(whereClause: String) -> String {
