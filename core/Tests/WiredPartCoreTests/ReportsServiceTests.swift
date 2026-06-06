@@ -115,14 +115,15 @@ struct ReportsServiceTests {
         #expect(updated?["status"] as String? == "completed")
     }
 
-    @Test("Timesheet correction allocates overtime from current settings instead of request buckets")
+    @Test("Timesheet correction allocates weekly overtime from current settings instead of request buckets")
     func testTimesheetCorrectionUsesOvertimeSettingsForAdjustedHours() throws {
         try withDenverTimeZone {
             let env = try E2ETestHelpers.setUp()
             let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CORR-OT", name: "Correction Overtime Job")
             _ = try env.jobs.updateOvertimeSettings(
-                calculationRule: "daily_only",
-                dailyThresholdHours: 6.0,
+                calculationRule: "weekly_only",
+                dailyThresholdHours: 8.0,
+                weeklyThresholdHours: 6.0,
                 updatedBy: env.adminUserId
             )
             let laborEntryId = try env.db.writer.write { db -> Int64 in
