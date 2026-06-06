@@ -1,0 +1,68 @@
+name: Approved PR Autofix
+
+# Private-project automation for Isaac's local Mac runner.
+# It only touches same-repo PRs that already have an APPROVED review decision.
+# It processes one PR per run and uses bounded Codex fix attempts to avoid loops.
+
+on:
+  pull_request_review:
+    types: [submitted]
+  check_suite:
+    types: [completed]
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Optional PR number to process"
+        required: false
+        type: string
+      dry_run:
+        description: "Log intended actions without pushing/merging"
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: approved-pr-autofix
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  checks: read
+  actions: read
+
+jobs:
+  approved-pr-autofix:
+    # Use the private self-hosted Mac runner, not GitHub-hosted minutes.
+    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      APPROVED_PR_AUTOFIX_BASE: main
+      APPROVED_PR_AUTOFIX_MAX_PRS: "20"
+      APPROVED_PR_AUTOFIX_MAX_ATTEMPTS: "3"
+      APPROVED_PR_AUTOFIX_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true && '1' || '0' }}
+      APPROVED_PR_AUTOFIX_PR_NUMBER: ${{ inputs.pr_number }}
+      APPROVED_PR_AUTOFIX_MODEL: gpt-5.5
+      APPROVED_PR_AUTOFIX_VALIDATE: auto
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify local tooling
+        run: |
+          set -euo pipefail
+          uname -m
+          xcodebuild -version
+          gh --version
+          codex --version
+
+      - name: Process one approved PR
+        run: scripts/approved-pr-autofix.sh "${{ github.repository }}"
