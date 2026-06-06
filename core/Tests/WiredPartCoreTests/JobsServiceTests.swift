@@ -298,6 +298,98 @@ struct JobsServiceTests {
         }
     }
 
+    @Test("Weekly overtime settings split hours after configured threshold")
+    func testWeeklyOvertimeSettingsSplitHoursAfterThreshold() throws {
+        try withMountainTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-WEEKLY-OT", name: "Weekly OT")
+            _ = try env.jobs.updateOvertimeSettings(
+                calculationRule: "weekly_only",
+                dailyThresholdHours: 24.0,
+                weeklyThresholdHours: 40.0,
+                weekStartWeekday: 2,
+                updatedBy: env.adminUserId
+            )
+
+            for dayOffset in 0..<5 {
+                let entryId = try env.jobs.clockIn(
+                    userId: env.adminUserId,
+                    jobId: jobId,
+                    at: try Self.localWeekday(dayOffset: dayOffset, hour: 8, minute: 0)
+                )
+                try env.jobs.clockOut(
+                    laborEntryId: entryId,
+                    at: try Self.localWeekday(dayOffset: dayOffset, hour: 16, minute: 0)
+                )
+            }
+
+            let saturdayEntryId = try env.jobs.clockIn(
+                userId: env.adminUserId,
+                jobId: jobId,
+                at: try Self.localWeekday(dayOffset: 5, hour: 8, minute: 0)
+            )
+            try env.jobs.clockOut(
+                laborEntryId: saturdayEntryId,
+                at: try Self.localWeekday(dayOffset: 5, hour: 12, minute: 0)
+            )
+
+            let saturdayEntry = try env.db.writer.read { db in
+                try Row.fetchOne(
+                    db,
+                    sql: "SELECT regular_hours, overtime_hours FROM labor_entries WHERE id = ?",
+                    arguments: [saturdayEntryId]
+                )
+            }
+
+            #expect(saturdayEntry?["regular_hours"] as Double? == 0.0)
+            #expect(saturdayEntry?["overtime_hours"] as Double? == 4.0)
+        }
+    }
+
+    @Test("Labor correction persists actor reason and before after hours")
+    func testLaborCorrectionPersistsAudit() throws {
+        try withMountainTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CORRECT", name: "Correction Audit")
+            let entryId = try env.jobs.clockIn(
+                userId: env.adminUserId,
+                jobId: jobId,
+                at: try Self.localToday(hour: 8, minute: 0)
+            )
+            try env.jobs.clockOut(
+                laborEntryId: entryId,
+                at: try Self.localToday(hour: 12, minute: 0)
+            )
+
+            let auditId = try env.jobs.correctLaborEntry(
+                laborEntryId: entryId,
+                correctedBy: env.adminUserId,
+                reason: "Manager approved missed clock-out correction",
+                clockIn: try Self.localToday(hour: 8, minute: 0),
+                clockOut: try Self.localToday(hour: 17, minute: 0)
+            )
+            let audits = try env.jobs.listLaborEntryCorrectionAudits(laborEntryId: entryId)
+            let corrected = try env.db.writer.read { db in
+                try Row.fetchOne(
+                    db,
+                    sql: "SELECT regular_hours, overtime_hours, edited_by FROM labor_entries WHERE id = ?",
+                    arguments: [entryId]
+                )
+            }
+
+            #expect(auditId > 0)
+            #expect(audits.count == 1)
+            #expect(audits[0].correctedBy == env.adminUserId)
+            #expect(audits[0].reason == "Manager approved missed clock-out correction")
+            #expect(audits[0].oldRegularHours == 4.0)
+            #expect(audits[0].newRegularHours == 8.0)
+            #expect(audits[0].newOvertimeHours == 1.0)
+            #expect(corrected?["regular_hours"] as Double? == 8.0)
+            #expect(corrected?["overtime_hours"] as Double? == 1.0)
+            #expect(corrected?["edited_by"] as Int64? == env.adminUserId)
+        }
+    }
+
     @Test("Switching jobs closes current entry and starts next entry at the same instant")
     func testSwitchClockedInJobIsAtomicAndDeterministic() throws {
         try withMountainTimeZone {
@@ -758,6 +850,22 @@ struct JobsServiceTests {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try #require(TimeZone(identifier: "America/Denver"))
         var components = calendar.dateComponents([.year, .month, .day], from: Date())
+        components.hour = hour
+        components.minute = minute
+        components.second = 0
+        return try #require(calendar.date(from: components))
+    }
+
+    private static func localWeekday(dayOffset: Int, hour: Int, minute: Int) throws -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "America/Denver"))
+        calendar.firstWeekday = 2
+        let todayStart = calendar.startOfDay(for: Date())
+        let weekday = calendar.component(.weekday, from: todayStart)
+        let daysSinceMonday = (weekday - 2 + 7) % 7
+        let monday = try #require(calendar.date(byAdding: .day, value: -daysSinceMonday, to: todayStart))
+        let targetDay = try #require(calendar.date(byAdding: .day, value: dayOffset, to: monday))
+        var components = calendar.dateComponents([.year, .month, .day], from: targetDay)
         components.hour = hour
         components.minute = minute
         components.second = 0
