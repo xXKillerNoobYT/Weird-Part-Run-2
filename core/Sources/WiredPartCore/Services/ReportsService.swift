@@ -26,6 +26,7 @@ public final class ReportsService: Sendable {
     /// A timesheet summary row aggregated per user within a date range.
     public struct TimesheetRow: Sendable, Identifiable {
         public let id: Int64
+        public let userId: Int64
         public let userName: String
         public let regularHours: Double
         public let overtimeHours: Double
@@ -33,15 +34,60 @@ public final class ReportsService: Sendable {
         public let daysWorked: Int
 
         public init(
-            id: Int64, userName: String, regularHours: Double,
+            id: Int64, userId: Int64, userName: String, regularHours: Double,
             overtimeHours: Double, totalHours: Double, daysWorked: Int
         ) {
             self.id = id
+            self.userId = userId
             self.userName = userName
             self.regularHours = regularHours
             self.overtimeHours = overtimeHours
             self.totalHours = totalHours
             self.daysWorked = daysWorked
+        }
+    }
+
+    /// A payroll-review segment row for one labor entry with related break totals.
+    public struct TimesheetSegmentRow: Sendable, Identifiable {
+        public let id: Int64
+        public let userId: Int64
+        public let userName: String
+        public let jobId: Int64
+        public let jobName: String
+        public let jobNumber: String
+        public let clockIn: String
+        public let clockOut: String?
+        public let paidBreakMinutes: Int
+        public let paidLunchMinutes: Int
+        public let unpaidLunchMinutes: Int
+        public let regularHours: Double
+        public let overtimeHours: Double
+        public let sourceDevice: String?
+        public let syncStatus: String
+        public let status: String
+
+        public init(
+            id: Int64, userId: Int64, userName: String, jobId: Int64, jobName: String,
+            jobNumber: String, clockIn: String, clockOut: String?, paidBreakMinutes: Int,
+            paidLunchMinutes: Int, unpaidLunchMinutes: Int, regularHours: Double,
+            overtimeHours: Double, sourceDevice: String?, syncStatus: String, status: String
+        ) {
+            self.id = id
+            self.userId = userId
+            self.userName = userName
+            self.jobId = jobId
+            self.jobName = jobName
+            self.jobNumber = jobNumber
+            self.clockIn = clockIn
+            self.clockOut = clockOut
+            self.paidBreakMinutes = paidBreakMinutes
+            self.paidLunchMinutes = paidLunchMinutes
+            self.unpaidLunchMinutes = unpaidLunchMinutes
+            self.regularHours = regularHours
+            self.overtimeHours = overtimeHours
+            self.sourceDevice = sourceDevice
+            self.syncStatus = syncStatus
+            self.status = status
         }
     }
 
@@ -153,13 +199,101 @@ public final class ReportsService: Sendable {
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [startDate, endDate])
                 return rows.enumerated().map { index, row in
-                    TimesheetRow(
-                        id: Int64(index + 1),
+                    let userId: Int64 = row["user_id"] ?? 0
+                    return TimesheetRow(
+                        id: userId == 0 ? Int64(index + 1) : userId,
+                        userId: userId,
                         userName: row["user_name"] ?? "Unknown",
                         regularHours: row["regular_hours"] ?? 0.0,
                         overtimeHours: row["overtime_hours"] ?? 0.0,
                         totalHours: row["total_hours"] ?? 0.0,
                         daysWorked: row["days_worked"] ?? 0
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get job-level timesheet segments for manager/tech review within a date range.
+    public func getTimesheetSegments(
+        startDate: String,
+        endDate: String,
+        userId: Int64? = nil
+    ) throws -> [TimesheetSegmentRow] {
+        do {
+            return try db.writer.read { dbConn -> [TimesheetSegmentRow] in
+                var args: [DatabaseValueConvertible?] = [startDate, endDate]
+                var userClause = ""
+                if let userId {
+                    userClause = " AND le.user_id = ?"
+                    args.append(userId)
+                }
+
+                let sql = """
+                    SELECT le.id, le.user_id,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS user_name,
+                           le.job_id,
+                           COALESCE(j.job_name, 'Unknown Job') AS job_name,
+                           COALESCE(j.job_number, '') AS job_number,
+                           le.clock_in, le.clock_out,
+                           COALESCE(le.regular_hours, 0) AS regular_hours,
+                           COALESCE(le.overtime_hours, 0) AS overtime_hours,
+                           COALESCE(le.status, CASE WHEN le.clock_out IS NULL THEN 'open' ELSE 'completed' END) AS status,
+                           COALESCE((
+                               SELECT SUM(COALESCE(br.duration_minutes, 0))
+                               FROM break_records br
+                               WHERE br.labor_entry_id = le.id
+                                 AND br.deleted_at IS NULL
+                                 AND br.break_type = 'break'
+                           ), 0) AS paid_break_minutes,
+                           COALESCE((
+                               SELECT SUM(COALESCE(br.duration_minutes, 0))
+                               FROM break_records br
+                               WHERE br.labor_entry_id = le.id
+                                 AND br.deleted_at IS NULL
+                                 AND br.break_type = 'lunch_paid'
+                           ), 0) AS paid_lunch_minutes,
+                           COALESCE((
+                               SELECT SUM(COALESCE(br.duration_minutes, 0))
+                               FROM break_records br
+                               WHERE br.labor_entry_id = le.id
+                                 AND br.deleted_at IS NULL
+                                 AND br.break_type = 'lunch_unpaid'
+                           ), 0) AS unpaid_lunch_minutes
+                    FROM labor_entries le
+                    LEFT JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
+                    LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
+                    WHERE le.deleted_at IS NULL
+                      AND \(Self.localDateSQL("le.clock_in")) >= date(?)
+                      AND \(Self.localDateSQL("le.clock_in")) <= date(?)
+                      \(userClause)
+                    ORDER BY user_name ASC, \(Self.localDateSQL("le.clock_in")) DESC, le.clock_in DESC
+                    """
+
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
+                return rows.map { row in
+                    let clockOut: String? = row["clock_out"] as String?
+                    let status: String = clockOut == nil ? "Open" : "Pending Review"
+                    return TimesheetSegmentRow(
+                        id: row["id"] ?? 0,
+                        userId: row["user_id"] ?? 0,
+                        userName: row["user_name"] ?? "Unknown",
+                        jobId: row["job_id"] ?? 0,
+                        jobName: row["job_name"] ?? "Unknown Job",
+                        jobNumber: row["job_number"] ?? "",
+                        clockIn: row["clock_in"] ?? "",
+                        clockOut: clockOut,
+                        paidBreakMinutes: row["paid_break_minutes"] ?? 0,
+                        paidLunchMinutes: row["paid_lunch_minutes"] ?? 0,
+                        unpaidLunchMinutes: row["unpaid_lunch_minutes"] ?? 0,
+                        regularHours: row["regular_hours"] ?? 0.0,
+                        overtimeHours: row["overtime_hours"] ?? 0.0,
+                        sourceDevice: nil,
+                        syncStatus: "Saved on this device",
+                        status: status
                     )
                 }
             }
