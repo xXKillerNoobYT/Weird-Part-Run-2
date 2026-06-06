@@ -265,26 +265,25 @@ struct JobsServiceTests {
             let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-1", name: "First OT Job")
             let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-2", name: "Second OT Job")
 
-            let firstClockIn = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 8, minute: 0))
-            let firstClockOut = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 14, minute: 0))
+            let firstLaborEntryId = try env.jobs.clockIn(
+                userId: env.adminUserId,
+                jobId: firstJobId,
+                at: try Self.localToday(hour: 8, minute: 0)
+            )
+            try env.jobs.clockOut(
+                laborEntryId: firstLaborEntryId,
+                at: try Self.localToday(hour: 14, minute: 0)
+            )
 
-            try env.db.writer.write { db in
-                try db.execute(sql: """
-                    INSERT INTO labor_entries
-                        (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
-                    VALUES (?, ?, ?, ?, 6.0, 0.0, 'completed', datetime('now'))
-                    """, arguments: [env.adminUserId, firstJobId, firstClockIn, firstClockOut])
-            }
-
-            let secondLaborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: secondJobId)
-            try env.db.writer.write { db in
-                try db.execute(
-                    sql: "UPDATE labor_entries SET clock_in = datetime('now', '-4 hours'), clock_out = NULL WHERE id = ?",
-                    arguments: [secondLaborEntryId]
-                )
-            }
-
-            try env.jobs.clockOut(laborEntryId: secondLaborEntryId)
+            let secondLaborEntryId = try env.jobs.clockIn(
+                userId: env.adminUserId,
+                jobId: secondJobId,
+                at: try Self.localToday(hour: 14, minute: 0)
+            )
+            try env.jobs.clockOut(
+                laborEntryId: secondLaborEntryId,
+                at: try Self.localToday(hour: 18, minute: 0)
+            )
 
             let secondEntry = try env.db.writer.read { db in
                 try Row.fetchOne(
@@ -296,6 +295,85 @@ struct JobsServiceTests {
 
             #expect(secondEntry?["regular_hours"] as Double? == 2.0)
             #expect(secondEntry?["overtime_hours"] as Double? == 2.0)
+        }
+    }
+
+    @Test("Switching jobs closes current entry and starts next entry at the same instant")
+    func testSwitchClockedInJobIsAtomicAndDeterministic() throws {
+        try withMountainTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SW-1", name: "Switch From")
+            let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SW-2", name: "Switch To")
+
+            let firstEntryId = try env.jobs.clockIn(
+                userId: env.adminUserId,
+                jobId: firstJobId,
+                at: try Self.localToday(hour: 7, minute: 0)
+            )
+            let secondEntryId = try env.jobs.switchClockedInJob(
+                userId: env.adminUserId,
+                nextJobId: secondJobId,
+                at: try Self.localToday(hour: 12, minute: 15)
+            )
+
+            let entries = try env.jobs.listLaborEntries(userId: env.adminUserId)
+            let firstEntry = try #require(entries.first { $0.id == firstEntryId })
+            let secondEntry = try #require(entries.first { $0.id == secondEntryId })
+            let active = try env.jobs.getActiveClockEntry(userId: env.adminUserId)
+
+            #expect(firstEntry.status == "completed")
+            #expect(firstEntry.clockOut == secondEntry.clockIn)
+            #expect(firstEntry.regularHours == 5.25)
+            #expect(firstEntry.overtimeHours == 0.0)
+            #expect(secondEntry.status == "clocked_in")
+            #expect(active?.id == secondEntryId)
+            #expect(active?.jobId == secondJobId)
+        }
+    }
+
+    @Test("Clock out subtracts unpaid breaks but keeps paid breaks compensable")
+    func testClockOutBreakPayTreatmentIsDeterministic() throws {
+        try withMountainTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BREAK-PAY", name: "Break Pay Job")
+            let laborEntryId = try env.jobs.clockIn(
+                userId: env.adminUserId,
+                jobId: jobId,
+                at: try Self.localToday(hour: 8, minute: 0)
+            )
+            let paidBreakStart = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 10, minute: 0))
+            let paidBreakEnd = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 10, minute: 15))
+            let unpaidLunchStart = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 12, minute: 0))
+            let unpaidLunchEnd = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 12, minute: 30))
+
+            try env.db.writer.write { db in
+                try db.execute(sql: """
+                    INSERT INTO break_records
+                        (user_id, labor_entry_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
+                    VALUES
+                        (?, ?, 'break', ?, ?, 15, 1, 0),
+                        (?, ?, 'lunch_unpaid', ?, ?, 30, 0, 0)
+                    """, arguments: [
+                    env.adminUserId, laborEntryId, paidBreakStart, paidBreakEnd,
+                    env.adminUserId, laborEntryId, unpaidLunchStart, unpaidLunchEnd
+                ])
+            }
+
+            try env.jobs.clockOut(
+                laborEntryId: laborEntryId,
+                at: try Self.localToday(hour: 17, minute: 0)
+            )
+
+            let entry = try env.db.writer.read { db in
+                try Row.fetchOne(
+                    db,
+                    sql: "SELECT regular_hours, overtime_hours FROM labor_entries WHERE id = ?",
+                    arguments: [laborEntryId]
+                )
+            }
+
+            #expect(entry?["regular_hours"] as Double? == 8.0)
+            #expect(entry?["overtime_hours"] as Double? == 0.5)
         }
     }
 
