@@ -140,6 +140,7 @@ extension AppDatabase {
         registerMigration099ReceivingItemRoutingDisposition(&migrator)
         registerMigration100POEmailRequestType(&migrator)
         registerMigration100StagingBoxContentsAndDeliveryState(&migrator)
+        registerMigration103TimesheetCorrectionAudit(&migrator)
         registerMigration101OvertimeAndLaborCorrectionAudit(&migrator)
     }
 
@@ -5295,6 +5296,38 @@ extension AppDatabase {
                 CREATE INDEX IF NOT EXISTS idx_vll_vehicle_deleted_id
                 ON vehicle_location_logs(vehicle_id, deleted_at, id)
                 """)
+        }
+    }
+
+    private static func registerMigration103TimesheetCorrectionAudit(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("103_timesheet_correction_audit") { db in
+            try db.create(table: "timesheet_correction_audits", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("labor_entry_id", .integer).notNull().references("labor_entries")
+                t.column("employee_user_id", .integer).notNull().references("users")
+                t.column("job_id", .integer).notNull().references("jobs")
+                t.column("original_clock_in", .text).notNull()
+                t.column("original_clock_out", .text)
+                t.column("adjusted_clock_in", .text).notNull()
+                t.column("adjusted_clock_out", .text).notNull()
+                t.column("original_regular_hours", .double).notNull().defaults(to: 0)
+                t.column("original_overtime_hours", .double).notNull().defaults(to: 0)
+                t.column("adjusted_regular_hours", .double).notNull().defaults(to: 0)
+                t.column("adjusted_overtime_hours", .double).notNull().defaults(to: 0)
+                t.column("reason", .text).notNull()
+                t.column("actor_user_id", .integer).notNull().references("users")
+                t.column("approval_status", .text).notNull().defaults(to: "pending_review")
+                t.column("approved_by", .integer).references("users")
+                t.column("approved_at", .text)
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("deleted_at", .text)
+            }
+            try db.create(index: "idx_timesheet_correction_labor_entry",
+                          on: "timesheet_correction_audits",
+                          columns: ["labor_entry_id"])
+            try db.create(index: "idx_timesheet_correction_created",
+                          on: "timesheet_correction_audits",
+                          columns: ["created_at"])
         }
     }
 

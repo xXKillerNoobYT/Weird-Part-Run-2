@@ -91,6 +91,104 @@ public final class ReportsService: Sendable {
         }
     }
 
+    public struct TimesheetCorrectionRequest: Sendable {
+        public let laborEntryId: Int64
+        public let adjustedClockIn: String
+        public let adjustedClockOut: String
+        public let adjustedRegularHours: Double
+        public let adjustedOvertimeHours: Double
+        public let reason: String
+        public let actorUserId: Int64
+
+        public init(
+            laborEntryId: Int64,
+            adjustedClockIn: String,
+            adjustedClockOut: String,
+            adjustedRegularHours: Double,
+            adjustedOvertimeHours: Double,
+            reason: String,
+            actorUserId: Int64
+        ) {
+            self.laborEntryId = laborEntryId
+            self.adjustedClockIn = adjustedClockIn
+            self.adjustedClockOut = adjustedClockOut
+            self.adjustedRegularHours = adjustedRegularHours
+            self.adjustedOvertimeHours = adjustedOvertimeHours
+            self.reason = reason
+            self.actorUserId = actorUserId
+        }
+    }
+
+    public struct TimesheetCorrectionAuditRecord: Sendable, Identifiable {
+        public let id: Int64
+        public let segmentId: Int64
+        public let jobId: Int64
+        public let jobName: String
+        public let jobNumber: String
+        public let employeeUserId: Int64
+        public let employeeName: String
+        public let originalClockIn: String
+        public let originalClockOut: String?
+        public let adjustedClockIn: String
+        public let adjustedClockOut: String
+        public let originalRegularHours: Double
+        public let originalOvertimeHours: Double
+        public let adjustedRegularHours: Double
+        public let adjustedOvertimeHours: Double
+        public let reason: String
+        public let actorUserId: Int64
+        public let actorName: String
+        public let changedAt: String
+        public let approvalStatus: String
+        public let approverName: String?
+
+        public init(
+            id: Int64,
+            segmentId: Int64,
+            jobId: Int64,
+            jobName: String,
+            jobNumber: String,
+            employeeUserId: Int64,
+            employeeName: String,
+            originalClockIn: String,
+            originalClockOut: String?,
+            adjustedClockIn: String,
+            adjustedClockOut: String,
+            originalRegularHours: Double,
+            originalOvertimeHours: Double,
+            adjustedRegularHours: Double,
+            adjustedOvertimeHours: Double,
+            reason: String,
+            actorUserId: Int64,
+            actorName: String,
+            changedAt: String,
+            approvalStatus: String,
+            approverName: String?
+        ) {
+            self.id = id
+            self.segmentId = segmentId
+            self.jobId = jobId
+            self.jobName = jobName
+            self.jobNumber = jobNumber
+            self.employeeUserId = employeeUserId
+            self.employeeName = employeeName
+            self.originalClockIn = originalClockIn
+            self.originalClockOut = originalClockOut
+            self.adjustedClockIn = adjustedClockIn
+            self.adjustedClockOut = adjustedClockOut
+            self.originalRegularHours = originalRegularHours
+            self.originalOvertimeHours = originalOvertimeHours
+            self.adjustedRegularHours = adjustedRegularHours
+            self.adjustedOvertimeHours = adjustedOvertimeHours
+            self.reason = reason
+            self.actorUserId = actorUserId
+            self.actorName = actorName
+            self.changedAt = changedAt
+            self.approvalStatus = approvalStatus
+            self.approverName = approverName
+        }
+    }
+
     /// A daily report summary row showing per-job activity for a given date.
     public struct DailyReportSummaryRow: Sendable, Identifiable {
         public let id: Int64
@@ -296,6 +394,115 @@ public final class ReportsService: Sendable {
                         status: status
                     )
                 }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    @discardableResult
+    public func saveTimesheetCorrection(_ request: TimesheetCorrectionRequest) throws -> TimesheetCorrectionAuditRecord {
+        let trimmedReason = request.reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedReason.isEmpty else { throw ReportsError.invalidTimesheetCorrectionReason }
+
+        guard let adjustedIn = CoreFormatters.parseDateTime(request.adjustedClockIn),
+              let adjustedOut = CoreFormatters.parseDateTime(request.adjustedClockOut),
+              adjustedOut >= adjustedIn else {
+            throw ReportsError.invalidTimesheetCorrectionRange
+        }
+
+        do {
+            return try db.writer.write { dbConn -> TimesheetCorrectionAuditRecord in
+                guard let original = try Row.fetchOne(dbConn, sql: """
+                    SELECT le.id, le.user_id, le.job_id, le.clock_in, le.clock_out,
+                           COALESCE(le.regular_hours, 0) AS regular_hours,
+                           COALESCE(le.overtime_hours, 0) AS overtime_hours
+                    FROM labor_entries le
+                    WHERE le.id = ? AND le.deleted_at IS NULL
+                    """, arguments: [request.laborEntryId]) else {
+                    throw ReportsError.timesheetSegmentNotFound(request.laborEntryId)
+                }
+
+                let employeeUserId: Int64 = original["user_id"] ?? 0
+                let jobId: Int64 = original["job_id"] ?? 0
+                let originalClockIn: String = original["clock_in"] ?? ""
+                let originalClockOut: String? = original["clock_out"] as String?
+                let originalRegular: Double = original["regular_hours"] ?? 0
+                let originalOvertime: Double = original["overtime_hours"] ?? 0
+                let changedAt = CoreFormatters.nowISO()
+
+                try dbConn.execute(sql: """
+                    UPDATE labor_entries
+                    SET clock_in = ?,
+                        clock_out = ?,
+                        regular_hours = ROUND(?, 2),
+                        overtime_hours = ROUND(?, 2),
+                        edited_by = ?,
+                        status = 'completed'
+                    WHERE id = ? AND deleted_at IS NULL
+                    """, arguments: [
+                    request.adjustedClockIn,
+                    request.adjustedClockOut,
+                    request.adjustedRegularHours,
+                    request.adjustedOvertimeHours,
+                    request.actorUserId,
+                    request.laborEntryId
+                ])
+
+                try dbConn.execute(sql: """
+                    INSERT INTO timesheet_correction_audits
+                        (labor_entry_id, employee_user_id, job_id, original_clock_in, original_clock_out,
+                         adjusted_clock_in, adjusted_clock_out, original_regular_hours, original_overtime_hours,
+                         adjusted_regular_hours, adjusted_overtime_hours, reason, actor_user_id,
+                         approval_status, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?)
+                    """, arguments: [
+                    request.laborEntryId, employeeUserId, jobId, originalClockIn, originalClockOut,
+                    request.adjustedClockIn, request.adjustedClockOut, originalRegular, originalOvertime,
+                    request.adjustedRegularHours, request.adjustedOvertimeHours, trimmedReason,
+                    request.actorUserId, changedAt
+                ])
+
+                guard let record = try Self.fetchTimesheetCorrectionAuditRecord(
+                    dbConn: dbConn,
+                    correctionId: dbConn.lastInsertedRowID
+                ) else {
+                    throw ReportsError.timesheetCorrectionAuditUnavailable
+                }
+                return record
+            }
+        } catch {
+            if isTableNotFoundError(error) { throw ReportsError.timesheetCorrectionAuditUnavailable }
+            throw error
+        }
+    }
+
+    public func getTimesheetCorrectionHistory(
+        laborEntryId: Int64? = nil,
+        startDate: String? = nil,
+        endDate: String? = nil
+    ) throws -> [TimesheetCorrectionAuditRecord] {
+        do {
+            return try db.writer.read { dbConn -> [TimesheetCorrectionAuditRecord] in
+                var clauses = ["tca.deleted_at IS NULL"]
+                var args: [DatabaseValueConvertible?] = []
+                if let laborEntryId {
+                    clauses.append("tca.labor_entry_id = ?")
+                    args.append(laborEntryId)
+                }
+                if let startDate {
+                    clauses.append("\(Self.localDateSQL("tca.original_clock_in")) >= date(?)")
+                    args.append(startDate)
+                }
+                if let endDate {
+                    clauses.append("\(Self.localDateSQL("tca.original_clock_in")) <= date(?)")
+                    args.append(endDate)
+                }
+
+                let sql = Self.timesheetCorrectionAuditSQL(whereClause: clauses.joined(separator: " AND "))
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
+                return rows.map(Self.mapTimesheetCorrectionAuditRecord)
             }
         } catch {
             if isTableNotFoundError(error) { return [] }
@@ -1073,9 +1280,90 @@ public final class ReportsService: Sendable {
         "CASE WHEN length(\(expression)) <= 10 THEN date(\(expression)) ELSE date(\(expression), 'localtime') END"
     }
 
+    private static func timesheetCorrectionAuditSQL(whereClause: String) -> String {
+        """
+        SELECT tca.id, tca.labor_entry_id, tca.employee_user_id, tca.job_id,
+               COALESCE(j.job_name, 'Unknown Job') AS job_name,
+               COALESCE(j.job_number, '') AS job_number,
+               COALESCE(employee.display_name, employee.email, 'Unknown') AS employee_name,
+               tca.original_clock_in, tca.original_clock_out,
+               tca.adjusted_clock_in, tca.adjusted_clock_out,
+               COALESCE(tca.original_regular_hours, 0) AS original_regular_hours,
+               COALESCE(tca.original_overtime_hours, 0) AS original_overtime_hours,
+               COALESCE(tca.adjusted_regular_hours, 0) AS adjusted_regular_hours,
+               COALESCE(tca.adjusted_overtime_hours, 0) AS adjusted_overtime_hours,
+               tca.reason, tca.actor_user_id,
+               COALESCE(actor.display_name, actor.email, 'Unknown') AS actor_name,
+               tca.created_at,
+               COALESCE(tca.approval_status, 'pending_review') AS approval_status,
+               COALESCE(approver.display_name, approver.email) AS approver_name
+        FROM timesheet_correction_audits tca
+        LEFT JOIN jobs j ON j.id = tca.job_id AND j.deleted_at IS NULL
+        LEFT JOIN users employee ON employee.id = tca.employee_user_id AND employee.deleted_at IS NULL
+        LEFT JOIN users actor ON actor.id = tca.actor_user_id AND actor.deleted_at IS NULL
+        LEFT JOIN users approver ON approver.id = tca.approved_by AND approver.deleted_at IS NULL
+        WHERE \(whereClause)
+        ORDER BY tca.created_at DESC, tca.id DESC
+        """
+    }
+
+    private static func mapTimesheetCorrectionAuditRecord(_ row: Row) -> TimesheetCorrectionAuditRecord {
+        TimesheetCorrectionAuditRecord(
+            id: row["id"] ?? 0,
+            segmentId: row["labor_entry_id"] ?? 0,
+            jobId: row["job_id"] ?? 0,
+            jobName: row["job_name"] ?? "Unknown Job",
+            jobNumber: row["job_number"] ?? "",
+            employeeUserId: row["employee_user_id"] ?? 0,
+            employeeName: row["employee_name"] ?? "Unknown",
+            originalClockIn: row["original_clock_in"] ?? "",
+            originalClockOut: row["original_clock_out"] as String?,
+            adjustedClockIn: row["adjusted_clock_in"] ?? "",
+            adjustedClockOut: row["adjusted_clock_out"] ?? "",
+            originalRegularHours: row["original_regular_hours"] ?? 0,
+            originalOvertimeHours: row["original_overtime_hours"] ?? 0,
+            adjustedRegularHours: row["adjusted_regular_hours"] ?? 0,
+            adjustedOvertimeHours: row["adjusted_overtime_hours"] ?? 0,
+            reason: row["reason"] ?? "",
+            actorUserId: row["actor_user_id"] ?? 0,
+            actorName: row["actor_name"] ?? "Unknown",
+            changedAt: row["created_at"] ?? "",
+            approvalStatus: row["approval_status"] ?? "pending_review",
+            approverName: row["approver_name"] as String?
+        )
+    }
+
+    private static func fetchTimesheetCorrectionAuditRecord(
+        dbConn: Database,
+        correctionId: Int64
+    ) throws -> TimesheetCorrectionAuditRecord? {
+        let sql = timesheetCorrectionAuditSQL(whereClause: "tca.id = ? AND tca.deleted_at IS NULL")
+        return try Row.fetchOne(dbConn, sql: sql, arguments: [correctionId]).map(mapTimesheetCorrectionAuditRecord)
+    }
+
     /// Detect whether a GRDB/SQLite error indicates a missing table.
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
         return message.contains("no such table") || message.contains("no such column")
+    }
+}
+
+public enum ReportsError: Error, LocalizedError, Equatable {
+    case timesheetSegmentNotFound(Int64)
+    case invalidTimesheetCorrectionReason
+    case invalidTimesheetCorrectionRange
+    case timesheetCorrectionAuditUnavailable
+
+    public var errorDescription: String? {
+        switch self {
+        case .timesheetSegmentNotFound:
+            return "Timesheet entry was not found."
+        case .invalidTimesheetCorrectionReason:
+            return "Correction reason is required."
+        case .invalidTimesheetCorrectionRange:
+            return "Adjusted clock out cannot be before adjusted clock in."
+        case .timesheetCorrectionAuditUnavailable:
+            return "Timesheet correction audit storage is not available."
+        }
     }
 }

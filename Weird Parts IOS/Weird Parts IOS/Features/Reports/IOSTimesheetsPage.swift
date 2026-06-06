@@ -22,7 +22,7 @@ struct IOSTimesheetsPage: View {
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
     @State private var selectedRow: ReportsService.TimesheetRow?
-    @State private var correctionHistory: [CorrectionAuditRecord] = []
+    @State private var correctionHistory: [ReportsService.TimesheetCorrectionAuditRecord] = []
 
     private enum ActiveSheet: Identifiable {
         case help
@@ -34,25 +34,6 @@ struct IOSTimesheetsPage: View {
             case .correction(let segment): return "correction-\(segment.id)"
             }
         }
-    }
-
-    struct CorrectionAuditRecord: Identifiable {
-        let id = UUID()
-        let segmentId: Int64
-        let jobName: String
-        let employeeName: String
-        let originalClockIn: String
-        let originalClockOut: String
-        let adjustedClockIn: Date
-        let adjustedClockOut: Date
-        let originalRegularHours: Double
-        let originalOvertimeHours: Double
-        let adjustedRegularHours: Double
-        let adjustedOvertimeHours: Double
-        let reason: String
-        let actorName: String
-        let changedAt: Date
-        let approvalStatus: String
     }
 
     private var startDateString: String {
@@ -102,9 +83,13 @@ struct IOSTimesheetsPage: View {
             case .correction(let segment):
                 TimesheetCorrectionSheet(
                     segment: segment,
+                    actorUserId: appCore.currentUser?.id,
                     actorName: appCore.currentUser?.displayName ?? "Current User",
+                    reportsService: appCore.reportsService,
                     onSave: { record in
+                        correctionHistory.removeAll { $0.id == record.id }
                         correctionHistory.insert(record, at: 0)
+                        loadData()
                         activeSheet = nil
                     }
                 )
@@ -277,6 +262,7 @@ struct IOSTimesheetsPage: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .hideWithoutPermission("manage_labor")
 
                 Spacer()
             }
@@ -296,10 +282,10 @@ struct IOSTimesheetsPage: View {
                         Text("\(formatDateTime(record.changedAt)) · Reason: \(record.reason)")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
-                        Text("\(record.employeeName) · \(record.jobName) · \(formatTimestamp(record.originalClockIn)) to \(formatDateTime(record.adjustedClockIn))")
+                        Text("\(record.employeeName) · \(jobLabel(record)) · \(formatTimestamp(record.originalClockIn)) to \(formatTimestamp(record.adjustedClockIn))")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
-                        Text("Original \(String(format: "%.1f", record.originalRegularHours))h regular / \(String(format: "%.1f", record.originalOvertimeHours))h overtime · Adjusted \(String(format: "%.1f", record.adjustedRegularHours))h regular / \(String(format: "%.1f", record.adjustedOvertimeHours))h overtime · \(record.approvalStatus)")
+                        Text("Original \(String(format: "%.1f", record.originalRegularHours))h regular / \(String(format: "%.1f", record.originalOvertimeHours))h overtime · Adjusted \(String(format: "%.1f", record.adjustedRegularHours))h regular / \(String(format: "%.1f", record.adjustedOvertimeHours))h overtime · \(approvalLabel(record))")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                     }
@@ -337,6 +323,10 @@ struct IOSTimesheetsPage: View {
                 endDate: endDateString
             )
             segments = try service.getTimesheetSegments(
+                startDate: startDateString,
+                endDate: endDateString
+            )
+            correctionHistory = try service.getTimesheetCorrectionHistory(
                 startDate: startDateString,
                 endDate: endDateString
             )
@@ -381,6 +371,10 @@ struct IOSTimesheetsPage: View {
         segment.jobNumber.isEmpty ? segment.jobName : "\(segment.jobName) (#\(segment.jobNumber))"
     }
 
+    private func jobLabel(_ record: ReportsService.TimesheetCorrectionAuditRecord) -> String {
+        record.jobNumber.isEmpty ? record.jobName : "\(record.jobName) (#\(record.jobNumber))"
+    }
+
     private func formatTimestamp(_ value: String) -> String {
         guard value.count >= 16 else { return value }
         return "\(value.prefix(10)) \(value.dropFirst(11).prefix(5))"
@@ -389,26 +383,48 @@ struct IOSTimesheetsPage: View {
     private func formatDateTime(_ date: Date) -> String {
         Formatters.localDateTimeFormatter.string(from: date)
     }
+
+    private func formatDateTime(_ value: String) -> String {
+        guard let date = CoreFormatters.parseDateTime(value) else { return formatTimestamp(value) }
+        return Formatters.localDateTimeFormatter.string(from: date)
+    }
+
+    private func approvalLabel(_ record: ReportsService.TimesheetCorrectionAuditRecord) -> String {
+        let status = record.approvalStatus
+            .replacingOccurrences(of: "_", with: " ")
+            .capitalized
+        if let approver = record.approverName, !approver.isEmpty {
+            return "\(status) by \(approver)"
+        }
+        return status
+    }
 }
 
 private struct TimesheetCorrectionSheet: View {
     @Environment(\.dismiss) private var dismiss
     let segment: ReportsService.TimesheetSegmentRow
+    let actorUserId: Int64?
     let actorName: String
-    let onSave: (IOSTimesheetsPage.CorrectionAuditRecord) -> Void
+    let reportsService: ReportsService?
+    let onSave: (ReportsService.TimesheetCorrectionAuditRecord) -> Void
 
     @State private var adjustedClockIn: Date
     @State private var adjustedClockOut: Date
     @State private var reason = ""
     @State private var validationMessage: String?
+    @State private var isSaving = false
 
     init(
         segment: ReportsService.TimesheetSegmentRow,
+        actorUserId: Int64?,
         actorName: String,
-        onSave: @escaping (IOSTimesheetsPage.CorrectionAuditRecord) -> Void
+        reportsService: ReportsService?,
+        onSave: @escaping (ReportsService.TimesheetCorrectionAuditRecord) -> Void
     ) {
         self.segment = segment
+        self.actorUserId = actorUserId
         self.actorName = actorName
+        self.reportsService = reportsService
         self.onSave = onSave
         let clockIn = CoreFormatters.parseDateTime(segment.clockIn) ?? Date()
         let clockOut = segment.clockOut.flatMap(CoreFormatters.parseDateTime) ?? clockIn.addingTimeInterval(3600)
@@ -433,6 +449,11 @@ private struct TimesheetCorrectionSheet: View {
                     DatePicker("Clock Out", selection: $adjustedClockOut)
                     labeledValue("Regular Preview", String(format: "%.1fh", adjustedHours.regular))
                     labeledValue("Overtime Preview", String(format: "%.1fh", adjustedHours.overtime))
+                    if overtimeChanged {
+                        Label("Overtime will change after save.", systemImage: "clock.badge.exclamationmark")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
                 }
 
                 Section {
@@ -446,6 +467,7 @@ private struct TimesheetCorrectionSheet: View {
                     Section {
                         Label(validationMessage, systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(.red)
+                            .accessibilityElement(children: .combine)
                     }
                 }
             }
@@ -456,7 +478,16 @@ private struct TimesheetCorrectionSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save Correction") { save() }
+                    Button {
+                        save()
+                    } label: {
+                        if isSaving {
+                            ProgressView()
+                        } else {
+                            Text("Save Correction")
+                        }
+                    }
+                    .disabled(isSaving)
                 }
             }
         }
@@ -469,6 +500,10 @@ private struct TimesheetCorrectionSheet: View {
     private var adjustedHours: (regular: Double, overtime: Double) {
         let totalHours = max(0, adjustedClockOut.timeIntervalSince(adjustedClockIn) / 3600)
         return (regular: min(8, totalHours), overtime: max(0, totalHours - 8))
+    }
+
+    private var overtimeChanged: Bool {
+        abs(adjustedHours.overtime - segment.overtimeHours) > 0.01
     }
 
     private func labeledValue(_ title: String, _ value: String) -> some View {
@@ -487,29 +522,37 @@ private struct TimesheetCorrectionSheet: View {
             validationMessage = "Reason is required before save."
             return
         }
+        guard let reportsService else {
+            validationMessage = "Reports service is not available."
+            return
+        }
+        guard let actorUserId else {
+            validationMessage = "Current user is required to save corrections."
+            return
+        }
         guard adjustedClockOut >= adjustedClockIn else {
             validationMessage = "Adjusted clock out cannot be before adjusted clock in."
             return
         }
 
-        let record = IOSTimesheetsPage.CorrectionAuditRecord(
-            segmentId: segment.id,
-            jobName: segment.jobName,
-            employeeName: segment.userName,
-            originalClockIn: segment.clockIn,
-            originalClockOut: segment.clockOut ?? "Open",
-            adjustedClockIn: adjustedClockIn,
-            adjustedClockOut: adjustedClockOut,
-            originalRegularHours: segment.regularHours,
-            originalOvertimeHours: segment.overtimeHours,
-            adjustedRegularHours: adjustedHours.regular,
-            adjustedOvertimeHours: adjustedHours.overtime,
-            reason: trimmedReason,
-            actorName: actorName,
-            changedAt: Date(),
-            approvalStatus: "Pending Review"
-        )
-        onSave(record)
+        validationMessage = nil
+        isSaving = true
+        do {
+            let request = ReportsService.TimesheetCorrectionRequest(
+                laborEntryId: segment.id,
+                adjustedClockIn: CoreFormatters.iso8601.string(from: adjustedClockIn),
+                adjustedClockOut: CoreFormatters.iso8601.string(from: adjustedClockOut),
+                adjustedRegularHours: adjustedHours.regular,
+                adjustedOvertimeHours: adjustedHours.overtime,
+                reason: trimmedReason,
+                actorUserId: actorUserId
+            )
+            let record = try reportsService.saveTimesheetCorrection(request)
+            onSave(record)
+        } catch {
+            validationMessage = userFriendlyError(error, context: "save timesheet correction")
+            isSaving = false
+        }
     }
 
     private func formatTimestamp(_ value: String) -> String {

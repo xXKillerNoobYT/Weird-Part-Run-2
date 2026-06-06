@@ -69,6 +69,90 @@ struct ReportsServiceTests {
         }
     }
 
+    @Test("Timesheet correction persists audit row and updates labor entry")
+    func testTimesheetCorrectionPersistsAuditAndUpdatesEntry() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CORR", name: "Correction Job")
+        let laborEntryId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-03-05T08:00:00Z', '2026-03-05T16:00:00Z', 8.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+            return db.lastInsertedRowID
+        }
+
+        let record = try env.reports.saveTimesheetCorrection(
+            ReportsService.TimesheetCorrectionRequest(
+                laborEntryId: laborEntryId,
+                adjustedClockIn: "2026-03-05T08:15:00Z",
+                adjustedClockOut: "2026-03-05T17:45:00Z",
+                adjustedRegularHours: 8.0,
+                adjustedOvertimeHours: 1.5,
+                reason: "Employee forgot to stop timer at the right time.",
+                actorUserId: env.adminUserId
+            )
+        )
+
+        #expect(record.segmentId == laborEntryId)
+        #expect(record.originalClockIn == "2026-03-05T08:00:00Z")
+        #expect(record.adjustedClockIn == "2026-03-05T08:15:00Z")
+        #expect(record.adjustedOvertimeHours == 1.5)
+        #expect(record.reason == "Employee forgot to stop timer at the right time.")
+        #expect(record.approvalStatus == "pending_review")
+
+        let updated = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT clock_in, clock_out, regular_hours, overtime_hours, edited_by, status
+                FROM labor_entries WHERE id = ?
+                """, arguments: [laborEntryId])
+        }
+        #expect(updated?["clock_in"] as String? == "2026-03-05T08:15:00Z")
+        #expect(updated?["clock_out"] as String? == "2026-03-05T17:45:00Z")
+        #expect(updated?["regular_hours"] as Double? == 8.0)
+        #expect(updated?["overtime_hours"] as Double? == 1.5)
+        #expect(updated?["edited_by"] as Int64? == env.adminUserId)
+        #expect(updated?["status"] as String? == "completed")
+    }
+
+    @Test("Timesheet correction history loads by reviewed work period")
+    func testTimesheetCorrectionHistoryLoadsByWorkPeriod() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-HIST", name: "History Job")
+        let laborEntryId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-04-10T08:00:00Z', '2026-04-10T12:00:00Z', 4.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+            return db.lastInsertedRowID
+        }
+
+        _ = try env.reports.saveTimesheetCorrection(
+            ReportsService.TimesheetCorrectionRequest(
+                laborEntryId: laborEntryId,
+                adjustedClockIn: "2026-04-10T08:00:00Z",
+                adjustedClockOut: "2026-04-10T13:00:00Z",
+                adjustedRegularHours: 5.0,
+                adjustedOvertimeHours: 0.0,
+                reason: "Verified against supervisor note.",
+                actorUserId: env.adminUserId
+            )
+        )
+
+        let inPeriod = try env.reports.getTimesheetCorrectionHistory(
+            startDate: "2026-04-10",
+            endDate: "2026-04-10"
+        )
+        let outsidePeriod = try env.reports.getTimesheetCorrectionHistory(
+            startDate: "2026-04-11",
+            endDate: "2026-04-11"
+        )
+
+        #expect(inPeriod.contains { $0.segmentId == laborEntryId })
+        #expect(!outsidePeriod.contains { $0.segmentId == laborEntryId })
+    }
+
     // MARK: - Daily Report Summary
 
     @Test("Daily report summary empty on fresh DB")
