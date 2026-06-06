@@ -447,13 +447,10 @@ private struct TimesheetCorrectionSheet: View {
                 Section("Adjusted Values") {
                     DatePicker("Clock In", selection: $adjustedClockIn)
                     DatePicker("Clock Out", selection: $adjustedClockOut)
-                    labeledValue("Regular Preview", String(format: "%.1fh", adjustedHours.regular))
-                    labeledValue("Overtime Preview", String(format: "%.1fh", adjustedHours.overtime))
-                    if overtimeChanged {
-                        Label("Overtime will change after save.", systemImage: "clock.badge.exclamationmark")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
+                    labeledValue("Paid Time Preview", String(format: "%.1fh", adjustedTotalHours))
+                    Label("Regular and overtime hours are calculated from the current overtime policy when saved.", systemImage: "clock.badge.exclamationmark")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section {
@@ -497,13 +494,8 @@ private struct TimesheetCorrectionSheet: View {
         segment.jobNumber.isEmpty ? segment.jobName : "\(segment.jobName) (#\(segment.jobNumber))"
     }
 
-    private var adjustedHours: (regular: Double, overtime: Double) {
-        let totalHours = max(0, adjustedClockOut.timeIntervalSince(adjustedClockIn) / 3600)
-        return (regular: min(8, totalHours), overtime: max(0, totalHours - 8))
-    }
-
-    private var overtimeChanged: Bool {
-        abs(adjustedHours.overtime - segment.overtimeHours) > 0.01
+    private var adjustedTotalHours: Double {
+        max(0, adjustedClockOut.timeIntervalSince(adjustedClockIn) / 3600)
     }
 
     private func labeledValue(_ title: String, _ value: String) -> some View {
@@ -542,8 +534,8 @@ private struct TimesheetCorrectionSheet: View {
                 laborEntryId: segment.id,
                 adjustedClockIn: CoreFormatters.iso8601.string(from: adjustedClockIn),
                 adjustedClockOut: CoreFormatters.iso8601.string(from: adjustedClockOut),
-                adjustedRegularHours: adjustedHours.regular,
-                adjustedOvertimeHours: adjustedHours.overtime,
+                adjustedRegularHours: segment.regularHours,
+                adjustedOvertimeHours: segment.overtimeHours,
                 reason: trimmedReason,
                 actorUserId: actorUserId
             )
