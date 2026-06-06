@@ -178,6 +178,60 @@ public final class JobsService: Sendable {
         }
     }
 
+    /// Timestamped notebook activity surfaced on the job detail screen.
+    public struct JobNoteRow: Sendable, Identifiable {
+        public let id: Int64
+        public let title: String
+        public let content: String?
+        public let entryType: String
+        public let authorId: Int64?
+        public let authorName: String
+        public let createdAt: String?
+
+        public init(id: Int64, title: String, content: String?, entryType: String, authorId: Int64?, authorName: String, createdAt: String?) {
+            self.id = id
+            self.title = title
+            self.content = content
+            self.entryType = entryType
+            self.authorId = authorId
+            self.authorName = authorName
+            self.createdAt = createdAt
+        }
+    }
+
+    /// Inventory movement linked to a job through Stage 3 stock movement records.
+    public struct JobInventoryMovementRow: Sendable, Identifiable {
+        public let id: Int64
+        public let partId: Int64
+        public let partName: String
+        public let partCode: String?
+        public let qty: Int
+        public let movementType: String
+        public let locationSummary: String
+        public let reason: String?
+        public let notes: String?
+        public let performedByName: String
+        public let createdAt: String?
+
+        public init(
+            id: Int64, partId: Int64, partName: String, partCode: String?,
+            qty: Int, movementType: String, locationSummary: String,
+            reason: String?, notes: String?, performedByName: String, createdAt: String?
+        ) {
+            self.id = id
+            self.partId = partId
+            self.partName = partName
+            self.partCode = partCode
+            self.qty = qty
+            self.movementType = movementType
+            self.locationSummary = locationSummary
+            self.reason = reason
+            self.notes = notes
+            self.performedByName = performedByName
+            self.createdAt = createdAt
+        }
+    }
+
     /// Full job detail with aggregated data.
     public struct JobDetail: Sendable {
         public let id: Int64
@@ -732,6 +786,16 @@ public final class JobsService: Sendable {
                 jobType: jobType,
                 createdBy: notebookCreatorId
             )
+            if let initialNote = notes?.trimmingCharacters(in: .whitespacesAndNewlines), !initialNote.isEmpty {
+                _ = try Self.insertJobNotebookEntry(
+                    dbConn,
+                    jobId: jobId,
+                    title: "Initial job note",
+                    content: initialNote,
+                    entryType: "note",
+                    createdBy: notebookCreatorId
+                )
+            }
             return jobId
         }
     }
@@ -807,6 +871,103 @@ public final class JobsService: Sendable {
 
             let sql = "UPDATE jobs SET \(setClauses.joined(separator: ", ")) WHERE id = ? AND deleted_at IS NULL"
             try dbConn.execute(sql: sql, arguments: StatementArguments(args))
+        }
+    }
+
+    /// Add a timestamped, attributed note to the job notebook.
+    @discardableResult
+    public func addJobNote(jobId: Int64, title: String, content: String? = nil, createdBy: Int64) throws -> Int64 {
+        let cleanedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanedTitle.isEmpty else { throw JobsError.requiredFieldEmpty }
+        return try db.writer.write { dbConn in
+            guard try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL", arguments: [jobId]) ?? 0 > 0 else {
+                throw JobsError.jobNotFound(jobId)
+            }
+            return try Self.insertJobNotebookEntry(
+                dbConn,
+                jobId: jobId,
+                title: cleanedTitle,
+                content: content,
+                entryType: "note",
+                createdBy: createdBy
+            )
+        }
+    }
+
+    /// List job notebook notes and stage-change audit entries in newest-first order.
+    public func listJobNotes(jobId: Int64, limit: Int = 25) throws -> [JobNoteRow] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT ne.id, ne.title, ne.content, ne.entry_type, ne.created_by, ne.created_at,
+                           COALESCE(u.display_name, u.email, 'User #' || ne.created_by) AS author_name
+                    FROM notebook_entries ne
+                    JOIN notebook_sections ns ON ns.id = ne.section_id AND ns.deleted_at IS NULL
+                    JOIN notebooks n ON n.id = ns.notebook_id AND n.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = ne.created_by AND u.deleted_at IS NULL
+                    WHERE n.job_id = ?
+                      AND ne.deleted_at IS NULL
+                      AND COALESCE(ne.is_deleted, 0) = 0
+                      AND ne.entry_type IN ('note', 'stage_change')
+                    ORDER BY ne.created_at DESC, ne.id DESC
+                    LIMIT ?
+                    """, arguments: [jobId, max(1, limit)])
+                return rows.map { row in
+                    JobNoteRow(
+                        id: row["id"] ?? 0,
+                        title: row["title"] ?? "",
+                        content: row["content"],
+                        entryType: row["entry_type"] ?? "note",
+                        authorId: row["created_by"],
+                        authorName: row["author_name"] ?? "Unknown",
+                        createdAt: row["created_at"]
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) || isColumnNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// List stock movements linked to the job by Stage 3 inventory workflows.
+    public func listJobInventoryMovements(jobId: Int64, limit: Int = 25) throws -> [JobInventoryMovementRow] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT sm.id, sm.part_id, sm.qty, sm.movement_type,
+                           sm.from_location_type, sm.to_location_type,
+                           sm.reason, sm.notes, sm.created_at,
+                           p.name AS part_name, p.code AS part_code,
+                           COALESCE(u.display_name, u.email, 'User #' || sm.performed_by) AS performed_by_name
+                    FROM stock_movements sm
+                    LEFT JOIN parts p ON p.id = sm.part_id AND p.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = sm.performed_by AND u.deleted_at IS NULL
+                    WHERE sm.job_id = ? AND sm.deleted_at IS NULL
+                    ORDER BY sm.created_at DESC, sm.id DESC
+                    LIMIT ?
+                    """, arguments: [jobId, max(1, limit)])
+                return rows.map { row in
+                    let from: String = row["from_location_type"] ?? "Unknown"
+                    let to: String = row["to_location_type"] ?? "Unknown"
+                    return JobInventoryMovementRow(
+                        id: row["id"] ?? 0,
+                        partId: row["part_id"] ?? 0,
+                        partName: row["part_name"] ?? "Unknown Part",
+                        partCode: row["part_code"],
+                        qty: row["qty"] ?? 0,
+                        movementType: row["movement_type"] ?? "movement",
+                        locationSummary: "\(from.capitalized) -> \(to.capitalized)",
+                        reason: row["reason"],
+                        notes: row["notes"],
+                        performedByName: row["performed_by_name"] ?? "Unknown",
+                        createdAt: row["created_at"]
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) || isColumnNotFoundError(error) { return [] }
+            throw error
         }
     }
 
@@ -2971,6 +3132,61 @@ public final class JobsService: Sendable {
         }
     }
 
+    /// Move a job to a stage in its assigned template and append an audit entry to the job notebook.
+    public func updateJobStage(jobId: Int64, stageId: Int64, changedBy: Int64, note: String? = nil) throws {
+        try db.writer.write { dbConn in
+            guard let jobRow = try Row.fetchOne(dbConn, sql: """
+                SELECT id, stage_template_id, current_stage_id
+                FROM jobs
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [jobId]) else {
+                throw JobsError.jobNotFound(jobId)
+            }
+
+            let templateId: Int64? = jobRow["stage_template_id"]
+            let currentStageId: Int64? = jobRow["current_stage_id"]
+            let stageSql: String
+            let stageArgs: [DatabaseValueConvertible?]
+            if let templateId {
+                stageSql = "SELECT id, name FROM job_stages WHERE id = ? AND template_id = ? AND deleted_at IS NULL"
+                stageArgs = [stageId, templateId]
+            } else {
+                stageSql = "SELECT id, name FROM job_stages WHERE id = ? AND deleted_at IS NULL"
+                stageArgs = [stageId]
+            }
+            guard let nextStage = try Row.fetchOne(dbConn, sql: stageSql, arguments: StatementArguments(stageArgs)) else {
+                throw JobsError.stageNotFound(stageId)
+            }
+
+            let previousName: String
+            if let currentStageId,
+               let previous = try String.fetchOne(dbConn, sql: "SELECT name FROM job_stages WHERE id = ?", arguments: [currentStageId]) {
+                previousName = previous
+            } else {
+                previousName = "Unassigned"
+            }
+            let nextName: String = nextStage["name"] ?? "Stage #\(stageId)"
+            guard currentStageId != stageId else { return }
+
+            try dbConn.execute(sql: """
+                UPDATE jobs
+                SET current_stage_id = ?, updated_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [stageId, jobId])
+
+            let content = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let auditContent = content?.isEmpty == false ? content : "Changed from \(previousName) to \(nextName)."
+            _ = try Self.insertJobNotebookEntry(
+                dbConn,
+                jobId: jobId,
+                title: "Stage changed: \(previousName) -> \(nextName)",
+                content: auditContent,
+                entryType: "stage_change",
+                createdBy: changedBy
+            )
+        }
+    }
+
     public func setJobStageCategoryMapping(templateId: Int64, categoryId: Int64, stageId: Int64?) throws {
         try db.writer.write { dbConn in
             guard try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM job_stage_templates WHERE id = ? AND archived_at IS NULL", arguments: [templateId]) ?? 0 > 0 else {
@@ -3049,5 +3265,58 @@ public final class JobsService: Sendable {
             }
             return JobStageStatus(id: stage.id, name: stage.name, sortOrder: stage.sortOrder, status: status)
         }
+    }
+
+    private static func insertJobNotebookEntry(
+        _ dbConn: Database,
+        jobId: Int64,
+        title: String,
+        content: String?,
+        entryType: String,
+        createdBy: Int64
+    ) throws -> Int64 {
+        let jobName = try String.fetchOne(
+            dbConn,
+            sql: "SELECT job_name FROM jobs WHERE id = ? AND deleted_at IS NULL",
+            arguments: [jobId]
+        ) ?? "Job \(jobId)"
+        let notebookId: Int64
+        if let existingNotebookId = try Int64.fetchOne(dbConn, sql: """
+            SELECT id FROM notebooks
+            WHERE job_id = ? AND deleted_at IS NULL
+            ORDER BY id ASC LIMIT 1
+            """, arguments: [jobId]) {
+            notebookId = existingNotebookId
+        } else {
+            try dbConn.execute(sql: """
+                INSERT INTO notebooks (title, description, job_id, created_by, notebook_type, status, created_at, updated_at)
+                VALUES (?, 'Auto-created job activity notebook', ?, ?, 'job', 'active', datetime('now'), datetime('now'))
+                """, arguments: ["\(jobName) Notebook", jobId, createdBy])
+            notebookId = dbConn.lastInsertedRowID
+        }
+
+        let sectionId: Int64
+        if let existingSectionId = try Int64.fetchOne(dbConn, sql: """
+            SELECT id FROM notebook_sections
+            WHERE notebook_id = ? AND name = 'Notes' AND deleted_at IS NULL
+            ORDER BY id ASC LIMIT 1
+            """, arguments: [notebookId]) {
+            sectionId = existingSectionId
+        } else {
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_sections (notebook_id, name, section_type, sort_order, created_at)
+                VALUES (?, 'Notes', 'notes', 0, datetime('now'))
+                """, arguments: [notebookId])
+            sectionId = dbConn.lastInsertedRowID
+        }
+
+        try dbConn.execute(sql: """
+            INSERT INTO notebook_entries
+                (section_id, title, content, entry_type, created_by, updated_by, sort_order, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, 0, datetime('now'), datetime('now'))
+            """, arguments: [sectionId, title, content, entryType, createdBy, createdBy])
+        let entryId = dbConn.lastInsertedRowID
+        try dbConn.execute(sql: "UPDATE notebooks SET updated_at = datetime('now') WHERE id = ?", arguments: [notebookId])
+        return entryId
     }
 }

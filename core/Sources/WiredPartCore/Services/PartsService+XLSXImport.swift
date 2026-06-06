@@ -7,47 +7,111 @@ extension PartsService {
     /// XLSX rows are normalized into the same draft row path used by CSV import so duplicate
     /// detection, validation, conflict generation, and atomic commit behavior stay shared.
     public func previewPartsImportXLSX(_ data: Data, supplierId: Int64? = nil) throws -> PartsImportPreview {
-        let workbook = try PartsImportXLSXReader(data: data).readFirstWorksheet()
-        guard workbook.rows.count > 1 else {
-            throw PartsError.invalidInput("XLSX sheet '\(workbook.sheetName)' is empty or has no data rows.")
+        let parsedSource = try PartsImportXLSXAdapter(service: self).parse(data)
+        let table = parsedSource.table
+        let sheetName = table.sheetName ?? "Sheet1"
+        guard table.rows.count > 1 else {
+            throw PartsError.invalidInput("XLSX sheet '\(sheetName)' is empty or has no data rows.")
         }
 
         var preview: PartsImportPreview
         do {
             preview = try previewPartsImportRows(
-                workbook.rows.map { PartsImportTabularRow(rowNumber: $0.rowNumber, columns: $0.columns) },
-                emptyDescription: "XLSX sheet '\(workbook.sheetName)' is empty or has no data rows.",
+                table.rows.map { PartsImportTabularRow(rowNumber: $0.rowNumber, columns: $0.columns) },
+                emptyDescription: "XLSX sheet '\(sheetName)' is empty or has no data rows.",
                 sourceKind: "xlsx",
                 supplierId: supplierId
             )
         } catch PartsError.invalidInput(let message) {
-            throw PartsError.invalidInput("XLSX sheet '\(workbook.sheetName)' row 1: \(message)")
+            throw PartsError.invalidInput("XLSX sheet '\(sheetName)' row 1: \(message)")
         }
 
         preview.errors = preview.errors.map { error in
             PartsImportError(
                 rowNumber: error.rowNumber,
-                message: "XLSX sheet '\(workbook.sheetName)' row \(error.rowNumber): \(error.message)"
+                message: "XLSX sheet '\(sheetName)' row \(error.rowNumber): \(error.message)"
             )
         }
         preview.source = PartsImportSourceMetadata(
-            sourceKind: "xlsx",
-            sheetName: workbook.sheetName,
-            sourceHash: importSourceHash(data),
+            sourceKind: parsedSource.source.sourceKind,
+            filename: parsedSource.source.filename,
+            sheetName: parsedSource.source.sheetName,
+            sourceHash: parsedSource.source.sourceHash,
+            userId: parsedSource.source.userId,
             supplierId: supplierId,
             headerFingerprint: preview.source?.headerFingerprint,
             sourceHeaders: preview.source?.sourceHeaders ?? [],
             acceptedColumnMapping: preview.source?.acceptedColumnMapping ?? [:],
-            savedMappingId: preview.source?.savedMappingId
+            savedMappingId: preview.source?.savedMappingId,
+            parserMetadata: parsedSource.source.parserMetadata,
+            evidence: parsedSource.source.evidence
         )
         return preview
     }
 
 }
 
+private struct PartsImportXLSXAdapter {
+    let service: PartsService
+
+    func parse(_ data: Data) throws -> PartsService.PartsImportParsedSource {
+        let hash = service.importSourceHash(data)
+        let workbook = try PartsImportXLSXReader(data: data).readWorkbook()
+        let firstWorksheet = workbook.worksheets[0]
+        let rows = firstWorksheet.rows.map { row in
+            PartsService.PartsImportDraftRow(
+                rowNumber: row.rowNumber,
+                columns: row.columns,
+                evidence: [
+                    PartsService.PartsImportSourceEvidence(
+                        kind: .row,
+                        sheetName: firstWorksheet.sheet.name,
+                        rowNumber: row.rowNumber
+                    )
+                ]
+            )
+        }
+        let table = PartsService.PartsImportExtractedTable(
+            id: "xlsx:\(firstWorksheet.sheet.index)",
+            sourceKind: .xlsx,
+            sourceName: firstWorksheet.sheet.name,
+            sheetName: firstWorksheet.sheet.name,
+            headerRowNumber: rows.first?.rowNumber,
+            rows: rows,
+            evidence: [PartsService.PartsImportSourceEvidence(kind: .sourceHash, text: hash)]
+        )
+        let parserMetadata = PartsService.PartsImportParserMetadata(
+            parserName: "wiredpart.xlsx",
+            parserVersion: "1",
+            sourceKind: .xlsx,
+            sourceHash: hash,
+            rowCount: rows.count,
+            columnCount: rows.map(\.columns.count).max() ?? 0,
+            sheetMetadata: workbook.sheetMetadata,
+            boundedArchiveProtectionsApplied: true
+        )
+        let source = PartsService.PartsImportSourceMetadata(
+            sourceKind: PartsService.PartsImportSourceKind.xlsx.rawValue,
+            sheetName: firstWorksheet.sheet.name,
+            sourceHash: hash,
+            parserMetadata: parserMetadata,
+            evidence: table.evidence
+        )
+        return PartsService.PartsImportParsedSource(table: table, source: source)
+    }
+}
+
 private struct PartsImportXLSXWorksheet {
-    let sheetName: String
+    let sheet: PartsService.PartsImportWorkbookSheetMetadata
     let rows: [PartsImportXLSXRow]
+}
+
+private struct PartsImportXLSXWorkbook {
+    let worksheets: [PartsImportXLSXWorksheet]
+
+    var sheetMetadata: [PartsService.PartsImportWorkbookSheetMetadata] {
+        worksheets.map(\.sheet)
+    }
 }
 
 private struct PartsImportXLSXRow {
@@ -78,14 +142,18 @@ private struct PartsImportXLSXReader {
               let workbookXML = String(data: workbookData, encoding: .utf8) else {
             throw PartsService.PartsError.invalidInput("Unsupported XLSX file: missing workbook metadata at xl/workbook.xml.")
         }
-        let firstSheet = workbookXML.xmlElements(named: "sheet").first
-        let relationshipId = firstSheet?.xmlAttribute("r:id") ?? firstSheet?.xmlAttribute("id")
         let relationshipXML = extracted["xl/_rels/workbook.xml.rels"].flatMap { String(data: $0, encoding: .utf8) }
-        let worksheetPath = Self.resolveWorksheetPath(relationshipId: relationshipId, relationshipsXML: relationshipXML)
+        let worksheetPaths = workbookXML.xmlElements(named: "sheet").map { sheet in
+            Self.resolveWorksheetPath(
+                relationshipId: sheet.xmlAttribute("r:id") ?? sheet.xmlAttribute("id"),
+                relationshipsXML: relationshipXML
+            )
+        }
+        let wantedSheetPaths = worksheetPaths.isEmpty ? ["xl/worksheets/sheet1.xml"] : worksheetPaths
 
         let sheetEntries = try Self.extractEntries(
             from: archive,
-            wantedPaths: [worksheetPath, "xl/sharedStrings.xml"]
+            wantedPaths: Set(wantedSheetPaths + ["xl/sharedStrings.xml"])
         )
         for (path, data) in sheetEntries {
             extracted[path] = data
@@ -140,23 +208,33 @@ private struct PartsImportXLSXReader {
         return "xl/worksheets/sheet1.xml"
     }
 
-    func readFirstWorksheet() throws -> PartsImportXLSXWorksheet {
+    func readWorkbook() throws -> PartsImportXLSXWorkbook {
         let workbookXML = try stringEntry("xl/workbook.xml", description: "workbook metadata")
         let sheets = workbookXML.xmlElements(named: "sheet")
-        guard let firstSheet = sheets.first else {
+        guard !sheets.isEmpty else {
             throw PartsService.PartsError.invalidInput("Unsupported XLSX file: workbook has no worksheets.")
         }
-
-        let sheetName = firstSheet.xmlAttribute("name") ?? "Sheet1"
-        let relationshipId = firstSheet.xmlAttribute("r:id") ?? firstSheet.xmlAttribute("id")
-        let worksheetPath = try resolveWorksheetPath(relationshipId: relationshipId)
-        let worksheetXML = try stringEntry(worksheetPath, description: "first worksheet")
         let sharedStrings = try readSharedStrings()
-        let rows = try parseRows(from: worksheetXML, sharedStrings: sharedStrings)
-        guard !rows.isEmpty else {
-            throw PartsService.PartsError.invalidInput("Unsupported XLSX sheet '\(sheetName)': no readable rows found.")
+        let worksheets = try sheets.enumerated().map { offset, sheetElement -> PartsImportXLSXWorksheet in
+            let sheetName = sheetElement.xmlAttribute("name") ?? "Sheet\(offset + 1)"
+            let relationshipId = sheetElement.xmlAttribute("r:id") ?? sheetElement.xmlAttribute("id")
+            let worksheetPath = try resolveWorksheetPath(relationshipId: relationshipId)
+            let worksheetXML = try stringEntry(worksheetPath, description: "worksheet \(sheetName)")
+            let rows = try parseRows(from: worksheetXML, sharedStrings: sharedStrings)
+            let metadata = PartsService.PartsImportWorkbookSheetMetadata(
+                index: offset,
+                name: sheetName,
+                relationshipId: relationshipId,
+                path: worksheetPath,
+                rowCount: rows.count,
+                columnCount: rows.map(\.columns.count).max() ?? 0
+            )
+            return PartsImportXLSXWorksheet(sheet: metadata, rows: rows)
         }
-        return PartsImportXLSXWorksheet(sheetName: sheetName, rows: rows)
+        guard let first = worksheets.first, !first.rows.isEmpty else {
+            throw PartsService.PartsError.invalidInput("Unsupported XLSX sheet '\(worksheets.first?.sheet.name ?? "Sheet1")': no readable rows found.")
+        }
+        return PartsImportXLSXWorkbook(worksheets: worksheets)
     }
 
     private func resolveWorksheetPath(relationshipId: String?) throws -> String {
