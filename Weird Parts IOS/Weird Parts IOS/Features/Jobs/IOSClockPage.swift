@@ -49,6 +49,9 @@ struct IOSClockPage: View {
     @State private var breakBudgetMinutes: Int = 15
     @State private var lunchPaidMinutes: Int = 30
     @State private var showLunchUnpaidPrompt = false
+    @State private var showRecoveredTimerBanner = false
+    @State private var recoveredBannerDismissed = false
+    @State private var isSwitchingJob = false
 
     // To-do integration
     @State private var activeTodos: [JobsService.ClockTodoItem] = []
@@ -223,16 +226,18 @@ struct IOSClockPage: View {
                         activeSheet = nil
                     }
                 case .switchJobPicker:
-                    SwitchJobPickerSheet(jobs: sortedJobs) { jobId, isShop in
-                        activeSheet = nil
-                        clockIn(jobId: jobId, isShop: isShop)
+                    SwitchJobPickerSheet(
+                        currentJobName: activeEntry?.jobName ?? "current job",
+                        jobs: sortedJobs,
+                        isSwitching: isSwitchingJob
+                    ) { job in
+                        Task { await switchToJob(job) }
                     }
                     .environmentObject(appCore)
                 case .lunchUnpaidPrompt:
                     LunchUnpaidPromptSheet(
                         onContinueUnpaid: {
-                            activeSheet = nil
-                            activityStatus = "lunch_unpaid"
+                            Task { await continueUnpaidLunch() }
                         },
                         onEndLunch: {
                             activeSheet = nil
@@ -389,6 +394,7 @@ struct IOSClockPage: View {
 
                 if let entry = activeEntry {
                     // CLOCKED IN — show status + clock out button
+                    clockRecoverySection(entry)
                     clockedInSection(entry)
                     currentTaskSection(entry)
                     shopJobLinkSection
@@ -419,7 +425,7 @@ struct IOSClockPage: View {
                     Text(elapsedText)
                         .font(.system(.largeTitle, design: .rounded)).bold()
                         .monospacedDigit()
-                    Text("on \(entry.jobName)")
+                    Text("Job: \(entry.jobName)")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -432,6 +438,10 @@ struct IOSClockPage: View {
                     Text(formatTime(entry.clockIn))
                         .font(.system(.subheadline, design: .monospaced))
                 }
+                Label("Saved on this device · waiting to sync", systemImage: "icloud.and.arrow.up")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityElement(children: .combine)
 
                 // Active break/lunch indicator
                 if let breakRecord = activeBreakRecord {
@@ -465,7 +475,7 @@ struct IOSClockPage: View {
                     }
 
                     Button {
-                        Task { await switchJob(entryId: entry.id) }
+                        switchJob(entryId: entry.id)
                     } label: {
                         Label("Switch Job", systemImage: "arrow.triangle.swap")
                             .frame(maxWidth: .infinity)
@@ -480,7 +490,7 @@ struct IOSClockPage: View {
 
                 // Break explanation when clock out is disabled
                 if activeBreakRecord != nil {
-                    Label("End your break first to clock out", systemImage: "info.circle")
+                    Label("End your break before switching jobs or clocking out.", systemImage: "info.circle")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -493,7 +503,7 @@ struct IOSClockPage: View {
                     Button {
                         Task { await endCurrentBreak() }
                     } label: {
-                        Label("End \(activeBreakRecord?.breakType == "break" ? "Break" : "Lunch")",
+                        Label(activeBreakRecord?.breakType == "lunch_unpaid" ? "Resume Work" : "End \(activeBreakRecord?.breakType == "break" ? "Break" : "Lunch")",
                               systemImage: "checkmark.circle.fill")
                             .frame(maxWidth: .infinity)
                     }
@@ -505,7 +515,7 @@ struct IOSClockPage: View {
                         Button {
                             Task { await startLunchBreak(entryId: entry.id) }
                         } label: {
-                            Label("Lunch", systemImage: "fork.knife")
+                            Label("Paid Lunch", systemImage: "fork.knife")
                         }
                         .buttonStyle(.bordered)
                         .disabled(activityStatus == "supply_run")
@@ -513,7 +523,15 @@ struct IOSClockPage: View {
                         Button {
                             Task { await startPaidBreak(entryId: entry.id) }
                         } label: {
-                            Label("Break", systemImage: "cup.and.saucer")
+                            Label("Paid Break", systemImage: "cup.and.saucer")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(activityStatus == "supply_run")
+
+                        Button {
+                            Task { await startUnpaidLunch(entryId: entry.id) }
+                        } label: {
+                            Label("Unpaid Lunch", systemImage: "pause.circle")
                         }
                         .buttonStyle(.bordered)
                         .disabled(activityStatus == "supply_run")
@@ -540,9 +558,9 @@ struct IOSClockPage: View {
     private var statusLabel: String {
         switch activityStatus {
         case "supply_run": return "On Supply Run"
-        case "break": return "On Break (Paid)"
-        case "lunch_paid": return "On Lunch (Paid)"
-        case "lunch_unpaid": return "On Lunch (Unpaid)"
+        case "break": return "On Paid Break"
+        case "lunch_paid": return "On Paid Lunch"
+        case "lunch_unpaid": return "On Unpaid Lunch"
         default: return "Clocked In"
         }
     }
@@ -574,7 +592,7 @@ struct IOSClockPage: View {
                 Image(systemName: breakRecord.breakType == "break" ? "cup.and.saucer.fill" : "fork.knife")
                     .foregroundStyle(.white)
                     .accessibilityHidden(true)
-                Text(breakRecord.breakType == "break" ? "Break Timer" : "Lunch Timer")
+                Text(activeBreakTitle(breakRecord))
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundStyle(.white)
@@ -595,7 +613,7 @@ struct IOSClockPage: View {
                 Text("\(elapsed)/\(budget) min")
                     .font(.caption2)
                     .foregroundStyle(.white.opacity(0.8))
-            } else {
+            } else if breakRecord.breakType == "lunch_paid" {
                 let paidMin = lunchPaidMinutes
                 let elapsed = breakElapsedMinutes(breakRecord)
                 let progress = min(1.0, Double(elapsed) / Double(max(1, paidMin)))
@@ -610,13 +628,70 @@ struct IOSClockPage: View {
                         .font(.caption2)
                         .foregroundStyle(.yellow)
                 }
+            } else {
+                Text("\(breakElapsedText) unpaid lunch")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.9))
+                Text("Timer paused for unpaid lunch. Resume work to continue this job.")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.85))
             }
         }
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(breakRecord.breakType == "break" ? Color.purple : Color.blue)
+                .fill(activeBreakColor(breakRecord))
         )
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private func clockRecoverySection(_ entry: JobsService.LaborEntryRow) -> some View {
+        if showRecoveredTimerBanner && !recoveredBannerDismissed {
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Active timer recovered", systemImage: "clock.arrow.circlepath")
+                        .font(.headline)
+                        .foregroundStyle(.blue)
+                    Text("You are still clocked into \(entry.jobName) since \(formatTime(entry.clockIn)).")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    HStack {
+                        Button {
+                            recoveredBannerDismissed = true
+                        } label: {
+                            Label("Continue Timer", systemImage: "play.circle")
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        Button(role: .destructive) {
+                            pendingClockOutEntryId = entry.id
+                            showClockOutConfirmation = true
+                        } label: {
+                            Label("Clock Out", systemImage: "stop.circle")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+    }
+
+    private func activeBreakTitle(_ record: BreakRecord) -> String {
+        switch record.breakType {
+        case "break": return "Paid Break"
+        case "lunch_unpaid": return "Unpaid Lunch"
+        default: return "Paid Lunch"
+        }
+    }
+
+    private func activeBreakColor(_ record: BreakRecord) -> Color {
+        switch record.breakType {
+        case "break": return .purple
+        case "lunch_unpaid": return .red
+        default: return .blue
+        }
     }
 
     private func breakElapsedMinutes(_ record: BreakRecord) -> Int {
@@ -1332,6 +1407,68 @@ struct IOSClockPage: View {
         }
     }
 
+    /// Start an unpaid lunch directly. It remains anchored to the active labor entry.
+    private func startUnpaidLunch(entryId: Int64) async {
+        guard let breakSvc = appCore.breakService,
+              let userId = appCore.currentUser?.id else {
+            await MainActor.run { errorMessage = "Break service unavailable" }
+            return
+        }
+
+        do {
+            let record = try breakSvc.startBreak(
+                userId: userId,
+                breakType: "lunch_unpaid",
+                laborEntryId: entryId,
+                timerMinutes: nil
+            )
+            await MainActor.run {
+                activeBreakRecord = record
+                activityStatus = "lunch_unpaid"
+                errorMessage = nil
+                startBreakTimer()
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = userFriendlyError(error, context: "start unpaid lunch")
+            }
+        }
+    }
+
+    /// Close paid lunch and continue the same active labor entry on unpaid lunch.
+    private func continueUnpaidLunch() async {
+        guard let breakSvc = appCore.breakService,
+              let userId = appCore.currentUser?.id,
+              let entryId = activeEntry?.id else {
+            await MainActor.run { errorMessage = "Break service unavailable" }
+            return
+        }
+
+        do {
+            if let paidRecordId = activeBreakRecord?.id {
+                try breakSvc.endBreak(recordId: paidRecordId)
+            }
+            let unpaidRecord = try breakSvc.startBreak(
+                userId: userId,
+                breakType: "lunch_unpaid",
+                laborEntryId: entryId,
+                timerMinutes: nil
+            )
+            await MainActor.run {
+                activeSheet = nil
+                showLunchUnpaidPrompt = false
+                activeBreakRecord = unpaidRecord
+                activityStatus = "lunch_unpaid"
+                errorMessage = nil
+                startBreakTimer()
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = userFriendlyError(error, context: "continue unpaid lunch")
+            }
+        }
+    }
+
     /// End the currently active break/lunch.
     private func endCurrentBreak() async {
         guard let breakSvc = appCore.breakService,
@@ -1440,37 +1577,68 @@ struct IOSClockPage: View {
 
     // MARK: - Switch Job
 
-    /// Clock out of current job and immediately show job picker for new clock-in.
-    private func switchJob(entryId: Int64) async {
-        guard let service = appCore.jobsService else {
+    /// Open the atomic job switch picker. The current entry remains active until confirmation.
+    private func switchJob(entryId: Int64) {
+        activeSheet = .switchJobPicker
+    }
+
+    private func switchToJob(_ job: JobWithDistance) async {
+        guard let service = appCore.jobsService,
+              let userId = appCore.currentUser?.id else {
             await MainActor.run { errorMessage = "Service not available" }
             return
         }
+
+        await MainActor.run { isSwitchingJob = true }
         let location = await locationManager.getCurrentLocation()
 
         do {
-            try service.clockOut(
-                laborEntryId: entryId,
-                gpsLat: location?.coordinate.latitude,
-                gpsLng: location?.coordinate.longitude
+            if try service.isJobOnPaymentHold(jobId: job.id) {
+                await MainActor.run {
+                    errorMessage = "This job is on payment hold. Contact your manager."
+                    isSwitchingJob = false
+                }
+                return
+            }
+
+            try service.switchClockedInJob(
+                userId: userId,
+                nextJobId: job.id,
+                at: Date(),
+                clockOutGpsLat: location?.coordinate.latitude,
+                clockOutGpsLng: location?.coordinate.longitude,
+                clockInGpsLat: location?.coordinate.latitude,
+                clockInGpsLng: location?.coordinate.longitude
             )
             geofenceManager.stopMonitoring()
+            if let jobLat = job.latitude, let jobLng = job.longitude, jobLat != 0, jobLng != 0 {
+                geofenceManager.startMonitoring(jobId: job.id, jobName: job.jobName, latitude: jobLat, longitude: jobLng)
+            }
             await MainActor.run {
+                activeSheet = nil
+                isSwitchingJob = false
                 errorMessage = nil
                 linkedJobId = nil
                 linkedJobName = nil
                 isShopClockIn = false
-                activeEntry = nil
                 currentTodo = nil
-                elapsedTimer?.invalidate()
-                elapsedTimer = nil
-                // Show job picker immediately for new clock-in
-                activeSheet = .switchJobPicker
+                recoveredBannerDismissed = false
             }
             loadData()
+        } catch let error as JobsService.JobsError {
+            await MainActor.run {
+                isSwitchingJob = false
+                switch error {
+                case .notClockedIn:
+                    showNotClockedInAlert = true
+                default:
+                    errorMessage = "Could not switch jobs. Your current timer is still running. Try again."
+                }
+            }
         } catch {
             await MainActor.run {
-                errorMessage = userFriendlyError(error, context: "switch job")
+                isSwitchingJob = false
+                errorMessage = "Could not switch jobs. Your current timer is still running. Try again."
             }
         }
     }
@@ -1720,10 +1888,15 @@ struct IOSClockPage: View {
                 // Start/stop elapsed timer based on clock-in state
                 if let entry {
                     startElapsedTimer(clockInISO: entry.clockIn)
+                    if !recoveredBannerDismissed {
+                        showRecoveredTimerBanner = true
+                    }
                 } else {
                     elapsedTimer?.invalidate()
                     elapsedTimer = nil
                     elapsedText = "0h 0m"
+                    showRecoveredTimerBanner = false
+                    recoveredBannerDismissed = false
                 }
 
                 // Check if current clock-in is to shop
@@ -1749,71 +1922,99 @@ struct IOSClockPage: View {
 
 private struct SwitchJobPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
+    let currentJobName: String
     let jobs: [IOSClockPage.JobWithDistance]
-    let onSelect: (Int64?, Bool) -> Void
+    let isSwitching: Bool
+    let onConfirm: (IOSClockPage.JobWithDistance) -> Void
+    @State private var selectedJob: IOSClockPage.JobWithDistance?
+    @State private var searchText = ""
+
+    private var filteredJobs: [IOSClockPage.JobWithDistance] {
+        guard !searchText.isEmpty else { return jobs }
+        let query = searchText.lowercased()
+        return jobs.filter {
+            $0.jobName.lowercased().contains(query) ||
+            $0.jobNumber.lowercased().contains(query)
+        }
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                // Shop option
-                Button {
-                    onSelect(nil, true)
-                } label: {
-                    HStack(spacing: DS.Space.md) {
-                        Image(systemName: "building.fill")
-                            .font(.title3)
-                            .foregroundStyle(.blue)
-                            .frame(width: 36, height: 36)
-                            .background(Color.blue.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .frame(minWidth: 44, minHeight: 44)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Shop / Warehouse").font(.body).fontWeight(.semibold)
-                            Text("Office, ordering, design work").font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                    }
-                    .contentShape(Rectangle())
+                Section {
+                    Text("Clock out of \(currentJobName) and clock into another job.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
 
-                // Job sites
-                ForEach(jobs) { job in
-                    Button {
-                        onSelect(job.id, false)
-                    } label: {
-                        HStack(spacing: DS.Space.md) {
-                            Image(systemName: "mappin.circle.fill")
-                                .font(.title3)
-                                .foregroundStyle(.orange)
-                                .frame(width: 36, height: 36)
-                                .background(Color.orange.opacity(0.1))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                .frame(minWidth: 44, minHeight: 44)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(job.jobName).font(.body).fontWeight(.medium)
-                                if !job.jobNumber.isEmpty {
-                                    Text("#\(job.jobNumber)").font(.caption).foregroundStyle(.secondary)
+                Section("Job Sites") {
+                    if filteredJobs.isEmpty {
+                        EmptyStateView(
+                            icon: "magnifyingglass",
+                            title: "No Jobs Found",
+                            message: "No clockable jobs match this search."
+                        )
+                    } else {
+                        ForEach(filteredJobs) { job in
+                            Button {
+                                selectedJob = job
+                            } label: {
+                                HStack(spacing: DS.Space.md) {
+                                    Image(systemName: "mappin.circle.fill")
+                                        .font(.title3)
+                                        .foregroundStyle(.orange)
+                                        .frame(width: 36, height: 36)
+                                        .background(Color.orange.opacity(0.1))
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                        .frame(minWidth: 44, minHeight: 44)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(job.jobName).font(.body).fontWeight(.medium)
+                                        HStack(spacing: 8) {
+                                            if !job.jobNumber.isEmpty {
+                                                Text("#\(job.jobNumber)").font(.caption).foregroundStyle(.secondary)
+                                            }
+                                            if let address = job.address, !address.isEmpty {
+                                                Text(address).font(.caption).foregroundStyle(.tertiary).lineLimit(1)
+                                            }
+                                        }
+                                    }
+                                    Spacer()
+                                    if !job.distanceText.isEmpty {
+                                        Text(job.distanceText)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
                                 }
+                                .contentShape(Rectangle())
                             }
-                            Spacer()
-                            if !job.distanceText.isEmpty {
-                                Text(job.distanceText)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
+                            .buttonStyle(.plain)
                         }
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
                 }
             }
-            .navigationTitle("Switch to…")
+            .navigationTitle("Switch Job")
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText, prompt: "Search jobs")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
+            }
+            .confirmationDialog(
+                selectedJob.map { "Switch from \(currentJobName) to \($0.jobName)?" } ?? "Switch Job?",
+                isPresented: Binding(
+                    get: { selectedJob != nil },
+                    set: { if !$0 { selectedJob = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Switch Job") {
+                    if let selectedJob {
+                        onConfirm(selectedJob)
+                    }
+                }
+                .disabled(isSwitching)
+                Button("Cancel", role: .cancel) { selectedJob = nil }
             }
         }
     }
