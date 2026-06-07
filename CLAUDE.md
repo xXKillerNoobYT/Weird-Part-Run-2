@@ -96,23 +96,19 @@ Errors are learning opportunities. When something breaks:
 
 ## WPR2 PR CI: Local Mac Actions Runner
 
-For this repo, do not treat GitHub-hosted Actions billing, `macos-latest`, `ubuntu-latest`, or queued cloud runners as the first PR blocker. The repo has a local self-hosted Mac runner intended for iOS/macOS/Xcode PR build, test, QA work, and repo-owned Actions automation while cloud billing is unavailable.
+For this repo, do not treat GitHub-hosted Actions billing, `macos-latest`, `ubuntu-latest`, or queued cloud runners as the first PR blocker. The repo has a local self-hosted Mac runner intended for trusted iOS/macOS/Xcode PR build, test, QA work, and repo-owned Actions automation while cloud billing is unavailable.
 
-Known runner:
-
-- Directory: `/Users/IA/actions-runner/Weird-Part-Run-2`
-- Service: `IA-Mac-WPR2`
-- Labels: `self-hosted`, `macOS`, `ARM64`, `xcode`, `ios`, `local-mac`
+Use `docs/runbooks/local-mac-actions-runner.md` as the canonical runner reference instead of duplicating machine-specific details here.
 
 Before calling CI blocked on cloud capacity, check:
 
 ```bash
 gh api repos/xXKillerNoobYT/Weird-Part-Run-2/actions/runners --jq '.runners[] | {name,status,busy,labels:[.labels[].name]}'
 gh run list -R xXKillerNoobYT/Weird-Part-Run-2 --limit 10
-rg -n "runs-on:" .github/workflows
+rg -n "runs-on:" .github/workflows || grep -R "runs-on:" .github/workflows
 ```
 
-If a workflow needs macOS/iOS/Xcode or is a required PR gate/repo-owned automation job, use `runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]`. If the local runner is offline or mislabelled, record that exact evidence as the blocker and name the owner/action needed to restore it. PR descriptions, PR-info notes, merge/review issues, and closeout comments must mention the local runner test path whenever they discuss CI.
+The runner API requires a GitHub token with permission to read repository Actions runner state. If API access is unavailable, use the repository Actions UI to inspect runner status and recent runs. If a workflow needs macOS/iOS/Xcode or is a required PR gate/repo-owned automation job, use `runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]` only for trusted repo events or same-repository PRs. If the local runner is offline or mislabelled, record that exact evidence as the blocker and name the owner/action needed to restore it. PR descriptions, PR-info notes, merge/review issues, and closeout comments must mention the local runner test path whenever they discuss CI.
 
 ## GitHub Account Context
 

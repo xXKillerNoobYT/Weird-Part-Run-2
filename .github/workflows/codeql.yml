@@ -24,6 +24,7 @@ on:
 jobs:
   required-codeql-compat:
     name: CodeQL
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     # Required compatibility context for the private WPR2 repo. Route through
     # the local Mac runner instead of cloud runners so PRs do not get blocked by
     # billing/hosted-runner availability.
@@ -36,6 +37,7 @@ jobs:
 
   analyze:
     name: Analyze (${{ matrix.language }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     # Swift CodeQL requires macOS; WPR2 uses the local self-hosted Mac runner.
     runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
     timeout-minutes: 60

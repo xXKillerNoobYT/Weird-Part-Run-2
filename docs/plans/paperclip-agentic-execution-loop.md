@@ -85,25 +85,24 @@ Never delete a live worktree, local branch, remote branch, or PR without evidenc
 
 ## Local Mac Actions Runner Gate
 
-For `xXKillerNoobYT/Weird-Part-Run-2`, PR build/test/QA work and repo-owned Actions automation must use the local self-hosted Mac runner path before treating GitHub-hosted Actions billing or queue capacity as a blocker.
+For `xXKillerNoobYT/Weird-Part-Run-2`, trusted PR build/test/QA work and repo-owned Actions automation must use the local self-hosted Mac runner path before treating GitHub-hosted Actions billing or queue capacity as a blocker.
 
-Known runner:
-
-- Directory: `/Users/IA/actions-runner/Weird-Part-Run-2`
-- Service: `IA-Mac-WPR2`
-- Labels: `self-hosted`, `macOS`, `ARM64`, `xcode`, `ios`, `local-mac`
+Use `docs/runbooks/local-mac-actions-runner.md` as the canonical runner reference instead of duplicating machine-specific details in plans or closeout comments.
 
 Before calling a PR blocked by CI, run:
 
 ```bash
 gh api repos/xXKillerNoobYT/Weird-Part-Run-2/actions/runners --jq '.runners[] | {name,status,busy,labels:[.labels[].name]}'
 gh run list -R xXKillerNoobYT/Weird-Part-Run-2 --limit 10
-rg -n "runs-on:" .github/workflows
+rg -n "runs-on:" .github/workflows || grep -R "runs-on:" .github/workflows
 ```
+
+The runner API requires a GitHub token with permission to read repository Actions runner state. If API access is unavailable, use the repository Actions UI to inspect runner status and recent runs.
 
 Required disposition:
 
 - If an Apple-platform or required PR-gate job is on `macos-latest`/`ubuntu-latest`, reroute it to `[self-hosted, macOS, ARM64, xcode, ios, local-mac]` or create a bounded CI child issue that does.
+- Do not run untrusted fork PR code on the self-hosted runner; keep self-hosted PR jobs limited to same-repository/trusted events.
 - If the local runner is online with those labels, do not escalate cloud billing as the primary blocker.
 - If the local runner is offline, busy, or missing labels, record the exact runner evidence and make that the named blocker.
 - PR descriptions, merge issues, review comments, and Paperclip closeout comments that mention CI must include the local-runner check result.
