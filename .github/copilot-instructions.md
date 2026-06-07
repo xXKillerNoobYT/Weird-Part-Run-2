@@ -16,6 +16,26 @@ cd core && swift build && swift test
 - Do not add a new failing test and leave it skipped.
 - If `swift build` fails, fix the compile error before pushing.
 
+### Local Mac Actions Runner For PR CI
+
+For `xXKillerNoobYT/Weird-Part-Run-2`, PR build/test/QA work and repo-owned Actions automation should use the local self-hosted Mac runner before treating GitHub-hosted Actions billing, `macos-latest`, `ubuntu-latest`, or cloud queue capacity as a blocker.
+
+Known runner:
+
+- Directory: `/Users/IA/actions-runner/Weird-Part-Run-2`
+- Service: `IA-Mac-WPR2`
+- Labels: `self-hosted`, `macOS`, `ARM64`, `xcode`, `ios`, `local-mac`
+
+Before marking CI blocked on cloud runner capacity, check:
+
+```bash
+gh api repos/xXKillerNoobYT/Weird-Part-Run-2/actions/runners --jq '.runners[] | {name,status,busy,labels:[.labels[].name]}'
+gh run list -R xXKillerNoobYT/Weird-Part-Run-2 --limit 10
+rg -n "runs-on:" .github/workflows
+```
+
+Use `runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]` for jobs that need macOS, iOS, Swift, or Xcode, required PR gates, and repo-owned automation jobs. If the runner is offline or missing labels, record that exact evidence in the PR/issue comment and name the owner/action needed to restore the runner.
+
 ---
 
 ## 2. Schema Is Canonical

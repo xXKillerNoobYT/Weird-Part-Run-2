@@ -24,7 +24,9 @@ on:
 jobs:
   required-codeql-compat:
     name: CodeQL
-    runs-on: ubuntu-latest
+    # Compatibility gate for the legacy required CodeQL context. Keep it on
+    # the same local runner path as the Swift analyzer so billing cannot block PRs.
+    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
     steps:
       - name: Required CodeQL compatibility gate
         run: |
@@ -33,7 +35,9 @@ jobs:
 
   analyze:
     name: Analyze (${{ matrix.language }})
-    runs-on: macos-latest  # Swift CodeQL requires macOS runners
+    # Swift CodeQL requires macOS/Xcode. Use the repository's local Mac
+    # runner instead of paid GitHub-hosted macOS capacity for PR blockers.
+    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
     timeout-minutes: 60
 
     permissions:

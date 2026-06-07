@@ -83,6 +83,31 @@ If the repo is above branch soft-cap pressure or has many active worktrees, pref
 
 Never delete a live worktree, local branch, remote branch, or PR without evidence that it is clean, merged, superseded, or intentionally abandoned.
 
+## Local Mac Actions Runner Gate
+
+For `xXKillerNoobYT/Weird-Part-Run-2`, PR build/test/QA work and repo-owned Actions automation must use the local self-hosted Mac runner path before treating GitHub-hosted Actions billing or queue capacity as a blocker.
+
+Known runner:
+
+- Directory: `/Users/IA/actions-runner/Weird-Part-Run-2`
+- Service: `IA-Mac-WPR2`
+- Labels: `self-hosted`, `macOS`, `ARM64`, `xcode`, `ios`, `local-mac`
+
+Before calling a PR blocked by CI, run:
+
+```bash
+gh api repos/xXKillerNoobYT/Weird-Part-Run-2/actions/runners --jq '.runners[] | {name,status,busy,labels:[.labels[].name]}'
+gh run list -R xXKillerNoobYT/Weird-Part-Run-2 --limit 10
+rg -n "runs-on:" .github/workflows
+```
+
+Required disposition:
+
+- If an Apple-platform or required PR-gate job is on `macos-latest`/`ubuntu-latest`, reroute it to `[self-hosted, macOS, ARM64, xcode, ios, local-mac]` or create a bounded CI child issue that does.
+- If the local runner is online with those labels, do not escalate cloud billing as the primary blocker.
+- If the local runner is offline, busy, or missing labels, record the exact runner evidence and make that the named blocker.
+- PR descriptions, merge issues, review comments, and Paperclip closeout comments that mention CI must include the local-runner check result.
+
 ## PR And Closeout Requirements
 
 A PR or closeout comment must include:
@@ -119,4 +144,3 @@ Paperclip closeout comments for GitHub-backed work must include a `GitHub sync:`
 - Do not create process-only issues that do not help agents choose, verify, land, or close work.
 - Do not broaden a small beta bug into an architecture project without a plan update and owner approval.
 - Do not treat Paperclip comments as completion when a code, PR, CI, review, or GitHub update is required.
-

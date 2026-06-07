@@ -94,6 +94,26 @@ Errors are learning opportunities. When something breaks:
 
 **GitHub Issues is the single source of truth** for all bugs, features, and improvements. Every unfixed problem MUST have a GitHub issue. Every fix should reference and close its issue.
 
+## WPR2 PR CI: Local Mac Actions Runner
+
+For this repo, do not treat GitHub-hosted Actions billing, `macos-latest`, `ubuntu-latest`, or queued cloud runners as the first PR blocker. The repo has a local self-hosted Mac runner intended for iOS/macOS/Xcode PR build, test, QA work, and repo-owned Actions automation while cloud billing is unavailable.
+
+Known runner:
+
+- Directory: `/Users/IA/actions-runner/Weird-Part-Run-2`
+- Service: `IA-Mac-WPR2`
+- Labels: `self-hosted`, `macOS`, `ARM64`, `xcode`, `ios`, `local-mac`
+
+Before calling CI blocked on cloud capacity, check:
+
+```bash
+gh api repos/xXKillerNoobYT/Weird-Part-Run-2/actions/runners --jq '.runners[] | {name,status,busy,labels:[.labels[].name]}'
+gh run list -R xXKillerNoobYT/Weird-Part-Run-2 --limit 10
+rg -n "runs-on:" .github/workflows
+```
+
+If a workflow needs macOS/iOS/Xcode or is a required PR gate/repo-owned automation job, use `runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]`. If the local runner is offline or mislabelled, record that exact evidence as the blocker and name the owner/action needed to restore it. PR descriptions, PR-info notes, merge/review issues, and closeout comments must mention the local runner test path whenever they discuss CI.
+
 ## GitHub Account Context
 
 This repo is currently under the user's personal GitHub account (`xXKillerNoobYT`), not a GitHub organization. Do not assume organization teams, organization policy pages, organization-level settings, or organization Copilot controls exist. Verify the repo owner before applying GitHub admin instructions. If a requested control is organization-only, document it as not applicable unless/until the user transfers the repo to an organization; use repo-level or user-account-level settings where available. See `docs/github-account-context.md`.
