@@ -1,99 +1,105 @@
 # WiredPart
 
-Native iOS field service management app for an electrical contracting company. Manages parts inventory, warehouse operations, fleet tracking, job management, labor hours, procurement, scheduling, and reporting — all running on-device with local SQLite storage and peer-to-peer sync.
+Native iOS field-service operations app for an electrical contracting shop. WiredPart manages parts inventory, warehouse operations, fleet tracking, job labor, procurement, scheduling, reporting, notebooks, chat/RFIs, and local device sync from a SwiftUI app backed by a shared Swift package.
 
----
+Tracking:
+
+- GitHub: [xXKillerNoobYT/Weird-Part-Run-2#942](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/942)
+- Paperclip parent: `WEI-3096`
+- Paperclip active implementation: `WEI-3099`
+- Paperclip QA review: `WEI-3100`
+
+## Start Here
+
+| Need | Read |
+| --- | --- |
+| Build or test locally | [docs/SETUP.md](docs/SETUP.md) |
+| Pick the right code area | [docs/WORKING-AREAS.md](docs/WORKING-AREAS.md) |
+| Verify a change | [docs/QA-PROCESS.md](docs/QA-PROCESS.md) |
+| Current staged roadmap | [docs/plans/staged-paperclip-goals.md](docs/plans/staged-paperclip-goals.md) |
+| Dependency and runner notes | [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) |
+| Historical implementation context | [docs/DEVELOPMENT-HANDOFF.md](docs/DEVELOPMENT-HANDOFF.md) |
+
+## Repository Map
+
+```text
+Weird-Part-Run-2/
+├── Weird Parts IOS/
+│   ├── Weird Parts.xcodeproj/        iOS Xcode project
+│   ├── Weird Parts IOS/              SwiftUI app target
+│   ├── Weird Parts IOSTests/         app-level unit/regression tests
+│   └── Weird Parts IOSUITests/       XCUITest suites and launch tests
+├── core/
+│   ├── Package.swift                 WiredPartCore Swift package
+│   ├── Sources/WiredPartCore/        models, services, database, sync, AI, QR/OCR
+│   └── Tests/WiredPartCoreTests/     Swift Testing package tests
+├── docs/                             setup, QA, plans, trackers, runbooks
+├── scripts/                          repo hygiene, GitHub/Paperclip sync, guards
+├── tests/                            static/repo-level checks
+├── tools/                            local developer utilities
+└── xcode-ai/                         AI-agent prompts, skills, and observations
+```
 
 ## Architecture
 
-| Component | Technology |
-|-----------|-----------|
-| **UI** | SwiftUI (iOS 18+) |
-| **Core Library** | WiredPartCore Swift Package (shared models, services, sync) |
-| **Database** | GRDB.swift / SQLite |
-| **Sync** | LAN HTTP (swift-nio) + MultipeerConnectivity (BT/Wi-Fi P2P) |
-| **AI** | Apple Foundation Models (iOS 26+, on-device) |
-| **Security** | CryptoKit (Ed25519 device trust) |
-| **OCR** | Apple Vision framework |
-| **QR** | AVFoundation barcode scanning |
+| Area | Technology |
+| --- | --- |
+| App UI | SwiftUI, iOS app target in `Weird Parts IOS/` |
+| Shared domain core | Swift Package Manager library `WiredPartCore` |
+| Database | GRDB.swift with SQLCipher-backed pinned dependency |
+| Sync | Local-first service layer, LAN/peer sync surfaces, device trust primitives |
+| AI/OCR/QR | Apple Foundation Models surfaces where available, Vision, AVFoundation |
+| Tests | Swift Testing for core package, Xcode test plans/XCUITest for app flows |
+| Automation | GitHub Actions plus local self-hosted Mac runner for Xcode/iOS work |
 
----
+The app is intentionally local-first. Core business rules belong in `core/Sources/WiredPartCore` where they can be tested without booting the UI. SwiftUI feature screens should remain thin composition layers over shared services, view models, and app navigation state.
 
-## Project Structure
+## Feature Areas
 
-```
-Weird-Part-Run-2/
-├── Weird Parts IOS/           ← iOS app target (SwiftUI)
-│   └── Weird Parts IOS/
-│       ├── App/               ← AppCore, entry point
-│       ├── Auth/              ← Onboarding, pairing, setup
-│       ├── Features/          ← 14 feature modules
-│       │   ├── Chat/
-│       │   ├── Dashboard/
-│       │   ├── Fleet/
-│       │   ├── Jobs/
-│       │   ├── Notebooks/
-│       │   ├── Office/
-│       │   ├── Orders/
-│       │   ├── Parts/
-│       │   ├── People/
-│       │   ├── Reports/
-│       │   ├── Scheduling/
-│       │   ├── Settings/
-│       │   ├── Tools/
-│       │   └── Warehouse/
-│       ├── Navigation/        ← Router, tab config, main view
-│       ├── Scanning/          ← OCR, QR scanner adapters
-│       ├── Shared/            ← Reusable components, charts
-│       ├── Sync/              ← Peer browser, sync manager, status
-│       └── Theme/             ← Theme manager, glass modifiers
-├── core/                      ← WiredPartCore Swift Package
-│   └── Sources/WiredPartCore/
-│       ├── AI/                ← Foundation Models service, AI tools
-│       ├── Database/          ← AppDatabase, migrations, base repo
-│       ├── ImageMatch/        ← Vision-based image matching
-│       ├── Models/            ← Domain models (12 modules)
-│       ├── OCR/               ← OCR processor adapter
-│       ├── QR/                ← QR codec, generator, scanner
-│       ├── Services/          ← 15 business logic services
-│       └── Sync/              ← Sync engine, peer management, crypto
-└── docs/                      ← Plans, specs, architecture docs
+| Area | Purpose | Primary App Path |
+| --- | --- | --- |
+| Dashboard | KPIs, alerts, quick actions | `Features/Dashboard` |
+| Parts | catalog, categories, brands, suppliers, pricing, forecasting, import/export | `Features/Parts` |
+| Warehouse | locations, movements, receiving, staging, returns, audits, trailers | `Features/Warehouse` |
+| Jobs | job lifecycle, labor, clock, questionnaire, daily reports | `Features/Jobs` |
+| Orders | JPOs, purchase orders, returns, procurement, approvals | `Features/Orders` |
+| Fleet | vehicles, trailers, inspections, maintenance, mileage, fuel | `Features/Fleet` |
+| People | employees, customers, contacts, hats, teams, permissions | `Features/People` |
+| Scheduling | calendar, dispatch, time off, templates, availability | `Features/Scheduling` |
+| Tools | tool registry, kits, checkout, maintenance | `Features/Tools` |
+| Notebooks | all notebooks, templates, job notebooks | `Features/Notebooks` |
+| Reports | timesheets, spending, daily summaries, pre-billing exports | `Features/Reports` |
+| Chat | messages, Q&A, RFIs | `Features/Chat` |
+| Office | office management dashboards and admin workflows | `Features/Office` |
+| Settings | company config, security, sync, theme, devices, AI settings | `Features/Settings` |
+
+## Common Commands
+
+```bash
+# Core package tests
+cd core
+swift test
+
+# Static artifact guard from repo root
+python3 scripts/guard-tracked-artifacts.py
+
+# Xcode app build/test from repo root; choose an installed simulator
+xcodebuild \
+  -project "Weird Parts IOS/Weird Parts.xcodeproj" \
+  -scheme "Weird Parts IOS" \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  build
 ```
 
----
+For PR validation that needs iOS/macOS/Xcode, prefer the repository's local self-hosted Mac runner labels documented in [docs/QA-PROCESS.md](docs/QA-PROCESS.md). Do not call a WPR2 PR blocked only because GitHub-hosted macOS capacity or billing is unavailable until the local runner state has been checked.
 
-## Modules
+## Work Rules
 
-| Module | Description |
-|--------|-------------|
-| Dashboard | KPI cards, quick actions |
-| Parts | Catalog, categories, brands, suppliers, pricing, companions, forecasting, import/export |
-| Warehouse | Dashboard, movements, locations, staging, receiving, returns, audit, inventory grid, tools, network, settings |
-| Jobs | Job list, labor, reports, clock, detail, questionnaire, daily reports |
-| Orders | JPO requests, purchase orders, returns, procurement, staging, approvals |
-| Fleet | Vehicles, maintenance, mileage, fuel, trailers, inspections, GPS, my truck, trailer locations, truck tools |
-| People | Employees, customers, contacts, hats, teams, contractors, permissions |
-| Scheduling | Calendar, dispatch, time off, templates, availability, sub schedule, config |
-| Tools | Registry, checkouts, kits, dashboard, admin, maintenance |
-| Notebooks | All notebooks, templates, job notebooks |
-| Reports | Timesheets, spending, daily summary, profitability, pre-billing, bookkeeper, labor overview |
-| Chat | Messages, Q&A, RFIs |
-| Office | Manage jobs, warehouse exec, spending dashboard |
-| Settings | Themes, app config, company, sync, bluetooth, AI config, devices, security, and more |
-
----
-
-## Auth & Permissions
-
-Hat-based permission system. Users wear one or more hats (roles), and their permissions are the union of all hat permissions. 7 built-in roles from Admin (full access) to Grunt (minimal access), with 30+ permission keys.
-
----
-
-## Sync
-
-Devices sync via LAN HTTP and Apple MultipeerConnectivity. Each device maintains its own SQLite database. Change tracking via `_change_log` table with last-writer-wins + field-level merge conflict resolution. Ed25519 device trust via CryptoKit.
-
----
+- Keep generated/runtime files out of commits. Run `python3 scripts/guard-tracked-artifacts.py` before handing off.
+- Put domain rules in `WiredPartCore` first when practical, then adapt them in the app.
+- Add or update the smallest relevant test for behavior changes.
+- Capture UI evidence for user-facing changes: route/screen, device or simulator, viewport/orientation, command, and result.
+- Link the GitHub issue and Paperclip ID in docs, PRs, and handoff comments when a change is part of tracked work.
 
 ## License
 
