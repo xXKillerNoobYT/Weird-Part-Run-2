@@ -9,8 +9,9 @@ on:
 jobs:
   tracked-artifacts:
     name: Tracked artifact guard
-    # This repo's PR gates run on the local Mac runner because GitHub-hosted
-    # billing/capacity is not a reliable unblock path for WPR2.
+    # WPR2 is a private repo with a repo-specific local Mac runner. Keep even
+    # lightweight required PR checks on that runner so PRs do not get blocked by
+    # cloud Actions billing/hosted-runner availability.
     runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
     timeout-minutes: 5
     steps:

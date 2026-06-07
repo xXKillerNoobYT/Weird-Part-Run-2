@@ -24,8 +24,9 @@ on:
 jobs:
   required-codeql-compat:
     name: CodeQL
-    # Compatibility gate for the legacy required CodeQL context. Keep it on
-    # the same local runner path as the Swift analyzer so billing cannot block PRs.
+    # Required compatibility context for the private WPR2 repo. Route through
+    # the local Mac runner instead of cloud runners so PRs do not get blocked by
+    # billing/hosted-runner availability.
     runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
     steps:
       - name: Required CodeQL compatibility gate
@@ -35,8 +36,7 @@ jobs:
 
   analyze:
     name: Analyze (${{ matrix.language }})
-    # Swift CodeQL requires macOS/Xcode. Use the repository's local Mac
-    # runner instead of paid GitHub-hosted macOS capacity for PR blockers.
+    # Swift CodeQL requires macOS; WPR2 uses the local self-hosted Mac runner.
     runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
     timeout-minutes: 60
 
