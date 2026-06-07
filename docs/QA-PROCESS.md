@@ -39,19 +39,34 @@ swift test --filter "SuiteOrTestName"
 # App build; choose an installed simulator
 xcodebuild \
   -project "Weird Parts IOS/Weird Parts.xcodeproj" \
-  -scheme "Weird Parts IOS" \
-  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -scheme "Weird Parts" \
+  -destination 'generic/platform=iOS Simulator' \
   build
 
 # App unit tests
 xcodebuild \
   -project "Weird Parts IOS/Weird Parts.xcodeproj" \
-  -scheme "Weird Parts IOS" \
-  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -scheme "Weird Parts" \
+  -destination 'generic/platform=iOS Simulator' \
   test
 ```
 
-If the simulator name is unavailable, run `xcrun simctl list devices available` and pick an installed iPhone/iPad simulator. Record the exact destination used.
+For route-specific simulator validation, replace the generic destination with an installed iPhone/iPad from `xcrun simctl list devices available`. Record the exact destination used.
+
+## Documentation Maintenance Cadence
+
+QA owns a docs spot-check whenever a change adds, removes, renames, or materially changes a user-facing route, service workflow, setup command, test command, runner label, permission/security behavior, sync behavior, or release-readiness gate.
+
+Use this checklist before approving the change:
+
+- Update `README.md` when the repo map, feature-area summary, common commands, or top-level status changes.
+- Update `docs/WORKING-AREAS.md` when code moves between app feature folders, `WiredPartCore`, tests, scripts, or workflow ownership areas.
+- Update `docs/SETUP.md` when Xcode project names, schemes, destinations, package commands, runner setup, or prerequisites change.
+- Update this `docs/QA-PROCESS.md` when evidence expectations, smoke commands, device matrix, artifact rules, or PR validation routes change.
+- Update feature-specific docs or file a GitHub follow-up when product behavior changes faster than the guide can be fixed in the current PR.
+- In the PR handoff, state `Docs checked: yes/no` and list any follow-up GitHub issue for mismatches intentionally deferred.
+
+Minimum cadence: run this checklist for every release-candidate PR, every field-test workflow PR, every GitHub/Paperclip automation PR, and any user-facing feature PR. For purely internal refactors, document why no guide update was required.
 
 ## UI Evidence Expectations
 

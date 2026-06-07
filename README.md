@@ -86,8 +86,8 @@ python3 scripts/guard-tracked-artifacts.py
 # Xcode app build/test from repo root; choose an installed simulator
 xcodebuild \
   -project "Weird Parts IOS/Weird Parts.xcodeproj" \
-  -scheme "Weird Parts IOS" \
-  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -scheme "Weird Parts" \
+  -destination 'generic/platform=iOS Simulator' \
   build
 ```
 

@@ -62,20 +62,20 @@ xcrun simctl list devices available
 
 xcodebuild \
   -project "Weird Parts IOS/Weird Parts.xcodeproj" \
-  -scheme "Weird Parts IOS" \
-  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -scheme "Weird Parts" \
+  -destination 'generic/platform=iOS Simulator' \
   build
 ```
 
-If `iPhone 16` is not installed, choose another available simulator and record the destination in your handoff.
+For manual simulator validation, replace the generic destination with an installed device from `xcrun simctl list devices available` and record the destination in your handoff.
 
 ## Run App Tests
 
 ```bash
 xcodebuild \
   -project "Weird Parts IOS/Weird Parts.xcodeproj" \
-  -scheme "Weird Parts IOS" \
-  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -scheme "Weird Parts" \
+  -destination 'generic/platform=iOS Simulator' \
   test
 ```
 
