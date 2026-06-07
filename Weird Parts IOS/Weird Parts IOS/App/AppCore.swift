@@ -942,6 +942,13 @@ final class AppCore: ObservableObject {
             try seedWarehouseLocationsUITestingFixtures(db: db)
         }
 
+        if ProcessInfo.processInfo.arguments.contains("-UITestingWEI3041Timesheets") &&
+            !ProcessInfo.processInfo.arguments.contains("-UITestingPreserveDatabase") {
+            try seedWEI3041TimesheetsFixture(db: db, userId: fixtureUserId)
+            UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
+            UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
+        }
+
         if ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard") {
             try seedDispatchBoardUITestingFixtures(db: db)
             UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
@@ -950,11 +957,100 @@ final class AppCore: ObservableObject {
 
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
-        if !ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard") {
+        let preservesWelcomeForUITest = ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard") ||
+            ProcessInfo.processInfo.arguments.contains("-UITestingWEI3041Timesheets")
+        if !preservesWelcomeForUITest {
             UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
         }
 
         seedWEI936OnboardingStateIfRequested(userId: fixtureUserId)
+    }
+
+    nonisolated private static func seedWEI3041TimesheetsFixture(db: AppDatabase, userId: Int64?) throws {
+        guard let userId else { return }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let dayStart = calendar.startOfDay(for: Date())
+        let firstClockIn = CoreFormatters.iso8601.string(from: calendar.date(byAdding: .hour, value: 8, to: dayStart) ?? dayStart)
+        let firstClockOut = CoreFormatters.iso8601.string(from: calendar.date(byAdding: .hour, value: 12, to: dayStart) ?? dayStart)
+        let secondClockIn = CoreFormatters.iso8601.string(from: calendar.date(byAdding: .minute, value: 750, to: dayStart) ?? dayStart)
+        let secondClockOut = CoreFormatters.iso8601.string(from: calendar.date(byAdding: .minute, value: 990, to: dayStart) ?? dayStart)
+
+        try db.writer.write { dbConn in
+            let existingOvertimeSettingsId = try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM overtime_settings ORDER BY id LIMIT 1"
+            )
+            if let existingOvertimeSettingsId {
+                try dbConn.execute(sql: """
+                    UPDATE overtime_settings
+                    SET calculation_rule = 'weekly_only',
+                        daily_threshold_hours = 8.0,
+                        weekly_threshold_hours = 6.0,
+                        week_start_weekday = 2,
+                        updated_by = ?,
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                    """, arguments: [userId, existingOvertimeSettingsId])
+            } else {
+                try dbConn.execute(sql: """
+                    INSERT INTO overtime_settings
+                        (calculation_rule, daily_threshold_hours, weekly_threshold_hours,
+                         week_start_weekday, updated_by, updated_at)
+                    VALUES ('weekly_only', 8.0, 6.0, 2, ?, datetime('now'))
+                    """, arguments: [userId])
+            }
+
+            try dbConn.execute(sql: """
+                INSERT OR IGNORE INTO jobs
+                    (job_number, job_name, customer_name, status, priority, job_type,
+                     lead_user_id, created_by, notes, created_at, updated_at)
+                VALUES ('UITEST-WEI-3041', 'WEI-3041 Correction Overtime Job', 'UITesting Customer',
+                        'active', 'normal', 'service', ?, ?,
+                        'Deterministic timesheet correction fixture for non-default overtime QA',
+                        datetime('now'), datetime('now'))
+                """, arguments: [userId, userId])
+            try dbConn.execute(sql: """
+                UPDATE jobs
+                SET job_name = 'WEI-3041 Correction Overtime Job',
+                    customer_name = 'UITesting Customer',
+                    status = 'active',
+                    priority = 'normal',
+                    job_type = 'service',
+                    lead_user_id = ?,
+                    created_by = ?,
+                    deleted_at = NULL,
+                    updated_at = datetime('now')
+                WHERE job_number = 'UITEST-WEI-3041'
+                """, arguments: [userId, userId])
+            let jobId = try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM jobs WHERE job_number = 'UITEST-WEI-3041' AND deleted_at IS NULL LIMIT 1"
+            )!
+
+            try dbConn.execute(sql: """
+                DELETE FROM timesheet_correction_audits
+                WHERE labor_entry_id IN (
+                    SELECT id FROM labor_entries
+                    WHERE job_id = ? AND user_id = ?
+                )
+                """, arguments: [jobId, userId])
+            try dbConn.execute(sql: """
+                DELETE FROM labor_entries
+                WHERE job_id = ? AND user_id = ?
+                """, arguments: [jobId, userId])
+
+            try dbConn.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES
+                    (?, ?, ?, ?, 4.0, 0.0, 'completed', datetime('now')),
+                    (?, ?, ?, ?, 4.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [
+                userId, jobId, firstClockIn, firstClockOut,
+                userId, jobId, secondClockIn, secondClockOut
+            ])
+        }
     }
 
     nonisolated private static func seedWarehouseLocationsUITestingFixtures(db: AppDatabase) throws {

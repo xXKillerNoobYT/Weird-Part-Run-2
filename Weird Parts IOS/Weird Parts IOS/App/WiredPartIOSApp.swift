@@ -42,6 +42,10 @@ struct WiredPartIOSApp: App {
         ProcessInfo.processInfo.arguments.contains("-UITestingWarehouseSetupWizard")
     }
 
+    private var shouldOpenTimesheetsForUITest: Bool {
+        ProcessInfo.processInfo.arguments.contains("-UITestingWEI3041Timesheets")
+    }
+
     private var shouldShowWEI936WelcomeFixture: Bool {
         ProcessInfo.processInfo.arguments.contains("-UITestingWEI936Welcome")
     }
@@ -88,6 +92,11 @@ struct WiredPartIOSApp: App {
                     } else if shouldOpenWarehouseSetupForUITest {
                         WarehouseOnboardingWizard()
                             .environmentObject(appCore)
+                    } else if shouldOpenTimesheetsForUITest {
+                        NavigationStack {
+                            IOSTimesheetsPage()
+                                .environmentObject(appCore)
+                        }
                     } else if isAdmin && !hasCompletedCompanySetup {
                         CompanySetupWizard()
                             .environmentObject(appCore)

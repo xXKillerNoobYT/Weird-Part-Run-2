@@ -135,6 +135,11 @@ struct IOSTimesheetsPage: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .safeAreaInset(edge: .bottom) {
+                Color.clear
+                    .frame(height: 96)
+                    .allowsHitTesting(false)
+            }
         }
     }
 
@@ -260,6 +265,7 @@ struct IOSTimesheetsPage: View {
                 } label: {
                     Label("Correct Entry", systemImage: "pencil.and.list.clipboard")
                 }
+                .accessibilityIdentifier("timesheetCorrectEntryButton-\(segment.id)")
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .hideWithoutPermission("manage_labor")
@@ -288,6 +294,7 @@ struct IOSTimesheetsPage: View {
                         Text("Original \(String(format: "%.1f", record.originalRegularHours))h regular / \(String(format: "%.1f", record.originalOvertimeHours))h overtime · Adjusted \(String(format: "%.1f", record.adjustedRegularHours))h regular / \(String(format: "%.1f", record.adjustedOvertimeHours))h overtime · \(approvalLabel(record))")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
+                            .accessibilityIdentifier("timesheetCorrectionHistoryAllocation")
                     }
                 }
             }
@@ -336,7 +343,11 @@ struct IOSTimesheetsPage: View {
                 selectedRow = rows.first
             }
         } catch {
-            loadError = "Timesheets could not load. Try again."
+            if ProcessInfo.processInfo.arguments.contains("-UITestingWEI3041Timesheets") {
+                loadError = "Timesheets could not load. Try again. \(error.localizedDescription)"
+            } else {
+                loadError = "Timesheets could not load. Try again."
+            }
         }
         isLoading = false
         postPageContext()
@@ -448,14 +459,17 @@ private struct TimesheetCorrectionSheet: View {
                     DatePicker("Clock In", selection: $adjustedClockIn)
                     DatePicker("Clock Out", selection: $adjustedClockOut)
                     labeledValue("Paid Time Preview", String(format: "%.1fh", adjustedTotalHours))
+                        .accessibilityIdentifier("timesheetCorrectionPaidTimePreview")
                     Label("Regular and overtime hours are calculated from the current overtime policy when saved.", systemImage: "clock.badge.exclamationmark")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("timesheetCorrectionPolicyAllocationCopy")
                 }
 
                 Section {
                     TextField("Explain why this time entry changed.", text: $reason, axis: .vertical)
                         .lineLimit(3...6)
+                        .accessibilityIdentifier("timesheetCorrectionReasonField")
                 } header: {
                     Text("Correction Reason")
                 }
@@ -470,6 +484,7 @@ private struct TimesheetCorrectionSheet: View {
             }
             .navigationTitle("Correct Entry")
             .navigationBarTitleDisplayMode(.inline)
+            .accessibilityIdentifier("timesheetCorrectionSheet")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -484,6 +499,7 @@ private struct TimesheetCorrectionSheet: View {
                             Text("Save Correction")
                         }
                     }
+                    .accessibilityIdentifier("timesheetCorrectionSaveButton")
                     .disabled(isSaving)
                 }
             }
