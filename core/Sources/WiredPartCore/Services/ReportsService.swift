@@ -95,8 +95,8 @@ public final class ReportsService: Sendable {
         public let laborEntryId: Int64
         public let adjustedClockIn: String
         public let adjustedClockOut: String
-        public let adjustedRegularHours: Double
-        public let adjustedOvertimeHours: Double
+        public let clientPreviewRegularHours: Double
+        public let clientPreviewOvertimeHours: Double
         public let reason: String
         public let actorUserId: Int64
 
@@ -104,16 +104,16 @@ public final class ReportsService: Sendable {
             laborEntryId: Int64,
             adjustedClockIn: String,
             adjustedClockOut: String,
-            adjustedRegularHours: Double,
-            adjustedOvertimeHours: Double,
+            clientPreviewRegularHours: Double,
+            clientPreviewOvertimeHours: Double,
             reason: String,
             actorUserId: Int64
         ) {
             self.laborEntryId = laborEntryId
             self.adjustedClockIn = adjustedClockIn
             self.adjustedClockOut = adjustedClockOut
-            self.adjustedRegularHours = adjustedRegularHours
-            self.adjustedOvertimeHours = adjustedOvertimeHours
+            self.clientPreviewRegularHours = clientPreviewRegularHours
+            self.clientPreviewOvertimeHours = clientPreviewOvertimeHours
             self.reason = reason
             self.actorUserId = actorUserId
         }
@@ -340,41 +340,28 @@ public final class ReportsService: Sendable {
                            COALESCE(le.regular_hours, 0) AS regular_hours,
                            COALESCE(le.overtime_hours, 0) AS overtime_hours,
                            COALESCE(le.status, CASE WHEN le.clock_out IS NULL THEN 'open' ELSE 'completed' END) AS status,
-                           COALESCE((
-                               SELECT SUM(COALESCE(br.duration_minutes, 0))
-                               FROM break_records br
-                               WHERE br.labor_entry_id = le.id
-                                 AND br.deleted_at IS NULL
-                                 AND br.break_type = 'break'
-                           ), 0) AS paid_break_minutes,
-                           COALESCE((
-                               SELECT SUM(COALESCE(br.duration_minutes, 0))
-                               FROM break_records br
-                               WHERE br.labor_entry_id = le.id
-                                 AND br.deleted_at IS NULL
-                                 AND br.break_type = 'lunch_paid'
-                           ), 0) AS paid_lunch_minutes,
-                           COALESCE((
-                               SELECT SUM(COALESCE(br.duration_minutes, 0))
-                               FROM break_records br
-                               WHERE br.labor_entry_id = le.id
-                                 AND br.deleted_at IS NULL
-                                 AND br.break_type = 'lunch_unpaid'
-                           ), 0) AS unpaid_lunch_minutes
+                           COALESCE(SUM(CASE WHEN br.break_type = 'break' THEN COALESCE(br.duration_minutes, 0) ELSE 0 END), 0) AS paid_break_minutes,
+                           COALESCE(SUM(CASE WHEN br.break_type = 'lunch_paid' THEN COALESCE(br.duration_minutes, 0) ELSE 0 END), 0) AS paid_lunch_minutes,
+                           COALESCE(SUM(CASE WHEN br.break_type = 'lunch_unpaid' THEN COALESCE(br.duration_minutes, 0) ELSE 0 END), 0) AS unpaid_lunch_minutes
                     FROM labor_entries le
                     LEFT JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
                     LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
+                    LEFT JOIN break_records br
+                      ON br.labor_entry_id = le.id
+                     AND br.deleted_at IS NULL
+                     AND br.break_type IN ('break', 'lunch_paid', 'lunch_unpaid')
                     WHERE le.deleted_at IS NULL
                       AND \(Self.localDateSQL("le.clock_in")) >= date(?)
                       AND \(Self.localDateSQL("le.clock_in")) <= date(?)
                       \(userClause)
+                    GROUP BY le.id, le.user_id, user_name, le.job_id, job_name, job_number,
+                             le.clock_in, le.clock_out, le.regular_hours, le.overtime_hours, status
                     ORDER BY user_name ASC, \(Self.localDateSQL("le.clock_in")) DESC, le.clock_in DESC
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     let clockOut: String? = row["clock_out"] as String?
-                    let status: String = clockOut == nil ? "Open" : "Pending Review"
                     return TimesheetSegmentRow(
                         id: row["id"] ?? 0,
                         userId: row["user_id"] ?? 0,
@@ -390,8 +377,8 @@ public final class ReportsService: Sendable {
                         regularHours: row["regular_hours"] ?? 0.0,
                         overtimeHours: row["overtime_hours"] ?? 0.0,
                         sourceDevice: nil,
-                        syncStatus: "Saved on this device",
-                        status: status
+                        syncStatus: "Local",
+                        status: row["status"] ?? (clockOut == nil ? "clocked_in" : "completed")
                     )
                 }
             }
@@ -411,6 +398,8 @@ public final class ReportsService: Sendable {
               adjustedOut >= adjustedIn else {
             throw ReportsError.invalidTimesheetCorrectionRange
         }
+        let adjustedClockIn = Self.sqliteUTCTimestamp(adjustedIn)
+        let adjustedClockOut = Self.sqliteUTCTimestamp(adjustedOut)
 
         do {
             return try db.writer.write { dbConn -> TimesheetCorrectionAuditRecord in
@@ -441,7 +430,7 @@ public final class ReportsService: Sendable {
                     dbConn: dbConn,
                     userId: employeeUserId,
                     laborEntryId: request.laborEntryId,
-                    clockInTimestamp: request.adjustedClockIn,
+                    clockInTimestamp: adjustedClockIn,
                     totalHours: adjustedTotalHours
                 )
 
@@ -455,8 +444,8 @@ public final class ReportsService: Sendable {
                         status = 'completed'
                     WHERE id = ? AND deleted_at IS NULL
                     """, arguments: [
-                    request.adjustedClockIn,
-                    request.adjustedClockOut,
+                    adjustedClockIn,
+                    adjustedClockOut,
                     allocation.regular,
                     allocation.overtime,
                     request.actorUserId,
@@ -472,7 +461,7 @@ public final class ReportsService: Sendable {
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?)
                     """, arguments: [
                     request.laborEntryId, employeeUserId, jobId, originalClockIn, originalClockOut,
-                    request.adjustedClockIn, request.adjustedClockOut, originalRegular, originalOvertime,
+                    adjustedClockIn, adjustedClockOut, originalRegular, originalOvertime,
                     allocation.regular, allocation.overtime, trimmedReason,
                     request.actorUserId, changedAt
                 ])
@@ -1338,7 +1327,7 @@ public final class ReportsService: Sendable {
             dbConn: dbConn,
             userId: userId,
             laborEntryId: laborEntryId,
-            whereSQL: "\(localDateSQL("clock_in")) = date(?, 'localtime') AND clock_in < ?",
+            whereSQL: "\(localDateSQL("clock_in")) = date(?, 'localtime') AND datetime(clock_in) < datetime(?)",
             arguments: [clockInTimestamp, clockInTimestamp]
         )
         let dailyRemaining = max(0, settings.dailyThresholdHours - dailyPriorHours)
@@ -1353,7 +1342,7 @@ public final class ReportsService: Sendable {
                 dbConn: dbConn,
                 userId: userId,
                 laborEntryId: laborEntryId,
-                whereSQL: "clock_in >= ? AND clock_in < ? AND clock_in < ?",
+                whereSQL: "datetime(clock_in) >= datetime(?) AND datetime(clock_in) < datetime(?) AND datetime(clock_in) < datetime(?)",
                 arguments: [weekStart, weekEnd, clockInTimestamp]
             )
             weeklyRemaining = max(0, weeklyThresholdHours - weeklyPriorHours)

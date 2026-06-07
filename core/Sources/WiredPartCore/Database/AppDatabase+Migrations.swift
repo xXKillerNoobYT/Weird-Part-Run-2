@@ -140,8 +140,8 @@ extension AppDatabase {
         registerMigration099ReceivingItemRoutingDisposition(&migrator)
         registerMigration100POEmailRequestType(&migrator)
         registerMigration100StagingBoxContentsAndDeliveryState(&migrator)
-        registerMigration103TimesheetCorrectionAudit(&migrator)
         registerMigration101OvertimeAndLaborCorrectionAudit(&migrator)
+        registerMigration103TimesheetCorrectionAudit(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates

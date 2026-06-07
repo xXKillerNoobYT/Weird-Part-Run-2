@@ -29,6 +29,7 @@ public final class JobsService: Sendable {
         case laborEntryNotFound(Int64)
         case alreadyClockedIn(userId: Int64, jobId: Int64)
         case notClockedIn(userId: Int64)
+        case userNotActive(Int64)
         case questionNotFound(Int64)
         case requiredQuestionNotAnswered(Int64)
         case invalidReturnQuantity(Int64)
@@ -2994,7 +2995,7 @@ public final class JobsService: Sendable {
             sql: "SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND COALESCE(is_active, 1) = 1",
             arguments: [userId]
         ) ?? 0
-        guard count > 0 else { throw JobsError.notClockedIn(userId: userId) }
+        guard count > 0 else { throw JobsError.userNotActive(userId) }
     }
 
     /// Detect whether a GRDB/SQLite error indicates a missing table.

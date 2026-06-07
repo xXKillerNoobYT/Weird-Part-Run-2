@@ -534,8 +534,8 @@ private struct TimesheetCorrectionSheet: View {
                 laborEntryId: segment.id,
                 adjustedClockIn: CoreFormatters.iso8601.string(from: adjustedClockIn),
                 adjustedClockOut: CoreFormatters.iso8601.string(from: adjustedClockOut),
-                adjustedRegularHours: segment.regularHours,
-                adjustedOvertimeHours: segment.overtimeHours,
+                clientPreviewRegularHours: segment.regularHours,
+                clientPreviewOvertimeHours: segment.overtimeHours,
                 reason: trimmedReason,
                 actorUserId: actorUserId
             )

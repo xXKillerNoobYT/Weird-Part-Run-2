@@ -87,8 +87,8 @@ struct ReportsServiceTests {
                 laborEntryId: laborEntryId,
                 adjustedClockIn: "2026-03-05T08:15:00Z",
                 adjustedClockOut: "2026-03-05T17:45:00Z",
-                adjustedRegularHours: 8.0,
-                adjustedOvertimeHours: 1.5,
+                clientPreviewRegularHours: 8.0,
+                clientPreviewOvertimeHours: 1.5,
                 reason: "Employee forgot to stop timer at the right time.",
                 actorUserId: env.adminUserId
             )
@@ -96,7 +96,7 @@ struct ReportsServiceTests {
 
         #expect(record.segmentId == laborEntryId)
         #expect(record.originalClockIn == "2026-03-05T08:00:00Z")
-        #expect(record.adjustedClockIn == "2026-03-05T08:15:00Z")
+        #expect(record.adjustedClockIn == "2026-03-05 08:15:00")
         #expect(record.adjustedOvertimeHours == 1.5)
         #expect(record.reason == "Employee forgot to stop timer at the right time.")
         #expect(record.approvalStatus == "pending_review")
@@ -107,8 +107,8 @@ struct ReportsServiceTests {
                 FROM labor_entries WHERE id = ?
                 """, arguments: [laborEntryId])
         }
-        #expect(updated?["clock_in"] as String? == "2026-03-05T08:15:00Z")
-        #expect(updated?["clock_out"] as String? == "2026-03-05T17:45:00Z")
+        #expect(updated?["clock_in"] as String? == "2026-03-05 08:15:00")
+        #expect(updated?["clock_out"] as String? == "2026-03-05 17:45:00")
         #expect(updated?["regular_hours"] as Double? == 8.0)
         #expect(updated?["overtime_hours"] as Double? == 1.5)
         #expect(updated?["edited_by"] as Int64? == env.adminUserId)
@@ -142,8 +142,8 @@ struct ReportsServiceTests {
                     laborEntryId: laborEntryId,
                     adjustedClockIn: "2026-03-05T18:30:00Z",
                     adjustedClockOut: "2026-03-05T22:30:00Z",
-                    adjustedRegularHours: 4.0,
-                    adjustedOvertimeHours: 0.0,
+                    clientPreviewRegularHours: 4.0,
+                    clientPreviewOvertimeHours: 0.0,
                     reason: "Corrected by manager after reviewing dispatch notes.",
                     actorUserId: env.adminUserId
                 )
@@ -181,8 +181,8 @@ struct ReportsServiceTests {
                 laborEntryId: laborEntryId,
                 adjustedClockIn: "2026-04-10T08:00:00Z",
                 adjustedClockOut: "2026-04-10T13:00:00Z",
-                adjustedRegularHours: 5.0,
-                adjustedOvertimeHours: 0.0,
+                clientPreviewRegularHours: 5.0,
+                clientPreviewOvertimeHours: 0.0,
                 reason: "Verified against supervisor note.",
                 actorUserId: env.adminUserId
             )
