@@ -676,11 +676,11 @@ struct PartsImportExportPage: View {
                     message: "PDF/OCR source is quarantined for review. Commit is disabled until security/provider gates allow evidence-backed writes."
                 )
             ],
-            totalRows: 0,
+            totalRows: 1,
             source: PartsService.PartsImportSourceMetadata(
                 sourceKind: "pdf",
                 filename: filename,
-                sourceHash: "sha256:\(data.count)-preview-only"
+                sourceHash: "preview-only:bytes:\(data.count)"
             )
         )
         return ImportPreview(
@@ -1068,10 +1068,7 @@ private struct ImportPreviewContent: View {
             }
             if preview.sourceKind == .xlsx {
                 if preview.workbookSheets.count > 1 {
-                    Picker("Workbook sheet", selection: Binding(
-                        get: { preview.sheetName ?? preview.workbookSheets[0] },
-                        set: { _ in }
-                    )) {
+                    Picker("Workbook sheet", selection: .constant(preview.sheetName ?? preview.workbookSheets[0])) {
                         ForEach(preview.workbookSheets, id: \.self) { sheet in
                             Text(sheet).tag(sheet)
                         }
@@ -1220,6 +1217,7 @@ private struct ImportPreviewContent: View {
                             }
                             .buttonStyle(.bordered)
                             .font(.caption)
+                            .accessibilityLabel("Skip row \(row.rowNumber): \(row.name)")
                         }
                     }
                 }
@@ -1254,6 +1252,7 @@ private struct ImportPreviewContent: View {
                         }
                         .buttonStyle(.bordered)
                         .font(.caption)
+                        .accessibilityLabel("Restore row \(row.rowNumber): \(row.name)")
                     }
                 }
             } header: {
@@ -1348,13 +1347,13 @@ private struct ImportPreviewContent: View {
     }
 
     private func skipNewPart(_ row: PartsService.PartsImportParsedRow) {
-        guard let index = preview.servicePreview.newParts.firstIndex(where: { $0.rowNumber == row.rowNumber && $0.name == row.name && $0.code == row.code }) else { return }
+        guard let index = preview.servicePreview.newParts.firstIndex(where: { $0.rowNumber == row.rowNumber }) else { return }
         let removed = preview.servicePreview.newParts.remove(at: index)
         preview.skippedNewParts.append(removed)
     }
 
     private func restoreSkippedNewPart(_ row: PartsService.PartsImportParsedRow) {
-        guard let index = preview.skippedNewParts.firstIndex(where: { $0.rowNumber == row.rowNumber && $0.name == row.name && $0.code == row.code }) else { return }
+        guard let index = preview.skippedNewParts.firstIndex(where: { $0.rowNumber == row.rowNumber }) else { return }
         let restored = preview.skippedNewParts.remove(at: index)
         preview.servicePreview.newParts.append(restored)
         preview.servicePreview.newParts.sort { $0.rowNumber < $1.rowNumber }
