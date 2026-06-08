@@ -40,6 +40,9 @@ struct IOSJobDetailPage: View {
     @State private var pullPartSearch = ""
     @State private var pullPartResults: [Part] = []
     @State private var selectedPullPart: Part?
+    @State private var pullSourceLocations: [WarehouseService.LedgerLocationSummary] = []
+    @State private var selectedPullSource: WarehouseService.LedgerLocationSummary?
+    @State private var isLoadingPullSources = false
     @State private var highlightedJobPartId: Int64?
     private var canViewJobFinancials: Bool { appCore.hasPermission("view_job_financials") }
 
@@ -1015,6 +1018,7 @@ struct IOSJobDetailPage: View {
 
                 if case .pull = action {
                     pullPartPickerSection
+                    pullSourcePickerSection
                 }
 
                 if case .correctUsed(let part) = action {
@@ -1125,6 +1129,8 @@ struct IOSJobDetailPage: View {
             ForEach(Array(pullPartResults.enumerated()), id: \.offset) { _, part in
                 Button {
                     selectedPullPart = part
+                    materialActionError = nil
+                    loadPullSourceLocations(for: part)
                 } label: {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -1140,6 +1146,41 @@ struct IOSJobDetailPage: View {
                             Image(systemName: "checkmark")
                         }
                     }
+                }
+            }
+        }
+    }
+
+    private var pullSourcePickerSection: some View {
+        Section("Source") {
+            if selectedPullPart?.id == nil {
+                Label("Select a part to load available source locations.", systemImage: "shippingbox")
+                    .foregroundStyle(.secondary)
+            } else if isLoadingPullSources {
+                ProgressView("Loading source locations...")
+            } else if pullSourceLocations.isEmpty {
+                Label("No available stock locations for this part.", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+            } else {
+                ForEach(pullSourceLocations, id: \.displayName) { source in
+                    Button {
+                        selectedPullSource = source
+                        materialQuantity = min(materialQuantity, source.qty)
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(source.displayName)
+                                Text("\(source.qty) available")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if selectedPullSource == source {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                    .accessibilityLabel("Source \(source.displayName), \(source.qty) available")
                 }
             }
         }
@@ -1307,6 +1348,9 @@ struct IOSJobDetailPage: View {
         materialNote = ""
         materialCondition = .usable
         selectedPullPart = nil
+        selectedPullSource = nil
+        pullSourceLocations = []
+        isLoadingPullSources = false
         switch action {
         case .pull:
             materialQuantity = 1
@@ -1336,6 +1380,34 @@ struct IOSJobDetailPage: View {
         }
     }
 
+    private func loadPullSourceLocations(for part: Part) {
+        selectedPullSource = nil
+        pullSourceLocations = []
+        guard let partId = part.id else {
+            materialActionError = "Select a saved part before choosing a source."
+            return
+        }
+        guard let service = appCore.warehouseService else {
+            materialActionError = "Warehouse service unavailable"
+            return
+        }
+        isLoadingPullSources = true
+        defer { isLoadingPullSources = false }
+
+        do {
+            let ledger = try service.getInventoryLedger(partId: partId)
+            pullSourceLocations = ledger?.locations.filter { $0.qty > 0 } ?? []
+            if pullSourceLocations.count == 1 {
+                selectedPullSource = pullSourceLocations[0]
+                materialQuantity = min(materialQuantity, pullSourceLocations[0].qty)
+            } else if pullSourceLocations.isEmpty {
+                materialQuantity = 1
+            }
+        } catch {
+            materialActionError = userFriendlyError(error, context: "load source locations")
+        }
+    }
+
     private func submitMaterialAction(_ action: MaterialAction) {
         guard let service = appCore.jobsService else {
             materialActionError = "Jobs service unavailable"
@@ -1357,12 +1429,27 @@ struct IOSJobDetailPage: View {
                     materialActionError = "Select a part to pull."
                     return
                 }
+                guard let source = selectedPullSource else {
+                    materialActionError = "Select a source location before pulling material."
+                    return
+                }
+                if let warehouseService = appCore.warehouseService {
+                    let available = try warehouseService.getStockQty(
+                        partId: partId,
+                        locationType: source.locationType,
+                        locationId: source.locationId
+                    )
+                    guard available >= materialQuantity else {
+                        materialActionError = "Only \(available) available in \(source.displayName). Adjust quantity to continue."
+                        return
+                    }
+                }
                 _ = try service.pullJobMaterial(
                     jobId: jobId,
                     partId: partId,
                     qty: materialQuantity,
-                    fromLocationType: "warehouse",
-                    fromLocationId: 1,
+                    fromLocationType: source.locationType,
+                    fromLocationId: source.locationId,
                     performedBy: userId,
                     notes: materialNote.nilIfEmpty
                 )
@@ -1437,7 +1524,7 @@ struct IOSJobDetailPage: View {
     private func materialActionMaxQty(_ action: MaterialAction) -> Int {
         switch action {
         case .pull:
-            return Self.maxPullQty
+            return min(Self.maxPullQty, max(0, selectedPullSource?.qty ?? 0))
         case .useReady(let material), .returnReady(let material):
             return material.stagedQty
         case .returnUsed(let part):
@@ -1450,7 +1537,10 @@ struct IOSJobDetailPage: View {
     private func canSubmitMaterialAction(_ action: MaterialAction) -> Bool {
         switch action {
         case .pull:
-            selectedPullPart?.id != nil && materialQuantity > 0
+            selectedPullPart?.id != nil
+                && selectedPullSource != nil
+                && materialQuantity > 0
+                && materialQuantity <= materialActionMaxQty(action)
         case .useReady, .returnReady, .returnUsed:
             materialQuantity > 0
                 && materialQuantity <= materialActionMaxQty(action)
@@ -1472,6 +1562,10 @@ struct IOSJobDetailPage: View {
         switch action {
         case .pull where selectedPullPart?.id == nil:
             return "Select a part before pulling material."
+        case .pull where selectedPullSource == nil:
+            return "Select a source location before pulling material."
+        case .pull where materialQuantity > materialActionMaxQty(action):
+            return overQuantityMessage(action)
         case .pull:
             return "Enter a valid pull quantity."
         case .correctUsed:
@@ -1488,7 +1582,10 @@ struct IOSJobDetailPage: View {
         case .useReady, .returnReady:
             return "Only \(materialActionMaxQty(action)) remain staged. Adjust quantity to continue."
         case .pull:
-            return "Enter a valid quantity to pull."
+            if let source = selectedPullSource {
+                return "Only \(source.qty) available in \(source.displayName). Adjust quantity to continue."
+            }
+            return "Select a source location with available stock."
         case .correctUsed:
             return "Adjusted quantity cannot be below already returned quantity."
         }
@@ -1538,7 +1635,13 @@ struct IOSJobDetailPage: View {
     private func materialActionSubtitle(_ action: MaterialAction) -> String {
         switch action {
         case .pull:
-            return "Source: Warehouse 1 -> \(job?.jobName ?? "job") staged material"
+            if let source = selectedPullSource {
+                return "Source: \(source.displayName) (\(source.qty) available) -> \(job?.jobName ?? "job") staged material"
+            }
+            if selectedPullPart?.id != nil {
+                return "Select a source location for \(job?.jobName ?? "job") staged material"
+            }
+            return "Select material and source location for \(job?.jobName ?? "job") staged material"
         case .useReady(let material):
             return "\(material.stagedQty) staged for \(job?.jobName ?? "this job")"
         case .returnReady(let material):

@@ -142,6 +142,32 @@ final class PartsBrandsPageRegressionTests: XCTestCase {
         )
     }
 
+    func testJobMaterialPullUsesSelectedSourceInsteadOfWarehouseOneDefault() throws {
+        let source = try Self.readJobsPageSource(named: "IOSJobDetailPage.swift")
+
+        XCTAssertTrue(
+            source.contains("@State private var selectedPullSource: WarehouseService.LedgerLocationSummary?"),
+            "Pull material should track the selected source location."
+        )
+        XCTAssertTrue(
+            source.contains("loadPullSourceLocations(for: part)"),
+            "Selecting a pull part should load available stock locations for that part."
+        )
+        XCTAssertTrue(
+            source.contains("fromLocationType: source.locationType") &&
+                source.contains("fromLocationId: source.locationId"),
+            "Pull material must pass the selected source location into JobsService.pullJobMaterial."
+        )
+        XCTAssertFalse(
+            source.contains("fromLocationType: \"warehouse\",\n                    fromLocationId: 1"),
+            "The iOS pull flow must not hard-code warehouse/1 as the source location."
+        )
+        XCTAssertFalse(
+            source.contains("Source: Warehouse 1"),
+            "The pull sheet subtitle should describe the selected source, not a hard-coded Warehouse 1."
+        )
+    }
+
     private static func readPartsBrandsPageSource(
         file: StaticString = #filePath
     ) throws -> String {
