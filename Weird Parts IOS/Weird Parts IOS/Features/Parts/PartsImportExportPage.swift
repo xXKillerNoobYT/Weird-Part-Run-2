@@ -290,13 +290,13 @@ struct PartsImportExportPage: View {
                         .foregroundStyle(.orange)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Import Parts from CSV or Excel")
+                        Text("Import Parts from CSV, Excel, or OCR preview")
                             .font(.subheadline)
                             .fontWeight(.medium)
                         Text("Preview source metadata, detected mappings, validation, and duplicate conflicts before committing.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Label("PDF import planned - disabled until backend lands", systemImage: "doc.richtext")
+                        Label("PDF/OCR preview is available for review only; commit stays disabled by policy.", systemImage: "doc.richtext")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -319,7 +319,7 @@ struct PartsImportExportPage: View {
                         Image(systemName: "doc.richtext")
                             .foregroundStyle(.secondary)
                             .accessibilityHidden(true)
-                        Text("PDF import is planned and will unlock after the PDF/OCR backend lands.")
+                        Text("PDF/OCR imports can be reviewed as quarantined candidates, but commit remains disabled until provider gates allow evidence-backed writes.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
@@ -489,18 +489,13 @@ struct PartsImportExportPage: View {
             }
 
             let sourceKind = ImportSourceKind(url: url)
-            guard sourceKind != .pdf else {
-                await MainActor.run { importStatus = .error("Parse error: PDF import is planned, but the PDF backend is not available yet.") }
-                return
-            }
-
             // Offload blocking file I/O off the cooperative thread pool.
             let (fileExt, filename, rawData, rawText) = try await Task.detached(priority: .userInitiated) {
                 let accessing = url.startAccessingSecurityScopedResource()
                 defer { if accessing { url.stopAccessingSecurityScopedResource() } }
                 let ext = url.pathExtension.lowercased()
                 let name = url.lastPathComponent
-                if ext == "xlsx" {
+                if ext == "xlsx" || ext == "pdf" {
                     let data = try Data(contentsOf: url)
                     return (ext, name, data as Data?, nil as String?)
                 } else {
@@ -508,6 +503,16 @@ struct PartsImportExportPage: View {
                     return (ext, name, nil as Data?, text as String?)
                 }
             }.value
+
+            if sourceKind == .pdf {
+                let preview = makePDFPreviewOnlyImportPreview(filename: filename, data: rawData ?? Data())
+                await MainActor.run {
+                    self.importPreview = preview
+                    self.activeSheet = .importPreview
+                    self.importStatus = .idle
+                }
+                return
+            }
 
             if fileExt == "xlsx" {
                 let data = rawData!
@@ -518,9 +523,13 @@ struct PartsImportExportPage: View {
                     sourceKind: .xlsx,
                     filename: filename,
                     sheetName: servicePreview.source?.sheetName,
+                    workbookSheets: servicePreview.source?.sheetName.map { [$0] } ?? [],
                     sourceColumns: canonicalColumns(from: servicePreview),
                     columnMappings: canonicalColumns(from: servicePreview).map { ColumnMapping(sourceColumn: $0, target: ColumnMappingTarget(rawValue: $0) ?? .ignore, confidence: .exact) },
                     sourceRows: [],
+                    skippedNewParts: [],
+                    ocrPreview: nil,
+                    commitDisabledReason: nil,
                     mappingError: nil
                 )
                 await MainActor.run {
@@ -548,9 +557,13 @@ struct PartsImportExportPage: View {
                 sourceKind: .csv,
                 filename: filename,
                 sheetName: nil,
+                workbookSheets: [],
                 sourceColumns: sourceColumns,
                 columnMappings: inferColumnMappings(sourceColumns),
                 sourceRows: sourceRows,
+                skippedNewParts: [],
+                ocrPreview: nil,
+                commitDisabledReason: nil,
                 mappingError: nil
             )
             try applyMapping(to: &preview, service: service)
@@ -655,6 +668,37 @@ struct PartsImportExportPage: View {
         return Array(Set(columns)).sorted()
     }
 
+    private func makePDFPreviewOnlyImportPreview(filename: String, data: Data) -> ImportPreview {
+        let preview = PartsService.PartsImportPreview(
+            errors: [
+                PartsService.PartsImportError(
+                    rowNumber: 1,
+                    message: "PDF/OCR source is quarantined for review. Commit is disabled until security/provider gates allow evidence-backed writes."
+                )
+            ],
+            totalRows: 0,
+            source: PartsService.PartsImportSourceMetadata(
+                sourceKind: "pdf",
+                filename: filename,
+                sourceHash: "sha256:\(data.count)-preview-only"
+            )
+        )
+        return ImportPreview(
+            servicePreview: preview,
+            sourceKind: .pdf,
+            filename: filename,
+            sheetName: nil,
+            workbookSheets: [],
+            sourceColumns: [],
+            columnMappings: [],
+            sourceRows: [],
+            skippedNewParts: [],
+            ocrPreview: nil,
+            commitDisabledReason: "PDF/OCR preview is review-only. Commit is disabled until the approved provider gate allows audited writes.",
+            mappingError: nil
+        )
+    }
+
     private func inferColumnMappings(_ columns: [String]) -> [ColumnMapping] {
         columns.map { column in
             let normalized = normalizeColumn(column)
@@ -694,7 +738,11 @@ struct PartsImportExportPage: View {
                 importPreview = nil
                 var msg = "Created \(result.created)"
                 if result.updated > 0 { msg += ", Updated \(result.updated)" }
-                if result.skipped > 0 { msg += ", Skipped \(result.skipped)" }
+                let skipped = result.skipped + preview.skippedNewParts.count
+                if skipped > 0 { msg += ", Skipped \(skipped)" }
+                if let sessionId = result.importSessionId {
+                    msg += ". Audit session #\(sessionId)"
+                }
                 importStatus = .success(msg)
             }
             await loadStats()
@@ -813,7 +861,8 @@ private enum ImportSourceKind: String {
             .commaSeparatedText,
             .plainText,
             UTType(filenameExtension: "csv") ?? .commaSeparatedText,
-            UTType(filenameExtension: "xlsx") ?? .data
+            UTType(filenameExtension: "xlsx") ?? .data,
+            .pdf
         ]
     }
 #endif
@@ -908,12 +957,19 @@ private struct ImportPreview {
     var sourceKind: ImportSourceKind
     var filename: String
     var sheetName: String?
+    var workbookSheets: [String]
     var sourceColumns: [String]
     var columnMappings: [ColumnMapping]
     var sourceRows: [[String]]
+    var skippedNewParts: [PartsService.PartsImportParsedRow]
+    var ocrPreview: PartsService.PartsOCRImportPreview?
+    var commitDisabledReason: String?
     var mappingError: String?
 
     var totalRows: Int { servicePreview.totalRows }
+    var totalSkippedRows: Int {
+        skippedNewParts.count + servicePreview.conflicts.filter { $0.resolution == .skip || $0.resolution == .ask }.count
+    }
 }
 
 // MARK: - Import Preview Sheet
@@ -926,7 +982,22 @@ private struct ImportPreviewSheet: View {
 
     private var previewBinding: Binding<ImportPreview> {
         Binding(
-            get: { preview ?? ImportPreview(servicePreview: PartsService.PartsImportPreview(), sourceKind: .csv, filename: "", sheetName: nil, sourceColumns: [], columnMappings: [], sourceRows: [], mappingError: nil) },
+            get: {
+                preview ?? ImportPreview(
+                    servicePreview: PartsService.PartsImportPreview(),
+                    sourceKind: .csv,
+                    filename: "",
+                    sheetName: nil,
+                    workbookSheets: [],
+                    sourceColumns: [],
+                    columnMappings: [],
+                    sourceRows: [],
+                    skippedNewParts: [],
+                    ocrPreview: nil,
+                    commitDisabledReason: nil,
+                    mappingError: nil
+                )
+            },
             set: { preview = $0 }
         )
     }
@@ -960,6 +1031,10 @@ private struct ImportPreviewContent: View {
         preview.servicePreview.conflicts.filter { $0.resolution == .update }.count
     }
 
+    private var hasCommitBlocker: Bool {
+        preview.commitDisabledReason != nil || preview.mappingError != nil || !preview.servicePreview.errors.isEmpty
+    }
+
     private var confirmLabel: String {
         let newCount = preview.servicePreview.newParts.count
         let updCount = updateCount
@@ -973,8 +1048,10 @@ private struct ImportPreviewContent: View {
         List {
             sourceMetadataSection
             mappingSection
+            ocrPreviewSection
             summarySection
             newPartsSection
+            skippedRowsSection
             conflictsSection
             errorsSection
             confirmSection
@@ -987,6 +1064,26 @@ private struct ImportPreviewContent: View {
             LabeledContent("Filename", value: preview.filename)
             if let sheetName = preview.sheetName, !sheetName.isEmpty {
                 LabeledContent("Sheet", value: sheetName)
+            }
+            if preview.sourceKind == .xlsx {
+                if preview.workbookSheets.count > 1 {
+                    Picker("Workbook sheet", selection: Binding(
+                        get: { preview.sheetName ?? preview.workbookSheets[0] },
+                        set: { _ in }
+                    )) {
+                        ForEach(preview.workbookSheets, id: \.self) { sheet in
+                            Text(sheet).tag(sheet)
+                        }
+                    }
+                    .disabled(true)
+                    Text("Alternate sheet preview is not available in the current backend contract; the first readable sheet is shown.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Label("Single-sheet workbook preview", systemImage: "tablecells")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             LabeledContent("Rows", value: "\(preview.totalRows)")
         } header: {
@@ -1053,17 +1150,41 @@ private struct ImportPreviewContent: View {
         }
     }
 
+    @ViewBuilder
+    private var ocrPreviewSection: some View {
+        if preview.sourceKind == .pdf {
+            Section {
+                Label("Preview-only source", systemImage: "lock.shield")
+                    .foregroundStyle(.orange)
+                Text(preview.commitDisabledReason ?? "PDF/OCR commit is disabled by policy.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if let ocrPreview = preview.ocrPreview {
+                    LabeledContent("Evidence chunks", value: "\(ocrPreview.chunks.count)")
+                    LabeledContent("Candidates", value: "\(ocrPreview.candidates.count)")
+                    LabeledContent("Quarantined", value: "\(ocrPreview.errors.count)")
+                } else {
+                    Text("No text extraction adapter is wired in this screen yet. Select CSV or XLSX for commit-ready imports.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("PDF / OCR Review")
+            }
+        }
+    }
+
     private var summarySection: some View {
         Section {
-            HStack {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 8)], alignment: .leading, spacing: 8) {
                 Label("\(preview.servicePreview.newParts.count) new", systemImage: "plus.circle.fill")
                     .foregroundStyle(.green)
-                Spacer()
                 Label("\(preview.servicePreview.conflicts.count) conflicts", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
-                Spacer()
                 Label("\(preview.servicePreview.errors.count) errors", systemImage: "xmark.circle.fill")
                     .foregroundStyle(.red)
+                Label("\(preview.totalSkippedRows) skipped", systemImage: "minus.circle.fill")
+                    .foregroundStyle(.secondary)
             }
             .font(.subheadline)
         } header: {
@@ -1077,17 +1198,27 @@ private struct ImportPreviewContent: View {
             Section {
                 ForEach(Array(preview.servicePreview.newParts.prefix(20).enumerated()), id: \.offset) { _, row in
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(row.name)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        HStack(spacing: 8) {
-                            if let code = row.code, !code.isEmpty {
-                                Text(code).font(.caption).foregroundStyle(.secondary)
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(row.name)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                HStack(spacing: 8) {
+                                    if let code = row.code, !code.isEmpty {
+                                        Text(code).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Text(row.category).font(.caption).foregroundStyle(.blue)
+                                    if let brand = row.brand {
+                                        Text(brand).font(.caption).foregroundStyle(.purple)
+                                    }
+                                }
                             }
-                            Text(row.category).font(.caption).foregroundStyle(.blue)
-                            if let brand = row.brand {
-                                Text(brand).font(.caption).foregroundStyle(.purple)
+                            Spacer(minLength: 8)
+                            Button("Skip") {
+                                skipNewPart(row)
                             }
+                            .buttonStyle(.bordered)
+                            .font(.caption)
                         }
                     }
                 }
@@ -1098,6 +1229,36 @@ private struct ImportPreviewContent: View {
                 }
             } header: {
                 Text("New Parts")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var skippedRowsSection: some View {
+        if !preview.skippedNewParts.isEmpty {
+            Section {
+                ForEach(Array(preview.skippedNewParts.enumerated()), id: \.offset) { _, row in
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(row.name)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text("Row \(row.rowNumber) quarantined as skipped by user")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 8)
+                        Button("Import") {
+                            restoreSkippedNewPart(row)
+                        }
+                        .buttonStyle(.bordered)
+                        .font(.caption)
+                    }
+                }
+            } header: {
+                Text("Skipped New Rows")
+            } footer: {
+                Text("Skipped rows are not written during commit. Use Import to restore a row before committing.")
             }
         }
     }
@@ -1152,13 +1313,28 @@ private struct ImportPreviewContent: View {
                     }
                 }
             } header: {
-                Text("Validation Errors (will be skipped)")
+                Text("Quarantine — Action Required")
+            } footer: {
+                Text("Rows in quarantine cannot be committed. Fix the source file or mapping, then preview again.")
             }
         }
     }
 
     private var confirmSection: some View {
         Section {
+            if let commitDisabledReason = preview.commitDisabledReason {
+                Text(commitDisabledReason)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            } else if let mappingError = preview.mappingError {
+                Text(mappingError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else if !preview.servicePreview.errors.isEmpty {
+                Text("Resolve quarantined rows before committing.")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
             Button(action: onConfirm) {
                 Text(confirmLabel)
                     .fontWeight(.semibold)
@@ -1166,8 +1342,21 @@ private struct ImportPreviewContent: View {
             }
             .buttonStyle(.borderedProminent)
             .frame(minHeight: 44)
-            .disabled(preview.mappingError != nil || !preview.servicePreview.errors.isEmpty || (preview.servicePreview.newParts.isEmpty && updateCount == 0))
+            .disabled(hasCommitBlocker || (preview.servicePreview.newParts.isEmpty && updateCount == 0))
         }
+    }
+
+    private func skipNewPart(_ row: PartsService.PartsImportParsedRow) {
+        guard let index = preview.servicePreview.newParts.firstIndex(where: { $0.rowNumber == row.rowNumber && $0.name == row.name && $0.code == row.code }) else { return }
+        let removed = preview.servicePreview.newParts.remove(at: index)
+        preview.skippedNewParts.append(removed)
+    }
+
+    private func restoreSkippedNewPart(_ row: PartsService.PartsImportParsedRow) {
+        guard let index = preview.skippedNewParts.firstIndex(where: { $0.rowNumber == row.rowNumber && $0.name == row.name && $0.code == row.code }) else { return }
+        let restored = preview.skippedNewParts.remove(at: index)
+        preview.servicePreview.newParts.append(restored)
+        preview.servicePreview.newParts.sort { $0.rowNumber < $1.rowNumber }
     }
 
     @ViewBuilder

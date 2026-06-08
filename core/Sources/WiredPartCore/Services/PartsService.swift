@@ -5966,6 +5966,11 @@ public final class PartsService: Sendable {
     public struct PartsImportError: Error, Sendable {
         public let rowNumber: Int
         public let message: String
+
+        public init(rowNumber: Int, message: String) {
+            self.rowNumber = rowNumber
+            self.message = message
+        }
     }
 
     public enum PartsImportConflictResolution: Sendable {
