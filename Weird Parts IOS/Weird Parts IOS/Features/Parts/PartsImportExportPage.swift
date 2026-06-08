@@ -733,13 +733,14 @@ struct PartsImportExportPage: View {
                 await MainActor.run { importStatus = .error("Validation error: row \(first.rowNumber): \(first.message)") }
                 return
             }
-            let result = try service.commitPartsImportCSV(preview.servicePreview)
+            var servicePreview = preview.servicePreview
+            servicePreview.skippedNewParts = preview.skippedNewParts
+            let result = try service.commitPartsImportCSV(servicePreview)
             await MainActor.run {
                 importPreview = nil
                 var msg = "Created \(result.created)"
                 if result.updated > 0 { msg += ", Updated \(result.updated)" }
-                let skipped = result.skipped + preview.skippedNewParts.count
-                if skipped > 0 { msg += ", Skipped \(skipped)" }
+                if result.skipped > 0 { msg += ", Skipped \(result.skipped)" }
                 if let sessionId = result.importSessionId {
                     msg += ". Audit session #\(sessionId)"
                 }

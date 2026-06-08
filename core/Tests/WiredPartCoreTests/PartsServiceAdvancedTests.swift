@@ -507,6 +507,46 @@ struct PartsServiceAdvancedTests {
         #expect((firstEvidence["row_payload_json"] as String?)?.contains("Audit Category") == true)
     }
 
+    @Test("commitPartsImportCSV records skipped new rows in audit evidence")
+    func testCommitPartsImportCSVRecordsSkippedNewRowEvidence() throws {
+        let env = try E2ETestHelpers.setUp()
+        var preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,brand,cost_price
+        Imported Part,IMPORT-AUD-001,Audit Category,Audit Brand,12.25
+        Skipped Part,SKIP-AUD-001,Audit Category,Audit Brand,13.50
+        """)
+        preview.source?.filename = "parts-with-skips.csv"
+        preview.source?.userId = env.adminUserId
+        let skipped = try #require(preview.newParts.first { $0.code == "SKIP-AUD-001" })
+        preview.newParts.removeAll { $0.code == "SKIP-AUD-001" }
+        preview.skippedNewParts.append(skipped)
+
+        let result = try env.parts.commitPartsImportCSV(preview)
+
+        #expect(result.created == 1)
+        #expect(result.updated == 0)
+        #expect(result.skipped == 1)
+        #expect(try env.parts.findPartByCode("IMPORT-AUD-001") != nil)
+        #expect(try env.parts.findPartByCode("SKIP-AUD-001") == nil)
+
+        let sessionId = try #require(result.importSessionId)
+        let session = try #require(try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT * FROM part_import_sessions WHERE id = ?", arguments: [sessionId])
+        })
+        #expect(session["created_count"] as Int == 1)
+        #expect(session["skipped_count"] as Int == 1)
+
+        let evidence = try env.db.writer.read { db in
+            try Row.fetchAll(db, sql: "SELECT * FROM part_import_row_evidence WHERE session_id = ? ORDER BY row_number", arguments: [sessionId])
+        }
+        #expect(evidence.count == 2)
+        let skippedEvidence = try #require(evidence.first { ($0["action"] as String) == "skipped" })
+        #expect(skippedEvidence["row_number"] as Int == 3)
+        #expect(skippedEvidence["source_code"] as String? == "SKIP-AUD-001")
+        #expect(skippedEvidence["part_id"] as Int64? == nil)
+        #expect((skippedEvidence["row_payload_json"] as String?)?.contains("Skipped Part") == true)
+    }
+
     @Test("commitPartsImportCSV records failed import session while rolling back partial writes")
     func testCommitPartsImportCSVRecordsRollbackFailureWithoutPartialWrites() throws {
         let env = try E2ETestHelpers.setUp()
