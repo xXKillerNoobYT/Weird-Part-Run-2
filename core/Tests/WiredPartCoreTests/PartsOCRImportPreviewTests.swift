@@ -4,6 +4,100 @@ import Testing
 
 @Suite("Parts PDF/OCR import preview tests")
 struct PartsOCRImportPreviewTests {
+    @Test("previewPartsImportDigitalPDF extracts text-layer tables with page evidence")
+    func previewPartsImportDigitalPDFExtractsTablesWithEvidence() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let preview = try env.parts.previewPartsImportDigitalPDF(pages: [
+            .init(pageNumber: 7, text: """
+            Supplier PDF Quote
+            Part # | Description | Category | Unit Cost | UOM
+            PDF-1 | Digital PDF Breaker | Electrical | 42.25 | each
+            PDF-2 | Digital PDF Wire | Wire | 18.00 | roll
+            Terms net 30
+            """)
+        ])
+
+        let table = try #require(preview.tables.first)
+        #expect(table.id == "pdf-p7-t1")
+        #expect(table.sourceKind == .digitalPDFText)
+        #expect(table.pageNumber == 7)
+        #expect(table.headerRowNumber == 2)
+        #expect(table.rows.count == 2)
+        #expect(table.evidence.contains { $0.text?.contains("Digital PDF Breaker") == true })
+
+        let breaker = try #require(preview.candidates.first { $0.code == "PDF-1" })
+        #expect(breaker.sourceKind == .digitalPDFText)
+        #expect(breaker.sourceEvidence.kind == .textBlock)
+        #expect(breaker.sourceEvidence.pageNumber == 7)
+        #expect(breaker.sourceEvidence.text?.contains("Digital PDF Breaker") == true)
+        #expect(breaker.sourceSnippet.contains("Digital PDF Breaker"))
+    }
+
+    @Test("previewPartsImportOCR bridges existing OCR chunks and candidates into shared preview")
+    func previewPartsImportOCRBridgesExistingChunksAndCandidates() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let chunk = PartsService.PartsOCRImportChunk(
+            id: "ocr-p1-c1",
+            pageNumber: 1,
+            text: "OCR-1 | Existing OCR Candidate | Wire",
+            snippet: "OCR-1 | Existing OCR Candidate | Wire"
+        )
+        let candidate = PartsService.PartsOCRImportCandidate(
+            rowNumber: 1,
+            chunkId: chunk.id,
+            pageNumber: 1,
+            sourceSnippet: chunk.snippet,
+            confidence: 0.92,
+            name: "Existing OCR Candidate",
+            code: "OCR-1",
+            category: "Wire",
+            brand: nil,
+            fields: [:]
+        )
+
+        let preview = try env.parts.previewPartsImportOCR(chunks: [chunk], candidates: [candidate])
+
+        #expect(preview.chunks.count == 1)
+        #expect(preview.candidates.count == 1)
+        #expect(preview.candidates.first?.sourceKind == .ocr)
+        #expect(preview.reviewReadyCandidates.count == 1)
+        #expect(preview.quarantinedCandidates.isEmpty)
+        #expect(preview.isCommitAllowed == false)
+    }
+
+    @Test("previewPartsImportOCR quarantines low-confidence OCR candidates and does not write parts")
+    func previewPartsImportOCRQuarantinesLowConfidenceCandidates() throws {
+        let env = try E2ETestHelpers.setUp()
+        let before = try env.parts.getImportExportStats()
+
+        let candidate = PartsService.PartsOCRImportCandidate(
+            rowNumber: 1,
+            chunkId: "ocr-p2-c1",
+            pageNumber: 2,
+            sourceSnippet: "LOW-1 | Low Confidence OCR | Electrical",
+            confidence: 0.42,
+            name: "Low Confidence OCR",
+            code: "LOW-1",
+            category: "Electrical",
+            brand: nil,
+            fields: [:]
+        )
+
+        let preview = try env.parts.previewPartsImportOCR(chunks: [], candidates: [candidate])
+        let after = try env.parts.getImportExportStats()
+
+        let quarantined = try #require(preview.quarantinedCandidates.first)
+        #expect(quarantined.code == "LOW-1")
+        #expect(quarantined.isQuarantined)
+        #expect(quarantined.quarantineReason?.contains("below import preview threshold") == true)
+        #expect(preview.reviewReadyCandidates.isEmpty)
+        #expect(preview.isCommitAllowed == false)
+        #expect(after.totalParts == before.totalParts)
+        #expect(try env.parts.findPartByCode("LOW-1") == nil)
+    }
+
     @Test("previewPartsImportOCR chunks extracted page text with page evidence")
     func previewPartsImportOCRChunksExtractedPageTextWithEvidence() throws {
         let env = try E2ETestHelpers.setUp()
