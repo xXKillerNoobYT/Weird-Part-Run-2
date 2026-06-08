@@ -5973,6 +5973,11 @@ public final class PartsService: Sendable {
     public struct PartsImportError: Error, Sendable {
         public let rowNumber: Int
         public let message: String
+
+        public init(rowNumber: Int, message: String) {
+            self.rowNumber = rowNumber
+            self.message = message
+        }
     }
 
     public enum PartsImportConflictResolution: Sendable {
@@ -6224,14 +6229,16 @@ public final class PartsService: Sendable {
     /// Preview generated before any import writes occur.
     public struct PartsImportPreview: Sendable {
         public var newParts: [PartsImportParsedRow] = []
+        public var skippedNewParts: [PartsImportParsedRow] = []
         public var conflicts: [PartsImportConflict] = []
         public var errors: [PartsImportError] = []
         public var decisions: [PartsImportPreviewRowDecision] = []
         public var totalRows: Int = 0
         public var source: PartsImportSourceMetadata?
 
-        public init(newParts: [PartsImportParsedRow] = [], conflicts: [PartsImportConflict] = [], errors: [PartsImportError] = [], decisions: [PartsImportPreviewRowDecision] = [], totalRows: Int = 0, source: PartsImportSourceMetadata? = nil) {
+        public init(newParts: [PartsImportParsedRow] = [], skippedNewParts: [PartsImportParsedRow] = [], conflicts: [PartsImportConflict] = [], errors: [PartsImportError] = [], decisions: [PartsImportPreviewRowDecision] = [], totalRows: Int = 0, source: PartsImportSourceMetadata? = nil) {
             self.newParts = newParts
+            self.skippedNewParts = skippedNewParts
             self.conflicts = conflicts
             self.errors = errors
             self.decisions = decisions
@@ -6759,7 +6766,7 @@ public final class PartsService: Sendable {
 
             var created = 0
             var updated = 0
-            var skipped = 0
+            var skipped = preview.skippedNewParts.count
 
             try db.writer.write { dbConn in
                 func parseImportNumeric(_ rawValue: String?, header: String, rowNumber: Int) throws -> Double? {
@@ -6871,6 +6878,9 @@ public final class PartsService: Sendable {
                     try recordImportRowEvidence(dbConn, sessionId: importSessionId, row: row, action: "created", partId: partId)
                     created += 1
                 }
+                for row in preview.skippedNewParts {
+                    try recordImportRowEvidence(dbConn, sessionId: importSessionId, row: row, action: "skipped", partId: nil)
+                }
                 for conflict in preview.conflicts {
                     switch conflict.resolution {
                     case .update:
@@ -6879,6 +6889,7 @@ public final class PartsService: Sendable {
                         try recordImportRowEvidence(dbConn, sessionId: importSessionId, row: conflict.parsedRow, action: "updated", partId: conflict.existingPartId)
                         updated += 1
                     case .skip, .ask:
+                        try recordImportRowEvidence(dbConn, sessionId: importSessionId, row: conflict.parsedRow, action: "skipped", partId: conflict.existingPartId)
                         skipped += 1
                     }
                 }
@@ -6924,7 +6935,7 @@ public final class PartsService: Sendable {
         }
     }
 
-    private func recordImportRowEvidence(_ dbConn: Database, sessionId: Int64?, row: PartsImportParsedRow, action: String, partId: Int64) throws {
+    private func recordImportRowEvidence(_ dbConn: Database, sessionId: Int64?, row: PartsImportParsedRow, action: String, partId: Int64?) throws {
         guard let sessionId else { return }
         try dbConn.execute(sql: """
             INSERT INTO part_import_row_evidence (
