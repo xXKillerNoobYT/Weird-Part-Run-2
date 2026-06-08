@@ -50,6 +50,10 @@ struct WiredPartIOSApp: App {
         ProcessInfo.processInfo.arguments.contains("-UITestingWEI936Celebration")
     }
 
+    private var shouldOpenWEI3144MaterialsFixture: Bool {
+        ProcessInfo.processInfo.arguments.contains("-UITestingWEI3144JobMaterials")
+    }
+
     /// Resolved color scheme from the user's theme setting.
     private var resolvedColorScheme: ColorScheme? {
         switch appCore.theme.themeMode {
@@ -85,6 +89,12 @@ struct WiredPartIOSApp: App {
                     } else if appCore.currentUser == nil {
                         LoginView()
                             .environmentObject(appCore)
+                    } else if shouldOpenWEI3144MaterialsFixture,
+                              let jobId = AppCore.uiTestingWEI3144JobMaterialsJobId(db: appCore.db) {
+                        NavigationStack {
+                            IOSJobDetailPage(jobId: jobId)
+                                .environmentObject(appCore)
+                        }
                     } else if shouldOpenWarehouseSetupForUITest {
                         WarehouseOnboardingWizard()
                             .environmentObject(appCore)

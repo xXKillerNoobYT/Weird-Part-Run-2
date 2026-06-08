@@ -26,6 +26,8 @@ public final class JobsService: Sendable {
         case jobNotFound(Int64)
         case jobNotClockable(Int64)
         case partNotFound(Int64)
+        case userNotFound(Int64)
+        case insufficientStagedMaterial(available: Int, requested: Int)
         case laborEntryNotFound(Int64)
         case alreadyClockedIn(userId: Int64, jobId: Int64)
         case notClockedIn(userId: Int64)
@@ -231,6 +233,97 @@ public final class JobsService: Sendable {
             self.reason = reason
             self.notes = notes
             self.performedByName = performedByName
+            self.createdAt = createdAt
+        }
+    }
+
+    /// Material currently staged and ready to use on a job.
+    public struct JobReadyMaterialRow: Sendable, Identifiable {
+        public let id: Int64
+        public let partId: Int64
+        public let partName: String
+        public let partCode: String?
+        public let stagedQty: Int
+        public let sourceSummary: String
+        public let lastMovedAt: String?
+
+        public init(
+            id: Int64, partId: Int64, partName: String, partCode: String?,
+            stagedQty: Int, sourceSummary: String, lastMovedAt: String?
+        ) {
+            self.id = id
+            self.partId = partId
+            self.partName = partName
+            self.partCode = partCode
+            self.stagedQty = stagedQty
+            self.sourceSummary = sourceSummary
+            self.lastMovedAt = lastMovedAt
+        }
+    }
+
+    public struct JobMaterialTotals: Sendable, Equatable {
+        public let stagedQty: Int
+        public let usedQty: Int
+        /// Quantity credited back against consumed job material. Pending return
+        /// handling is exposed separately through `pendingReturnQty`.
+        public let returnedQty: Int
+        public let pendingReturnQty: Int
+        public let netMaterialCost: Double
+        public let totalMaterialCost: Double
+
+        public init(
+            stagedQty: Int,
+            usedQty: Int,
+            returnedQty: Int,
+            pendingReturnQty: Int,
+            netMaterialCost: Double,
+            totalMaterialCost: Double
+        ) {
+            self.stagedQty = stagedQty
+            self.usedQty = usedQty
+            self.returnedQty = returnedQty
+            self.pendingReturnQty = pendingReturnQty
+            self.netMaterialCost = netMaterialCost
+            self.totalMaterialCost = totalMaterialCost
+        }
+    }
+
+    public struct JobMaterialHistoryRow: Sendable, Identifiable {
+        public let id: String
+        public let eventType: String
+        public let partId: Int64
+        public let partName: String
+        public let partCode: String?
+        public let qty: Int
+        public let actorName: String
+        public let locationSummary: String
+        public let reference: String?
+        public let notes: String?
+        public let createdAt: String?
+
+        public init(
+            id: String,
+            eventType: String,
+            partId: Int64,
+            partName: String,
+            partCode: String?,
+            qty: Int,
+            actorName: String,
+            locationSummary: String,
+            reference: String?,
+            notes: String?,
+            createdAt: String?
+        ) {
+            self.id = id
+            self.eventType = eventType
+            self.partId = partId
+            self.partName = partName
+            self.partCode = partCode
+            self.qty = qty
+            self.actorName = actorName
+            self.locationSummary = locationSummary
+            self.reference = reference
+            self.notes = notes
             self.createdAt = createdAt
         }
     }
@@ -2539,6 +2632,488 @@ public final class JobsService: Sendable {
         }
     }
 
+    /// List material staged in the job's `pulled` stock bucket and ready for field use.
+    public func listReadyJobMaterials(jobId: Int64) throws -> [JobReadyMaterialRow] {
+        do {
+            return try db.writer.read { dbConn in
+                try Self.requireActiveJob(jobId, dbConn: dbConn)
+                // CTE resolves the latest staged-pull movement per part in one pass,
+                // avoiding two correlated subqueries per stock row.
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    WITH latest_move AS (
+                        SELECT sm.part_id, sm.movement_type, sm.created_at
+                        FROM stock_movements sm
+                        INNER JOIN (
+                            SELECT part_id, MAX(id) AS max_id
+                            FROM stock_movements
+                            WHERE to_location_type = 'pulled'
+                              AND to_location_id = ?
+                              AND job_id = ?
+                              AND deleted_at IS NULL
+                            GROUP BY part_id
+                        ) lm ON sm.id = lm.max_id AND sm.part_id = lm.part_id
+                    )
+                    SELECT s.part_id,
+                           s.qty AS staged_qty,
+                           p.name AS part_name,
+                           p.code AS part_code,
+                           lm.movement_type AS source_movement_type,
+                           lm.created_at AS last_moved_at
+                    FROM stock s
+                    LEFT JOIN parts p ON p.id = s.part_id AND p.deleted_at IS NULL
+                    LEFT JOIN latest_move lm ON lm.part_id = s.part_id
+                    WHERE s.location_type = 'pulled'
+                      AND s.location_id = ?
+                      AND s.qty > 0
+                      AND s.deleted_at IS NULL
+                    ORDER BY p.name, s.part_id
+                    """, arguments: [jobId, jobId, jobId])
+                return rows.map { row in
+                    let sourceType = (row["source_movement_type"] as String?) ?? StockMovement.MovementType.receivingStaged.rawValue
+                    return JobReadyMaterialRow(
+                        id: row["part_id"] ?? 0,
+                        partId: row["part_id"] ?? 0,
+                        partName: (row["part_name"] as String?) ?? "Unknown Part",
+                        partCode: row["part_code"] as String?,
+                        stagedQty: row["staged_qty"] ?? 0,
+                        sourceSummary: StockMovement.MovementType.displayName(forRawValue: sourceType),
+                        lastMovedAt: row["last_moved_at"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) || isColumnNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Pull available inventory from a warehouse/truck/shop bucket into job-ready staged stock.
+    @discardableResult
+    public func pullJobMaterial(
+        jobId: Int64,
+        partId: Int64,
+        qty: Int,
+        fromLocationType: String,
+        fromLocationId: Int64,
+        performedBy: Int64,
+        notes: String? = nil
+    ) throws -> Int64 {
+        guard qty > 0 else { throw JobsError.invalidReturnQuantity(partId) }
+        return try db.writer.write { dbConn in
+            try Self.requireActiveJob(jobId, dbConn: dbConn)
+            try Self.requireActivePart(partId, dbConn: dbConn)
+            try Self.requireActiveUser(performedBy, dbConn: dbConn)
+
+            let available = try Self.stockQty(partId: partId, locationType: fromLocationType, locationId: fromLocationId, dbConn: dbConn)
+            guard available >= qty else {
+                throw JobsError.insufficientStagedMaterial(available: available, requested: qty)
+            }
+
+            let movementId = try Self.insertStockMovement(
+                partId: partId,
+                qty: qty,
+                fromLocationType: fromLocationType,
+                fromLocationId: fromLocationId,
+                toLocationType: "pulled",
+                toLocationId: jobId,
+                movementType: StockMovement.MovementType.transfer.rawValue,
+                reason: "Pulled for job",
+                notes: notes,
+                performedBy: performedBy,
+                jobId: jobId,
+                unitCostAtMove: nil,
+                dbConn: dbConn
+            )
+            try Self.decrementStock(partId: partId, locationType: fromLocationType, locationId: fromLocationId, qty: qty, dbConn: dbConn)
+            try Self.incrementStock(partId: partId, locationType: "pulled", locationId: jobId, qty: qty, dbConn: dbConn)
+            return movementId
+        }
+    }
+
+    /// Consume staged material into `job_parts` and decrement the job's pulled stock atomically.
+    @discardableResult
+    public func consumeStagedJobMaterial(
+        jobId: Int64,
+        partId: Int64,
+        qty: Int,
+        performedBy: Int64,
+        notes: String? = nil
+    ) throws -> Int64 {
+        guard qty > 0 else { throw JobsError.invalidReturnQuantity(partId) }
+        return try db.writer.write { dbConn in
+            try Self.requireActiveJob(jobId, dbConn: dbConn)
+            try Self.requireActivePart(partId, dbConn: dbConn)
+            try Self.requireActiveUser(performedBy, dbConn: dbConn)
+
+            let available = try Self.stockQty(partId: partId, locationType: "pulled", locationId: jobId, dbConn: dbConn)
+            guard available >= qty else {
+                throw JobsError.insufficientStagedMaterial(available: available, requested: qty)
+            }
+
+            let unitCost = try Self.latestStagedUnitCost(partId: partId, jobId: jobId, dbConn: dbConn)
+
+            try dbConn.execute(sql: """
+                INSERT INTO job_parts
+                    (job_id, part_id, qty_consumed, unit_cost_at_consume, consumed_by, consumed_at, notes)
+                VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
+                """, arguments: [jobId, partId, qty, unitCost, performedBy, notes])
+            let jobPartId = dbConn.lastInsertedRowID
+
+            try Self.insertStockMovement(
+                partId: partId,
+                qty: qty,
+                fromLocationType: "pulled",
+                fromLocationId: jobId,
+                toLocationType: nil,
+                toLocationId: nil,
+                movementType: StockMovement.MovementType.jobPull.rawValue,
+                reason: "Consumed on job",
+                notes: notes,
+                performedBy: performedBy,
+                jobId: jobId,
+                unitCostAtMove: unitCost,
+                dbConn: dbConn
+            )
+            try Self.decrementStock(partId: partId, locationType: "pulled", locationId: jobId, qty: qty, dbConn: dbConn)
+
+            return jobPartId
+        }
+    }
+
+    /// Return unused staged material from a job into warehouse holding/review.
+    @discardableResult
+    public func returnStagedJobMaterial(
+        jobId: Int64,
+        partId: Int64,
+        qty: Int,
+        condition: String = "usable",
+        performedBy: Int64,
+        notes: String? = nil
+    ) throws -> Int64 {
+        guard qty > 0 else { throw JobsError.invalidReturnQuantity(partId) }
+        return try db.writer.write { dbConn in
+            try Self.requireActiveJob(jobId, dbConn: dbConn)
+            try Self.requireActivePart(partId, dbConn: dbConn)
+            try Self.requireActiveUser(performedBy, dbConn: dbConn)
+
+            let available = try Self.stockQty(partId: partId, locationType: "pulled", locationId: jobId, dbConn: dbConn)
+            guard available >= qty else {
+                throw JobsError.insufficientStagedMaterial(available: available, requested: qty)
+            }
+
+            let stagedUnitCost = try Self.latestStagedUnitCost(partId: partId, jobId: jobId, dbConn: dbConn)
+            try Self.insertStockMovement(
+                partId: partId,
+                qty: qty,
+                fromLocationType: "pulled",
+                fromLocationId: jobId,
+                toLocationType: nil,
+                toLocationId: nil,
+                movementType: StockMovement.MovementType.stockReturn.rawValue,
+                reason: "Returned unused job material",
+                notes: notes,
+                performedBy: performedBy,
+                jobId: jobId,
+                unitCostAtMove: stagedUnitCost,
+                dbConn: dbConn
+            )
+            try Self.decrementStock(partId: partId, locationType: "pulled", locationId: jobId, qty: qty, dbConn: dbConn)
+
+            return try Self.insertJobReturnIntake(
+                sourceJobId: jobId,
+                returnSource: "job",
+                returnedBy: performedBy,
+                partId: partId,
+                qty: qty,
+                condition: condition,
+                sourceJobPartId: nil,
+                notes: notes,
+                dbConn: dbConn
+            )
+        }
+    }
+
+    /// Return unused pulled material directly back to truck/warehouse inventory.
+    @discardableResult
+    public func returnPulledJobMaterial(
+        jobId: Int64,
+        partId: Int64,
+        qty: Int,
+        toLocationType: String,
+        toLocationId: Int64,
+        performedBy: Int64,
+        notes: String? = nil
+    ) throws -> Int64 {
+        guard qty > 0 else { throw JobsError.invalidReturnQuantity(partId) }
+        return try db.writer.write { dbConn in
+            try Self.requireActiveJob(jobId, dbConn: dbConn)
+            try Self.requireActivePart(partId, dbConn: dbConn)
+            try Self.requireActiveUser(performedBy, dbConn: dbConn)
+
+            let available = try Self.stockQty(partId: partId, locationType: "pulled", locationId: jobId, dbConn: dbConn)
+            guard available >= qty else {
+                throw JobsError.insufficientStagedMaterial(available: available, requested: qty)
+            }
+
+            let stagedUnitCost = try Self.latestStagedUnitCost(partId: partId, jobId: jobId, dbConn: dbConn)
+            let movementId = try Self.insertStockMovement(
+                partId: partId,
+                qty: qty,
+                fromLocationType: "pulled",
+                fromLocationId: jobId,
+                toLocationType: toLocationType,
+                toLocationId: toLocationId,
+                movementType: StockMovement.MovementType.stockReturn.rawValue,
+                reason: "Returned unused job material to inventory",
+                notes: notes,
+                performedBy: performedBy,
+                jobId: jobId,
+                unitCostAtMove: stagedUnitCost,
+                dbConn: dbConn
+            )
+            try Self.decrementStock(partId: partId, locationType: "pulled", locationId: jobId, qty: qty, dbConn: dbConn)
+            try Self.incrementStock(partId: partId, locationType: toLocationType, locationId: toLocationId, qty: qty, dbConn: dbConn)
+            return movementId
+        }
+    }
+
+    /// Reverse consumed material and create a warehouse return-intake item in one transaction.
+    @discardableResult
+    public func returnConsumedJobMaterial(
+        jobPartId: Int64,
+        returnQty: Int,
+        condition: String = "usable",
+        performedBy: Int64,
+        notes: String? = nil
+    ) throws -> Int64 {
+        guard returnQty > 0 else { throw JobsError.invalidReturnQuantity(jobPartId) }
+        return try db.writer.write { dbConn in
+            try Self.requireActiveUser(performedBy, dbConn: dbConn)
+            guard let row = try Row.fetchOne(dbConn, sql: """
+                SELECT job_id, part_id, qty_consumed, qty_returned, unit_cost_at_consume
+                FROM job_parts
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [jobPartId]) else {
+                throw JobsError.laborEntryNotFound(jobPartId)
+            }
+
+            let jobId: Int64 = row["job_id"] ?? 0
+            let partId: Int64 = row["part_id"] ?? 0
+            let consumed: Int = row["qty_consumed"] ?? 0
+            let alreadyReturned: Int = row["qty_returned"] ?? 0
+            guard alreadyReturned + returnQty <= consumed else {
+                throw JobsError.invalidReturnQuantity(jobPartId)
+            }
+
+            try dbConn.execute(sql: """
+                UPDATE job_parts
+                SET qty_returned = qty_returned + ?
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [returnQty, jobPartId])
+
+            try Self.insertStockMovement(
+                partId: partId,
+                qty: returnQty,
+                fromLocationType: nil,
+                fromLocationId: nil,
+                toLocationType: nil,
+                toLocationId: nil,
+                movementType: StockMovement.MovementType.stockReturn.rawValue,
+                reason: "Returned consumed job material",
+                notes: notes,
+                performedBy: performedBy,
+                jobId: jobId,
+                unitCostAtMove: row["unit_cost_at_consume"] as Double?,
+                dbConn: dbConn
+            )
+
+            return try Self.insertJobReturnIntake(
+                sourceJobId: jobId,
+                returnSource: "job",
+                returnedBy: performedBy,
+                partId: partId,
+                qty: returnQty,
+                condition: condition,
+                sourceJobPartId: jobPartId,
+                notes: notes,
+                dbConn: dbConn
+            )
+        }
+    }
+
+    /// Correct a consumed job-part quantity with required audit detail.
+    public func correctConsumedJobMaterial(
+        jobPartId: Int64,
+        adjustedQty: Int,
+        performedBy: Int64,
+        note: String
+    ) throws {
+        let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedNote.isEmpty else { throw JobsError.requiredFieldEmpty }
+        guard adjustedQty > 0 else { throw JobsError.invalidReturnQuantity(jobPartId) }
+
+        try db.writer.write { dbConn in
+            try Self.requireActiveUser(performedBy, dbConn: dbConn)
+            guard let row = try Row.fetchOne(dbConn, sql: """
+                SELECT job_id, part_id, qty_consumed, qty_returned, unit_cost_at_consume
+                FROM job_parts
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [jobPartId]) else {
+                throw JobsError.laborEntryNotFound(jobPartId)
+            }
+
+            let jobId: Int64 = row["job_id"] ?? 0
+            let partId: Int64 = row["part_id"] ?? 0
+            let originalQty: Int = row["qty_consumed"] ?? 0
+            let returnedQty: Int = row["qty_returned"] ?? 0
+            guard adjustedQty >= returnedQty else {
+                throw JobsError.invalidReturnQuantity(jobPartId)
+            }
+
+            try dbConn.execute(sql: """
+                UPDATE job_parts
+                SET qty_consumed = ?
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [adjustedQty, jobPartId])
+
+            let auditNote = "Correction: original_qty=\(originalQty), adjusted_qty=\(adjustedQty). \(trimmedNote)"
+            try Self.insertStockMovement(
+                partId: partId,
+                qty: abs(adjustedQty - originalQty),
+                fromLocationType: nil,
+                fromLocationId: nil,
+                toLocationType: nil,
+                toLocationId: nil,
+                movementType: StockMovement.MovementType.adjustment.rawValue,
+                reason: "Corrected consumed job material",
+                notes: auditNote,
+                performedBy: performedBy,
+                jobId: jobId,
+                unitCostAtMove: row["unit_cost_at_consume"] as Double?,
+                dbConn: dbConn
+            )
+        }
+    }
+
+    public func getJobMaterialTotals(jobId: Int64) throws -> JobMaterialTotals {
+        do {
+            return try db.writer.read { dbConn in
+                try Self.requireActiveJob(jobId, dbConn: dbConn)
+                let staged = try Int.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(qty), 0)
+                    FROM stock
+                    WHERE location_type = 'pulled' AND location_id = ? AND deleted_at IS NULL
+                    """, arguments: [jobId]) ?? 0
+                let used = try Int.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(qty_consumed - qty_returned), 0)
+                    FROM job_parts
+                    WHERE job_id = ? AND deleted_at IS NULL
+                    """, arguments: [jobId]) ?? 0
+                let returned = try Int.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(qty_returned), 0)
+                    FROM job_parts
+                    WHERE job_id = ? AND deleted_at IS NULL
+                    """, arguments: [jobId]) ?? 0
+                let pendingReturn = try Int.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(jrii.qty_remaining), 0)
+                    FROM job_return_intake_items jrii
+                    JOIN job_return_intakes jri ON jri.id = jrii.intake_id
+                    WHERE jri.source_job_id = ?
+                      AND jri.deleted_at IS NULL
+                      AND jrii.deleted_at IS NULL
+                      AND jrii.status IN ('holding', 'damage_review', 'wrong_part_review', 'supplier_review')
+                    """, arguments: [jobId]) ?? 0
+                let netCost = try Double.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM((qty_consumed - qty_returned) * COALESCE(unit_cost_at_consume, 0)), 0)
+                    FROM job_parts
+                    WHERE job_id = ? AND deleted_at IS NULL
+                    """, arguments: [jobId]) ?? 0
+                let totalCost = try Double.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(qty_consumed * COALESCE(unit_cost_at_consume, 0)), 0)
+                    FROM job_parts
+                    WHERE job_id = ? AND deleted_at IS NULL
+                    """, arguments: [jobId]) ?? 0
+                return JobMaterialTotals(
+                    stagedQty: staged,
+                    usedQty: used,
+                    returnedQty: returned,
+                    pendingReturnQty: pendingReturn,
+                    netMaterialCost: netCost,
+                    totalMaterialCost: totalCost
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) || isColumnNotFoundError(error) {
+                return JobMaterialTotals(stagedQty: 0, usedQty: 0, returnedQty: 0, pendingReturnQty: 0, netMaterialCost: 0, totalMaterialCost: 0)
+            }
+            throw error
+        }
+    }
+
+    public func listJobMaterialHistory(jobId: Int64, limit: Int = 50) throws -> [JobMaterialHistoryRow] {
+        do {
+            return try db.writer.read { dbConn in
+                try Self.requireActiveJob(jobId, dbConn: dbConn)
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT 'movement-' || sm.id AS row_id,
+                           sm.movement_type AS event_type,
+                           sm.part_id,
+                           p.name AS part_name,
+                           p.code AS part_code,
+                           sm.qty,
+                           COALESCE(u.display_name, u.email, 'User #' || sm.performed_by) AS actor_name,
+                           COALESCE(sm.from_location_type, 'none') || ' -> ' || COALESCE(sm.to_location_type, 'none') AS location_summary,
+                           sm.reference_number AS reference,
+                           sm.notes,
+                           sm.created_at
+                    FROM stock_movements sm
+                    LEFT JOIN parts p ON p.id = sm.part_id AND p.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = sm.performed_by AND u.deleted_at IS NULL
+                    WHERE sm.job_id = ? AND sm.deleted_at IS NULL
+                    UNION ALL
+                    SELECT 'return-' || jrii.id AS row_id,
+                           'job_return_' || jrii.status AS event_type,
+                           jrii.part_id,
+                           p.name AS part_name,
+                           p.code AS part_code,
+                           jrii.qty_returned AS qty,
+                           COALESCE(u.display_name, u.email, 'User #' || jri.returned_by) AS actor_name,
+                           'job -> return holding' AS location_summary,
+                           'Return intake #' || jri.id AS reference,
+                           jrii.notes,
+                           jrii.created_at
+                    FROM job_return_intake_items jrii
+                    JOIN job_return_intakes jri ON jri.id = jrii.intake_id
+                    LEFT JOIN parts p ON p.id = jrii.part_id AND p.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = jri.returned_by AND u.deleted_at IS NULL
+                    WHERE jri.source_job_id = ?
+                      AND jri.deleted_at IS NULL
+                      AND jrii.deleted_at IS NULL
+                    ORDER BY 11 DESC, 1 DESC
+                    LIMIT ?
+                    """, arguments: [jobId, jobId, max(1, limit)])
+                return rows.map { row in
+                    JobMaterialHistoryRow(
+                        id: row["row_id"] ?? "",
+                        eventType: row["event_type"] ?? "material",
+                        partId: row["part_id"] ?? 0,
+                        partName: (row["part_name"] as String?) ?? "Unknown Part",
+                        partCode: row["part_code"] as String?,
+                        qty: row["qty"] ?? 0,
+                        actorName: row["actor_name"] ?? "Unknown",
+                        locationSummary: row["location_summary"] ?? "",
+                        reference: row["reference"] as String?,
+                        notes: row["notes"] as String?,
+                        createdAt: row["created_at"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) || isColumnNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
     // =========================================================================
     // MARK: - 8. Dashboard KPIs
     // =========================================================================
@@ -3667,6 +4242,171 @@ public final class JobsService: Sendable {
                 status = "pending"
             }
             return JobStageStatus(id: stage.id, name: stage.name, sortOrder: stage.sortOrder, status: status)
+        }
+    }
+
+    private static func requireActiveJob(_ jobId: Int64, dbConn: Database) throws {
+        let exists = (try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL
+            """, arguments: [jobId]) ?? 0) > 0
+        guard exists else { throw JobsError.jobNotFound(jobId) }
+    }
+
+    private static func requireActivePart(_ partId: Int64, dbConn: Database) throws {
+        let exists = (try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL
+            """, arguments: [partId]) ?? 0) > 0
+        guard exists else { throw JobsError.partNotFound(partId) }
+    }
+
+    private static func requireActiveUser(_ userId: Int64, dbConn: Database) throws {
+        let exists = (try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+            """, arguments: [userId]) ?? 0) > 0
+        guard exists else { throw JobsError.userNotFound(userId) }
+    }
+
+    private static func stockQty(partId: Int64, locationType: String, locationId: Int64, dbConn: Database) throws -> Int {
+        try Int.fetchOne(dbConn, sql: """
+            SELECT COALESCE(SUM(qty), 0)
+            FROM stock
+            WHERE part_id = ?
+              AND location_type = ?
+              AND location_id = ?
+              AND deleted_at IS NULL
+            """, arguments: [partId, locationType, locationId]) ?? 0
+    }
+
+    private static func latestStagedUnitCost(partId: Int64, jobId: Int64, dbConn: Database) throws -> Double? {
+        try Double.fetchOne(dbConn, sql: """
+            SELECT unit_cost_at_move
+            FROM stock_movements
+            WHERE part_id = ?
+              AND to_location_type = 'pulled'
+              AND to_location_id = ?
+              AND job_id = ?
+              AND deleted_at IS NULL
+              AND unit_cost_at_move IS NOT NULL
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """, arguments: [partId, jobId, jobId])
+    }
+
+    private static func decrementStock(partId: Int64, locationType: String, locationId: Int64, qty: Int, dbConn: Database) throws {
+        let available = try stockQty(partId: partId, locationType: locationType, locationId: locationId, dbConn: dbConn)
+        guard available >= qty else {
+            throw JobsError.insufficientStagedMaterial(available: available, requested: qty)
+        }
+        try dbConn.execute(sql: """
+            UPDATE stock
+            SET qty = qty - ?, updated_at = datetime('now')
+            WHERE part_id = ?
+              AND location_type = ?
+              AND location_id = ?
+              AND deleted_at IS NULL
+            """, arguments: [qty, partId, locationType, locationId])
+    }
+
+    private static func incrementStock(partId: Int64, locationType: String, locationId: Int64, qty: Int, dbConn: Database) throws {
+        try dbConn.execute(sql: """
+            UPDATE stock
+            SET qty = qty + ?, updated_at = datetime('now')
+            WHERE part_id = ?
+              AND location_type = ?
+              AND location_id = ?
+              AND deleted_at IS NULL
+            """, arguments: [qty, partId, locationType, locationId])
+        if dbConn.changesCount == 0 {
+            try dbConn.execute(sql: """
+                INSERT INTO stock (part_id, location_type, location_id, qty, updated_at)
+                VALUES (?, ?, ?, ?, datetime('now'))
+                """, arguments: [partId, locationType, locationId, qty])
+        }
+    }
+
+    @discardableResult
+    private static func insertStockMovement(
+        partId: Int64,
+        qty: Int,
+        fromLocationType: String?,
+        fromLocationId: Int64?,
+        toLocationType: String?,
+        toLocationId: Int64?,
+        movementType: String,
+        reason: String?,
+        notes: String?,
+        performedBy: Int64,
+        jobId: Int64,
+        unitCostAtMove: Double?,
+        dbConn: Database
+    ) throws -> Int64 {
+        try dbConn.execute(sql: """
+            INSERT INTO stock_movements
+                (part_id, qty, from_location_type, from_location_id,
+                 to_location_type, to_location_id, movement_type,
+                 reason, notes, performed_by, job_id, unit_cost_at_move, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """, arguments: [
+                partId, qty, fromLocationType, fromLocationId,
+                toLocationType, toLocationId, movementType,
+                reason, notes, performedBy, jobId, unitCostAtMove,
+            ])
+        return dbConn.lastInsertedRowID
+    }
+
+    @discardableResult
+    private static func insertJobReturnIntake(
+        sourceJobId: Int64,
+        returnSource: String,
+        returnedBy: Int64,
+        partId: Int64,
+        qty: Int,
+        condition: String,
+        sourceJobPartId: Int64?,
+        notes: String?,
+        dbConn: Database
+    ) throws -> Int64 {
+        let normalizedCondition = normalizeReturnCondition(condition)
+        let itemStatus = initialReturnItemStatus(condition: normalizedCondition)
+        try dbConn.execute(sql: """
+            INSERT INTO job_return_intakes
+                (source_job_id, return_source, returned_by, status, notes, created_at, updated_at)
+            VALUES (?, ?, ?, 'holding', ?, datetime('now'), datetime('now'))
+            """, arguments: [sourceJobId, returnSource, returnedBy, notes])
+        let intakeId = dbConn.lastInsertedRowID
+
+        try dbConn.execute(sql: """
+            INSERT INTO job_return_intake_items
+                (intake_id, part_id, source_job_part_id, qty_returned, qty_remaining,
+                 condition, status, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """, arguments: [
+                intakeId, partId, sourceJobPartId, qty, qty,
+                normalizedCondition, itemStatus, notes,
+            ])
+
+        return intakeId
+    }
+
+    private static func normalizeReturnCondition(_ condition: String) -> String {
+        let normalized = condition
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+        return normalized.isEmpty ? "usable" : normalized
+    }
+
+    private static func initialReturnItemStatus(condition: String) -> String {
+        switch condition {
+        case "damaged":
+            return "damage_review"
+        case "wrong_part":
+            return "wrong_part_review"
+        case "supplier_issue":
+            return "supplier_review"
+        default:
+            return "holding"
         }
     }
 
