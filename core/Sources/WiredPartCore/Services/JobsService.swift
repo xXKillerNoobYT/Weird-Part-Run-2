@@ -29,16 +29,19 @@ public final class JobsService: Sendable {
         case laborEntryNotFound(Int64)
         case alreadyClockedIn(userId: Int64, jobId: Int64)
         case notClockedIn(userId: Int64)
+        case userNotActive(Int64)
         case questionNotFound(Int64)
         case requiredQuestionNotAnswered(Int64)
         case invalidReturnQuantity(Int64)
         case invalidAmount(Int64)
         case invalidDuration(Int64)
         case requiredFieldEmpty
+        case invalidOvertimeSettings
         case templateNotFound(Int64)
         case stageNotFound(Int64)
         case stageInUse(Int64)
         case invalidStageTemplate(Int64)
+        case invalidClockOutTime(laborEntryId: Int64)
     }
 
     // =========================================================================
@@ -1206,43 +1209,28 @@ public final class JobsService: Sendable {
         gpsLat: Double? = nil,
         gpsLng: Double? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
-            // Verify the target job exists, is not deleted, and is in a clockable state
-            guard let jobRow = try Row.fetchOne(
-                dbConn,
-                sql: "SELECT status FROM jobs WHERE id = ? AND deleted_at IS NULL",
-                arguments: [jobId]
-            ) else {
-                throw JobsError.jobNotFound(jobId)
-            }
-            let jobStatus: String = jobRow["status"] ?? ""
-            guard ["active", "in_progress"].contains(jobStatus) else {
-                throw JobsError.jobNotClockable(jobId)
-            }
+        try clockIn(userId: userId, jobId: jobId, at: Date(), gpsLat: gpsLat, gpsLng: gpsLng)
+    }
 
-            // Check for existing open clock entry
-            let existing = try Int.fetchOne(
-                dbConn,
-                sql: """
-                    SELECT COUNT(*) FROM labor_entries
-                    WHERE user_id = ? AND status = 'clocked_in' AND deleted_at IS NULL
-                    """,
-                arguments: [userId]
-            ) ?? 0
-
-            if existing > 0 {
-                throw JobsError.alreadyClockedIn(userId: userId, jobId: jobId)
-            }
-
-            try dbConn.execute(
-                sql: """
-                    INSERT INTO labor_entries
-                    (user_id, job_id, clock_in, clock_in_gps_lat, clock_in_gps_lng, status, created_at)
-                    VALUES (?, ?, datetime('now'), ?, ?, 'clocked_in', datetime('now'))
-                    """,
-                arguments: [userId, jobId, gpsLat, gpsLng]
+    /// Deterministic clock-in variant for imported time entries, tests, and job-switch flows.
+    @discardableResult
+    public func clockIn(
+        userId: Int64,
+        jobId: Int64,
+        at clockInAt: Date,
+        gpsLat: Double? = nil,
+        gpsLng: Double? = nil
+    ) throws -> Int64 {
+        let clockInTimestamp = Self.sqliteTimestamp(clockInAt)
+        return try db.writer.write { dbConn in
+            try Self.createClockEntry(
+                dbConn: dbConn,
+                userId: userId,
+                jobId: jobId,
+                clockInTimestamp: clockInTimestamp,
+                gpsLat: gpsLat,
+                gpsLng: gpsLng
             )
-            return dbConn.lastInsertedRowID
         }
     }
 
@@ -1258,7 +1246,19 @@ public final class JobsService: Sendable {
         gpsLat: Double? = nil,
         gpsLng: Double? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        try clockInToWarehouse(userId: userId, at: Date(), gpsLat: gpsLat, gpsLng: gpsLng)
+    }
+
+    /// Deterministic Shop / Warehouse clock-in variant.
+    @discardableResult
+    public func clockInToWarehouse(
+        userId: Int64,
+        at clockInAt: Date,
+        gpsLat: Double? = nil,
+        gpsLng: Double? = nil
+    ) throws -> Int64 {
+        let clockInTimestamp = Self.sqliteTimestamp(clockInAt)
+        return try db.writer.write { dbConn in
             let existing = try Int.fetchOne(
                 dbConn,
                 sql: """
@@ -1277,9 +1277,9 @@ public final class JobsService: Sendable {
                 sql: """
                     INSERT INTO labor_entries
                     (user_id, job_id, clock_in, clock_in_gps_lat, clock_in_gps_lng, status, created_at)
-                    VALUES (?, ?, datetime('now'), ?, ?, 'clocked_in', datetime('now'))
+                    VALUES (?, ?, ?, ?, ?, 'clocked_in', ?)
                     """,
-                arguments: [userId, warehouseJobId, gpsLat, gpsLng]
+                arguments: [userId, warehouseJobId, clockInTimestamp, gpsLat, gpsLng, clockInTimestamp]
             )
             return dbConn.lastInsertedRowID
         }
@@ -1294,63 +1294,246 @@ public final class JobsService: Sendable {
         gpsLat: Double? = nil,
         gpsLng: Double? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
-            // Verify the entry exists and is clocked in
-            guard let entry = try Row.fetchOne(
+        try clockOut(laborEntryId: laborEntryId, at: Date(), gpsLat: gpsLat, gpsLng: gpsLng)
+    }
+
+    /// Deterministic clock-out variant. Calculates unpaid-break-adjusted regular/overtime
+    /// hours against the user's local-day total before this entry.
+    @discardableResult
+    public func clockOut(
+        laborEntryId: Int64,
+        at clockOutAt: Date,
+        gpsLat: Double? = nil,
+        gpsLng: Double? = nil
+    ) throws -> Int64 {
+        let clockOutTimestamp = Self.sqliteTimestamp(clockOutAt)
+        return try db.writer.write { dbConn in
+            try Self.completeClockEntry(
+                dbConn: dbConn,
+                laborEntryId: laborEntryId,
+                clockOutTimestamp: clockOutTimestamp,
+                gpsLat: gpsLat,
+                gpsLng: gpsLng
+            )
+        }
+    }
+
+    /// Close the user's current entry at `switchedAt`, then clock into `nextJobId` at the
+    /// same instant. Both writes happen atomically so job switches cannot leave a gap or two
+    /// active entries.
+    @discardableResult
+    public func switchClockedInJob(
+        userId: Int64,
+        nextJobId: Int64,
+        at switchedAt: Date,
+        clockOutGpsLat: Double? = nil,
+        clockOutGpsLng: Double? = nil,
+        clockInGpsLat: Double? = nil,
+        clockInGpsLng: Double? = nil
+    ) throws -> Int64 {
+        let switchTimestamp = Self.sqliteTimestamp(switchedAt)
+        return try db.writer.write { dbConn in
+            guard let active = try Row.fetchOne(
                 dbConn,
-                sql: "SELECT id, user_id, clock_in FROM labor_entries WHERE id = ? AND status = 'clocked_in' AND deleted_at IS NULL",
+                sql: """
+                    SELECT id
+                    FROM labor_entries
+                    WHERE user_id = ? AND status = 'clocked_in' AND deleted_at IS NULL
+                    LIMIT 1
+                    """,
+                arguments: [userId]
+            ) else {
+                throw JobsError.notClockedIn(userId: userId)
+            }
+            let activeEntryId: Int64 = active["id"] ?? 0
+
+            try Self.completeClockEntry(
+                dbConn: dbConn,
+                laborEntryId: activeEntryId,
+                clockOutTimestamp: switchTimestamp,
+                gpsLat: clockOutGpsLat,
+                gpsLng: clockOutGpsLng
+            )
+            return try Self.createClockEntry(
+                dbConn: dbConn,
+                userId: userId,
+                jobId: nextJobId,
+                clockInTimestamp: switchTimestamp,
+                gpsLat: clockInGpsLat,
+                gpsLng: clockInGpsLng
+            )
+        }
+    }
+
+    public func getOvertimeSettings() throws -> OvertimeSettings {
+        try db.writer.read { dbConn in
+            try Self.fetchOvertimeSettings(dbConn)
+        }
+    }
+
+    public func updateOvertimeSettings(
+        calculationRule: String,
+        dailyThresholdHours: Double = 8.0,
+        weeklyThresholdHours: Double? = nil,
+        weekStartWeekday: Int = 2,
+        updatedBy: Int64? = nil
+    ) throws -> OvertimeSettings {
+        guard ["daily_only", "weekly_only", "daily_and_weekly"].contains(calculationRule),
+              dailyThresholdHours > 0,
+              weeklyThresholdHours.map({ $0 > 0 }) ?? true,
+              (1...7).contains(weekStartWeekday)
+        else {
+            throw JobsError.invalidOvertimeSettings
+        }
+
+        let timestamp = Self.sqliteTimestamp(Date())
+        return try db.writer.write { dbConn in
+            if let updatedBy {
+                try Self.requireActiveUser(dbConn, userId: updatedBy)
+            }
+            let existingId = try Int64.fetchOne(dbConn, sql: "SELECT id FROM overtime_settings ORDER BY id LIMIT 1")
+            if let existingId {
+                try dbConn.execute(sql: """
+                    UPDATE overtime_settings
+                    SET calculation_rule = ?,
+                        daily_threshold_hours = ?,
+                        weekly_threshold_hours = ?,
+                        week_start_weekday = ?,
+                        updated_by = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """, arguments: [
+                    calculationRule, dailyThresholdHours, weeklyThresholdHours,
+                    weekStartWeekday, updatedBy, timestamp, existingId
+                ])
+            } else {
+                try dbConn.execute(sql: """
+                    INSERT INTO overtime_settings
+                        (calculation_rule, daily_threshold_hours, weekly_threshold_hours,
+                         week_start_weekday, updated_by, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """, arguments: [
+                    calculationRule, dailyThresholdHours, weeklyThresholdHours,
+                    weekStartWeekday, updatedBy, timestamp
+                ])
+            }
+            return try Self.fetchOvertimeSettings(dbConn)
+        }
+    }
+
+    @discardableResult
+    public func correctLaborEntry(
+        laborEntryId: Int64,
+        correctedBy: Int64,
+        reason: String,
+        clockIn: Date,
+        clockOut: Date?
+    ) throws -> Int64 {
+        let trimmedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedReason.isEmpty else { throw JobsError.requiredFieldEmpty }
+
+        let newClockIn = Self.sqliteTimestamp(clockIn)
+        let newClockOut = clockOut.map(Self.sqliteTimestamp(_:))
+        if let clockOut, clockOut < clockIn {
+            throw JobsError.invalidClockOutTime(laborEntryId: laborEntryId)
+        }
+
+        return try db.writer.write { dbConn in
+            try Self.requireActiveUser(dbConn, userId: correctedBy)
+            guard let oldEntry = try Row.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT id, user_id, clock_in, clock_out, regular_hours,
+                           overtime_hours, status
+                    FROM labor_entries
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
                 arguments: [laborEntryId]
             ) else {
                 throw JobsError.laborEntryNotFound(laborEntryId)
             }
-            let userId: Int64 = entry["user_id"] ?? 0
-            let clockIn: String = entry["clock_in"] ?? ""
 
-            // Calculate raw elapsed hours
-            let rawHours = try Double.fetchOne(dbConn, sql: """
-                SELECT ROUND((julianday(datetime('now')) - julianday(clock_in)) * 24, 2)
-                FROM labor_entries WHERE id = ?
-                """, arguments: [laborEntryId]) ?? 0
+            let userId: Int64 = oldEntry["user_id"] ?? 0
+            let oldClockIn: String = oldEntry["clock_in"] ?? ""
+            let oldClockOut: String? = oldEntry["clock_out"] as String?
+            let oldRegularHours: Double = oldEntry["regular_hours"] ?? 0
+            let oldOvertimeHours: Double = oldEntry["overtime_hours"] ?? 0
+            let oldStatus: String = oldEntry["status"] ?? ""
 
-            // Subtract break time (fixes #206)
-            let breakMinutes = try Double.fetchOne(dbConn, sql: """
-                SELECT COALESCE(SUM(duration_minutes), 0)
-                FROM break_records WHERE labor_entry_id = ? AND deleted_at IS NULL
-                """, arguments: [laborEntryId]) ?? 0
-            let totalHours = max(0, rawHours - (breakMinutes / 60.0))
+            let allocation: (regular: Double, overtime: Double)
+            let newStatus: String
+            if let newClockOut {
+                let rawHours = try Double.fetchOne(dbConn, sql: """
+                    SELECT ROUND((julianday(?) - julianday(?)) * 24, 4)
+                    """, arguments: [newClockOut, newClockIn]) ?? 0
+                guard rawHours >= 0 else {
+                    throw JobsError.invalidClockOutTime(laborEntryId: laborEntryId)
+                }
+                let unpaidBreakMinutes = try Double.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(duration_minutes), 0)
+                    FROM break_records
+                    WHERE labor_entry_id = ? AND COALESCE(is_paid, 1) = 0 AND deleted_at IS NULL
+                    """, arguments: [laborEntryId]) ?? 0
+                let totalHours = max(0, rawHours - (unpaidBreakMinutes / 60.0))
+                allocation = try Self.allocateOvertimeHours(
+                    dbConn: dbConn,
+                    userId: userId,
+                    laborEntryId: laborEntryId,
+                    clockInTimestamp: newClockIn,
+                    totalHours: totalHours
+                )
+                newStatus = "completed"
+            } else {
+                allocation = (0, 0)
+                newStatus = "clocked_in"
+            }
 
-            // Split into regular/overtime at the per-user, per-day threshold. Count earlier
-            // completed entries for the same worker/day so switching jobs does not restart
-            // the daily regular-hours allowance.
-            let priorWorkedHours = try Double.fetchOne(dbConn, sql: """
-                SELECT COALESCE(SUM(regular_hours + overtime_hours), 0)
-                FROM labor_entries
-                WHERE user_id = ?
-                  AND id != ?
-                  AND status = 'completed'
-                  AND deleted_at IS NULL
-                  AND \(Self.localDateSQL("clock_in")) = date(?, 'localtime')
-                  AND clock_in < ?
-                """, arguments: [userId, laborEntryId, clockIn, clockIn]) ?? 0
-            let remainingRegularHours = max(0, 8.0 - priorWorkedHours)
-            let regularHours = min(totalHours, remainingRegularHours)
-            let overtimeHours = max(0, totalHours - regularHours)
+            try dbConn.execute(sql: """
+                UPDATE labor_entries
+                SET clock_in = ?,
+                    clock_out = ?,
+                    regular_hours = ROUND(?, 2),
+                    overtime_hours = ROUND(?, 2),
+                    status = ?,
+                    edited_by = ?
+                WHERE id = ?
+                """, arguments: [
+                newClockIn, newClockOut, allocation.regular, allocation.overtime,
+                newStatus, correctedBy, laborEntryId
+            ])
 
-            try dbConn.execute(
+            try dbConn.execute(sql: """
+                INSERT INTO labor_entry_correction_audits
+                    (labor_entry_id, corrected_by, reason,
+                     old_clock_in, new_clock_in, old_clock_out, new_clock_out,
+                     old_regular_hours, new_regular_hours,
+                     old_overtime_hours, new_overtime_hours,
+                     old_status, new_status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ROUND(?, 2), ?, ROUND(?, 2), ?, ?)
+                """, arguments: [
+                laborEntryId, correctedBy, trimmedReason,
+                oldClockIn, newClockIn, oldClockOut, newClockOut,
+                oldRegularHours, allocation.regular,
+                oldOvertimeHours, allocation.overtime,
+                oldStatus, newStatus
+            ])
+
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    public func listLaborEntryCorrectionAudits(laborEntryId: Int64) throws -> [LaborEntryCorrectionAudit] {
+        try db.writer.read { dbConn in
+            try LaborEntryCorrectionAudit.fetchAll(
+                dbConn,
                 sql: """
-                    UPDATE labor_entries
-                    SET clock_out = datetime('now'),
-                        clock_out_gps_lat = ?,
-                        clock_out_gps_lng = ?,
-                        regular_hours = ROUND(?, 2),
-                        overtime_hours = ROUND(?, 2),
-                        status = 'completed'
-                    WHERE id = ?
+                    SELECT *
+                    FROM labor_entry_correction_audits
+                    WHERE labor_entry_id = ?
+                    ORDER BY created_at DESC, id DESC
                     """,
-                arguments: [gpsLat, gpsLng, regularHours, overtimeHours, laborEntryId]
+                arguments: [laborEntryId]
             )
-
-            return laborEntryId
         }
     }
 
@@ -2585,6 +2768,10 @@ public final class JobsService: Sendable {
         return formatter
     }()
 
+    private static func sqliteTimestamp(_ date: Date) -> String {
+        sqliteUTCDateFormatter.string(from: date)
+    }
+
     private static func parseSQLiteUTCDateTime(_ string: String) -> Date? {
         if let date = CoreFormatters.parseISO(string) { return date }
         return sqliteUTCDateFormatter.date(from: string)
@@ -2593,6 +2780,222 @@ public final class JobsService: Sendable {
     /// Convert SQLite datetime/date text into the current local operational day.
     private static func localDateSQL(_ expression: String) -> String {
         "CASE WHEN length(\(expression)) <= 10 THEN date(\(expression)) ELSE date(\(expression), 'localtime') END"
+    }
+
+    @discardableResult
+    private static func createClockEntry(
+        dbConn: Database,
+        userId: Int64,
+        jobId: Int64,
+        clockInTimestamp: String,
+        gpsLat: Double?,
+        gpsLng: Double?
+    ) throws -> Int64 {
+        guard let jobRow = try Row.fetchOne(
+            dbConn,
+            sql: "SELECT status FROM jobs WHERE id = ? AND deleted_at IS NULL",
+            arguments: [jobId]
+        ) else {
+            throw JobsError.jobNotFound(jobId)
+        }
+        let jobStatus: String = jobRow["status"] ?? ""
+        guard ["active", "in_progress"].contains(jobStatus) else {
+            throw JobsError.jobNotClockable(jobId)
+        }
+
+        let existing = try Int.fetchOne(
+            dbConn,
+            sql: """
+                SELECT COUNT(*) FROM labor_entries
+                WHERE user_id = ? AND status = 'clocked_in' AND deleted_at IS NULL
+                """,
+            arguments: [userId]
+        ) ?? 0
+        if existing > 0 {
+            throw JobsError.alreadyClockedIn(userId: userId, jobId: jobId)
+        }
+
+        try dbConn.execute(
+            sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_in_gps_lat, clock_in_gps_lng, status, created_at)
+                VALUES (?, ?, ?, ?, ?, 'clocked_in', ?)
+                """,
+            arguments: [userId, jobId, clockInTimestamp, gpsLat, gpsLng, clockInTimestamp]
+        )
+        return dbConn.lastInsertedRowID
+    }
+
+    @discardableResult
+    private static func completeClockEntry(
+        dbConn: Database,
+        laborEntryId: Int64,
+        clockOutTimestamp: String,
+        gpsLat: Double?,
+        gpsLng: Double?
+    ) throws -> Int64 {
+        guard let entry = try Row.fetchOne(
+            dbConn,
+            sql: "SELECT id, user_id, clock_in FROM labor_entries WHERE id = ? AND status = 'clocked_in' AND deleted_at IS NULL",
+            arguments: [laborEntryId]
+        ) else {
+            throw JobsError.laborEntryNotFound(laborEntryId)
+        }
+        let userId: Int64 = entry["user_id"] ?? 0
+        let clockIn: String = entry["clock_in"] ?? ""
+
+        let rawHours = try Double.fetchOne(dbConn, sql: """
+            SELECT ROUND((julianday(?) - julianday(clock_in)) * 24, 4)
+            FROM labor_entries WHERE id = ?
+            """, arguments: [clockOutTimestamp, laborEntryId]) ?? 0
+        guard rawHours >= 0 else {
+            throw JobsError.invalidClockOutTime(laborEntryId: laborEntryId)
+        }
+
+        let unpaidBreakMinutes = try Double.fetchOne(dbConn, sql: """
+            SELECT COALESCE(SUM(duration_minutes), 0)
+            FROM break_records
+            WHERE labor_entry_id = ? AND COALESCE(is_paid, 1) = 0 AND deleted_at IS NULL
+            """, arguments: [laborEntryId]) ?? 0
+        let totalHours = max(0, rawHours - (unpaidBreakMinutes / 60.0))
+
+        let allocation = try allocateOvertimeHours(
+            dbConn: dbConn,
+            userId: userId,
+            laborEntryId: laborEntryId,
+            clockInTimestamp: clockIn,
+            totalHours: totalHours
+        )
+
+        try dbConn.execute(
+            sql: """
+                UPDATE labor_entries
+                SET clock_out = ?,
+                    clock_out_gps_lat = ?,
+                    clock_out_gps_lng = ?,
+                    regular_hours = ROUND(?, 2),
+                    overtime_hours = ROUND(?, 2),
+                    status = 'completed'
+                WHERE id = ?
+                """,
+            arguments: [clockOutTimestamp, gpsLat, gpsLng, allocation.regular, allocation.overtime, laborEntryId]
+        )
+
+        return laborEntryId
+    }
+
+    private static func fetchOvertimeSettings(_ dbConn: Database) throws -> OvertimeSettings {
+        if let settings = try OvertimeSettings.fetchOne(
+            dbConn,
+            sql: "SELECT * FROM overtime_settings ORDER BY id LIMIT 1"
+        ) {
+            return settings
+        }
+        return OvertimeSettings(
+            id: nil,
+            calculationRule: "daily_only",
+            dailyThresholdHours: 8.0,
+            weeklyThresholdHours: nil,
+            weekStartWeekday: 2,
+            updatedBy: nil,
+            updatedAt: nil
+        )
+    }
+
+    private static func allocateOvertimeHours(
+        dbConn: Database,
+        userId: Int64,
+        laborEntryId: Int64,
+        clockInTimestamp: String,
+        totalHours: Double
+    ) throws -> (regular: Double, overtime: Double) {
+        let settings = try fetchOvertimeSettings(dbConn)
+        let dailyPriorHours = try priorCompletedHours(
+            dbConn: dbConn,
+            userId: userId,
+            laborEntryId: laborEntryId,
+            whereSQL: "\(localDateSQL("clock_in")) = date(?, 'localtime') AND clock_in < ?",
+            arguments: [clockInTimestamp, clockInTimestamp]
+        )
+        let dailyRemaining = max(0, settings.dailyThresholdHours - dailyPriorHours)
+
+        let weeklyRemaining: Double
+        if let weeklyThresholdHours = settings.weeklyThresholdHours,
+           let clockInDate = parseSQLiteUTCDateTime(clockInTimestamp) {
+            let interval = localWeekInterval(containing: clockInDate, weekStartWeekday: settings.weekStartWeekday)
+            let weekStart = sqliteTimestamp(interval.start)
+            let weekEnd = sqliteTimestamp(interval.end)
+            let weeklyPriorHours = try priorCompletedHours(
+                dbConn: dbConn,
+                userId: userId,
+                laborEntryId: laborEntryId,
+                whereSQL: "clock_in >= ? AND clock_in < ? AND clock_in < ?",
+                arguments: [weekStart, weekEnd, clockInTimestamp]
+            )
+            weeklyRemaining = max(0, weeklyThresholdHours - weeklyPriorHours)
+        } else {
+            weeklyRemaining = Double.greatestFiniteMagnitude
+        }
+
+        let regularCapacity: Double
+        switch settings.calculationRule {
+        case "weekly_only":
+            regularCapacity = weeklyRemaining
+        case "daily_and_weekly":
+            regularCapacity = min(dailyRemaining, weeklyRemaining)
+        default:
+            regularCapacity = dailyRemaining
+        }
+
+        let regularHours = min(totalHours, max(0, regularCapacity))
+        let overtimeHours = max(0, totalHours - regularHours)
+        return (roundHours(regularHours), roundHours(overtimeHours))
+    }
+
+    private static func priorCompletedHours(
+        dbConn: Database,
+        userId: Int64,
+        laborEntryId: Int64,
+        whereSQL: String,
+        arguments: StatementArguments
+    ) throws -> Double {
+        var allArguments: StatementArguments = [userId, laborEntryId]
+        allArguments += arguments
+        return try Double.fetchOne(dbConn, sql: """
+            SELECT COALESCE(SUM(regular_hours + overtime_hours), 0)
+            FROM labor_entries
+            WHERE user_id = ?
+              AND id != ?
+              AND status = 'completed'
+              AND deleted_at IS NULL
+              AND \(whereSQL)
+            """, arguments: allArguments) ?? 0
+    }
+
+    private static func localWeekInterval(containing date: Date, weekStartWeekday: Int) -> DateInterval {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone.current
+        calendar.firstWeekday = weekStartWeekday
+
+        let dayStart = calendar.startOfDay(for: date)
+        let weekday = calendar.component(.weekday, from: dayStart)
+        let daysSinceStart = (weekday - weekStartWeekday + 7) % 7
+        let start = calendar.date(byAdding: .day, value: -daysSinceStart, to: dayStart) ?? dayStart
+        let end = calendar.date(byAdding: .day, value: 7, to: start) ?? start.addingTimeInterval(7 * 24 * 60 * 60)
+        return DateInterval(start: start, end: end)
+    }
+
+    private static func roundHours(_ value: Double) -> Double {
+        (value * 100).rounded() / 100
+    }
+
+    private static func requireActiveUser(_ dbConn: Database, userId: Int64) throws {
+        let count = try Int.fetchOne(
+            dbConn,
+            sql: "SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND COALESCE(is_active, 1) = 1",
+            arguments: [userId]
+        ) ?? 0
+        guard count > 0 else { throw JobsError.userNotActive(userId) }
     }
 
     /// Detect whether a GRDB/SQLite error indicates a missing table.

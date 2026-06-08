@@ -253,6 +253,25 @@ struct PartsServiceAdvancedTests {
         #expect(after.totalSuppliers == before.totalSuppliers + 1)
     }
 
+    @Test("getImportExportStats excludes inactive parts from active catalog total")
+    func testGetImportExportStatsExcludesInactiveParts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let before = try env.parts.getImportExportStats()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let activePartId = try E2ETestHelpers.seedPart(env, name: "Active Stats Part", categoryId: catId)
+        let inactivePartId = try E2ETestHelpers.seedPart(env, name: "Inactive Stats Part", categoryId: catId)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET is_active = 0 WHERE id = ?", arguments: [inactivePartId])
+        }
+
+        let stats = try env.parts.getImportExportStats()
+        let listedParts = try env.parts.listParts()
+        #expect(stats.totalParts == before.totalParts + 1)
+        #expect(try env.parts.getPart(id: activePartId).part.id == activePartId)
+        #expect(!listedParts.contains { $0.part.id == inactivePartId })
+    }
+
     @Test("getImportExportStats returns zeros on empty catalog")
     func testGetImportExportStatsEmpty() throws {
         let env = try E2ETestHelpers.setUp()
@@ -305,6 +324,21 @@ struct PartsServiceAdvancedTests {
         #expect(preview.errors.count == 2)
         #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid number for cost_price: N/A" })
         #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid number for markup_percent: forty" })
+    }
+
+    @Test("previewPartsImportCSV rejects invalid exported sell_price values")
+    func testPreviewPartsImportCSVRejectsInvalidSellPriceValue() throws {
+        let env = try E2ETestHelpers.setUp()
+        let csv = """
+        name,code,category,cost_price,markup_percent,sell_price
+        Bad Sell Price Part,BAD-SELL-001,Test,12.5,20,not-a-number
+        """
+
+        let preview = try env.parts.previewPartsImportCSV(csv)
+
+        #expect(preview.newParts.isEmpty)
+        #expect(preview.errors.count == 1)
+        #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid number for sell_price: not-a-number" })
     }
 
     @Test("previewPartsImportCSV keeps rows with valid numeric pricing fields")

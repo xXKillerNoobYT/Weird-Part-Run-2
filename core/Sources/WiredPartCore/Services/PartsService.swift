@@ -1170,6 +1170,7 @@ public final class PartsService: Sendable {
                                AND cbs.type_id = p.type_id
                                AND cbs.deleted_at IS NULL
                             WHERE p.deleted_at IS NULL
+                              AND p.is_active = 1
                               AND (p.name LIKE ? OR p.code LIKE ?
                                    OR pc.part_number LIKE ?
                                    OR pc.name LIKE ?
@@ -1189,6 +1190,7 @@ public final class PartsService: Sendable {
                             SELECT DISTINCT p.* FROM parts p
                             LEFT JOIN part_colors pc ON pc.id = p.color_id AND pc.deleted_at IS NULL
                             WHERE p.deleted_at IS NULL
+                              AND p.is_active = 1
                               AND (p.name LIKE ? OR p.code LIKE ? OR pc.name LIKE ?)
                             ORDER BY p.name ASC
                             LIMIT ?
@@ -5818,7 +5820,7 @@ public final class PartsService: Sendable {
     /// Get summary stats for the import/export page.
     public func getImportExportStats() throws -> ImportExportStats {
         try db.writer.read { dbConn in
-            let parts = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM parts WHERE deleted_at IS NULL") ?? 0
+            let parts = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM parts WHERE deleted_at IS NULL AND is_active = 1") ?? 0
             let cats = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM part_categories WHERE deleted_at IS NULL") ?? 0
             let brands = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM brands WHERE deleted_at IS NULL") ?? 0
             let suppliers = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM suppliers WHERE deleted_at IS NULL") ?? 0
@@ -5871,6 +5873,7 @@ public final class PartsService: Sendable {
                 LEFT JOIN brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
                 LEFT JOIN part_colors pco ON pco.id = p.color_id AND pco.deleted_at IS NULL
                 WHERE p.deleted_at IS NULL
+                  AND p.is_active = 1
                 ORDER BY p.name ASC
                 """
 
@@ -6350,7 +6353,7 @@ public final class PartsService: Sendable {
                 if !trimmed.isEmpty { fields[header] = trimmed }
             }
 
-            for numericHeader in ["cost_price", "markup_percent"] {
+            for numericHeader in ["cost_price", "markup_percent", "sell_price"] {
                 if let raw = fields[numericHeader] {
                     guard let value = Double(raw) else {
                         let message = "Invalid number for \(numericHeader): \(raw)"
