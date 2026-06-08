@@ -34,7 +34,7 @@ permissions:
 
 jobs:
   maintain-prs:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
