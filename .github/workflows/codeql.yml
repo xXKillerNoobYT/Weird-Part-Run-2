@@ -24,7 +24,7 @@ on:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
-    runs-on: macos-latest  # Swift CodeQL requires macOS runners
+    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]  # Swift CodeQL requires macOS runners
     timeout-minutes: 60
 
     permissions:
