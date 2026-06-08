@@ -1396,7 +1396,7 @@ struct IOSJobDetailPage: View {
 
         do {
             let ledger = try service.getInventoryLedger(partId: partId)
-            pullSourceLocations = ledger?.locations.filter { $0.qty > 0 } ?? []
+            pullSourceLocations = ledger?.locations.filter(Self.isPullMaterialSourceLocation) ?? []
             if pullSourceLocations.count == 1 {
                 selectedPullSource = pullSourceLocations[0]
                 materialQuantity = min(materialQuantity, pullSourceLocations[0].qty)
@@ -1406,6 +1406,10 @@ struct IOSJobDetailPage: View {
         } catch {
             materialActionError = userFriendlyError(error, context: "load source locations")
         }
+    }
+
+    private static func isPullMaterialSourceLocation(_ location: WarehouseService.LedgerLocationSummary) -> Bool {
+        location.qty > 0 && pullMaterialSourceLocationTypes.contains(location.locationType.lowercased())
     }
 
     private func submitMaterialAction(_ action: MaterialAction) {
@@ -1520,6 +1524,12 @@ struct IOSJobDetailPage: View {
     // the current consumed qty to accommodate rounding or re-count adjustments.
     private static let maxPullQty = 999
     private static let maxCorrectionOverage = 100
+    private static let pullMaterialSourceLocationTypes: Set<String> = [
+        "warehouse",
+        "truck",
+        "trailer",
+        "shop",
+    ]
 
     private func materialActionMaxQty(_ action: MaterialAction) -> Int {
         switch action {

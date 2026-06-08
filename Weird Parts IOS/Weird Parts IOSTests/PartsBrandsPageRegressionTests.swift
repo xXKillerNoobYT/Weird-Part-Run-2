@@ -154,6 +154,34 @@ final class PartsBrandsPageRegressionTests: XCTestCase {
             "Selecting a pull part should load available stock locations for that part."
         )
         XCTAssertTrue(
+            source.contains("pullMaterialSourceLocationTypes: Set<String>") &&
+                source.contains("\"warehouse\"") &&
+                source.contains("\"truck\"") &&
+                source.contains("\"trailer\"") &&
+                source.contains("\"shop\""),
+            "Pull material should only expose external inventory source buckets."
+        )
+        let allowlistStart = try XCTUnwrap(source.range(of: "pullMaterialSourceLocationTypes: Set<String>"))
+        let allowlistTail = source[allowlistStart.lowerBound...]
+        let allowlistEnd = try XCTUnwrap(allowlistTail.range(of: "]"))
+        let allowlistSource = String(allowlistTail[..<allowlistEnd.upperBound])
+        XCTAssertFalse(
+            allowlistSource.contains("\"pulled\"") || allowlistSource.contains("\"job\""),
+            "Pull material source allowlist must exclude internal pulled/job stock buckets."
+        )
+        XCTAssertTrue(
+            source.contains("pullSourceLocations = ledger?.locations.filter(Self.isPullMaterialSourceLocation)"),
+            "Pull material should filter ledger locations through the source-bucket predicate."
+        )
+        XCTAssertTrue(
+            source.contains("location.qty > 0 && pullMaterialSourceLocationTypes.contains(location.locationType.lowercased())"),
+            "The pull source predicate should require positive stock and an allowed external source type."
+        )
+        XCTAssertFalse(
+            source.contains("pullSourceLocations = ledger?.locations.filter { $0.qty > 0 }"),
+            "The pull source picker must not expose every positive ledger bucket, because pulled/job rows are not valid sources."
+        )
+        XCTAssertTrue(
             source.contains("fromLocationType: source.locationType") &&
                 source.contains("fromLocationId: source.locationId"),
             "Pull material must pass the selected source location into JobsService.pullJobMaterial."
