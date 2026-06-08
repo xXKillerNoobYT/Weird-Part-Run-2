@@ -61,6 +61,18 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         return repoRoot.appendingPathComponent("docs/testing/artifacts/wei-936/wei-1451-current", isDirectory: true)
     }
 
+    private var wei3144ArtifactDirectory: URL {
+        if let path = ProcessInfo.processInfo.environment["WEI_3144_ARTIFACT_DIR"], !path.isEmpty {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        let source = URL(fileURLWithPath: #filePath)
+        let repoRoot = source
+            .deletingLastPathComponent() // Weird Parts IOSUITests
+            .deletingLastPathComponent() // Weird Parts IOS
+            .deletingLastPathComponent() // repo root
+        return repoRoot.appendingPathComponent("docs/testing/artifacts/wei-3144/current", isDirectory: true)
+    }
+
     // MARK: - Setup & Teardown
 
     override func setUpWithError() throws {
@@ -170,6 +182,68 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         - VoiceOver/accessibility traversal smoke: core evidence controls expose labels for Dismiss checklist, Checklist dismissed. Undo, Required tour steps complete, and the welcome/celebration headings.
         """
         try verification.write(to: artifactDirectory.appendingPathComponent("07-accessibility-reduce-motion-voiceover-notes.txt"), atomically: true, encoding: .utf8)
+    }
+
+    @MainActor
+    func testWEI3144JobMaterialsWalkthroughEvidence() throws {
+        let artifactDirectory = wei3144ArtifactDirectory
+        try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
+
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments += [
+            "-UITesting",
+            "-UITestingWEI936AutoLogin",
+            "-UITestingWEI3144JobMaterials"
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["WEI-3144 Materials QA Job"].waitForExistence(timeout: 20), "Seeded job detail should open")
+        scrollUntilVisible(app.descendants(matching: .any)["jobMaterialsTab"])
+        XCTAssertTrue(app.descendants(matching: .any)["jobMaterialsTab"].waitForExistence(timeout: 10), "Materials tab content should render")
+
+        for segment in ["Ready", "Used", "Returns", "History"] {
+            XCTAssertTrue(app.buttons[segment].waitForExistence(timeout: 5), "Materials segment \(segment) should be visible")
+        }
+
+        captureWEI3144("01-materials-ready")
+
+        app.buttons["Used"].tap()
+        XCTAssertTrue(app.staticTexts["WEI-3144 Wire Nut"].waitForExistence(timeout: 5), "Used segment should show consumed wire nuts")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '7 used'")).firstMatch.waitForExistence(timeout: 5), "Used segment should show 7 consumed")
+        captureWEI3144("02-materials-used")
+
+        let correctButton = app.buttons["Correct"].firstMatch
+        XCTAssertTrue(correctButton.waitForExistence(timeout: 5), "Used material row should expose correction action")
+        correctButton.tap()
+        XCTAssertTrue(app.navigationBars["Correct Material"].waitForExistence(timeout: 5), "Correction sheet should open")
+        let auditNoteField = app.textFields["Required audit note"].firstMatch
+        XCTAssertTrue(auditNoteField.waitForExistence(timeout: 5), "Correction flow should label the audit note field")
+        XCTAssertFalse(app.buttons["Save Correction"].isEnabled, "Save Correction should stay disabled until an audit note is entered")
+        captureWEI3144("03-correction-requires-audit-note")
+        app.buttons["Cancel"].tap()
+
+        app.buttons["Returns"].tap()
+        captureWEI3144("04-materials-returns")
+        XCTAssertTrue(app.staticTexts["WEI-3144 Wire Nut"].waitForExistence(timeout: 5), "Returns segment should show the returned wire nut")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'qty 3'")).firstMatch.waitForExistence(timeout: 5), "Returns segment should show the returned quantity")
+
+        app.buttons["History"].tap()
+        captureWEI3144("05-materials-history")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Pulled 10 wire nuts'")).firstMatch.waitForExistence(timeout: 5), "History should show seeded pull note")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'original_qty=9'")).firstMatch.waitForExistence(timeout: 5), "History should show original correction value")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'adjusted_qty=7'")).firstMatch.waitForExistence(timeout: 5), "History should show adjusted correction value")
+
+        let viewport = UIDevice.current.userInterfaceIdiom == .pad ? "tablet" : "phone"
+        let verification = """
+        WEI-3144 Materials walkthrough evidence (\(viewport))
+        - Route: Job Detail -> Materials for seeded job UITEST-MAT-3144.
+        - Segments visible: Ready, Used, Returns, History.
+        - Seed path exercised through production services: pull 10 WEI-3144 Wire Nut, consume 7, return 3 unused.
+        - Correction flow verified: Save Correction is disabled with an empty required audit note.
+        - History verified: seeded correction row includes original_qty=9 and adjusted_qty=7.
+        """
+        try verification.write(to: artifactDirectory.appendingPathComponent("\(viewport)-verification.txt"), atomically: true, encoding: .utf8)
     }
 
     @MainActor
@@ -1148,6 +1222,29 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
         let file = wei1451ArtifactDirectory.appendingPathComponent("\(name).png")
         try? screenshot.pngRepresentation.write(to: file, options: .atomic)
+    }
+
+    private func captureWEI3144(_ name: String) {
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let viewport = UIDevice.current.userInterfaceIdiom == .pad ? "tablet" : "phone"
+        let file = wei3144ArtifactDirectory.appendingPathComponent("\(viewport)-\(name).png")
+        try? screenshot.pngRepresentation.write(to: file, options: .atomic)
+    }
+
+    private func scrollUntilVisible(_ element: XCUIElement, maxSwipes: Int = 8) {
+        for _ in 0..<maxSwipes where !element.exists || !element.isHittable {
+            app.swipeUp()
+        }
+    }
+
+    private func configureUITestingEnvironment(_ app: XCUIApplication) {
+        app.launchEnvironment["OS_ACTIVITY_MODE"] = "disable"
+        app.launchEnvironment["UITEST_DISABLE_ANIMATIONS"] = "1"
     }
 
     private func currentWizardStepNumber(timeout: TimeInterval = 5) -> Int? {

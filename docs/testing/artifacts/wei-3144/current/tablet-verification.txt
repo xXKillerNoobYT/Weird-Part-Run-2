@@ -1,0 +1,6 @@
+WEI-3144 Materials walkthrough evidence (tablet)
+- Route: Job Detail -> Materials for seeded job UITEST-MAT-3144.
+- Segments visible: Ready, Used, Returns, History.
+- Seed path exercised through production services: pull 10 WEI-3144 Wire Nut, consume 7, return 3 unused.
+- Correction flow verified: Save Correction is disabled with an empty required audit note.
+- History verified: seeded correction row includes original_qty=9 and adjusted_qty=7.

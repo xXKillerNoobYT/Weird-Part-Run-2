@@ -425,6 +425,100 @@ struct WarehouseServiceExtTests {
         #expect(sessionId > 0)
     }
 
+    @Test("Completing receiving rolls PO and linked JPO lifecycle through partial backorder to received")
+    func testReceivingCompletionUpdatesOrderLifecycle() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Lifecycle Conduit", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-RCV-LIFE", name: "Receiving Lifecycle")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Lifecycle Supplier")
+
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
+        _ = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 4, userId: env.adminUserId)
+        try env.orders.updateJPOStatus(id: jpoId, status: "approved")
+        let poId = try env.orders.generatePOFromJPO(jpoId: jpoId, supplierId: supplierId)
+        try env.orders.updatePOStatus(id: poId, status: "submitted", userId: env.adminUserId)
+        try env.orders.markPOSentToSupplier(id: poId, sentByUserId: env.adminUserId)
+
+        let firstSessionId = try env.warehouse.startReceivingSession(poId: poId, startedBy: env.adminUserId)
+        var firstItemId: Int64 = 0
+        try env.db.writer.read { db in
+            let row = try Row.fetchOne(db, sql: """
+                SELECT id, expected_qty
+                FROM receiving_session_items
+                WHERE session_id = ?
+                """, arguments: [firstSessionId])
+            firstItemId = row?["id"] ?? 0
+            #expect(row?["expected_qty"] as Int? == 4)
+        }
+        try env.warehouse.updateSessionItem(itemId: firstItemId, receivedQty: 2)
+        try env.warehouse.completeSession(sessionId: firstSessionId, completedBy: env.adminUserId)
+
+        try env.db.writer.read { db in
+            let row = try Row.fetchOne(db, sql: """
+                SELECT po.status AS po_status,
+                       pli.qty_received,
+                       pli.status AS line_status,
+                       jpo.status AS jpo_status,
+                       jli.line_status AS jpo_line_status
+                FROM purchase_orders po
+                JOIN po_line_items pli ON pli.po_id = po.id
+                JOIN jpo_line_items jli ON jli.id = pli.jpo_line_id
+                JOIN job_parts_orders jpo ON jpo.id = jli.jpo_id
+                WHERE po.id = ?
+                """, arguments: [poId])
+            #expect(row?["po_status"] as String? == "partial")
+            #expect(row?["qty_received"] as Int? == 2)
+            #expect(row?["line_status"] as String? == "backorder")
+            #expect(row?["jpo_status"] as String? == "backorder")
+            #expect(row?["jpo_line_status"] as String? == "backorder")
+        }
+
+        let secondSessionId = try env.warehouse.startReceivingSession(poId: poId, startedBy: env.adminUserId)
+        var secondItemId: Int64 = 0
+        try env.db.writer.read { db in
+            let row = try Row.fetchOne(db, sql: """
+                SELECT id, expected_qty
+                FROM receiving_session_items
+                WHERE session_id = ?
+                """, arguments: [secondSessionId])
+            secondItemId = row?["id"] ?? 0
+            #expect(row?["expected_qty"] as Int? == 2)
+        }
+        try env.warehouse.updateSessionItem(itemId: secondItemId, receivedQty: 2)
+        try env.warehouse.completeSession(sessionId: secondSessionId, completedBy: env.adminUserId)
+
+        try env.db.writer.read { db in
+            let row = try Row.fetchOne(db, sql: """
+                SELECT po.status AS po_status,
+                       pli.qty_received,
+                       pli.status AS line_status,
+                       jpo.status AS jpo_status,
+                       jli.line_status AS jpo_line_status
+                FROM purchase_orders po
+                JOIN po_line_items pli ON pli.po_id = po.id
+                JOIN jpo_line_items jli ON jli.id = pli.jpo_line_id
+                JOIN job_parts_orders jpo ON jpo.id = jli.jpo_id
+                WHERE po.id = ?
+                """, arguments: [poId])
+            #expect(row?["po_status"] as String? == "received")
+            #expect(row?["qty_received"] as Int? == 4)
+            #expect(row?["line_status"] as String? == "received")
+            #expect(row?["jpo_status"] as String? == "received")
+            #expect(row?["jpo_line_status"] as String? == "received")
+
+            let poHistory = try String.fetchAll(db, sql: """
+                SELECT new_status
+                FROM order_status_history
+                WHERE entity_type = 'purchase_order'
+                  AND entity_id = ?
+                  AND new_status IN ('partial', 'received')
+                ORDER BY id
+                """, arguments: [poId])
+            #expect(poHistory == ["partial", "received"])
+        }
+    }
+
     // MARK: - Inventory Reports
 
     @Test("Inventory value report")
