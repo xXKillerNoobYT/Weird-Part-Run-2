@@ -84,6 +84,9 @@ struct UserMenuSheet: View {
                 MenuItem(id: "settings-dispatch-preferences", label: "Dispatch Preferences", icon: "location.circle.fill",
                          tabId: "settings-dispatch-preferences", permission: nil,
                          keywords: ["dispatch", "preferences", "scheduling", "assignment", "routing"]),
+                MenuItem(id: "settings-purchase-orders", label: "Purchase Orders", icon: "doc.badge.gearshape.fill",
+                         tabId: "settings-purchase-orders", permission: "manage_settings",
+                         keywords: ["purchase orders", "po", "grouping", "supplier", "job", "procurement"]),
             ]),
 
             // 4. Warehouse
