@@ -86,6 +86,7 @@ struct DatabaseTests {
             "wishlist_items",    // 057
             "background_task_log", // 058
             "vehicle_location_logs", // 089
+            "timesheet_correction_audits", // 103
             // Audit assignments & permissions (059-060)
         ]
 
@@ -107,9 +108,9 @@ struct DatabaseTests {
         #expect(tables == ["part_import_row_evidence", "part_import_sessions"])
     }
 
-    @Test("Schema version is 97")
+    @Test("Schema version is 103")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 97)
+        #expect(AppDatabase.schemaVersion == 103)
     }
 
     @Test("Migration 095 normalizes duplicate legacy stage sort orders and category maps")
