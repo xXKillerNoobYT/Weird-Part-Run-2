@@ -6,7 +6,7 @@ extension PartsService {
     ///
     /// XLSX rows are normalized into the same draft row path used by CSV import so duplicate
     /// detection, validation, conflict generation, and atomic commit behavior stay shared.
-    public func previewPartsImportXLSX(_ data: Data) throws -> PartsImportPreview {
+    public func previewPartsImportXLSX(_ data: Data, supplierId: Int64? = nil) throws -> PartsImportPreview {
         let parsedSource = try PartsImportXLSXAdapter(service: self).parse(data)
         let table = parsedSource.table
         let sheetName = table.sheetName ?? "Sheet1"
@@ -18,7 +18,9 @@ extension PartsService {
         do {
             preview = try previewPartsImportRows(
                 table.rows.map { PartsImportTabularRow(rowNumber: $0.rowNumber, columns: $0.columns) },
-                emptyDescription: "XLSX sheet '\(sheetName)' is empty or has no data rows."
+                emptyDescription: "XLSX sheet '\(sheetName)' is empty or has no data rows.",
+                sourceKind: "xlsx",
+                supplierId: supplierId
             )
         } catch PartsError.invalidInput(let message) {
             throw PartsError.invalidInput("XLSX sheet '\(sheetName)' row 1: \(message)")
@@ -30,7 +32,20 @@ extension PartsService {
                 message: "XLSX sheet '\(sheetName)' row \(error.rowNumber): \(error.message)"
             )
         }
-        preview.source = parsedSource.source
+        preview.source = PartsImportSourceMetadata(
+            sourceKind: parsedSource.source.sourceKind,
+            filename: parsedSource.source.filename,
+            sheetName: parsedSource.source.sheetName,
+            sourceHash: parsedSource.source.sourceHash,
+            userId: parsedSource.source.userId,
+            supplierId: supplierId,
+            headerFingerprint: preview.source?.headerFingerprint,
+            sourceHeaders: preview.source?.sourceHeaders ?? [],
+            acceptedColumnMapping: preview.source?.acceptedColumnMapping ?? [:],
+            savedMappingId: preview.source?.savedMappingId,
+            parserMetadata: parsedSource.source.parserMetadata,
+            evidence: parsedSource.source.evidence
+        )
         return preview
     }
 
