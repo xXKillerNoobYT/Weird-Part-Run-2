@@ -180,7 +180,12 @@ struct IOSJobDetailPage: View {
                 }
             }
             .refreshable { loadData() }
-            .task { loadData() }
+            .task {
+                if ProcessInfo.processInfo.arguments.contains("-UITestingWEI3144JobMaterials") {
+                    selectedTab = .materials
+                }
+                loadData()
+            }
             .task { appCore.onboardingManager?.markCompleted("jobs-tap-detail") }
             .onDisappear {
                 NotificationCenter.default.post(name: .jobDetailPageInactive, object: nil)
@@ -520,6 +525,7 @@ struct IOSJobDetailPage: View {
                 }
             }
             .pickerStyle(.segmented)
+            .accessibilityIdentifier("jobMaterialSegmentPicker")
 
             switch selectedMaterialSegment {
             case .ready:
@@ -532,6 +538,7 @@ struct IOSJobDetailPage: View {
                 historyMaterialsSegment
             }
         }
+        .accessibilityIdentifier("jobMaterialsTab")
     }
 
     @ViewBuilder

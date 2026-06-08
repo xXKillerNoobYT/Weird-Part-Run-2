@@ -948,6 +948,10 @@ final class AppCore: ObservableObject {
             UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
         }
 
+        if ProcessInfo.processInfo.arguments.contains("-UITestingWEI3144JobMaterials") {
+            try seedWEI3144JobMaterialsFixtures(db: db, userId: fixtureUserId)
+        }
+
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
         if !ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard") {
@@ -955,6 +959,101 @@ final class AppCore: ObservableObject {
         }
 
         seedWEI936OnboardingStateIfRequested(userId: fixtureUserId)
+    }
+
+    nonisolated static func uiTestingWEI3144JobMaterialsJobId(db: AppDatabase?) -> Int64? {
+        guard ProcessInfo.processInfo.arguments.contains("-UITestingWEI3144JobMaterials"),
+              let db
+        else { return nil }
+        return try? db.writer.read { dbConn in
+            try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM jobs WHERE job_number = 'UITEST-MAT-3144' AND deleted_at IS NULL"
+            )
+        }
+    }
+
+    nonisolated private static func seedWEI3144JobMaterialsFixtures(db: AppDatabase, userId: Int64?) throws {
+        guard let userId else { return }
+
+        let parts = PartsService(db: db, auth: AuthService(db: db))
+        let warehouse = WarehouseService(db: db)
+        let jobs = JobsService(db: db)
+        let categoryId = try parts.createCategory(name: "UITesting WEI-3144 Electrical", description: "Seeded material QA category")
+
+        let wireNutId = try parts.createPart(
+            categoryId: categoryId,
+            name: "WEI-3144 Wire Nut",
+            code: "WEI3144-WIRE-NUT",
+            description: "Seeded wire nut for pull, consume, and return mobile QA"
+        )
+        let correctionPartId = try parts.createPart(
+            categoryId: categoryId,
+            name: "WEI-3144 Correction Wire Nut",
+            code: "WEI3144-CORRECT",
+            description: "Seeded material correction row for audit-note QA"
+        )
+        let jobId = try jobs.createJob(
+            jobNumber: "UITEST-MAT-3144",
+            jobName: "WEI-3144 Materials QA Job",
+            customerName: "Seeded QA Customer",
+            status: "active",
+            priority: "high",
+            jobType: "service",
+            notes: "Seeded for Stage 6 parts-on-jobs mobile/tablet Materials QA.",
+            createdBy: userId
+        )
+
+        _ = try warehouse.createMovement(
+            partId: wireNutId,
+            qty: 10,
+            fromLocationType: nil,
+            fromLocationId: nil,
+            toLocationType: "warehouse",
+            toLocationId: 1,
+            movementType: StockMovement.MovementType.receive.rawValue,
+            reason: "WEI-3144 seed stock",
+            performedBy: userId
+        )
+        _ = try jobs.pullJobMaterial(
+            jobId: jobId,
+            partId: wireNutId,
+            qty: 10,
+            fromLocationType: "warehouse",
+            fromLocationId: 1,
+            performedBy: userId,
+            notes: "Pulled 10 wire nuts for seeded Materials QA"
+        )
+        _ = try jobs.consumeStagedJobMaterial(
+            jobId: jobId,
+            partId: wireNutId,
+            qty: 7,
+            performedBy: userId,
+            notes: "Consumed 7 wire nuts in seeded Materials QA"
+        )
+        _ = try jobs.returnPulledJobMaterial(
+            jobId: jobId,
+            partId: wireNutId,
+            qty: 3,
+            toLocationType: "warehouse",
+            toLocationId: 1,
+            performedBy: userId,
+            notes: "Returned 3 unused wire nuts in seeded Materials QA"
+        )
+
+        let correctionJobPartId = try jobs.addJobPart(
+            jobId: jobId,
+            partId: correctionPartId,
+            qty: 9,
+            costAtConsume: 1.25,
+            performedBy: userId
+        )
+        try jobs.correctConsumedJobMaterial(
+            jobPartId: correctionJobPartId,
+            adjustedQty: 7,
+            performedBy: userId,
+            note: "Seeded correction validates required audit note."
+        )
     }
 
     nonisolated private static func seedWarehouseLocationsUITestingFixtures(db: AppDatabase) throws {
