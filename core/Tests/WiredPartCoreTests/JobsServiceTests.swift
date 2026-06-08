@@ -844,7 +844,7 @@ struct JobsServiceTests {
         #expect(history.contains { $0.eventType == StockMovement.MovementType.stockReturn.rawValue && $0.qty == 3 })
     }
 
-    @Test("returnConsumedJobMaterial credits job totals and creates return intake")
+    @Test("returnConsumedJobMaterial credits job totals once and creates return intake")
     func testReturnConsumedJobMaterialContract() throws {
         let env = try E2ETestHelpers.setUp()
         let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-MAT-RETURN", name: "Material Return Job")
@@ -872,7 +872,7 @@ struct JobsServiceTests {
         let totals = try env.jobs.getJobMaterialTotals(jobId: jobId)
         #expect(totals.usedQty == 2)
         #expect(totals.pendingReturnQty == 2)
-        #expect(totals.returnedQty == 4)
+        #expect(totals.returnedQty == 2)
         #expect(totals.netMaterialCost == 25.0)
         #expect(totals.totalMaterialCost == 50.0)
 

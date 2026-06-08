@@ -264,6 +264,8 @@ public final class JobsService: Sendable {
     public struct JobMaterialTotals: Sendable, Equatable {
         public let stagedQty: Int
         public let usedQty: Int
+        /// Quantity credited back against consumed job material. Pending return
+        /// handling is exposed separately through `pendingReturnQty`.
         public let returnedQty: Int
         public let pendingReturnQty: Int
         public let netMaterialCost: Double
@@ -3036,7 +3038,7 @@ public final class JobsService: Sendable {
                 return JobMaterialTotals(
                     stagedQty: staged,
                     usedQty: used,
-                    returnedQty: returned + pendingReturn,
+                    returnedQty: returned,
                     pendingReturnQty: pendingReturn,
                     netMaterialCost: netCost,
                     totalMaterialCost: totalCost
