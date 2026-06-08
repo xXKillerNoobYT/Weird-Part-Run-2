@@ -901,6 +901,22 @@ struct PartsServiceAdvancedTests {
         #expect(lookup.id == saved.id)
         #expect(lookup.columnMapping["Vendor Part"] == "supplier_part_number")
         #expect(try env.parts.findPartByCode("Vendor Part") == nil)
+
+        _ = try env.parts.saveAcceptedPartsImportMapping(
+            supplierId: supplierId,
+            sourceKind: "csv",
+            sourceHeaders: ["Item", "Vendor Part", "Group"],
+            columnMapping: ["Item": "name", "Vendor Part": "supplier_part_number", "Group": "category"],
+            acceptedBy: nil
+        )
+        let acceptedBy = try env.db.writer.read { db in
+            try Int64.fetchOne(
+                db,
+                sql: "SELECT accepted_by FROM part_import_saved_mappings WHERE id = ?",
+                arguments: [saved.id]
+            )
+        }
+        #expect(acceptedBy == env.adminUserId)
     }
 
     @Test("previewPartsImportCSV prefers supplier part number matches before internal code")
@@ -949,6 +965,26 @@ struct PartsServiceAdvancedTests {
         #expect(decisionsByRow[5] == .quarantined)
         #expect(decisionsByRow[6] == .new)
         #expect(preview.errors.contains { $0.rowNumber == 5 })
+    }
+
+    @Test("previewPartsImportCSV classifies update when mutable import fields differ")
+    func testPreviewPartsImportCSVClassifiesUpdateWhenMutableFieldsDiffer() throws {
+        let env = try E2ETestHelpers.setUp()
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Mutable Field Category")
+        _ = try env.parts.createPart(
+            categoryId: categoryId,
+            name: "Mutable Field Part",
+            code: "MUT-001",
+            description: "old description"
+        )
+
+        let preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,description
+        Mutable Field Part,MUT-001,Mutable Field Category,new description
+        """)
+
+        let decision = try #require(preview.decisions.first)
+        #expect(decision.classification == .update)
     }
 
     // MARK: - approveScheduledDeletion

@@ -5737,7 +5737,7 @@ extension AppDatabase {
         migrator.registerMigration("101_part_import_saved_mappings") { db in
             try db.create(table: "part_import_saved_mappings", ifNotExists: true) { t in
                 t.autoIncrementedPrimaryKey("id")
-                t.column("supplier_id", .integer).references("suppliers", onDelete: .setNull)
+                t.column("supplier_id", .integer).references("suppliers", onDelete: .cascade)
                 t.column("source_kind", .text).notNull()
                 t.column("header_fingerprint", .text).notNull()
                 t.column("schema_version", .integer).notNull()
