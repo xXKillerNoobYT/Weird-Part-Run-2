@@ -9,7 +9,7 @@ on:
 jobs:
   tracked-artifacts:
     name: Tracked artifact guard
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
     timeout-minutes: 5
     steps:
       - name: Checkout repository
