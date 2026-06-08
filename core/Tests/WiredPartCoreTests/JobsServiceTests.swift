@@ -783,49 +783,65 @@ struct JobsServiceTests {
         #expect(afterReturn.first?.qtyReturned == 3)
     }
 
-    @Test("consumeStagedJobMaterial moves pulled stock into job parts and history")
-    func testConsumeStagedJobMaterialContract() throws {
+    @Test("job material contract pulls consumes returns and balances inventory")
+    func testJobMaterialPullConsumeReturnContract() throws {
         let env = try E2ETestHelpers.setUp()
         let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-MAT-USE", name: "Material Use Job")
         let catId = try E2ETestHelpers.seedCategory(env)
-        let partId = try E2ETestHelpers.seedPart(env, name: "Ready Conduit", categoryId: catId)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Wire Nut", categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10, locationType: "warehouse", locationId: 1)
 
-        _ = try env.warehouse.stageReceivedPartsForJob(
-            partId: partId,
-            qty: 5,
+        _ = try env.jobs.pullJobMaterial(
             jobId: jobId,
+            partId: partId,
+            qty: 10,
+            fromLocationType: "warehouse",
+            fromLocationId: 1,
             performedBy: env.adminUserId,
-            notes: "Stage for rough-in"
+            notes: "Pulled for install"
         )
 
         let readyBefore = try env.jobs.listReadyJobMaterials(jobId: jobId)
         #expect(readyBefore.first?.partId == partId)
-        #expect(readyBefore.first?.stagedQty == 5)
+        #expect(readyBefore.first?.stagedQty == 10)
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1) == 0)
 
         let jobPartId = try env.jobs.consumeStagedJobMaterial(
             jobId: jobId,
             partId: partId,
-            qty: 3,
+            qty: 7,
             performedBy: env.adminUserId,
-            notes: "Used in wall"
+            notes: "Used seven on rough-in"
+        )
+
+        _ = try env.jobs.returnPulledJobMaterial(
+            jobId: jobId,
+            partId: partId,
+            qty: 3,
+            toLocationType: "warehouse",
+            toLocationId: 1,
+            performedBy: env.adminUserId,
+            notes: "Returned unused wire nuts"
         )
 
         let readyAfter = try env.jobs.listReadyJobMaterials(jobId: jobId)
-        #expect(readyAfter.first?.stagedQty == 2)
-        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "pulled", locationId: jobId) == 2)
+        #expect(readyAfter.isEmpty)
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "pulled", locationId: jobId) == 0)
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1) == 3)
 
         let jobPart = try #require(try env.jobs.getJobParts(jobId: jobId).first { $0.id == jobPartId })
-        #expect(jobPart.qtyConsumed == 3)
+        #expect(jobPart.qtyConsumed == 7)
         #expect(jobPart.qtyReturned == 0)
 
         let totals = try env.jobs.getJobMaterialTotals(jobId: jobId)
-        #expect(totals.stagedQty == 2)
-        #expect(totals.usedQty == 3)
+        #expect(totals.stagedQty == 0)
+        #expect(totals.usedQty == 7)
         #expect(totals.returnedQty == 0)
 
         let history = try env.jobs.listJobMaterialHistory(jobId: jobId)
-        #expect(history.contains { $0.eventType == StockMovement.MovementType.jobPull.rawValue && $0.qty == 3 })
-        #expect(history.contains { $0.eventType == StockMovement.MovementType.receivingStaged.rawValue && $0.qty == 5 })
+        #expect(history.contains { $0.eventType == StockMovement.MovementType.transfer.rawValue && $0.qty == 10 })
+        #expect(history.contains { $0.eventType == StockMovement.MovementType.jobPull.rawValue && $0.qty == 7 })
+        #expect(history.contains { $0.eventType == StockMovement.MovementType.stockReturn.rawValue && $0.qty == 3 })
     }
 
     @Test("returnConsumedJobMaterial credits job totals and creates return intake")
@@ -877,6 +893,55 @@ struct JobsServiceTests {
         let history = try env.jobs.listJobMaterialHistory(jobId: jobId)
         #expect(history.contains { $0.eventType == StockMovement.MovementType.stockReturn.rawValue && $0.qty == 2 })
         #expect(history.contains { $0.eventType == "job_return_damage_review" && $0.qty == 2 })
+    }
+
+    @Test("correctConsumedJobMaterial requires a note and writes adjustment history")
+    func testCorrectConsumedJobMaterialContract() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-MAT-CORRECT", name: "Material Correction Job")
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Correction Part", categoryId: catId)
+        let jobPartId = try env.jobs.addJobPart(
+            jobId: jobId,
+            partId: partId,
+            qty: 9,
+            costAtConsume: 3.0,
+            performedBy: env.adminUserId
+        )
+
+        var missingNoteThrew = false
+        do {
+            try env.jobs.correctConsumedJobMaterial(
+                jobPartId: jobPartId,
+                adjustedQty: 7,
+                performedBy: env.adminUserId,
+                note: " "
+            )
+        } catch JobsService.JobsError.requiredFieldEmpty {
+            missingNoteThrew = true
+        } catch {}
+        #expect(missingNoteThrew)
+
+        try env.jobs.correctConsumedJobMaterial(
+            jobPartId: jobPartId,
+            adjustedQty: 7,
+            performedBy: env.adminUserId,
+            note: "Two were entered by mistake."
+        )
+
+        let jobPart = try #require(try env.jobs.getJobParts(jobId: jobId).first { $0.id == jobPartId })
+        #expect(jobPart.qtyConsumed == 7)
+
+        let totals = try env.jobs.getJobMaterialTotals(jobId: jobId)
+        #expect(totals.usedQty == 7)
+        #expect(totals.netMaterialCost == 21.0)
+
+        let history = try env.jobs.listJobMaterialHistory(jobId: jobId)
+        let adjustment = try #require(history.first { $0.eventType == StockMovement.MovementType.adjustment.rawValue })
+        #expect(adjustment.qty == 2)
+        #expect(adjustment.notes?.contains("original_qty=9") == true)
+        #expect(adjustment.notes?.contains("adjusted_qty=7") == true)
+        #expect(adjustment.notes?.contains("Two were entered by mistake.") == true)
     }
 
     // MARK: - List Active Jobs & Dashboard KPIs

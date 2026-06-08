@@ -2689,6 +2689,49 @@ public final class JobsService: Sendable {
         }
     }
 
+    /// Pull available inventory from a warehouse/truck/shop bucket into job-ready staged stock.
+    @discardableResult
+    public func pullJobMaterial(
+        jobId: Int64,
+        partId: Int64,
+        qty: Int,
+        fromLocationType: String,
+        fromLocationId: Int64,
+        performedBy: Int64,
+        notes: String? = nil
+    ) throws -> Int64 {
+        guard qty > 0 else { throw JobsError.invalidReturnQuantity(partId) }
+        return try db.writer.write { dbConn in
+            try Self.requireActiveJob(jobId, dbConn: dbConn)
+            try Self.requireActivePart(partId, dbConn: dbConn)
+            try Self.requireActiveUser(performedBy, dbConn: dbConn)
+
+            let available = try Self.stockQty(partId: partId, locationType: fromLocationType, locationId: fromLocationId, dbConn: dbConn)
+            guard available >= qty else {
+                throw JobsError.insufficientStagedMaterial(available: available, requested: qty)
+            }
+
+            let movementId = try Self.insertStockMovement(
+                partId: partId,
+                qty: qty,
+                fromLocationType: fromLocationType,
+                fromLocationId: fromLocationId,
+                toLocationType: "pulled",
+                toLocationId: jobId,
+                movementType: StockMovement.MovementType.transfer.rawValue,
+                reason: "Pulled for job",
+                notes: notes,
+                performedBy: performedBy,
+                jobId: jobId,
+                unitCostAtMove: nil,
+                dbConn: dbConn
+            )
+            try Self.decrementStock(partId: partId, locationType: fromLocationType, locationId: fromLocationId, qty: qty, dbConn: dbConn)
+            try Self.incrementStock(partId: partId, locationType: "pulled", locationId: jobId, qty: qty, dbConn: dbConn)
+            return movementId
+        }
+    }
+
     /// Consume staged material into `job_parts` and decrement the job's pulled stock atomically.
     @discardableResult
     public func consumeStagedJobMaterial(
@@ -2791,6 +2834,49 @@ public final class JobsService: Sendable {
         }
     }
 
+    /// Return unused pulled material directly back to truck/warehouse inventory.
+    @discardableResult
+    public func returnPulledJobMaterial(
+        jobId: Int64,
+        partId: Int64,
+        qty: Int,
+        toLocationType: String,
+        toLocationId: Int64,
+        performedBy: Int64,
+        notes: String? = nil
+    ) throws -> Int64 {
+        guard qty > 0 else { throw JobsError.invalidReturnQuantity(partId) }
+        return try db.writer.write { dbConn in
+            try Self.requireActiveJob(jobId, dbConn: dbConn)
+            try Self.requireActivePart(partId, dbConn: dbConn)
+            try Self.requireActiveUser(performedBy, dbConn: dbConn)
+
+            let available = try Self.stockQty(partId: partId, locationType: "pulled", locationId: jobId, dbConn: dbConn)
+            guard available >= qty else {
+                throw JobsError.insufficientStagedMaterial(available: available, requested: qty)
+            }
+
+            let movementId = try Self.insertStockMovement(
+                partId: partId,
+                qty: qty,
+                fromLocationType: "pulled",
+                fromLocationId: jobId,
+                toLocationType: toLocationType,
+                toLocationId: toLocationId,
+                movementType: StockMovement.MovementType.stockReturn.rawValue,
+                reason: "Returned unused job material to inventory",
+                notes: notes,
+                performedBy: performedBy,
+                jobId: jobId,
+                unitCostAtMove: Self.latestStagedUnitCost(partId: partId, jobId: jobId, dbConn: dbConn),
+                dbConn: dbConn
+            )
+            try Self.decrementStock(partId: partId, locationType: "pulled", locationId: jobId, qty: qty, dbConn: dbConn)
+            try Self.incrementStock(partId: partId, locationType: toLocationType, locationId: toLocationId, qty: qty, dbConn: dbConn)
+            return movementId
+        }
+    }
+
     /// Reverse consumed material and create a warehouse return-intake item in one transaction.
     @discardableResult
     public func returnConsumedJobMaterial(
@@ -2850,6 +2936,60 @@ public final class JobsService: Sendable {
                 condition: condition,
                 sourceJobPartId: jobPartId,
                 notes: notes,
+                dbConn: dbConn
+            )
+        }
+    }
+
+    /// Correct a consumed job-part quantity with required audit detail.
+    public func correctConsumedJobMaterial(
+        jobPartId: Int64,
+        adjustedQty: Int,
+        performedBy: Int64,
+        note: String
+    ) throws {
+        let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedNote.isEmpty else { throw JobsError.requiredFieldEmpty }
+        guard adjustedQty > 0 else { throw JobsError.invalidReturnQuantity(jobPartId) }
+
+        try db.writer.write { dbConn in
+            try Self.requireActiveUser(performedBy, dbConn: dbConn)
+            guard let row = try Row.fetchOne(dbConn, sql: """
+                SELECT job_id, part_id, qty_consumed, qty_returned, unit_cost_at_consume
+                FROM job_parts
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [jobPartId]) else {
+                throw JobsError.laborEntryNotFound(jobPartId)
+            }
+
+            let jobId: Int64 = row["job_id"] ?? 0
+            let partId: Int64 = row["part_id"] ?? 0
+            let originalQty: Int = row["qty_consumed"] ?? 0
+            let returnedQty: Int = row["qty_returned"] ?? 0
+            guard adjustedQty >= returnedQty else {
+                throw JobsError.invalidReturnQuantity(jobPartId)
+            }
+
+            try dbConn.execute(sql: """
+                UPDATE job_parts
+                SET qty_consumed = ?
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [adjustedQty, jobPartId])
+
+            let auditNote = "Correction: original_qty=\(originalQty), adjusted_qty=\(adjustedQty). \(trimmedNote)"
+            try Self.insertStockMovement(
+                partId: partId,
+                qty: abs(adjustedQty - originalQty),
+                fromLocationType: nil,
+                fromLocationId: nil,
+                toLocationType: nil,
+                toLocationId: nil,
+                movementType: StockMovement.MovementType.adjustment.rawValue,
+                reason: "Corrected consumed job material",
+                notes: auditNote,
+                performedBy: performedBy,
+                jobId: jobId,
+                unitCostAtMove: row["unit_cost_at_consume"] as Double?,
                 dbConn: dbConn
             )
         }
@@ -4165,6 +4305,23 @@ public final class JobsService: Sendable {
               AND location_id = ?
               AND deleted_at IS NULL
             """, arguments: [qty, partId, locationType, locationId])
+    }
+
+    private static func incrementStock(partId: Int64, locationType: String, locationId: Int64, qty: Int, dbConn: Database) throws {
+        try dbConn.execute(sql: """
+            UPDATE stock
+            SET qty = qty + ?, updated_at = datetime('now')
+            WHERE part_id = ?
+              AND location_type = ?
+              AND location_id = ?
+              AND deleted_at IS NULL
+            """, arguments: [qty, partId, locationType, locationId])
+        if dbConn.changesCount == 0 {
+            try dbConn.execute(sql: """
+                INSERT INTO stock (part_id, location_type, location_id, qty, updated_at)
+                VALUES (?, ?, ?, ?, datetime('now'))
+                """, arguments: [partId, locationType, locationId, qty])
+        }
     }
 
     @discardableResult
