@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   sync-tracker:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
     timeout-minutes: 10
     env:
       PAPERCLIP_API_URL: ${{ secrets.PAPERCLIP_API_URL }}
