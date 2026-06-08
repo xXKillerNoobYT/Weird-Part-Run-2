@@ -118,6 +118,22 @@ struct E2EPartsCatalogTests {
         #expect(conduitResults.count == 1)
     }
 
+    @Test("Search parts excludes inactive catalog rows")
+    func testPartSearchExcludesInactiveParts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let activeId = try env.parts.createPart(categoryId: catId, name: "Search Active Fuse", code: "SEARCH-ACTIVE")
+        let inactiveId = try env.parts.createPart(categoryId: catId, name: "Search Inactive Fuse", code: "SEARCH-INACTIVE")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET is_active = 0 WHERE id = ?", arguments: [inactiveId])
+        }
+
+        let results = try env.parts.searchParts(query: "Search")
+        #expect(results.contains { $0.id == activeId })
+        #expect(!results.contains { $0.id == inactiveId })
+    }
+
     @Test("Part list with filters")
     func testPartListFilters() throws {
         let env = try E2ETestHelpers.setUp()
@@ -130,6 +146,22 @@ struct E2EPartsCatalogTests {
         let wireOnly = try env.parts.listParts(categoryId: cat1)
         #expect(wireOnly.count == 1)
         #expect(wireOnly[0].part.name == "Wire Part")
+    }
+
+    @Test("Part list excludes inactive catalog rows")
+    func testPartListExcludesInactiveParts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let activeId = try env.parts.createPart(categoryId: catId, name: "List Active Fuse", code: "LIST-ACTIVE")
+        let inactiveId = try env.parts.createPart(categoryId: catId, name: "List Inactive Fuse", code: "LIST-INACTIVE")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET is_active = 0 WHERE id = ?", arguments: [inactiveId])
+        }
+
+        let results = try env.parts.listParts(search: "List")
+        #expect(results.contains { $0.part.id == activeId })
+        #expect(!results.contains { $0.part.id == inactiveId })
     }
 
     // MARK: - Brands & Suppliers
@@ -314,6 +346,23 @@ struct E2EPartsCatalogTests {
         #expect(csv.contains("CSV Part 1"))
         #expect(csv.contains("CSV Part 2"))
         #expect(csv.contains("CSV-001"))
+    }
+
+    @Test("Parts CSV export excludes inactive catalog rows")
+    func testCSVExportExcludesInactiveParts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "CSVActiveOnly")
+        _ = try env.parts.createPart(categoryId: catId, name: "CSV Active Part", code: "CSV-ACTIVE")
+        let inactiveId = try env.parts.createPart(categoryId: catId, name: "CSV Inactive Part", code: "CSV-INACTIVE")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET is_active = 0 WHERE id = ?", arguments: [inactiveId])
+        }
+
+        let csv = try env.parts.exportPartsCSV(groups: [.hierarchy])
+        #expect(csv.contains("CSV Active Part"))
+        #expect(!csv.contains("CSV Inactive Part"))
+        #expect(!csv.contains("CSV-INACTIVE"))
     }
 
     // MARK: - Color Part Numbers (#46)
