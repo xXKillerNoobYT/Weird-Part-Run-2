@@ -783,6 +783,102 @@ struct JobsServiceTests {
         #expect(afterReturn.first?.qtyReturned == 3)
     }
 
+    @Test("consumeStagedJobMaterial moves pulled stock into job parts and history")
+    func testConsumeStagedJobMaterialContract() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-MAT-USE", name: "Material Use Job")
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Ready Conduit", categoryId: catId)
+
+        _ = try env.warehouse.stageReceivedPartsForJob(
+            partId: partId,
+            qty: 5,
+            jobId: jobId,
+            performedBy: env.adminUserId,
+            notes: "Stage for rough-in"
+        )
+
+        let readyBefore = try env.jobs.listReadyJobMaterials(jobId: jobId)
+        #expect(readyBefore.first?.partId == partId)
+        #expect(readyBefore.first?.stagedQty == 5)
+
+        let jobPartId = try env.jobs.consumeStagedJobMaterial(
+            jobId: jobId,
+            partId: partId,
+            qty: 3,
+            performedBy: env.adminUserId,
+            notes: "Used in wall"
+        )
+
+        let readyAfter = try env.jobs.listReadyJobMaterials(jobId: jobId)
+        #expect(readyAfter.first?.stagedQty == 2)
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "pulled", locationId: jobId) == 2)
+
+        let jobPart = try #require(try env.jobs.getJobParts(jobId: jobId).first { $0.id == jobPartId })
+        #expect(jobPart.qtyConsumed == 3)
+        #expect(jobPart.qtyReturned == 0)
+
+        let totals = try env.jobs.getJobMaterialTotals(jobId: jobId)
+        #expect(totals.stagedQty == 2)
+        #expect(totals.usedQty == 3)
+        #expect(totals.returnedQty == 0)
+
+        let history = try env.jobs.listJobMaterialHistory(jobId: jobId)
+        #expect(history.contains { $0.eventType == StockMovement.MovementType.jobPull.rawValue && $0.qty == 3 })
+        #expect(history.contains { $0.eventType == StockMovement.MovementType.receivingStaged.rawValue && $0.qty == 5 })
+    }
+
+    @Test("returnConsumedJobMaterial credits job totals and creates return intake")
+    func testReturnConsumedJobMaterialContract() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-MAT-RETURN", name: "Material Return Job")
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Returnable Breaker", categoryId: catId)
+        let jobPartId = try env.jobs.addJobPart(
+            jobId: jobId,
+            partId: partId,
+            qty: 4,
+            costAtConsume: 12.5,
+            performedBy: env.adminUserId
+        )
+
+        let intakeId = try env.jobs.returnConsumedJobMaterial(
+            jobPartId: jobPartId,
+            returnQty: 2,
+            condition: "damaged",
+            performedBy: env.adminUserId,
+            notes: "Cracked case"
+        )
+
+        let jobPart = try #require(try env.jobs.getJobParts(jobId: jobId).first { $0.id == jobPartId })
+        #expect(jobPart.qtyReturned == 2)
+
+        let totals = try env.jobs.getJobMaterialTotals(jobId: jobId)
+        #expect(totals.usedQty == 2)
+        #expect(totals.pendingReturnQty == 2)
+        #expect(totals.returnedQty == 4)
+        #expect(totals.netMaterialCost == 25.0)
+        #expect(totals.totalMaterialCost == 50.0)
+
+        let intakeRow = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT jri.source_job_id, jrii.source_job_part_id, jrii.qty_returned, jrii.condition, jrii.status
+                FROM job_return_intakes jri
+                JOIN job_return_intake_items jrii ON jrii.intake_id = jri.id
+                WHERE jri.id = ?
+                """, arguments: [intakeId])
+        }
+        #expect(intakeRow?["source_job_id"] as Int64? == jobId)
+        #expect(intakeRow?["source_job_part_id"] as Int64? == jobPartId)
+        #expect(intakeRow?["qty_returned"] as Int? == 2)
+        #expect(intakeRow?["condition"] as String? == "damaged")
+        #expect(intakeRow?["status"] as String? == "damage_review")
+
+        let history = try env.jobs.listJobMaterialHistory(jobId: jobId)
+        #expect(history.contains { $0.eventType == StockMovement.MovementType.stockReturn.rawValue && $0.qty == 2 })
+        #expect(history.contains { $0.eventType == "job_return_damage_review" && $0.qty == 2 })
+    }
+
     // MARK: - List Active Jobs & Dashboard KPIs
 
     @Test("List active jobs and dashboard KPIs")
