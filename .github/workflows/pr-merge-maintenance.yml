@@ -45,6 +45,14 @@ jobs:
       PR_MAINTENANCE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true && '1' || '0' }}
 
     steps:
+      - name: Verify self-hosted macOS runner
+        shell: bash
+        run: |
+          test "$RUNNER_OS" = "macOS"
+          test "$(uname -s)" = "Darwin"
+          echo "Runner: $RUNNER_NAME"
+          echo "Architecture: $RUNNER_ARCH"
+
       - name: Checkout
         uses: actions/checkout@v4
 
