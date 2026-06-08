@@ -120,6 +120,12 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app.descendants(matching: .any)["categoryFormSheet"]
     }
 
+    private func configureUITestingEnvironment(_ app: XCUIApplication) {
+        if !app.launchArguments.contains("-UITesting") {
+            app.launchArguments += ["-UITesting"]
+        }
+    }
+
     override func tearDownWithError() throws {
         app = nil
     }
@@ -1686,15 +1692,15 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     func testWEI1303EmployeeDetailTabsMeetMinimumTouchTargets() throws {
         app.terminate()
         app = XCUIApplication()
-        app.launchArguments += ["-UITesting"]
+        configureUITestingEnvironment(app)
         app.launch()
 
         logInAsUITestOwnerIfNeeded()
         openEmployeeDetailForUITestOwner()
 
-        let profile = app.buttons["Profile"]
-        let hats = app.buttons["Hats"]
-        let teams = app.buttons["Teams"]
+        let profile = employeeDetailTab("profile", label: "Profile")
+        let hats = employeeDetailTab("hats", label: "Hats")
+        let teams = employeeDetailTab("teams", label: "Teams")
         XCTAssertTrue(profile.waitForExistence(timeout: 10), "Profile tab should be visible")
         XCTAssertTrue(hats.waitForExistence(timeout: 5), "Hats tab should be visible")
         XCTAssertTrue(teams.waitForExistence(timeout: 5), "Teams tab should be visible")
@@ -1742,15 +1748,35 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             employees.tap()
         }
 
-        let owner = app.staticTexts["UITest Owner"]
-        XCTAssertTrue(owner.waitForExistence(timeout: 10), "UITest Owner should be visible in employees list")
-        owner.tap()
+        let ownerRow = app.buttons.matching(NSPredicate(format: "label CONTAINS 'UITest Owner'")).firstMatch
+        let ownerLabel = app.staticTexts["UITest Owner"]
+        XCTAssertTrue(
+            ownerRow.waitForExistence(timeout: 10) || ownerLabel.waitForExistence(timeout: 10),
+            "UITest Owner should be visible in employees list"
+        )
+        if ownerRow.exists && ownerRow.isHittable {
+            ownerRow.tap()
+        } else {
+            ownerLabel.tap()
+        }
 
         XCTAssertTrue(
             app.navigationBars["UITest Owner"].waitForExistence(timeout: 10) ||
                 app.staticTexts["Basic Info"].waitForExistence(timeout: 10),
             "Employee detail should open for UITest Owner"
         )
+    }
+
+    private func employeeDetailTab(_ id: String, label: String) -> XCUIElement {
+        let identified = app.buttons["employeeDetailTab_\(id)"]
+        if identified.exists {
+            return identified
+        }
+        let labeled = app.buttons[label]
+        if labeled.exists {
+            return labeled
+        }
+        return app.buttons["\(label) tab"]
     }
 
     private func captureWEI1303(_ name: String) {
