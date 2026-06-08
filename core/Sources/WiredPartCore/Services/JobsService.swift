@@ -2637,41 +2637,37 @@ public final class JobsService: Sendable {
         do {
             return try db.writer.read { dbConn in
                 try Self.requireActiveJob(jobId, dbConn: dbConn)
+                // CTE resolves the latest staged-pull movement per part in one pass,
+                // avoiding two correlated subqueries per stock row.
                 let rows = try Row.fetchAll(dbConn, sql: """
+                    WITH latest_move AS (
+                        SELECT sm.part_id, sm.movement_type, sm.created_at
+                        FROM stock_movements sm
+                        INNER JOIN (
+                            SELECT part_id, MAX(id) AS max_id
+                            FROM stock_movements
+                            WHERE to_location_type = 'pulled'
+                              AND to_location_id = ?
+                              AND job_id = ?
+                              AND deleted_at IS NULL
+                            GROUP BY part_id
+                        ) lm ON sm.id = lm.max_id AND sm.part_id = lm.part_id
+                    )
                     SELECT s.part_id,
                            s.qty AS staged_qty,
                            p.name AS part_name,
                            p.code AS part_code,
-                           (
-                               SELECT sm.movement_type
-                               FROM stock_movements sm
-                               WHERE sm.part_id = s.part_id
-                                 AND sm.to_location_type = 'pulled'
-                                 AND sm.to_location_id = ?
-                                 AND sm.job_id = ?
-                                 AND sm.deleted_at IS NULL
-                               ORDER BY sm.created_at DESC, sm.id DESC
-                               LIMIT 1
-                           ) AS source_movement_type,
-                           (
-                               SELECT sm.created_at
-                               FROM stock_movements sm
-                               WHERE sm.part_id = s.part_id
-                                 AND sm.to_location_type = 'pulled'
-                                 AND sm.to_location_id = ?
-                                 AND sm.job_id = ?
-                                 AND sm.deleted_at IS NULL
-                               ORDER BY sm.created_at DESC, sm.id DESC
-                               LIMIT 1
-                           ) AS last_moved_at
+                           lm.movement_type AS source_movement_type,
+                           lm.created_at AS last_moved_at
                     FROM stock s
                     LEFT JOIN parts p ON p.id = s.part_id AND p.deleted_at IS NULL
+                    LEFT JOIN latest_move lm ON lm.part_id = s.part_id
                     WHERE s.location_type = 'pulled'
                       AND s.location_id = ?
                       AND s.qty > 0
                       AND s.deleted_at IS NULL
                     ORDER BY p.name, s.part_id
-                    """, arguments: [jobId, jobId, jobId, jobId, jobId])
+                    """, arguments: [jobId, jobId, jobId])
                 return rows.map { row in
                     let sourceType = (row["source_movement_type"] as String?) ?? StockMovement.MovementType.receivingStaged.rawValue
                     return JobReadyMaterialRow(
@@ -2805,6 +2801,7 @@ public final class JobsService: Sendable {
                 throw JobsError.insufficientStagedMaterial(available: available, requested: qty)
             }
 
+            let stagedUnitCost = try Self.latestStagedUnitCost(partId: partId, jobId: jobId, dbConn: dbConn)
             try Self.insertStockMovement(
                 partId: partId,
                 qty: qty,
@@ -2817,7 +2814,7 @@ public final class JobsService: Sendable {
                 notes: notes,
                 performedBy: performedBy,
                 jobId: jobId,
-                unitCostAtMove: Self.latestStagedUnitCost(partId: partId, jobId: jobId, dbConn: dbConn),
+                unitCostAtMove: stagedUnitCost,
                 dbConn: dbConn
             )
             try Self.decrementStock(partId: partId, locationType: "pulled", locationId: jobId, qty: qty, dbConn: dbConn)
@@ -2858,6 +2855,7 @@ public final class JobsService: Sendable {
                 throw JobsError.insufficientStagedMaterial(available: available, requested: qty)
             }
 
+            let stagedUnitCost = try Self.latestStagedUnitCost(partId: partId, jobId: jobId, dbConn: dbConn)
             let movementId = try Self.insertStockMovement(
                 partId: partId,
                 qty: qty,
@@ -2870,7 +2868,7 @@ public final class JobsService: Sendable {
                 notes: notes,
                 performedBy: performedBy,
                 jobId: jobId,
-                unitCostAtMove: Self.latestStagedUnitCost(partId: partId, jobId: jobId, dbConn: dbConn),
+                unitCostAtMove: stagedUnitCost,
                 dbConn: dbConn
             )
             try Self.decrementStock(partId: partId, locationType: "pulled", locationId: jobId, qty: qty, dbConn: dbConn)

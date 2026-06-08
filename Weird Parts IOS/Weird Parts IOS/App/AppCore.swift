@@ -976,6 +976,16 @@ final class AppCore: ObservableObject {
     nonisolated private static func seedWEI3144JobMaterialsFixtures(db: AppDatabase, userId: Int64?) throws {
         guard let userId else { return }
 
+        // Guard against duplicate seeding when the app is relaunched with the same
+        // persisted DB (e.g. repeated Simulator runs with -UITestingWEI3144JobMaterials).
+        let alreadySeeded = (try? db.writer.read { dbConn in
+            try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM jobs WHERE job_number = 'UITEST-MAT-3144' AND deleted_at IS NULL"
+            )
+        }) != nil
+        if alreadySeeded { return }
+
         let parts = PartsService(db: db, auth: AuthService(db: db))
         let warehouse = WarehouseService(db: db)
         let jobs = JobsService(db: db)

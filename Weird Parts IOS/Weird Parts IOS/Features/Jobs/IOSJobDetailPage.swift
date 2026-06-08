@@ -1022,7 +1022,7 @@ struct IOSJobDetailPage: View {
                         Stepper(
                             "Adjusted quantity: \(materialCorrectionQty)",
                             value: $materialCorrectionQty,
-                            in: part.qtyReturned...max(part.qtyReturned, part.qtyConsumed + 100)
+                            in: part.qtyReturned...max(part.qtyReturned, part.qtyConsumed + Self.maxCorrectionOverage)
                         )
                         .accessibilityValue("\(materialCorrectionQty) adjusted, \(part.qtyReturned) already returned")
                         TextField("Required audit note", text: $materialNote, axis: .vertical)
@@ -1414,7 +1414,11 @@ struct IOSJobDetailPage: View {
             activeSheet = nil
             loadData()
         } catch JobsService.JobsError.insufficientStagedMaterial(let available, _) {
-            materialActionError = "Only \(available) remain staged. Adjust quantity to continue."
+            if case .pull = action {
+                materialActionError = "Only \(available) available in source location. Adjust quantity to continue."
+            } else {
+                materialActionError = "Only \(available) remain staged. Adjust quantity to continue."
+            }
         } catch JobsService.JobsError.invalidReturnQuantity(_) {
             materialActionError = overQuantityMessage(action)
         } catch JobsService.JobsError.requiredFieldEmpty {
@@ -1424,16 +1428,22 @@ struct IOSJobDetailPage: View {
         }
     }
 
+    // Maximum pull quantity per action — caps the stepper to avoid absurd inputs.
+    // 999 is a practical per-pull ceiling; corrections allow up to 100 units above
+    // the current consumed qty to accommodate rounding or re-count adjustments.
+    private static let maxPullQty = 999
+    private static let maxCorrectionOverage = 100
+
     private func materialActionMaxQty(_ action: MaterialAction) -> Int {
         switch action {
         case .pull:
-            return 999
+            return Self.maxPullQty
         case .useReady(let material), .returnReady(let material):
             return material.stagedQty
         case .returnUsed(let part):
             return max(0, part.qtyConsumed - part.qtyReturned)
         case .correctUsed(let part):
-            return max(part.qtyReturned, part.qtyConsumed + 100)
+            return max(part.qtyReturned, part.qtyConsumed + Self.maxCorrectionOverage)
         }
     }
 
