@@ -425,7 +425,7 @@ public actor PeerManager {
         var pushed = 0
         var pulled = 0
 
-        let baseURL = "http://\(peer.host):\(peer.port)"
+        let baseURL = try Self.makeLANSyncBaseURL(for: peer)
         let lastSyncAt = state.lastPeerSyncs[peer.deviceId]?.syncedAt
 
         // Resolve shared key for this peer (fetches /sync/key once then caches)
@@ -443,9 +443,7 @@ public actor PeerManager {
             let encoder = JSONEncoder()
             let plainPushBody = try encoder.encode(pushRequest)
 
-            guard let pushURL = URL(string: "\(baseURL)/sync/push") else {
-                throw URLError(.badURL)
-            }
+            let pushURL = baseURL.appendingPathComponent("sync/push")
             var urlRequest = URLRequest(url: pushURL)
             urlRequest.httpMethod = "POST"
             urlRequest.timeoutInterval = 30
@@ -472,9 +470,7 @@ public actor PeerManager {
         )
 
         let plainPullBody = try JSONEncoder().encode(pullRequest)
-        guard let pullURL = URL(string: "\(baseURL)/sync/pull") else {
-            throw URLError(.badURL)
-        }
+        let pullURL = baseURL.appendingPathComponent("sync/pull")
         var pullURLRequest = URLRequest(url: pullURL)
         pullURLRequest.httpMethod = "POST"
         pullURLRequest.timeoutInterval = 30
@@ -510,11 +506,67 @@ public actor PeerManager {
         return (pushed, pulled)
     }
 
+    static func makeLANSyncBaseURL(for peer: DiscoveredPeer) throws -> URL {
+        let trimmedHost = peer.host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedHost.isEmpty, peer.port > 0 else {
+            throw URLError(.badURL)
+        }
+        guard !trimmedHost.hasPrefix("WiredPart-") || trimmedHost.contains(".") else {
+            throw URLError(.badURL)
+        }
+
+        let normalized = normalizedLANHostAndPort(trimmedHost, fallbackPort: peer.port)
+
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = normalized.host
+        components.port = Int(normalized.port)
+
+        guard let url = components.url else {
+            throw URLError(.badURL)
+        }
+        return url
+    }
+
+    private static func normalizedLANHostAndPort(
+        _ rawHost: String,
+        fallbackPort: UInt16
+    ) -> (host: String, port: UInt16) {
+        if let components = URLComponents(string: rawHost),
+           components.scheme != nil,
+           let host = components.host {
+            return (host: host, port: normalizedPort(components.port, fallback: fallbackPort))
+        }
+
+        if let components = URLComponents(string: "http://\(rawHost)"),
+           let host = components.host {
+            return (host: host, port: normalizedPort(components.port, fallback: fallbackPort))
+        }
+
+        if rawHost.hasPrefix("[") {
+            return (host: rawHost, port: fallbackPort)
+        }
+
+        if rawHost.contains(":") {
+            let escapedZone = rawHost.replacingOccurrences(of: "%", with: "%25")
+            return (host: "[\(escapedZone)]", port: fallbackPort)
+        }
+
+        return (host: rawHost, port: fallbackPort)
+    }
+
+    private static func normalizedPort(_ port: Int?, fallback: UInt16) -> UInt16 {
+        guard let port, let exact = UInt16(exactly: port) else {
+            return fallback
+        }
+        return exact
+    }
+
     // MARK: - Private: Payload Encryption Helpers
 
     /// Fetch the peer's X25519 KA public key from GET /sync/key (cached).
     /// Returns nil if the peer doesn't support encryption (old version or network error).
-    private func resolveSharedKey(baseURL: String, peerDeviceId: String) async -> Data? {
+    private func resolveSharedKey(baseURL: URL, peerDeviceId: String) async -> Data? {
         // Use cached peer KA public key if available
         let peerKAKey: String
         if let cached = peerKAPublicKeys[peerDeviceId], !cached.isEmpty {
@@ -536,10 +588,8 @@ public actor PeerManager {
     /// Returns the key if successful, nil if encryption is not supported.
     /// Fixes #197: no longer silently falls back — callers must handle nil explicitly.
     /// Fixes #191: sends X-Company-ID header so the server can reject unknown peers.
-    private func fetchPeerKAPublicKey(baseURL: String, peerDeviceId: String) async -> String? {
-        guard let url = URL(string: "\(baseURL)/sync/key") else {
-            return nil
-        }
+    private func fetchPeerKAPublicKey(baseURL: URL, peerDeviceId: String) async -> String? {
+        let url = baseURL.appendingPathComponent("sync/key")
         var req = URLRequest(url: url)
         req.timeoutInterval = 5
         // Fix #191: identify our company so the server can gate key exchange to known peers.
