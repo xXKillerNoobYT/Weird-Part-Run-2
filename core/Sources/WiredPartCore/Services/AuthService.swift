@@ -1114,14 +1114,11 @@ public final class AuthService: Sendable {
     }
 
     private static func loadLittleEndianUInt64(_ bytes: [UInt8], at offset: Int) -> UInt64 {
-        UInt64(bytes[offset]) |
-        (UInt64(bytes[offset + 1]) << 8) |
-        (UInt64(bytes[offset + 2]) << 16) |
-        (UInt64(bytes[offset + 3]) << 24) |
-        (UInt64(bytes[offset + 4]) << 32) |
-        (UInt64(bytes[offset + 5]) << 40) |
-        (UInt64(bytes[offset + 6]) << 48) |
-        (UInt64(bytes[offset + 7]) << 56)
+        var value: UInt64 = 0
+        for index in 0..<8 {
+            value |= UInt64(bytes[offset + index]) << UInt64(index * 8)
+        }
+        return value
     }
 
     private static func storeLittleEndianUInt32(_ value: UInt32, into bytes: inout [UInt8], at offset: Int) {

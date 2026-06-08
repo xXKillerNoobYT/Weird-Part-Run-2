@@ -123,7 +123,7 @@ struct IOSReceivingPage: View {
                         }
                     }
             }
-        case .continueSession:
+        case .continueSession(_):
             // IOSReceiveShipmentPage shows PO list; user picks the PO to continue
             NavigationStack {
                 IOSReceiveShipmentPage()

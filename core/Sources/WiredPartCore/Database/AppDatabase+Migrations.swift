@@ -140,6 +140,9 @@ extension AppDatabase {
         registerMigration099ReceivingItemRoutingDisposition(&migrator)
         registerMigration100POEmailRequestType(&migrator)
         registerMigration100StagingBoxContentsAndDeliveryState(&migrator)
+        registerMigration101OvertimeAndLaborCorrectionAudit(&migrator)
+        registerMigration102PartImportSavedMappings(&migrator)
+        registerMigration103TimesheetCorrectionAudit(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5297,6 +5300,38 @@ extension AppDatabase {
         }
     }
 
+    private static func registerMigration103TimesheetCorrectionAudit(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("103_timesheet_correction_audit") { db in
+            try db.create(table: "timesheet_correction_audits", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("labor_entry_id", .integer).notNull().references("labor_entries")
+                t.column("employee_user_id", .integer).notNull().references("users")
+                t.column("job_id", .integer).notNull().references("jobs")
+                t.column("original_clock_in", .text).notNull()
+                t.column("original_clock_out", .text)
+                t.column("adjusted_clock_in", .text).notNull()
+                t.column("adjusted_clock_out", .text).notNull()
+                t.column("original_regular_hours", .double).notNull().defaults(to: 0)
+                t.column("original_overtime_hours", .double).notNull().defaults(to: 0)
+                t.column("adjusted_regular_hours", .double).notNull().defaults(to: 0)
+                t.column("adjusted_overtime_hours", .double).notNull().defaults(to: 0)
+                t.column("reason", .text).notNull()
+                t.column("actor_user_id", .integer).notNull().references("users")
+                t.column("approval_status", .text).notNull().defaults(to: "pending_review")
+                t.column("approved_by", .integer).references("users")
+                t.column("approved_at", .text)
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("deleted_at", .text)
+            }
+            try db.create(index: "idx_timesheet_correction_labor_entry",
+                          on: "timesheet_correction_audits",
+                          columns: ["labor_entry_id"])
+            try db.create(index: "idx_timesheet_correction_created",
+                          on: "timesheet_correction_audits",
+                          columns: ["created_at"])
+        }
+    }
+
     private static func registerMigration075CompanionFeedbackNullableSuggestionId(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("075_companion_feedback_nullable_suggestion_id") { db in
             try db.execute(sql: """
@@ -5729,6 +5764,86 @@ extension AppDatabase {
                           columns: ["staging_tag_id"])
         }
     }
+
+    private static func registerMigration101OvertimeAndLaborCorrectionAudit(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("101_overtime_and_labor_correction_audit") { db in
+            try db.create(table: "overtime_settings", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("calculation_rule", .text).notNull().defaults(to: "daily_only")
+                t.column("daily_threshold_hours", .double).notNull().defaults(to: 8.0)
+                t.column("weekly_threshold_hours", .double)
+                t.column("week_start_weekday", .integer).notNull().defaults(to: 2)
+                t.column("updated_by", .integer).references("users")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.check(sql: "calculation_rule IN ('daily_only', 'weekly_only', 'daily_and_weekly')")
+                t.check(sql: "daily_threshold_hours > 0")
+                t.check(sql: "weekly_threshold_hours IS NULL OR weekly_threshold_hours > 0")
+                t.check(sql: "week_start_weekday BETWEEN 1 AND 7")
+            }
+
+            let settingsCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM overtime_settings") ?? 0
+            if settingsCount == 0 {
+                try db.execute(sql: """
+                    INSERT INTO overtime_settings
+                        (calculation_rule, daily_threshold_hours, weekly_threshold_hours, week_start_weekday)
+                    VALUES ('daily_only', 8.0, NULL, 2)
+                    """)
+            }
+
+            try db.create(table: "labor_entry_correction_audits", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("labor_entry_id", .integer).notNull()
+                    .references("labor_entries", onDelete: .cascade)
+                t.column("corrected_by", .integer).notNull().references("users")
+                t.column("reason", .text).notNull()
+                t.column("old_clock_in", .text).notNull()
+                t.column("new_clock_in", .text).notNull()
+                t.column("old_clock_out", .text)
+                t.column("new_clock_out", .text)
+                t.column("old_regular_hours", .double).notNull()
+                t.column("new_regular_hours", .double).notNull()
+                t.column("old_overtime_hours", .double).notNull()
+                t.column("new_overtime_hours", .double).notNull()
+                t.column("old_status", .text).notNull()
+                t.column("new_status", .text).notNull()
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_labor_correction_audits_entry", on: "labor_entry_correction_audits", columns: ["labor_entry_id", "created_at"], ifNotExists: true)
+            try db.create(index: "idx_labor_correction_audits_actor", on: "labor_entry_correction_audits", columns: ["corrected_by", "created_at"], ifNotExists: true)
+        }
+    }
+
+    // MARK: - Migration 102: Saved part import mappings
+
+    private static func registerMigration102PartImportSavedMappings(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("102_part_import_saved_mappings") { db in
+            try db.create(table: "part_import_saved_mappings", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("supplier_id", .integer).references("suppliers", onDelete: .cascade)
+                t.column("source_kind", .text).notNull()
+                t.column("header_fingerprint", .text).notNull()
+                t.column("schema_version", .integer).notNull()
+                t.column("column_mapping_json", .text).notNull()
+                t.column("source_headers_json", .text).notNull()
+                t.column("accepted_by", .integer).references("users")
+                t.column("use_count", .integer).notNull().defaults(to: 0)
+                t.column("last_used_at", .text)
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("deleted_at", .text)
+            }
+            try db.execute(sql: """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_part_import_saved_mappings_lookup
+                ON part_import_saved_mappings (
+                    COALESCE(supplier_id, -1),
+                    source_kind,
+                    header_fingerprint,
+                    schema_version
+                )
+                WHERE deleted_at IS NULL
+                """)
+        }
+    }
 }
 
 // MARK: - Migration 100: PO email_request_type + grouping_key
@@ -5748,4 +5863,3 @@ private func registerMigration100POEmailRequestType(_ migrator: inout DatabaseMi
         }
     }
 }
-

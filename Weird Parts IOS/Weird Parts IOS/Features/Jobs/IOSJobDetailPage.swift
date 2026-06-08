@@ -18,6 +18,9 @@ struct IOSJobDetailPage: View {
     @State private var activeTodos: [JobsService.ClockTodoItem] = []
     @State private var todoSummary: JobsService.JobTodoSummary?
     @State private var stages: [JobsService.JobStageStatus] = []
+    @State private var jobParts: [JobsService.JobPartRow] = []
+    @State private var jobNotes: [JobsService.JobNoteRow] = []
+    @State private var inventoryMovements: [JobsService.JobInventoryMovementRow] = []
     @State private var isPaymentHold = false
     @State private var warrantyDaysRemaining: Int?
     @State private var selectedTab: DetailTab = .todos
@@ -28,7 +31,7 @@ struct IOSJobDetailPage: View {
 
     private enum DetailTab: String, CaseIterable, Identifiable {
         case todos = "To-Dos"
-        case jpos = "JPOs"
+        case materials = "Materials"
         case labor = "Labor"
         case notes = "Notes"
         case financial = "Financial"
@@ -82,7 +85,7 @@ struct IOSJobDetailPage: View {
                         title: "Job Detail Help",
                         sections: [
                             ("Dashboard", "Review status, stage progress, smart cards, AI summary, today’s activity, and quick actions from the top of the page."),
-                            ("Tabs", "Use To-Dos, JPOs, Labor, Notes, Financial, and Warranty tabs to focus the detail area."),
+                            ("Tabs", "Use To-Dos, Materials, Labor, Notes, Financial, and Warranty tabs to focus the detail area."),
                             ("Payment Holds", "A red banner appears when a job is on payment hold. Workers can still view details, but clock-in remains blocked by the Jobs service."),
                             ("Weekly Review", "Tap the calendar icon to submit a weekly work review for this job.")
                         ]
@@ -216,7 +219,7 @@ struct IOSJobDetailPage: View {
                     HStack {
                         ForEach(stages) { stage in
                             Button {
-                                activeSheet = .stageDetails(stage.name)
+                                changeStage(stage)
                             } label: {
                                 Text(stage.name)
                                     .font(.caption2)
@@ -227,9 +230,10 @@ struct IOSJobDetailPage: View {
                                     .foregroundStyle(stageTint(stage))
                             }
                             .buttonStyle(.plain)
+                            .disabled(stage.status == "in_progress")
                         }
                     }
-                    .accessibilityLabel("Tap a stage name for details")
+                    .accessibilityLabel("Tap a stage name to move the job to that stage")
                 }
             }
         }
@@ -263,12 +267,12 @@ struct IOSJobDetailPage: View {
                 )
             }
             smartCard(
-                title: "JPOs",
-                value: "—",
-                subtitle: "Linked orders tab",
-                icon: "doc.text.fill",
+                title: "Materials",
+                value: "\(jobParts.count + inventoryMovements.count)",
+                subtitle: "Parts and pulls",
+                icon: "shippingbox.fill",
                 tint: .orange
-            ) { selectedTab = .jpos }
+            ) { selectedTab = .materials }
             smartCard(
                 title: "To-Dos",
                 value: todoValue,
@@ -358,12 +362,8 @@ struct IOSJobDetailPage: View {
                 switch selectedTab {
                 case .todos:
                     todosTab
-                case .jpos:
-                    placeholderTab(
-                        title: "Linked JPOs",
-                        message: "Linked purchase orders will be listed here once the order relationship is exposed to the job detail dashboard.",
-                        icon: "doc.text"
-                    )
+                case .materials:
+                    materialsTab
                 case .labor:
                     laborTab
                 case .notes:
@@ -425,10 +425,73 @@ struct IOSJobDetailPage: View {
         }
     }
 
+    private var materialsTab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Materials", systemImage: "shippingbox")
+            if jobParts.isEmpty && inventoryMovements.isEmpty {
+                placeholderRow("No parts or inventory movements are linked to this job yet.", systemImage: "shippingbox")
+            } else {
+                ForEach(jobParts) { part in
+                    labelRow(
+                        part.partName,
+                        value: "\(part.qtyConsumed - part.qtyReturned) used",
+                        icon: "wrench.and.screwdriver"
+                    )
+                }
+                ForEach(inventoryMovements) { movement in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Label(movement.partName, systemImage: "arrow.left.arrow.right")
+                                .font(.subheadline)
+                            Spacer()
+                            Text("\(movement.qty)")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                        }
+                        Text("\(StockMovement.MovementType.displayName(forRawValue: movement.movementType)) • \(movement.locationSummary) • \(movement.performedByName)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if let notes = movement.notes, !notes.isEmpty {
+                            Text(notes)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+    }
+
     private func notesTab(_ job: JobsService.JobDetail) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionHeader("Notes", systemImage: "note.text")
-            if let notes = job.notes, !notes.isEmpty {
+            if !jobNotes.isEmpty {
+                ForEach(jobNotes) { note in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .top) {
+                            Label(note.title, systemImage: note.entryType == "stage_change" ? "point.3.connected.trianglepath.dotted" : "note.text")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Spacer()
+                            if let createdAt = note.createdAt {
+                                Text(formatDate(createdAt))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        if let content = note.content, !content.isEmpty {
+                            Text(content)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Text(note.authorName)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.vertical, 4)
+                }
+            } else if let notes = job.notes, !notes.isEmpty {
                 Text(notes)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -742,6 +805,9 @@ struct IOSJobDetailPage: View {
             activeTodos = try service.getActiveJobTodos(jobId: jobId)
             todoSummary = try service.getJobTodoSummary(jobId: jobId)
             stages = try service.listJobStages(forJobId: jobId)
+            jobParts = try service.getJobParts(jobId: jobId)
+            jobNotes = try service.listJobNotes(jobId: jobId)
+            inventoryMovements = try service.listJobInventoryMovements(jobId: jobId)
             isPaymentHold = try service.isJobOnPaymentHold(jobId: jobId)
             warrantyDaysRemaining = try service.warrantyDaysRemaining(jobId: jobId)
             if let job {
@@ -751,6 +817,25 @@ struct IOSJobDetailPage: View {
             loadError = userFriendlyError(error, context: "load job details")
         }
         isLoading = false
+    }
+
+    private func changeStage(_ stage: JobsService.JobStageStatus) {
+        guard stage.status != "in_progress" else { return }
+        guard let service = appCore.jobsService else {
+            loadError = "Jobs service unavailable"
+            return
+        }
+        guard let userId = appCore.currentUser?.id else {
+            loadError = "Not logged in. Please log in and try again."
+            return
+        }
+        do {
+            try service.updateJobStage(jobId: jobId, stageId: stage.id, changedBy: userId)
+            loadData()
+            selectedTab = .notes
+        } catch {
+            loadError = userFriendlyError(error, context: "update job stage")
+        }
     }
 
     private func postAIContext(_ job: JobsService.JobDetail) {
