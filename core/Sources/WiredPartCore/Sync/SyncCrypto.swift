@@ -112,10 +112,22 @@ public enum SyncCrypto {
     /// `ABCD-1234`. Spaces and hyphens are ignored so users can type the
     /// displayed code naturally, but other characters fail closed.
     public static func normalizedPairingCode(_ code: String) -> String? {
-        let normalized = code
-            .filter { !$0.isWhitespace && $0 != "-" }
-            .map { String($0).uppercased() }
-            .joined()
+        var normalized = ""
+        normalized.reserveCapacity(8)
+
+        for scalar in code.unicodeScalars {
+            switch scalar.value {
+            case 9...13, 32, 45:
+                continue
+            case 48...57, 65...90:
+                normalized.append(Character(scalar))
+            case 97...122:
+                guard let uppercased = UnicodeScalar(scalar.value - 32) else { return nil }
+                normalized.append(Character(uppercased))
+            default:
+                return nil
+            }
+        }
 
         guard normalized.count == 8,
               normalized.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else {

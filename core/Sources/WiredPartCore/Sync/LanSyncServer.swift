@@ -245,6 +245,15 @@ public actor SyncServerState {
         return SyncCrypto.verifyPairingCode(code, expectedDigest: digest)
     }
 
+    public func consumePairingCode(_ code: String) -> Bool {
+        guard let digest = activePairingCodeDigest,
+              SyncCrypto.verifyPairingCode(code, expectedDigest: digest) else {
+            return false
+        }
+        activePairingCodeDigest = nil
+        return true
+    }
+
     /// Filter outbox by vector clock (send only what the peer hasn't seen)
     /// or by timestamp (fallback), or return everything (first sync).
     public func getOutboxFiltered(
@@ -586,12 +595,10 @@ public final class LanSyncServer: Sendable {
             return (400, Data(json.utf8))
         }
 
-        guard await state.verifyPairingCode(request.pairingCode) else {
+        guard await state.consumePairingCode(request.pairingCode) else {
             let json = #"{"error":"invalid_pairing_code"}"#
             return (403, Data(json.utf8))
         }
-
-        await state.clearActivePairingCode()
 
         let response = SyncPairResponse(
             accepted: true,

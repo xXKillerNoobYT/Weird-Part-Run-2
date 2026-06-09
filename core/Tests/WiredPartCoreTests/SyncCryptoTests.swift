@@ -12,6 +12,7 @@ struct SyncCryptoTests {
         #expect(SyncCrypto.normalizedPairingCode(" AB CD 12 34 ") == "ABCD1234")
         #expect(SyncCrypto.normalizedPairingCode("ABC-123") == nil)
         #expect(SyncCrypto.normalizedPairingCode("ABCD-123!") == nil)
+        #expect(SyncCrypto.normalizedPairingCode("ABCD-12ß4") == nil)
     }
 
     @Test("Pairing code verification compares normalized codes")

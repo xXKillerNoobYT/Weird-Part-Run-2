@@ -449,6 +449,13 @@ final class IOSSyncManager {
         let deviceId = DeviceIdentity.current
         let deviceName = UIDevice.current.name
 
+        guard let db else {
+            syncStatus = .error
+            syncProgressMessage = nil
+            errorMessage = SyncError.noDatabaseAvailable.localizedDescription
+            throw SyncError.noDatabaseAvailable
+        }
+
         let pairResponse = try await verifyPairingCodeWithShop(
             shopAddress: shopAddress,
             pairingCode: normalizedPairingCode,
@@ -458,13 +465,6 @@ final class IOSSyncManager {
 
         syncProgressMessage = "Registering verified device..."
         syncProgressPercent = 0.2
-
-        guard let db else {
-            syncStatus = .error
-            syncProgressMessage = nil
-            errorMessage = SyncError.noDatabaseAvailable.localizedDescription
-            throw SyncError.noDatabaseAvailable
-        }
 
         try ChangeTracker.registerPeerDevice(
             db: db,
