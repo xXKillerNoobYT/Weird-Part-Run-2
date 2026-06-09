@@ -1670,17 +1670,20 @@ public final class WarehouseService: Sendable {
         }
     }
 
-    /// Update a receiving session item's received quantity.
-    public func updateSessionItem(itemId: Int64, receivedQty: Int, notes: String? = nil) throws {
+    /// Update a receiving session item's received quantity and optional verified receipt cost.
+    public func updateSessionItem(itemId: Int64, receivedQty: Int, notes: String? = nil, actualCost: Double? = nil) throws {
         guard receivedQty >= 0 else { throw WarehouseError.invalidQuantity }
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     UPDATE receiving_session_items
-                    SET received_qty = ?, notes = COALESCE(?, notes), scanned_at = datetime('now')
+                    SET received_qty = ?,
+                        notes = COALESCE(?, notes),
+                        actual_cost = COALESCE(?, actual_cost),
+                        scanned_at = datetime('now')
                     WHERE id = ? AND deleted_at IS NULL
                     """,
-                arguments: [receivedQty, notes, itemId]
+                arguments: [receivedQty, notes, actualCost, itemId]
             )
         }
     }
@@ -1849,7 +1852,7 @@ public final class WarehouseService: Sendable {
         }
 
         let receivedRows = try Row.fetchAll(dbConn, sql: """
-            SELECT rsi.po_line_id, rsi.received_qty
+            SELECT rsi.po_line_id, rsi.received_qty, rsi.actual_cost
             FROM receiving_session_items rsi
             JOIN po_line_items pli ON pli.id = rsi.po_line_id AND pli.deleted_at IS NULL
             WHERE rsi.session_id = ?
@@ -1859,18 +1862,20 @@ public final class WarehouseService: Sendable {
         for row in receivedRows {
             let lineId: Int64 = row["po_line_id"] ?? 0
             let receivedQty: Int = row["received_qty"] ?? 0
+            let actualCost: Double? = row["actual_cost"] as Double?
             guard lineId > 0 else { continue }
 
             try dbConn.execute(sql: """
                 UPDATE po_line_items
                 SET qty_received = COALESCE(qty_received, 0) + ?,
+                    received_unit_cost = COALESCE(?, received_unit_cost),
                     status = CASE
                         WHEN COALESCE(qty_received, 0) + ? >= qty_ordered THEN 'received'
                         WHEN COALESCE(qty_received, 0) + ? > 0 THEN 'backorder'
                         ELSE status
                     END
                 WHERE id = ? AND deleted_at IS NULL
-                """, arguments: [receivedQty, receivedQty, receivedQty, lineId])
+                """, arguments: [receivedQty, actualCost, receivedQty, receivedQty, lineId])
 
             try dbConn.execute(sql: """
                 UPDATE jpo_line_items

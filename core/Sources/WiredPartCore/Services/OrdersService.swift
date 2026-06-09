@@ -3520,12 +3520,20 @@ public final class OrdersService: Sendable {
         public let expectedQty: Int
         public let receivedQty: Int
         public let hasDiscrepancy: Bool
+        public let hasQuantityDiscrepancy: Bool
+        public let hasPriceDiscrepancy: Bool
+        public let orderUnitCost: Double?
+        public let receivedUnitCost: Double?
         public let notes: String?
 
         public init(
             id: Int64, partName: String, partCode: String?,
             expectedQty: Int, receivedQty: Int,
-            hasDiscrepancy: Bool, notes: String?
+            hasDiscrepancy: Bool, notes: String?,
+            hasQuantityDiscrepancy: Bool? = nil,
+            hasPriceDiscrepancy: Bool = false,
+            orderUnitCost: Double? = nil,
+            receivedUnitCost: Double? = nil
         ) {
             self.id = id
             self.partName = partName
@@ -3533,6 +3541,10 @@ public final class OrdersService: Sendable {
             self.expectedQty = expectedQty
             self.receivedQty = receivedQty
             self.hasDiscrepancy = hasDiscrepancy
+            self.hasQuantityDiscrepancy = hasQuantityDiscrepancy ?? hasDiscrepancy
+            self.hasPriceDiscrepancy = hasPriceDiscrepancy
+            self.orderUnitCost = orderUnitCost
+            self.receivedUnitCost = receivedUnitCost
             self.notes = notes
         }
     }
@@ -3555,9 +3567,17 @@ public final class OrdersService: Sendable {
                        COALESCE(
                            (SELECT COUNT(*)
                             FROM receiving_session_items rsi
+                            LEFT JOIN po_line_items pli ON pli.id = rsi.po_line_id AND pli.deleted_at IS NULL
                             WHERE rsi.session_id = rs.id
                               AND rsi.deleted_at IS NULL
-                              AND rsi.received_qty != rsi.expected_qty), 0
+                              AND (
+                                  rsi.received_qty != rsi.expected_qty
+                                  OR (
+                                      rsi.actual_cost IS NOT NULL
+                                      AND pli.unit_cost IS NOT NULL
+                                      AND ABS(rsi.actual_cost - pli.unit_cost) > 0.0001
+                                  )
+                              )), 0
                        ) AS discrepancy_count
                 FROM receiving_sessions rs
                 LEFT JOIN users u ON u.id = rs.started_by AND u.deleted_at IS NULL
@@ -3589,6 +3609,8 @@ public final class OrdersService: Sendable {
                        p.code AS part_code,
                        rsi.expected_qty,
                        rsi.received_qty,
+                       pli.unit_cost,
+                       rsi.actual_cost,
                        rsi.notes
                 FROM receiving_session_items rsi
                 LEFT JOIN po_line_items pli ON pli.id = rsi.po_line_id AND pli.deleted_at IS NULL
@@ -3599,14 +3621,27 @@ public final class OrdersService: Sendable {
             return rows.map { row in
                 let expected: Int = row["expected_qty"] ?? 0
                 let received: Int = row["received_qty"] ?? 0
+                let orderUnitCost: Double? = row["unit_cost"] as Double?
+                let receivedUnitCost: Double? = row["actual_cost"] as Double?
+                let hasQuantityDiscrepancy = expected != received
+                let hasPriceDiscrepancy: Bool
+                if let orderUnitCost, let receivedUnitCost {
+                    hasPriceDiscrepancy = abs(orderUnitCost - receivedUnitCost) > 0.0001
+                } else {
+                    hasPriceDiscrepancy = false
+                }
                 return ReceiptHistoryItem(
                     id: row["id"] ?? 0,
                     partName: row["part_name"] ?? "Unknown Part",
                     partCode: row["part_code"] as String?,
                     expectedQty: expected,
                     receivedQty: received,
-                    hasDiscrepancy: expected != received,
-                    notes: row["notes"] as String?
+                    hasDiscrepancy: hasQuantityDiscrepancy || hasPriceDiscrepancy,
+                    notes: row["notes"] as String?,
+                    hasQuantityDiscrepancy: hasQuantityDiscrepancy,
+                    hasPriceDiscrepancy: hasPriceDiscrepancy,
+                    orderUnitCost: orderUnitCost,
+                    receivedUnitCost: receivedUnitCost
                 )
             }
         }
