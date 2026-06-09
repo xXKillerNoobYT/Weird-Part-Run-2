@@ -5766,7 +5766,6 @@ extension AppDatabase {
         }
     }
 
-<<<<<<< HEAD
     private static func registerMigration101OvertimeAndLaborCorrectionAudit(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("101_overtime_and_labor_correction_audit") { db in
             try db.create(table: "overtime_settings", ifNotExists: true) { t in
@@ -5844,7 +5843,9 @@ extension AppDatabase {
                 )
                 WHERE deleted_at IS NULL
                 """)
-=======
+        }
+    }
+
     private static func registerMigration104AuthTokenSessionDeviceId(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("104_auth_token_session_device_id") { db in
             try addColumnIfMissing(db, table: "auth_token_sessions", column: "device_id", type: .text)
@@ -5856,7 +5857,6 @@ extension AppDatabase {
                           on: "auth_token_sessions",
                           columns: ["parent_refresh_id"],
                           ifNotExists: true)
->>>>>>> 53f18b5d3 (Preserve WEI-2994 auth LAN sync delta)
         }
     }
 }
