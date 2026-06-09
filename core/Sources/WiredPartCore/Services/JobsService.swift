@@ -26,19 +26,24 @@ public final class JobsService: Sendable {
         case jobNotFound(Int64)
         case jobNotClockable(Int64)
         case partNotFound(Int64)
+        case userNotFound(Int64)
+        case insufficientStagedMaterial(available: Int, requested: Int)
         case laborEntryNotFound(Int64)
         case alreadyClockedIn(userId: Int64, jobId: Int64)
         case notClockedIn(userId: Int64)
+        case userNotActive(Int64)
         case questionNotFound(Int64)
         case requiredQuestionNotAnswered(Int64)
         case invalidReturnQuantity(Int64)
         case invalidAmount(Int64)
         case invalidDuration(Int64)
         case requiredFieldEmpty
+        case invalidOvertimeSettings
         case templateNotFound(Int64)
         case stageNotFound(Int64)
         case stageInUse(Int64)
         case invalidStageTemplate(Int64)
+        case invalidClockOutTime(laborEntryId: Int64)
     }
 
     // =========================================================================
@@ -228,6 +233,97 @@ public final class JobsService: Sendable {
             self.reason = reason
             self.notes = notes
             self.performedByName = performedByName
+            self.createdAt = createdAt
+        }
+    }
+
+    /// Material currently staged and ready to use on a job.
+    public struct JobReadyMaterialRow: Sendable, Identifiable {
+        public let id: Int64
+        public let partId: Int64
+        public let partName: String
+        public let partCode: String?
+        public let stagedQty: Int
+        public let sourceSummary: String
+        public let lastMovedAt: String?
+
+        public init(
+            id: Int64, partId: Int64, partName: String, partCode: String?,
+            stagedQty: Int, sourceSummary: String, lastMovedAt: String?
+        ) {
+            self.id = id
+            self.partId = partId
+            self.partName = partName
+            self.partCode = partCode
+            self.stagedQty = stagedQty
+            self.sourceSummary = sourceSummary
+            self.lastMovedAt = lastMovedAt
+        }
+    }
+
+    public struct JobMaterialTotals: Sendable, Equatable {
+        public let stagedQty: Int
+        public let usedQty: Int
+        /// Quantity credited back against consumed job material. Pending return
+        /// handling is exposed separately through `pendingReturnQty`.
+        public let returnedQty: Int
+        public let pendingReturnQty: Int
+        public let netMaterialCost: Double
+        public let totalMaterialCost: Double
+
+        public init(
+            stagedQty: Int,
+            usedQty: Int,
+            returnedQty: Int,
+            pendingReturnQty: Int,
+            netMaterialCost: Double,
+            totalMaterialCost: Double
+        ) {
+            self.stagedQty = stagedQty
+            self.usedQty = usedQty
+            self.returnedQty = returnedQty
+            self.pendingReturnQty = pendingReturnQty
+            self.netMaterialCost = netMaterialCost
+            self.totalMaterialCost = totalMaterialCost
+        }
+    }
+
+    public struct JobMaterialHistoryRow: Sendable, Identifiable {
+        public let id: String
+        public let eventType: String
+        public let partId: Int64
+        public let partName: String
+        public let partCode: String?
+        public let qty: Int
+        public let actorName: String
+        public let locationSummary: String
+        public let reference: String?
+        public let notes: String?
+        public let createdAt: String?
+
+        public init(
+            id: String,
+            eventType: String,
+            partId: Int64,
+            partName: String,
+            partCode: String?,
+            qty: Int,
+            actorName: String,
+            locationSummary: String,
+            reference: String?,
+            notes: String?,
+            createdAt: String?
+        ) {
+            self.id = id
+            self.eventType = eventType
+            self.partId = partId
+            self.partName = partName
+            self.partCode = partCode
+            self.qty = qty
+            self.actorName = actorName
+            self.locationSummary = locationSummary
+            self.reference = reference
+            self.notes = notes
             self.createdAt = createdAt
         }
     }
@@ -1206,43 +1302,28 @@ public final class JobsService: Sendable {
         gpsLat: Double? = nil,
         gpsLng: Double? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
-            // Verify the target job exists, is not deleted, and is in a clockable state
-            guard let jobRow = try Row.fetchOne(
-                dbConn,
-                sql: "SELECT status FROM jobs WHERE id = ? AND deleted_at IS NULL",
-                arguments: [jobId]
-            ) else {
-                throw JobsError.jobNotFound(jobId)
-            }
-            let jobStatus: String = jobRow["status"] ?? ""
-            guard ["active", "in_progress"].contains(jobStatus) else {
-                throw JobsError.jobNotClockable(jobId)
-            }
+        try clockIn(userId: userId, jobId: jobId, at: Date(), gpsLat: gpsLat, gpsLng: gpsLng)
+    }
 
-            // Check for existing open clock entry
-            let existing = try Int.fetchOne(
-                dbConn,
-                sql: """
-                    SELECT COUNT(*) FROM labor_entries
-                    WHERE user_id = ? AND status = 'clocked_in' AND deleted_at IS NULL
-                    """,
-                arguments: [userId]
-            ) ?? 0
-
-            if existing > 0 {
-                throw JobsError.alreadyClockedIn(userId: userId, jobId: jobId)
-            }
-
-            try dbConn.execute(
-                sql: """
-                    INSERT INTO labor_entries
-                    (user_id, job_id, clock_in, clock_in_gps_lat, clock_in_gps_lng, status, created_at)
-                    VALUES (?, ?, datetime('now'), ?, ?, 'clocked_in', datetime('now'))
-                    """,
-                arguments: [userId, jobId, gpsLat, gpsLng]
+    /// Deterministic clock-in variant for imported time entries, tests, and job-switch flows.
+    @discardableResult
+    public func clockIn(
+        userId: Int64,
+        jobId: Int64,
+        at clockInAt: Date,
+        gpsLat: Double? = nil,
+        gpsLng: Double? = nil
+    ) throws -> Int64 {
+        let clockInTimestamp = Self.sqliteTimestamp(clockInAt)
+        return try db.writer.write { dbConn in
+            try Self.createClockEntry(
+                dbConn: dbConn,
+                userId: userId,
+                jobId: jobId,
+                clockInTimestamp: clockInTimestamp,
+                gpsLat: gpsLat,
+                gpsLng: gpsLng
             )
-            return dbConn.lastInsertedRowID
         }
     }
 
@@ -1258,7 +1339,19 @@ public final class JobsService: Sendable {
         gpsLat: Double? = nil,
         gpsLng: Double? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        try clockInToWarehouse(userId: userId, at: Date(), gpsLat: gpsLat, gpsLng: gpsLng)
+    }
+
+    /// Deterministic Shop / Warehouse clock-in variant.
+    @discardableResult
+    public func clockInToWarehouse(
+        userId: Int64,
+        at clockInAt: Date,
+        gpsLat: Double? = nil,
+        gpsLng: Double? = nil
+    ) throws -> Int64 {
+        let clockInTimestamp = Self.sqliteTimestamp(clockInAt)
+        return try db.writer.write { dbConn in
             let existing = try Int.fetchOne(
                 dbConn,
                 sql: """
@@ -1277,9 +1370,9 @@ public final class JobsService: Sendable {
                 sql: """
                     INSERT INTO labor_entries
                     (user_id, job_id, clock_in, clock_in_gps_lat, clock_in_gps_lng, status, created_at)
-                    VALUES (?, ?, datetime('now'), ?, ?, 'clocked_in', datetime('now'))
+                    VALUES (?, ?, ?, ?, ?, 'clocked_in', ?)
                     """,
-                arguments: [userId, warehouseJobId, gpsLat, gpsLng]
+                arguments: [userId, warehouseJobId, clockInTimestamp, gpsLat, gpsLng, clockInTimestamp]
             )
             return dbConn.lastInsertedRowID
         }
@@ -1294,63 +1387,246 @@ public final class JobsService: Sendable {
         gpsLat: Double? = nil,
         gpsLng: Double? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
-            // Verify the entry exists and is clocked in
-            guard let entry = try Row.fetchOne(
+        try clockOut(laborEntryId: laborEntryId, at: Date(), gpsLat: gpsLat, gpsLng: gpsLng)
+    }
+
+    /// Deterministic clock-out variant. Calculates unpaid-break-adjusted regular/overtime
+    /// hours against the user's local-day total before this entry.
+    @discardableResult
+    public func clockOut(
+        laborEntryId: Int64,
+        at clockOutAt: Date,
+        gpsLat: Double? = nil,
+        gpsLng: Double? = nil
+    ) throws -> Int64 {
+        let clockOutTimestamp = Self.sqliteTimestamp(clockOutAt)
+        return try db.writer.write { dbConn in
+            try Self.completeClockEntry(
+                dbConn: dbConn,
+                laborEntryId: laborEntryId,
+                clockOutTimestamp: clockOutTimestamp,
+                gpsLat: gpsLat,
+                gpsLng: gpsLng
+            )
+        }
+    }
+
+    /// Close the user's current entry at `switchedAt`, then clock into `nextJobId` at the
+    /// same instant. Both writes happen atomically so job switches cannot leave a gap or two
+    /// active entries.
+    @discardableResult
+    public func switchClockedInJob(
+        userId: Int64,
+        nextJobId: Int64,
+        at switchedAt: Date,
+        clockOutGpsLat: Double? = nil,
+        clockOutGpsLng: Double? = nil,
+        clockInGpsLat: Double? = nil,
+        clockInGpsLng: Double? = nil
+    ) throws -> Int64 {
+        let switchTimestamp = Self.sqliteTimestamp(switchedAt)
+        return try db.writer.write { dbConn in
+            guard let active = try Row.fetchOne(
                 dbConn,
-                sql: "SELECT id, user_id, clock_in FROM labor_entries WHERE id = ? AND status = 'clocked_in' AND deleted_at IS NULL",
+                sql: """
+                    SELECT id
+                    FROM labor_entries
+                    WHERE user_id = ? AND status = 'clocked_in' AND deleted_at IS NULL
+                    LIMIT 1
+                    """,
+                arguments: [userId]
+            ) else {
+                throw JobsError.notClockedIn(userId: userId)
+            }
+            let activeEntryId: Int64 = active["id"] ?? 0
+
+            try Self.completeClockEntry(
+                dbConn: dbConn,
+                laborEntryId: activeEntryId,
+                clockOutTimestamp: switchTimestamp,
+                gpsLat: clockOutGpsLat,
+                gpsLng: clockOutGpsLng
+            )
+            return try Self.createClockEntry(
+                dbConn: dbConn,
+                userId: userId,
+                jobId: nextJobId,
+                clockInTimestamp: switchTimestamp,
+                gpsLat: clockInGpsLat,
+                gpsLng: clockInGpsLng
+            )
+        }
+    }
+
+    public func getOvertimeSettings() throws -> OvertimeSettings {
+        try db.writer.read { dbConn in
+            try Self.fetchOvertimeSettings(dbConn)
+        }
+    }
+
+    public func updateOvertimeSettings(
+        calculationRule: String,
+        dailyThresholdHours: Double = 8.0,
+        weeklyThresholdHours: Double? = nil,
+        weekStartWeekday: Int = 2,
+        updatedBy: Int64? = nil
+    ) throws -> OvertimeSettings {
+        guard ["daily_only", "weekly_only", "daily_and_weekly"].contains(calculationRule),
+              dailyThresholdHours > 0,
+              weeklyThresholdHours.map({ $0 > 0 }) ?? true,
+              (1...7).contains(weekStartWeekday)
+        else {
+            throw JobsError.invalidOvertimeSettings
+        }
+
+        let timestamp = Self.sqliteTimestamp(Date())
+        return try db.writer.write { dbConn in
+            if let updatedBy {
+                try Self.requireActiveUser(dbConn, userId: updatedBy)
+            }
+            let existingId = try Int64.fetchOne(dbConn, sql: "SELECT id FROM overtime_settings ORDER BY id LIMIT 1")
+            if let existingId {
+                try dbConn.execute(sql: """
+                    UPDATE overtime_settings
+                    SET calculation_rule = ?,
+                        daily_threshold_hours = ?,
+                        weekly_threshold_hours = ?,
+                        week_start_weekday = ?,
+                        updated_by = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """, arguments: [
+                    calculationRule, dailyThresholdHours, weeklyThresholdHours,
+                    weekStartWeekday, updatedBy, timestamp, existingId
+                ])
+            } else {
+                try dbConn.execute(sql: """
+                    INSERT INTO overtime_settings
+                        (calculation_rule, daily_threshold_hours, weekly_threshold_hours,
+                         week_start_weekday, updated_by, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """, arguments: [
+                    calculationRule, dailyThresholdHours, weeklyThresholdHours,
+                    weekStartWeekday, updatedBy, timestamp
+                ])
+            }
+            return try Self.fetchOvertimeSettings(dbConn)
+        }
+    }
+
+    @discardableResult
+    public func correctLaborEntry(
+        laborEntryId: Int64,
+        correctedBy: Int64,
+        reason: String,
+        clockIn: Date,
+        clockOut: Date?
+    ) throws -> Int64 {
+        let trimmedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedReason.isEmpty else { throw JobsError.requiredFieldEmpty }
+
+        let newClockIn = Self.sqliteTimestamp(clockIn)
+        let newClockOut = clockOut.map(Self.sqliteTimestamp(_:))
+        if let clockOut, clockOut < clockIn {
+            throw JobsError.invalidClockOutTime(laborEntryId: laborEntryId)
+        }
+
+        return try db.writer.write { dbConn in
+            try Self.requireActiveUser(dbConn, userId: correctedBy)
+            guard let oldEntry = try Row.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT id, user_id, clock_in, clock_out, regular_hours,
+                           overtime_hours, status
+                    FROM labor_entries
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
                 arguments: [laborEntryId]
             ) else {
                 throw JobsError.laborEntryNotFound(laborEntryId)
             }
-            let userId: Int64 = entry["user_id"] ?? 0
-            let clockIn: String = entry["clock_in"] ?? ""
 
-            // Calculate raw elapsed hours
-            let rawHours = try Double.fetchOne(dbConn, sql: """
-                SELECT ROUND((julianday(datetime('now')) - julianday(clock_in)) * 24, 2)
-                FROM labor_entries WHERE id = ?
-                """, arguments: [laborEntryId]) ?? 0
+            let userId: Int64 = oldEntry["user_id"] ?? 0
+            let oldClockIn: String = oldEntry["clock_in"] ?? ""
+            let oldClockOut: String? = oldEntry["clock_out"] as String?
+            let oldRegularHours: Double = oldEntry["regular_hours"] ?? 0
+            let oldOvertimeHours: Double = oldEntry["overtime_hours"] ?? 0
+            let oldStatus: String = oldEntry["status"] ?? ""
 
-            // Subtract break time (fixes #206)
-            let breakMinutes = try Double.fetchOne(dbConn, sql: """
-                SELECT COALESCE(SUM(duration_minutes), 0)
-                FROM break_records WHERE labor_entry_id = ? AND deleted_at IS NULL
-                """, arguments: [laborEntryId]) ?? 0
-            let totalHours = max(0, rawHours - (breakMinutes / 60.0))
+            let allocation: (regular: Double, overtime: Double)
+            let newStatus: String
+            if let newClockOut {
+                let rawHours = try Double.fetchOne(dbConn, sql: """
+                    SELECT ROUND((julianday(?) - julianday(?)) * 24, 4)
+                    """, arguments: [newClockOut, newClockIn]) ?? 0
+                guard rawHours >= 0 else {
+                    throw JobsError.invalidClockOutTime(laborEntryId: laborEntryId)
+                }
+                let unpaidBreakMinutes = try Double.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(duration_minutes), 0)
+                    FROM break_records
+                    WHERE labor_entry_id = ? AND COALESCE(is_paid, 1) = 0 AND deleted_at IS NULL
+                    """, arguments: [laborEntryId]) ?? 0
+                let totalHours = max(0, rawHours - (unpaidBreakMinutes / 60.0))
+                allocation = try Self.allocateOvertimeHours(
+                    dbConn: dbConn,
+                    userId: userId,
+                    laborEntryId: laborEntryId,
+                    clockInTimestamp: newClockIn,
+                    totalHours: totalHours
+                )
+                newStatus = "completed"
+            } else {
+                allocation = (0, 0)
+                newStatus = "clocked_in"
+            }
 
-            // Split into regular/overtime at the per-user, per-day threshold. Count earlier
-            // completed entries for the same worker/day so switching jobs does not restart
-            // the daily regular-hours allowance.
-            let priorWorkedHours = try Double.fetchOne(dbConn, sql: """
-                SELECT COALESCE(SUM(regular_hours + overtime_hours), 0)
-                FROM labor_entries
-                WHERE user_id = ?
-                  AND id != ?
-                  AND status = 'completed'
-                  AND deleted_at IS NULL
-                  AND \(Self.localDateSQL("clock_in")) = date(?, 'localtime')
-                  AND clock_in < ?
-                """, arguments: [userId, laborEntryId, clockIn, clockIn]) ?? 0
-            let remainingRegularHours = max(0, 8.0 - priorWorkedHours)
-            let regularHours = min(totalHours, remainingRegularHours)
-            let overtimeHours = max(0, totalHours - regularHours)
+            try dbConn.execute(sql: """
+                UPDATE labor_entries
+                SET clock_in = ?,
+                    clock_out = ?,
+                    regular_hours = ROUND(?, 2),
+                    overtime_hours = ROUND(?, 2),
+                    status = ?,
+                    edited_by = ?
+                WHERE id = ?
+                """, arguments: [
+                newClockIn, newClockOut, allocation.regular, allocation.overtime,
+                newStatus, correctedBy, laborEntryId
+            ])
 
-            try dbConn.execute(
+            try dbConn.execute(sql: """
+                INSERT INTO labor_entry_correction_audits
+                    (labor_entry_id, corrected_by, reason,
+                     old_clock_in, new_clock_in, old_clock_out, new_clock_out,
+                     old_regular_hours, new_regular_hours,
+                     old_overtime_hours, new_overtime_hours,
+                     old_status, new_status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ROUND(?, 2), ?, ROUND(?, 2), ?, ?)
+                """, arguments: [
+                laborEntryId, correctedBy, trimmedReason,
+                oldClockIn, newClockIn, oldClockOut, newClockOut,
+                oldRegularHours, allocation.regular,
+                oldOvertimeHours, allocation.overtime,
+                oldStatus, newStatus
+            ])
+
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    public func listLaborEntryCorrectionAudits(laborEntryId: Int64) throws -> [LaborEntryCorrectionAudit] {
+        try db.writer.read { dbConn in
+            try LaborEntryCorrectionAudit.fetchAll(
+                dbConn,
                 sql: """
-                    UPDATE labor_entries
-                    SET clock_out = datetime('now'),
-                        clock_out_gps_lat = ?,
-                        clock_out_gps_lng = ?,
-                        regular_hours = ROUND(?, 2),
-                        overtime_hours = ROUND(?, 2),
-                        status = 'completed'
-                    WHERE id = ?
+                    SELECT *
+                    FROM labor_entry_correction_audits
+                    WHERE labor_entry_id = ?
+                    ORDER BY created_at DESC, id DESC
                     """,
-                arguments: [gpsLat, gpsLng, regularHours, overtimeHours, laborEntryId]
+                arguments: [laborEntryId]
             )
-
-            return laborEntryId
         }
     }
 
@@ -2356,6 +2632,488 @@ public final class JobsService: Sendable {
         }
     }
 
+    /// List material staged in the job's `pulled` stock bucket and ready for field use.
+    public func listReadyJobMaterials(jobId: Int64) throws -> [JobReadyMaterialRow] {
+        do {
+            return try db.writer.read { dbConn in
+                try Self.requireActiveJob(jobId, dbConn: dbConn)
+                // CTE resolves the latest staged-pull movement per part in one pass,
+                // avoiding two correlated subqueries per stock row.
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    WITH latest_move AS (
+                        SELECT sm.part_id, sm.movement_type, sm.created_at
+                        FROM stock_movements sm
+                        INNER JOIN (
+                            SELECT part_id, MAX(id) AS max_id
+                            FROM stock_movements
+                            WHERE to_location_type = 'pulled'
+                              AND to_location_id = ?
+                              AND job_id = ?
+                              AND deleted_at IS NULL
+                            GROUP BY part_id
+                        ) lm ON sm.id = lm.max_id AND sm.part_id = lm.part_id
+                    )
+                    SELECT s.part_id,
+                           s.qty AS staged_qty,
+                           p.name AS part_name,
+                           p.code AS part_code,
+                           lm.movement_type AS source_movement_type,
+                           lm.created_at AS last_moved_at
+                    FROM stock s
+                    LEFT JOIN parts p ON p.id = s.part_id AND p.deleted_at IS NULL
+                    LEFT JOIN latest_move lm ON lm.part_id = s.part_id
+                    WHERE s.location_type = 'pulled'
+                      AND s.location_id = ?
+                      AND s.qty > 0
+                      AND s.deleted_at IS NULL
+                    ORDER BY p.name, s.part_id
+                    """, arguments: [jobId, jobId, jobId])
+                return rows.map { row in
+                    let sourceType = (row["source_movement_type"] as String?) ?? StockMovement.MovementType.receivingStaged.rawValue
+                    return JobReadyMaterialRow(
+                        id: row["part_id"] ?? 0,
+                        partId: row["part_id"] ?? 0,
+                        partName: (row["part_name"] as String?) ?? "Unknown Part",
+                        partCode: row["part_code"] as String?,
+                        stagedQty: row["staged_qty"] ?? 0,
+                        sourceSummary: StockMovement.MovementType.displayName(forRawValue: sourceType),
+                        lastMovedAt: row["last_moved_at"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) || isColumnNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Pull available inventory from a warehouse/truck/shop bucket into job-ready staged stock.
+    @discardableResult
+    public func pullJobMaterial(
+        jobId: Int64,
+        partId: Int64,
+        qty: Int,
+        fromLocationType: String,
+        fromLocationId: Int64,
+        performedBy: Int64,
+        notes: String? = nil
+    ) throws -> Int64 {
+        guard qty > 0 else { throw JobsError.invalidReturnQuantity(partId) }
+        return try db.writer.write { dbConn in
+            try Self.requireActiveJob(jobId, dbConn: dbConn)
+            try Self.requireActivePart(partId, dbConn: dbConn)
+            try Self.requireActiveUser(performedBy, dbConn: dbConn)
+
+            let available = try Self.stockQty(partId: partId, locationType: fromLocationType, locationId: fromLocationId, dbConn: dbConn)
+            guard available >= qty else {
+                throw JobsError.insufficientStagedMaterial(available: available, requested: qty)
+            }
+
+            let movementId = try Self.insertStockMovement(
+                partId: partId,
+                qty: qty,
+                fromLocationType: fromLocationType,
+                fromLocationId: fromLocationId,
+                toLocationType: "pulled",
+                toLocationId: jobId,
+                movementType: StockMovement.MovementType.transfer.rawValue,
+                reason: "Pulled for job",
+                notes: notes,
+                performedBy: performedBy,
+                jobId: jobId,
+                unitCostAtMove: nil,
+                dbConn: dbConn
+            )
+            try Self.decrementStock(partId: partId, locationType: fromLocationType, locationId: fromLocationId, qty: qty, dbConn: dbConn)
+            try Self.incrementStock(partId: partId, locationType: "pulled", locationId: jobId, qty: qty, dbConn: dbConn)
+            return movementId
+        }
+    }
+
+    /// Consume staged material into `job_parts` and decrement the job's pulled stock atomically.
+    @discardableResult
+    public func consumeStagedJobMaterial(
+        jobId: Int64,
+        partId: Int64,
+        qty: Int,
+        performedBy: Int64,
+        notes: String? = nil
+    ) throws -> Int64 {
+        guard qty > 0 else { throw JobsError.invalidReturnQuantity(partId) }
+        return try db.writer.write { dbConn in
+            try Self.requireActiveJob(jobId, dbConn: dbConn)
+            try Self.requireActivePart(partId, dbConn: dbConn)
+            try Self.requireActiveUser(performedBy, dbConn: dbConn)
+
+            let available = try Self.stockQty(partId: partId, locationType: "pulled", locationId: jobId, dbConn: dbConn)
+            guard available >= qty else {
+                throw JobsError.insufficientStagedMaterial(available: available, requested: qty)
+            }
+
+            let unitCost = try Self.latestStagedUnitCost(partId: partId, jobId: jobId, dbConn: dbConn)
+
+            try dbConn.execute(sql: """
+                INSERT INTO job_parts
+                    (job_id, part_id, qty_consumed, unit_cost_at_consume, consumed_by, consumed_at, notes)
+                VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
+                """, arguments: [jobId, partId, qty, unitCost, performedBy, notes])
+            let jobPartId = dbConn.lastInsertedRowID
+
+            try Self.insertStockMovement(
+                partId: partId,
+                qty: qty,
+                fromLocationType: "pulled",
+                fromLocationId: jobId,
+                toLocationType: nil,
+                toLocationId: nil,
+                movementType: StockMovement.MovementType.jobPull.rawValue,
+                reason: "Consumed on job",
+                notes: notes,
+                performedBy: performedBy,
+                jobId: jobId,
+                unitCostAtMove: unitCost,
+                dbConn: dbConn
+            )
+            try Self.decrementStock(partId: partId, locationType: "pulled", locationId: jobId, qty: qty, dbConn: dbConn)
+
+            return jobPartId
+        }
+    }
+
+    /// Return unused staged material from a job into warehouse holding/review.
+    @discardableResult
+    public func returnStagedJobMaterial(
+        jobId: Int64,
+        partId: Int64,
+        qty: Int,
+        condition: String = "usable",
+        performedBy: Int64,
+        notes: String? = nil
+    ) throws -> Int64 {
+        guard qty > 0 else { throw JobsError.invalidReturnQuantity(partId) }
+        return try db.writer.write { dbConn in
+            try Self.requireActiveJob(jobId, dbConn: dbConn)
+            try Self.requireActivePart(partId, dbConn: dbConn)
+            try Self.requireActiveUser(performedBy, dbConn: dbConn)
+
+            let available = try Self.stockQty(partId: partId, locationType: "pulled", locationId: jobId, dbConn: dbConn)
+            guard available >= qty else {
+                throw JobsError.insufficientStagedMaterial(available: available, requested: qty)
+            }
+
+            let stagedUnitCost = try Self.latestStagedUnitCost(partId: partId, jobId: jobId, dbConn: dbConn)
+            try Self.insertStockMovement(
+                partId: partId,
+                qty: qty,
+                fromLocationType: "pulled",
+                fromLocationId: jobId,
+                toLocationType: nil,
+                toLocationId: nil,
+                movementType: StockMovement.MovementType.stockReturn.rawValue,
+                reason: "Returned unused job material",
+                notes: notes,
+                performedBy: performedBy,
+                jobId: jobId,
+                unitCostAtMove: stagedUnitCost,
+                dbConn: dbConn
+            )
+            try Self.decrementStock(partId: partId, locationType: "pulled", locationId: jobId, qty: qty, dbConn: dbConn)
+
+            return try Self.insertJobReturnIntake(
+                sourceJobId: jobId,
+                returnSource: "job",
+                returnedBy: performedBy,
+                partId: partId,
+                qty: qty,
+                condition: condition,
+                sourceJobPartId: nil,
+                notes: notes,
+                dbConn: dbConn
+            )
+        }
+    }
+
+    /// Return unused pulled material directly back to truck/warehouse inventory.
+    @discardableResult
+    public func returnPulledJobMaterial(
+        jobId: Int64,
+        partId: Int64,
+        qty: Int,
+        toLocationType: String,
+        toLocationId: Int64,
+        performedBy: Int64,
+        notes: String? = nil
+    ) throws -> Int64 {
+        guard qty > 0 else { throw JobsError.invalidReturnQuantity(partId) }
+        return try db.writer.write { dbConn in
+            try Self.requireActiveJob(jobId, dbConn: dbConn)
+            try Self.requireActivePart(partId, dbConn: dbConn)
+            try Self.requireActiveUser(performedBy, dbConn: dbConn)
+
+            let available = try Self.stockQty(partId: partId, locationType: "pulled", locationId: jobId, dbConn: dbConn)
+            guard available >= qty else {
+                throw JobsError.insufficientStagedMaterial(available: available, requested: qty)
+            }
+
+            let stagedUnitCost = try Self.latestStagedUnitCost(partId: partId, jobId: jobId, dbConn: dbConn)
+            let movementId = try Self.insertStockMovement(
+                partId: partId,
+                qty: qty,
+                fromLocationType: "pulled",
+                fromLocationId: jobId,
+                toLocationType: toLocationType,
+                toLocationId: toLocationId,
+                movementType: StockMovement.MovementType.stockReturn.rawValue,
+                reason: "Returned unused job material to inventory",
+                notes: notes,
+                performedBy: performedBy,
+                jobId: jobId,
+                unitCostAtMove: stagedUnitCost,
+                dbConn: dbConn
+            )
+            try Self.decrementStock(partId: partId, locationType: "pulled", locationId: jobId, qty: qty, dbConn: dbConn)
+            try Self.incrementStock(partId: partId, locationType: toLocationType, locationId: toLocationId, qty: qty, dbConn: dbConn)
+            return movementId
+        }
+    }
+
+    /// Reverse consumed material and create a warehouse return-intake item in one transaction.
+    @discardableResult
+    public func returnConsumedJobMaterial(
+        jobPartId: Int64,
+        returnQty: Int,
+        condition: String = "usable",
+        performedBy: Int64,
+        notes: String? = nil
+    ) throws -> Int64 {
+        guard returnQty > 0 else { throw JobsError.invalidReturnQuantity(jobPartId) }
+        return try db.writer.write { dbConn in
+            try Self.requireActiveUser(performedBy, dbConn: dbConn)
+            guard let row = try Row.fetchOne(dbConn, sql: """
+                SELECT job_id, part_id, qty_consumed, qty_returned, unit_cost_at_consume
+                FROM job_parts
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [jobPartId]) else {
+                throw JobsError.laborEntryNotFound(jobPartId)
+            }
+
+            let jobId: Int64 = row["job_id"] ?? 0
+            let partId: Int64 = row["part_id"] ?? 0
+            let consumed: Int = row["qty_consumed"] ?? 0
+            let alreadyReturned: Int = row["qty_returned"] ?? 0
+            guard alreadyReturned + returnQty <= consumed else {
+                throw JobsError.invalidReturnQuantity(jobPartId)
+            }
+
+            try dbConn.execute(sql: """
+                UPDATE job_parts
+                SET qty_returned = qty_returned + ?
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [returnQty, jobPartId])
+
+            try Self.insertStockMovement(
+                partId: partId,
+                qty: returnQty,
+                fromLocationType: nil,
+                fromLocationId: nil,
+                toLocationType: nil,
+                toLocationId: nil,
+                movementType: StockMovement.MovementType.stockReturn.rawValue,
+                reason: "Returned consumed job material",
+                notes: notes,
+                performedBy: performedBy,
+                jobId: jobId,
+                unitCostAtMove: row["unit_cost_at_consume"] as Double?,
+                dbConn: dbConn
+            )
+
+            return try Self.insertJobReturnIntake(
+                sourceJobId: jobId,
+                returnSource: "job",
+                returnedBy: performedBy,
+                partId: partId,
+                qty: returnQty,
+                condition: condition,
+                sourceJobPartId: jobPartId,
+                notes: notes,
+                dbConn: dbConn
+            )
+        }
+    }
+
+    /// Correct a consumed job-part quantity with required audit detail.
+    public func correctConsumedJobMaterial(
+        jobPartId: Int64,
+        adjustedQty: Int,
+        performedBy: Int64,
+        note: String
+    ) throws {
+        let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedNote.isEmpty else { throw JobsError.requiredFieldEmpty }
+        guard adjustedQty > 0 else { throw JobsError.invalidReturnQuantity(jobPartId) }
+
+        try db.writer.write { dbConn in
+            try Self.requireActiveUser(performedBy, dbConn: dbConn)
+            guard let row = try Row.fetchOne(dbConn, sql: """
+                SELECT job_id, part_id, qty_consumed, qty_returned, unit_cost_at_consume
+                FROM job_parts
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [jobPartId]) else {
+                throw JobsError.laborEntryNotFound(jobPartId)
+            }
+
+            let jobId: Int64 = row["job_id"] ?? 0
+            let partId: Int64 = row["part_id"] ?? 0
+            let originalQty: Int = row["qty_consumed"] ?? 0
+            let returnedQty: Int = row["qty_returned"] ?? 0
+            guard adjustedQty >= returnedQty else {
+                throw JobsError.invalidReturnQuantity(jobPartId)
+            }
+
+            try dbConn.execute(sql: """
+                UPDATE job_parts
+                SET qty_consumed = ?
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [adjustedQty, jobPartId])
+
+            let auditNote = "Correction: original_qty=\(originalQty), adjusted_qty=\(adjustedQty). \(trimmedNote)"
+            try Self.insertStockMovement(
+                partId: partId,
+                qty: abs(adjustedQty - originalQty),
+                fromLocationType: nil,
+                fromLocationId: nil,
+                toLocationType: nil,
+                toLocationId: nil,
+                movementType: StockMovement.MovementType.adjustment.rawValue,
+                reason: "Corrected consumed job material",
+                notes: auditNote,
+                performedBy: performedBy,
+                jobId: jobId,
+                unitCostAtMove: row["unit_cost_at_consume"] as Double?,
+                dbConn: dbConn
+            )
+        }
+    }
+
+    public func getJobMaterialTotals(jobId: Int64) throws -> JobMaterialTotals {
+        do {
+            return try db.writer.read { dbConn in
+                try Self.requireActiveJob(jobId, dbConn: dbConn)
+                let staged = try Int.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(qty), 0)
+                    FROM stock
+                    WHERE location_type = 'pulled' AND location_id = ? AND deleted_at IS NULL
+                    """, arguments: [jobId]) ?? 0
+                let used = try Int.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(qty_consumed - qty_returned), 0)
+                    FROM job_parts
+                    WHERE job_id = ? AND deleted_at IS NULL
+                    """, arguments: [jobId]) ?? 0
+                let returned = try Int.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(qty_returned), 0)
+                    FROM job_parts
+                    WHERE job_id = ? AND deleted_at IS NULL
+                    """, arguments: [jobId]) ?? 0
+                let pendingReturn = try Int.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(jrii.qty_remaining), 0)
+                    FROM job_return_intake_items jrii
+                    JOIN job_return_intakes jri ON jri.id = jrii.intake_id
+                    WHERE jri.source_job_id = ?
+                      AND jri.deleted_at IS NULL
+                      AND jrii.deleted_at IS NULL
+                      AND jrii.status IN ('holding', 'damage_review', 'wrong_part_review', 'supplier_review')
+                    """, arguments: [jobId]) ?? 0
+                let netCost = try Double.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM((qty_consumed - qty_returned) * COALESCE(unit_cost_at_consume, 0)), 0)
+                    FROM job_parts
+                    WHERE job_id = ? AND deleted_at IS NULL
+                    """, arguments: [jobId]) ?? 0
+                let totalCost = try Double.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(qty_consumed * COALESCE(unit_cost_at_consume, 0)), 0)
+                    FROM job_parts
+                    WHERE job_id = ? AND deleted_at IS NULL
+                    """, arguments: [jobId]) ?? 0
+                return JobMaterialTotals(
+                    stagedQty: staged,
+                    usedQty: used,
+                    returnedQty: returned,
+                    pendingReturnQty: pendingReturn,
+                    netMaterialCost: netCost,
+                    totalMaterialCost: totalCost
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) || isColumnNotFoundError(error) {
+                return JobMaterialTotals(stagedQty: 0, usedQty: 0, returnedQty: 0, pendingReturnQty: 0, netMaterialCost: 0, totalMaterialCost: 0)
+            }
+            throw error
+        }
+    }
+
+    public func listJobMaterialHistory(jobId: Int64, limit: Int = 50) throws -> [JobMaterialHistoryRow] {
+        do {
+            return try db.writer.read { dbConn in
+                try Self.requireActiveJob(jobId, dbConn: dbConn)
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT 'movement-' || sm.id AS row_id,
+                           sm.movement_type AS event_type,
+                           sm.part_id,
+                           p.name AS part_name,
+                           p.code AS part_code,
+                           sm.qty,
+                           COALESCE(u.display_name, u.email, 'User #' || sm.performed_by) AS actor_name,
+                           COALESCE(sm.from_location_type, 'none') || ' -> ' || COALESCE(sm.to_location_type, 'none') AS location_summary,
+                           sm.reference_number AS reference,
+                           sm.notes,
+                           sm.created_at
+                    FROM stock_movements sm
+                    LEFT JOIN parts p ON p.id = sm.part_id AND p.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = sm.performed_by AND u.deleted_at IS NULL
+                    WHERE sm.job_id = ? AND sm.deleted_at IS NULL
+                    UNION ALL
+                    SELECT 'return-' || jrii.id AS row_id,
+                           'job_return_' || jrii.status AS event_type,
+                           jrii.part_id,
+                           p.name AS part_name,
+                           p.code AS part_code,
+                           jrii.qty_returned AS qty,
+                           COALESCE(u.display_name, u.email, 'User #' || jri.returned_by) AS actor_name,
+                           'job -> return holding' AS location_summary,
+                           'Return intake #' || jri.id AS reference,
+                           jrii.notes,
+                           jrii.created_at
+                    FROM job_return_intake_items jrii
+                    JOIN job_return_intakes jri ON jri.id = jrii.intake_id
+                    LEFT JOIN parts p ON p.id = jrii.part_id AND p.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = jri.returned_by AND u.deleted_at IS NULL
+                    WHERE jri.source_job_id = ?
+                      AND jri.deleted_at IS NULL
+                      AND jrii.deleted_at IS NULL
+                    ORDER BY 11 DESC, 1 DESC
+                    LIMIT ?
+                    """, arguments: [jobId, jobId, max(1, limit)])
+                return rows.map { row in
+                    JobMaterialHistoryRow(
+                        id: row["row_id"] ?? "",
+                        eventType: row["event_type"] ?? "material",
+                        partId: row["part_id"] ?? 0,
+                        partName: (row["part_name"] as String?) ?? "Unknown Part",
+                        partCode: row["part_code"] as String?,
+                        qty: row["qty"] ?? 0,
+                        actorName: row["actor_name"] ?? "Unknown",
+                        locationSummary: row["location_summary"] ?? "",
+                        reference: row["reference"] as String?,
+                        notes: row["notes"] as String?,
+                        createdAt: row["created_at"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) || isColumnNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
     // =========================================================================
     // MARK: - 8. Dashboard KPIs
     // =========================================================================
@@ -2585,6 +3343,10 @@ public final class JobsService: Sendable {
         return formatter
     }()
 
+    private static func sqliteTimestamp(_ date: Date) -> String {
+        sqliteUTCDateFormatter.string(from: date)
+    }
+
     private static func parseSQLiteUTCDateTime(_ string: String) -> Date? {
         if let date = CoreFormatters.parseISO(string) { return date }
         return sqliteUTCDateFormatter.date(from: string)
@@ -2593,6 +3355,222 @@ public final class JobsService: Sendable {
     /// Convert SQLite datetime/date text into the current local operational day.
     private static func localDateSQL(_ expression: String) -> String {
         "CASE WHEN length(\(expression)) <= 10 THEN date(\(expression)) ELSE date(\(expression), 'localtime') END"
+    }
+
+    @discardableResult
+    private static func createClockEntry(
+        dbConn: Database,
+        userId: Int64,
+        jobId: Int64,
+        clockInTimestamp: String,
+        gpsLat: Double?,
+        gpsLng: Double?
+    ) throws -> Int64 {
+        guard let jobRow = try Row.fetchOne(
+            dbConn,
+            sql: "SELECT status FROM jobs WHERE id = ? AND deleted_at IS NULL",
+            arguments: [jobId]
+        ) else {
+            throw JobsError.jobNotFound(jobId)
+        }
+        let jobStatus: String = jobRow["status"] ?? ""
+        guard ["active", "in_progress"].contains(jobStatus) else {
+            throw JobsError.jobNotClockable(jobId)
+        }
+
+        let existing = try Int.fetchOne(
+            dbConn,
+            sql: """
+                SELECT COUNT(*) FROM labor_entries
+                WHERE user_id = ? AND status = 'clocked_in' AND deleted_at IS NULL
+                """,
+            arguments: [userId]
+        ) ?? 0
+        if existing > 0 {
+            throw JobsError.alreadyClockedIn(userId: userId, jobId: jobId)
+        }
+
+        try dbConn.execute(
+            sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_in_gps_lat, clock_in_gps_lng, status, created_at)
+                VALUES (?, ?, ?, ?, ?, 'clocked_in', ?)
+                """,
+            arguments: [userId, jobId, clockInTimestamp, gpsLat, gpsLng, clockInTimestamp]
+        )
+        return dbConn.lastInsertedRowID
+    }
+
+    @discardableResult
+    private static func completeClockEntry(
+        dbConn: Database,
+        laborEntryId: Int64,
+        clockOutTimestamp: String,
+        gpsLat: Double?,
+        gpsLng: Double?
+    ) throws -> Int64 {
+        guard let entry = try Row.fetchOne(
+            dbConn,
+            sql: "SELECT id, user_id, clock_in FROM labor_entries WHERE id = ? AND status = 'clocked_in' AND deleted_at IS NULL",
+            arguments: [laborEntryId]
+        ) else {
+            throw JobsError.laborEntryNotFound(laborEntryId)
+        }
+        let userId: Int64 = entry["user_id"] ?? 0
+        let clockIn: String = entry["clock_in"] ?? ""
+
+        let rawHours = try Double.fetchOne(dbConn, sql: """
+            SELECT ROUND((julianday(?) - julianday(clock_in)) * 24, 4)
+            FROM labor_entries WHERE id = ?
+            """, arguments: [clockOutTimestamp, laborEntryId]) ?? 0
+        guard rawHours >= 0 else {
+            throw JobsError.invalidClockOutTime(laborEntryId: laborEntryId)
+        }
+
+        let unpaidBreakMinutes = try Double.fetchOne(dbConn, sql: """
+            SELECT COALESCE(SUM(duration_minutes), 0)
+            FROM break_records
+            WHERE labor_entry_id = ? AND COALESCE(is_paid, 1) = 0 AND deleted_at IS NULL
+            """, arguments: [laborEntryId]) ?? 0
+        let totalHours = max(0, rawHours - (unpaidBreakMinutes / 60.0))
+
+        let allocation = try allocateOvertimeHours(
+            dbConn: dbConn,
+            userId: userId,
+            laborEntryId: laborEntryId,
+            clockInTimestamp: clockIn,
+            totalHours: totalHours
+        )
+
+        try dbConn.execute(
+            sql: """
+                UPDATE labor_entries
+                SET clock_out = ?,
+                    clock_out_gps_lat = ?,
+                    clock_out_gps_lng = ?,
+                    regular_hours = ROUND(?, 2),
+                    overtime_hours = ROUND(?, 2),
+                    status = 'completed'
+                WHERE id = ?
+                """,
+            arguments: [clockOutTimestamp, gpsLat, gpsLng, allocation.regular, allocation.overtime, laborEntryId]
+        )
+
+        return laborEntryId
+    }
+
+    private static func fetchOvertimeSettings(_ dbConn: Database) throws -> OvertimeSettings {
+        if let settings = try OvertimeSettings.fetchOne(
+            dbConn,
+            sql: "SELECT * FROM overtime_settings ORDER BY id LIMIT 1"
+        ) {
+            return settings
+        }
+        return OvertimeSettings(
+            id: nil,
+            calculationRule: "daily_only",
+            dailyThresholdHours: 8.0,
+            weeklyThresholdHours: nil,
+            weekStartWeekday: 2,
+            updatedBy: nil,
+            updatedAt: nil
+        )
+    }
+
+    private static func allocateOvertimeHours(
+        dbConn: Database,
+        userId: Int64,
+        laborEntryId: Int64,
+        clockInTimestamp: String,
+        totalHours: Double
+    ) throws -> (regular: Double, overtime: Double) {
+        let settings = try fetchOvertimeSettings(dbConn)
+        let dailyPriorHours = try priorCompletedHours(
+            dbConn: dbConn,
+            userId: userId,
+            laborEntryId: laborEntryId,
+            whereSQL: "\(localDateSQL("clock_in")) = date(?, 'localtime') AND clock_in < ?",
+            arguments: [clockInTimestamp, clockInTimestamp]
+        )
+        let dailyRemaining = max(0, settings.dailyThresholdHours - dailyPriorHours)
+
+        let weeklyRemaining: Double
+        if let weeklyThresholdHours = settings.weeklyThresholdHours,
+           let clockInDate = parseSQLiteUTCDateTime(clockInTimestamp) {
+            let interval = localWeekInterval(containing: clockInDate, weekStartWeekday: settings.weekStartWeekday)
+            let weekStart = sqliteTimestamp(interval.start)
+            let weekEnd = sqliteTimestamp(interval.end)
+            let weeklyPriorHours = try priorCompletedHours(
+                dbConn: dbConn,
+                userId: userId,
+                laborEntryId: laborEntryId,
+                whereSQL: "clock_in >= ? AND clock_in < ? AND clock_in < ?",
+                arguments: [weekStart, weekEnd, clockInTimestamp]
+            )
+            weeklyRemaining = max(0, weeklyThresholdHours - weeklyPriorHours)
+        } else {
+            weeklyRemaining = Double.greatestFiniteMagnitude
+        }
+
+        let regularCapacity: Double
+        switch settings.calculationRule {
+        case "weekly_only":
+            regularCapacity = weeklyRemaining
+        case "daily_and_weekly":
+            regularCapacity = min(dailyRemaining, weeklyRemaining)
+        default:
+            regularCapacity = dailyRemaining
+        }
+
+        let regularHours = min(totalHours, max(0, regularCapacity))
+        let overtimeHours = max(0, totalHours - regularHours)
+        return (roundHours(regularHours), roundHours(overtimeHours))
+    }
+
+    private static func priorCompletedHours(
+        dbConn: Database,
+        userId: Int64,
+        laborEntryId: Int64,
+        whereSQL: String,
+        arguments: StatementArguments
+    ) throws -> Double {
+        var allArguments: StatementArguments = [userId, laborEntryId]
+        allArguments += arguments
+        return try Double.fetchOne(dbConn, sql: """
+            SELECT COALESCE(SUM(regular_hours + overtime_hours), 0)
+            FROM labor_entries
+            WHERE user_id = ?
+              AND id != ?
+              AND status = 'completed'
+              AND deleted_at IS NULL
+              AND \(whereSQL)
+            """, arguments: allArguments) ?? 0
+    }
+
+    private static func localWeekInterval(containing date: Date, weekStartWeekday: Int) -> DateInterval {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone.current
+        calendar.firstWeekday = weekStartWeekday
+
+        let dayStart = calendar.startOfDay(for: date)
+        let weekday = calendar.component(.weekday, from: dayStart)
+        let daysSinceStart = (weekday - weekStartWeekday + 7) % 7
+        let start = calendar.date(byAdding: .day, value: -daysSinceStart, to: dayStart) ?? dayStart
+        let end = calendar.date(byAdding: .day, value: 7, to: start) ?? start.addingTimeInterval(7 * 24 * 60 * 60)
+        return DateInterval(start: start, end: end)
+    }
+
+    private static func roundHours(_ value: Double) -> Double {
+        (value * 100).rounded() / 100
+    }
+
+    private static func requireActiveUser(_ dbConn: Database, userId: Int64) throws {
+        let count = try Int.fetchOne(
+            dbConn,
+            sql: "SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND COALESCE(is_active, 1) = 1",
+            arguments: [userId]
+        ) ?? 0
+        guard count > 0 else { throw JobsError.userNotActive(userId) }
     }
 
     /// Detect whether a GRDB/SQLite error indicates a missing table.
@@ -3264,6 +4242,171 @@ public final class JobsService: Sendable {
                 status = "pending"
             }
             return JobStageStatus(id: stage.id, name: stage.name, sortOrder: stage.sortOrder, status: status)
+        }
+    }
+
+    private static func requireActiveJob(_ jobId: Int64, dbConn: Database) throws {
+        let exists = (try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL
+            """, arguments: [jobId]) ?? 0) > 0
+        guard exists else { throw JobsError.jobNotFound(jobId) }
+    }
+
+    private static func requireActivePart(_ partId: Int64, dbConn: Database) throws {
+        let exists = (try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL
+            """, arguments: [partId]) ?? 0) > 0
+        guard exists else { throw JobsError.partNotFound(partId) }
+    }
+
+    private static func requireActiveUser(_ userId: Int64, dbConn: Database) throws {
+        let exists = (try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+            """, arguments: [userId]) ?? 0) > 0
+        guard exists else { throw JobsError.userNotFound(userId) }
+    }
+
+    private static func stockQty(partId: Int64, locationType: String, locationId: Int64, dbConn: Database) throws -> Int {
+        try Int.fetchOne(dbConn, sql: """
+            SELECT COALESCE(SUM(qty), 0)
+            FROM stock
+            WHERE part_id = ?
+              AND location_type = ?
+              AND location_id = ?
+              AND deleted_at IS NULL
+            """, arguments: [partId, locationType, locationId]) ?? 0
+    }
+
+    private static func latestStagedUnitCost(partId: Int64, jobId: Int64, dbConn: Database) throws -> Double? {
+        try Double.fetchOne(dbConn, sql: """
+            SELECT unit_cost_at_move
+            FROM stock_movements
+            WHERE part_id = ?
+              AND to_location_type = 'pulled'
+              AND to_location_id = ?
+              AND job_id = ?
+              AND deleted_at IS NULL
+              AND unit_cost_at_move IS NOT NULL
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """, arguments: [partId, jobId, jobId])
+    }
+
+    private static func decrementStock(partId: Int64, locationType: String, locationId: Int64, qty: Int, dbConn: Database) throws {
+        let available = try stockQty(partId: partId, locationType: locationType, locationId: locationId, dbConn: dbConn)
+        guard available >= qty else {
+            throw JobsError.insufficientStagedMaterial(available: available, requested: qty)
+        }
+        try dbConn.execute(sql: """
+            UPDATE stock
+            SET qty = qty - ?, updated_at = datetime('now')
+            WHERE part_id = ?
+              AND location_type = ?
+              AND location_id = ?
+              AND deleted_at IS NULL
+            """, arguments: [qty, partId, locationType, locationId])
+    }
+
+    private static func incrementStock(partId: Int64, locationType: String, locationId: Int64, qty: Int, dbConn: Database) throws {
+        try dbConn.execute(sql: """
+            UPDATE stock
+            SET qty = qty + ?, updated_at = datetime('now')
+            WHERE part_id = ?
+              AND location_type = ?
+              AND location_id = ?
+              AND deleted_at IS NULL
+            """, arguments: [qty, partId, locationType, locationId])
+        if dbConn.changesCount == 0 {
+            try dbConn.execute(sql: """
+                INSERT INTO stock (part_id, location_type, location_id, qty, updated_at)
+                VALUES (?, ?, ?, ?, datetime('now'))
+                """, arguments: [partId, locationType, locationId, qty])
+        }
+    }
+
+    @discardableResult
+    private static func insertStockMovement(
+        partId: Int64,
+        qty: Int,
+        fromLocationType: String?,
+        fromLocationId: Int64?,
+        toLocationType: String?,
+        toLocationId: Int64?,
+        movementType: String,
+        reason: String?,
+        notes: String?,
+        performedBy: Int64,
+        jobId: Int64,
+        unitCostAtMove: Double?,
+        dbConn: Database
+    ) throws -> Int64 {
+        try dbConn.execute(sql: """
+            INSERT INTO stock_movements
+                (part_id, qty, from_location_type, from_location_id,
+                 to_location_type, to_location_id, movement_type,
+                 reason, notes, performed_by, job_id, unit_cost_at_move, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """, arguments: [
+                partId, qty, fromLocationType, fromLocationId,
+                toLocationType, toLocationId, movementType,
+                reason, notes, performedBy, jobId, unitCostAtMove,
+            ])
+        return dbConn.lastInsertedRowID
+    }
+
+    @discardableResult
+    private static func insertJobReturnIntake(
+        sourceJobId: Int64,
+        returnSource: String,
+        returnedBy: Int64,
+        partId: Int64,
+        qty: Int,
+        condition: String,
+        sourceJobPartId: Int64?,
+        notes: String?,
+        dbConn: Database
+    ) throws -> Int64 {
+        let normalizedCondition = normalizeReturnCondition(condition)
+        let itemStatus = initialReturnItemStatus(condition: normalizedCondition)
+        try dbConn.execute(sql: """
+            INSERT INTO job_return_intakes
+                (source_job_id, return_source, returned_by, status, notes, created_at, updated_at)
+            VALUES (?, ?, ?, 'holding', ?, datetime('now'), datetime('now'))
+            """, arguments: [sourceJobId, returnSource, returnedBy, notes])
+        let intakeId = dbConn.lastInsertedRowID
+
+        try dbConn.execute(sql: """
+            INSERT INTO job_return_intake_items
+                (intake_id, part_id, source_job_part_id, qty_returned, qty_remaining,
+                 condition, status, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """, arguments: [
+                intakeId, partId, sourceJobPartId, qty, qty,
+                normalizedCondition, itemStatus, notes,
+            ])
+
+        return intakeId
+    }
+
+    private static func normalizeReturnCondition(_ condition: String) -> String {
+        let normalized = condition
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+        return normalized.isEmpty ? "usable" : normalized
+    }
+
+    private static func initialReturnItemStatus(condition: String) -> String {
+        switch condition {
+        case "damaged":
+            return "damage_review"
+        case "wrong_part":
+            return "wrong_part_review"
+        case "supplier_issue":
+            return "supplier_review"
+        default:
+            return "holding"
         }
     }
 

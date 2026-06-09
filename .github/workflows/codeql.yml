@@ -24,8 +24,20 @@ on:
 jobs:
   required-codeql-compat:
     name: CodeQL
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Required compatibility context for the private WPR2 repo. Route through
+    # the local Mac runner instead of cloud runners so PRs do not get blocked by
+    # billing/hosted-runner availability.
+    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
     steps:
+      - name: Verify self-hosted macOS runner
+        shell: bash
+        run: |
+          test "$RUNNER_OS" = "macOS"
+          test "$(uname -s)" = "Darwin"
+          echo "Runner: $RUNNER_NAME"
+          echo "Architecture: $RUNNER_ARCH"
+
       - name: Required CodeQL compatibility gate
         run: |
           echo "Compatibility check for the legacy required CodeQL context."
@@ -33,7 +45,9 @@ jobs:
 
   analyze:
     name: Analyze (${{ matrix.language }})
-    runs-on: macos-latest  # Swift CodeQL requires macOS runners
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Swift CodeQL requires macOS; WPR2 uses the local self-hosted Mac runner.
+    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
     timeout-minutes: 60
 
     permissions:
@@ -47,6 +61,14 @@ jobs:
         language: ["swift"]
 
     steps:
+      - name: Verify self-hosted macOS runner
+        shell: bash
+        run: |
+          test "$RUNNER_OS" = "macOS"
+          test "$(uname -s)" = "Darwin"
+          echo "Runner: $RUNNER_NAME"
+          echo "Architecture: $RUNNER_ARCH"
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
