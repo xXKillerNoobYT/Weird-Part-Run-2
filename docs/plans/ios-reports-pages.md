@@ -60,6 +60,8 @@ Reports is architecturally clean — zero GRDB imports in any UI file. Labor/Fin
 
 **Status:** Phase 8 (Reports & Pre-Billing) is marked complete in CLAUDE.md. iOS page set, service APIs, and export utilities are all implemented. This section captures the state of the code so C1b (plan-vs-code drift) can verify against a concrete surface.
 
+**Backend data contract:** `docs/plans/stage-8-reports-data-contract.md` is the canonical contract checklist for report, pre-billing, bookkeeper export, warehouse audit summary, and app-wide audit-log row shapes, permission expectations, lock/filter rules, persistence side effects, and verification hooks.
+
 ### iOS Files (22 total in `Features/Reports/`)
 
 | File | Purpose | Plan section |
