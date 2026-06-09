@@ -282,6 +282,28 @@ final class IOSSyncManager {
         }
     }
 
+    /// Issue a one-time pairing code from the shop-side sync server.
+    func issueShopPairingCode() async throws -> String {
+        guard let pm = peerManager else {
+            throw SyncError.noDatabaseAvailable
+        }
+
+        let currentState = await pm.getState()
+        if !currentState.running {
+            let deviceId = DeviceIdentity.current
+            let deviceName = UIDevice.current.name
+            let companyId = (try? settingsService?.getSettingsByCategory("company"))?["company_id"] ?? "default"
+            try await pm.startPeerSync(
+                deviceId: deviceId,
+                deviceName: deviceName,
+                companyId: companyId
+            )
+            isScanning = true
+        }
+
+        return try await pm.issuePairingCode()
+    }
+
     /// Enable or disable Bluetooth/Multipeer sync.
     func setBluetoothEnabled(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: "bluetooth_sync_enabled")

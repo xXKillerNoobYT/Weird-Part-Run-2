@@ -89,6 +89,23 @@ public enum SyncCrypto {
 
     // MARK: - Pairing Codes
 
+    private static let pairingCodeCharacters = Array("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+
+    /// Generate a one-time human-enterable pairing code.
+    public static func generatePairingCode() -> String {
+        var generator = SystemRandomNumberGenerator()
+        return String((0..<8).map { _ in
+            pairingCodeCharacters.randomElement(using: &generator)!
+        })
+    }
+
+    /// Format a normalized pairing code for display as `ABCD-1234`.
+    public static func formattedPairingCode(_ code: String) -> String? {
+        guard let normalized = normalizedPairingCode(code) else { return nil }
+        let splitIndex = normalized.index(normalized.startIndex, offsetBy: 4)
+        return "\(normalized[..<splitIndex])-\(normalized[splitIndex...])"
+    }
+
     /// Normalize a human-entered pairing code for comparison.
     ///
     /// Codes are eight alphanumeric characters, commonly displayed as

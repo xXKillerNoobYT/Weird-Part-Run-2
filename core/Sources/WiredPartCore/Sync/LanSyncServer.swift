@@ -228,6 +228,13 @@ public actor SyncServerState {
         activePairingCodeDigest = SyncCrypto.pairingCodeDigest(normalized)
     }
 
+    /// Issue and activate a new one-time pairing code for shop-side display.
+    public func issueActivePairingCode() throws -> String {
+        let code = SyncCrypto.generatePairingCode()
+        try setActivePairingCode(code)
+        return SyncCrypto.formattedPairingCode(code) ?? code
+    }
+
     /// Clear the active pairing code after it is used or expires.
     public func clearActivePairingCode() {
         activePairingCodeDigest = nil
@@ -778,6 +785,7 @@ public final class LanSyncServer: Sendable {
 public enum SyncServerError: Error {
     case failedToBind
     case invalidPairingCode
+    case serverNotRunning
 }
 
 // MARK: - Parsed HTTP Request
