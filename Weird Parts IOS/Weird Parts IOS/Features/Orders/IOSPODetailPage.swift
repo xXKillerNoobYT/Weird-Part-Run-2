@@ -1746,7 +1746,7 @@ struct IOSPODetailPage: View {
                     Text("\(item.receivedQty)")
                         .font(.caption)
                         .fontWeight(.semibold)
-                        .foregroundStyle(item.hasDiscrepancy ? .orange : .primary)
+                        .foregroundStyle(item.hasQuantityDiscrepancy ? .orange : .primary)
                     Text("/")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
@@ -1755,12 +1755,22 @@ struct IOSPODetailPage: View {
                         .foregroundStyle(.secondary)
                 }
 
-                if item.hasDiscrepancy {
+                if item.hasQuantityDiscrepancy {
                     let diff = item.receivedQty - item.expectedQty
                     Text(diff > 0 ? "+\(diff) over" : "\(-diff) short")
                         .font(.caption)
                         .fontWeight(.semibold)
                         .foregroundStyle(diff > 0 ? .blue : .red)
+                }
+
+                if item.hasPriceDiscrepancy,
+                   let orderUnitCost = item.orderUnitCost,
+                   let receivedUnitCost = item.receivedUnitCost {
+                    Text("\(formatCurrency(orderUnitCost)) -> \(formatCurrency(receivedUnitCost))")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.orange)
+                        .accessibilityLabel("Price discrepancy")
                 }
             }
 

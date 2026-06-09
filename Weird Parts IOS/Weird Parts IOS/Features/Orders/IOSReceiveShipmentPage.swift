@@ -953,10 +953,19 @@ struct IOSReceiveShipmentPage: View {
         actionError = nil
 
         do {
-            // Update received quantities
+            // Update received quantities and any verified invoice cost before completion.
             for item in sessionItems {
                 let qty = receivedQtys[item.id] ?? item.expectedQty
-                try warehouseService.updateSessionItem(itemId: item.id, receivedQty: qty)
+                let verifiedCost: Double?
+                switch priceVerifications[item.id] {
+                case .matches:
+                    verifiedCost = item.unitPrice
+                case .different(let newPrice):
+                    verifiedCost = newPrice > 0 ? newPrice : nil
+                case .notShown, .none:
+                    verifiedCost = nil
+                }
+                try warehouseService.updateSessionItem(itemId: item.id, receivedQty: qty, actualCost: verifiedCost)
             }
 
             // Complete the session (creates stock movements for non-routed items)
