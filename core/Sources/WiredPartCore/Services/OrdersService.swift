@@ -2371,12 +2371,75 @@ public final class OrdersService: Sendable {
         }
     }
 
-    /// Generate draft POs from procurement selections, grouped by supplier.
-    /// Each supplier gets one PO with all their selected parts as line items.
+    private func purchaseOrderGroupingMode(dbConn: Database) throws -> PurchaseOrderGroupingMode {
+        let rawValue = try String.fetchOne(
+            dbConn,
+            sql: "SELECT value FROM settings WHERE key = 'po_grouping_mode'"
+        )
+        return PurchaseOrderGroupingMode(rawValue: rawValue ?? "") ?? .perSupplierMixed
+    }
+
+    private func jpoLineInfo(for lineIds: [Int64], dbConn: Database) throws -> [Int64: (jobId: Int64?, quantity: Int)] {
+        guard !lineIds.isEmpty else { return [:] }
+        let placeholders = lineIds.map { _ in "?" }.joined(separator: ",")
+        let rows = try Row.fetchAll(dbConn, sql: """
+            SELECT jl.id AS line_id, jpo.job_id, jl.qty_requested
+            FROM jpo_line_items jl
+            JOIN job_parts_orders jpo ON jpo.id = jl.jpo_id AND jpo.deleted_at IS NULL
+            WHERE jl.id IN (\(placeholders))
+              AND jl.deleted_at IS NULL
+            """, arguments: StatementArguments(lineIds))
+        var infoByLineId: [Int64: (jobId: Int64?, quantity: Int)] = [:]
+        for row in rows {
+            let lineId: Int64 = row["line_id"] ?? 0
+            infoByLineId[lineId] = (row["job_id"] as Int64?, row["qty_requested"] ?? 0)
+        }
+        return infoByLineId
+    }
+
+    private func splitProcurementItemByJob(
+        _ item: ProcurementGenerateItem,
+        infoByLineId: [Int64: (jobId: Int64?, quantity: Int)]
+    ) -> [(jobId: Int64?, item: ProcurementGenerateItem)] {
+        guard !item.jpoLineIds.isEmpty else {
+            return [(nil, item)]
+        }
+
+        var remainingQty = item.quantity
+        var splitItems: [(jobId: Int64?, item: ProcurementGenerateItem)] = []
+        for lineId in item.jpoLineIds where remainingQty > 0 {
+            let lineInfo = infoByLineId[lineId]
+            let lineQty = item.jpoLineIds.count == 1 ? item.quantity : (lineInfo?.quantity ?? 0)
+            let allocatedQty = min(lineQty, remainingQty)
+            guard allocatedQty > 0 else { continue }
+            remainingQty -= allocatedQty
+            splitItems.append((
+                lineInfo?.jobId,
+                ProcurementGenerateItem(
+                    partId: item.partId,
+                    supplierId: item.supplierId,
+                    quantity: allocatedQty,
+                    unitCost: item.unitCost,
+                    jpoLineIds: [lineId],
+                    wishlistItemIds: item.wishlistItemIds,
+                    forecastTargetIds: item.forecastTargetIds
+                )
+            ))
+        }
+        return splitItems
+    }
+
+    /// Generate draft POs from procurement selections, grouped by the configured PO grouping mode.
+    /// Mixed mode creates one PO per supplier; per-job mode creates one PO per supplier/job.
     /// JPO line items are linked and their status set to 'in_procurement'.
     @discardableResult
-    public func generatePOsFromProcurement(items: [ProcurementGenerateItem]) throws -> ProcurementGenerateResult {
+    public func generatePOsFromProcurement(
+        items: [ProcurementGenerateItem],
+        groupingMode requestedGroupingMode: PurchaseOrderGroupingMode? = nil
+    ) throws -> ProcurementGenerateResult {
         try db.writer.write { dbConn in
+            let groupingMode = try requestedGroupingMode ?? purchaseOrderGroupingMode(dbConn: dbConn)
+
             for partId in Set(items.map(\.partId)) {
                 let row = try Row.fetchOne(dbConn, sql: """
                     SELECT COALESCE(p.max_stock_level, 0) AS max_stock,
@@ -2503,16 +2566,37 @@ public final class OrdersService: Sendable {
                 }
             }
 
-            // Group items by supplier
-            var bySupplier: [Int64: [ProcurementGenerateItem]] = [:]
-            for item in items {
-                bySupplier[item.supplierId, default: []].append(item)
+            struct POGroupKey: Hashable {
+                let supplierId: Int64
+                let jobId: Int64?
+            }
+
+            var groupedItems: [POGroupKey: [ProcurementGenerateItem]] = [:]
+            switch groupingMode {
+            case .perSupplierMixed:
+                for item in items {
+                    groupedItems[POGroupKey(supplierId: item.supplierId, jobId: nil), default: []].append(item)
+                }
+            case .perSupplierPerJob:
+                let allLineIds = items.flatMap(\.jpoLineIds)
+                let infoByLineId = try jpoLineInfo(for: allLineIds, dbConn: dbConn)
+                for item in items {
+                    for split in splitProcurementItemByJob(item, infoByLineId: infoByLineId) {
+                        groupedItems[POGroupKey(supplierId: item.supplierId, jobId: split.jobId), default: []].append(split.item)
+                    }
+                }
             }
 
             var createdPOs: [(poId: Int64, poNumber: String, supplierId: Int64)] = []
             var totalLines = 0
 
-            for (supplierId, supplierItems) in bySupplier {
+            for (groupKey, supplierItems) in groupedItems.sorted(by: {
+                if $0.key.supplierId == $1.key.supplierId {
+                    return ($0.key.jobId ?? 0) < ($1.key.jobId ?? 0)
+                }
+                return $0.key.supplierId < $1.key.supplierId
+            }) {
+                let supplierId = groupKey.supplierId
                 // Guard: supplier must not be tombstoned before creating a PO for them.
                 let supplierExists = (try Int.fetchOne(dbConn, sql: """
                     SELECT COUNT(*) FROM suppliers WHERE id = ? AND deleted_at IS NULL
@@ -2527,13 +2611,16 @@ public final class OrdersService: Sendable {
                 let poNumber = String(format: "PO-%05d", maxNum + 1)
 
                 // Create PO
+                let groupingNote = groupingMode == .perSupplierPerJob && groupKey.jobId != nil
+                    ? "PO grouping: per supplier per job"
+                    : nil
                 try dbConn.execute(
                     sql: """
                         INSERT INTO purchase_orders
-                        (po_number, supplier_id, status, order_date, created_at, updated_at)
-                        VALUES (?, ?, 'draft', date('now'), datetime('now'), datetime('now'))
+                        (po_number, supplier_id, status, notes, order_date, created_at, updated_at)
+                        VALUES (?, ?, 'draft', ?, date('now'), datetime('now'), datetime('now'))
                         """,
-                    arguments: [poNumber, supplierId]
+                    arguments: [poNumber, supplierId, groupingNote]
                 )
                 let poId = dbConn.lastInsertedRowID
 
