@@ -5,6 +5,42 @@
 
 ## Latest Run
 
+**Date:** 2026-06-07
+**Area:** AI/vision import privacy and provider gates
+**Issue:** WEI-2963 / WEI-2812
+
+### Files scanned
+- `core/Sources/WiredPartCore/Services/PartsService+OCRImportPreview.swift`
+- `core/Sources/WiredPartCore/OCR/OCRProcessor.swift`
+- `core/Sources/WiredPartCore/OCR/OCRScannerAdapter.swift`
+- `core/Sources/WiredPartCore/AI/FoundationModelsService.swift`
+- `core/Sources/WiredPartCore/ImageMatch/ImageFeatureAdapter.swift`
+- `Weird Parts IOS/Weird Parts IOS/Scanning/IOSOCRScanner.swift`
+- `Weird Parts IOS/Weird Parts IOS/Scanning/IOSDocumentScanView.swift`
+- `Weird Parts IOS/Weird Parts IOS/Scanning/IOSImageFeatureAdapter.swift`
+- `Weird Parts IOS/Weird Parts IOS/PrivacyInfo.xcprivacy`
+- `Weird Parts IOS/Weird-Parts-IOS-Info.plist`
+- `core/Tests/WiredPartCoreTests/PartsOCRImportPreviewTests.swift`
+
+### Phase results
+- **Provider gates:** PASS — AI generation uses Apple Foundation Models behind `canImport(FoundationModels)` and OS availability checks; repo search found no OpenAI/Anthropic/Gemini/cloud AI provider calls in the AI/OCR/vision import path.
+- **Vision/OCR privacy:** FIXED — camera usage disclosure now names document/OCR import review, matching `VNDocumentCameraViewController` use.
+- **Import commit gate:** PASS — OCR parts import remains preview-only with `isCommitAllowed == false`; tests assert no parts are written by `previewPartsImportOCR`.
+- **Local processing:** PASS — OCR and image matching use Apple Vision/VisionKit locally; network scan found only LAN/peer sync paths, not AI/image provider uploads.
+- **Evidence handling:** PASS — OCR import candidates keep page/snippet evidence for human review; raw OCR text is displayed transiently in scan UI and accepted fields are explicitly user-confirmed.
+
+### Findings
+**0 critical, 0 high, 0 medium, 1 low fixed in-place.**
+
+| # | Severity | Description | Resolution |
+|---|----------|-------------|------------|
+| 1 | Low | iOS camera permission string mentioned QR/barcodes/device pairing but not document OCR scanning. | Updated `NSCameraUsageDescription` to include documents and OCR import review. |
+
+### Verdict
+**PASS** — AI/vision import paths are on-device/provider-gated and preview-only. Remote provider fallback is not enabled. Security/go-no-go criteria for enabling provider fallback are documented in [WEI-2812 AI Vision Security Gates](/Users/IA/GitHub/Weird-Part-Run-2/.paperclip/worktrees/WEI-2963-wei-2812-security-review-ai-vision-import-privacy-and-provider-gates/docs/WEI-2812-ai-vision-security-gates.md).
+
+---
+
 **Date:** 2026-04-24
 **Area:** tools
 **Iteration:** AUTO GO R4 iter 2 (C8)
