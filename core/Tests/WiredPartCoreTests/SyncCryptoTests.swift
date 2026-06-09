@@ -6,6 +6,21 @@ import CryptoKit
 @Suite("SyncCrypto Tests")
 struct SyncCryptoTests {
 
+    @Test("Pairing code normalization accepts displayed code format")
+    func testPairingCodeNormalization() {
+        #expect(SyncCrypto.normalizedPairingCode("abcd-1234") == "ABCD1234")
+        #expect(SyncCrypto.normalizedPairingCode(" AB CD 12 34 ") == "ABCD1234")
+        #expect(SyncCrypto.normalizedPairingCode("ABC-123") == nil)
+        #expect(SyncCrypto.normalizedPairingCode("ABCD-123!") == nil)
+    }
+
+    @Test("Pairing code verification compares normalized codes")
+    func testPairingCodeVerification() {
+        let digest = SyncCrypto.pairingCodeDigest("ABCD1234")
+        #expect(SyncCrypto.verifyPairingCode("abcd-1234", expectedDigest: digest))
+        #expect(!SyncCrypto.verifyPairingCode("WXYZ-1234", expectedDigest: digest))
+    }
+
     // MARK: - Helpers
 
     /// Create a signed certificate for testing.

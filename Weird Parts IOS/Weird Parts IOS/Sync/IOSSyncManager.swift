@@ -22,7 +22,13 @@ final class IOSSyncManager {
     var syncHistory: [SyncHistoryEntry] = []
     var syncProgressMessage: String?
     var syncProgressPercent: Double = 0
-    var isPaired: Bool { UserDefaults.standard.bool(forKey: "device_paired") }
+    var isPaired: Bool {
+        guard let map = try? settingsService?.getSettingsByCategory("sync") else {
+            return false
+        }
+        return !(map["device_pairing_verified_at"] ?? "").isEmpty
+            && !(map["paired_shop_device_id"] ?? "").isEmpty
+    }
 
     struct SyncHistoryEntry: Identifiable {
         let id = UUID()
@@ -411,32 +417,110 @@ final class IOSSyncManager {
         syncProgressMessage = "Connecting to shop..."
         syncProgressPercent = 0.1
 
+        guard let normalizedPairingCode = SyncCrypto.normalizedPairingCode(pairingCode) else {
+            syncStatus = .error
+            syncProgressMessage = nil
+            errorMessage = "Pairing code must be eight letters or numbers."
+            throw SyncError.invalidPairingCode
+        }
+
         let deviceId = DeviceIdentity.current
         let deviceName = UIDevice.current.name
 
-        // Store the server address for future syncs (must succeed — without it, all future syncs fail)
+        let pairResponse = try await verifyPairingCodeWithShop(
+            shopAddress: shopAddress,
+            pairingCode: normalizedPairingCode,
+            deviceId: deviceId,
+            deviceName: deviceName
+        )
+
+        syncProgressMessage = "Registering verified device..."
+        syncProgressPercent = 0.2
+
+        guard let db else {
+            syncStatus = .error
+            syncProgressMessage = nil
+            errorMessage = SyncError.noDatabaseAvailable.localizedDescription
+            throw SyncError.noDatabaseAvailable
+        }
+
+        try ChangeTracker.registerPeerDevice(
+            db: db,
+            peerId: pairResponse.serverDeviceId,
+            peerName: "Shop Computer",
+            platform: "shop"
+        )
+
+        // Store verified pairing state only after the shop accepts the code and
+        // local trusted-device registration succeeds.
         if let service = settingsService {
             try service.upsertSettingsMap([
                 "shop_server_address": shopAddress,
+                "paired_shop_device_id": pairResponse.serverDeviceId,
+                "paired_company_id": pairResponse.companyId,
+                "device_pairing_verified_at": pairResponse.pairedAt,
+                "auto_sync": "true",
+                "sync_interval": "60",
             ], category: "sync")
         }
-
-        // Register this device with the shop (best effort — pairing can proceed if this fails)
-        if let db {
-            do {
-                try ChangeTracker.registerPeerDevice(
-                    db: db,
-                    peerId: deviceId,
-                    peerName: deviceName,
-                    platform: "iOS"
-                )
-            } catch {
-                logger.error("[IOSSyncManager] registerPeerDevice failed (non-fatal): \(error.localizedDescription)")
-            }
-        }
+        UserDefaults.standard.set(true, forKey: "device_paired")
+        UserDefaults.standard.set(true, forKey: "bluetooth_sync_enabled")
 
         syncProgressMessage = "Device registered."
         syncProgressPercent = 0.3
+    }
+
+    private func verifyPairingCodeWithShop(
+        shopAddress: String,
+        pairingCode: String,
+        deviceId: String,
+        deviceName: String
+    ) async throws -> SyncPairResponse {
+        let baseURL = try normalizedShopBaseURL(shopAddress)
+        let url = baseURL.appendingPathComponent("sync/pair")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 10
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(SyncPairRequest(
+            deviceId: deviceId,
+            deviceName: deviceName,
+            pairingCode: pairingCode,
+            platform: "iOS"
+        ))
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw SyncError.syncFailed("Invalid pairing response")
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            syncStatus = .error
+            syncProgressMessage = nil
+            errorMessage = httpResponse.statusCode == 403
+                ? "Pairing code was not accepted by the shop."
+                : "Pairing verification failed: \(httpResponse.statusCode)"
+            throw SyncError.pairingVerificationFailed(errorMessage ?? "Pairing verification failed")
+        }
+
+        let pairResponse = try JSONDecoder().decode(SyncPairResponse.self, from: data)
+        guard pairResponse.accepted else {
+            throw SyncError.pairingVerificationFailed("Pairing was not accepted by the shop.")
+        }
+        return pairResponse
+    }
+
+    private func normalizedShopBaseURL(_ shopAddress: String) throws -> URL {
+        let trimmed = shopAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        let addressWithScheme = trimmed.contains("://") ? trimmed : "http://\(trimmed)"
+        guard let url = URL(string: addressWithScheme),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              url.host != nil else {
+            throw SyncError.invalidShopAddress
+        }
+        return url
     }
 
     // MARK: - Initial Full Sync
@@ -532,6 +616,8 @@ final class IOSSyncManager {
         let deviceKeys: Set<String> = [
             "device_name", "bluetooth_enabled", "sync_server_address",
             "local_db_path", "device_id", "bluetooth_sync_enabled",
+            "shop_server_address", "paired_shop_device_id", "paired_company_id",
+            "device_pairing_verified_at",
         ]
         if deviceKeys.contains(key) { return .device }
 
@@ -574,12 +660,18 @@ final class IOSSyncManager {
     enum SyncError: LocalizedError {
         case noDatabaseAvailable
         case noServerConfigured
+        case invalidPairingCode
+        case invalidShopAddress
+        case pairingVerificationFailed(String)
         case syncFailed(String)
 
         var errorDescription: String? {
             switch self {
             case .noDatabaseAvailable: return "Database not available."
             case .noServerConfigured: return "No sync server configured."
+            case .invalidPairingCode: return "Pairing code must be eight letters or numbers."
+            case .invalidShopAddress: return "Shop address is invalid."
+            case .pairingVerificationFailed(let msg): return msg
             case .syncFailed(let msg): return "Sync failed: \(msg)"
             }
         }

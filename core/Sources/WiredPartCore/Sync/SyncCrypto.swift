@@ -87,6 +87,44 @@ public enum AuthResult: Sendable, Equatable {
 /// Public keys are 32 bytes, signatures are 64 bytes, both base64-encoded for transport.
 public enum SyncCrypto {
 
+    // MARK: - Pairing Codes
+
+    /// Normalize a human-entered pairing code for comparison.
+    ///
+    /// Codes are eight alphanumeric characters, commonly displayed as
+    /// `ABCD-1234`. Spaces and hyphens are ignored so users can type the
+    /// displayed code naturally, but other characters fail closed.
+    public static func normalizedPairingCode(_ code: String) -> String? {
+        let normalized = code
+            .filter { !$0.isWhitespace && $0 != "-" }
+            .map { String($0).uppercased() }
+            .joined()
+
+        guard normalized.count == 8,
+              normalized.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else {
+            return nil
+        }
+        return normalized
+    }
+
+    /// Digest a normalized pairing code before storing it in server state.
+    public static func pairingCodeDigest(_ normalizedCode: String) -> Data {
+        Data(SHA256.hash(data: Data(normalizedCode.utf8)))
+    }
+
+    /// Constant-time pairing-code verification against a stored digest.
+    public static func verifyPairingCode(_ candidate: String, expectedDigest: Data) -> Bool {
+        guard let normalized = normalizedPairingCode(candidate) else { return false }
+        let candidateDigest = pairingCodeDigest(normalized)
+        guard candidateDigest.count == expectedDigest.count else { return false }
+
+        var diff: UInt8 = 0
+        for (left, right) in zip(candidateDigest, expectedDigest) {
+            diff |= left ^ right
+        }
+        return diff == 0
+    }
+
     // MARK: - Verification
 
     /// Verify a sync request's Ed25519 certificate.
