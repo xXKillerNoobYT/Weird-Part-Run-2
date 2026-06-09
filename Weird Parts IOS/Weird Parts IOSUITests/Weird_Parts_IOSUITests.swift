@@ -1795,4 +1795,56 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try? screenshot.pngRepresentation.write(to: dir.appendingPathComponent("\(name).png"), options: .atomic)
     }
+
+    @MainActor
+    func testWEI3140CSVMappingPreviewScreenshot() throws {
+        launchWEI3140Fixture(mode: "csv")
+        XCTAssertTrue(app.navigationBars["Import Preview"].waitForExistence(timeout: 12))
+        captureWEI3140("01-csv-mapping-preview")
+    }
+
+    @MainActor
+    func testWEI3140LargeErrorQuarantineScreenshot() throws {
+        launchWEI3140Fixture(mode: "error")
+        XCTAssertTrue(app.navigationBars["Import Preview"].waitForExistence(timeout: 12))
+        captureWEI3140("02-large-error-preview-top")
+        app.swipeUp()
+        app.swipeUp()
+        captureWEI3140("03-large-error-quarantine-commit-disabled")
+    }
+
+    @MainActor
+    func testWEI3140PDFPreviewOnlyScreenshot() throws {
+        launchWEI3140Fixture(mode: "pdf")
+        XCTAssertTrue(app.staticTexts["PDF / OCR Review"].waitForExistence(timeout: 12))
+        captureWEI3140("04-pdf-ocr-preview-only")
+        app.swipeUp()
+        captureWEI3140("05-pdf-ocr-commit-disabled")
+    }
+
+    private func launchWEI3140Fixture(mode: String) {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = ["-UITestingWEI3140ImportPreviewFixture", "-WEI3140FixtureMode", mode]
+        app.launch()
+    }
+
+    private var wei3140ArtifactDirectory: URL {
+        if let path = ProcessInfo.processInfo.environment["WEI_3140_ARTIFACT_DIR"], !path.isEmpty {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        return URL(fileURLWithPath: "/tmp/wpr2-pr955-wei3140-screens", isDirectory: true)
+    }
+
+    private func captureWEI3140(_ name: String) {
+        try? FileManager.default.createDirectory(at: wei3140ArtifactDirectory, withIntermediateDirectories: true)
+        let screenshot = XCUIScreen.main.screenshot()
+        let url = wei3140ArtifactDirectory.appendingPathComponent("\(name).png")
+        try? screenshot.pngRepresentation.write(to: url)
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
 }

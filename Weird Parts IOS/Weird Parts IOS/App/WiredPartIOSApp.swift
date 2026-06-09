@@ -54,6 +54,10 @@ struct WiredPartIOSApp: App {
         ProcessInfo.processInfo.arguments.contains("-UITestingWEI3144JobMaterials")
     }
 
+    private var shouldShowWEI3140ImportPreviewFixture: Bool {
+        ProcessInfo.processInfo.arguments.contains("-UITestingWEI3140ImportPreviewFixture")
+    }
+
     /// Resolved color scheme from the user's theme setting.
     private var resolvedColorScheme: ColorScheme? {
         switch appCore.theme.themeMode {
@@ -71,7 +75,9 @@ struct WiredPartIOSApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if appCore.isReady {
+                if shouldShowWEI3140ImportPreviewFixture {
+                    WEI3140ImportPreviewFixtureView()
+                } else if appCore.isReady {
                     if shouldShowWEI936WelcomeFixture {
                         OnboardingWelcomeView()
                             .environmentObject(appCore)

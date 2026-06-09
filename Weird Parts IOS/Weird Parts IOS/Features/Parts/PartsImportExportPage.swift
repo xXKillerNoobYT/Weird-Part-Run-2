@@ -1460,3 +1460,146 @@ private struct ImportPreviewContent: View {
         }
     }
 }
+
+
+// MARK: - WEI-3140 UI verification fixture (test-only launch surface)
+
+#if DEBUG
+struct WEI3140ImportPreviewFixtureView: View {
+    @State private var preview: ImportPreview
+
+    init() {
+        let mode = ProcessInfo.processInfo.arguments.drop(while: { $0 != "-WEI3140FixtureMode" }).dropFirst().first ?? "csv"
+        _preview = State(initialValue: Self.makePreview(mode: String(mode)))
+    }
+
+    var body: some View {
+        NavigationStack {
+            ImportPreviewContent(
+                preview: $preview,
+                onConfirm: {},
+                onApplyMapping: { updated in preview = updated }
+            )
+            .navigationTitle("Import Preview")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    private static func row(_ rowNumber: Int, _ name: String, code: String, category: String, brand: String? = nil) -> PartsService.PartsImportParsedRow {
+        PartsService.PartsImportParsedRow(
+            rowNumber: rowNumber,
+            name: name,
+            code: code,
+            category: category,
+            brand: brand,
+            fields: ["cost_price": "12.45", "unit_of_measure": "ea", "shelf_location": "A-\(rowNumber)"]
+        )
+    }
+
+    private static func makePreview(mode: String) -> ImportPreview {
+        switch mode {
+        case "pdf":
+            let ocr = PartsService.PartsOCRImportPreview(
+                chunks: [
+                    .init(id: "p1-c1", pageNumber: 1, text: "Pump seal kit PS-100", snippet: "Pump seal kit PS-100 — qty 4"),
+                    .init(id: "p1-c2", pageNumber: 1, text: "Unclear scan row", snippet: "?? gasket line unreadable")
+                ],
+                candidates: [
+                    .init(rowNumber: 1, chunkId: "p1-c1", pageNumber: 1, sourceSnippet: "Pump seal kit PS-100 — qty 4", confidence: 0.82, name: "Pump Seal Kit", code: "PS-100", category: "Pump Parts", brand: "Acme", fields: ["confidence": "0.82"])
+                ],
+                errors: [
+                    .init(pageNumber: 1, sourceSnippet: "?? gasket line unreadable", message: "OCR could not prove name/category from source evidence")
+                ],
+                isCommitAllowed: false
+            )
+            return ImportPreview(
+                servicePreview: PartsService.PartsImportPreview(totalRows: 2, source: .init(sourceKind: "pdf", filename: "supplier-scan.pdf")),
+                sourceKind: .pdf,
+                filename: "supplier-scan.pdf",
+                sheetName: nil,
+                workbookSheets: [],
+                sourceColumns: [],
+                columnMappings: [],
+                sourceRows: [],
+                skippedNewParts: [],
+                ocrPreview: ocr,
+                commitDisabledReason: "PDF/OCR import is preview-only until source evidence review and backend commit policy are approved.",
+                mappingError: nil
+            )
+        case "error":
+            var conflict = PartsService.PartsImportConflict(
+                parsedRow: row(4, "Field Valve Rebuild Kit With Very Long Supplier Description", code: "FV-REBUILD-2026-LONG", category: "Valve Parts", brand: "Acme"),
+                existingPartId: 99,
+                existingPartName: "Field Valve Rebuild Kit",
+                existingPartCode: "FV-OLD"
+            )
+            conflict.resolution = .ask
+            return ImportPreview(
+                servicePreview: PartsService.PartsImportPreview(
+                    newParts: [row(2, "Hydraulic Hose Assembly", code: "HHA-24", category: "Hydraulics", brand: "Parker")],
+                    conflicts: [conflict],
+                    errors: [
+                        .init(rowNumber: 5, message: "Missing required category"),
+                        .init(rowNumber: 6, message: "Cost price is not a valid number")
+                    ],
+                    totalRows: 5,
+                    source: .init(sourceKind: "csv", filename: "large-supplier-import.csv")
+                ),
+                sourceKind: .csv,
+                filename: "large-supplier-import.csv",
+                sheetName: nil,
+                workbookSheets: [],
+                sourceColumns: ["Part #", "Description", "Unit Price", "Category"],
+                columnMappings: [
+                    .init(sourceColumn: "Part #", target: .code, confidence: .alias),
+                    .init(sourceColumn: "Description", target: .name, confidence: .alias),
+                    .init(sourceColumn: "Unit Price", target: .costPrice, confidence: .alias),
+                    .init(sourceColumn: "Category", target: .category, confidence: .exact)
+                ],
+                sourceRows: [],
+                skippedNewParts: [row(3, "Skipped Compressor Belt", code: "SCB-77", category: "Belts", brand: "Gates")],
+                ocrPreview: nil,
+                commitDisabledReason: nil,
+                mappingError: nil
+            )
+        default:
+            var updateConflict = PartsService.PartsImportConflict(
+                parsedRow: row(4, "Copper Elbow 90 Degree", code: "CE-90", category: "Fittings", brand: "Nibco"),
+                existingPartId: 42,
+                existingPartName: "Copper Elbow 90°",
+                existingPartCode: "CE90"
+            )
+            updateConflict.resolution = .update
+            return ImportPreview(
+                servicePreview: PartsService.PartsImportPreview(
+                    newParts: [
+                        row(2, "Hydraulic Hose Assembly", code: "HHA-24", category: "Hydraulics", brand: "Parker"),
+                        row(3, "Stainless Hex Bolt 3/8 x 2", code: "BOLT-SS-382", category: "Fasteners", brand: "Hillman")
+                    ],
+                    conflicts: [updateConflict],
+                    errors: [],
+                    totalRows: 3,
+                    source: .init(sourceKind: "csv", filename: "supplier-clean-import.csv")
+                ),
+                sourceKind: .csv,
+                filename: "supplier-clean-import.csv",
+                sheetName: nil,
+                workbookSheets: [],
+                sourceColumns: ["Part #", "Description", "Unit Price", "Category", "Brand"],
+                columnMappings: [
+                    .init(sourceColumn: "Part #", target: .code, confidence: .alias),
+                    .init(sourceColumn: "Description", target: .name, confidence: .alias),
+                    .init(sourceColumn: "Unit Price", target: .costPrice, confidence: .alias),
+                    .init(sourceColumn: "Category", target: .category, confidence: .exact),
+                    .init(sourceColumn: "Brand", target: .brand, confidence: .exact)
+                ],
+                sourceRows: [],
+                skippedNewParts: [],
+                ocrPreview: nil,
+                commitDisabledReason: nil,
+                mappingError: nil
+            )
+        }
+    }
+}
+#endif

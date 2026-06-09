@@ -5966,6 +5966,15 @@ public final class PartsService: Sendable {
         public var supplierPartNumber: String? {
             fields["supplier_part_number"]
         }
+
+        public init(rowNumber: Int, name: String, code: String?, category: String, brand: String?, fields: [String: String]) {
+            self.rowNumber = rowNumber
+            self.name = name
+            self.code = code
+            self.category = category
+            self.brand = brand
+            self.fields = fields
+        }
     }
 
     /// A validation error surfaced during import preview. The row number is 1-based
