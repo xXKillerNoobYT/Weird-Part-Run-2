@@ -1,8 +1,9 @@
 # Stage 8 Reports Data Contract
 
-Issue: WEI-3195
+Issue: WEI-3197
 Owner: BackendCoder
 Status: Spec complete
+Last verified: 2026-06-08 against `ReportsService`, `WarehouseService`, `SettingsService`, and focused core tests.
 
 ## Scope
 
@@ -131,7 +132,7 @@ BookkeeperMaterialRow {
 Rules:
 
 - Labor summary groups by employee and sorts by employee name.
-- Material rows include purchase orders created inside the inclusive date range and sort by PO number.
+- Material rows include non-deleted purchase orders created inside the inclusive date range and sort by PO number.
 - Supplier names from soft-deleted supplier rows must not leak into the export.
 - Exported currency should use exactly two fractional digits in UI/export utilities.
 
@@ -139,6 +140,7 @@ Verification hooks:
 
 - `ReportsServiceTests.testBookkeeperLaborEmpty`
 - `ReportsServiceTests.testBookkeeperMaterialEmpty`
+- `ReportsServiceTests.testBookkeeperMaterialPOs_excludesDeletedPurchaseOrders`
 - `ReportsServiceTests.testBookkeeperMaterialPOs_hidesDeletedSupplierName`
 
 ### Report Stats
@@ -251,4 +253,3 @@ Verification hooks:
 - UI export buttons can generate files from the typed rows, but they must not alter source report data.
 - Any future sync/API adapter for these reports must expose the same response shapes and move role checks into the adapter boundary.
 - QA/browser/simulator verification should prove page rendering and export affordances; backend verification is satisfied by the service tests named above.
-

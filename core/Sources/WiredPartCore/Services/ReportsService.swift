@@ -838,6 +838,7 @@ public final class ReportsService: Sendable {
                     FROM purchase_orders po
                     LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL
                     WHERE date(po.created_at) >= ? AND date(po.created_at) <= ?
+                      AND po.deleted_at IS NULL
                     ORDER BY po.po_number
                     """
 

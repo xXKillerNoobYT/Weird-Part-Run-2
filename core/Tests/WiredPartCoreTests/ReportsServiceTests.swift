@@ -287,6 +287,31 @@ struct ReportsServiceTests {
         #expect(data.isEmpty)
     }
 
+    @Test("Bookkeeper material POs exclude soft-deleted purchase orders")
+    func testBookkeeperMaterialPOs_excludesDeletedPurchaseOrders() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Deleted PO Supplier")
+        let poId = try env.orders.createPurchaseOrder(
+            poNumber: "PO-BK-DELETED", supplierId: supplierId, notes: nil
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE purchase_orders
+                SET total_cost = 125.0,
+                    created_at = '2026-06-08 10:00:00',
+                    deleted_at = '2026-06-08 11:00:00'
+                WHERE id = ?
+                """, arguments: [poId])
+        }
+
+        let data = try env.reports.getBookkeeperMaterialPOs(
+            startDate: "2026-06-08",
+            endDate: "2026-06-08"
+        )
+
+        #expect(data.allSatisfy { $0.poNumber != "PO-BK-DELETED" })
+    }
+
     @Test("Bookkeeper material POs degrade soft-deleted supplier name to 'Unknown'")
     func testBookkeeperMaterialPOs_hidesDeletedSupplierName() throws {
         let env = try E2ETestHelpers.setUp()
