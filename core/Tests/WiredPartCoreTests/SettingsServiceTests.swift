@@ -145,6 +145,22 @@ struct SettingsServiceTests {
         #expect(try svc.isAutoSyncEnabled() == true)
     }
 
+    @Test("purchase order settings default to supplier mixed and persist per-job mode")
+    func testPurchaseOrderGroupingSettings() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        #expect(try svc.getPurchaseOrderSettings().groupingMode == .perSupplierMixed)
+
+        let saved = try svc.updatePurchaseOrderSettings(
+            SettingsService.PurchaseOrderSettings(groupingMode: .perSupplierPerJob)
+        )
+
+        #expect(saved.groupingMode == .perSupplierPerJob)
+        #expect(try svc.getPurchaseOrderSettings().groupingMode == .perSupplierPerJob)
+        #expect(try svc.getSettingsByCategory("orders")["po_grouping_mode"] == "per_supplier_per_job")
+    }
+
     // MARK: - Theme
 
     @Test("getTheme returns defaults when no settings exist")
