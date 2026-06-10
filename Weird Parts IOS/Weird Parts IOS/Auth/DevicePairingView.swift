@@ -25,7 +25,7 @@ struct DevicePairingView: View {
     }
 
     private var isValid: Bool {
-        pairingCode.trimmingCharacters(in: .whitespaces).count >= 4
+        SyncCrypto.normalizedPairingCode(pairingCode) != nil
     }
 
     var body: some View {
@@ -252,17 +252,6 @@ struct DevicePairingView: View {
                 shopAddress: shop.address,
                 pairingCode: pairingCode.trimmingCharacters(in: .whitespaces)
             )
-
-            // Save pairing state — must succeed or sync will never work
-            if let service = appCore.settingsService {
-                try service.upsertSettingsMap([
-                    "shop_server_address": shop.address,
-                    "auto_sync": "true",
-                    "sync_interval": "60",
-                ], category: "sync")
-            }
-            UserDefaults.standard.set(true, forKey: "bluetooth_sync_enabled")
-            UserDefaults.standard.set(true, forKey: "device_paired")
 
             // Navigate to the sync waiting screen for initial download
             navigateToSync = true

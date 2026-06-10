@@ -202,6 +202,44 @@ struct PeerManagerTests {
         }
     }
 
+    @Test("PeerManager issued pairing code activates sync pair endpoint")
+    func testIssuedPairingCodePairsThroughSyncServer() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+
+        try await pm.startPeerSync(
+            deviceId: "shop-dev",
+            deviceName: "Shop Mac",
+            companyId: "co-1"
+        )
+        let issuedCode = try await pm.issuePairingCode()
+        #expect(SyncCrypto.normalizedPairingCode(issuedCode) != nil)
+
+        let state = await pm.getState()
+        let body = try JSONEncoder().encode(SyncPairRequest(
+            deviceId: "phone-dev",
+            deviceName: "Phone",
+            pairingCode: issuedCode,
+            platform: "iOS"
+        ))
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(state.syncPort)/sync/pair")!)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        #expect((response as! HTTPURLResponse).statusCode == 200)
+        let pairResponse = try JSONDecoder().decode(SyncPairResponse.self, from: data)
+        #expect(pairResponse.accepted)
+        #expect(pairResponse.serverDeviceId == "shop-dev")
+        #expect(pairResponse.companyId == "co-1")
+
+        let (_, secondResponse) = try await URLSession.shared.data(for: request)
+        #expect((secondResponse as! HTTPURLResponse).statusCode == 403)
+
+        await pm.stopPeerSync()
+    }
+
     @Test("PeerSyncResult stores all fields correctly")
     func testPeerSyncResult() {
         let result = PeerSyncResult(
