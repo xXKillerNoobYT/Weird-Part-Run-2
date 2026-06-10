@@ -702,6 +702,7 @@ struct ReportsServiceTests {
         let env = try E2ETestHelpers.setUp()
         let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-PB-001", name: "Pre-Billing Job")
         try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET billing_rate = 125.0 WHERE id = ?", arguments: [jobId])
             try db.execute(sql: """
                 INSERT INTO labor_entries
                 (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
@@ -712,6 +713,106 @@ struct ReportsServiceTests {
         let row = rows.first(where: { $0.id == jobId })
         #expect(row != nil)
         #expect(row?.regularHours ?? 0.0 >= 4.0)
+    }
+
+    @Test("getPreBillingData includes deterministic material, JPO, PO, and audit provenance")
+    func testPreBillingDataIncludesStage8ReadModelProvenance() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-PB-STAGE8", name: "Stage 8 Read Model Job")
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Stage 8 Category")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Stage 8 Part", categoryId: categoryId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Stage 8 Supplier")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET billing_rate = 100.0 WHERE id = ?", arguments: [jobId])
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-06-01 07:00:00', '2026-06-01 17:00:00', 8.0, 2.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+            try db.execute(sql: """
+                INSERT INTO job_parts
+                (job_id, part_id, qty_consumed, qty_returned, unit_cost_at_consume, unit_sell_at_consume, consumed_by, consumed_at)
+                VALUES (?, ?, 3, 1, 10.0, 15.0, ?, '2026-06-01 12:00:00')
+                """, arguments: [jobId, partId, env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO job_parts_orders
+                (job_id, order_number, status, requested_by, created_at, updated_at)
+                VALUES (?, 'JPO-STAGE8-001', 'ordered', ?, '2026-06-01 08:00:00', '2026-06-01 08:00:00')
+                """, arguments: [jobId, env.adminUserId])
+            let jpoId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO jpo_line_items
+                (jpo_id, part_id, qty_requested, qty_ordered, line_status, created_at)
+                VALUES (?, ?, 2, 2, 'in_procurement', '2026-06-01 08:05:00')
+                """, arguments: [jpoId, partId])
+            let jpoLineId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO purchase_orders
+                (po_number, supplier_id, status, order_date, total_cost, created_at, updated_at)
+                VALUES ('PO-STAGE8-001', ?, 'received', '2026-06-01', 30.0, '2026-06-01 09:00:00', '2026-06-01 09:00:00')
+                """, arguments: [supplierId])
+            let poId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO po_line_items
+                (po_id, jpo_line_id, part_id, qty_ordered, qty_received, unit_cost, status, created_at)
+                VALUES (?, ?, ?, 2, 2, 15.0, 'received', '2026-06-01 09:05:00')
+                """, arguments: [poId, jpoLineId, partId])
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO po_jpo_links (po_id, jpo_id, created_at)
+                VALUES (?, ?, '2026-06-01 09:10:00')
+                """, arguments: [poId, jpoId])
+            try db.execute(sql: """
+                INSERT INTO stock_movements
+                (part_id, qty, to_location_type, to_location_id, movement_type, reason, job_id, performed_by, unit_cost_at_move, created_at)
+                VALUES (?, -1, 'job', ?, 'job_consumed', 'Audit provenance link', ?, ?, 10.0, '2026-06-01 10:00:00')
+                """, arguments: [partId, jobId, jobId, env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO warehouse_floor_plans (name, width_inches, length_inches, created_at)
+                VALUES ('Stage 8 Floor', 120, 120, datetime('now'))
+                """)
+            let floorPlanId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO warehouse_storage_units (floor_plan_id, name, unit_type, created_at)
+                VALUES (?, 'Stage 8 Unit', 'rack', datetime('now'))
+                """, arguments: [floorPlanId])
+            let unitId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO warehouse_storage_levels (unit_id, level_code, created_at)
+                VALUES (?, 'A', datetime('now'))
+                """, arguments: [unitId])
+            let levelId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO warehouse_storage_areas (level_id, area_code, area_number, full_location_code, created_at)
+                VALUES (?, 'A1', 1, 'A-1', datetime('now'))
+                """, arguments: [levelId])
+            let areaId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO audit_sessions_v2 (session_type, started_by, status, started_at)
+                VALUES ('count', ?, 'completed', '2026-06-01 10:15:00')
+                """, arguments: [env.adminUserId])
+            let sessionId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO audit_counts
+                (session_id, part_id, area_id, system_count, user_count, variance, variance_dollars, variance_percent, result, counted_by, counted_at)
+                VALUES (?, ?, ?, 5, 4, -1, -10.0, -20.0, 'variance', ?, '2026-06-01 10:20:00')
+                """, arguments: [sessionId, partId, areaId, env.adminUserId])
+        }
+
+        let rows = try env.reports.getPreBillingData(startDate: "2026-06-01", endDate: "2026-06-01")
+        let row = rows.first(where: { $0.id == jobId })
+
+        #expect(row?.jobNumber == "J-PB-STAGE8")
+        #expect(abs((row?.regularHours ?? 0) - 8.0) < 0.01)
+        #expect(abs((row?.overtimeHours ?? 0) - 2.0) < 0.01)
+        #expect(abs((row?.materialCost ?? 0) - 30.0) < 0.01)
+        #expect(abs((row?.billableAmount ?? 0) - 1030.0) < 0.01)
+        #expect(row?.laborEntryCount == 1)
+        #expect(row?.materialLineCount == 1)
+        #expect(row?.jpoCount == 1)
+        #expect(row?.purchaseOrderCount == 1)
+        #expect(row?.auditDiscrepancyCount == 1)
+        #expect(row?.sourceSummary.contains("1 labor entry") == true)
     }
 
     @Test("getPreBillingData excludes labor from locked billing periods")
@@ -756,6 +857,120 @@ struct ReportsServiceTests {
         let rows = try env.reports.getPreBillingData(startDate: "2026-05-01", endDate: "2026-05-31")
 
         #expect(rows.allSatisfy { $0.id != jobId })
+    }
+
+    @Test("Bookkeeper labor summary includes gross pay and source count")
+    func testBookkeeperLaborSummaryIncludesPayrollTotals() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BK-LABOR", name: "Bookkeeper Labor Job")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET pay_rate = 20.0 WHERE id = ?", arguments: [env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-06-02 07:00:00', '2026-06-02 18:00:00', 8.0, 2.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+        }
+
+        let rows = try env.reports.getBookkeeperLaborSummary(startDate: "2026-06-02", endDate: "2026-06-02")
+        let row = rows.first(where: { $0.id == env.adminUserId })
+
+        #expect(abs((row?.grossPay ?? 0) - 220.0) < 0.01)
+        #expect(row?.laborEntryCount == 1)
+        #expect(row?.sourceSummary == "1 labor entry")
+    }
+
+    @Test("Bookkeeper material export is deterministic and excludes cancelled and deleted POs")
+    func testBookkeeperMaterialPOsDeterministicExportRows() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BK-MAT", name: "Bookkeeper Material Job")
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Bookkeeper Material Category")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Bookkeeper Material Part", categoryId: categoryId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Bookkeeper Material Supplier")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO job_parts_orders
+                (job_id, order_number, status, requested_by, created_at, updated_at)
+                VALUES (?, 'JPO-BK-MAT-001', 'ordered', ?, '2026-06-03 08:00:00', '2026-06-03 08:00:00')
+                """, arguments: [jobId, env.adminUserId])
+            let jpoId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO jpo_line_items (jpo_id, part_id, qty_requested, line_status, created_at)
+                VALUES (?, ?, 4, 'in_procurement', '2026-06-03 08:05:00')
+                """, arguments: [jpoId, partId])
+            let jpoLineId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO purchase_orders
+                (po_number, supplier_id, status, order_date, total_cost, created_at, updated_at)
+                VALUES ('PO-BK-MAT-001', ?, 'received', '2026-06-03', 44.0, '2026-06-03 09:00:00', '2026-06-03 09:00:00')
+                """, arguments: [supplierId])
+            let poId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, jpo_line_id, part_id, qty_ordered, qty_received, unit_cost, status, created_at)
+                VALUES (?, ?, ?, 4, 4, 11.0, 'received', '2026-06-03 09:05:00')
+                """, arguments: [poId, jpoLineId, partId])
+            try db.execute(sql: "INSERT OR IGNORE INTO po_jpo_links (po_id, jpo_id, created_at) VALUES (?, ?, datetime('now'))", arguments: [poId, jpoId])
+            try db.execute(sql: """
+                INSERT INTO purchase_orders
+                (po_number, supplier_id, status, order_date, total_cost, deleted_at, created_at, updated_at)
+                VALUES ('PO-BK-MAT-DELETED', ?, 'received', '2026-06-03', 1000.0, datetime('now'), '2026-06-03 09:00:00', '2026-06-03 09:00:00')
+                """, arguments: [supplierId])
+            try db.execute(sql: """
+                INSERT INTO purchase_orders
+                (po_number, supplier_id, status, order_date, total_cost, created_at, updated_at)
+                VALUES ('PO-BK-MAT-CANCELLED', ?, 'cancelled', '2026-06-03', 1000.0, '2026-06-03 09:00:00', '2026-06-03 09:00:00')
+                """, arguments: [supplierId])
+        }
+
+        let rows = try env.reports.getBookkeeperMaterialPOs(startDate: "2026-06-03", endDate: "2026-06-03")
+
+        #expect(rows.map(\.poNumber) == ["PO-BK-MAT-001"])
+        #expect(rows.first?.lineItemCount == 1)
+        #expect(rows.first?.jpoCount == 1)
+        #expect(rows.first?.jobNames == "Bookkeeper Material Job")
+        #expect(rows.first?.sourceSummary == "1 PO line, 1 JPO")
+    }
+
+    @Test("Audit summaries aggregate count variance by part and area")
+    func testAuditSummariesAggregateVarianceProvenance() throws {
+        let env = try E2ETestHelpers.setUp()
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Audit Summary Category")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Audit Summary Part", categoryId: categoryId)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "INSERT INTO warehouse_floor_plans (name, width_inches, length_inches, created_at) VALUES ('Audit Floor', 120, 120, datetime('now'))")
+            let floorPlanId = db.lastInsertedRowID
+            try db.execute(sql: "INSERT INTO warehouse_storage_units (floor_plan_id, name, unit_type, created_at) VALUES (?, 'Audit Unit', 'rack', datetime('now'))", arguments: [floorPlanId])
+            let unitId = db.lastInsertedRowID
+            try db.execute(sql: "INSERT INTO warehouse_storage_levels (unit_id, level_code, created_at) VALUES (?, 'B', datetime('now'))", arguments: [unitId])
+            let levelId = db.lastInsertedRowID
+            try db.execute(sql: "INSERT INTO warehouse_storage_areas (level_id, area_code, area_number, full_location_code, created_at) VALUES (?, 'B1', 1, 'B-1', datetime('now'))", arguments: [levelId])
+            let areaId = db.lastInsertedRowID
+            try db.execute(sql: "INSERT INTO audit_sessions_v2 (session_type, started_by, status, started_at) VALUES ('count', ?, 'completed', '2026-06-04 08:00:00')", arguments: [env.adminUserId])
+            let sessionId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO audit_counts
+                (session_id, part_id, area_id, system_count, user_count, variance, variance_dollars, variance_percent, result, counted_by, counted_at)
+                VALUES (?, ?, ?, 10, 8, -2, -24.0, -20.0, 'variance', ?, '2026-06-04 08:10:00')
+                """, arguments: [sessionId, partId, areaId, env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO audit_counts
+                (session_id, part_id, area_id, system_count, user_count, variance, variance_dollars, variance_percent, result, counted_by, counted_at)
+                VALUES (?, ?, ?, 8, 8, 0, 0.0, 0.0, 'match', ?, '2026-06-04 08:20:00')
+                """, arguments: [sessionId, partId, areaId, env.adminUserId])
+        }
+
+        let rows = try env.reports.getAuditSummaries(startDate: "2026-06-04", endDate: "2026-06-04")
+
+        #expect(rows.count == 1)
+        #expect(rows.first?.partName == "Audit Summary Part")
+        #expect(rows.first?.areaName == "B-1")
+        #expect(rows.first?.countCount == 2)
+        #expect(rows.first?.discrepancyCount == 1)
+        #expect(rows.first?.totalVariance == -2)
+        #expect(abs((rows.first?.totalVarianceDollars ?? 0) - -24.0) < 0.01)
+        #expect(rows.first?.sourceSummary == "2 audit counts, 1 discrepancy")
     }
 
     @Test("getDailyReportSummary aggregates labor entries for a specific date")

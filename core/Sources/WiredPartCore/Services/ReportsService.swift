@@ -689,15 +689,47 @@ public final class ReportsService: Sendable {
     /// A pre-billing row showing per-job labor hours in a date range.
     public struct PreBillingRow: Sendable, Identifiable {
         public let id: Int64
+        public let jobNumber: String
         public let jobName: String
         public let regularHours: Double
         public let overtimeHours: Double
+        public let materialCost: Double
+        public let billableAmount: Double
+        public let laborEntryCount: Int
+        public let materialLineCount: Int
+        public let jpoCount: Int
+        public let purchaseOrderCount: Int
+        public let auditDiscrepancyCount: Int
+        public let sourceSummary: String
 
-        public init(id: Int64, jobName: String, regularHours: Double, overtimeHours: Double) {
+        public init(
+            id: Int64,
+            jobNumber: String = "",
+            jobName: String,
+            regularHours: Double,
+            overtimeHours: Double,
+            materialCost: Double = 0,
+            billableAmount: Double = 0,
+            laborEntryCount: Int = 0,
+            materialLineCount: Int = 0,
+            jpoCount: Int = 0,
+            purchaseOrderCount: Int = 0,
+            auditDiscrepancyCount: Int = 0,
+            sourceSummary: String = ""
+        ) {
             self.id = id
+            self.jobNumber = jobNumber
             self.jobName = jobName
             self.regularHours = regularHours
             self.overtimeHours = overtimeHours
+            self.materialCost = materialCost
+            self.billableAmount = billableAmount
+            self.laborEntryCount = laborEntryCount
+            self.materialLineCount = materialLineCount
+            self.jpoCount = jpoCount
+            self.purchaseOrderCount = purchaseOrderCount
+            self.auditDiscrepancyCount = auditDiscrepancyCount
+            self.sourceSummary = sourceSummary
         }
     }
 
@@ -714,35 +746,118 @@ public final class ReportsService: Sendable {
         do {
             return try db.writer.read { dbConn -> [PreBillingRow] in
                 let sql = """
-                    SELECT j.id, j.job_name,
-                           COALESCE(SUM(le.regular_hours), 0) AS regular_hours,
-                           COALESCE(SUM(le.overtime_hours), 0) AS overtime_hours
+                    WITH unlocked_labor AS (
+                        SELECT le.*
+                        FROM labor_entries le
+                        WHERE le.deleted_at IS NULL
+                          AND \(Self.localDateSQL("le.clock_in")) >= ?
+                          AND \(Self.localDateSQL("le.clock_in")) <= ?
+                          AND NOT EXISTS (
+                              SELECT 1
+                              FROM billing_periods bp
+                              WHERE (bp.job_id = le.job_id OR bp.job_id IS NULL)
+                                AND bp.locked_at IS NOT NULL
+                                AND bp.deleted_at IS NULL
+                                AND \(Self.localDateSQL("le.clock_in")) >= date(bp.period_start)
+                                AND \(Self.localDateSQL("le.clock_in")) <= date(bp.period_end)
+                          )
+                    ),
+                    labor_rollup AS (
+                        SELECT job_id,
+                               COALESCE(SUM(regular_hours), 0) AS regular_hours,
+                               COALESCE(SUM(overtime_hours), 0) AS overtime_hours,
+                               COUNT(*) AS labor_entry_count
+                        FROM unlocked_labor
+                        GROUP BY job_id
+                    ),
+                    material_rollup AS (
+                        SELECT job_id,
+                               COALESCE(SUM((qty_consumed - qty_returned) * COALESCE(unit_sell_at_consume, unit_cost_at_consume, 0)), 0) AS material_cost,
+                               COUNT(*) AS material_line_count
+                        FROM job_parts
+                        WHERE deleted_at IS NULL
+                          AND date(consumed_at) >= date(?)
+                          AND date(consumed_at) <= date(?)
+                        GROUP BY job_id
+                    ),
+                    po_rollup AS (
+                        SELECT jpo.job_id,
+                               COUNT(DISTINCT jpo.id) AS jpo_count,
+                               COUNT(DISTINCT po.id) AS purchase_order_count
+                        FROM job_parts_orders jpo
+                        LEFT JOIN po_jpo_links pjl ON pjl.jpo_id = jpo.id
+                        LEFT JOIN purchase_orders po ON po.id = pjl.po_id AND po.deleted_at IS NULL
+                        WHERE jpo.deleted_at IS NULL
+                          AND date(jpo.created_at) >= date(?)
+                          AND date(jpo.created_at) <= date(?)
+                        GROUP BY jpo.job_id
+                    ),
+                    audit_rollup AS (
+                        SELECT sm.job_id,
+                               COUNT(DISTINCT ac.id) AS audit_discrepancy_count
+                        FROM audit_counts ac
+                        JOIN stock_movements sm ON sm.part_id = ac.part_id
+                            AND sm.job_id IS NOT NULL
+                            AND sm.deleted_at IS NULL
+                        WHERE ac.variance != 0
+                          AND date(ac.counted_at) >= date(?)
+                          AND date(ac.counted_at) <= date(?)
+                        GROUP BY sm.job_id
+                    )
+                    SELECT j.id,
+                           COALESCE(j.job_number, '') AS job_number,
+                           j.job_name,
+                           COALESCE(lr.regular_hours, 0) AS regular_hours,
+                           COALESCE(lr.overtime_hours, 0) AS overtime_hours,
+                           COALESCE(mr.material_cost, 0) AS material_cost,
+                           ROUND(((COALESCE(lr.regular_hours, 0) + COALESCE(lr.overtime_hours, 0)) * COALESCE(j.billing_rate, 0)) + COALESCE(mr.material_cost, 0), 2) AS billable_amount,
+                           COALESCE(lr.labor_entry_count, 0) AS labor_entry_count,
+                           COALESCE(mr.material_line_count, 0) AS material_line_count,
+                           COALESCE(pr.jpo_count, 0) AS jpo_count,
+                           COALESCE(pr.purchase_order_count, 0) AS purchase_order_count,
+                           COALESCE(ar.audit_discrepancy_count, 0) AS audit_discrepancy_count
                     FROM jobs j
-                    LEFT JOIN labor_entries le ON le.job_id = j.id
-                        AND \(Self.localDateSQL("le.clock_in")) >= ? AND \(Self.localDateSQL("le.clock_in")) <= ?
-                        AND le.deleted_at IS NULL
-                        AND NOT EXISTS (
-                            SELECT 1
-                            FROM billing_periods bp
-                            WHERE (bp.job_id = le.job_id OR bp.job_id IS NULL)
-                              AND bp.locked_at IS NOT NULL
-                              AND bp.deleted_at IS NULL
-                              AND \(Self.localDateSQL("le.clock_in")) >= date(bp.period_start)
-                              AND \(Self.localDateSQL("le.clock_in")) <= date(bp.period_end)
-                        )
+                    LEFT JOIN labor_rollup lr ON lr.job_id = j.id
+                    LEFT JOIN material_rollup mr ON mr.job_id = j.id
+                    LEFT JOIN po_rollup pr ON pr.job_id = j.id
+                    LEFT JOIN audit_rollup ar ON ar.job_id = j.id
                     WHERE j.deleted_at IS NULL
                     GROUP BY j.id
-                    HAVING regular_hours > 0 OR overtime_hours > 0
-                    ORDER BY j.job_name
+                    HAVING regular_hours > 0 OR overtime_hours > 0 OR material_cost > 0
+                    ORDER BY j.job_name, j.id
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [startDate, endDate])
+                let rows = try Row.fetchAll(
+                    dbConn,
+                    sql: sql,
+                    arguments: [startDate, endDate, startDate, endDate, startDate, endDate, startDate, endDate]
+                )
                 return rows.map { row in
-                    PreBillingRow(
+                    let laborEntryCount: Int = row["labor_entry_count"] ?? 0
+                    let materialLineCount: Int = row["material_line_count"] ?? 0
+                    let jpoCount: Int = row["jpo_count"] ?? 0
+                    let purchaseOrderCount: Int = row["purchase_order_count"] ?? 0
+                    let auditDiscrepancyCount: Int = row["audit_discrepancy_count"] ?? 0
+                    return PreBillingRow(
                         id: row["id"] ?? 0,
+                        jobNumber: row["job_number"] ?? "",
                         jobName: row["job_name"] ?? "",
                         regularHours: row["regular_hours"] ?? 0.0,
-                        overtimeHours: row["overtime_hours"] ?? 0.0
+                        overtimeHours: row["overtime_hours"] ?? 0.0,
+                        materialCost: row["material_cost"] ?? 0.0,
+                        billableAmount: row["billable_amount"] ?? 0.0,
+                        laborEntryCount: laborEntryCount,
+                        materialLineCount: materialLineCount,
+                        jpoCount: jpoCount,
+                        purchaseOrderCount: purchaseOrderCount,
+                        auditDiscrepancyCount: auditDiscrepancyCount,
+                        sourceSummary: Self.reportSourceSummary(
+                            laborEntryCount: laborEntryCount,
+                            materialLineCount: materialLineCount,
+                            jpoCount: jpoCount,
+                            purchaseOrderCount: purchaseOrderCount,
+                            auditDiscrepancyCount: auditDiscrepancyCount
+                        )
                     )
                 }
             }
@@ -762,12 +877,26 @@ public final class ReportsService: Sendable {
         public let employeeName: String
         public let regularHours: Double
         public let overtimeHours: Double
+        public let grossPay: Double
+        public let laborEntryCount: Int
+        public let sourceSummary: String
 
-        public init(id: Int64, employeeName: String, regularHours: Double, overtimeHours: Double) {
+        public init(
+            id: Int64,
+            employeeName: String,
+            regularHours: Double,
+            overtimeHours: Double,
+            grossPay: Double = 0,
+            laborEntryCount: Int = 0,
+            sourceSummary: String = ""
+        ) {
             self.id = id
             self.employeeName = employeeName
             self.regularHours = regularHours
             self.overtimeHours = overtimeHours
+            self.grossPay = grossPay
+            self.laborEntryCount = laborEntryCount
+            self.sourceSummary = sourceSummary
         }
     }
 
@@ -777,12 +906,29 @@ public final class ReportsService: Sendable {
         public let poNumber: String
         public let supplierName: String
         public let totalAmount: Double
+        public let lineItemCount: Int
+        public let jpoCount: Int
+        public let jobNames: String
+        public let sourceSummary: String
 
-        public init(id: Int64, poNumber: String, supplierName: String, totalAmount: Double) {
+        public init(
+            id: Int64,
+            poNumber: String,
+            supplierName: String,
+            totalAmount: Double,
+            lineItemCount: Int = 0,
+            jpoCount: Int = 0,
+            jobNames: String = "",
+            sourceSummary: String = ""
+        ) {
             self.id = id
             self.poNumber = poNumber
             self.supplierName = supplierName
             self.totalAmount = totalAmount
+            self.lineItemCount = lineItemCount
+            self.jpoCount = jpoCount
+            self.jobNames = jobNames
+            self.sourceSummary = sourceSummary
         }
     }
 
@@ -796,24 +942,34 @@ public final class ReportsService: Sendable {
         do {
             return try db.writer.read { dbConn -> [BookkeeperLaborRow] in
                 let sql = """
-                    SELECT u.id, COALESCE(u.display_name, u.email) AS name,
+                    SELECT u.id, COALESCE(u.display_name, u.email, 'Unknown') AS name,
                            COALESCE(SUM(le.regular_hours), 0) AS regular_hours,
-                           COALESCE(SUM(le.overtime_hours), 0) AS overtime_hours
+                           COALESCE(SUM(le.overtime_hours), 0) AS overtime_hours,
+                           ROUND(COALESCE(SUM(
+                               le.regular_hours * COALESCE(u.pay_rate, 0) +
+                               le.overtime_hours * COALESCE(u.pay_rate, 0) * 1.5
+                           ), 0), 2) AS gross_pay,
+                           COUNT(le.id) AS labor_entry_count
                     FROM users u
                     JOIN labor_entries le ON le.user_id = u.id
-                    WHERE \(Self.localDateSQL("le.clock_in")) >= ? AND \(Self.localDateSQL("le.clock_in")) <= ?
+                    WHERE \(Self.localDateSQL("le.clock_in")) >= date(?)
+                      AND \(Self.localDateSQL("le.clock_in")) <= date(?)
                       AND le.deleted_at IS NULL
                     GROUP BY u.id
-                    ORDER BY name
+                    ORDER BY name, u.id
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [startDate, endDate])
                 return rows.map { row in
-                    BookkeeperLaborRow(
+                    let laborEntryCount: Int = row["labor_entry_count"] ?? 0
+                    return BookkeeperLaborRow(
                         id: row["id"] ?? 0,
                         employeeName: row["name"] ?? "Unknown",
                         regularHours: row["regular_hours"] ?? 0.0,
-                        overtimeHours: row["overtime_hours"] ?? 0.0
+                        overtimeHours: row["overtime_hours"] ?? 0.0,
+                        grossPay: row["gross_pay"] ?? 0.0,
+                        laborEntryCount: laborEntryCount,
+                        sourceSummary: "\(laborEntryCount) labor entr\(laborEntryCount == 1 ? "y" : "ies")"
                     )
                 }
             }
@@ -833,22 +989,40 @@ public final class ReportsService: Sendable {
         do {
             return try db.writer.read { dbConn -> [BookkeeperMaterialRow] in
                 let sql = """
-                    SELECT po.id, po.po_number, COALESCE(s.name, 'Unknown') AS supplier_name,
-                           COALESCE(po.total_cost, 0) AS total_amount
+                    SELECT po.id,
+                           po.po_number,
+                           COALESCE(s.name, 'Unknown') AS supplier_name,
+                           COALESCE(po.total_cost, 0) AS total_amount,
+                           COUNT(DISTINCT pli.id) AS line_item_count,
+                           COUNT(DISTINCT jpo.id) AS jpo_count,
+                           COALESCE(GROUP_CONCAT(DISTINCT j.job_name), '') AS job_names
                     FROM purchase_orders po
                     LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL
-                    WHERE date(po.created_at) >= ? AND date(po.created_at) <= ?
-                      AND po.deleted_at IS NULL
-                    ORDER BY po.po_number
+                    LEFT JOIN po_line_items pli ON pli.po_id = po.id AND pli.deleted_at IS NULL
+                    LEFT JOIN jpo_line_items jli ON jli.id = pli.jpo_line_id AND jli.deleted_at IS NULL
+                    LEFT JOIN job_parts_orders jpo ON jpo.id = jli.jpo_id AND jpo.deleted_at IS NULL
+                    LEFT JOIN jobs j ON j.id = jpo.job_id AND j.deleted_at IS NULL
+                    WHERE po.deleted_at IS NULL
+                      AND po.status != 'cancelled'
+                      AND date(COALESCE(po.order_date, po.created_at)) >= date(?)
+                      AND date(COALESCE(po.order_date, po.created_at)) <= date(?)
+                    GROUP BY po.id
+                    ORDER BY po.po_number, po.id
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [startDate, endDate])
                 return rows.map { row in
-                    BookkeeperMaterialRow(
+                    let lineItemCount: Int = row["line_item_count"] ?? 0
+                    let jpoCount: Int = row["jpo_count"] ?? 0
+                    return BookkeeperMaterialRow(
                         id: row["id"] ?? 0,
                         poNumber: row["po_number"] ?? "",
                         supplierName: row["supplier_name"] ?? "Unknown",
-                        totalAmount: row["total_amount"] ?? 0.0
+                        totalAmount: row["total_amount"] ?? 0.0,
+                        lineItemCount: lineItemCount,
+                        jpoCount: jpoCount,
+                        jobNames: row["job_names"] ?? "",
+                        sourceSummary: "\(lineItemCount) PO line\(lineItemCount == 1 ? "" : "s"), \(jpoCount) JPO\(jpoCount == 1 ? "" : "s")"
                     )
                 }
             }
@@ -859,7 +1033,94 @@ public final class ReportsService: Sendable {
     }
 
     // =========================================================================
-    // MARK: - 7. Reports Stats
+    // MARK: - 7. Audit Summary Data
+    // =========================================================================
+
+    public struct AuditSummaryRow: Sendable, Identifiable {
+        public let id: Int64
+        public let partId: Int64
+        public let partName: String
+        public let areaName: String
+        public let countCount: Int
+        public let discrepancyCount: Int
+        public let totalVariance: Int
+        public let totalVarianceDollars: Double
+        public let lastCountedAt: String?
+        public let sourceSummary: String
+
+        public init(
+            id: Int64,
+            partId: Int64,
+            partName: String,
+            areaName: String,
+            countCount: Int,
+            discrepancyCount: Int,
+            totalVariance: Int,
+            totalVarianceDollars: Double,
+            lastCountedAt: String?,
+            sourceSummary: String
+        ) {
+            self.id = id
+            self.partId = partId
+            self.partName = partName
+            self.areaName = areaName
+            self.countCount = countCount
+            self.discrepancyCount = discrepancyCount
+            self.totalVariance = totalVariance
+            self.totalVarianceDollars = totalVarianceDollars
+            self.lastCountedAt = lastCountedAt
+            self.sourceSummary = sourceSummary
+        }
+    }
+
+    public func getAuditSummaries(startDate: String, endDate: String) throws -> [AuditSummaryRow] {
+        do {
+            return try db.writer.read { dbConn -> [AuditSummaryRow] in
+                let sql = """
+                    SELECT ac.part_id,
+                           COALESCE(p.name, 'Unknown Part') AS part_name,
+                           COALESCE(wsa.full_location_code, wsa.area_code, 'Unknown Area') AS area_name,
+                           COUNT(ac.id) AS count_count,
+                           SUM(CASE WHEN ac.variance != 0 THEN 1 ELSE 0 END) AS discrepancy_count,
+                           COALESCE(SUM(ac.variance), 0) AS total_variance,
+                           COALESCE(SUM(ac.variance_dollars), 0) AS total_variance_dollars,
+                           MAX(ac.counted_at) AS last_counted_at
+                    FROM audit_counts ac
+                    JOIN audit_sessions_v2 aus ON aus.id = ac.session_id AND aus.deleted_at IS NULL
+                    LEFT JOIN parts p ON p.id = ac.part_id AND p.deleted_at IS NULL
+                    LEFT JOIN warehouse_storage_areas wsa ON wsa.id = ac.area_id AND wsa.deleted_at IS NULL
+                    WHERE date(ac.counted_at) >= date(?)
+                      AND date(ac.counted_at) <= date(?)
+                    GROUP BY ac.part_id, area_name
+                    ORDER BY discrepancy_count DESC, ABS(total_variance_dollars) DESC, part_name, area_name
+                    """
+
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [startDate, endDate])
+                return rows.enumerated().map { index, row in
+                    let countCount: Int = row["count_count"] ?? 0
+                    let discrepancyCount: Int = row["discrepancy_count"] ?? 0
+                    return AuditSummaryRow(
+                        id: Int64(index + 1),
+                        partId: row["part_id"] ?? 0,
+                        partName: row["part_name"] ?? "Unknown Part",
+                        areaName: row["area_name"] ?? "Unknown Area",
+                        countCount: countCount,
+                        discrepancyCount: discrepancyCount,
+                        totalVariance: row["total_variance"] ?? 0,
+                        totalVarianceDollars: row["total_variance_dollars"] ?? 0.0,
+                        lastCountedAt: row["last_counted_at"] as String?,
+                        sourceSummary: "\(countCount) audit count\(countCount == 1 ? "" : "s"), \(discrepancyCount) discrepanc\(discrepancyCount == 1 ? "y" : "ies")"
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 8. Reports Stats
     // =========================================================================
 
     /// Get high-level reporting stats: open billing periods, pending timesheets,
@@ -923,6 +1184,22 @@ public final class ReportsService: Sendable {
             if isTableNotFoundError(error) { return 0.0 }
             throw error
         }
+    }
+
+    private static func reportSourceSummary(
+        laborEntryCount: Int,
+        materialLineCount: Int,
+        jpoCount: Int,
+        purchaseOrderCount: Int,
+        auditDiscrepancyCount: Int
+    ) -> String {
+        [
+            "\(laborEntryCount) labor entr\(laborEntryCount == 1 ? "y" : "ies")",
+            "\(materialLineCount) material line\(materialLineCount == 1 ? "" : "s")",
+            "\(jpoCount) JPO\(jpoCount == 1 ? "" : "s")",
+            "\(purchaseOrderCount) PO\(purchaseOrderCount == 1 ? "" : "s")",
+            "\(auditDiscrepancyCount) audit discrepanc\(auditDiscrepancyCount == 1 ? "y" : "ies")"
+        ].joined(separator: ", ")
     }
 
     // =========================================================================
