@@ -48,6 +48,21 @@ public final class AuthService: Sendable {
         public let iat: Double
         public let exp: Double
         public let type: String
+        public let deviceId: String?
+
+        public init(sub: Int64, jti: String, iat: Double, exp: Double, type: String, deviceId: String? = nil) {
+            self.sub = sub
+            self.jti = jti
+            self.iat = iat
+            self.exp = exp
+            self.type = type
+            self.deviceId = deviceId
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case sub, jti, iat, exp, type
+            case deviceId = "device_id"
+        }
     }
 
     /// Summary of a user's hat (role).
@@ -581,7 +596,7 @@ public final class AuthService: Sendable {
             throw AuthError.sessionRevoked
         }
 
-        let tokens = try Self.makeSessionTokens(forUserId: payload.sub)
+        let tokens = try Self.makeSessionTokens(forUserId: payload.sub, deviceId: payload.deviceId)
         try db.writer.write { dbConn in
             let now = Self.currentTimestamp()
             try Self.revokeTokenById(payload.jti, in: dbConn, revokedAt: now)
@@ -648,21 +663,24 @@ public final class AuthService: Sendable {
         }
     }
 
-    /// List active (trusted, non-deactivated) sessions from the device registry.
+    /// List active revocable auth sessions.
     public func listActiveSessions() throws -> [ActiveSession] {
         do {
             return try db.writer.read { dbConnection in
                 let rows = try Row.fetchAll(dbConnection, sql: """
-                    SELECT dr.rowid AS id, dr.device_id, dr.created_at,
-                           COALESCE(dr.device_name, 'Unknown') AS user_name
-                    FROM _device_registry dr
-                    WHERE dr.is_trusted = 1 AND dr.is_deactivated = 0
-                    ORDER BY dr.last_seen_at DESC
-                """)
+                    SELECT ats.token_id AS id, ats.user_id, ats.created_at,
+                           COALESCE(u.display_name, 'Unknown') AS user_name
+                    FROM auth_token_sessions ats
+                    LEFT JOIN users u ON u.id = ats.user_id AND u.deleted_at IS NULL
+                    WHERE ats.token_type = 'local_refresh'
+                      AND ats.revoked_at IS NULL
+                      AND ats.expires_at_ms > ?
+                    ORDER BY ats.created_at DESC
+                """, arguments: [Date().timeIntervalSince1970 * 1000])
                 return rows.map { row in
                     ActiveSession(
-                        id: "\(row["id"] as Int64? ?? 0)",
-                        userId: row["device_id"] as? String ?? "unknown",
+                        id: row["id"] as? String ?? "unknown",
+                        userId: "\(row["user_id"] as Int64? ?? 0)",
                         userName: row["user_name"] as? String ?? "Unknown",
                         createdAt: row["created_at"] as? String ?? "Unknown"
                     )
@@ -674,9 +692,15 @@ public final class AuthService: Sendable {
         }
     }
 
-    /// Force-deactivate a session by its rowid in the device registry.
+    /// Force-deactivate a revocable auth session. New callers pass a refresh token
+    /// session id from `listActiveSessions`; the rowid path is retained for older
+    /// device-registry callers.
     public func deactivateSession(sessionId: String) throws {
         try db.writer.write { dbConnection in
+            let now = Self.currentTimestamp()
+            let revokedCount = try Self.revokeTokenFamily(rootTokenId: sessionId, in: dbConnection, revokedAt: now)
+            if revokedCount > 0 { return }
+
             try dbConnection.execute(
                 sql: "UPDATE _device_registry SET is_deactivated = 1 WHERE rowid = ?",
                 arguments: [sessionId]
@@ -1264,14 +1288,15 @@ public final class AuthService: Sendable {
         generateToken(userId: userId, type: "local_refresh", ttlMs: 7 * 24 * 60 * 60 * 1000)
     }
 
-    private static func generateToken(userId: Int64, type: String, ttlMs: Double) -> String? {
+    private static func generateToken(userId: Int64, type: String, ttlMs: Double, deviceId: String? = nil) -> String? {
         let nowMs = Date().timeIntervalSince1970 * 1000
         let payload = TokenPayload(
             sub: userId,
             jti: UUID().uuidString.lowercased(),
             iat: nowMs,
             exp: nowMs + ttlMs,
-            type: type
+            type: type,
+            deviceId: deviceId
         )
         guard let data = try? JSONEncoder().encode(payload) else {
             return nil
@@ -1307,9 +1332,9 @@ public final class AuthService: Sendable {
         let refreshPayload: TokenPayload
     }
 
-    private static func makeSessionTokens(forUserId userId: Int64) throws -> SessionTokenPair {
-        guard let access = Self.generateLocalToken(userId: userId),
-              let refresh = Self.generateLocalRefreshToken(userId: userId),
+    private static func makeSessionTokens(forUserId userId: Int64, deviceId: String? = nil) throws -> SessionTokenPair {
+        guard let access = Self.generateToken(userId: userId, type: "local_access", ttlMs: 15 * 60 * 1000, deviceId: deviceId),
+              let refresh = Self.generateToken(userId: userId, type: "local_refresh", ttlMs: 7 * 24 * 60 * 60 * 1000, deviceId: deviceId),
               let accessPayload = Self.parseLocalToken(access),
               let refreshPayload = Self.parseLocalToken(refresh) else {
             throw AuthError.invalidToken
@@ -1318,7 +1343,8 @@ public final class AuthService: Sendable {
     }
 
     private func issueSessionTokens(forUserId userId: Int64, parentRefreshId: String?) throws -> (accessToken: String, refreshToken: String) {
-        let tokens = try Self.makeSessionTokens(forUserId: userId)
+        let deviceId = try currentDeviceId()
+        let tokens = try Self.makeSessionTokens(forUserId: userId, deviceId: deviceId)
 
         try db.writer.write { dbConn in
             let now = Self.currentTimestamp()
@@ -1342,17 +1368,17 @@ public final class AuthService: Sendable {
     ) throws {
         try dbConn.execute(
             sql: """
-                INSERT INTO auth_token_sessions (token_id, user_id, token_type, parent_refresh_id, expires_at_ms, revoked_at, created_at)
-                VALUES (?, ?, 'local_access', ?, ?, NULL, ?)
+                INSERT INTO auth_token_sessions (token_id, user_id, token_type, parent_refresh_id, expires_at_ms, revoked_at, created_at, device_id)
+                VALUES (?, ?, 'local_access', ?, ?, NULL, ?, ?)
             """,
-            arguments: [tokens.accessPayload.jti, userId, tokens.refreshPayload.jti, tokens.accessPayload.exp, createdAt]
+            arguments: [tokens.accessPayload.jti, userId, tokens.refreshPayload.jti, tokens.accessPayload.exp, createdAt, tokens.accessPayload.deviceId]
         )
         try dbConn.execute(
             sql: """
-                INSERT INTO auth_token_sessions (token_id, user_id, token_type, parent_refresh_id, expires_at_ms, revoked_at, created_at)
-                VALUES (?, ?, 'local_refresh', ?, ?, NULL, ?)
+                INSERT INTO auth_token_sessions (token_id, user_id, token_type, parent_refresh_id, expires_at_ms, revoked_at, created_at, device_id)
+                VALUES (?, ?, 'local_refresh', ?, ?, NULL, ?, ?)
             """,
-            arguments: [tokens.refreshPayload.jti, userId, parentRefreshId, tokens.refreshPayload.exp, createdAt]
+            arguments: [tokens.refreshPayload.jti, userId, parentRefreshId, tokens.refreshPayload.exp, createdAt, tokens.refreshPayload.deviceId]
         )
     }
 
@@ -1361,6 +1387,33 @@ public final class AuthService: Sendable {
             sql: "UPDATE auth_token_sessions SET revoked_at = ? WHERE token_id = ?",
             arguments: [revokedAt, tokenId]
         )
+    }
+
+    @discardableResult
+    private static func revokeTokenFamily(rootTokenId: String, in dbConn: Database, revokedAt: String) throws -> Int {
+        try dbConn.execute(
+            sql: """
+                WITH RECURSIVE family(token_id) AS (
+                    SELECT token_id FROM auth_token_sessions WHERE token_id = ?
+                    UNION
+                    SELECT ats.token_id
+                    FROM auth_token_sessions ats
+                    JOIN family f ON ats.parent_refresh_id = f.token_id
+                )
+                UPDATE auth_token_sessions
+                SET revoked_at = ?
+                WHERE token_id IN (SELECT token_id FROM family)
+                  AND revoked_at IS NULL
+            """,
+            arguments: [rootTokenId, revokedAt]
+        )
+        return dbConn.changesCount
+    }
+
+    private func currentDeviceId() throws -> String? {
+        try db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: "SELECT value FROM settings WHERE key = 'device_id'")
+        }
     }
 
     private func isTokenActive(tokenId: String, expectedType: String) throws -> Bool {

@@ -65,6 +65,118 @@ struct SyncServerTests {
         await server.stop()
     }
 
+    // MARK: - POST /sync/pair
+
+    @Test("POST /sync/pair rejects when no pairing code is active")
+    func testPairRejectsWithoutActiveCode() async throws {
+        let state = makeState(deviceId: "shop-dev", companyId: "co-1")
+        let server = LanSyncServer(state: state)
+        let port = try await server.start()
+
+        let body = try JSONEncoder().encode(SyncPairRequest(
+            deviceId: "phone-dev",
+            deviceName: "Phone",
+            pairingCode: "ABCD-1234",
+            platform: "iOS"
+        ))
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/pair")!)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        #expect((response as! HTTPURLResponse).statusCode == 403)
+
+        await server.stop()
+    }
+
+    @Test("POST /sync/pair rejects wrong code")
+    func testPairRejectsWrongCode() async throws {
+        let state = makeState(deviceId: "shop-dev", companyId: "co-1")
+        try await state.setActivePairingCode("ABCD-1234")
+        let server = LanSyncServer(state: state)
+        let port = try await server.start()
+
+        let body = try JSONEncoder().encode(SyncPairRequest(
+            deviceId: "phone-dev",
+            deviceName: "Phone",
+            pairingCode: "WXYZ-1234",
+            platform: "iOS"
+        ))
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/pair")!)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        #expect((response as! HTTPURLResponse).statusCode == 403)
+
+        await server.stop()
+    }
+
+    @Test("POST /sync/pair accepts active code once")
+    func testPairAcceptsActiveCodeOnce() async throws {
+        let state = makeState(deviceId: "shop-dev", companyId: "co-1")
+        try await state.setActivePairingCode("ABCD-1234")
+        let server = LanSyncServer(state: state)
+        let port = try await server.start()
+
+        let body = try JSONEncoder().encode(SyncPairRequest(
+            deviceId: "phone-dev",
+            deviceName: "Phone",
+            pairingCode: "abcd1234",
+            platform: "iOS"
+        ))
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/pair")!)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (data, firstResponse) = try await URLSession.shared.data(for: request)
+        #expect((firstResponse as! HTTPURLResponse).statusCode == 200)
+        let pairResponse = try JSONDecoder().decode(SyncPairResponse.self, from: data)
+        #expect(pairResponse.accepted)
+        #expect(pairResponse.serverDeviceId == "shop-dev")
+        #expect(pairResponse.companyId == "co-1")
+        #expect(!pairResponse.pairedAt.isEmpty)
+
+        let (_, secondResponse) = try await URLSession.shared.data(for: request)
+        #expect((secondResponse as! HTTPURLResponse).statusCode == 403)
+
+        await server.stop()
+    }
+
+    @Test("POST /sync/pair consumes active code atomically under concurrency")
+    func testPairConsumesActiveCodeAtomicallyUnderConcurrency() async throws {
+        let state = makeState(deviceId: "shop-dev", companyId: "co-1")
+        try await state.setActivePairingCode("ABCD-1234")
+        let server = LanSyncServer(state: state)
+        let port = try await server.start()
+
+        func makeRequest(deviceId: String) throws -> URLRequest {
+            let body = try JSONEncoder().encode(SyncPairRequest(
+                deviceId: deviceId,
+                deviceName: "Phone",
+                pairingCode: "abcd1234",
+                platform: "iOS"
+            ))
+            var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/pair")!)
+            request.httpMethod = "POST"
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            return request
+        }
+
+        async let first = URLSession.shared.data(for: makeRequest(deviceId: "phone-dev-a"))
+        async let second = URLSession.shared.data(for: makeRequest(deviceId: "phone-dev-b"))
+
+        let firstStatus = try await (first.1 as! HTTPURLResponse).statusCode
+        let secondStatus = try await (second.1 as! HTTPURLResponse).statusCode
+        #expect([firstStatus, secondStatus].sorted() == [200, 403])
+
+        await server.stop()
+    }
+
     // MARK: - POST /sync/push
 
     @Test("POST /sync/push accepts changes")

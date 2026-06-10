@@ -87,6 +87,73 @@ public enum AuthResult: Sendable, Equatable {
 /// Public keys are 32 bytes, signatures are 64 bytes, both base64-encoded for transport.
 public enum SyncCrypto {
 
+    // MARK: - Pairing Codes
+
+    private static let pairingCodeCharacters = Array("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+
+    /// Generate a one-time human-enterable pairing code.
+    public static func generatePairingCode() -> String {
+        var generator = SystemRandomNumberGenerator()
+        return String((0..<8).map { _ in
+            pairingCodeCharacters.randomElement(using: &generator)!
+        })
+    }
+
+    /// Format a normalized pairing code for display as `ABCD-1234`.
+    public static func formattedPairingCode(_ code: String) -> String? {
+        guard let normalized = normalizedPairingCode(code) else { return nil }
+        let splitIndex = normalized.index(normalized.startIndex, offsetBy: 4)
+        return "\(normalized[..<splitIndex])-\(normalized[splitIndex...])"
+    }
+
+    /// Normalize a human-entered pairing code for comparison.
+    ///
+    /// Codes are eight alphanumeric characters, commonly displayed as
+    /// `ABCD-1234`. Spaces and hyphens are ignored so users can type the
+    /// displayed code naturally, but other characters fail closed.
+    public static func normalizedPairingCode(_ code: String) -> String? {
+        var normalized = ""
+        normalized.reserveCapacity(8)
+
+        for scalar in code.unicodeScalars {
+            switch scalar.value {
+            case 9...13, 32, 45:
+                continue
+            case 48...57, 65...90:
+                normalized.append(Character(scalar))
+            case 97...122:
+                guard let uppercased = UnicodeScalar(scalar.value - 32) else { return nil }
+                normalized.append(Character(uppercased))
+            default:
+                return nil
+            }
+        }
+
+        guard normalized.count == 8,
+              normalized.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else {
+            return nil
+        }
+        return normalized
+    }
+
+    /// Digest a normalized pairing code before storing it in server state.
+    public static func pairingCodeDigest(_ normalizedCode: String) -> Data {
+        Data(SHA256.hash(data: Data(normalizedCode.utf8)))
+    }
+
+    /// Constant-time pairing-code verification against a stored digest.
+    public static func verifyPairingCode(_ candidate: String, expectedDigest: Data) -> Bool {
+        guard let normalized = normalizedPairingCode(candidate) else { return false }
+        let candidateDigest = pairingCodeDigest(normalized)
+        guard candidateDigest.count == expectedDigest.count else { return false }
+
+        var diff: UInt8 = 0
+        for (left, right) in zip(candidateDigest, expectedDigest) {
+            diff |= left ^ right
+        }
+        return diff == 0
+    }
+
     // MARK: - Verification
 
     /// Verify a sync request's Ed25519 certificate.
