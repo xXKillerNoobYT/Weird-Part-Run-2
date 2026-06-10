@@ -413,6 +413,19 @@ public actor PeerManager {
         await sState.setOutbox(enriched)
     }
 
+    /// Issue a one-time pairing code on the running shop sync server.
+    public func issuePairingCode() async throws -> String {
+        guard let sState = serverState else {
+            throw SyncServerError.serverNotRunning
+        }
+        return try await sState.issueActivePairingCode()
+    }
+
+    /// Clear any active pairing code on the running shop sync server.
+    public func clearPairingCode() async {
+        await serverState?.clearActivePairingCode()
+    }
+
     // MARK: - Private: LAN HTTP Sync
 
     private func syncViaHTTP(

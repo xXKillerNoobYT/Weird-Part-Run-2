@@ -2082,6 +2082,57 @@ struct WarehouseServiceExtTests {
         #expect(badMovements == 0)
     }
 
+    @Test("receiving completion persists verified invoice price discrepancy")
+    func testReceivingCompletionPersistsVerifiedInvoicePriceDiscrepancy() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Verified Cost Part", categoryId: catId)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-PRICE-DIFF", supplierId: supplierId, notes: nil)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, part_id, qty_ordered, unit_cost)
+                VALUES (?, ?, 3, 10.0)
+                """, arguments: [poId, partId])
+        }
+
+        let sessionId = try env.warehouse.startReceivingSession(poId: poId, startedBy: env.adminUserId)
+        let item = try #require(try env.warehouse.getSessionItems(sessionId: sessionId).first)
+
+        try env.warehouse.updateSessionItem(itemId: item.id, receivedQty: 3, actualCost: 12.5)
+        try env.warehouse.completeSession(sessionId: sessionId, completedBy: env.adminUserId)
+
+        try env.db.writer.read { db in
+            let row = try Row.fetchOne(db, sql: """
+                SELECT rsi.actual_cost,
+                       pli.received_unit_cost,
+                       sm.unit_cost_at_move
+                FROM receiving_session_items rsi
+                JOIN po_line_items pli ON pli.id = rsi.po_line_id
+                JOIN stock_movements sm ON sm.part_id = pli.part_id
+                WHERE rsi.id = ?
+                  AND sm.movement_type = 'receiving'
+                """, arguments: [item.id])
+
+            #expect(row?["actual_cost"] as Double? == 12.5)
+            #expect(row?["received_unit_cost"] as Double? == 12.5)
+            #expect(row?["unit_cost_at_move"] as Double? == 12.5)
+        }
+
+        let entries = try env.orders.getReceiptHistoryEntries(poId: poId)
+        let entry = try #require(entries.first)
+        #expect(entry.hasDiscrepancies)
+
+        let historyItems = try env.orders.getReceiptHistoryItems(sessionId: sessionId)
+        let historyItem = try #require(historyItems.first)
+        #expect(historyItem.hasDiscrepancy)
+        #expect(!historyItem.hasQuantityDiscrepancy)
+        #expect(historyItem.hasPriceDiscrepancy)
+        #expect(historyItem.orderUnitCost == 10.0)
+        #expect(historyItem.receivedUnitCost == 12.5)
+    }
+
     @Test("completeSession does not add routed PO incoming items to shelf stock")
     func testCompleteSession_skipsRoutedPOIncomingShelfStock() throws {
         let env = try E2ETestHelpers.setUp()
