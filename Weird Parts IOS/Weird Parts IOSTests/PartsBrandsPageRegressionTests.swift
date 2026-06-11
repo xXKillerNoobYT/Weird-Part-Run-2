@@ -174,6 +174,16 @@ final class PartsBrandsPageRegressionTests: XCTestCase {
             "Pull material should filter ledger locations through the source-bucket predicate."
         )
         XCTAssertTrue(
+            source.contains("ForEach(pullSourceLocations.indices, id: \\.self)"),
+            "Pull source picker should not use displayName as its row identity because source names are not guaranteed unique."
+        )
+        XCTAssertTrue(
+            source.contains("DispatchQueue.global(qos: .userInitiated).async") &&
+                source.contains("DispatchQueue.main.async") &&
+                source.contains("guard selectedPullPart?.id == requestedPartId else { return }"),
+            "Pull source loading should run the ledger read off the main thread and ignore stale completions."
+        )
+        XCTAssertTrue(
             source.contains("location.qty > 0 && pullMaterialSourceLocationTypes.contains(location.locationType.lowercased())"),
             "The pull source predicate should require positive stock and an allowed external source type."
         )

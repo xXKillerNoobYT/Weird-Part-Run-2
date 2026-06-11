@@ -1162,7 +1162,8 @@ struct IOSJobDetailPage: View {
                 Label("No available stock locations for this part.", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
             } else {
-                ForEach(pullSourceLocations, id: \.displayName) { source in
+                ForEach(pullSourceLocations.indices, id: \.self) { index in
+                    let source = pullSourceLocations[index]
                     Button {
                         selectedPullSource = source
                         materialQuantity = min(materialQuantity, source.qty)
@@ -1392,19 +1393,30 @@ struct IOSJobDetailPage: View {
             return
         }
         isLoadingPullSources = true
-        defer { isLoadingPullSources = false }
+        let requestedPartId = partId
 
-        do {
-            let ledger = try service.getInventoryLedger(partId: partId)
-            pullSourceLocations = ledger?.locations.filter(Self.isPullMaterialSourceLocation) ?? []
-            if pullSourceLocations.count == 1 {
-                selectedPullSource = pullSourceLocations[0]
-                materialQuantity = min(materialQuantity, pullSourceLocations[0].qty)
-            } else if pullSourceLocations.isEmpty {
-                materialQuantity = 1
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Result {
+                try service.getInventoryLedger(partId: requestedPartId)
             }
-        } catch {
-            materialActionError = userFriendlyError(error, context: "load source locations")
+
+            DispatchQueue.main.async {
+                guard selectedPullPart?.id == requestedPartId else { return }
+                isLoadingPullSources = false
+
+                do {
+                    let ledger = try result.get()
+                    pullSourceLocations = ledger?.locations.filter(Self.isPullMaterialSourceLocation) ?? []
+                    if pullSourceLocations.count == 1 {
+                        selectedPullSource = pullSourceLocations[0]
+                        materialQuantity = min(materialQuantity, pullSourceLocations[0].qty)
+                    } else if pullSourceLocations.isEmpty {
+                        materialQuantity = 1
+                    }
+                } catch {
+                    materialActionError = userFriendlyError(error, context: "load source locations")
+                }
+            }
         }
     }
 
