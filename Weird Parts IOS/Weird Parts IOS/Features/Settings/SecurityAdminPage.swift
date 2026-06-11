@@ -3,10 +3,8 @@ import WiredPartCore
 
 /// Security and device administration page.
 ///
-/// Shows registered devices, active sessions, and provides force-logout
+/// Shows registered devices, active auth sessions, and provides force-logout
 /// capability. Uses AuthService methods to read device and session data.
-/// On mobile this is primarily a view-only status page; full
-/// administration is expected on desktop.
 struct SecurityAdminPage: View {
     @EnvironmentObject private var appCore: AppCore
 
@@ -54,8 +52,8 @@ struct SecurityAdminPage: View {
         }
         .sheet(item: $activeSheet) { _ in
             PageHelpSheet(title: "Security Help", sections: [
-                ("What This Page Does", "Shows registered devices and active user sessions. Administrators can force-logout sessions from this page."),
-                ("How to Use It", "Review device status and active sessions. To end a session, tap the red X button next to it (admin permission required). Full device and session management is available on the desktop application."),
+                ("What This Page Does", "Shows registered device status and active user auth sessions. Administrators can force-logout sessions from this page."),
+                ("How to Use It", "Review device status and active sessions. To end a session, tap the red X button next to it (admin permission required)."),
             ])
         }
         .task { loadData() }
@@ -146,7 +144,7 @@ struct SecurityAdminPage: View {
 
     private var securityInfoSection: some View {
         Section {
-            Text("Full device and session management is available on the desktop application. This page provides a read-only view of the current security state.")
+            Text("Registered devices show sync status. Active sessions are revocable login sessions; force logout invalidates the selected session tokens.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
