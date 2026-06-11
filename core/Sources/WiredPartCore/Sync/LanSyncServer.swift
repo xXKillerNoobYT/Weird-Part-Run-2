@@ -118,6 +118,50 @@ public struct SyncKeyResponse: Codable, Sendable {
     public let key: String  // base64-encoded X25519 KA public key
 }
 
+// MARK: - Pairing
+
+/// Request body for POST /sync/pair.
+public struct SyncPairRequest: Codable, Sendable {
+    public var deviceId: String
+    public var deviceName: String
+    public var pairingCode: String
+    public var platform: String?
+
+    public init(
+        deviceId: String,
+        deviceName: String,
+        pairingCode: String,
+        platform: String? = nil
+    ) {
+        self.deviceId = deviceId
+        self.deviceName = deviceName
+        self.pairingCode = pairingCode
+        self.platform = platform
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case deviceId = "device_id"
+        case deviceName = "device_name"
+        case pairingCode = "pairing_code"
+        case platform
+    }
+}
+
+/// Response body for POST /sync/pair.
+public struct SyncPairResponse: Codable, Sendable {
+    public var accepted: Bool
+    public var serverDeviceId: String
+    public var companyId: String
+    public var pairedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case accepted
+        case serverDeviceId = "server_device_id"
+        case companyId = "company_id"
+        case pairedAt = "paired_at"
+    }
+}
+
 // MARK: - Server State (Actor)
 
 /// Thread-safe shared state for the sync server.
@@ -133,6 +177,7 @@ public actor SyncServerState {
     public private(set) var outbox: [IncomingChange] = []
     public var companyPublicKey: String?     // nil = Phase 4 compat (no cert required)
     public var lastSyncAt: String?
+    private var activePairingCodeDigest: Data?
 
     /// X25519 key agreement public key (base64). Shared with peers via GET /sync/key.
     /// Peers use this to derive a shared AES-GCM key for payload encryption.
@@ -173,6 +218,40 @@ public actor SyncServerState {
 
     public func setPort(_ port: UInt16) {
         self.port = port
+    }
+
+    /// Configure the current one-time pairing code issued by the shop.
+    public func setActivePairingCode(_ code: String) throws {
+        guard let normalized = SyncCrypto.normalizedPairingCode(code) else {
+            throw SyncServerError.invalidPairingCode
+        }
+        activePairingCodeDigest = SyncCrypto.pairingCodeDigest(normalized)
+    }
+
+    /// Issue and activate a new one-time pairing code for shop-side display.
+    public func issueActivePairingCode() throws -> String {
+        let code = SyncCrypto.generatePairingCode()
+        try setActivePairingCode(code)
+        return SyncCrypto.formattedPairingCode(code) ?? code
+    }
+
+    /// Clear the active pairing code after it is used or expires.
+    public func clearActivePairingCode() {
+        activePairingCodeDigest = nil
+    }
+
+    public func verifyPairingCode(_ code: String) -> Bool {
+        guard let digest = activePairingCodeDigest else { return false }
+        return SyncCrypto.verifyPairingCode(code, expectedDigest: digest)
+    }
+
+    public func consumePairingCode(_ code: String) -> Bool {
+        guard let digest = activePairingCodeDigest,
+              SyncCrypto.verifyPairingCode(code, expectedDigest: digest) else {
+            return false
+        }
+        activePairingCodeDigest = nil
+        return true
     }
 
     /// Filter outbox by vector clock (send only what the peer hasn't seen)
@@ -387,6 +466,9 @@ public final class LanSyncServer: Sendable {
         case ("GET", "/sync/key"):
             return await handleKeyExchange(headers: request.headers, state: state)
 
+        case ("POST", "/sync/pair"):
+            return await handlePair(body: request.body, state: state)
+
         case ("POST", "/sync/push"):
             return await handlePush(body: request.body, headers: request.headers, state: state)
 
@@ -501,6 +583,31 @@ public final class LanSyncServer: Sendable {
         let pubKey = state.kaPublicKeyB64
         let response = SyncKeyResponse(key: pubKey)
         let encoder = JSONEncoder()
+        let data = (try? encoder.encode(response)) ?? Data()
+        return (200, data)
+    }
+
+    private static func handlePair(body: Data, state: SyncServerState) async -> (Int, Data) {
+        guard let request = try? JSONDecoder().decode(SyncPairRequest.self, from: body),
+              !request.deviceId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !request.deviceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            let json = #"{"error":"invalid_json"}"#
+            return (400, Data(json.utf8))
+        }
+
+        guard await state.consumePairingCode(request.pairingCode) else {
+            let json = #"{"error":"invalid_pairing_code"}"#
+            return (403, Data(json.utf8))
+        }
+
+        let response = SyncPairResponse(
+            accepted: true,
+            serverDeviceId: state.deviceId,
+            companyId: state.companyId,
+            pairedAt: CoreFormatters.nowISO()
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
         let data = (try? encoder.encode(response)) ?? Data()
         return (200, data)
     }
@@ -684,6 +791,8 @@ public final class LanSyncServer: Sendable {
 
 public enum SyncServerError: Error {
     case failedToBind
+    case invalidPairingCode
+    case serverNotRunning
 }
 
 // MARK: - Parsed HTTP Request
