@@ -173,6 +173,7 @@ struct LoginView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("loginView")
         .background(Color(.systemBackground))
         .safeAreaInset(edge: .bottom) {
