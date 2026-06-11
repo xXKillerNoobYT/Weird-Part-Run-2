@@ -3,6 +3,7 @@ import XCTest
 final class ConflictScreenshotCaptureUITests: XCTestCase {
 
     private var app: XCUIApplication!
+    private let manualOptInMarkerPath = "/tmp/WeirdPartsConflictScreenshotCapture.opt-in"
 
     // MARK: - Setup & Teardown
 
@@ -12,11 +13,14 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
         continueAfterFailure = true
 
         app = XCUIApplication()
-        // Signal both general UI-testing mode and the specific conflict-capture
-        // mode so the app can (now or in the future) seed the required fixtures.
-        app.launchArguments += ["-UITesting", "-UITestingConflictCapture"]
+        // Always signal general UI-testing mode; only manual capture runs get
+        // the specific fixture mode that seeds and suppresses conflict overlays.
         if let captureScreenshots = ProcessInfo.processInfo.environment["UI_TEST_CONFLICT_SCREENSHOTS"] {
             app.launchEnvironment["UI_TEST_CONFLICT_SCREENSHOTS"] = captureScreenshots
+        }
+        app.launchArguments += ["-UITesting"]
+        if isManualCaptureOptedIn {
+            app.launchArguments += ["-UITestingConflictCapture"]
         }
     }
 
@@ -36,22 +40,19 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
     //
     //   UI_TEST_CONFLICT_SCREENSHOTS=1 xcodebuild test -scheme "Weird Parts" …
     //
-    // Xcode may not expose the shell environment to the XCTest runner, so the
-    // explicit conflict-capture launch argument also opts this focused capture
-    // test into execution once setUp has prepared the app fixture mode.
-    //
     // In Xcode: Edit Scheme → Test → Arguments → Environment Variables →
     //   Name: UI_TEST_CONFLICT_SCREENSHOTS   Value: 1
+    //
+    // If this Xcode runner does not expose shell environment variables to the
+    // XCTest process, create /tmp/WeirdPartsConflictScreenshotCapture.opt-in
+    // before the focused run and remove it after.
     func testCaptureConflictScreenshots() throws {
-        let shouldCaptureScreenshots = ProcessInfo.processInfo.environment["UI_TEST_CONFLICT_SCREENSHOTS"] == "1"
-            || app.launchEnvironment["UI_TEST_CONFLICT_SCREENSHOTS"] == "1"
-            || app.launchArguments.contains("-UITestingConflictCapture")
-
-        guard shouldCaptureScreenshots else {
+        guard isManualCaptureOptedIn else {
             throw XCTSkip(
                 "Skipped: set the environment variable UI_TEST_CONFLICT_SCREENSHOTS=1 " +
-                "and ensure the simulator has a seeded admin user (PIN 1234) with " +
-                "pending sync conflicts before running this test."
+                "or create /tmp/WeirdPartsConflictScreenshotCapture.opt-in, then ensure " +
+                "the simulator has a seeded admin user (PIN 1234) with pending sync " +
+                "conflicts before running this test."
             )
         }
 
@@ -147,5 +148,11 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    private var isManualCaptureOptedIn: Bool {
+        ProcessInfo.processInfo.environment["UI_TEST_CONFLICT_SCREENSHOTS"] == "1"
+            || app.launchEnvironment["UI_TEST_CONFLICT_SCREENSHOTS"] == "1"
+            || FileManager.default.fileExists(atPath: manualOptInMarkerPath)
     }
 }
