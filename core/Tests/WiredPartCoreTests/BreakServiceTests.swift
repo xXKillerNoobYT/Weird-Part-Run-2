@@ -347,6 +347,37 @@ struct BreakServiceTests {
         #expect(records.filter { $0.breakType == "break" }.count == 2)
     }
 
+    @Test("autoFillBreaksForDay does not duplicate timezone-qualified scheduled breaks")
+    func testAutoFillDoesNotDuplicateTimezoneQualifiedScheduledBreaks() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        try breakService.updateCompanyBreakSettings(
+            stateCode: "CA",
+            roundingMinutes: 15,
+            roundingEnabled: false,
+            autoFillBreaks: true,
+            defaultMorningBreak: "10:00",
+            defaultLunch: nil,
+            defaultAfternoonBreak: "14:00"
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO break_records
+                    (user_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
+                VALUES
+                    (?, 'break', date('now') || 'T10:00:00Z', date('now') || 'T10:15:00Z', 15, 1, 1),
+                    (?, 'break', date('now') || 'T14:00:00+00:00', date('now') || 'T14:15:00+00:00', 15, 1, 1)
+                """, arguments: [env.adminUserId, env.adminUserId])
+        }
+
+        try breakService.autoFillBreaksForDay(userId: env.adminUserId)
+
+        let records = try breakService.getBreakRecordsForDay(userId: env.adminUserId)
+        #expect(records.filter { $0.breakType == "break" }.count == 2)
+    }
+
     // MARK: - Rounding
 
     @Test("getRoundedTime rounds correctly")

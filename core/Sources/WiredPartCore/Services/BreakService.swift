@@ -286,7 +286,7 @@ public final class BreakService: Sendable {
             func insertScheduledBreakIfMissing(at time: String) throws {
                 let startStr = "\(dateStr)T\(time):00"
                 let alreadyExists = existing.contains {
-                    $0.breakType == "break" && $0.startedAt == startStr
+                    $0.breakType == "break" && $0.startedAt.hasPrefix(startStr)
                 }
                 guard !alreadyExists else { return }
 
