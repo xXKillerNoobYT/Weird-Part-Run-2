@@ -78,6 +78,12 @@ struct SettingsServiceTests {
 
         #expect(SettingsService.syncScope(for: "update_channel", category: "general") == .device)
         #expect(SettingsService.syncScope(for: "custom_backup_key", category: "backup") == .device)
+        #expect(SettingsService.syncScope(for: "sync_server_address", category: "sync") == .device)
+        #expect(SettingsService.syncScope(for: "shop_server_address", category: "sync") == .device)
+        #expect(SettingsService.syncScope(for: "paired_shop_device_id", category: "sync") == .device)
+        #expect(SettingsService.syncScope(for: "paired_company_id", category: "sync") == .device)
+        #expect(SettingsService.syncScope(for: "device_pairing_verified_at", category: "sync") == .device)
+        #expect(SettingsService.syncScope(for: "local_db_path", category: "general") == .device)
 
         #expect(SettingsService.syncScope(for: "payment_terms", category: "pdf") == .company)
         #expect(SettingsService.syncScope(for: "unknown_future_setting") == .company)
@@ -109,12 +115,14 @@ struct SettingsServiceTests {
         try svc.upsertSetting(key: "payment_terms", value: "Net 30", category: "pdf")
         try svc.upsertSetting(key: "theme_mode", value: "dark", category: "theme")
         try svc.upsertSetting(key: "last_backup_time", value: "2026-05-17T00:00:00Z", category: "backup")
+        try svc.upsertSetting(key: "shop_server_address", value: "http://shop.local", category: "sync")
 
         let syncable = try svc.getSettings(excludingScope: .device)
 
         #expect(syncable.contains { $0.key == "payment_terms" })
         #expect(syncable.contains { $0.key == "theme_mode" })
         #expect(!syncable.contains { $0.key == "last_backup_time" })
+        #expect(!syncable.contains { $0.key == "shop_server_address" })
     }
 
     @Test("isAutoSyncEnabled defaults to true")

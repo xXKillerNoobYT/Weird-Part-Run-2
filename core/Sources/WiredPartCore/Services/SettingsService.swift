@@ -971,10 +971,16 @@ public final class SettingsService: Sendable {
         "device_fingerprint",
         "device_id",
         "device_name",
+        "device_pairing_verified_at",
         "device_private_key",
+        "paired_company_id",
+        "paired_shop_device_id",
+        "shop_server_address",
         "last_backup_time",
         "last_update_check",
+        "sync_server_address",
         "local_database_path",
+        "local_db_path",
         "update_channel",
     ]
 }
