@@ -151,6 +151,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         relaunchForWEI1451(["-UITestingWEI936NotStarted"])
         logInAsUITestOwnerIfNeeded()
         XCTAssertTrue(app.staticTexts["Getting Started"].waitForExistence(timeout: 20), "Dashboard should show the not-started Getting Started card")
+        XCTAssertFalse(app.staticTexts["Try This"].exists, "Not-started fixture should not show the active onboarding tour banner")
         captureWEI1451("02-ipad-landscape-card-not-started")
 
         relaunchForWEI1451(["-UITestingWEI936TourActive"])

@@ -1155,14 +1155,17 @@ final class AppCore: ObservableObject {
 
         if let userId {
             let storageKey = "onboarding_progress_\(userId)"
-            UserDefaults.standard.set(true, forKey: storageKey + "_active")
+            let shouldActivateTour = !args.contains("-UITestingWEI936NotStarted")
+            UserDefaults.standard.set(shouldActivateTour, forKey: storageKey + "_active")
 
             var completedTasks: Set<String> = []
             if args.contains("-UITestingWEI936RequiredDone") {
                 completedTasks.formUnion(["dashboard-view-kpis", "dashboard-tap-kpi"])
             }
-            if let data = try? JSONEncoder().encode(completedTasks) {
+            if shouldActivateTour, let data = try? JSONEncoder().encode(completedTasks) {
                 UserDefaults.standard.set(data, forKey: storageKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: storageKey)
             }
         }
 
