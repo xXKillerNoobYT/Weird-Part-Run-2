@@ -6766,6 +6766,7 @@ public final class PartsService: Sendable {
     /// errors, no writes are attempted. If any database write fails mid-import,
     /// GRDB rolls back the entire transaction, preventing partial bad state.
     public func commitPartsImportCSV(_ preview: PartsImportPreview) throws -> PartsImportCommitResult {
+        try validateImportCommitSource(preview.source)
         let importSessionId = try createImportSessionIfNeeded(for: preview)
         do {
             guard preview.errors.isEmpty else {
@@ -6884,21 +6885,21 @@ public final class PartsService: Sendable {
                 for row in preview.newParts {
                     let partId = try create(row)
                     try upsertSupplierLinkIfNeeded(dbConn, row: row, partId: partId, supplierId: preview.source?.supplierId)
-                    try recordImportRowEvidence(dbConn, sessionId: importSessionId, row: row, action: "created", partId: partId)
+                    try recordImportRowEvidence(dbConn, sessionId: importSessionId, row: row, action: "created", partId: partId, source: preview.source)
                     created += 1
                 }
                 for row in preview.skippedNewParts {
-                    try recordImportRowEvidence(dbConn, sessionId: importSessionId, row: row, action: "skipped", partId: nil)
+                    try recordImportRowEvidence(dbConn, sessionId: importSessionId, row: row, action: "skipped", partId: nil, source: preview.source)
                 }
                 for conflict in preview.conflicts {
                     switch conflict.resolution {
                     case .update:
                         try update(conflict)
                         try upsertSupplierLinkIfNeeded(dbConn, row: conflict.parsedRow, partId: conflict.existingPartId, supplierId: preview.source?.supplierId)
-                        try recordImportRowEvidence(dbConn, sessionId: importSessionId, row: conflict.parsedRow, action: "updated", partId: conflict.existingPartId)
+                        try recordImportRowEvidence(dbConn, sessionId: importSessionId, row: conflict.parsedRow, action: "updated", partId: conflict.existingPartId, source: preview.source)
                         updated += 1
                     case .skip, .ask:
-                        try recordImportRowEvidence(dbConn, sessionId: importSessionId, row: conflict.parsedRow, action: "skipped", partId: conflict.existingPartId)
+                        try recordImportRowEvidence(dbConn, sessionId: importSessionId, row: conflict.parsedRow, action: "skipped", partId: conflict.existingPartId, source: preview.source)
                         skipped += 1
                     }
                 }
@@ -6910,6 +6911,35 @@ public final class PartsService: Sendable {
         } catch {
             try? finishImportSessionIfNeeded(id: importSessionId, status: "failed", created: 0, updated: 0, skipped: 0, error: String(describing: error))
             throw error
+        }
+    }
+
+    /// Commit a source-agnostic parts import preview atomically.
+    ///
+    /// CSV callers keep using `commitPartsImportCSV` for compatibility; non-CSV
+    /// deterministic parsers should use this entry point so the contract does
+    /// not imply that commit behavior is CSV-specific.
+    public func commitPartsImport(_ preview: PartsImportPreview) throws -> PartsImportCommitResult {
+        try commitPartsImportCSV(preview)
+    }
+
+    private func validateImportCommitSource(_ source: PartsImportSourceMetadata?) throws {
+        guard let source else { return }
+        guard PartsImportSourceKind(rawValue: source.sourceKind) != nil else {
+            throw PartsError.invalidInput("Unsupported parts import source kind: \(source.sourceKind)")
+        }
+        guard let sourceHash = source.sourceHash?.trimmingCharacters(in: .whitespacesAndNewlines),
+              sourceHash.hasPrefix("sha256:"),
+              sourceHash.count == 71 else {
+            throw PartsError.invalidInput("Parts import commit requires a durable sha256 source hash.")
+        }
+        if let parserSourceHash = source.parserMetadata?.sourceHash,
+           parserSourceHash != sourceHash {
+            throw PartsError.invalidInput("Parts import source hash does not match parser metadata.")
+        }
+        if let parserSourceKind = source.parserMetadata?.sourceKind.rawValue,
+           parserSourceKind != source.sourceKind {
+            throw PartsError.invalidInput("Parts import source kind does not match parser metadata.")
         }
     }
 
@@ -6944,7 +6974,7 @@ public final class PartsService: Sendable {
         }
     }
 
-    private func recordImportRowEvidence(_ dbConn: Database, sessionId: Int64?, row: PartsImportParsedRow, action: String, partId: Int64?) throws {
+    private func recordImportRowEvidence(_ dbConn: Database, sessionId: Int64?, row: PartsImportParsedRow, action: String, partId: Int64?, source: PartsImportSourceMetadata?) throws {
         guard let sessionId else { return }
         try dbConn.execute(sql: """
             INSERT INTO part_import_row_evidence (
@@ -6960,25 +6990,67 @@ public final class PartsService: Sendable {
                 row.code,
                 row.category,
                 row.brand,
-                importRowPayloadJSON(row)
+                importRowPayloadJSON(row, source: source)
             ])
     }
 
-    private func importRowPayloadJSON(_ row: PartsImportParsedRow) -> String {
-        let payload: [String: Any] = [
+    private func importRowPayloadJSON(_ row: PartsImportParsedRow, source: PartsImportSourceMetadata?) -> String {
+        var payload: [String: Any] = [
             "rowNumber": row.rowNumber,
             "name": row.name,
-            "code": row.code as Any,
             "category": row.category,
-            "brand": row.brand as Any,
             "fields": row.fields
         ]
+        payload["code"] = row.code ?? NSNull()
+        payload["brand"] = row.brand ?? NSNull()
+        if let sourcePayload = sourceEvidencePayload(source) {
+            payload["source"] = sourcePayload
+        }
         guard JSONSerialization.isValidJSONObject(payload),
               let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
               let json = String(data: data, encoding: .utf8) else {
             return "{}"
         }
         return json
+    }
+
+    private func sourceEvidencePayload(_ source: PartsImportSourceMetadata?) -> [String: Any]? {
+        guard let source else { return nil }
+        var payload: [String: Any] = [
+            "sourceKind": source.sourceKind
+        ]
+        if let filename = source.filename { payload["filename"] = filename }
+        if let sheetName = source.sheetName { payload["sheetName"] = sheetName }
+        if let sourceHash = source.sourceHash { payload["sourceHash"] = sourceHash }
+        if let parserMetadata = source.parserMetadata {
+            var parserPayload: [String: Any] = [
+                "name": parserMetadata.parserName,
+                "version": parserMetadata.parserVersion,
+                "sourceKind": parserMetadata.sourceKind.rawValue
+            ]
+            if let sourceHash = parserMetadata.sourceHash {
+                parserPayload["sourceHash"] = sourceHash
+            }
+            payload["parser"] = parserPayload
+        }
+        if !source.evidence.isEmpty {
+            payload["evidence"] = source.evidence.map(sourceEvidenceJSON)
+        }
+        return payload
+    }
+
+    private func sourceEvidenceJSON(_ evidence: PartsImportSourceEvidence) -> [String: Any] {
+        var payload: [String: Any] = [
+            "kind": evidence.kind.rawValue
+        ]
+        if let sheetName = evidence.sheetName { payload["sheetName"] = sheetName }
+        if let pageNumber = evidence.pageNumber { payload["pageNumber"] = pageNumber }
+        if let rowNumber = evidence.rowNumber { payload["rowNumber"] = rowNumber }
+        if let columnName = evidence.columnName { payload["columnName"] = columnName }
+        if let text = evidence.text { payload["text"] = text }
+        if let confidence = evidence.confidence { payload["confidence"] = confidence }
+        if let boundingBox = evidence.boundingBox { payload["boundingBox"] = boundingBox }
+        return payload
     }
 
     private func encodeJSONDictionary(_ dictionary: [String: String]) throws -> String {
