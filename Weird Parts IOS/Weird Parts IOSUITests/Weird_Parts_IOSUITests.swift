@@ -124,6 +124,8 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         if !app.launchArguments.contains("-UITesting") {
             app.launchArguments += ["-UITesting"]
         }
+        app.launchEnvironment["OS_ACTIVITY_MODE"] = "disable"
+        app.launchEnvironment["UITEST_DISABLE_ANIMATIONS"] = "1"
     }
 
     override func tearDownWithError() throws {
@@ -1240,11 +1242,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         for _ in 0..<maxSwipes where !element.exists || !element.isHittable {
             app.swipeUp()
         }
-    }
-
-    private func configureUITestingEnvironment(_ app: XCUIApplication) {
-        app.launchEnvironment["OS_ACTIVITY_MODE"] = "disable"
-        app.launchEnvironment["UITEST_DISABLE_ANIMATIONS"] = "1"
     }
 
     private func currentWizardStepNumber(timeout: TimeInterval = 5) -> Int? {
