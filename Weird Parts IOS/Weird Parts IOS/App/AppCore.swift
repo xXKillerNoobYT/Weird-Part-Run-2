@@ -1152,6 +1152,7 @@ final class AppCore: ObservableObject {
             args.contains("-UITestingWEI936Celebration") else { return }
 
         UserDefaults.standard.removeObject(forKey: "onboarding_checklist_dismissed")
+        UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
 
         if let userId {
             let storageKey = "onboarding_progress_\(userId)"

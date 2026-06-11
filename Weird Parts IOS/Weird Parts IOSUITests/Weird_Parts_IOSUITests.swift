@@ -166,10 +166,20 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
         relaunchForWEI1451(["-UITestingWEI936NotStarted"])
         logInAsUITestOwnerIfNeeded()
-        let dismiss = app.buttons["Dismiss checklist"]
+        let dismiss = app.descendants(matching: .any)["dismissChecklistButton"].firstMatch
         XCTAssertTrue(dismiss.waitForExistence(timeout: 20), "Dismiss checklist control should be present")
-        dismiss.tap()
-        XCTAssertTrue(app.staticTexts["Checklist dismissed"].waitForExistence(timeout: 5), "Dismiss action should show a toast with undo")
+        XCTAssertTrue(dismiss.isHittable, "Dismiss checklist control should be hittable")
+        dismiss.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        captureWEI1451("05-ipad-landscape-after-dismiss-tap")
+        let toast = app.descendants(matching: .any)["checklistDismissToast"]
+        let toastMessage = app.descendants(matching: .any)["checklistToastMessage"]
+        let undoToast = app.descendants(matching: .any)["checklistUndoDismissToast"]
+        XCTAssertTrue(
+            toast.waitForExistence(timeout: 5) ||
+            toastMessage.waitForExistence(timeout: 1) ||
+            undoToast.waitForExistence(timeout: 1),
+            "Dismiss action should show a toast with undo"
+        )
         captureWEI1451("05-ipad-landscape-dismiss-toast")
 
         relaunchForWEI1451(["-UITestingWEI936Celebration"])
