@@ -22,12 +22,15 @@ struct IOSPreBillingPage: View {
 
     private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
+    private var effectiveStart: Date { dateRange.dateInterval?.start ?? startDate }
+    private var effectiveEnd: Date { dateRange.dateInterval?.end ?? endDate }
+
     private var startDateString: String {
-        Formatters.localDateFormatter.string(from: startDate)
+        Formatters.localDateFormatter.string(from: effectiveStart)
     }
 
     private var endDateString: String {
-        Formatters.localDateFormatter.string(from: endDate)
+        Formatters.localDateFormatter.string(from: effectiveEnd)
     }
 
     var body: some View {
@@ -38,9 +41,18 @@ struct IOSPreBillingPage: View {
         .navigationTitle("Pre-Billing")
         .reportExportToolbar(
             title: "Pre-Billing",
-            columns: ["Job", "Regular Hrs", "Overtime Hrs"],
-            rows: rows.map { [$0.jobName, String(format: "%.1f", $0.regularHours),
-                              String(format: "%.1f", $0.overtimeHours)] }
+            columns: ["Job", "Job Number", "Regular Hrs", "Overtime Hrs", "Material Cost", "Billable Amount", "Sources"],
+            rows: filteredRows.map {
+                [
+                    $0.jobName,
+                    $0.jobNumber,
+                    String(format: "%.1f", $0.regularHours),
+                    String(format: "%.1f", $0.overtimeHours),
+                    formatCurrency($0.materialCost),
+                    formatCurrency($0.billableAmount),
+                    $0.sourceSummary
+                ]
+            }
         )
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -64,6 +76,7 @@ struct IOSPreBillingPage: View {
         .onDisappear {
             NotificationCenter.default.post(name: .reportsPrebillingPageInactive, object: nil)
         }
+        .onChange(of: dateRange) { _, _ in loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
     }
@@ -86,17 +99,25 @@ struct IOSPreBillingPage: View {
         } else {
             List {
                 Section {
-                    HStack(spacing: 16) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 12)], spacing: 12) {
                         summaryCard(title: "Jobs", value: "\(rows.count)", color: .blue)
                         summaryCard(title: "Reg Hrs", value: String(format: "%.1f", totalRegular), color: .green)
                         summaryCard(title: "OT Hrs", value: String(format: "%.1f", totalOvertime), color: .orange)
+                        summaryCard(title: "Materials", value: formatCurrency(totalMaterialCost), color: .purple)
+                        summaryCard(title: "Billable", value: formatCurrency(totalBillableAmount), color: .primary)
                     }
                     .padding(.vertical, 4)
                 }
 
                 Section("Job Summaries") {
-                    ForEach(filteredRows) { row in
-                        billingRow(row)
+                    if filteredRows.isEmpty {
+                        Text("No jobs match the current search.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(filteredRows) { row in
+                            billingRow(row)
+                        }
                     }
                 }
             }
@@ -109,9 +130,11 @@ struct IOSPreBillingPage: View {
     private func summaryCard(title: String, value: String, color: Color) -> some View {
         VStack(spacing: 4) {
             Text(value)
-                .font(.system(.title3, design: .monospaced))
+                .font(.system(.subheadline, design: .monospaced))
                 .fontWeight(.bold)
                 .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
             Text(title)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -126,7 +149,13 @@ struct IOSPreBillingPage: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(row.jobName)
                     .fontWeight(.medium)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                if !row.jobNumber.isEmpty {
+                    Text(row.jobNumber)
+                        .font(.caption2)
+                        .fontDesign(.monospaced)
+                        .foregroundStyle(.secondary)
+                }
                 HStack(spacing: 12) {
                     Label(String(format: "%.1f reg", row.regularHours), systemImage: "clock")
                         .font(.caption)
@@ -136,6 +165,14 @@ struct IOSPreBillingPage: View {
                             .font(.caption)
                             .foregroundStyle(.orange)
                     }
+                }
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                if !row.sourceSummary.isEmpty {
+                    Text(row.sourceSummary)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(2)
                 }
             }
 
@@ -148,9 +185,19 @@ struct IOSPreBillingPage: View {
                 Text("total hrs")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                if row.materialCost > 0 || row.billableAmount > 0 {
+                    Text(formatCurrency(row.billableAmount))
+                        .font(.caption)
+                        .fontWeight(.medium)
+                    Text("billable")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(preBillingAccessibilityLabel(row))
     }
 
     // MARK: - Computed
@@ -158,12 +205,24 @@ struct IOSPreBillingPage: View {
     private var filteredRows: [ReportsService.PreBillingRow] {
         if searchText.isEmpty { return rows }
         return rows.filter {
-            $0.jobName.localizedCaseInsensitiveContains(searchText)
+            $0.jobName.localizedCaseInsensitiveContains(searchText) ||
+            $0.jobNumber.localizedCaseInsensitiveContains(searchText)
         }
     }
 
     private var totalRegular: Double { rows.reduce(0) { $0 + $1.regularHours } }
     private var totalOvertime: Double { rows.reduce(0) { $0 + $1.overtimeHours } }
+    private var totalMaterialCost: Double { rows.reduce(0) { $0 + $1.materialCost } }
+    private var totalBillableAmount: Double { rows.reduce(0) { $0 + $1.billableAmount } }
+
+    private func formatCurrency(_ value: Double) -> String {
+        Formatters.formatCurrencyTwoDecimal(value)
+    }
+
+    private func preBillingAccessibilityLabel(_ row: ReportsService.PreBillingRow) -> String {
+        let jobNumber = row.jobNumber.isEmpty ? "" : ", job number \(row.jobNumber)"
+        return "\(row.jobName)\(jobNumber), \(String(format: "%.1f", row.regularHours)) regular hours, \(String(format: "%.1f", row.overtimeHours)) overtime hours, \(String(format: "%.1f", row.regularHours + row.overtimeHours)) total hours, \(formatCurrency(row.billableAmount)) billable."
+    }
 
     // MARK: - Data Loading
 
