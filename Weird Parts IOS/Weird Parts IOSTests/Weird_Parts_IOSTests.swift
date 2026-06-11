@@ -35,6 +35,12 @@ struct Weird_Parts_IOSTests {
     }
 
     @MainActor
+    @Test func shopServerAddressSettingsAreDeviceScoped() async throws {
+        #expect(IOSSyncManager.settingSyncScope(for: "sync_server_address") == .device)
+        #expect(IOSSyncManager.settingSyncScope(for: "shop_server_address") == .device)
+    }
+
+    @MainActor
     @Test func lanPeerDiscoveryStartupFailureSurfacesErrorAndStopsLanOnlyScan() async throws {
         let manager = IOSSyncManager()
         manager.isScanning = true

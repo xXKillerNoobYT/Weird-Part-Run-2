@@ -35,6 +35,8 @@ struct AuditLogPage: View {
             if isLoading {
                 ProgressView("Loading audit log...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let errorMessage {
+                ErrorStateView(message: errorMessage) { loadData() }
             } else if entries.isEmpty {
                 EmptyStateView(
                     icon: "doc.text.magnifyingglass",
@@ -54,14 +56,6 @@ struct AuditLogPage: View {
                                 Task { loadData() }
                             }
                             .frame(maxWidth: .infinity)
-                        }
-                    }
-
-                    if let errorMessage {
-                        Section {
-                            Label(errorMessage, systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(.red)
-                                .font(.callout)
                         }
                     }
                 }
@@ -154,6 +148,7 @@ struct AuditLogPage: View {
             isLoading = false
             return
         }
+        errorMessage = nil
         do {
             entries = try settingsService.listAuditLog(limit: limit)
         } catch {
