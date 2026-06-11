@@ -18,17 +18,34 @@ struct IOSJobDetailPage: View {
     @State private var activeTodos: [JobsService.ClockTodoItem] = []
     @State private var todoSummary: JobsService.JobTodoSummary?
     @State private var stages: [JobsService.JobStageStatus] = []
+    @State private var jobParts: [JobsService.JobPartRow] = []
+    @State private var readyMaterials: [JobsService.JobReadyMaterialRow] = []
+    @State private var materialTotals: JobsService.JobMaterialTotals?
+    @State private var materialHistory: [JobsService.JobMaterialHistoryRow] = []
+    @State private var jobNotes: [JobsService.JobNoteRow] = []
+    @State private var inventoryMovements: [JobsService.JobInventoryMovementRow] = []
     @State private var isPaymentHold = false
     @State private var warrantyDaysRemaining: Int?
     @State private var selectedTab: DetailTab = .todos
+    @State private var selectedMaterialSegment: MaterialSegment = .ready
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
+    @State private var materialSuccessMessage: String?
+    @State private var materialActionError: String?
+    @State private var materialQuantity = 1
+    @State private var materialNote = ""
+    @State private var materialCondition: MaterialCondition = .usable
+    @State private var materialCorrectionQty = 1
+    @State private var pullPartSearch = ""
+    @State private var pullPartResults: [Part] = []
+    @State private var selectedPullPart: Part?
+    @State private var highlightedJobPartId: Int64?
     private var canViewJobFinancials: Bool { appCore.hasPermission("view_job_financials") }
 
     private enum DetailTab: String, CaseIterable, Identifiable {
         case todos = "To-Dos"
-        case jpos = "JPOs"
+        case materials = "Materials"
         case labor = "Labor"
         case notes = "Notes"
         case financial = "Financial"
@@ -37,11 +54,66 @@ struct IOSJobDetailPage: View {
         var id: String { rawValue }
     }
 
+    private enum MaterialSegment: String, CaseIterable, Identifiable {
+        case ready = "Ready"
+        case used = "Used"
+        case returns = "Returns"
+        case history = "History"
+
+        var id: String { rawValue }
+    }
+
+    private enum MaterialCondition: String, CaseIterable, Identifiable {
+        case usable = "Usable"
+        case damaged = "Damaged"
+        case wrongPart = "Wrong part"
+        case supplierIssue = "Supplier issue"
+
+        var id: String { rawValue }
+
+        var contractValue: String {
+            switch self {
+            case .usable: "usable"
+            case .damaged: "damaged"
+            case .wrongPart: "wrong_part"
+            case .supplierIssue: "supplier_issue"
+            }
+        }
+
+        var destinationPreview: String {
+            switch self {
+            case .usable: "Warehouse review / shelf route"
+            case .damaged: "Damage review"
+            case .wrongPart: "Wrong-part review"
+            case .supplierIssue: "Supplier return review"
+            }
+        }
+    }
+
+    private enum MaterialAction: Identifiable {
+        case pull
+        case useReady(JobsService.JobReadyMaterialRow)
+        case returnReady(JobsService.JobReadyMaterialRow)
+        case returnUsed(JobsService.JobPartRow)
+        case correctUsed(JobsService.JobPartRow)
+
+        var id: String {
+            switch self {
+            case .pull: "pull"
+            case .useReady(let row): "use-ready-\(row.partId)"
+            case .returnReady(let row): "return-ready-\(row.partId)"
+            case .returnUsed(let row): "return-used-\(row.id)"
+            case .correctUsed(let row): "correct-used-\(row.id)"
+            }
+        }
+    }
+
     private enum ActiveSheet: Identifiable {
         case help
         case weeklyReview
         case stageDetails(String)
         case quickAction(String)
+        case materialAction(MaterialAction)
 
         var id: String {
             switch self {
@@ -49,6 +121,7 @@ struct IOSJobDetailPage: View {
             case .weeklyReview: "weeklyReview"
             case .stageDetails(let name): "stage-\(name)"
             case .quickAction(let name): "action-\(name)"
+            case .materialAction(let action): "material-\(action.id)"
             }
         }
     }
@@ -82,7 +155,7 @@ struct IOSJobDetailPage: View {
                         title: "Job Detail Help",
                         sections: [
                             ("Dashboard", "Review status, stage progress, smart cards, AI summary, today’s activity, and quick actions from the top of the page."),
-                            ("Tabs", "Use To-Dos, JPOs, Labor, Notes, Financial, and Warranty tabs to focus the detail area."),
+                            ("Tabs", "Use To-Dos, Materials, Labor, Notes, Financial, and Warranty tabs to focus the detail area."),
                             ("Payment Holds", "A red banner appears when a job is on payment hold. Workers can still view details, but clock-in remains blocked by the Jobs service."),
                             ("Weekly Review", "Tap the calendar icon to submit a weekly work review for this job.")
                         ]
@@ -102,10 +175,17 @@ struct IOSJobDetailPage: View {
                         title: action,
                         message: quickActionMessage(action)
                     )
+                case .materialAction(let action):
+                    materialActionSheet(action)
                 }
             }
             .refreshable { loadData() }
-            .task { loadData() }
+            .task {
+                if ProcessInfo.processInfo.arguments.contains("-UITestingWEI3144JobMaterials") {
+                    selectedTab = .materials
+                }
+                loadData()
+            }
             .task { appCore.onboardingManager?.markCompleted("jobs-tap-detail") }
             .onDisappear {
                 NotificationCenter.default.post(name: .jobDetailPageInactive, object: nil)
@@ -216,7 +296,7 @@ struct IOSJobDetailPage: View {
                     HStack {
                         ForEach(stages) { stage in
                             Button {
-                                activeSheet = .stageDetails(stage.name)
+                                changeStage(stage)
                             } label: {
                                 Text(stage.name)
                                     .font(.caption2)
@@ -227,9 +307,10 @@ struct IOSJobDetailPage: View {
                                     .foregroundStyle(stageTint(stage))
                             }
                             .buttonStyle(.plain)
+                            .disabled(stage.status == "in_progress")
                         }
                     }
-                    .accessibilityLabel("Tap a stage name for details")
+                    .accessibilityLabel("Tap a stage name to move the job to that stage")
                 }
             }
         }
@@ -263,12 +344,12 @@ struct IOSJobDetailPage: View {
                 )
             }
             smartCard(
-                title: "JPOs",
-                value: "—",
-                subtitle: "Linked orders tab",
-                icon: "doc.text.fill",
+                title: "Materials",
+                value: "\(materialTotalsValue.usedQty)",
+                subtitle: "\(materialTotalsValue.stagedQty) staged, \(materialTotalsValue.returnedQty) returned",
+                icon: "shippingbox.fill",
                 tint: .orange
-            ) { selectedTab = .jpos }
+            ) { selectedTab = .materials }
             smartCard(
                 title: "To-Dos",
                 value: todoValue,
@@ -358,12 +439,8 @@ struct IOSJobDetailPage: View {
                 switch selectedTab {
                 case .todos:
                     todosTab
-                case .jpos:
-                    placeholderTab(
-                        title: "Linked JPOs",
-                        message: "Linked purchase orders will be listed here once the order relationship is exposed to the job detail dashboard.",
-                        icon: "doc.text"
-                    )
+                case .materials:
+                    materialsTab
                 case .labor:
                     laborTab
                 case .notes:
@@ -425,10 +502,334 @@ struct IOSJobDetailPage: View {
         }
     }
 
+    private var materialsTab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                sectionHeader("Materials", systemImage: "shippingbox")
+                Spacer()
+                Button {
+                    prepareMaterialAction(.pull)
+                } label: {
+                    Label("Pull Material", systemImage: "arrow.down.to.line.compact")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityHint("Pulls warehouse stock into job-ready staged material")
+            }
+
+            materialStatusBanner
+            materialTotalsHeader
+
+            Picker("Material Segment", selection: $selectedMaterialSegment) {
+                ForEach(MaterialSegment.allCases) { segment in
+                    Text(segment.rawValue).tag(segment)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("jobMaterialSegmentPicker")
+
+            switch selectedMaterialSegment {
+            case .ready:
+                readyMaterialsSegment
+            case .used:
+                usedMaterialsSegment
+            case .returns:
+                returnsMaterialsSegment
+            case .history:
+                historyMaterialsSegment
+            }
+        }
+        .accessibilityIdentifier("jobMaterialsTab")
+    }
+
+    @ViewBuilder
+    private var materialStatusBanner: some View {
+        if let materialSuccessMessage {
+            Label(materialSuccessMessage, systemImage: "checkmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.green)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.green.opacity(0.12)))
+                .accessibilityLabel(materialSuccessMessage)
+        }
+        if let materialActionError {
+            Label(materialActionError, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.red)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.red.opacity(0.12)))
+                .accessibilityLabel(materialActionError)
+        }
+    }
+
+    private var materialTotalsHeader: some View {
+        let totals = materialTotalsValue
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                materialTotalPill(title: "Staged", value: "\(totals.stagedQty)", tint: .blue)
+                materialTotalPill(title: "Used", value: "\(totals.usedQty)", tint: .green)
+                materialTotalPill(title: "Returned", value: "\(totals.returnedQty)", tint: .orange)
+            }
+            if hasFinancialPermission {
+                HStack(spacing: 8) {
+                    materialTotalPill(title: "Net Cost", value: formatCurrency(totals.netMaterialCost), tint: .secondary)
+                    materialTotalPill(title: "Total Cost", value: formatCurrency(totals.totalMaterialCost), tint: .secondary)
+                }
+            }
+        }
+    }
+
+    private func materialTotalPill(title: String, value: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundStyle(tint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color(.tertiarySystemGroupedBackground)))
+    }
+
+    private var readyMaterialsSegment: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if isLoading {
+                ProgressView("Loading staged material...")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if readyMaterials.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    placeholderRow("No staged material. Pulled or received parts for this job will appear here.", systemImage: "shippingbox")
+                    Button {
+                        activeSheet = .quickAction("Create JPO")
+                    } label: {
+                        Label("Open Stage Planner", systemImage: "list.bullet.clipboard")
+                    }
+                    .buttonStyle(.bordered)
+                }
+            } else {
+                ForEach(readyMaterials) { material in
+                    readyMaterialRow(material)
+                }
+            }
+        }
+    }
+
+    private func readyMaterialRow(_ material: JobsService.JobReadyMaterialRow) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "shippingbox.fill")
+                    .foregroundStyle(.blue)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(material.partName)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text([material.partCode, material.sourceSummary, material.lastMovedAt.map { "Moved \(formatDate($0))" }]
+                        .compactMap { $0 }
+                        .joined(separator: " • "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Text("\(material.stagedQty) staged")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.blue)
+            }
+            HStack {
+                Button("Use") { prepareMaterialAction(.useReady(material)) }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityLabel("Use \(material.partName)")
+                Button("Return") { prepareMaterialAction(.returnReady(material)) }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel("Return \(material.partName)")
+                Spacer()
+            }
+            .font(.caption)
+        }
+        .padding(.vertical, 8)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var usedMaterialsSegment: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if jobParts.isEmpty {
+                placeholderRow("No material has been used on this job yet.", systemImage: "wrench.and.screwdriver")
+            } else {
+                ForEach(jobParts) { part in
+                    usedMaterialRow(part)
+                }
+            }
+        }
+    }
+
+    private func usedMaterialRow(_ part: JobsService.JobPartRow) -> some View {
+        let netQty = part.qtyConsumed - part.qtyReturned
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "wrench.and.screwdriver.fill")
+                    .foregroundStyle(.green)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(part.partName)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text([part.partCode, "\(part.qtyConsumed) used", "\(part.qtyReturned) returned"].compactMap { $0 }.joined(separator: " • "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("\(netQty) net")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.green)
+                    if hasFinancialPermission, let unitCost = part.unitCost {
+                        Text(formatCurrency(Double(netQty) * unitCost))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            HStack {
+                Button("Return") { prepareMaterialAction(.returnUsed(part)) }
+                    .buttonStyle(.bordered)
+                    .disabled(netQty <= 0)
+                    .accessibilityHint(netQty > 0 ? "Returns used material to warehouse review" : "All used quantity has already been returned")
+                Button("Correct") { prepareMaterialAction(.correctUsed(part)) }
+                    .buttonStyle(.bordered)
+                    .accessibilityHint("Requires an audit note")
+                Spacer()
+            }
+            .font(.caption)
+        }
+        .padding(.vertical, 8)
+        .background(highlightedJobPartId == part.id ? Color.green.opacity(0.10) : Color.clear)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var returnsMaterialsSegment: some View {
+        let rows = materialHistory.filter { $0.eventType.contains("return") }
+        return VStack(alignment: .leading, spacing: 8) {
+            Button {
+                if let firstReady = readyMaterials.first {
+                    prepareMaterialAction(.returnReady(firstReady))
+                } else if let firstUsed = jobParts.first(where: { $0.qtyConsumed > $0.qtyReturned }) {
+                    prepareMaterialAction(.returnUsed(firstUsed))
+                }
+            } label: {
+                Label("Start Return", systemImage: "arrow.uturn.left")
+            }
+            .buttonStyle(.bordered)
+            .disabled(readyMaterials.isEmpty && !jobParts.contains { $0.qtyConsumed > $0.qtyReturned })
+            .accessibilityHint("Starts a return from staged or used material on this job")
+
+            if rows.isEmpty {
+                placeholderRow("No material returns have been started for this job.", systemImage: "arrow.uturn.left")
+            } else {
+                ForEach(rows) { row in
+                    materialHistoryRow(row)
+                }
+            }
+        }
+    }
+
+    private var historyMaterialsSegment: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if materialHistory.isEmpty && inventoryMovements.isEmpty {
+                placeholderRow("No material history has been logged for this job yet.", systemImage: "clock.arrow.circlepath")
+            } else {
+                ForEach(materialHistory) { row in
+                    materialHistoryRow(row)
+                }
+                ForEach(inventoryMovements) { movement in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Label(movement.partName, systemImage: StockMovement.MovementType.systemImageName(forRawValue: movement.movementType))
+                                .font(.subheadline)
+                            Spacer()
+                            Text("\(movement.qty)")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                        }
+                        Text("\(StockMovement.MovementType.displayName(forRawValue: movement.movementType)) • \(movement.locationSummary) • \(movement.performedByName)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+    }
+
+    private func materialHistoryRow(_ row: JobsService.JobMaterialHistoryRow) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: materialHistoryIcon(row.eventType))
+                    .foregroundStyle(materialHistoryTint(row.eventType))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.partName)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Text("\(materialEventName(row.eventType)) • qty \(row.qty) • \(row.actorName)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text([row.locationSummary, row.reference, row.createdAt.map(formatDate)].compactMap { $0 }.joined(separator: " • "))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    if let notes = row.notes, !notes.isEmpty {
+                        Text(notes)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer()
+            }
+        }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .combine)
+    }
+
     private func notesTab(_ job: JobsService.JobDetail) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionHeader("Notes", systemImage: "note.text")
-            if let notes = job.notes, !notes.isEmpty {
+            if !jobNotes.isEmpty {
+                ForEach(jobNotes) { note in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .top) {
+                            Label(note.title, systemImage: note.entryType == "stage_change" ? "point.3.connected.trianglepath.dotted" : "note.text")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Spacer()
+                            if let createdAt = note.createdAt {
+                                Text(formatDate(createdAt))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        if let content = note.content, !content.isEmpty {
+                            Text(content)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Text(note.authorName)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.vertical, 4)
+                }
+            } else if let notes = job.notes, !notes.isEmpty {
                 Text(notes)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -607,6 +1008,143 @@ struct IOSJobDetailPage: View {
         .presentationDetents([.medium])
     }
 
+    private func materialActionSheet(_ action: MaterialAction) -> some View {
+        NavigationStack {
+            Form {
+                materialActionHeader(action)
+
+                if case .pull = action {
+                    pullPartPickerSection
+                }
+
+                if case .correctUsed(let part) = action {
+                    Section("Correction") {
+                        Stepper(
+                            "Adjusted quantity: \(materialCorrectionQty)",
+                            value: $materialCorrectionQty,
+                            in: part.qtyReturned...max(part.qtyReturned, part.qtyConsumed + Self.maxCorrectionOverage)
+                        )
+                        .accessibilityValue("\(materialCorrectionQty) adjusted, \(part.qtyReturned) already returned")
+                        TextField("Required audit note", text: $materialNote, axis: .vertical)
+                            .lineLimit(3...5)
+                    }
+                } else {
+                    Section("Quantity") {
+                        Stepper(
+                            "Quantity: \(materialQuantity)",
+                            value: $materialQuantity,
+                            in: 1...max(1, materialActionMaxQty(action))
+                        )
+                        .accessibilityValue("\(materialQuantity) of \(materialActionMaxQty(action)) available")
+                        if materialQuantity > materialActionMaxQty(action) {
+                            Text(overQuantityMessage(action))
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                }
+
+                if isReturnAction(action) {
+                    Section("Condition") {
+                        Picker("Condition", selection: $materialCondition) {
+                            ForEach(MaterialCondition.allCases) { condition in
+                                Text(condition.rawValue).tag(condition)
+                            }
+                        }
+                        Text(materialCondition.destinationPreview)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if !isCorrectionAction(action) {
+                    Section("Note") {
+                        TextField(notePlaceholder(action), text: $materialNote, axis: .vertical)
+                            .lineLimit(3...5)
+                        if isReturnAction(action), materialCondition != .usable, materialNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Text("Add a note for damaged, wrong, or supplier-issue returns.")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                }
+
+                if let materialActionError {
+                    Section {
+                        Label(materialActionError, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle(materialActionTitle(action))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { activeSheet = nil }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(materialActionPrimaryTitle(action)) {
+                        submitMaterialAction(action)
+                    }
+                    .disabled(!canSubmitMaterialAction(action))
+                    .accessibilityHint(materialActionDisabledHint(action))
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    @ViewBuilder
+    private func materialActionHeader(_ action: MaterialAction) -> some View {
+        Section {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(materialActionPartName(action))
+                    .font(.headline)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(materialActionSubtitle(action))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var pullPartPickerSection: some View {
+        Section("Part") {
+            TextField("Search parts by name or code", text: $pullPartSearch)
+                .onSubmit { loadPullPartResults() }
+            Button {
+                loadPullPartResults()
+            } label: {
+                Label("Search Parts", systemImage: "magnifyingglass")
+            }
+            if let selectedPullPart {
+                Label("\(selectedPullPart.name) selected", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            }
+            ForEach(Array(pullPartResults.enumerated()), id: \.offset) { _, part in
+                Button {
+                    selectedPullPart = part
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(part.name)
+                            if let code = part.code, !code.isEmpty {
+                                Text(code)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        if selectedPullPart?.id == part.id {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private func labelRow(_ label: String, value: String?, icon: String) -> some View {
         HStack {
             Label(label, systemImage: icon)
@@ -657,6 +1195,21 @@ struct IOSJobDetailPage: View {
         let labor = laborSummary
         let total = (labor?.totalRegularHours ?? 0) + (labor?.totalOvertimeHours ?? 0)
         return String(format: "%.1f hrs", total)
+    }
+
+    private var materialTotalsValue: JobsService.JobMaterialTotals {
+        materialTotals ?? JobsService.JobMaterialTotals(
+            stagedQty: readyMaterials.reduce(0) { $0 + $1.stagedQty },
+            usedQty: jobParts.reduce(0) { $0 + max(0, $1.qtyConsumed - $1.qtyReturned) },
+            returnedQty: jobParts.reduce(0) { $0 + $1.qtyReturned },
+            pendingReturnQty: 0,
+            netMaterialCost: jobParts.reduce(0) { total, part in
+                total + Double(max(0, part.qtyConsumed - part.qtyReturned)) * (part.unitCost ?? 0)
+            },
+            totalMaterialCost: jobParts.reduce(0) { total, part in
+                total + Double(part.qtyConsumed) * (part.unitCost ?? 0)
+            }
+        )
     }
 
     private var todoValue: String {
@@ -725,6 +1278,291 @@ struct IOSJobDetailPage: View {
         Formatters.formatCurrency(value)
     }
 
+    private func materialEventName(_ eventType: String) -> String {
+        if eventType.hasPrefix("job_return_") {
+            return eventType
+                .replacingOccurrences(of: "job_return_", with: "Return ")
+                .replacingOccurrences(of: "_", with: " ")
+                .capitalized
+        }
+        return StockMovement.MovementType.displayName(forRawValue: eventType)
+    }
+
+    private func materialHistoryIcon(_ eventType: String) -> String {
+        if eventType.hasPrefix("job_return_") { return "tray.and.arrow.down.fill" }
+        return StockMovement.MovementType.systemImageName(forRawValue: eventType)
+    }
+
+    private func materialHistoryTint(_ eventType: String) -> Color {
+        if eventType.contains("damage") || eventType.contains("wrong") || eventType.contains("supplier") { return .red }
+        if eventType.contains("return") { return .orange }
+        if StockMovement.MovementType(rawValue: eventType) == .jobPull { return .green }
+        if StockMovement.MovementType(rawValue: eventType) == .transfer { return .blue }
+        return .secondary
+    }
+
+    private func prepareMaterialAction(_ action: MaterialAction) {
+        materialActionError = nil
+        materialSuccessMessage = nil
+        materialNote = ""
+        materialCondition = .usable
+        selectedPullPart = nil
+        switch action {
+        case .pull:
+            materialQuantity = 1
+            pullPartSearch = ""
+            loadPullPartResults()
+        case .useReady(let material), .returnReady(let material):
+            materialQuantity = max(1, material.stagedQty)
+        case .returnUsed(let part):
+            materialQuantity = max(1, part.qtyConsumed - part.qtyReturned)
+        case .correctUsed(let part):
+            materialCorrectionQty = part.qtyConsumed
+        }
+        activeSheet = .materialAction(action)
+    }
+
+    private func loadPullPartResults() {
+        guard let service = appCore.partsService else {
+            materialActionError = "Parts service unavailable"
+            pullPartResults = []
+            return
+        }
+        do {
+            pullPartResults = try service.searchParts(query: pullPartSearch.trimmingCharacters(in: .whitespacesAndNewlines), limit: 8)
+        } catch {
+            materialActionError = userFriendlyError(error, context: "load parts")
+            pullPartResults = []
+        }
+    }
+
+    private func submitMaterialAction(_ action: MaterialAction) {
+        guard let service = appCore.jobsService else {
+            materialActionError = "Jobs service unavailable"
+            return
+        }
+        guard let userId = appCore.currentUser?.id else {
+            materialActionError = "Not logged in. Please log in and try again."
+            return
+        }
+        guard canSubmitMaterialAction(action) else {
+            materialActionError = materialActionDisabledHint(action)
+            return
+        }
+
+        do {
+            switch action {
+            case .pull:
+                guard let part = selectedPullPart, let partId = part.id else {
+                    materialActionError = "Select a part to pull."
+                    return
+                }
+                _ = try service.pullJobMaterial(
+                    jobId: jobId,
+                    partId: partId,
+                    qty: materialQuantity,
+                    fromLocationType: "warehouse",
+                    fromLocationId: 1,
+                    performedBy: userId,
+                    notes: materialNote.nilIfEmpty
+                )
+                materialSuccessMessage = "Pulled \(materialQuantity) \(part.name) to \(job?.jobName ?? "this job")."
+                selectedMaterialSegment = .ready
+            case .useReady(let material):
+                let jobPartId = try service.consumeStagedJobMaterial(
+                    jobId: jobId,
+                    partId: material.partId,
+                    qty: materialQuantity,
+                    performedBy: userId,
+                    notes: materialNote.nilIfEmpty
+                )
+                materialSuccessMessage = "Used \(materialQuantity) \(material.partName) on \(job?.jobName ?? "this job")."
+                highlightedJobPartId = jobPartId
+                selectedMaterialSegment = .used
+            case .returnReady(let material):
+                _ = try service.returnStagedJobMaterial(
+                    jobId: jobId,
+                    partId: material.partId,
+                    qty: materialQuantity,
+                    condition: materialCondition.contractValue,
+                    performedBy: userId,
+                    notes: materialNote.nilIfEmpty
+                )
+                materialSuccessMessage = "Returned \(materialQuantity) \(material.partName) for warehouse review."
+                selectedMaterialSegment = .returns
+            case .returnUsed(let part):
+                _ = try service.returnConsumedJobMaterial(
+                    jobPartId: part.id,
+                    returnQty: materialQuantity,
+                    condition: materialCondition.contractValue,
+                    performedBy: userId,
+                    notes: materialNote.nilIfEmpty
+                )
+                materialSuccessMessage = "Returned \(materialQuantity) \(part.partName) from used material."
+                selectedMaterialSegment = .returns
+            case .correctUsed(let part):
+                try service.correctConsumedJobMaterial(
+                    jobPartId: part.id,
+                    adjustedQty: materialCorrectionQty,
+                    performedBy: userId,
+                    note: materialNote
+                )
+                materialSuccessMessage = "Corrected \(part.partName) from \(part.qtyConsumed) to \(materialCorrectionQty)."
+                highlightedJobPartId = part.id
+                selectedMaterialSegment = .history
+            }
+            activeSheet = nil
+            loadData()
+        } catch JobsService.JobsError.insufficientStagedMaterial(let available, _) {
+            if case .pull = action {
+                materialActionError = "Only \(available) available in source location. Adjust quantity to continue."
+            } else {
+                materialActionError = "Only \(available) remain staged. Adjust quantity to continue."
+            }
+        } catch JobsService.JobsError.invalidReturnQuantity(_) {
+            materialActionError = overQuantityMessage(action)
+        } catch JobsService.JobsError.requiredFieldEmpty {
+            materialActionError = "Add the required audit note before continuing."
+        } catch {
+            materialActionError = userFriendlyError(error, context: "update job material")
+        }
+    }
+
+    // Maximum pull quantity per action — caps the stepper to avoid absurd inputs.
+    // 999 is a practical per-pull ceiling; corrections allow up to 100 units above
+    // the current consumed qty to accommodate rounding or re-count adjustments.
+    private static let maxPullQty = 999
+    private static let maxCorrectionOverage = 100
+
+    private func materialActionMaxQty(_ action: MaterialAction) -> Int {
+        switch action {
+        case .pull:
+            return Self.maxPullQty
+        case .useReady(let material), .returnReady(let material):
+            return material.stagedQty
+        case .returnUsed(let part):
+            return max(0, part.qtyConsumed - part.qtyReturned)
+        case .correctUsed(let part):
+            return max(part.qtyReturned, part.qtyConsumed + Self.maxCorrectionOverage)
+        }
+    }
+
+    private func canSubmitMaterialAction(_ action: MaterialAction) -> Bool {
+        switch action {
+        case .pull:
+            selectedPullPart?.id != nil && materialQuantity > 0
+        case .useReady, .returnReady, .returnUsed:
+            materialQuantity > 0
+                && materialQuantity <= materialActionMaxQty(action)
+                && (!isReturnAction(action) || materialCondition == .usable || !materialNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        case .correctUsed(let part):
+            materialCorrectionQty >= part.qtyReturned && !materialNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    private func materialActionDisabledHint(_ action: MaterialAction) -> String {
+        if materialQuantity > materialActionMaxQty(action) {
+            return overQuantityMessage(action)
+        }
+        if isReturnAction(action),
+           materialCondition != .usable,
+           materialNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "Add a note for damaged, wrong, or supplier-issue returns."
+        }
+        switch action {
+        case .pull where selectedPullPart?.id == nil:
+            return "Select a part before pulling material."
+        case .pull:
+            return "Enter a valid pull quantity."
+        case .correctUsed:
+            return "Corrections require an audit note and cannot be below returned quantity."
+        default:
+            return ""
+        }
+    }
+
+    private func overQuantityMessage(_ action: MaterialAction) -> String {
+        switch action {
+        case .returnUsed:
+            return "Return quantity cannot exceed unreturned used quantity."
+        case .useReady, .returnReady:
+            return "Only \(materialActionMaxQty(action)) remain staged. Adjust quantity to continue."
+        case .pull:
+            return "Enter a valid quantity to pull."
+        case .correctUsed:
+            return "Adjusted quantity cannot be below already returned quantity."
+        }
+    }
+
+    private func isReturnAction(_ action: MaterialAction) -> Bool {
+        switch action {
+        case .returnReady, .returnUsed: true
+        default: false
+        }
+    }
+
+    private func isCorrectionAction(_ action: MaterialAction) -> Bool {
+        if case .correctUsed = action { return true }
+        return false
+    }
+
+    private func materialActionTitle(_ action: MaterialAction) -> String {
+        switch action {
+        case .pull: "Pull Material"
+        case .useReady: "Use Material"
+        case .returnReady, .returnUsed: "Return Material"
+        case .correctUsed: "Correct Material"
+        }
+    }
+
+    private func materialActionPrimaryTitle(_ action: MaterialAction) -> String {
+        switch action {
+        case .pull: "Pull Material"
+        case .useReady: "Use Material"
+        case .returnReady, .returnUsed: "Submit Return"
+        case .correctUsed: "Save Correction"
+        }
+    }
+
+    private func materialActionPartName(_ action: MaterialAction) -> String {
+        switch action {
+        case .pull:
+            return selectedPullPart?.name ?? "Select material"
+        case .useReady(let material), .returnReady(let material):
+            return material.partName
+        case .returnUsed(let part), .correctUsed(let part):
+            return part.partName
+        }
+    }
+
+    private func materialActionSubtitle(_ action: MaterialAction) -> String {
+        switch action {
+        case .pull:
+            return "Source: Warehouse 1 -> \(job?.jobName ?? "job") staged material"
+        case .useReady(let material):
+            return "\(material.stagedQty) staged for \(job?.jobName ?? "this job")"
+        case .returnReady(let material):
+            return "\(material.stagedQty) staged can be returned"
+        case .returnUsed(let part):
+            return "\(part.qtyConsumed - part.qtyReturned) unreturned used quantity"
+        case .correctUsed(let part):
+            return "Original \(part.qtyConsumed), returned \(part.qtyReturned). Audit note required."
+        }
+    }
+
+    private func notePlaceholder(_ action: MaterialAction) -> String {
+        switch action {
+        case .useReady:
+            return "Where it was used or why quantity differs"
+        case .returnReady, .returnUsed:
+            return "Return note"
+        case .pull:
+            return "Pull note"
+        case .correctUsed:
+            return "Required audit note"
+        }
+    }
+
     // MARK: - Data Loading
 
     private func loadData() {
@@ -742,6 +1580,12 @@ struct IOSJobDetailPage: View {
             activeTodos = try service.getActiveJobTodos(jobId: jobId)
             todoSummary = try service.getJobTodoSummary(jobId: jobId)
             stages = try service.listJobStages(forJobId: jobId)
+            jobParts = try service.getJobParts(jobId: jobId)
+            readyMaterials = try service.listReadyJobMaterials(jobId: jobId)
+            materialTotals = try service.getJobMaterialTotals(jobId: jobId)
+            materialHistory = try service.listJobMaterialHistory(jobId: jobId)
+            jobNotes = try service.listJobNotes(jobId: jobId)
+            inventoryMovements = try service.listJobInventoryMovements(jobId: jobId)
             isPaymentHold = try service.isJobOnPaymentHold(jobId: jobId)
             warrantyDaysRemaining = try service.warrantyDaysRemaining(jobId: jobId)
             if let job {
@@ -751,6 +1595,25 @@ struct IOSJobDetailPage: View {
             loadError = userFriendlyError(error, context: "load job details")
         }
         isLoading = false
+    }
+
+    private func changeStage(_ stage: JobsService.JobStageStatus) {
+        guard stage.status != "in_progress" else { return }
+        guard let service = appCore.jobsService else {
+            loadError = "Jobs service unavailable"
+            return
+        }
+        guard let userId = appCore.currentUser?.id else {
+            loadError = "Not logged in. Please log in and try again."
+            return
+        }
+        do {
+            try service.updateJobStage(jobId: jobId, stageId: stage.id, changedBy: userId)
+            loadData()
+            selectedTab = .notes
+        } catch {
+            loadError = userFriendlyError(error, context: "update job stage")
+        }
     }
 
     private func postAIContext(_ job: JobsService.JobDetail) {
@@ -779,5 +1642,12 @@ private extension Optional where Wrapped == String {
     var nilIfEmpty: String? {
         guard let value = self, !value.isEmpty else { return nil }
         return value
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

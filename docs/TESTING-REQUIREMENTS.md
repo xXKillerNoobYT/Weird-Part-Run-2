@@ -1,9 +1,13 @@
 # WiredPart v1.0 — Testing Requirements & Verification Procedures
 
 > **Document Owner:** QA Lead
-> **Last Updated:** 2026-03-27
+> **Last Updated:** 2026-06-07
 > **Scope:** Complete testing strategy covering unit, integration, E2E, UI, performance, and security testing
 > **Standard:** Production-grade quality for enterprise deployment
+> **Paperclip staging update:** This remains the quality gate reference. The stage order and active/planned status live in `docs/plans/staged-paperclip-goals.md`.
+> **Docs upgrade tracking:** GitHub [#942](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/942), Paperclip `WEI-3096` / `WEI-3099`; QA review `WEI-3100`.
+
+For current command examples, local runner expectations, and handoff template, start with [`docs/QA-PROCESS.md`](QA-PROCESS.md). This file remains the detailed test-standard reference.
 
 ---
 

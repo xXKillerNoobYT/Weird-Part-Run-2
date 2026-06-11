@@ -130,18 +130,22 @@ render_link() {
   fi
 }
 
+_issues_file=$(mktemp); _agents_file=$(mktemp)
+printf '%s' "$ISSUES_JSON" > "$_issues_file"
+printf '%s' "$AGENTS_JSON" > "$_agents_file"
+
 COMMENT_BODY="$(
   jq -nr \
-    --argjson issues "$ISSUES_JSON" \
-    --argjson agents "$AGENTS_JSON" \
+    --slurpfile issues "$_issues_file" \
+    --slurpfile agents "$_agents_file" \
     --arg stamp "$STAMP" '
     def agent_name($id):
-      ($agents | map(select(.id == $id)) | .[0].name) // "unassigned";
+      ($agents[0] | map(select(.id == $id)) | .[0].name) // "unassigned";
 
     def issue_sort_key: .identifier // .id // "";
 
     def normalized:
-      $issues
+      $issues[0]
       | map({
           identifier,
           title,
@@ -180,8 +184,8 @@ COMMENT_BODY="$(
 
 SYNC_FINGERPRINT="$(
   jq -cS -n \
-    --argjson issues "$ISSUES_JSON" '
-    $issues
+    --slurpfile issues "$_issues_file" '
+    $issues[0]
     | map({
         identifier,
         title,

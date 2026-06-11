@@ -56,6 +56,16 @@ struct IOSMainView: View {
     /// Filtered modules in the user's preferred order.
     private var orderedModules: [AppModule] {
         let modules = tabPrefs.orderedModules(from: filteredModules)
+        if isUITestingOpenWarehouseLocations {
+            guard let warehouseIndex = modules.firstIndex(where: { $0.id == "warehouse" }) else {
+                return modules
+            }
+            var reordered = modules
+            let warehouse = reordered.remove(at: warehouseIndex)
+            reordered.insert(warehouse, at: min(3, reordered.count))
+            return reordered
+        }
+
         guard isUITestingOpenPartsCategories else { return modules }
 
         // UI tests for Parts > Categories should validate the feature, not the
@@ -75,6 +85,13 @@ struct IOSMainView: View {
     private var isUITestingOpenPartsCategories: Bool {
         let args = ProcessInfo.processInfo.arguments
         return args.contains("-UITesting") && args.contains("-UITestingOpenPartsCategories")
+    }
+
+    /// Test-only deep link for visual QA reruns that need the warehouse floor
+    /// plan page without depending on manual tab traversal.
+    private var isUITestingOpenWarehouseLocations: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-UITesting") && args.contains("-UITestingWarehouseLocations")
     }
 
     /// First 4 ordered modules shown as dedicated bottom tabs.
@@ -134,6 +151,14 @@ struct IOSMainView: View {
                 selectedModuleId = "parts"
                 expandedModuleId = "parts"
                 selectedTabPath = "/parts/categories"
+            } else if isUITestingOpenWarehouseLocations {
+                selectedModuleId = "warehouse"
+                expandedModuleId = "warehouse"
+                selectedTabPath = "/warehouse/locations"
+                moduleNavigationRequests["warehouse"] = ModuleNavigationRequest(
+                    moduleId: "warehouse",
+                    tabId: "warehouse-locations"
+                )
             }
             badgeManager.refresh()
         }
@@ -700,6 +725,8 @@ struct ModuleHostView: View {
             applyNavigationRequest(navigationRequest)
             if isUITestingOpenPartsCategories, module.id == "parts" {
                 selectedTabId = "parts-categories"
+            } else if isUITestingOpenWarehouseLocations, module.id == "warehouse" {
+                selectedTabId = "warehouse-locations"
             } else if selectedTabId.isEmpty, let first = visibleTabsList.first {
                 selectedTabId = first.id
             }
@@ -715,6 +742,11 @@ struct ModuleHostView: View {
     private var isUITestingOpenPartsCategories: Bool {
         let args = ProcessInfo.processInfo.arguments
         return args.contains("-UITesting") && args.contains("-UITestingOpenPartsCategories")
+    }
+
+    private var isUITestingOpenWarehouseLocations: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-UITesting") && args.contains("-UITestingWarehouseLocations")
     }
 
     private var currentPath: String {

@@ -146,15 +146,28 @@ struct E2EJobsLaborTests {
         let entryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
         _ = try env.jobs.clockOut(laborEntryId: entryId)
 
-        if let qId = questions.first?.questionId {
-            try env.jobs.saveClockOutResponses(
-                laborEntryId: entryId,
-                responses: [(questionId: qId, answer: "Installed new panel")]
+        let customQuestion = try #require(questions.first { $0.questionText == "What did you accomplish?" })
+        let responsesToSave = questions.map { question in
+            (
+                questionId: question.questionId,
+                answer: question.questionId == customQuestion.questionId
+                    ? "Installed new panel"
+                    : "Completed panel labeling and staged tomorrow's materials"
             )
-
-            let responses = try env.jobs.getResponsesForEntry(laborEntryId: entryId)
-            #expect(!responses.isEmpty)
         }
+
+        try env.jobs.saveClockOutResponses(
+            laborEntryId: entryId,
+            responses: responsesToSave
+        )
+
+        let responses = try env.jobs.getResponsesForEntry(laborEntryId: entryId)
+        #expect(responses.count == questions.count)
+        #expect(responses.first { $0.questionId == customQuestion.questionId }?.answer == "Installed new panel")
+        #expect(responses.contains { response in
+            response.questionText.localizedCaseInsensitiveContains("daily report") &&
+            response.answer == "Completed panel labeling and staged tomorrow's materials"
+        })
     }
 
     // MARK: - One-Time Questions

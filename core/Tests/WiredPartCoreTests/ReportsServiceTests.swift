@@ -1,10 +1,29 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 import Testing
 import GRDB
 @testable import WiredPartCore
 
-@Suite("ReportsService Tests")
+@Suite("ReportsService Tests", .serialized)
 struct ReportsServiceTests {
+    private func withDenverTimeZone(_ work: () throws -> Void) throws {
+        let originalTZ = getenv("TZ").map { String(cString: $0) }
+        setenv("TZ", "America/Denver", 1)
+        tzset()
+        defer {
+            if let originalTZ {
+                setenv("TZ", originalTZ, 1)
+            } else {
+                unsetenv("TZ")
+            }
+            tzset()
+        }
+        try work()
+    }
 
     // MARK: - Timesheet
 
@@ -22,9 +41,164 @@ struct ReportsServiceTests {
         let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
         try env.jobs.clockOut(laborEntryId: laborEntryId)
 
-        let today = ISO8601DateFormatter().string(from: Date()).prefix(10)
-        let data = try env.reports.getTimesheetData(startDate: String(today), endDate: String(today))
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let today = formatter.string(from: Date())
+        let data = try env.reports.getTimesheetData(startDate: today, endDate: today)
         #expect(data.count >= 1)
+    }
+
+    @Test("Timesheet data buckets UTC evening clock-in into local work day")
+    func testTimesheetUsesLocalOperationalDayForUtcClockIn() throws {
+        try withDenverTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LOCAL-TS", name: "Local Timesheet Job")
+            try env.db.writer.write { db in
+                try db.execute(sql: """
+                    INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                    VALUES (?, ?, '2026-03-06 03:30:00', '2026-03-06 04:30:00', 1.0, 0.0, 'completed', datetime('now'))
+                    """, arguments: [env.adminUserId, jobId])
+            }
+
+            let localDayRows = try env.reports.getTimesheetData(startDate: "2026-03-05", endDate: "2026-03-05")
+
+            #expect(localDayRows.count == 1)
+            #expect(localDayRows.first?.daysWorked == 1)
+            #expect(abs((localDayRows.first?.totalHours ?? 0) - 1.0) < 0.01)
+        }
+    }
+
+    @Test("Timesheet correction persists audit row and updates labor entry")
+    func testTimesheetCorrectionPersistsAuditAndUpdatesEntry() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CORR", name: "Correction Job")
+        let laborEntryId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-03-05T08:00:00Z', '2026-03-05T16:00:00Z', 8.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+            return db.lastInsertedRowID
+        }
+
+        let record = try env.reports.saveTimesheetCorrection(
+            ReportsService.TimesheetCorrectionRequest(
+                laborEntryId: laborEntryId,
+                adjustedClockIn: "2026-03-05T08:15:00Z",
+                adjustedClockOut: "2026-03-05T17:45:00Z",
+                clientPreviewRegularHours: 8.0,
+                clientPreviewOvertimeHours: 1.5,
+                reason: "Employee forgot to stop timer at the right time.",
+                actorUserId: env.adminUserId
+            )
+        )
+
+        #expect(record.segmentId == laborEntryId)
+        #expect(record.originalClockIn == "2026-03-05T08:00:00Z")
+        #expect(record.adjustedClockIn == "2026-03-05 08:15:00")
+        #expect(record.adjustedOvertimeHours == 1.5)
+        #expect(record.reason == "Employee forgot to stop timer at the right time.")
+        #expect(record.approvalStatus == "pending_review")
+
+        let updated = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT clock_in, clock_out, regular_hours, overtime_hours, edited_by, status
+                FROM labor_entries WHERE id = ?
+                """, arguments: [laborEntryId])
+        }
+        #expect(updated?["clock_in"] as String? == "2026-03-05 08:15:00")
+        #expect(updated?["clock_out"] as String? == "2026-03-05 17:45:00")
+        #expect(updated?["regular_hours"] as Double? == 8.0)
+        #expect(updated?["overtime_hours"] as Double? == 1.5)
+        #expect(updated?["edited_by"] as Int64? == env.adminUserId)
+        #expect(updated?["status"] as String? == "completed")
+    }
+
+    @Test("Timesheet correction allocates weekly overtime from current settings instead of request buckets")
+    func testTimesheetCorrectionUsesOvertimeSettingsForAdjustedHours() throws {
+        try withDenverTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CORR-OT", name: "Correction Overtime Job")
+            _ = try env.jobs.updateOvertimeSettings(
+                calculationRule: "weekly_only",
+                dailyThresholdHours: 8.0,
+                weeklyThresholdHours: 6.0,
+                updatedBy: env.adminUserId
+            )
+            let laborEntryId = try env.db.writer.write { db -> Int64 in
+                try db.execute(sql: """
+                    INSERT INTO labor_entries
+                        (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                    VALUES
+                        (?, ?, '2026-03-05T14:00:00Z', '2026-03-05T18:00:00Z', 4.0, 0.0, 'completed', datetime('now')),
+                        (?, ?, '2026-03-05T18:30:00Z', '2026-03-05T20:30:00Z', 2.0, 0.0, 'completed', datetime('now'))
+                    """, arguments: [env.adminUserId, jobId, env.adminUserId, jobId])
+                return db.lastInsertedRowID
+            }
+
+            let record = try env.reports.saveTimesheetCorrection(
+                ReportsService.TimesheetCorrectionRequest(
+                    laborEntryId: laborEntryId,
+                    adjustedClockIn: "2026-03-05T18:30:00Z",
+                    adjustedClockOut: "2026-03-05T22:30:00Z",
+                    clientPreviewRegularHours: 4.0,
+                    clientPreviewOvertimeHours: 0.0,
+                    reason: "Corrected by manager after reviewing dispatch notes.",
+                    actorUserId: env.adminUserId
+                )
+            )
+
+            #expect(record.adjustedRegularHours == 2.0)
+            #expect(record.adjustedOvertimeHours == 2.0)
+
+            let updated = try env.db.writer.read { db in
+                try Row.fetchOne(db, sql: """
+                    SELECT regular_hours, overtime_hours
+                    FROM labor_entries WHERE id = ?
+                    """, arguments: [laborEntryId])
+            }
+            #expect(updated?["regular_hours"] as Double? == 2.0)
+            #expect(updated?["overtime_hours"] as Double? == 2.0)
+        }
+    }
+
+    @Test("Timesheet correction history loads by reviewed work period")
+    func testTimesheetCorrectionHistoryLoadsByWorkPeriod() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-HIST", name: "History Job")
+        let laborEntryId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-04-10T08:00:00Z', '2026-04-10T12:00:00Z', 4.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+            return db.lastInsertedRowID
+        }
+
+        _ = try env.reports.saveTimesheetCorrection(
+            ReportsService.TimesheetCorrectionRequest(
+                laborEntryId: laborEntryId,
+                adjustedClockIn: "2026-04-10T08:00:00Z",
+                adjustedClockOut: "2026-04-10T13:00:00Z",
+                clientPreviewRegularHours: 5.0,
+                clientPreviewOvertimeHours: 0.0,
+                reason: "Verified against supervisor note.",
+                actorUserId: env.adminUserId
+            )
+        )
+
+        let inPeriod = try env.reports.getTimesheetCorrectionHistory(
+            startDate: "2026-04-10",
+            endDate: "2026-04-10"
+        )
+        let outsidePeriod = try env.reports.getTimesheetCorrectionHistory(
+            startDate: "2026-04-11",
+            endDate: "2026-04-11"
+        )
+
+        #expect(inPeriod.contains { $0.segmentId == laborEntryId })
+        #expect(!outsidePeriod.contains { $0.segmentId == laborEntryId })
     }
 
     // MARK: - Daily Report Summary
@@ -34,6 +208,28 @@ struct ReportsServiceTests {
         let env = try E2ETestHelpers.setUp()
         let summary = try env.reports.getDailyReportSummary(date: "2026-03-29")
         #expect(summary.isEmpty)
+    }
+
+    @Test("Daily report summary buckets UTC evening clock-in into local work day")
+    func testDailyReportSummaryUsesLocalOperationalDayForUtcClockIn() throws {
+        try withDenverTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LOCAL-DR", name: "Local Daily Report Job")
+            try env.db.writer.write { db in
+                try db.execute(sql: """
+                    INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                    VALUES (?, ?, '2026-03-06 03:30:00', '2026-03-06 04:30:00', 1.5, 0.0, 'completed', datetime('now'))
+                    """, arguments: [env.adminUserId, jobId])
+            }
+
+            let rows = try env.reports.getDailyReportSummary(date: "2026-03-05")
+            let row = rows.first(where: { $0.id == jobId })
+
+            #expect(row != nil)
+            #expect(row?.workerCount == 1)
+            #expect(abs((row?.totalHours ?? 0) - 1.5) < 0.01)
+        }
     }
 
     // MARK: - Spending

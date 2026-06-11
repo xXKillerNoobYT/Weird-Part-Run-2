@@ -449,6 +449,13 @@ public final class OrdersService: Sendable {
         public let supplierNotes: String?
         public let submittedBy: Int64?
         public let submittedByName: String?
+        public let sentToSupplierAt: String?
+        public let sentByUserId: Int64?
+        public let supplierConfirmationNum: String?
+        /// 'order' or 'pricing' — set at send time. (#750 v2)
+        public let emailRequestType: String
+        /// UUID shared by all POs sent together in one grouped email. (#750 v2)
+        public let sendGroupId: String?
         public let deletedAt: String?
         public let createdAt: String?
         public let updatedAt: String?
@@ -462,7 +469,9 @@ public final class OrdersService: Sendable {
             subtotal: Double?, taxAmount: Double?, shippingCost: Double?, totalCost: Double?,
             notes: String?, internalNotes: String?, supplierNotes: String?,
             submittedBy: Int64?, submittedByName: String?,
-            deletedAt: String?, createdAt: String?, updatedAt: String?,
+            sentToSupplierAt: String?, sentByUserId: Int64?, supplierConfirmationNum: String?,
+ emailRequestType: String, sendGroupId: String?,
+ deletedAt: String?, createdAt: String?,updatedAt: String?,
             lines: [POLineRow], linkedJPOIds: [Int64]
         ) {
             self.id = id
@@ -484,6 +493,11 @@ public final class OrdersService: Sendable {
             self.supplierNotes = supplierNotes
             self.submittedBy = submittedBy
             self.submittedByName = submittedByName
+            self.sentToSupplierAt = sentToSupplierAt
+            self.sentByUserId = sentByUserId
+            self.supplierConfirmationNum = supplierConfirmationNum
+            self.emailRequestType = emailRequestType
+            self.sendGroupId = sendGroupId
             self.deletedAt = deletedAt
             self.createdAt = createdAt
             self.updatedAt = updatedAt
@@ -2357,12 +2371,75 @@ public final class OrdersService: Sendable {
         }
     }
 
-    /// Generate draft POs from procurement selections, grouped by supplier.
-    /// Each supplier gets one PO with all their selected parts as line items.
+    private func purchaseOrderGroupingMode(dbConn: Database) throws -> PurchaseOrderGroupingMode {
+        let rawValue = try String.fetchOne(
+            dbConn,
+            sql: "SELECT value FROM settings WHERE key = 'po_grouping_mode'"
+        )
+        return PurchaseOrderGroupingMode(rawValue: rawValue ?? "") ?? .perSupplierMixed
+    }
+
+    private func jpoLineInfo(for lineIds: [Int64], dbConn: Database) throws -> [Int64: (jobId: Int64?, quantity: Int)] {
+        guard !lineIds.isEmpty else { return [:] }
+        let placeholders = lineIds.map { _ in "?" }.joined(separator: ",")
+        let rows = try Row.fetchAll(dbConn, sql: """
+            SELECT jl.id AS line_id, jpo.job_id, jl.qty_requested
+            FROM jpo_line_items jl
+            JOIN job_parts_orders jpo ON jpo.id = jl.jpo_id AND jpo.deleted_at IS NULL
+            WHERE jl.id IN (\(placeholders))
+              AND jl.deleted_at IS NULL
+            """, arguments: StatementArguments(lineIds))
+        var infoByLineId: [Int64: (jobId: Int64?, quantity: Int)] = [:]
+        for row in rows {
+            let lineId: Int64 = row["line_id"] ?? 0
+            infoByLineId[lineId] = (row["job_id"] as Int64?, row["qty_requested"] ?? 0)
+        }
+        return infoByLineId
+    }
+
+    private func splitProcurementItemByJob(
+        _ item: ProcurementGenerateItem,
+        infoByLineId: [Int64: (jobId: Int64?, quantity: Int)]
+    ) -> [(jobId: Int64?, item: ProcurementGenerateItem)] {
+        guard !item.jpoLineIds.isEmpty else {
+            return [(nil, item)]
+        }
+
+        var remainingQty = item.quantity
+        var splitItems: [(jobId: Int64?, item: ProcurementGenerateItem)] = []
+        for lineId in item.jpoLineIds where remainingQty > 0 {
+            let lineInfo = infoByLineId[lineId]
+            let lineQty = item.jpoLineIds.count == 1 ? item.quantity : (lineInfo?.quantity ?? 0)
+            let allocatedQty = min(lineQty, remainingQty)
+            guard allocatedQty > 0 else { continue }
+            remainingQty -= allocatedQty
+            splitItems.append((
+                lineInfo?.jobId,
+                ProcurementGenerateItem(
+                    partId: item.partId,
+                    supplierId: item.supplierId,
+                    quantity: allocatedQty,
+                    unitCost: item.unitCost,
+                    jpoLineIds: [lineId],
+                    wishlistItemIds: item.wishlistItemIds,
+                    forecastTargetIds: item.forecastTargetIds
+                )
+            ))
+        }
+        return splitItems
+    }
+
+    /// Generate draft POs from procurement selections, grouped by the configured PO grouping mode.
+    /// Mixed mode creates one PO per supplier; per-job mode creates one PO per supplier/job.
     /// JPO line items are linked and their status set to 'in_procurement'.
     @discardableResult
-    public func generatePOsFromProcurement(items: [ProcurementGenerateItem]) throws -> ProcurementGenerateResult {
+    public func generatePOsFromProcurement(
+        items: [ProcurementGenerateItem],
+        groupingMode requestedGroupingMode: PurchaseOrderGroupingMode? = nil
+    ) throws -> ProcurementGenerateResult {
         try db.writer.write { dbConn in
+            let groupingMode = try requestedGroupingMode ?? purchaseOrderGroupingMode(dbConn: dbConn)
+
             for partId in Set(items.map(\.partId)) {
                 let row = try Row.fetchOne(dbConn, sql: """
                     SELECT COALESCE(p.max_stock_level, 0) AS max_stock,
@@ -2489,16 +2566,37 @@ public final class OrdersService: Sendable {
                 }
             }
 
-            // Group items by supplier
-            var bySupplier: [Int64: [ProcurementGenerateItem]] = [:]
-            for item in items {
-                bySupplier[item.supplierId, default: []].append(item)
+            struct POGroupKey: Hashable {
+                let supplierId: Int64
+                let jobId: Int64?
+            }
+
+            var groupedItems: [POGroupKey: [ProcurementGenerateItem]] = [:]
+            switch groupingMode {
+            case .perSupplierMixed:
+                for item in items {
+                    groupedItems[POGroupKey(supplierId: item.supplierId, jobId: nil), default: []].append(item)
+                }
+            case .perSupplierPerJob:
+                let allLineIds = items.flatMap(\.jpoLineIds)
+                let infoByLineId = try jpoLineInfo(for: allLineIds, dbConn: dbConn)
+                for item in items {
+                    for split in splitProcurementItemByJob(item, infoByLineId: infoByLineId) {
+                        groupedItems[POGroupKey(supplierId: item.supplierId, jobId: split.jobId), default: []].append(split.item)
+                    }
+                }
             }
 
             var createdPOs: [(poId: Int64, poNumber: String, supplierId: Int64)] = []
             var totalLines = 0
 
-            for (supplierId, supplierItems) in bySupplier {
+            for (groupKey, supplierItems) in groupedItems.sorted(by: {
+                if $0.key.supplierId == $1.key.supplierId {
+                    return ($0.key.jobId ?? 0) < ($1.key.jobId ?? 0)
+                }
+                return $0.key.supplierId < $1.key.supplierId
+            }) {
+                let supplierId = groupKey.supplierId
                 // Guard: supplier must not be tombstoned before creating a PO for them.
                 let supplierExists = (try Int.fetchOne(dbConn, sql: """
                     SELECT COUNT(*) FROM suppliers WHERE id = ? AND deleted_at IS NULL
@@ -2513,13 +2611,16 @@ public final class OrdersService: Sendable {
                 let poNumber = String(format: "PO-%05d", maxNum + 1)
 
                 // Create PO
+                let groupingNote = groupingMode == .perSupplierPerJob && groupKey.jobId != nil
+                    ? "PO grouping: per supplier per job"
+                    : nil
                 try dbConn.execute(
                     sql: """
                         INSERT INTO purchase_orders
-                        (po_number, supplier_id, status, order_date, created_at, updated_at)
-                        VALUES (?, ?, 'draft', date('now'), datetime('now'), datetime('now'))
+                        (po_number, supplier_id, status, notes, order_date, created_at, updated_at)
+                        VALUES (?, ?, 'draft', ?, date('now'), datetime('now'), datetime('now'))
                         """,
-                    arguments: [poNumber, supplierId]
+                    arguments: [poNumber, supplierId, groupingNote]
                 )
                 let poId = dbConn.lastInsertedRowID
 
@@ -3084,6 +3185,11 @@ public final class OrdersService: Sendable {
                 supplierNotes: row["supplier_notes"] as String?,
                 submittedBy: row["submitted_by"] as Int64?,
                 submittedByName: row["submitted_by_name"] as String?,
+                sentToSupplierAt: row["sent_to_supplier_at"] as String?,
+                sentByUserId: row["sent_by_user_id"] as Int64?,
+                supplierConfirmationNum: row["supplier_confirmation_num"] as String?,
+                emailRequestType: (row["email_request_type"] as String?) ?? "order",
+                sendGroupId: row["send_group_id"] as String?,
                 deletedAt: row["deleted_at"] as String?,
                 createdAt: row["created_at"] as String?,
                 updatedAt: row["updated_at"] as String?,
@@ -3093,6 +3199,62 @@ public final class OrdersService: Sendable {
         }
         guard let result else { throw OrdersError.purchaseOrderNotFound(id) }
         return result
+    }
+
+    /// Returns other draft/submitted POs for the same supplier — used in grouped send flow. (#750 v2)
+    public func listSendablePOs(supplierId: Int64, excludingId: Int64) throws -> [POListItem] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT po.id, po.po_number, po.status, po.total_cost, po.order_date,
+                       COALESCE(s.name, 'Unknown Supplier') AS supplier_name,
+                       COALESCE((SELECT COUNT(*) FROM po_line_items pl
+                                 WHERE pl.po_id = po.id AND pl.deleted_at IS NULL), 0) AS line_count
+                FROM purchase_orders po
+                LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL
+                WHERE po.supplier_id = ?
+                  AND po.id != ?
+                  AND po.status IN ('draft', 'submitted')
+                  AND po.deleted_at IS NULL
+                ORDER BY po.created_at DESC
+                LIMIT 50
+                """, arguments: [supplierId, excludingId])
+            return rows.map {
+                POListItem(
+                    id: $0["id"] ?? 0, poNumber: $0["po_number"] ?? "",
+                    supplierName: $0["supplier_name"] ?? "", status: $0["status"] ?? "draft",
+                    totalCost: $0["total_cost"] as Double?, lineCount: $0["line_count"] ?? 0,
+                    orderDate: $0["order_date"] as String?
+                )
+            }
+        }
+    }
+
+    /// Mark a PO as sent to the supplier — records timestamp, acting user, and optional supplier confirmation number.
+    /// Also advances status from "submitted" → "ordered" since confirmation of send = order placed. (#750)
+    public func markPOSentToSupplier(
+        id: Int64,
+        sentByUserId: Int64,
+        confirmationNumber: String? = nil,
+        emailRequestType: String = "order",
+        sendGroupId: String? = nil
+    ) throws {
+        try db.writer.write { dbConn in
+            let now = ISO8601DateFormatter().string(from: Date())
+            try dbConn.execute(
+                sql: """
+                    UPDATE purchase_orders
+                    SET sent_to_supplier_at       = ?,
+                        sent_by_user_id           = ?,
+                        supplier_confirmation_num = ?,
+                        email_request_type        = ?,
+                        send_group_id             = COALESCE(?, send_group_id),
+                        status                    = CASE WHEN status = 'submitted' THEN 'ordered' ELSE status END,
+                        updated_at                = ?
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [now, sentByUserId, confirmationNumber, emailRequestType, sendGroupId, now, id]
+            )
+        }
     }
 
     /// Create a new purchase order. Returns the inserted row ID.
@@ -3358,12 +3520,20 @@ public final class OrdersService: Sendable {
         public let expectedQty: Int
         public let receivedQty: Int
         public let hasDiscrepancy: Bool
+        public let hasQuantityDiscrepancy: Bool
+        public let hasPriceDiscrepancy: Bool
+        public let orderUnitCost: Double?
+        public let receivedUnitCost: Double?
         public let notes: String?
 
         public init(
             id: Int64, partName: String, partCode: String?,
             expectedQty: Int, receivedQty: Int,
-            hasDiscrepancy: Bool, notes: String?
+            hasDiscrepancy: Bool, notes: String?,
+            hasQuantityDiscrepancy: Bool? = nil,
+            hasPriceDiscrepancy: Bool = false,
+            orderUnitCost: Double? = nil,
+            receivedUnitCost: Double? = nil
         ) {
             self.id = id
             self.partName = partName
@@ -3371,6 +3541,10 @@ public final class OrdersService: Sendable {
             self.expectedQty = expectedQty
             self.receivedQty = receivedQty
             self.hasDiscrepancy = hasDiscrepancy
+            self.hasQuantityDiscrepancy = hasQuantityDiscrepancy ?? hasDiscrepancy
+            self.hasPriceDiscrepancy = hasPriceDiscrepancy
+            self.orderUnitCost = orderUnitCost
+            self.receivedUnitCost = receivedUnitCost
             self.notes = notes
         }
     }
@@ -3393,9 +3567,17 @@ public final class OrdersService: Sendable {
                        COALESCE(
                            (SELECT COUNT(*)
                             FROM receiving_session_items rsi
+                            LEFT JOIN po_line_items pli ON pli.id = rsi.po_line_id AND pli.deleted_at IS NULL
                             WHERE rsi.session_id = rs.id
                               AND rsi.deleted_at IS NULL
-                              AND rsi.received_qty != rsi.expected_qty), 0
+                              AND (
+                                  rsi.received_qty != rsi.expected_qty
+                                  OR (
+                                      rsi.actual_cost IS NOT NULL
+                                      AND pli.unit_cost IS NOT NULL
+                                      AND ABS(rsi.actual_cost - pli.unit_cost) > 0.0001
+                                  )
+                              )), 0
                        ) AS discrepancy_count
                 FROM receiving_sessions rs
                 LEFT JOIN users u ON u.id = rs.started_by AND u.deleted_at IS NULL
@@ -3427,6 +3609,8 @@ public final class OrdersService: Sendable {
                        p.code AS part_code,
                        rsi.expected_qty,
                        rsi.received_qty,
+                       pli.unit_cost,
+                       rsi.actual_cost,
                        rsi.notes
                 FROM receiving_session_items rsi
                 LEFT JOIN po_line_items pli ON pli.id = rsi.po_line_id AND pli.deleted_at IS NULL
@@ -3437,14 +3621,27 @@ public final class OrdersService: Sendable {
             return rows.map { row in
                 let expected: Int = row["expected_qty"] ?? 0
                 let received: Int = row["received_qty"] ?? 0
+                let orderUnitCost: Double? = row["unit_cost"] as Double?
+                let receivedUnitCost: Double? = row["actual_cost"] as Double?
+                let hasQuantityDiscrepancy = expected != received
+                let hasPriceDiscrepancy: Bool
+                if let orderUnitCost, let receivedUnitCost {
+                    hasPriceDiscrepancy = abs(orderUnitCost - receivedUnitCost) > 0.0001
+                } else {
+                    hasPriceDiscrepancy = false
+                }
                 return ReceiptHistoryItem(
                     id: row["id"] ?? 0,
                     partName: row["part_name"] ?? "Unknown Part",
                     partCode: row["part_code"] as String?,
                     expectedQty: expected,
                     receivedQty: received,
-                    hasDiscrepancy: expected != received,
-                    notes: row["notes"] as String?
+                    hasDiscrepancy: hasQuantityDiscrepancy || hasPriceDiscrepancy,
+                    notes: row["notes"] as String?,
+                    hasQuantityDiscrepancy: hasQuantityDiscrepancy,
+                    hasPriceDiscrepancy: hasPriceDiscrepancy,
+                    orderUnitCost: orderUnitCost,
+                    receivedUnitCost: receivedUnitCost
                 )
             }
         }

@@ -1,9 +1,14 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 import Testing
 import GRDB
 @testable import WiredPartCore
 
-@Suite("JobsService Tests")
+@Suite("JobsService Tests", .serialized)
 struct JobsServiceTests {
 
     // MARK: - Job CRUD
@@ -255,48 +260,213 @@ struct JobsServiceTests {
 
     @Test("Daily overtime threshold spans multiple labor entries")
     func testDailyOvertimeThresholdSpansMultipleLaborEntries() throws {
-        let env = try E2ETestHelpers.setUp()
-        let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-1", name: "First OT Job")
-        let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-2", name: "Second OT Job")
+        try withMountainTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-1", name: "First OT Job")
+            let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OT-2", name: "Second OT Job")
 
-        try env.db.writer.write { db in
-            try db.execute(sql: """
-                INSERT INTO labor_entries
-                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
-                VALUES
-                    (
-                        ?,
-                        ?,
-                        date(datetime('now', '-4 hours')) || ' 00:00:00',
-                        date(datetime('now', '-4 hours')) || ' 06:00:00',
-                        6.0,
-                        0.0,
-                        'completed',
-                        datetime('now')
-                    )
-                """, arguments: [env.adminUserId, firstJobId])
-        }
-
-        let secondLaborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: secondJobId)
-        try env.db.writer.write { db in
-            try db.execute(
-                sql: "UPDATE labor_entries SET clock_in = datetime('now', '-4 hours') WHERE id = ?",
-                arguments: [secondLaborEntryId]
+            let firstLaborEntryId = try env.jobs.clockIn(
+                userId: env.adminUserId,
+                jobId: firstJobId,
+                at: try Self.localToday(hour: 8, minute: 0)
             )
-        }
-
-        try env.jobs.clockOut(laborEntryId: secondLaborEntryId)
-
-        let secondEntry = try env.db.writer.read { db in
-            try Row.fetchOne(
-                db,
-                sql: "SELECT regular_hours, overtime_hours FROM labor_entries WHERE id = ?",
-                arguments: [secondLaborEntryId]
+            try env.jobs.clockOut(
+                laborEntryId: firstLaborEntryId,
+                at: try Self.localToday(hour: 14, minute: 0)
             )
-        }
 
-        #expect(secondEntry?["regular_hours"] as Double? == 2.0)
-        #expect(secondEntry?["overtime_hours"] as Double? == 2.0)
+            let secondLaborEntryId = try env.jobs.clockIn(
+                userId: env.adminUserId,
+                jobId: secondJobId,
+                at: try Self.localToday(hour: 14, minute: 0)
+            )
+            try env.jobs.clockOut(
+                laborEntryId: secondLaborEntryId,
+                at: try Self.localToday(hour: 18, minute: 0)
+            )
+
+            let secondEntry = try env.db.writer.read { db in
+                try Row.fetchOne(
+                    db,
+                    sql: "SELECT regular_hours, overtime_hours FROM labor_entries WHERE id = ?",
+                    arguments: [secondLaborEntryId]
+                )
+            }
+
+            #expect(secondEntry?["regular_hours"] as Double? == 2.0)
+            #expect(secondEntry?["overtime_hours"] as Double? == 2.0)
+        }
+    }
+
+    @Test("Weekly overtime settings split hours after configured threshold")
+    func testWeeklyOvertimeSettingsSplitHoursAfterThreshold() throws {
+        try withMountainTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-WEEKLY-OT", name: "Weekly OT")
+            _ = try env.jobs.updateOvertimeSettings(
+                calculationRule: "weekly_only",
+                dailyThresholdHours: 24.0,
+                weeklyThresholdHours: 40.0,
+                weekStartWeekday: 2,
+                updatedBy: env.adminUserId
+            )
+
+            for dayOffset in 0..<5 {
+                let entryId = try env.jobs.clockIn(
+                    userId: env.adminUserId,
+                    jobId: jobId,
+                    at: try Self.localWeekday(dayOffset: dayOffset, hour: 8, minute: 0)
+                )
+                try env.jobs.clockOut(
+                    laborEntryId: entryId,
+                    at: try Self.localWeekday(dayOffset: dayOffset, hour: 16, minute: 0)
+                )
+            }
+
+            let saturdayEntryId = try env.jobs.clockIn(
+                userId: env.adminUserId,
+                jobId: jobId,
+                at: try Self.localWeekday(dayOffset: 5, hour: 8, minute: 0)
+            )
+            try env.jobs.clockOut(
+                laborEntryId: saturdayEntryId,
+                at: try Self.localWeekday(dayOffset: 5, hour: 12, minute: 0)
+            )
+
+            let saturdayEntry = try env.db.writer.read { db in
+                try Row.fetchOne(
+                    db,
+                    sql: "SELECT regular_hours, overtime_hours FROM labor_entries WHERE id = ?",
+                    arguments: [saturdayEntryId]
+                )
+            }
+
+            #expect(saturdayEntry?["regular_hours"] as Double? == 0.0)
+            #expect(saturdayEntry?["overtime_hours"] as Double? == 4.0)
+        }
+    }
+
+    @Test("Labor correction persists actor reason and before after hours")
+    func testLaborCorrectionPersistsAudit() throws {
+        try withMountainTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CORRECT", name: "Correction Audit")
+            let entryId = try env.jobs.clockIn(
+                userId: env.adminUserId,
+                jobId: jobId,
+                at: try Self.localToday(hour: 8, minute: 0)
+            )
+            try env.jobs.clockOut(
+                laborEntryId: entryId,
+                at: try Self.localToday(hour: 12, minute: 0)
+            )
+
+            let auditId = try env.jobs.correctLaborEntry(
+                laborEntryId: entryId,
+                correctedBy: env.adminUserId,
+                reason: "Manager approved missed clock-out correction",
+                clockIn: try Self.localToday(hour: 8, minute: 0),
+                clockOut: try Self.localToday(hour: 17, minute: 0)
+            )
+            let audits = try env.jobs.listLaborEntryCorrectionAudits(laborEntryId: entryId)
+            let corrected = try env.db.writer.read { db in
+                try Row.fetchOne(
+                    db,
+                    sql: "SELECT regular_hours, overtime_hours, edited_by FROM labor_entries WHERE id = ?",
+                    arguments: [entryId]
+                )
+            }
+
+            #expect(auditId > 0)
+            #expect(audits.count == 1)
+            #expect(audits[0].correctedBy == env.adminUserId)
+            #expect(audits[0].reason == "Manager approved missed clock-out correction")
+            #expect(audits[0].oldRegularHours == 4.0)
+            #expect(audits[0].newRegularHours == 8.0)
+            #expect(audits[0].newOvertimeHours == 1.0)
+            #expect(corrected?["regular_hours"] as Double? == 8.0)
+            #expect(corrected?["overtime_hours"] as Double? == 1.0)
+            #expect(corrected?["edited_by"] as Int64? == env.adminUserId)
+        }
+    }
+
+    @Test("Switching jobs closes current entry and starts next entry at the same instant")
+    func testSwitchClockedInJobIsAtomicAndDeterministic() throws {
+        try withMountainTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SW-1", name: "Switch From")
+            let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SW-2", name: "Switch To")
+
+            let firstEntryId = try env.jobs.clockIn(
+                userId: env.adminUserId,
+                jobId: firstJobId,
+                at: try Self.localToday(hour: 7, minute: 0)
+            )
+            let secondEntryId = try env.jobs.switchClockedInJob(
+                userId: env.adminUserId,
+                nextJobId: secondJobId,
+                at: try Self.localToday(hour: 12, minute: 15)
+            )
+
+            let entries = try env.jobs.listLaborEntries(userId: env.adminUserId)
+            let firstEntry = try #require(entries.first { $0.id == firstEntryId })
+            let secondEntry = try #require(entries.first { $0.id == secondEntryId })
+            let active = try env.jobs.getActiveClockEntry(userId: env.adminUserId)
+
+            #expect(firstEntry.status == "completed")
+            #expect(firstEntry.clockOut == secondEntry.clockIn)
+            #expect(firstEntry.regularHours == 5.25)
+            #expect(firstEntry.overtimeHours == 0.0)
+            #expect(secondEntry.status == "clocked_in")
+            #expect(active?.id == secondEntryId)
+            #expect(active?.jobId == secondJobId)
+        }
+    }
+
+    @Test("Clock out subtracts unpaid breaks but keeps paid breaks compensable")
+    func testClockOutBreakPayTreatmentIsDeterministic() throws {
+        try withMountainTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BREAK-PAY", name: "Break Pay Job")
+            let laborEntryId = try env.jobs.clockIn(
+                userId: env.adminUserId,
+                jobId: jobId,
+                at: try Self.localToday(hour: 8, minute: 0)
+            )
+            let paidBreakStart = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 10, minute: 0))
+            let paidBreakEnd = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 10, minute: 15))
+            let unpaidLunchStart = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 12, minute: 0))
+            let unpaidLunchEnd = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 12, minute: 30))
+
+            try env.db.writer.write { db in
+                try db.execute(sql: """
+                    INSERT INTO break_records
+                        (user_id, labor_entry_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
+                    VALUES
+                        (?, ?, 'break', ?, ?, 15, 1, 0),
+                        (?, ?, 'lunch_unpaid', ?, ?, 30, 0, 0)
+                    """, arguments: [
+                    env.adminUserId, laborEntryId, paidBreakStart, paidBreakEnd,
+                    env.adminUserId, laborEntryId, unpaidLunchStart, unpaidLunchEnd
+                ])
+            }
+
+            try env.jobs.clockOut(
+                laborEntryId: laborEntryId,
+                at: try Self.localToday(hour: 17, minute: 0)
+            )
+
+            let entry = try env.db.writer.read { db in
+                try Row.fetchOne(
+                    db,
+                    sql: "SELECT regular_hours, overtime_hours FROM labor_entries WHERE id = ?",
+                    arguments: [laborEntryId]
+                )
+            }
+
+            #expect(entry?["regular_hours"] as Double? == 8.0)
+            #expect(entry?["overtime_hours"] as Double? == 0.5)
+        }
     }
 
     // MARK: - Team Members
@@ -423,6 +593,32 @@ struct JobsServiceTests {
         #expect(parts.count >= 1)
     }
 
+    @Test("job notes are timestamped and attributed through job notebook")
+    func testJobNotesAreTimestampedAndAttributed() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try env.jobs.createJob(
+            jobNumber: "J-NOTES",
+            jobName: "Notes Job",
+            notes: "Initial field note",
+            createdBy: env.adminUserId
+        )
+
+        _ = try env.jobs.addJobNote(
+            jobId: jobId,
+            title: "Field update",
+            content: "Crew finished rough-in walkthrough.",
+            createdBy: env.adminUserId
+        )
+
+        let notes = try env.jobs.listJobNotes(jobId: jobId)
+        #expect(notes.count >= 2)
+        #expect(notes.contains { $0.title == "Initial job note" && $0.content == "Initial field note" })
+        let update = try #require(notes.first { $0.title == "Field update" })
+        #expect(update.authorId == env.adminUserId)
+        #expect(!update.authorName.isEmpty)
+        #expect(update.createdAt != nil)
+    }
+
     // MARK: - Job Stages
 
     @Test("List job stages")
@@ -431,6 +627,55 @@ struct JobsServiceTests {
         let jobId = try E2ETestHelpers.seedJob(env)
         let stages = try env.jobs.listJobStages(forJobId: jobId)
         #expect(stages.count >= 0)
+    }
+
+    @Test("updateJobStage records attributed stage-change audit")
+    func testUpdateJobStageRecordsAudit() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let templateId = try #require(try env.jobs.listJobStageTemplates().first?.id)
+        let stages = try env.jobs.listAllJobStages(templateId: templateId)
+        let roughId = try #require(stages.first(where: { $0.name == "Rough-in" })?.id)
+        let trimId = try #require(stages.first(where: { $0.name == "Trim-out" })?.id)
+
+        try env.jobs.updateJobStage(jobId: jobId, stageId: roughId, changedBy: env.adminUserId)
+        try env.jobs.updateJobStage(jobId: jobId, stageId: trimId, changedBy: env.adminUserId, note: "Crew moved to trim.")
+
+        let currentStageId: Int64? = try env.db.writer.read { db in
+            try Int64.fetchOne(db, sql: "SELECT current_stage_id FROM jobs WHERE id = ?", arguments: [jobId])
+        }
+        let auditNotes = try env.jobs.listJobNotes(jobId: jobId).filter { $0.entryType == "stage_change" }
+        #expect(currentStageId == trimId)
+        #expect(auditNotes.count == 2)
+        #expect(auditNotes.contains { $0.title.contains("Rough-in -> Trim-out") && $0.content == "Crew moved to trim." })
+        #expect(auditNotes.allSatisfy { $0.authorId == env.adminUserId && $0.createdAt != nil })
+    }
+
+    @Test("job inventory movement feed reads Stage 3 job-linked stock movements")
+    func testJobInventoryMovementFeedReadsLinkedMovements() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let categoryId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Job Wire", categoryId: categoryId)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO stock_movements
+                    (part_id, qty, from_location_type, from_location_id, to_location_type, to_location_id,
+                     movement_type, reason, notes, performed_by, job_id, created_at)
+                VALUES (?, 4, 'warehouse', 1, 'job', ?, ?, 'Job pull', 'Pulled for install',
+                        ?, ?, datetime('now'))
+                """, arguments: [partId, jobId, StockMovement.MovementType.jobPull.rawValue, env.adminUserId, jobId])
+        }
+
+        let movements = try env.jobs.listJobInventoryMovements(jobId: jobId)
+        let movement = try #require(movements.first)
+        #expect(movement.partId == partId)
+        #expect(movement.partName == "Job Wire")
+        #expect(movement.qty == 4)
+        #expect(movement.movementType == StockMovement.MovementType.jobPull.rawValue)
+        #expect(movement.notes == "Pulled for install")
+        #expect(movement.performedByName == env.adminUser.displayName)
     }
 
     // MARK: - Active Clock Entry
@@ -467,6 +712,32 @@ struct JobsServiceTests {
         let groups = try env.jobs.getTodaysClockEntries(userId: env.adminUserId)
         #expect(groups.count >= 1)
         #expect(groups.first?.jobId == jobId)
+    }
+
+    @Test("Today's clock entries use local-day completed labor")
+    func testGetTodaysClockEntriesUsesLocalOperationalDayForCompletedLabor() throws {
+        try withMountainTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CLOCK-LOCAL", name: "Local Clock Job")
+            let clockIn = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 22, minute: 30))
+            let clockOut = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 23, minute: 30))
+
+            try env.db.writer.write { db in
+                try db.execute(sql: "DELETE FROM labor_entries")
+                try db.execute(sql: """
+                    INSERT INTO labor_entries
+                        (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                    VALUES (?, ?, ?, ?, 1.0, 0.0, 'completed', datetime('now'))
+                    """, arguments: [env.adminUserId, jobId, clockIn, clockOut])
+            }
+
+            let groups = try env.jobs.getTodaysClockEntries(userId: env.adminUserId)
+            let group = try #require(groups.first(where: { $0.jobId == jobId }))
+
+            #expect(group.jobName == "Local Clock Job")
+            #expect(group.entries.count == 1)
+            #expect(abs(group.totalDuration - 3600) < 1)
+        }
     }
 
     // MARK: - Report Detail & Review
@@ -512,6 +783,167 @@ struct JobsServiceTests {
         #expect(afterReturn.first?.qtyReturned == 3)
     }
 
+    @Test("job material contract pulls consumes returns and balances inventory")
+    func testJobMaterialPullConsumeReturnContract() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-MAT-USE", name: "Material Use Job")
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Wire Nut", categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10, locationType: "warehouse", locationId: 1)
+
+        _ = try env.jobs.pullJobMaterial(
+            jobId: jobId,
+            partId: partId,
+            qty: 10,
+            fromLocationType: "warehouse",
+            fromLocationId: 1,
+            performedBy: env.adminUserId,
+            notes: "Pulled for install"
+        )
+
+        let readyBefore = try env.jobs.listReadyJobMaterials(jobId: jobId)
+        #expect(readyBefore.first?.partId == partId)
+        #expect(readyBefore.first?.stagedQty == 10)
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1) == 0)
+
+        let jobPartId = try env.jobs.consumeStagedJobMaterial(
+            jobId: jobId,
+            partId: partId,
+            qty: 7,
+            performedBy: env.adminUserId,
+            notes: "Used seven on rough-in"
+        )
+
+        _ = try env.jobs.returnPulledJobMaterial(
+            jobId: jobId,
+            partId: partId,
+            qty: 3,
+            toLocationType: "warehouse",
+            toLocationId: 1,
+            performedBy: env.adminUserId,
+            notes: "Returned unused wire nuts"
+        )
+
+        let readyAfter = try env.jobs.listReadyJobMaterials(jobId: jobId)
+        #expect(readyAfter.isEmpty)
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "pulled", locationId: jobId) == 0)
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1) == 3)
+
+        let jobPart = try #require(try env.jobs.getJobParts(jobId: jobId).first { $0.id == jobPartId })
+        #expect(jobPart.qtyConsumed == 7)
+        #expect(jobPart.qtyReturned == 0)
+
+        let totals = try env.jobs.getJobMaterialTotals(jobId: jobId)
+        #expect(totals.stagedQty == 0)
+        #expect(totals.usedQty == 7)
+        #expect(totals.returnedQty == 0)
+
+        let history = try env.jobs.listJobMaterialHistory(jobId: jobId)
+        #expect(history.contains { $0.eventType == StockMovement.MovementType.transfer.rawValue && $0.qty == 10 })
+        #expect(history.contains { $0.eventType == StockMovement.MovementType.jobPull.rawValue && $0.qty == 7 })
+        #expect(history.contains { $0.eventType == StockMovement.MovementType.stockReturn.rawValue && $0.qty == 3 })
+    }
+
+    @Test("returnConsumedJobMaterial credits job totals once and creates return intake")
+    func testReturnConsumedJobMaterialContract() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-MAT-RETURN", name: "Material Return Job")
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Returnable Breaker", categoryId: catId)
+        let jobPartId = try env.jobs.addJobPart(
+            jobId: jobId,
+            partId: partId,
+            qty: 4,
+            costAtConsume: 12.5,
+            performedBy: env.adminUserId
+        )
+
+        let intakeId = try env.jobs.returnConsumedJobMaterial(
+            jobPartId: jobPartId,
+            returnQty: 2,
+            condition: "damaged",
+            performedBy: env.adminUserId,
+            notes: "Cracked case"
+        )
+
+        let jobPart = try #require(try env.jobs.getJobParts(jobId: jobId).first { $0.id == jobPartId })
+        #expect(jobPart.qtyReturned == 2)
+
+        let totals = try env.jobs.getJobMaterialTotals(jobId: jobId)
+        #expect(totals.usedQty == 2)
+        #expect(totals.pendingReturnQty == 2)
+        #expect(totals.returnedQty == 2)
+        #expect(totals.netMaterialCost == 25.0)
+        #expect(totals.totalMaterialCost == 50.0)
+
+        let intakeRow = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT jri.source_job_id, jrii.source_job_part_id, jrii.qty_returned, jrii.condition, jrii.status
+                FROM job_return_intakes jri
+                JOIN job_return_intake_items jrii ON jrii.intake_id = jri.id
+                WHERE jri.id = ?
+                """, arguments: [intakeId])
+        }
+        #expect(intakeRow?["source_job_id"] as Int64? == jobId)
+        #expect(intakeRow?["source_job_part_id"] as Int64? == jobPartId)
+        #expect(intakeRow?["qty_returned"] as Int? == 2)
+        #expect(intakeRow?["condition"] as String? == "damaged")
+        #expect(intakeRow?["status"] as String? == "damage_review")
+
+        let history = try env.jobs.listJobMaterialHistory(jobId: jobId)
+        #expect(history.contains { $0.eventType == StockMovement.MovementType.stockReturn.rawValue && $0.qty == 2 })
+        #expect(history.contains { $0.eventType == "job_return_damage_review" && $0.qty == 2 })
+    }
+
+    @Test("correctConsumedJobMaterial requires a note and writes adjustment history")
+    func testCorrectConsumedJobMaterialContract() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-MAT-CORRECT", name: "Material Correction Job")
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Correction Part", categoryId: catId)
+        let jobPartId = try env.jobs.addJobPart(
+            jobId: jobId,
+            partId: partId,
+            qty: 9,
+            costAtConsume: 3.0,
+            performedBy: env.adminUserId
+        )
+
+        var missingNoteThrew = false
+        do {
+            try env.jobs.correctConsumedJobMaterial(
+                jobPartId: jobPartId,
+                adjustedQty: 7,
+                performedBy: env.adminUserId,
+                note: " "
+            )
+        } catch JobsService.JobsError.requiredFieldEmpty {
+            missingNoteThrew = true
+        } catch {}
+        #expect(missingNoteThrew)
+
+        try env.jobs.correctConsumedJobMaterial(
+            jobPartId: jobPartId,
+            adjustedQty: 7,
+            performedBy: env.adminUserId,
+            note: "Two were entered by mistake."
+        )
+
+        let jobPart = try #require(try env.jobs.getJobParts(jobId: jobId).first { $0.id == jobPartId })
+        #expect(jobPart.qtyConsumed == 7)
+
+        let totals = try env.jobs.getJobMaterialTotals(jobId: jobId)
+        #expect(totals.usedQty == 7)
+        #expect(totals.netMaterialCost == 21.0)
+
+        let history = try env.jobs.listJobMaterialHistory(jobId: jobId)
+        let adjustment = try #require(history.first { $0.eventType == StockMovement.MovementType.adjustment.rawValue })
+        #expect(adjustment.qty == 2)
+        #expect(adjustment.notes?.contains("original_qty=9") == true)
+        #expect(adjustment.notes?.contains("adjusted_qty=7") == true)
+        #expect(adjustment.notes?.contains("Two were entered by mistake.") == true)
+    }
+
     // MARK: - List Active Jobs & Dashboard KPIs
 
     @Test("List active jobs and dashboard KPIs")
@@ -524,6 +956,28 @@ struct JobsServiceTests {
 
         let kpis = try env.jobs.getJobsDashboardKPIs()
         #expect(kpis.activeJobs >= 1)
+    }
+
+    @Test("Jobs dashboard KPIs bucket UTC end-of-day labor into local today")
+    func testJobsDashboardKPIsUseLocalClockInDateBucket() throws {
+        try withMountainTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-KPI-LOCAL", name: "Local KPI")
+            let clockIn = Self.utcTimestampFormatter.string(from: try Self.localToday(hour: 23, minute: 30))
+
+            try env.db.writer.write { db in
+                try db.execute(sql: "DELETE FROM labor_entries")
+                try db.execute(sql: """
+                    INSERT INTO labor_entries
+                        (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                    VALUES (?, ?, ?, ?, 3.0, 0.0, 'completed', datetime('now'))
+                    """, arguments: [env.adminUserId, jobId, clockIn, clockIn])
+            }
+
+            let kpis = try env.jobs.getJobsDashboardKPIs()
+
+            #expect(kpis.todayLaborHours == 3.0)
+        }
     }
 
     // MARK: - Supply Run Toggle & Labor Notes
@@ -544,6 +998,56 @@ struct JobsServiceTests {
         #expect(notesAfter?.contains("supply_run_start") == true)
 
         try env.jobs.clockOut(laborEntryId: laborEntryId)
+    }
+
+    private static let utcTimestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return formatter
+    }()
+
+    private static func localToday(hour: Int, minute: Int) throws -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "America/Denver"))
+        var components = calendar.dateComponents([.year, .month, .day], from: Date())
+        components.hour = hour
+        components.minute = minute
+        components.second = 0
+        return try #require(calendar.date(from: components))
+    }
+
+    private static func localWeekday(dayOffset: Int, hour: Int, minute: Int) throws -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "America/Denver"))
+        calendar.firstWeekday = 2
+        let todayStart = calendar.startOfDay(for: Date())
+        let weekday = calendar.component(.weekday, from: todayStart)
+        let daysSinceMonday = (weekday - 2 + 7) % 7
+        let monday = try #require(calendar.date(byAdding: .day, value: -daysSinceMonday, to: todayStart))
+        let targetDay = try #require(calendar.date(byAdding: .day, value: dayOffset, to: monday))
+        var components = calendar.dateComponents([.year, .month, .day], from: targetDay)
+        components.hour = hour
+        components.minute = minute
+        components.second = 0
+        return try #require(calendar.date(from: components))
+    }
+
+    private func withMountainTimeZone<T>(_ body: () throws -> T) rethrows -> T {
+        #if canImport(Darwin) || canImport(Glibc)
+        let originalTZ = getenv("TZ").map { String(cString: $0) }
+        setenv("TZ", "America/Denver", 1)
+        tzset()
+        defer {
+            if let originalTZ {
+                setenv("TZ", originalTZ, 1)
+            } else {
+                unsetenv("TZ")
+            }
+            tzset()
+        }
+        #endif
+        return try body()
     }
 
     // MARK: - Jobs for Customer
