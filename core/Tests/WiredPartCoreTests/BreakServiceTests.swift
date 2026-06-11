@@ -254,6 +254,161 @@ struct BreakServiceTests {
         #expect(countAfter >= countBefore)
     }
 
+    @Test("autoFillBreaksForDay fills missing second scheduled break")
+    func testAutoFillMissingSecondScheduledBreak() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        try breakService.updateCompanyBreakSettings(
+            stateCode: "CA",
+            roundingMinutes: 15,
+            roundingEnabled: false,
+            autoFillBreaks: true,
+            defaultMorningBreak: "10:00",
+            defaultLunch: nil,
+            defaultAfternoonBreak: "14:00"
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO break_records
+                    (user_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
+                VALUES (?, 'break', date('now') || 'T10:00:00', date('now') || 'T10:15:00', 15, 1, 0)
+                """, arguments: [env.adminUserId])
+        }
+
+        try breakService.autoFillBreaksForDay(userId: env.adminUserId)
+
+        let records = try breakService.getBreakRecordsForDay(userId: env.adminUserId)
+        let breakRecords = records.filter { $0.breakType == "break" }
+        #expect(breakRecords.count == 2)
+        #expect(breakRecords.contains { $0.startedAt.hasSuffix("T10:00:00") && !$0.autoFilled })
+        #expect(breakRecords.contains { $0.startedAt.hasSuffix("T14:00:00") && $0.autoFilled })
+    }
+
+    @Test("autoFillBreaksForDay existing lunch suppresses only lunch")
+    func testAutoFillExistingLunchStillFillsBreaks() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        try breakService.updateCompanyBreakSettings(
+            stateCode: "CA",
+            roundingMinutes: 15,
+            roundingEnabled: false,
+            autoFillBreaks: true,
+            defaultMorningBreak: "10:00",
+            defaultLunch: "12:00",
+            defaultAfternoonBreak: "14:00"
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO break_records
+                    (user_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
+                VALUES (?, 'lunch_paid', date('now') || 'T12:00:00', date('now') || 'T12:30:00', 30, 1, 0)
+                """, arguments: [env.adminUserId])
+        }
+
+        try breakService.autoFillBreaksForDay(userId: env.adminUserId)
+
+        let records = try breakService.getBreakRecordsForDay(userId: env.adminUserId)
+        #expect(records.filter { $0.breakType == "break" }.count == 2)
+        #expect(records.filter { $0.breakType.hasPrefix("lunch") }.count == 1)
+    }
+
+    @Test("autoFillBreaksForDay does not duplicate existing scheduled breaks")
+    func testAutoFillDoesNotDuplicateExistingScheduledBreaks() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        try breakService.updateCompanyBreakSettings(
+            stateCode: "CA",
+            roundingMinutes: 15,
+            roundingEnabled: false,
+            autoFillBreaks: true,
+            defaultMorningBreak: "10:00",
+            defaultLunch: nil,
+            defaultAfternoonBreak: "14:00"
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO break_records
+                    (user_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
+                VALUES
+                    (?, 'break', date('now') || 'T10:00:00', date('now') || 'T10:15:00', 15, 1, 1),
+                    (?, 'break', date('now') || 'T14:00:00', date('now') || 'T14:15:00', 15, 1, 1)
+                """, arguments: [env.adminUserId, env.adminUserId])
+        }
+
+        try breakService.autoFillBreaksForDay(userId: env.adminUserId)
+
+        let records = try breakService.getBreakRecordsForDay(userId: env.adminUserId)
+        #expect(records.filter { $0.breakType == "break" }.count == 2)
+    }
+
+    @Test("autoFillBreaksForDay does not duplicate timezone-qualified scheduled breaks")
+    func testAutoFillDoesNotDuplicateTimezoneQualifiedScheduledBreaks() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        try breakService.updateCompanyBreakSettings(
+            stateCode: "CA",
+            roundingMinutes: 15,
+            roundingEnabled: false,
+            autoFillBreaks: true,
+            defaultMorningBreak: "10:00",
+            defaultLunch: nil,
+            defaultAfternoonBreak: "14:00"
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO break_records
+                    (user_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
+                VALUES
+                    (?, 'break', date('now') || 'T10:00:00Z', date('now') || 'T10:15:00Z', 15, 1, 1),
+                    (?, 'break', date('now') || 'T14:00:00+00:00', date('now') || 'T14:15:00+00:00', 15, 1, 1)
+                """, arguments: [env.adminUserId, env.adminUserId])
+        }
+
+        try breakService.autoFillBreaksForDay(userId: env.adminUserId)
+
+        let records = try breakService.getBreakRecordsForDay(userId: env.adminUserId)
+        #expect(records.filter { $0.breakType == "break" }.count == 2)
+    }
+
+    @Test("autoFillBreaksForDay does not duplicate breaks within scheduled minute")
+    func testAutoFillDoesNotDuplicateNonzeroSecondScheduledBreaks() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        try breakService.updateCompanyBreakSettings(
+            stateCode: "CA",
+            roundingMinutes: 15,
+            roundingEnabled: false,
+            autoFillBreaks: true,
+            defaultMorningBreak: "10:00",
+            defaultLunch: nil,
+            defaultAfternoonBreak: "14:00"
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO break_records
+                    (user_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
+                VALUES
+                    (?, 'break', date('now') || 'T10:00:15Z', date('now') || 'T10:15:15Z', 15, 1, 0),
+                    (?, 'break', date('now') || 'T14:00:45+00:00', date('now') || 'T14:15:45+00:00', 15, 1, 0)
+                """, arguments: [env.adminUserId, env.adminUserId])
+        }
+
+        try breakService.autoFillBreaksForDay(userId: env.adminUserId)
+
+        let records = try breakService.getBreakRecordsForDay(userId: env.adminUserId)
+        #expect(records.filter { $0.breakType == "break" }.count == 2)
+    }
+
     // MARK: - Rounding
 
     @Test("getRoundedTime rounds correctly")

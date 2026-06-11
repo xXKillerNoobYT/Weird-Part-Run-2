@@ -283,42 +283,33 @@ public final class BreakService: Sendable {
         let dateStr = Self.formatDateUTC(date)  // must match the UTC date used in getBreakRecordsForDay
 
         do { try db.writer.write { dbConn in
-            // Auto-fill morning break if missing — evaluated independently of afternoon (#727)
-            if let morningTime = settings.defaultMorningBreak {
-                let hasMorningBreak = existing.contains {
-                    $0.breakType == "break" && $0.startedAt.hasPrefix("\(dateStr)T\(morningTime)")
+            func insertScheduledBreakIfMissing(at time: String) throws {
+                let startStr = "\(dateStr)T\(time):00"
+                let scheduledMinutePrefix = "\(dateStr)T\(time)"
+                let alreadyExists = existing.contains {
+                    $0.breakType == "break" && $0.startedAt.hasPrefix(scheduledMinutePrefix)
                 }
-                if !hasMorningBreak {
-                    let startStr = "\(dateStr)T\(morningTime):00"
-                    var record = BreakRecord(
-                        id: nil, userId: userId, laborEntryId: laborEntryId,
-                        breakType: "break", startedAt: startStr,
-                        endedAt: "\(dateStr)T\(Self.addMinutes(morningTime, 15)):00",
-                        durationMinutes: 15, isPaid: true,
-                        autoFilled: true, timerDurationMinutes: 15,
-                        createdAt: nil, deletedAt: nil
-                    )
-                    try record.insert(dbConn)
-                }
+                guard !alreadyExists else { return }
+
+                var record = BreakRecord(
+                    id: nil, userId: userId, laborEntryId: laborEntryId,
+                    breakType: "break", startedAt: startStr,
+                    endedAt: "\(dateStr)T\(Self.addMinutes(time, 15)):00",
+                    durationMinutes: 15, isPaid: true,
+                    autoFilled: true, timerDurationMinutes: 15,
+                    createdAt: nil, deletedAt: nil
+                )
+                try record.insert(dbConn)
             }
 
-            // Auto-fill afternoon break if missing — evaluated independently of morning (#727)
+            // Auto-fill each scheduled break independently so one existing break
+            // does not suppress the other configured default break.
+            if let morningTime = settings.defaultMorningBreak {
+                try insertScheduledBreakIfMissing(at: morningTime)
+            }
+
             if let afternoonTime = settings.defaultAfternoonBreak {
-                let hasAfternoonBreak = existing.contains {
-                    $0.breakType == "break" && $0.startedAt.hasPrefix("\(dateStr)T\(afternoonTime)")
-                }
-                if !hasAfternoonBreak {
-                    let startStr = "\(dateStr)T\(afternoonTime):00"
-                    var record = BreakRecord(
-                        id: nil, userId: userId, laborEntryId: laborEntryId,
-                        breakType: "break", startedAt: startStr,
-                        endedAt: "\(dateStr)T\(Self.addMinutes(afternoonTime, 15)):00",
-                        durationMinutes: 15, isPaid: true,
-                        autoFilled: true, timerDurationMinutes: 15,
-                        createdAt: nil, deletedAt: nil
-                    )
-                    try record.insert(dbConn)
-                }
+                try insertScheduledBreakIfMissing(at: afternoonTime)
             }
 
             // Auto-fill lunch if missing
