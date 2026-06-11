@@ -58,6 +58,20 @@ public struct PeerManagerState: Sendable {
     }
 }
 
+private enum PeerSyncHTTPError: LocalizedError {
+    case nonHTTPResponse(endpoint: String)
+    case httpError(endpoint: String, statusCode: Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .nonHTTPResponse(let endpoint):
+            return "LAN sync \(endpoint) failed: non-HTTP response"
+        case .httpError(let endpoint, let statusCode):
+            return "LAN sync \(endpoint) failed: HTTP \(statusCode)"
+        }
+    }
+}
+
 // MARK: - Peer Manager
 
 /// Peer discovery and sync coordinator.
@@ -463,14 +477,12 @@ public actor PeerManager {
             applyPayload(&urlRequest, plain: plainPushBody, sharedKeyData: sharedKeyData)
 
             let (pushData, pushResp) = try await URLSession.shared.data(for: urlRequest)
-            if let httpResp = pushResp as? HTTPURLResponse, httpResp.statusCode == 200 {
-                let plainPushData = decrypt(pushData, sharedKeyData: sharedKeyData)
-                if let result = try? JSONDecoder().decode(SyncPushResponse.self, from: plainPushData) {
-                    pushed = result.accepted
-                    let syncedIds = pendingChanges.compactMap { $0.id }
-                    try ChangeTracker.markSynced(db: db, ids: syncedIds, batchId: result.syncBatchId)
-                }
-            }
+            try Self.validateSyncHTTPResponse(pushResp, endpoint: "push")
+            let plainPushData = decrypt(pushData, sharedKeyData: sharedKeyData)
+            let result = try JSONDecoder().decode(SyncPushResponse.self, from: plainPushData)
+            pushed = result.accepted
+            let syncedIds = pendingChanges.compactMap { $0.id }
+            try ChangeTracker.markSynced(db: db, ids: syncedIds, batchId: result.syncBatchId)
         }
 
         // 2. Pull peer's changes
@@ -490,33 +502,40 @@ public actor PeerManager {
         applyPayload(&pullURLRequest, plain: plainPullBody, sharedKeyData: sharedKeyData)
 
         let (pullData, pullResp) = try await URLSession.shared.data(for: pullURLRequest)
-        if let httpResp = pullResp as? HTTPURLResponse, httpResp.statusCode == 200 {
-            let plainPullData = decrypt(pullData, sharedKeyData: sharedKeyData)
-            if let result = try? JSONDecoder().decode(SyncPullResponse.self, from: plainPullData) {
-                pulled = result.changes.count
+        try Self.validateSyncHTTPResponse(pullResp, endpoint: "pull")
+        let plainPullData = decrypt(pullData, sharedKeyData: sharedKeyData)
+        let result = try JSONDecoder().decode(SyncPullResponse.self, from: plainPullData)
+        pulled = result.changes.count
 
-                if !result.changes.isEmpty {
-                    _ = try ConflictResolver.resolveAndApplyChanges(
-                        db: db,
-                        changes: result.changes,
-                        localDeviceId: deviceId
-                    )
+        if !result.changes.isEmpty {
+            _ = try ConflictResolver.resolveAndApplyChanges(
+                db: db,
+                changes: result.changes,
+                localDeviceId: deviceId
+            )
 
-                    // Update vector clock with highest sequence from this peer
-                    let maxSeq = result.changes.compactMap { $0.id }.max() ?? 0
-                    if maxSeq > 0 {
-                        try ChangeTracker.updateVectorClock(
-                            db: db,
-                            peerId: result.serverDeviceId,
-                            lastSequence: maxSeq,
-                            deviceId: deviceId
-                        )
-                    }
-                }
+            // Update vector clock with highest sequence from this peer
+            let maxSeq = result.changes.compactMap { $0.id }.max() ?? 0
+            if maxSeq > 0 {
+                try ChangeTracker.updateVectorClock(
+                    db: db,
+                    peerId: result.serverDeviceId,
+                    lastSequence: maxSeq,
+                    deviceId: deviceId
+                )
             }
         }
 
         return (pushed, pulled)
+    }
+
+    private static func validateSyncHTTPResponse(_ response: URLResponse, endpoint: String) throws {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw PeerSyncHTTPError.nonHTTPResponse(endpoint: endpoint)
+        }
+        guard httpResponse.statusCode == 200 else {
+            throw PeerSyncHTTPError.httpError(endpoint: endpoint, statusCode: httpResponse.statusCode)
+        }
     }
 
     static func makeLANSyncBaseURL(for peer: DiscoveredPeer) throws -> URL {
