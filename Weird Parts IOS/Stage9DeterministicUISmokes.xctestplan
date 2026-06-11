@@ -1,0 +1,33 @@
+{
+  "configurations" : [
+    {
+      "id" : "A0E9C5F8-2C43-4D5C-8F52-2B9D090F1234",
+      "name" : "Stage 9 Deterministic UI Smokes",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:Weird Parts.xcodeproj",
+      "identifier" : "08F2BE312F67A53500944E97",
+      "name" : "Weird Parts"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : false,
+      "selectedTests" : [
+        "Weird_Parts_IOSUITests/testWEI3144JobMaterialsWalkthroughEvidence()",
+        "Weird_Parts_IOSUITests/testWEI3295Stage8ReportsViewportHarness()"
+      ],
+      "target" : {
+        "containerPath" : "container:Weird Parts.xcodeproj",
+        "identifier" : "08F2BE4D2F67A53700944E97",
+        "name" : "Weird PartsUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

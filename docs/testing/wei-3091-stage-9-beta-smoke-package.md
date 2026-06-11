@@ -19,6 +19,7 @@ All of these must be true before starting the field-test smoke:
 - `WEI-3353` Stage 8 merge reconciliation is `done`.
 - The tester is using the repo branch or PR intended for beta, with no unrelated local changes.
 - Xcode can resolve the workspace schemes `WiredPart-iOS` and `WiredPartCore`.
+- Xcode can resolve the shared deterministic smoke scheme `WiredPart-iOS-Stage9-Smokes`.
 - The tester has one compact iPhone simulator and one iPad simulator available.
 - No known P0/P1 data-loss, privacy, security, install, launch, or migration issue is open against the beta candidate.
 
@@ -42,14 +43,19 @@ xcodebuild \
   build
 ```
 
+The shared `WiredPart-iOS-Stage9-Smokes` scheme is the Xcode-runnable deterministic UI smoke lane. In Xcode, select that scheme, choose a concrete iPhone or iPad simulator, and run Test. The scheme uses `Weird Parts IOS/Stage9DeterministicUISmokes.xctestplan`, which selects only:
+
+- `Weird PartsUITests/Weird_Parts_IOSUITests/testWEI3295Stage8ReportsViewportHarness`
+- `Weird PartsUITests/Weird_Parts_IOSUITests/testWEI3144JobMaterialsWalkthroughEvidence`
+
 Run the deterministic UI smoke on at least one compact phone and one tablet. The phone run proves install/launch and exercises the current Stage 8 reports/pre-billing/bookkeeper/audit surface using `-UITestingStage8Reports`.
 
 ```bash
 xcodebuild \
   -workspace "Wierd Parts.xcworkspace" \
-  -scheme "WiredPart-iOS" \
+  -scheme "WiredPart-iOS-Stage9-Smokes" \
   -destination 'platform=iOS Simulator,name=WEI-2499 QA iPhone SE 375 26.4.1' \
-  -only-testing:Weird_Parts_IOSUITests/Weird_Parts_IOSUITests/testWEI3295Stage8ReportsViewportHarness \
+  -only-testing:'Weird PartsUITests/Weird_Parts_IOSUITests/testWEI3295Stage8ReportsViewportHarness' \
   test
 ```
 
@@ -58,9 +64,9 @@ For tablet evidence, use an installed iPad destination and keep the same targete
 ```bash
 xcodebuild \
   -workspace "Wierd Parts.xcworkspace" \
-  -scheme "WiredPart-iOS" \
+  -scheme "WiredPart-iOS-Stage9-Smokes" \
   -destination 'platform=iOS Simulator,name=iPad (A16)' \
-  -only-testing:Weird_Parts_IOSUITests/Weird_Parts_IOSUITests/testWEI3295Stage8ReportsViewportHarness \
+  -only-testing:'Weird PartsUITests/Weird_Parts_IOSUITests/testWEI3295Stage8ReportsViewportHarness' \
   test
 ```
 
@@ -69,9 +75,9 @@ Optional but recommended for Stage 6 coverage:
 ```bash
 xcodebuild \
   -workspace "Wierd Parts.xcworkspace" \
-  -scheme "WiredPart-iOS" \
+  -scheme "WiredPart-iOS-Stage9-Smokes" \
   -destination 'platform=iOS Simulator,name=WEI-2499 QA iPhone SE 375 26.4.1' \
-  -only-testing:Weird_Parts_IOSUITests/Weird_Parts_IOSUITests/testWEI3144JobMaterialsWalkthroughEvidence \
+  -only-testing:'Weird PartsUITests/Weird_Parts_IOSUITests/testWEI3144JobMaterialsWalkthroughEvidence' \
   test
 ```
 
@@ -147,16 +153,17 @@ Commands run:
 | --- | --- | --- |
 | `git diff --check` | Pass | No whitespace errors in the Stage 9 docs diff |
 | `python3 scripts/guard-tracked-artifacts.py` | Pass | `No tracked Paperclip/Xcode runtime artifacts found.` |
-| `xcodebuild -list -workspace "Wierd Parts.xcworkspace"` | Pass | Workspace schemes are `GRDB-Package`, `WiredPart-iOS`, `WiredPart-macOS`, and `WiredPartCore` |
+| `xcodebuild -list -workspace "Wierd Parts.xcworkspace"` | Pass | Workspace schemes are `GRDB-Package`, `WiredPart-iOS`, `WiredPart-iOS-Stage9-Smokes`, `WiredPart-macOS`, and `WiredPartCore` |
 | `cd core && swift test` | Inconclusive | Built successfully and started suites, then the SwiftPM test helper stopped producing output and was terminated after a bounded wait |
 | Focused `swift test --filter 'JobsServiceTests|OrdersServiceTests|ReportsServiceTests|Database Migration Tests'` | Inconclusive | Built immediately, then the same SwiftPM test helper no-output behavior recurred and was terminated |
 | `xcodebuild -workspace "Wierd Parts.xcworkspace" -scheme "WiredPart-iOS" -destination 'generic/platform=iOS Simulator' build` | Pass | Simulator app build succeeded; warnings were pre-existing deprecation/result-builder/concurrency warnings |
 | `xcodebuild ... -only-testing:Weird_Parts_IOSUITests/.../testWEI3295Stage8ReportsViewportHarness test` | Blocked | `Weird_Parts_IOSUITests` is not a member of the active `WiredPart-iOS` scheme/test plan |
+| WEI-3374 Xcode scheme repair | Pass | Added shared `WiredPart-iOS-Stage9-Smokes` scheme with `Stage9DeterministicUISmokes.xctestplan`; `xcodebuild -showTestPlans` reports `Stage9DeterministicUISmokes`, and `xcodebuild ... -scheme "WiredPart-iOS-Stage9-Smokes" ... build-for-testing` passed on the compact phone simulator |
 | Direct phone install/launch smoke | Pass | Installed and launched built app on `WEI-2499 QA iPhone SE 375 26.4.1` (`145DE584-9492-43FE-8C19-A9573D24DC7F`) with `-UITesting -UITestingWEI936AutoLogin -UITestingStage8Reports -UITestingStage8PreBilling`; `simctl launch` returned pid `24213`, and `ps` showed the process still running |
 
 Remaining before beta go:
 
-- Add or select a runnable scheme/test plan that includes `Weird_Parts_IOSUITests`, then run the Stage 8 and Stage 6 targeted UI smokes through Xcode.
+- Run the Stage 8 and Stage 6 targeted UI smokes through the shared `WiredPart-iOS-Stage9-Smokes` scheme on phone and tablet, using the corrected `Weird PartsUITests/...` selectors when running from CLI.
 - Run the tablet install/launch smoke from this package.
 - Resolve or classify the SwiftPM test-helper no-output behavior so the core service gate can produce a terminal pass/fail result.
 
