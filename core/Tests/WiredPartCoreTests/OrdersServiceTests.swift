@@ -249,6 +249,58 @@ struct OrdersServiceTests {
         #expect(detail.emailRequestType == "pricing")
     }
 
+    @Test("Supplier send rejects non-sendable PO statuses without mutating audit fields")
+    func testMarkPOSentToSupplierRejectsNonSendableStatusesWithoutAuditMutation() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let blockedStatuses = ["ordered", "partial", "received", "complete", "cancelled"]
+
+        for status in blockedStatuses {
+            for requestType in ["order", "pricing"] {
+                let poId = try env.orders.createPurchaseOrder(
+                    poNumber: "PO-BLOCK-\(status)-\(requestType)",
+                    supplierId: supplierId,
+                    notes: nil
+                )
+                try env.db.writer.write { db in
+                    try db.execute(
+                        sql: """
+                            UPDATE purchase_orders
+                            SET status = ?,
+                                sent_to_supplier_at = NULL,
+                                sent_by_user_id = NULL,
+                                supplier_confirmation_num = NULL,
+                                email_request_type = 'order',
+                                send_group_id = NULL
+                            WHERE id = ?
+                            """,
+                        arguments: [status, poId]
+                    )
+                }
+
+                #expect(throws: OrdersService.OrdersError.invalidSupplierTransmission(
+                    "Cannot send supplier \(requestType) for PO in \(status) status"
+                )) {
+                    try env.orders.markPOSentToSupplier(
+                        id: poId,
+                        sentByUserId: env.adminUserId,
+                        confirmationNumber: "SHOULD-NOT-WRITE",
+                        emailRequestType: requestType,
+                        sendGroupId: "blocked-group"
+                    )
+                }
+
+                let detail = try env.orders.getPODetail(id: poId)
+                #expect(detail.status == status)
+                #expect(detail.sentToSupplierAt == nil)
+                #expect(detail.sentByUserId == nil)
+                #expect(detail.supplierConfirmationNum == nil)
+                #expect(detail.emailRequestType == "order")
+                #expect(detail.sendGroupId == nil)
+            }
+        }
+    }
+
     @Test("Update PO status supports cancellation from active states")
     func testUpdatePOStatusCancellation() throws {
         let env = try E2ETestHelpers.setUp()

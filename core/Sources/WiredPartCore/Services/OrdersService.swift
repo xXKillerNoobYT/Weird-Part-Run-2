@@ -3252,12 +3252,13 @@ public final class OrdersService: Sendable {
             }
 
             let oldStatus: String = row["status"] ?? "draft"
-            let newStatus: String
-            if emailRequestType == "order", (oldStatus == "draft" || oldStatus == "submitted") {
-                newStatus = "ordered"
-            } else {
-                newStatus = oldStatus
+            guard oldStatus == "draft" || oldStatus == "submitted" else {
+                throw OrdersError.invalidSupplierTransmission(
+                    "Cannot send supplier \(emailRequestType) for PO in \(oldStatus) status"
+                )
             }
+            let newStatus = emailRequestType == "order" ? "ordered" : oldStatus
+
             let now = ISO8601DateFormatter().string(from: Date())
             try dbConn.execute(
                 sql: """
