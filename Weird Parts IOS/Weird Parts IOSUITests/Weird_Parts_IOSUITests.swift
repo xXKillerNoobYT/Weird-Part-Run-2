@@ -124,6 +124,8 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         if !app.launchArguments.contains("-UITesting") {
             app.launchArguments += ["-UITesting"]
         }
+        app.launchEnvironment["OS_ACTIVITY_MODE"] = "disable"
+        app.launchEnvironment["UITEST_DISABLE_ANIMATIONS"] = "1"
     }
 
     override func tearDownWithError() throws {
@@ -146,7 +148,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["WiredPart"].waitForExistence(timeout: 20), "Welcome fixture should render the first-launch welcome screen")
         captureWEI1451("01-ipad-landscape-welcome-sheet")
 
-        relaunchForWEI1451([])
+        relaunchForWEI1451(["-UITestingWEI936NotStarted"])
         logInAsUITestOwnerIfNeeded()
         XCTAssertTrue(app.staticTexts["Getting Started"].waitForExistence(timeout: 20), "Dashboard should show the not-started Getting Started card")
         captureWEI1451("02-ipad-landscape-card-not-started")
@@ -161,7 +163,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Required tour steps complete"].waitForExistence(timeout: 20), "Required-done fixture should collapse the per-page banner")
         captureWEI1451("04-ipad-landscape-required-done-collapsed-strip")
 
-        relaunchForWEI1451([])
+        relaunchForWEI1451(["-UITestingWEI936NotStarted"])
         logInAsUITestOwnerIfNeeded()
         let dismiss = app.buttons["Dismiss checklist"]
         XCTAssertTrue(dismiss.waitForExistence(timeout: 20), "Dismiss checklist control should be present")
@@ -176,7 +178,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         let verification = """
         WEI-1451 / WEI-936 remaining evidence verification
         - iPad landscape captured with WEI_1185_LANDSCAPE=1 / XCUIDevice.landscapeLeft when requested.
-        - Deterministic launch fixtures used: -UITestingWEI936Welcome, -UITestingWEI936TourActive, -UITestingWEI936RequiredDone, -UITestingWEI936Celebration.
+        - Deterministic launch fixtures used: -UITestingWEI936Welcome, -UITestingWEI936NotStarted, -UITestingWEI936TourActive, -UITestingWEI936RequiredDone, -UITestingWEI936Celebration.
         - Dismiss toast verified by tapping the Dashboard Getting Started dismiss button and waiting for the Checklist dismissed toast.
         - Reduce Motion: OnboardingCompleteView now renders the checkmark without a spring animation when accessibilityReduceMotion is true.
         - VoiceOver/accessibility traversal smoke: core evidence controls expose labels for Dismiss checklist, Checklist dismissed. Undo, Required tour steps complete, and the welcome/celebration headings.
@@ -1204,7 +1206,8 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     private func relaunchForWEI1451(_ launchArguments: [String]) {
         app.terminate()
         app = XCUIApplication()
-        app.launchArguments += ["-UITesting"] + launchArguments
+        configureUITestingEnvironment(app)
+        app.launchArguments += launchArguments
         if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" {
             XCUIDevice.shared.orientation = .landscapeLeft
         }
@@ -1240,10 +1243,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         }
     }
 
-    private func configureUITestingEnvironment(_ app: XCUIApplication) {
-        app.launchEnvironment["OS_ACTIVITY_MODE"] = "disable"
-        app.launchEnvironment["UITEST_DISABLE_ANIMATIONS"] = "1"
-    }
 
     private func currentWizardStepNumber(timeout: TimeInterval = 5) -> Int? {
         let deadline = Date().addingTimeInterval(timeout)
