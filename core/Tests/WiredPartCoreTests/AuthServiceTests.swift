@@ -737,6 +737,19 @@ struct AuthServiceTests {
         #expect(sessions.isEmpty)
     }
 
+    @Test("listActiveSessions returns active token sessions")
+    func testListActiveSessionsReturnsTokenSessions() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
+
+        let sessions = try auth.listActiveSessions()
+        #expect(sessions.count == 1)
+        #expect(sessions[0].userName == "Admin")
+        #expect(sessions[0].userId == "1")
+        #expect(!sessions[0].id.isEmpty)
+    }
+
     @Test("deactivateSession still marks a legacy device-registry row as deactivated")
     func testDeactivateSession() throws {
         let db = try freshDB()
@@ -756,6 +769,27 @@ struct AuthServiceTests {
             try Int.fetchOne(dbConn, sql: "SELECT is_deactivated FROM _device_registry WHERE rowid = ?", arguments: [rowId])
         }
         #expect(deactivated == 1)
+    }
+
+    @Test("deactivateSession revokes rotated token family")
+    func testDeactivateSessionRevokesRotatedTokenFamily() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
+        let originalRefreshToken = try #require(seed.refreshToken)
+        let originalSessionId = try #require(AuthService.parseLocalToken(originalRefreshToken)?.jti)
+
+        let rotated = try auth.refreshLocalSession(refreshToken: originalRefreshToken)
+        _ = try auth.getLocalUserProfile(token: rotated.accessToken)
+
+        try auth.deactivateSession(sessionId: originalSessionId)
+
+        #expect(throws: AuthService.AuthError.sessionRevoked) {
+            _ = try auth.getLocalUserProfile(token: rotated.accessToken)
+        }
+        #expect(throws: AuthService.AuthError.sessionRevoked) {
+            _ = try auth.refreshLocalSession(refreshToken: rotated.refreshToken)
+        }
     }
 
     @Test("listRegisteredDevices shows Unassigned for soft-deleted assigned user")
