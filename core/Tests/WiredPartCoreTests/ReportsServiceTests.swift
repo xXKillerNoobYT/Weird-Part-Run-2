@@ -952,7 +952,8 @@ struct ReportsServiceTests {
     @Test("Bookkeeper material export is deterministic and excludes cancelled and deleted POs")
     func testBookkeeperMaterialPOsDeterministicExportRows() throws {
         let env = try E2ETestHelpers.setUp()
-        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BK-MAT", name: "Bookkeeper Material Job")
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BK-MAT-Z", name: "Zulu Material Job")
+        let alphaJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BK-MAT-A", name: "Alpha Material Job")
         let categoryId = try E2ETestHelpers.seedCategory(env, name: "Bookkeeper Material Category")
         let partId = try E2ETestHelpers.seedPart(env, name: "Bookkeeper Material Part", categoryId: categoryId)
         let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Bookkeeper Material Supplier")
@@ -965,10 +966,21 @@ struct ReportsServiceTests {
                 """, arguments: [jobId, env.adminUserId])
             let jpoId = db.lastInsertedRowID
             try db.execute(sql: """
+                INSERT INTO job_parts_orders
+                (job_id, order_number, status, requested_by, created_at, updated_at)
+                VALUES (?, 'JPO-BK-MAT-002', 'ordered', ?, '2026-06-03 08:01:00', '2026-06-03 08:01:00')
+                """, arguments: [alphaJobId, env.adminUserId])
+            let alphaJpoId = db.lastInsertedRowID
+            try db.execute(sql: """
                 INSERT INTO jpo_line_items (jpo_id, part_id, qty_requested, line_status, created_at)
                 VALUES (?, ?, 4, 'in_procurement', '2026-06-03 08:05:00')
                 """, arguments: [jpoId, partId])
             let jpoLineId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO jpo_line_items (jpo_id, part_id, qty_requested, line_status, created_at)
+                VALUES (?, ?, 2, 'in_procurement', '2026-06-03 08:06:00')
+                """, arguments: [alphaJpoId, partId])
+            let alphaJpoLineId = db.lastInsertedRowID
             try db.execute(sql: """
                 INSERT INTO purchase_orders
                 (po_number, supplier_id, status, order_date, total_cost, created_at, updated_at)
@@ -979,7 +991,12 @@ struct ReportsServiceTests {
                 INSERT INTO po_line_items (po_id, jpo_line_id, part_id, qty_ordered, qty_received, unit_cost, status, created_at)
                 VALUES (?, ?, ?, 4, 4, 11.0, 'received', '2026-06-03 09:05:00')
                 """, arguments: [poId, jpoLineId, partId])
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, jpo_line_id, part_id, qty_ordered, qty_received, unit_cost, status, created_at)
+                VALUES (?, ?, ?, 2, 2, 11.0, 'received', '2026-06-03 09:06:00')
+                """, arguments: [poId, alphaJpoLineId, partId])
             try db.execute(sql: "INSERT OR IGNORE INTO po_jpo_links (po_id, jpo_id, created_at) VALUES (?, ?, datetime('now'))", arguments: [poId, jpoId])
+            try db.execute(sql: "INSERT OR IGNORE INTO po_jpo_links (po_id, jpo_id, created_at) VALUES (?, ?, datetime('now'))", arguments: [poId, alphaJpoId])
             try db.execute(sql: """
                 INSERT INTO purchase_orders
                 (po_number, supplier_id, status, order_date, total_cost, deleted_at, created_at, updated_at)
@@ -995,10 +1012,10 @@ struct ReportsServiceTests {
         let rows = try env.reports.getBookkeeperMaterialPOs(startDate: "2026-06-03", endDate: "2026-06-03")
 
         #expect(rows.map(\.poNumber) == ["PO-BK-MAT-001"])
-        #expect(rows.first?.lineItemCount == 1)
-        #expect(rows.first?.jpoCount == 1)
-        #expect(rows.first?.jobNames == "Bookkeeper Material Job")
-        #expect(rows.first?.sourceSummary == "1 PO line, 1 JPO")
+        #expect(rows.first?.lineItemCount == 2)
+        #expect(rows.first?.jpoCount == 2)
+        #expect(rows.first?.jobNames == "Alpha Material Job,Zulu Material Job")
+        #expect(rows.first?.sourceSummary == "2 PO lines, 2 JPOs")
     }
 
     @Test("Audit summaries aggregate count variance by part and area")

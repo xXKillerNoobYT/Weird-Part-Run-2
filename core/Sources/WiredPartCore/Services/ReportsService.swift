@@ -981,7 +981,20 @@ public final class ReportsService: Sendable {
                            COALESCE(po.total_cost, 0) AS total_amount,
                            COUNT(DISTINCT pli.id) AS line_item_count,
                            COUNT(DISTINCT jpo.id) AS jpo_count,
-                           COALESCE(GROUP_CONCAT(DISTINCT j.job_name), '') AS job_names
+                           COALESCE((
+                               SELECT GROUP_CONCAT(ordered_jobs.job_name)
+                               FROM (
+                                   SELECT j2.job_name AS job_name, MIN(j2.id) AS first_job_id
+                                   FROM po_line_items pli2
+                                   JOIN jpo_line_items jli2 ON jli2.id = pli2.jpo_line_id AND jli2.deleted_at IS NULL
+                                   JOIN job_parts_orders jpo2 ON jpo2.id = jli2.jpo_id AND jpo2.deleted_at IS NULL
+                                   JOIN jobs j2 ON j2.id = jpo2.job_id AND j2.deleted_at IS NULL
+                                   WHERE pli2.po_id = po.id
+                                     AND pli2.deleted_at IS NULL
+                                   GROUP BY j2.job_name
+                                   ORDER BY LOWER(j2.job_name), first_job_id
+                               ) ordered_jobs
+                           ), '') AS job_names
                     FROM purchase_orders po
                     LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL
                     LEFT JOIN po_line_items pli ON pli.po_id = po.id AND pli.deleted_at IS NULL

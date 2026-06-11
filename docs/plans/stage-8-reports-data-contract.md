@@ -84,21 +84,34 @@ Response row:
 PreBillingRow {
   id: Int64              // job id
   jobName: String
+  jobNumber: String
   regularHours: Double
   overtimeHours: Double
+  materialCost: Double
+  billableTotal: Double
+  laborEntryCount: Int
+  jobPartCount: Int
+  jpoCount: Int
+  purchaseOrderCount: Int
+  auditDiscrepancyCount: Int // compatibility field; currently 0 until job-scoped audit provenance exists
+  sourceSummary: String
 }
 ```
 
 Rules:
 
 - Include jobs with regular or overtime labor in the requested inclusive date range.
+- Include material cost, billable totals, and source counts from existing job/labor/job-parts/JPO/PO tables; do not persist a separate report source of truth.
 - Exclude labor entries covered by a locked, non-deleted `billing_periods` row where `job_id` matches the labor job or where `job_id IS NULL` for a company-wide lock.
+- Do not attribute `audit_counts` to a job through `part_id` alone. `auditDiscrepancyCount` remains `0` until a real job-scoped audit source exists.
 - Sort by job name ascending.
 - Consumers treat the output as already lock-filtered.
 
 Verification hooks:
 
 - `ReportsServiceTests.testPreBillingDataWithLaborEntries`
+- `ReportsServiceTests.testPreBillingDataIncludesStage8ReadModelProvenance`
+- `ReportsServiceTests.testPreBillingDataDoesNotExposeUnprovenSharedPartAuditAttribution`
 - `ReportsServiceTests.testPreBillingDataExcludesLockedBillingPeriods`
 - `ReportsServiceTests.testPreBillingDataExcludesCompanyWideLockedBillingPeriods`
 
@@ -119,6 +132,9 @@ BookkeeperLaborRow {
   employeeName: String
   regularHours: Double
   overtimeHours: Double
+  grossPay: Double
+  laborEntryCount: Int
+  sourceSummary: String
 }
 
 BookkeeperMaterialRow {
@@ -126,22 +142,30 @@ BookkeeperMaterialRow {
   poNumber: String
   supplierName: String   // "Unknown" if supplier is missing or soft-deleted
   totalAmount: Double
+  lineItemCount: Int
+  jpoCount: Int
+  jobNames: String       // distinct job names, ordered case-insensitively by name then job id, comma-separated
+  sourceSummary: String
 }
 ```
 
 Rules:
 
 - Labor summary groups by employee and sorts by employee name.
-- Material rows include non-deleted purchase orders created inside the inclusive date range and sort by PO number.
+- Labor `grossPay` is regular hours at employee pay rate plus overtime at 1.5x pay rate.
+- Material rows include non-deleted, non-cancelled purchase orders whose `COALESCE(order_date, created_at)` falls inside the inclusive date range and sort by PO number.
 - Supplier names from soft-deleted supplier rows must not leak into the export.
+- Material `jobNames` must be deterministic for multi-job POs: use distinct linked job names ordered by normalized name plus job id before concatenation.
 - Exported currency should use exactly two fractional digits in UI/export utilities.
 
 Verification hooks:
 
 - `ReportsServiceTests.testBookkeeperLaborEmpty`
+- `ReportsServiceTests.testBookkeeperLaborSummaryIncludesPayrollTotals`
 - `ReportsServiceTests.testBookkeeperMaterialEmpty`
 - `ReportsServiceTests.testBookkeeperMaterialPOs_excludesDeletedPurchaseOrders`
 - `ReportsServiceTests.testBookkeeperMaterialPOs_hidesDeletedSupplierName`
+- `ReportsServiceTests.testBookkeeperMaterialPOsDeterministicExportRows`
 
 ### Report Stats
 
@@ -176,6 +200,7 @@ Verification hook:
 Service methods:
 
 ```swift
+ReportsService.getAuditSummaries(startDate:endDate:) throws -> [AuditSummaryRow]
 WarehouseService.getAuditSummary() throws -> AuditSummary
 WarehouseService.getAuditDiscrepancies() throws -> [AuditDiscrepancy]
 ```
@@ -183,6 +208,18 @@ WarehouseService.getAuditDiscrepancies() throws -> [AuditDiscrepancy]
 Response shapes:
 
 ```swift
+AuditSummaryRow {
+  partId: Int64
+  partName: String
+  areaId: Int64?
+  areaLabel: String
+  expectedQty: Int
+  countedQty: Int
+  variance: Int
+  lastCountedAt: String
+  sourceSummary: String
+}
+
 AuditSummary {
   totalParts: Int
   countedParts: Int
@@ -205,13 +242,16 @@ AuditDiscrepancy {
 
 Rules:
 
+- `ReportsService.getAuditSummaries(startDate:endDate:)` reads `audit_counts` in the requested inclusive date range and groups variance by part plus area.
+- Report summary rows must include deterministic labels and source summaries suitable for Stage 8 UI/export display.
 - Summary scope is warehouse stock only.
 - Counted/discrepancy totals are for records counted today.
 - `lastAuditDate` propagates database errors except missing optional tables; do not represent real failures as "never audited".
 - Discrepancy `difference` is counted quantity minus system quantity.
 
-Verification hook:
+Verification hooks:
 
+- `ReportsServiceTests.testAuditSummariesAggregateVarianceProvenance`
 - `WarehouseAuditTests.testAuditSummaryRealDiscrepancies`
 
 ### App-Wide Audit Log
