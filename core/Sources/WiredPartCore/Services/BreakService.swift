@@ -285,8 +285,9 @@ public final class BreakService: Sendable {
         do { try db.writer.write { dbConn in
             func insertScheduledBreakIfMissing(at time: String) throws {
                 let startStr = "\(dateStr)T\(time):00"
+                let scheduledMinutePrefix = "\(dateStr)T\(time)"
                 let alreadyExists = existing.contains {
-                    $0.breakType == "break" && $0.startedAt.hasPrefix(startStr)
+                    $0.breakType == "break" && $0.startedAt.hasPrefix(scheduledMinutePrefix)
                 }
                 guard !alreadyExists else { return }
 
