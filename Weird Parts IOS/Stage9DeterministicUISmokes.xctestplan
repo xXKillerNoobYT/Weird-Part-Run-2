@@ -10,7 +10,7 @@
   ],
   "defaultOptions" : {
     "targetForVariableExpansion" : {
-      "containerPath" : "container:Weird Parts.xcodeproj",
+      "containerPath" : "container:Weird Parts IOS/Weird Parts.xcodeproj",
       "identifier" : "08F2BE312F67A53500944E97",
       "name" : "Weird Parts"
     }
@@ -23,7 +23,7 @@
         "Weird_Parts_IOSUITests/testWEI3295Stage8ReportsViewportHarness()"
       ],
       "target" : {
-        "containerPath" : "container:Weird Parts.xcodeproj",
+        "containerPath" : "container:Weird Parts IOS/Weird Parts.xcodeproj",
         "identifier" : "08F2BE4D2F67A53700944E97",
         "name" : "Weird PartsUITests"
       }
