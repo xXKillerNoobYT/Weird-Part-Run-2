@@ -942,8 +942,14 @@ final class AppCore: ObservableObject {
             try seedWarehouseLocationsUITestingFixtures(db: db)
         }
 
+        let suppressPostLoginOnboarding = ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard")
+            || ProcessInfo.processInfo.arguments.contains("-UITestingConflictCapture")
+
         if ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard") {
             try seedDispatchBoardUITestingFixtures(db: db)
+        }
+
+        if suppressPostLoginOnboarding {
             UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
             UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
         }
@@ -958,7 +964,7 @@ final class AppCore: ObservableObject {
 
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
-        if !ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard") {
+        if !suppressPostLoginOnboarding {
             UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
         }
 
