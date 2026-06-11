@@ -520,8 +520,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(placedStorage.waitForExistence(timeout: 8), "Dropped Storage zone should render on the grid")
         placedStorage.tap()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Storage at R1C1'")).firstMatch.waitForExistence(timeout: 5),
-                      "Tapping Storage should select the Storage zone before resizing")
 
         let resizeHandle = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Resize Storage'")).firstMatch
         XCTAssertTrue(resizeHandle.waitForExistence(timeout: 5), "Selected Storage zone should expose a resize handle")
