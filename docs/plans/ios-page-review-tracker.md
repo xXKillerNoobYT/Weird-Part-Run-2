@@ -10,6 +10,26 @@
 
 ---
 
+## 2026-05-23 Reconciliation Note for GH#649 / WEI-2005
+
+This tracker began as a design-review and Xcode-AI prompt planning ledger. It should no longer be read as the live beta QA status. There are four separate signals:
+
+1. Historical 44-page rebuild pass: `docs/page-rebuild-tracker.md` records a historical 44/44 April 2026 rebuild matrix, now explicitly labeled historical.
+2. Original design prompt queue: the table below preserves what prompt chains were written or planned during the March design-review period.
+3. Later implementation evidence: `xcode-ai/prompt-results-log.md` records many later prompts/results as SUCCESS, implemented, or already implemented; `xcode-ai/fix-prompts/00-fix-order.md` says Phase 1 all 279 prompts were archived and Phase 2 HIG/security work is complete.
+4. Current human-visible QA: `docs/plans/ux-audit-page-gap-list-2026-05-23.md` and `docs/testing/wei-1944-full-app-usability-verification-matrix.md` define the remaining simulator/manual verification work before beta confidence.
+
+Therefore, statuses such as “queued” below mean “originally queued in the design/prompt ledger” only when backed by the current fix-order queue. They are not automatic proof of unfinished implementation, and “DONE” is not automatic proof of current human-visible usability.
+
+### Current prompt-ledger interpretation
+
+- Completed/archive evidence: `xcode-ai/fix-prompts/00-fix-order.md` states Phase 1 prompts 01–67A are archived in `done/`, and Phase 2 HIG/security work is complete.
+- Later result evidence: `xcode-ai/prompt-results-log.md` includes implementation/result entries for Jobs 45A+, Scheduling 46A+, Tools 47B/47D/47E, Fleet 48A–48E, Reports 49A–49D, Office 50A–50D, Settings/standards/sync 51A–55A, and related later groups.
+- Still active-looking prompt work in the current queue: PE-046 through PE-049 (PE-COLORS Phase 2 UI prompts to be written) and PE-051 (Tools sheet dismiss guard after PE-COLORS).
+- Current QA links: use the WEI-1944 matrix for “what still needs human-visible verification,” not the old prompt counts.
+
+---
+
 ## Review Progress Overview
 
 | Area | Pages | Reviewed | Prompts | Status |
@@ -34,26 +54,26 @@
 | Warehouse | 15 files | ✅ | 31A-31I (9) | All DONE |
 | Cross-cutting Cleanup | multiple | ✅ | 32A-32J (10) | All DONE |
 | Cross-cutting Polish | multiple | ✅ | 33A-33H (8) | All DONE |
-| UI Quality Audit | multiple | ✅ | 34A (1) | Queued |
-| Targeted Fixes | multiple | ✅ | 35A-35I (9) | Queued |
-| Floor Plan System | warehouse | ✅ | 36A-36D (4) | Queued |
-| Audit Confidence System | warehouse | ✅ | 37A-37D (4) | Queued |
-| Break/Lunch Compliance | clock | ✅ | 38A-38B (2) | Queued |
-| Hats Permission Audit | cross-cutting | ✅ | 39A (1) | Queued |
-| Clock To-Do Integration | clock | ✅ | 40A-40B (2) | Queued |
-| Teams Detail | people | ✅ | 41A (1) | Queued |
-| Chat | 9 files | ✅ Design | 42A-42D (4) | Prompts written, queued |
-| Notebooks | 7 files | ✅ Design | 43A-43E (5) | Prompts written, queued |
-| People | 11 files | ✅ Design | 44A-44F (6) | Prompts written, queued |
-| Jobs | 11 files | ✅ Design | 45A-45D (4) | Prompts written, queued |
-| Scheduling | 12 files | ✅ Design | 46A-46F (6) | Prompts written, queued |
-| Tools | 7 files | ✅ Design | — | Design complete, prompts pending |
-| Fleet | 17 files | ✅ Design | — | Design complete, prompts pending |
-| Reports | 9 files | ✅ Design | — | Design complete, prompts pending |
-| Office | 6 files | ✅ Design | — | Design complete, prompts pending |
-| Settings | 23 files | ✅ Design | — | Design complete, prompts pending |
+| UI Quality Audit | multiple | ✅ | 34A (1) | Historical prompt; see results/fix-order + current WEI-1944 QA matrix |
+| Targeted Fixes | multiple | ✅ | 35A-35I (9) | Historical prompt group; later fixes/results exist, use current issue queue for residuals |
+| Floor Plan System | warehouse | ✅ | 36A-36D (4) | Later implementation evidence exists; current simulator/manual QA still required |
+| Audit Confidence System | warehouse | ✅ | 37A-37D (4) | Later implementation evidence exists; current simulator/manual QA still required |
+| Break/Lunch Compliance | clock | ✅ | 38A-38B (2) | Later implementation evidence exists; verify in Clock QA matrix |
+| Hats Permission Audit | cross-cutting | ✅ | 39A (1) | Later cleanup/security evidence exists; verify permission behavior in QA matrix |
+| Clock To-Do Integration | clock | ✅ | 40A-40B (2) | Historical prompt ledger; current Clock walkthrough remains high-priority QA |
+| Teams Detail | people | ✅ | 41A (1) | Later People/Teams evidence exists; verify People flows in QA matrix |
+| Chat | 9 files | ✅ Design | 42A-42D (4) | Later result evidence exists; chat/RFI/Q&A still needs human-visible verification |
+| Notebooks | 7 files | ✅ Design | 43A-43E (5) | Later result evidence exists; notebook editor/manual QA remains required |
+| People | 11 files | ✅ Design | 44A-44F (6) | Later People result evidence exists; permission/privacy QA remains required |
+| Jobs | 11 files | ✅ Design | 45A-45D (4) | Later Jobs result evidence exists; current Jobs/Clock QA remains high priority |
+| Scheduling | 12 files | ✅ Design | 46A-46F (6) | Later Scheduling result evidence exists; current Scheduling QA remains high priority |
+| Tools | 7 files | ✅ Design | 47-series + PE-051 | Later Tools result evidence exists; PE-051 dismiss guard remains active-looking |
+| Fleet | 17 files | ✅ Design | 48A-48E | Later Fleet result evidence exists; verify Fleet native flows in QA matrix |
+| Reports | 9 files | ✅ Design | 49A-49D | Later Reports result evidence exists; export/manual QA remains required |
+| Office | 6 files | ✅ Design | 50A-50D | Later Office result evidence exists; approval/financial QA remains required |
+| Settings | 23 files | ✅ Design | 52A+ / settings groups | Later Settings result evidence exists; deep settings/manual QA remains required |
 
-**Totals:** 188 prompts written · 133 DONE · 55 queued · 5 areas designed (prompts pending) · 0 feature areas unreviewed
+**Historical design-ledger totals:** 188 prompts written in this tracker; older “133 DONE / 55 queued / 5 prompt-pending areas” counts are superseded by `xcode-ai/prompt-results-log.md` and `xcode-ai/fix-prompts/00-fix-order.md`. Current active-looking prompt work is PE-046–PE-049 and PE-051; current human-visible QA status is in the WEI-1944 matrix.
 
 ---
 
@@ -524,15 +544,15 @@ These areas have comprehensive design plans saved in `docs/plans/`. Next step: r
 | 33G | Staging box management: physical box system — sizes, labels, full/open, contents, move-all |
 | 33H | Duplicate wizard cleanup: delete inline wizard, use IOSMovementWizard (1364→369 lines) |
 
-## Queued Prompt Chains — Written But Not Yet Implemented
+## Historical Prompt Chains — Originally Queued; Reconcile Against Results Log
 
-### UI Quality Audit (Prompt 34A) — QUEUED
+### UI Quality Audit (Prompt 34A) — HISTORICAL LEDGER; VERIFY AGAINST RESULTS LOG / CURRENT QA
 
 | Prompt | Feature |
 |--------|---------|
 | 34A | Sheet dismiss, sticky buttons, navigation links, data display, form validation |
 
-### Targeted Fixes (Prompts 35A-35I) — QUEUED
+### Targeted Fixes (Prompts 35A-35I) — HISTORICAL LEDGER; USE CURRENT ISSUE QUEUE FOR RESIDUALS
 
 | Prompt | Feature |
 |--------|---------|
@@ -546,7 +566,7 @@ These areas have comprehensive design plans saved in `docs/plans/`. Next step: r
 | 35H | Companion GRDB + hats delete: remove GRDB from 2 sheets, add hat delete confirmation |
 | 35I | Reports + tools GRDB: remove GRDB from PreBilling, BookkeeperExport, ToolKits |
 
-### Floor Plan System (Prompts 36A-36D) — QUEUED
+### Floor Plan System (Prompts 36A-36D) — LATER EVIDENCE EXISTS; MANUAL QA STILL REQUIRED
 
 | Prompt | Feature |
 |--------|---------|
@@ -555,7 +575,7 @@ These areas have comprehensive design plans saved in `docs/plans/`. Next step: r
 | 36C | Floor plan navigation: warehouse GPS directions, QR scan full location view, user position tracking |
 | 36D | Onboarding wizard: 6-step progressive setup, Quick Count mode, Save & Exit, AI suggestions |
 
-### Audit Confidence System (Prompts 37A-37D) — QUEUED
+### Audit Confidence System (Prompts 37A-37D) — LATER EVIDENCE EXISTS; MANUAL QA STILL REQUIRED
 
 See `docs/plans/warehouse-audit-intelligence.md` for full design.
 
@@ -566,33 +586,33 @@ See `docs/plans/warehouse-audit-intelligence.md` for full design.
 | 37C | Organization tab: consolidation voting, org checklist, rating rollup area→unit→row→warehouse |
 | 37D | User ratings + leaderboard: leaderboard for all, detail for managers, multi-user consensus, training suggestions |
 
-### Break/Lunch Compliance (Prompts 38A-38B) — QUEUED
+### Break/Lunch Compliance (Prompts 38A-38B) — LATER EVIDENCE EXISTS; VERIFY CLOCK FLOW
 
 | Prompt | Feature |
 |--------|---------|
 | 38A | 4-tier policy (state+company), break_records, auto-fill, 15-min rounding, state presets |
 | 38B | Clock page buttons, settings page, clock-out questionnaire, bonus tracking |
 
-### Hats Permission Audit (Prompt 39A) — QUEUED
+### Hats Permission Audit (Prompt 39A) — LATER EVIDENCE EXISTS; VERIFY PERMISSIONS
 
 | Prompt | Feature |
 |--------|---------|
 | 39A | Cross-cutting: replace hardcoded role checks with hasPermission(), seed new permission keys |
 
-### Clock To-Do Integration (Prompts 40A-40B) — QUEUED
+### Clock To-Do Integration (Prompts 40A-40B) — HISTORICAL LEDGER; VERIFY CLOCK WALKTHROUGH
 
 | Prompt | Feature |
 |--------|---------|
 | 40A | Clock-in to-do picker, Mark Done + Pick Next, work type selector (New/Warranty) |
 | 40B | Live elapsed timer, today's hours per job/to-do, Switch Job one-action button |
 
-### Teams Detail (Prompt 41A) — QUEUED
+### Teams Detail (Prompt 41A) — LATER PEOPLE/TEAMS EVIDENCE EXISTS
 
 | Prompt | Feature |
 |--------|---------|
 | 41A | IOSTeamDetailPage with members/roles/jobs, smart cards on list page, add/remove members |
 
-### Chat (Prompts 42A-42D) — QUEUED
+### Chat (Prompts 42A-42D) — LATER RESULT EVIDENCE EXISTS; VERIFY CHAT/RFI/Q&A
 
 | Prompt | Feature |
 |--------|---------|
@@ -601,7 +621,7 @@ See `docs/plans/warehouse-audit-intelligence.md` for full design.
 | 42C | Attachments: photo/file/part-ref attachments, composer buttons, auto-save to job notebook |
 | 42D | Q&A escalation: visual escalation ladder (Worker⇄Lead⇄Manager⇄Office), push back, smart cards |
 
-### Notebooks (Prompts 43A-43E) — QUEUED
+### Notebooks (Prompts 43A-43E) — LATER RESULT EVIDENCE EXISTS; VERIFY EDITOR
 
 | Prompt | Feature |
 |--------|---------|
@@ -611,7 +631,7 @@ See `docs/plans/warehouse-audit-intelligence.md` for full design.
 | 43D | Panel schedule: circuit grid, breaker types, 240V spanning, PDF export |
 | 43E | Daily report system: auto-generated from clock/to-do data, AI verification, user notes, templates |
 
-### People (Prompts 44A-44F) — QUEUED
+### People (Prompts 44A-44F) — LATER RESULT EVIDENCE EXISTS; VERIFY PRIVACY/PERMISSIONS
 
 | Prompt | Feature |
 |--------|---------|
@@ -622,7 +642,7 @@ See `docs/plans/warehouse-audit-intelligence.md` for full design.
 | 44E | Contacts redesign: smart cards by type, active/inactive sections, sort options, type badges |
 | 44F | Payment tracking: company setting, green-to-red status bar, overdue alerts, payment records |
 
-### Jobs (Prompts 45A-45D) — QUEUED
+### Jobs (Prompts 45A-45D) — LATER RESULT EVIDENCE EXISTS; VERIFY JOB/CLOCK FLOWS
 
 | Prompt | Feature |
 |--------|---------|
@@ -631,7 +651,7 @@ See `docs/plans/warehouse-audit-intelligence.md` for full design.
 | 45C | Job types & status: migration (warranty fields, continuous job, payment hold, clock-in blocking) |
 | 45D | Warranty to-do: work classification (regular/warranty), manager review, reclassification tracking |
 
-### Scheduling (Prompts 46A-46F) — QUEUED
+### Scheduling (Prompts 46A-46F) — LATER RESULT EVIDENCE EXISTS; VERIFY SCHEDULING UX
 
 | Prompt | Feature |
 |--------|---------|
@@ -700,30 +720,15 @@ DONE:  29A-D (orders cleanup) → 30A-E (JPO creation)
 DONE:  31A-I (warehouse full)
 DONE:  32A-J (cross-cutting cleanup) → 33A-H (feature polish)
 
-NEXT:  34A (UI quality audit)
-THEN:  35A-I (targeted fixes — GRDB removal, error states, service layer gaps)
-THEN:  36A-D (floor plan system)
-THEN:  37A-D (audit confidence system)
-THEN:  38A-B (break/lunch compliance)
-THEN:  39A (hats permission audit — cross-cutting)
-THEN:  40A-B (clock to-do integration)
-THEN:  41A (teams detail page)
-THEN:  42A-D (chat)
-THEN:  43A-E (notebooks)
-THEN:  44A-F (people)
-THEN:  45A-D (jobs)
-THEN:  46A-F (scheduling)
-
-DESIGNED (need prompts written):
-  - Tools (see docs/plans/ios-tools-pages.md)
-  - Fleet (see docs/plans/ios-fleet-pages.md)
-  - Reports (see docs/plans/ios-reports-pages.md)
-  - Office (see docs/plans/ios-office-pages.md)
-  - Settings (see docs/plans/ios-settings-pages.md)
+CURRENT FOLLOW-UP (2026-05-23):
+  - Do not use this old order as the live implementation queue.
+  - Check `xcode-ai/prompt-results-log.md` for implementation evidence after prompt groups 34A-67A.
+  - Check `xcode-ai/fix-prompts/00-fix-order.md` for the live prompt queue. Active-looking prompt work: PE-046, PE-047, PE-048, PE-049, and PE-051.
+  - Use `docs/testing/wei-1944-full-app-usability-verification-matrix.md` for current human-visible QA priority/order.
 
 ALL 12 feature areas designed. 0 unreviewed.
 ```
 
 ---
 
-*Last updated: 2026-03-23 (Settings design complete — all 12 areas designed, 0 unreviewed)*
+*Last updated: 2026-05-23 for GH#649 / WEI-2005: reconciled historical prompt-ledger language with prompt-results-log evidence and linked current QA matrices.*

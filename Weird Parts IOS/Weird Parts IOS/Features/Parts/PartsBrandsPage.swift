@@ -14,12 +14,14 @@ struct PartsBrandsPage: View {
     // Single active-sheet enum to avoid multiple .sheet conflicts
     enum ActiveSheet: Identifiable {
         case addBrand
+        case addBrandSuppliers(Int64)
         case detailBrand(BrandListRow)
         case help
 
         var id: String {
             switch self {
             case .addBrand: return "addBrand"
+            case .addBrandSuppliers(let brandId): return "addBrandSuppliers-\(brandId)"
             case .detailBrand(let b): return "detail-\(b.id)"
             case .help: return "help"
             }
@@ -27,6 +29,7 @@ struct PartsBrandsPage: View {
     }
 
     @State private var activeSheet: ActiveSheet?
+    @State private var pendingAddSuppliersBrandId: Int64?
     @State private var brandToDelete: BrandListRow?
     @State private var showDeleteConfirm = false
     @State private var deleteError: String?
@@ -65,8 +68,19 @@ struct PartsBrandsPage: View {
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .addBrand:
-                BrandFormSheet(brand: nil) { await loadData() }
-                    .environmentObject(appCore)
+                BrandFormSheet(
+                    brand: nil,
+                    onSave: { await loadData() },
+                    onAddSuppliers: { brandId in
+                        presentAddSuppliersPicker(for: brandId)
+                    }
+                )
+                .environmentObject(appCore)
+            case .addBrandSuppliers(let brandId):
+                BrandSupplierPickerSheet(brandId: brandId) {
+                    await loadData()
+                }
+                .environmentObject(appCore)
             case .detailBrand(let brandRow):
                 BrandDetailSheet(brand: brandRow) { await loadData() }
                     .environmentObject(appCore)
@@ -80,6 +94,11 @@ struct PartsBrandsPage: View {
                     ]
                 )
             }
+        }
+        .onChange(of: activeSheet?.id) { _, sheetId in
+            guard sheetId == nil, let brandId = pendingAddSuppliersBrandId else { return }
+            pendingAddSuppliersBrandId = nil
+            activeSheet = .addBrandSuppliers(brandId)
         }
         .background(DS.Background.page)
         .task {
@@ -101,6 +120,14 @@ struct PartsBrandsPage: View {
     }
 
     // MARK: - Filtered
+
+    private func presentAddSuppliersPicker(for brandId: Int64) {
+        if activeSheet == nil {
+            activeSheet = .addBrandSuppliers(brandId)
+        } else {
+            pendingAddSuppliersBrandId = brandId
+        }
+    }
 
     private var filteredBrands: [BrandListRow] {
         if searchText.isEmpty { return brands }
@@ -300,6 +327,7 @@ struct BrandListRow: Identifiable, Sendable {
 private struct BrandFormSheet: View {
     let brand: BrandListRow?
     let onSave: () async -> Void
+    let onAddSuppliers: ((Int64) -> Void)?
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
 
@@ -367,8 +395,14 @@ private struct BrandFormSheet: View {
             .alert("Add Suppliers?", isPresented: $showAddSuppliersPrompt) {
                 Button("Add Suppliers") {
                     Task {
+                        let brandId = newBrandId
                         dismiss()
                         await onSave()
+                        if let brandId {
+                            await MainActor.run {
+                                onAddSuppliers?(brandId)
+                            }
+                        }
                     }
                 }
                 Button("Skip", role: .cancel) {
@@ -435,9 +469,16 @@ private struct BrandDetailSheet: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
 
+    @State private var displayedBrand: BrandListRow
     @State private var linkedSuppliers: [PartsService.BrandSupplierRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
+
+    init(brand: BrandListRow, onUpdate: @escaping () async -> Void) {
+        self.brand = brand
+        self.onUpdate = onUpdate
+        _displayedBrand = State(initialValue: brand)
+    }
 
     private enum DetailActiveSheet: Identifiable {
         case editBrand
@@ -458,14 +499,15 @@ private struct BrandDetailSheet: View {
             List {
                 // Brand Info
                 Section("Brand Details") {
-                    LabeledContent("Name", value: brand.name)
-                    if let website = brand.website, !website.isEmpty {
+                    LabeledContent("Name", value: displayedBrand.name)
+                    if let website = displayedBrand.website, !website.isEmpty {
                         LabeledContent("Website", value: website)
                     }
-                    if let notes = brand.notes, !notes.isEmpty {
+                    if let notes = displayedBrand.notes, !notes.isEmpty {
                         LabeledContent("Notes", value: notes)
                     }
-                    LabeledContent("Parts Using This Brand", value: "\(brand.partCount)")
+                    LabeledContent("Parts Using This Brand", value: "\(displayedBrand.partCount)")
+                    LabeledContent("Linked Suppliers", value: "\(displayedBrand.supplierCount)")
                 }
 
                 // Linked Suppliers
@@ -533,7 +575,7 @@ private struct BrandDetailSheet: View {
                     }
                 }
             }
-            .navigationTitle(brand.name)
+            .navigationTitle(displayedBrand.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -551,13 +593,20 @@ private struct BrandDetailSheet: View {
             .sheet(item: $activeDetailSheet) { sheet in
                 switch sheet {
                 case .editBrand:
-                    BrandFormSheet(brand: brand) {
-                        await onUpdate()
-                    }
+                    BrandFormSheet(
+                        brand: displayedBrand,
+                        onSave: {
+                            await refreshDisplayedBrand()
+                            await onUpdate()
+                        },
+                        onAddSuppliers: nil
+                    )
                     .environmentObject(appCore)
                 case .supplierPicker:
-                    BrandSupplierPickerSheet(brandId: brand.id) {
+                    BrandSupplierPickerSheet(brandId: displayedBrand.id) {
                         loadSuppliers()
+                        await refreshDisplayedBrand()
+                        await onUpdate()
                     }
                     .environmentObject(appCore)
                 }
@@ -575,7 +624,7 @@ private struct BrandDetailSheet: View {
                 loadError = "Parts service unavailable"
                 return
             }
-            linkedSuppliers = try service.getBrandSuppliersWithStatus(brandId: brand.id)
+            linkedSuppliers = try service.getBrandSuppliersWithStatus(brandId: displayedBrand.id)
             isLoading = false
         } catch {
             loadError = userFriendlyError(error, context: "load suppliers")
@@ -584,7 +633,10 @@ private struct BrandDetailSheet: View {
     }
 
     private func toggleCarryStatus(_ link: PartsService.BrandSupplierRow) {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            loadError = "Parts service unavailable"
+            return
+        }
         let newStatus = link.carryStatus == "carry_on_shelf" ? "need_to_order" : "carry_on_shelf"
         do {
             try service.updateBrandSupplierCarryStatus(
@@ -597,13 +649,34 @@ private struct BrandDetailSheet: View {
             loadError = userFriendlyError(error, context: "update carry status")
         }
     }
+
+    private func refreshDisplayedBrand() async {
+        guard let service = appCore.partsService else {
+            loadError = "Parts service unavailable"
+            return
+        }
+        do {
+            if let refreshed = try service.listBrands().first(where: { $0.brand.id == displayedBrand.id }) {
+                displayedBrand = BrandListRow(
+                    id: refreshed.brand.id ?? displayedBrand.id,
+                    name: refreshed.brand.name,
+                    website: refreshed.brand.website,
+                    notes: refreshed.brand.notes,
+                    partCount: refreshed.partCount,
+                    supplierCount: refreshed.supplierCount
+                )
+            }
+        } catch {
+            loadError = userFriendlyError(error, context: "refresh brand")
+        }
+    }
 }
 
 // MARK: - Brand Supplier Picker Sheet
 
 struct BrandSupplierPickerSheet: View {
     let brandId: Int64
-    let onSave: () -> Void
+    let onSave: () async -> Void
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
 
@@ -807,8 +880,8 @@ struct BrandSupplierPickerSheet: View {
             await MainActor.run {
                 isSaving = false
                 dismiss()
-                onSave()
             }
+            await onSave()
         } catch {
             await MainActor.run {
                 isSaving = false

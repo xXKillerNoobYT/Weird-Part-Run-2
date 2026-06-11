@@ -1,6 +1,8 @@
 # Wired-Part — Key Principles to Remember
 
 > This document captures the core design philosophy and non-negotiable principles of the Wired-Part application. Every contributor (human or AI) should internalize these before making changes.
+>
+> **Paperclip staging update (2026-05-26):** Use `docs/plans/staged-paperclip-goals.md` for current execution order and active/planned status. Architecture notes below preserve product principles and may include historical platform language.
 
 ---
 

@@ -42,6 +42,28 @@ struct WiredPartIOSApp: App {
         ProcessInfo.processInfo.arguments.contains("-UITestingWarehouseSetupWizard")
     }
 
+    private var shouldShowWEI936WelcomeFixture: Bool {
+        ProcessInfo.processInfo.arguments.contains("-UITestingWEI936Welcome")
+    }
+
+    private var shouldShowWEI936CelebrationFixture: Bool {
+        ProcessInfo.processInfo.arguments.contains("-UITestingWEI936Celebration")
+    }
+
+    private var shouldOpenWEI3144MaterialsFixture: Bool {
+        ProcessInfo.processInfo.arguments.contains("-UITestingWEI3144JobMaterials")
+    }
+
+    #if DEBUG
+    private var shouldShowWEI3140ImportPreviewFixture: Bool {
+        ProcessInfo.processInfo.arguments.contains("-UITestingWEI3140ImportPreviewFixture")
+    }
+    #else
+    private var shouldShowWEI3140ImportPreviewFixture: Bool {
+        false
+    }
+    #endif
+
     /// Resolved color scheme from the user's theme setting.
     private var resolvedColorScheme: ColorScheme? {
         switch appCore.theme.themeMode {
@@ -59,8 +81,22 @@ struct WiredPartIOSApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if appCore.isReady {
-                    if appCore.needsOnboarding {
+                if shouldShowWEI3140ImportPreviewFixture {
+                    #if DEBUG
+                    WEI3140ImportPreviewFixtureView()
+                    #else
+                    EmptyView()
+                    #endif
+                } else if appCore.isReady {
+                    if shouldShowWEI936WelcomeFixture {
+                        OnboardingWelcomeView()
+                            .environmentObject(appCore)
+                    } else if shouldShowWEI936CelebrationFixture {
+                        NavigationStack {
+                            OnboardingCompleteView()
+                                .environmentObject(appCore)
+                        }
+                    } else if appCore.needsOnboarding {
                         OnboardingWelcomeView()
                             .environmentObject(appCore)
                     } else if appCore.needsBootstrap {
@@ -68,6 +104,15 @@ struct WiredPartIOSApp: App {
                             .environmentObject(appCore)
                     } else if appCore.currentUser == nil {
                         LoginView()
+                            .environmentObject(appCore)
+                    } else if shouldOpenWEI3144MaterialsFixture,
+                              let jobId = AppCore.uiTestingWEI3144JobMaterialsJobId(db: appCore.db) {
+                        NavigationStack {
+                            IOSJobDetailPage(jobId: jobId)
+                                .environmentObject(appCore)
+                        }
+                    } else if shouldOpenWarehouseSetupForUITest {
+                        WarehouseOnboardingWizard()
                             .environmentObject(appCore)
                     } else if isAdmin && !hasCompletedCompanySetup {
                         CompanySetupWizard()
@@ -77,9 +122,6 @@ struct WiredPartIOSApp: App {
                             .environmentObject(appCore)
                     } else if !hasCompletedOnboarding {
                         OnboardingWalkthroughView()
-                            .environmentObject(appCore)
-                    } else if shouldOpenWarehouseSetupForUITest {
-                        WarehouseOnboardingWizard()
                             .environmentObject(appCore)
                     } else {
                         IOSMainView()

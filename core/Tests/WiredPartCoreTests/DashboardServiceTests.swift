@@ -1,10 +1,29 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 import Testing
 import GRDB
 @testable import WiredPartCore
 
-@Suite("DashboardService Tests")
+@Suite("DashboardService Tests", .serialized)
 struct DashboardServiceTests {
+    private func withDenverTimeZone(_ work: () throws -> Void) throws {
+        let originalTZ = getenv("TZ").map { String(cString: $0) }
+        setenv("TZ", "America/Denver", 1)
+        tzset()
+        defer {
+            if let originalTZ {
+                setenv("TZ", originalTZ, 1)
+            } else {
+                unsetenv("TZ")
+            }
+            tzset()
+        }
+        try work()
+    }
 
     private func freshEnv() throws -> (E2ETestHelpers.TestEnvironment, DashboardService) {
         let env = try E2ETestHelpers.setUp()
@@ -97,6 +116,49 @@ struct DashboardServiceTests {
         #expect(data.kpiSummary.activeJobs >= 0)
     }
 
+    @Test("Labor chart buckets UTC evening clock-in into local work day")
+    func testLaborChartUsesLocalOperationalDayForUtcClockIn() throws {
+        try withDenverTimeZone {
+            let (env, dash) = try freshEnv()
+            let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LOCAL-DASH", name: "Local Dashboard Job")
+
+            var localCalendar = Calendar(identifier: .gregorian)
+            localCalendar.timeZone = TimeZone(identifier: "America/Denver")!
+            let localStartOfDay = localCalendar.startOfDay(for: Date())
+            let localEvening = localCalendar.date(bySettingHour: 21, minute: 30, second: 0, of: localStartOfDay)!
+
+            let utcFormatter = DateFormatter()
+            utcFormatter.calendar = Calendar(identifier: .gregorian)
+            utcFormatter.locale = Locale(identifier: "en_US_POSIX")
+            utcFormatter.timeZone = TimeZone(identifier: "UTC")
+            utcFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+
+            let localDayFormatter = DateFormatter()
+            localDayFormatter.calendar = Calendar(identifier: .gregorian)
+            localDayFormatter.locale = Locale(identifier: "en_US_POSIX")
+            localDayFormatter.timeZone = TimeZone(identifier: "America/Denver")
+            localDayFormatter.dateFormat = "yyyy-MM-dd"
+
+            let clockIn = utcFormatter.string(from: localEvening)
+            let clockOut = utcFormatter.string(from: localEvening.addingTimeInterval(2 * 60 * 60))
+            let localDay = localDayFormatter.string(from: localEvening)
+
+            try env.db.writer.write { db in
+                try db.execute(sql: """
+                    INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                    VALUES (?, ?, ?, ?, 2.0, 0.0, 'completed', datetime('now'))
+                    """, arguments: [env.adminUserId, jobId, clockIn, clockOut])
+            }
+
+            let chartRows = try dash.getLaborChartData()
+            let localDayRow = chartRows.first(where: { $0.dateString == localDay })
+
+            #expect(localDayRow != nil)
+            #expect(abs((localDayRow?.regularHours ?? 0) - 2.0) < 0.01)
+        }
+    }
+
     // MARK: - Delivery & Budget
 
     @Test("Expected deliveries includes PO with delivery date within window")
@@ -145,6 +207,47 @@ struct DashboardServiceTests {
         let (env, dash) = try freshEnv()
         let hours = try dash.getMyHoursToday(userId: env.adminUserId)
         #expect(hours.totalHours >= 0)
+    }
+
+    @Test("My hours today reads completed break minutes from break records without labor gaps")
+    func testMyHoursTodayBreakMinutesFromBreakRecords() throws {
+        let (env, dash) = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BREAK-01", name: "Break Job")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries (user_id, job_id, clock_in, clock_out, regular_hours, status)
+                VALUES (?, ?, datetime('now','-4 hours'), datetime('now','-1 hour'), 3.0, 'completed')
+                """, arguments: [env.adminUserId, jobId])
+            try db.execute(sql: """
+                INSERT INTO break_records
+                    (user_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
+                VALUES
+                    (?, 'break', datetime('now','-3 hours'), datetime('now','-2 hours','-45 minutes'), 15, 1, 0),
+                    (?, 'lunch_unpaid', datetime('now','-2 hours'), datetime('now','-1 hours','-30 minutes'), 30, 0, 0)
+                """, arguments: [env.adminUserId, env.adminUserId])
+        }
+
+        let hours = try dash.getMyHoursToday(userId: env.adminUserId)
+
+        #expect(hours.breakMinutes == 45)
+    }
+
+    @Test("My hours today includes elapsed minutes for active same-day break record")
+    func testMyHoursTodayIncludesActiveBreakElapsedMinutes() throws {
+        let (env, dash) = try freshEnv()
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO break_records
+                    (user_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
+                VALUES
+                    (?, 'break', datetime('now','-20 minutes'), NULL, NULL, 1, 0)
+                """, arguments: [env.adminUserId])
+        }
+
+        let hours = try dash.getMyHoursToday(userId: env.adminUserId)
+
+        #expect(hours.breakMinutes >= 19)
+        #expect(hours.breakMinutes <= 21)
     }
 
     @Test("Team clocked in status reflects active clock entry")
@@ -491,6 +594,110 @@ struct DashboardServiceTests {
         let briefing = try dash.getOfficeBriefing()
         // Summary always begins with "Good morning." regardless of data state
         #expect(briefing.summary.hasPrefix("Good morning."))
+    }
+
+    @Test("getOfficeSmartCards returns command center counts")
+    func testOfficeSmartCardsCommandCenterCounts() throws {
+        let (env, dash) = try freshEnv()
+        let categoryId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Low Stock Coupling", categoryId: categoryId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-OFFICE-CARDS", name: "Office Cards Job")
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET min_stock_level = 10 WHERE id = ?", arguments: [partId])
+            try db.execute(sql: """
+                INSERT INTO labor_entries (user_id, job_id, clock_in, work_type)
+                VALUES (?, ?, datetime('now'), 'regular')
+                """, arguments: [env.adminUserId, jobId])
+            try db.execute(sql: """
+                INSERT INTO job_parts_orders (job_id, order_number, status, order_type, requested_by)
+                VALUES (?, 'JPO-OFFICE-CARDS', 'submitted', 'job', ?)
+                """, arguments: [jobId, env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO purchase_orders (po_number, supplier_id, status, expected_delivery, submitted_by)
+                VALUES ('PO-OFFICE-CARDS', ?, 'submitted', date('now', '-1 day'), ?)
+                """, arguments: [supplierId, env.adminUserId])
+            try db.execute(sql: """
+                UPDATE jobs
+                SET status = 'payment_hold',
+                    due_date = date('now', '-1 day'),
+                    warranty_end_date = date('now', '+10 days')
+                WHERE id = ?
+                """, arguments: [jobId])
+            try db.execute(sql: """
+                INSERT INTO tool_maintenance_types (name)
+                VALUES ('Office Card Calibration')
+                """)
+            let maintenanceTypeId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO tools (tool_number, name, category, calibration_due_date)
+                VALUES ('TOOL-OFFICE-CARDS', 'Office Card Meter', 'meter', date('now', '+2 days'))
+                """)
+            let toolId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO tool_maintenance_schedules (tool_id, maintenance_type_id, next_due_date)
+                VALUES (?, ?, date('now', '+2 days'))
+                """, arguments: [toolId, maintenanceTypeId])
+        }
+
+        let cards = Dictionary(uniqueKeysWithValues: try dash.getOfficeSmartCards().map { ($0.id, $0.count) })
+        #expect(cards["approvals_pending"] == 1)
+        #expect(cards["working_today"] == 1)
+        #expect(cards["jpos_pending"] == 1)
+        #expect(cards["payment_overdue"] == 1)
+        #expect(cards["parts_below_min"] == 1)
+        #expect(cards["maintenance_due"] == 2)
+        #expect(cards["callbacks_overdue"] == 1)
+        #expect(cards["warranty_expiring"] == 1)
+    }
+
+    @Test("getAttentionItems includes command center attention sources")
+    func testAttentionItemsIncludeCommandCenterSources() throws {
+        let (env, dash) = try freshEnv()
+        let categoryId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Attention Low Stock Part", categoryId: categoryId)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-ATTENTION-SOURCES", name: "Attention Sources Job")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET min_stock_level = 5 WHERE id = ?", arguments: [partId])
+            try db.execute(sql: """
+                INSERT INTO qa_threads (job_id, asked_by, subject, status, priority)
+                VALUES (?, ?, 'Need office decision', 'open', 'normal')
+                """, arguments: [jobId, env.adminUserId])
+            try db.execute(sql: """
+                UPDATE jobs
+                SET due_date = date('now', '-1 day'),
+                    warranty_end_date = date('now', '+20 days')
+                WHERE id = ?
+                """, arguments: [jobId])
+            try db.execute(sql: """
+                INSERT INTO certifications (user_id, cert_type, cert_name, expiry_date, is_active)
+                VALUES (?, 'safety', 'Lift Cert', date('now', '+15 days'), 1)
+                """, arguments: [env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO tool_maintenance_types (name)
+                VALUES ('Attention Maintenance')
+                """)
+            let maintenanceTypeId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO tools (tool_number, name, category)
+                VALUES ('TOOL-ATTENTION', 'Attention Meter', 'meter')
+                """)
+            let toolId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO tool_maintenance_schedules (tool_id, maintenance_type_id, next_due_date)
+                VALUES (?, ?, date('now', '+1 day'))
+                """, arguments: [toolId, maintenanceTypeId])
+        }
+
+        let itemTypes = Set(try dash.getAttentionItems().map(\.itemType))
+        #expect(itemTypes.contains("low_stock"))
+        #expect(itemTypes.contains("open_qa"))
+        #expect(itemTypes.contains("overdue_job"))
+        #expect(itemTypes.contains("maintenance_due"))
+        #expect(itemTypes.contains("expiring_cert"))
+        #expect(itemTypes.contains("warranty_expiring"))
     }
 
     // MARK: - Financial Snapshot

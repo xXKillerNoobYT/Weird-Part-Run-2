@@ -23,6 +23,7 @@ struct IOSProcurementPage: View {
     @State private var generateSuccess: String?
     @State private var isGenerating = false
     @State private var searchText = ""
+    @State private var poGroupingMode: PurchaseOrderGroupingMode = .perSupplierMixed
 
     // Generate POs confirmation
     @State private var showGeneratePOsConfirmation = false
@@ -515,14 +516,22 @@ struct IOSProcurementPage: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                Label(poGroupingMode.displayName, systemImage: poGroupingMode == .perSupplierMixed ? "shippingbox.fill" : "folder.badge.gearshape")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 // Grouped by supplier
-                ForEach(poPreviewGroups, id: \.supplierId) { group in
+                ForEach(poPreviewGroups, id: \.id) { group in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(group.supplierName)
                             .font(.caption)
                             .fontWeight(.semibold)
-                        ForEach(group.parts, id: \.partId) { part in
+                        if let jobName = group.jobName {
+                            Text(jobName)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        ForEach(group.parts, id: \.key) { part in
                             HStack {
                                 Text(part.partName)
                                     .font(.caption)
@@ -594,12 +603,15 @@ struct IOSProcurementPage: View {
     }
 
     private struct POPreviewGroup {
+        let id: String
         let supplierId: Int64
         let supplierName: String
+        let jobName: String?
         let parts: [POPreviewPart]
     }
 
     private struct POPreviewPart {
+        let key: String
         let partId: Int64
         let partName: String
         let quantity: Int
@@ -608,25 +620,59 @@ struct IOSProcurementPage: View {
     }
 
     private var poPreviewGroups: [POPreviewGroup] {
-        var groups: [Int64: (name: String, parts: [POPreviewPart])] = [:]
+        var groups: [String: (supplierId: Int64, supplierName: String, jobName: String?, parts: [POPreviewPart])] = [:]
         for item in cachedReadyToGenerate {
             guard let supplierId = selectedSupplier[item.id] else { continue }
             let supplierName = item.suppliers.first(where: { $0.id == supplierId })?.name ?? "Unknown"
             let unitCost = item.suppliers.first(where: { $0.id == supplierId })?.unitPrice
-            let allLineIds = item.sources.flatMap(\.lineIds)
             let orderQty = effectiveOrderQty(for: item)
 
+            if poGroupingMode == .perSupplierPerJob && !item.sources.isEmpty {
+                var remaining = orderQty
+                for source in item.sources where remaining > 0 {
+                    let quantity = min(source.quantity, remaining)
+                    guard quantity > 0 else { continue }
+                    remaining -= quantity
+                    let jobKey = source.jobId.map { "job-\($0)" } ?? "general"
+                    let groupId = "\(supplierId):\(jobKey)"
+                    let part = POPreviewPart(
+                        key: "\(item.id):\(source.id)",
+                        partId: item.partId,
+                        partName: item.partName,
+                        quantity: quantity,
+                        unitCost: unitCost,
+                        jpoLineIds: source.lineIds
+                    )
+                    groups[groupId, default: (supplierId: supplierId, supplierName: supplierName, jobName: source.jobId == nil ? "General procurement" : source.sourceName, parts: [])].parts.append(part)
+                }
+                continue
+            }
+
             let part = POPreviewPart(
-                partId: item.id,
+                key: "\(item.id):mixed",
+                partId: item.partId,
                 partName: item.partName,
                 quantity: orderQty,
                 unitCost: unitCost,
-                jpoLineIds: allLineIds
+                jpoLineIds: item.sources.flatMap(\.lineIds)
             )
-            groups[supplierId, default: (name: supplierName, parts: [])].parts.append(part)
+            groups["\(supplierId):mixed", default: (supplierId: supplierId, supplierName: supplierName, jobName: nil, parts: [])].parts.append(part)
         }
-        return groups.map { POPreviewGroup(supplierId: $0.key, supplierName: $0.value.name, parts: $0.value.parts) }
-            .sorted { $0.supplierName < $1.supplierName }
+        return groups.map {
+            POPreviewGroup(
+                id: $0.key,
+                supplierId: $0.value.supplierId,
+                supplierName: $0.value.supplierName,
+                jobName: $0.value.jobName,
+                parts: $0.value.parts
+            )
+        }
+        .sorted {
+            if $0.supplierName == $1.supplierName {
+                return ($0.jobName ?? "") < ($1.jobName ?? "")
+            }
+            return $0.supplierName < $1.supplierName
+        }
     }
 
     // MARK: - Confirmation Dialog Content
@@ -1083,7 +1129,7 @@ struct IOSProcurementPage: View {
                 fromLocationId: 1,
                 toLocationType: "pulled",
                 toLocationId: 1,
-                movementType: "transfer",
+                movementType: StockMovement.MovementType.transfer.rawValue,
                 reason: "Procurement pull",
                 notes: "Pulled \(actualPull) for procurement demand of \(item.totalDemand)",
                 performedBy: userId
@@ -1157,6 +1203,9 @@ struct IOSProcurementPage: View {
         isLoading = items.isEmpty
         loadError = nil
         do {
+            if let settingsService = appCore.settingsService {
+                poGroupingMode = try settingsService.getPurchaseOrderSettings().groupingMode
+            }
             let newItems = try service.getProcurementDemand()
             // Clean up pull decisions for parts no longer in the list
             let currentIds = Set(newItems.map(\.id))
@@ -1209,6 +1258,7 @@ struct IOSProcurementPage: View {
         Total demand rows: \(items.count), visible rows: \(filteredItems.count), selected rows: \(checkedParts.count), rows with supplier selected: \(selectedSupplierCount).
         Active source filter: \(sourceFilter ?? "all"), search active: \(!searchText.isEmpty), source counts: \(sourceText.isEmpty ? "none" : sourceText).
         Ready-to-generate preview groups: \(poPreviewGroups.count), ready order quantity: \(readyQuantity), pull decisions: \(pullDecisions.count).
+        PO grouping mode: \(poGroupingMode.displayName).
         Visible examples: \(visibleExamples.isEmpty ? "none" : visibleExamples).
         Available read-only guidance: explain demand sources, supplier tags, pull-vs-order choices, current filters, and PO preview state. Do not generate POs or change selections directly.
         """

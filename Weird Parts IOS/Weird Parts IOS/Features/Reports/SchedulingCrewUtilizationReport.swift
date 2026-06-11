@@ -30,9 +30,11 @@ struct SchedulingCrewUtilizationReport: View {
                 Section { ProgressView("Loading...") }
             } else if utilizationData.isEmpty {
                 Section {
-                    ContentUnavailableView("No Scheduling Data",
-                        systemImage: "person.3",
-                        description: Text("No dispatch entries found for this period."))
+                    EmptyStateView(
+                        icon: "person.3",
+                        title: "No Scheduling Data",
+                        message: "No dispatch entries found for this period."
+                    )
                 }
             } else {
                 Section("Summary") {

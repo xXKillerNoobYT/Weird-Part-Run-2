@@ -11,20 +11,41 @@ import GRDB
 /// Ported from: Unified Notebook System (Phase 4.5)
 public final class NotebooksService: Sendable {
     private let db: AppDatabase
+    private let auth: AuthService
 
-    public init(db: AppDatabase) {
+    public init(db: AppDatabase, auth: AuthService? = nil) {
         self.db = db
+        self.auth = auth ?? AuthService(db: db)
     }
 
     // =========================================================================
     // MARK: - Error Types
     // =========================================================================
 
-    public enum NotebooksError: Error, Sendable {
+    public enum NotebooksError: Error, LocalizedError, Sendable {
         case notebookNotFound(Int64)
         case entryNotFound(Int64)
         case requiredFieldEmpty
         case invalidDuration(Int64)
+        case invalidData(String)
+        case insufficientPermissions(required: String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .insufficientPermissions(let required):
+                return "You don't have permission to perform this action (required: \(required))."
+            case .notebookNotFound(let id):
+                return "Notebook \(id) not found."
+            case .entryNotFound(let id):
+                return "Notebook entry \(id) not found."
+            case .requiredFieldEmpty:
+                return "A required field is empty."
+            case .invalidDuration(let duration):
+                return "Invalid duration: \(duration)."
+            case .invalidData(let message):
+                return message
+            }
+        }
     }
 
     // =========================================================================
@@ -111,6 +132,35 @@ public final class NotebooksService: Sendable {
             self.classificationReviewed = classificationReviewed
             self.warrantyTimerEnd = warrantyTimerEnd
             self.isQuestion = isQuestion
+        }
+    }
+
+    /// A warranty work classification waiting for manager review.
+    public struct PendingWarrantyClassification: Sendable, Identifiable {
+        public let id: Int64
+        public let entryTitle: String
+        public let entryContent: String
+        public let requestedClassification: String
+        public let requestedByName: String
+        public let jobName: String
+        public let createdAt: String
+
+        public init(
+            id: Int64,
+            entryTitle: String,
+            entryContent: String,
+            requestedClassification: String,
+            requestedByName: String,
+            jobName: String,
+            createdAt: String
+        ) {
+            self.id = id
+            self.entryTitle = entryTitle
+            self.entryContent = entryContent
+            self.requestedClassification = requestedClassification
+            self.requestedByName = requestedByName
+            self.jobName = jobName
+            self.createdAt = createdAt
         }
     }
 
@@ -316,10 +366,34 @@ public final class NotebooksService: Sendable {
         jobId: Int64? = nil,
         createdBy: Int64
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_notebooks")
+        }
+
         guard !title.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw NotebooksError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
+            if notebookType == "job", let jobId,
+               let existingId = try Int64.fetchOne(
+                   dbConn,
+                   sql: """
+                       SELECT id FROM notebooks
+                       WHERE job_id = ? AND notebook_type = 'job' AND deleted_at IS NULL
+                       ORDER BY id ASC LIMIT 1
+                       """,
+                   arguments: [jobId]
+               ) {
+                try dbConn.execute(
+                    sql: """
+                        UPDATE notebooks
+                        SET title = ?, created_by = COALESCE(created_by, ?), status = 'active', updated_at = datetime('now')
+                        WHERE id = ?
+                        """,
+                    arguments: [title, createdBy, existingId]
+                )
+                return existingId
+            }
             try dbConn.execute(
                 sql: """
                     INSERT INTO notebooks
@@ -346,6 +420,10 @@ public final class NotebooksService: Sendable {
         entryType: String = "note",
         createdBy: Int64
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_notebooks")
+        }
+
         guard !title.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw NotebooksError.requiredFieldEmpty
         }
@@ -453,15 +531,34 @@ public final class NotebooksService: Sendable {
         }
     }
 
+    private enum ClassificationPermission {
+        static let classify = "notebooks.classify_todo"
+        static let reclassify = "notebooks.reclassify_todo"
+        static let review = "notebooks.review_classification"
+    }
+
+    private func requirePermission(userId: Int64, permissionKey: String) throws {
+        guard try auth.hasPermission(userId, permissionKey: permissionKey) else {
+            throw NotebooksError.insufficientPermissions(required: permissionKey)
+        }
+    }
+
+    private static func fetchActiveClassification(_ dbConn: Database, entryId: Int64) throws -> String? {
+        let row = try Row.fetchOne(dbConn, sql: """
+            SELECT work_classification
+            FROM notebook_entries
+            WHERE id = ? AND deleted_at IS NULL
+            """, arguments: [entryId])
+        guard let row else { throw NotebooksError.entryNotFound(entryId) }
+        return row["work_classification"] as String?
+    }
+
     /// Classify a to-do as regular or warranty work.
     public func classifyTodoWork(entryId: Int64, classification: String, classifiedBy: Int64) throws {
+        try requirePermission(userId: classifiedBy, permissionKey: ClassificationPermission.classify)
         try db.writer.write { dbConn in
-            // Get current classification for history
-            let current = try String.fetchOne(dbConn, sql: """
-                SELECT work_classification FROM notebook_entries WHERE id = ?
-                """, arguments: [entryId])
+            let current = try Self.fetchActiveClassification(dbConn, entryId: entryId)
 
-            // Update classification
             try dbConn.execute(sql: """
                 UPDATE notebook_entries SET
                     work_classification = ?,
@@ -472,7 +569,6 @@ public final class NotebooksService: Sendable {
                 WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [classification, entryId])
 
-            // Log in classification_history
             try dbConn.execute(sql: """
                 INSERT INTO classification_history
                     (entry_id, old_classification, new_classification, changed_by, changed_at)
@@ -483,9 +579,11 @@ public final class NotebooksService: Sendable {
 
     /// Manager reviews/approves a classification.
     public func reviewClassification(entryId: Int64, reviewedBy: Int64, approved: Bool, newClassification: String?) throws {
+        try requirePermission(userId: reviewedBy, permissionKey: ClassificationPermission.review)
         try db.writer.write { dbConn in
+            let current = try Self.fetchActiveClassification(dbConn, entryId: entryId)
+
             if approved {
-                // Approve current classification
                 try dbConn.execute(sql: """
                     UPDATE notebook_entries SET
                         classification_reviewed = 1,
@@ -495,11 +593,6 @@ public final class NotebooksService: Sendable {
                     WHERE id = ? AND deleted_at IS NULL
                     """, arguments: [reviewedBy, entryId])
             } else if let newClass = newClassification {
-                // Reclassify and approve in one step
-                let current = try String.fetchOne(dbConn, sql: """
-                    SELECT work_classification FROM notebook_entries WHERE id = ?
-                    """, arguments: [entryId])
-
                 try dbConn.execute(sql: """
                     UPDATE notebook_entries SET
                         work_classification = ?,
@@ -519,21 +612,53 @@ public final class NotebooksService: Sendable {
         }
     }
 
+    /// List all pending warranty classification reviews across job notebooks.
+    public func listPendingWarrantyClassifications() throws -> [PendingWarrantyClassification] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT ne.id,
+                           COALESCE(ne.title, '') AS title,
+                           COALESCE(ne.content, '') AS content,
+                           COALESCE(ne.work_classification, '') AS work_classification,
+                           COALESCE(ne.updated_at, ne.created_at, '') AS created_at,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS requested_by_name,
+                           COALESCE(j.job_name, n.title, 'Unknown Job') AS job_name
+                    FROM notebook_entries ne
+                    INNER JOIN notebook_sections ns ON ns.id = ne.section_id
+                    INNER JOIN notebooks n ON n.id = ns.notebook_id
+                    LEFT JOIN jobs j ON j.id = n.job_id AND j.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = ne.created_by AND u.deleted_at IS NULL
+                    WHERE ne.deleted_at IS NULL
+                      AND n.deleted_at IS NULL
+                      AND ne.work_classification IS NOT NULL
+                      AND COALESCE(ne.classification_reviewed, 0) = 0
+                    ORDER BY COALESCE(ne.updated_at, ne.created_at) ASC, ne.id ASC
+                    """)
+                return rows.map { row in
+                    PendingWarrantyClassification(
+                        id: row["id"] ?? 0,
+                        entryTitle: row["title"] ?? "",
+                        entryContent: row["content"] ?? "",
+                        requestedClassification: row["work_classification"] ?? "",
+                        requestedByName: row["requested_by_name"] ?? "Unknown",
+                        jobName: row["job_name"] ?? "Unknown Job",
+                        createdAt: row["created_at"] ?? ""
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
     /// Reclassify a to-do with reason tracking. Resets the review flag.
     public func reclassifyTodoWork(entryId: Int64, newClassification: String, changedBy: Int64, reason: String?) throws {
+        try requirePermission(userId: changedBy, permissionKey: ClassificationPermission.reclassify)
         try db.writer.write { dbConn in
-            let current = try String.fetchOne(dbConn, sql: """
-                SELECT work_classification FROM notebook_entries WHERE id = ?
-                """, arguments: [entryId])
+            let current = try Self.fetchActiveClassification(dbConn, entryId: entryId)
 
-            // Log old → new
-            try dbConn.execute(sql: """
-                INSERT INTO classification_history
-                    (entry_id, old_classification, new_classification, changed_by, reason, changed_at)
-                VALUES (?, ?, ?, ?, ?, datetime('now'))
-                """, arguments: [entryId, current, newClassification, changedBy, reason])
-
-            // Update entry and reset review
             try dbConn.execute(sql: """
                 UPDATE notebook_entries SET
                     work_classification = ?,
@@ -543,6 +668,12 @@ public final class NotebooksService: Sendable {
                     updated_at = datetime('now')
                 WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [newClassification, entryId])
+
+            try dbConn.execute(sql: """
+                INSERT INTO classification_history
+                    (entry_id, old_classification, new_classification, changed_by, reason, changed_at)
+                VALUES (?, ?, ?, ?, ?, datetime('now'))
+                """, arguments: [entryId, current, newClassification, changedBy, reason])
         }
     }
 
@@ -573,7 +704,7 @@ public final class NotebooksService: Sendable {
     /// Start warranty timer when a to-do is completed. Sets timer_start = now, timer_end = now + job warranty days.
     public func startWarrantyTimer(entryId: Int64, warrantyDurationDays: Int) throws {
         guard warrantyDurationDays > 0 else {
-            throw NotebooksError.invalidDuration(entryId)
+            throw NotebooksError.invalidDuration(Int64(warrantyDurationDays))
         }
         let now = Date()
         let end = Calendar.current.date(byAdding: .day, value: warrantyDurationDays, to: now) ?? now.addingTimeInterval(Double(warrantyDurationDays) * 86400)
@@ -810,10 +941,16 @@ public final class NotebooksService: Sendable {
         title: String? = nil,
         content: String? = nil,
         blockData: String? = nil,
+        headingLevel: Int? = nil,
+        checklistItems: String? = nil,
         createdBy: Int64,
         sortOrder: Int? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_notebooks")
+        }
+
+        return try db.writer.write { dbConn in
             let order: Int
             if let so = sortOrder {
                 order = so
@@ -828,23 +965,158 @@ public final class NotebooksService: Sendable {
                 SELECT notebook_id FROM notebook_sections WHERE id = ?
                 """, arguments: [sectionId])
 
+            let storedBlockData = blockType == "checklist" ? nil : blockData
+            let storedChecklistItems = checklistItems ?? (blockType == "checklist" ? blockData : nil)
+
             try dbConn.execute(sql: """
                 INSERT INTO notebook_entries
                 (section_id, notebook_id, title, content, entry_type, block_type, block_data,
-                 field_required, is_deleted, is_completed, sort_order, created_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'note', ?, ?, 0, 0, 0, ?, ?, datetime('now'), datetime('now'))
-                """, arguments: [sectionId, notebookId, title ?? "", content, blockType, blockData, order, createdBy])
+                 heading_level, checklist_items, field_required, is_deleted, is_completed,
+                 sort_order, created_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'note', ?, ?, ?, ?, 0, 0, 0, ?, ?, datetime('now'), datetime('now'))
+                """, arguments: [
+                    sectionId, notebookId, title ?? "", content, blockType, storedBlockData,
+                    headingLevel, storedChecklistItems, order, createdBy
+                ])
             return dbConn.lastInsertedRowID
         }
     }
 
-    /// Update a block entry's content and/or block data.
-    public func updateBlockEntry(entryId: Int64, content: String?, blockData: String?) throws {
+    /// Update a block entry's editable fields and record a sync-compatible change-log entry.
+    public func updateBlockEntry(
+        entryId: Int64,
+        title: String? = nil,
+        content: String?,
+        blockData: String?,
+        headingLevel: Int? = nil,
+        checklistItems: String? = nil,
+        updatedBy: Int64
+    ) throws {
+        try db.writer.write { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: updatedBy, permissionKey: "manage_notebooks")
+
+            guard let existing = try Row.fetchOne(dbConn, sql: """
+                SELECT title, content, block_data, heading_level, checklist_items
+                FROM notebook_entries
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [entryId]) else { return }
+
+            let newTitle = title ?? (existing["title"] as String? ?? "")
+            let oldTitle = existing["title"] as String? ?? ""
+            let oldContent = existing["content"] as String?
+            let oldBlockData = existing["block_data"] as String?
+            let oldHeadingLevel = existing["heading_level"] as Int?
+            let oldChecklistItems = existing["checklist_items"] as String?
+
+            try dbConn.execute(sql: """
+                UPDATE notebook_entries
+                SET title = ?, content = ?, block_data = ?, heading_level = ?, checklist_items = ?,
+                    updated_by = ?, updated_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [newTitle, content, blockData, headingLevel, checklistItems, updatedBy, entryId])
+
+            var changedFields: [String: Any] = [:]
+            var oldValues: [String: Any] = [:]
+            func trackString(_ field: String, old: String?, new: String?) {
+                if old != new {
+                    changedFields[field] = new ?? NSNull()
+                    oldValues[field] = old ?? NSNull()
+                }
+            }
+            func trackInt(_ field: String, old: Int?, new: Int?) {
+                if old != new {
+                    changedFields[field] = new ?? NSNull()
+                    oldValues[field] = old ?? NSNull()
+                }
+            }
+            trackString("title", old: oldTitle, new: newTitle)
+            trackString("content", old: oldContent, new: content)
+            trackString("block_data", old: oldBlockData, new: blockData)
+            trackInt("heading_level", old: oldHeadingLevel, new: headingLevel)
+            trackString("checklist_items", old: oldChecklistItems, new: checklistItems)
+
+            if !changedFields.isEmpty {
+                let changedFieldsData = try JSONSerialization.data(withJSONObject: changedFields, options: [.sortedKeys])
+                let oldValuesData = try JSONSerialization.data(withJSONObject: oldValues, options: [.sortedKeys])
+                guard let changedFieldsJSON = String(data: changedFieldsData, encoding: .utf8),
+                      let oldValuesJSON = String(data: oldValuesData, encoding: .utf8) else {
+                    throw NotebooksError.invalidData("Unable to encode notebook change history")
+                }
+
+                try dbConn.execute(sql: """
+                    INSERT INTO _change_log
+                    (device_id, table_name, record_id, operation, changed_fields, old_values, timestamp)
+                    VALUES ('local', 'notebook_entries', ?, 'UPDATE', ?, ?, datetime('now'))
+                    """, arguments: [entryId, changedFieldsJSON, oldValuesJSON])
+            }
+        }
+    }
+
+    // MARK: - Advisory Block Edit Locks
+
+    @discardableResult
+    public func acquireBlockEditLock(
+        entryId: Int64,
+        userId: Int64,
+        deviceId: String = DeviceIdentity.current,
+        now: Date = Date(),
+        ttlSeconds: TimeInterval = 300
+    ) throws -> NotebookEntryEditLock {
+        try db.writer.write { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "manage_notebooks")
+            try purgeExpiredBlockEditLocks(dbConn, now: now)
+
+            let lockedAt = Self.lockTimestamp(now)
+            let expiresAt = Self.lockTimestamp(now.addingTimeInterval(ttlSeconds))
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_entry_edit_locks (entry_id, user_id, device_id, locked_at, expires_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(entry_id, user_id, device_id) DO UPDATE SET
+                    locked_at = excluded.locked_at,
+                    expires_at = excluded.expires_at
+                """, arguments: [entryId, userId, deviceId, lockedAt, expiresAt])
+
+            guard let lock = try fetchBlockEditLock(dbConn: dbConn, entryId: entryId, userId: userId, deviceId: deviceId) else {
+                throw NotebooksError.invalidData("Unable to acquire notebook edit lock")
+            }
+            return lock
+        }
+    }
+
+    public func releaseBlockEditLock(
+        entryId: Int64,
+        userId: Int64,
+        deviceId: String = DeviceIdentity.current
+    ) throws {
         try db.writer.write { dbConn in
             try dbConn.execute(sql: """
-                UPDATE notebook_entries SET content = ?, block_data = ?, updated_at = datetime('now')
-                WHERE id = ? AND deleted_at IS NULL
-                """, arguments: [content, blockData, entryId])
+                DELETE FROM notebook_entry_edit_locks
+                WHERE entry_id = ? AND user_id = ? AND device_id = ?
+                """, arguments: [entryId, userId, deviceId])
+        }
+    }
+
+    public func activeBlockEditLocks(notebookId: Int64, now: Date = Date()) throws -> [NotebookEntryEditLock] {
+        do {
+            return try db.writer.write { dbConn in
+                try purgeExpiredBlockEditLocks(dbConn, now: now)
+                let nowString = Self.lockTimestamp(now)
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT l.id, l.entry_id, l.user_id, l.device_id, l.locked_at, l.expires_at,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS user_name
+                    FROM notebook_entry_edit_locks l
+                    INNER JOIN notebook_entries ne ON ne.id = l.entry_id
+                    LEFT JOIN users u ON u.id = l.user_id AND u.deleted_at IS NULL
+                    WHERE ne.notebook_id = ?
+                      AND ne.deleted_at IS NULL
+                      AND l.expires_at > ?
+                    ORDER BY l.locked_at DESC
+                    """, arguments: [notebookId, nowString])
+                return rows.map(Self.makeEditLock)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 
@@ -1098,6 +1370,108 @@ public final class NotebooksService: Sendable {
         }
     }
 
+    /// Select the best job starter template for a job type.
+    public func findBestJobTemplate(jobType: String?) throws -> NotebookTemplateItem? {
+        try db.writer.read { dbConn in
+            try findBestJobTemplate(dbConn: dbConn, jobType: jobType)
+        }
+    }
+
+    /// Ensure a job has exactly one active linked job notebook, creating and templating it when missing.
+    @discardableResult
+    public func ensureJobNotebook(
+        jobId: Int64,
+        jobName: String,
+        jobType: String?,
+        createdBy: Int64
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try ensureJobNotebook(dbConn: dbConn, jobId: jobId, jobName: jobName, jobType: jobType, createdBy: createdBy)
+        }
+    }
+
+    func findBestJobTemplate(dbConn: Database, jobType: String?) throws -> NotebookTemplateItem? {
+        let normalized = Self.normalizedJobTemplateCategory(jobType)
+        let rows = try Row.fetchAll(dbConn, sql: """
+            SELECT id, name, description, template_type, category, is_default, created_at
+            FROM notebook_templates
+            WHERE deleted_at IS NULL AND template_type = 'job'
+            ORDER BY is_default DESC, name ASC
+            """)
+        let templates = rows.map { row in
+            NotebookTemplateItem(
+                id: row["id"] ?? 0,
+                name: row["name"] ?? "",
+                description: row["description"] as String?,
+                templateType: row["template_type"] ?? "job",
+                category: row["category"] as String?,
+                isDefault: (row["is_default"] as Int?) == 1,
+                createdAt: row["created_at"] as String?
+            )
+        }
+        if let exact = templates.first(where: { Self.normalizedJobTemplateCategory($0.category) == normalized }) {
+            return exact
+        }
+        if let service = templates.first(where: { Self.normalizedJobTemplateCategory($0.category) == "service" }) {
+            return service
+        }
+        return templates.first(where: { $0.isDefault }) ?? templates.first
+    }
+
+    @discardableResult
+    func ensureJobNotebook(
+        dbConn: Database,
+        jobId: Int64,
+        jobName: String,
+        jobType: String?,
+        createdBy: Int64
+    ) throws -> Int64 {
+        if let existing = try Int64.fetchOne(dbConn, sql: """
+            SELECT id FROM notebooks
+            WHERE job_id = ? AND notebook_type = 'job' AND deleted_at IS NULL
+            ORDER BY id ASC LIMIT 1
+            """, arguments: [jobId]) {
+            return existing
+        }
+
+        try seedDefaultTemplatesIfMissing(dbConn: dbConn, createdBy: createdBy)
+
+        let template = try findBestJobTemplate(dbConn: dbConn, jobType: jobType)
+        let titleBase = jobName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let notebookTitle = titleBase.isEmpty ? "Job Notebook" : "\(titleBase) Notebook"
+        try dbConn.execute(sql: """
+            INSERT INTO notebooks
+            (title, notebook_type, job_id, template_id, created_by, status, created_at, updated_at)
+            VALUES (?, 'job', ?, ?, ?, 'active', datetime('now'), datetime('now'))
+            """, arguments: [notebookTitle, jobId, template?.id, createdBy])
+        let notebookId = dbConn.lastInsertedRowID
+
+        if let template {
+            try applyJobTemplate(dbConn: dbConn, templateId: template.id, notebookId: notebookId, createdBy: createdBy)
+        } else {
+            try createMinimalJobNotebookSections(dbConn: dbConn, notebookId: notebookId, createdBy: createdBy)
+        }
+        return notebookId
+    }
+
+    private static func normalizedJobTemplateCategory(_ value: String?) -> String {
+        let normalized = (value ?? "service")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+        return normalized.isEmpty ? "service" : normalized
+    }
+
+    private func createMinimalJobNotebookSections(dbConn: Database, notebookId: Int64, createdBy: Int64) throws {
+        for (index, name) in ["General", "Daily Log", "Photos"].enumerated() {
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_sections (notebook_id, name, section_type, sort_order, is_locked, is_collapsed, created_at, updated_at)
+                VALUES (?, ?, 'standard', ?, 0, 0, datetime('now'), datetime('now'))
+                """, arguments: [notebookId, name, index])
+        }
+    }
+
     /// Create a template.
     public func createTemplate(
         name: String,
@@ -1107,6 +1481,10 @@ public final class NotebooksService: Sendable {
         templateData: NotebookTemplateData,
         createdBy: Int64
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_templates")
+        }
+
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw NotebooksError.requiredFieldEmpty
         }
@@ -1123,61 +1501,69 @@ public final class NotebooksService: Sendable {
 
     /// Apply a job template to a notebook — creates groups, sections, and entries.
     public func applyJobTemplate(templateId: Int64, notebookId: Int64, createdBy: Int64) throws {
-        let templateRow = try db.writer.read { dbConn in
-            try Row.fetchOne(dbConn, sql: "SELECT template_data FROM notebook_templates WHERE id = ?", arguments: [templateId])
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_templates")
         }
+        try db.writer.write { dbConn in
+            try applyJobTemplate(dbConn: dbConn, templateId: templateId, notebookId: notebookId, createdBy: createdBy)
+        }
+    }
+
+    func applyJobTemplate(dbConn: Database, templateId: Int64, notebookId: Int64, createdBy: Int64) throws {
+        let templateRow = try Row.fetchOne(dbConn, sql: "SELECT template_data FROM notebook_templates WHERE id = ?", arguments: [templateId])
         guard let jsonString = templateRow?["template_data"] as String?,
               let jsonData = jsonString.data(using: .utf8) else { return }
 
         let template = try JSONDecoder().decode(NotebookTemplateData.self, from: jsonData)
 
-        // Single transaction — partial template application is worse than no application.
-        try db.writer.write { dbConn in
-            for group in template.groups {
-                let groupMaxOrder = try Int.fetchOne(dbConn, sql: """
-                    SELECT COALESCE(MAX(sort_order), -1) FROM notebook_section_groups
+        for group in template.groups {
+            let groupMaxOrder = try Int.fetchOne(dbConn, sql: """
+                SELECT COALESCE(MAX(sort_order), -1) FROM notebook_section_groups
+                WHERE notebook_id = ? AND deleted_at IS NULL
+                """, arguments: [notebookId]) ?? -1
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_section_groups (notebook_id, name, sort_order, created_at, updated_at)
+                VALUES (?, ?, ?, datetime('now'), datetime('now'))
+                """, arguments: [notebookId, group.name, groupMaxOrder + 1])
+            let groupId = dbConn.lastInsertedRowID
+
+            for section in group.sections {
+                let sectionMaxOrder = try Int.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(MAX(sort_order), -1) FROM notebook_sections
                     WHERE notebook_id = ? AND deleted_at IS NULL
                     """, arguments: [notebookId]) ?? -1
                 try dbConn.execute(sql: """
-                    INSERT INTO notebook_section_groups (notebook_id, name, sort_order, created_at, updated_at)
-                    VALUES (?, ?, ?, datetime('now'), datetime('now'))
-                    """, arguments: [notebookId, group.name, groupMaxOrder + 1])
-                let groupId = dbConn.lastInsertedRowID
+                    INSERT INTO notebook_sections (notebook_id, group_id, name, section_type, sort_order, is_locked, is_collapsed, created_at, updated_at)
+                    VALUES (?, ?, ?, 'standard', ?, 0, 0, datetime('now'), datetime('now'))
+                    """, arguments: [notebookId, groupId, section.name, sectionMaxOrder + 1])
+                let sectionId = dbConn.lastInsertedRowID
 
-                for section in group.sections {
-                    let sectionMaxOrder = try Int.fetchOne(dbConn, sql: """
-                        SELECT COALESCE(MAX(sort_order), -1) FROM notebook_sections
-                        WHERE notebook_id = ? AND deleted_at IS NULL
-                        """, arguments: [notebookId]) ?? -1
+                for (entryIndex, entry) in section.entries.enumerated() {
+                    var checklistJson: String? = nil
+                    if let items = entry.checklistItems, let data = try? JSONSerialization.data(withJSONObject: items) {
+                        checklistJson = String(data: data, encoding: .utf8)
+                    }
                     try dbConn.execute(sql: """
-                        INSERT INTO notebook_sections (notebook_id, group_id, name, section_type, sort_order, is_locked, is_collapsed, created_at, updated_at)
-                        VALUES (?, ?, ?, 'standard', ?, 0, 0, datetime('now'), datetime('now'))
-                        """, arguments: [notebookId, groupId, section.name, sectionMaxOrder + 1])
-                    let sectionId = dbConn.lastInsertedRowID
-
-                    for (entryIndex, entry) in section.entries.enumerated() {
-                        var checklistJson: String? = nil
-                        if let items = entry.checklistItems, let data = try? JSONSerialization.data(withJSONObject: items) {
-                            checklistJson = String(data: data, encoding: .utf8)
-                        }
-                        try dbConn.execute(sql: """
-                            INSERT INTO notebook_entries (notebook_id, section_id, entry_type, block_type, title, content,
-                                heading_level, checklist_items, sort_order, created_by, created_at)
-                            VALUES (?, ?, 'note', ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                            """, arguments: [
-                                notebookId, sectionId, entry.blockType,
-                                entry.title, entry.content,
-                                entry.headingLevel, checklistJson,
-                                entryIndex, createdBy
-                            ])
+                        INSERT INTO notebook_entries (notebook_id, section_id, entry_type, block_type, title, content,
+                            heading_level, checklist_items, sort_order, created_by, created_at)
+                        VALUES (?, ?, 'note', ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                        """, arguments: [
+                            notebookId, sectionId, entry.blockType,
+                            entry.title, entry.content,
+                            entry.headingLevel, checklistJson,
+                            entryIndex, createdBy
+                        ])
                     }
                 }
             }
-        }
     }
 
     /// Apply a page template to a section — creates entries.
     public func applyPageTemplate(templateId: Int64, sectionId: Int64, createdBy: Int64) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_templates")
+        }
+
         let templateRow = try db.writer.read { dbConn in
             try Row.fetchOne(dbConn, sql: "SELECT template_data FROM notebook_templates WHERE id = ?", arguments: [templateId])
         }
@@ -1218,11 +1604,27 @@ public final class NotebooksService: Sendable {
         }
     }
 
-    /// Seed default templates if none exist.
+    /// Seed default templates if none exist. Requires template-management permission for user-initiated calls.
     public func seedDefaultTemplates(createdBy: Int64) throws {
-        let count = try db.writer.read { dbConn -> Int in
-            try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM notebook_templates WHERE is_default = 1") ?? 0
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_templates")
         }
+
+        try db.writer.write { dbConn in
+            try seedDefaultTemplatesIfMissing(dbConn: dbConn, createdBy: createdBy)
+        }
+    }
+
+    /// Seed bootstrap job templates inside an existing trusted write transaction.
+    ///
+    /// This intentionally does not enforce `manage_templates`: create-job flows call
+    /// it to install system defaults needed for the atomic job-notebook side effect,
+    /// while public template-management entry points keep their permission gate.
+    func seedDefaultTemplatesIfMissing(dbConn: Database, createdBy: Int64) throws {
+        let count = try Int.fetchOne(
+            dbConn,
+            sql: "SELECT COUNT(*) FROM notebook_templates WHERE template_type = 'job' AND deleted_at IS NULL"
+        ) ?? 0
         guard count == 0 else { return }
 
         // Residential Job Template
@@ -1260,15 +1662,13 @@ public final class NotebooksService: Sendable {
         let jsonData = try JSONEncoder().encode(residentialTemplate)
         let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
 
-        try db.writer.write { dbConn in
-            try dbConn.execute(sql: """
-                INSERT INTO notebook_templates (name, description, template_type, category, template_data, is_default, created_by)
-                VALUES (?, ?, ?, ?, ?, 1, ?)
-                """, arguments: [
-                    "Residential Job", "Standard residential job notebook with safety, materials, daily log, photos, and punch list",
-                    "job", "residential", jsonString, createdBy
-                ])
-        }
+        try dbConn.execute(sql: """
+            INSERT INTO notebook_templates (name, description, template_type, category, template_data, is_default, created_by)
+            VALUES (?, ?, ?, ?, ?, 1, ?)
+            """, arguments: [
+                "Residential Job", "Standard residential job notebook with safety, materials, daily log, photos, and punch list",
+                "job", "residential", jsonString, createdBy
+            ])
 
         // Commercial Job Template
         let commercialTemplate = NotebookTemplateData(groups: [
@@ -1305,15 +1705,13 @@ public final class NotebooksService: Sendable {
         let commercialJson = try JSONEncoder().encode(commercialTemplate)
         let commercialJsonStr = String(data: commercialJson, encoding: .utf8) ?? "{}"
 
-        try db.writer.write { dbConn in
-            try dbConn.execute(sql: """
-                INSERT INTO notebook_templates (name, description, template_type, category, template_data, is_default, created_by)
-                VALUES (?, ?, ?, ?, ?, 1, ?)
-                """, arguments: [
-                    "Commercial Job", "Commercial job notebook with panel schedules, permits, and as-built documentation",
-                    "job", "commercial", commercialJsonStr, createdBy
-                ])
-        }
+        try dbConn.execute(sql: """
+            INSERT INTO notebook_templates (name, description, template_type, category, template_data, is_default, created_by)
+            VALUES (?, ?, ?, ?, ?, 1, ?)
+            """, arguments: [
+                "Commercial Job", "Commercial job notebook with panel schedules, permits, and as-built documentation",
+                "job", "commercial", commercialJsonStr, createdBy
+            ])
 
         // Service Call Template
         let serviceTemplate = NotebookTemplateData(groups: [
@@ -1331,15 +1729,13 @@ public final class NotebooksService: Sendable {
         let serviceJson = try JSONEncoder().encode(serviceTemplate)
         let serviceJsonStr = String(data: serviceJson, encoding: .utf8) ?? "{}"
 
-        try db.writer.write { dbConn in
-            try dbConn.execute(sql: """
-                INSERT INTO notebook_templates (name, description, template_type, category, template_data, is_default, created_by)
-                VALUES (?, ?, ?, ?, ?, 1, ?)
-                """, arguments: [
-                    "Service Call", "Quick service call notebook for diagnosis and repair",
-                    "job", "service", serviceJsonStr, createdBy
-                ])
-        }
+        try dbConn.execute(sql: """
+            INSERT INTO notebook_templates (name, description, template_type, category, template_data, is_default, created_by)
+            VALUES (?, ?, ?, ?, ?, 1, ?)
+            """, arguments: [
+                "Service Call", "Quick service call notebook for diagnosis and repair",
+                "job", "service", serviceJsonStr, createdBy
+            ])
     }
 
     // =========================================================================
@@ -1463,6 +1859,76 @@ public final class NotebooksService: Sendable {
         }
     }
 
+    @discardableResult
+    public func resolveBlockConflictWithFoundationModels(
+        conflictLogId: Int64,
+        mergeText: @escaping @Sendable (_ localText: String, _ remoteText: String, _ context: String?) async -> String? = { localText, remoteText, context in
+            let result = await FoundationModelsService().mergeTextConflict(
+                localText: localText,
+                remoteText: remoteText,
+                context: context
+            )
+            return result.success ? result.text : nil
+        }
+    ) async throws -> Bool {
+        let pending = try await db.writer.read { dbConn -> (recordId: Int64, fieldName: String, local: String, remote: String, context: String?, entryUpdatedAt: String?)? in
+            guard let row = try Row.fetchOne(dbConn, sql: """
+                SELECT cl.record_id, cl.field_name, cl.local_value, cl.remote_value,
+                       ne.title AS entry_title, ne.block_type, ne.updated_at AS entry_updated_at
+                FROM _conflict_log cl
+                LEFT JOIN notebook_entries ne ON CAST(cl.record_id AS INTEGER) = ne.id
+                WHERE cl.id = ? AND cl.reviewed = 0
+                """, arguments: [conflictLogId]) else {
+                return nil
+            }
+
+            let fieldName: String = row["field_name"] ?? ""
+            guard Self.foundationMergeFields.contains(fieldName) else { return nil }
+            guard let recordId = Int64(row["record_id"] as String? ?? "") else { return nil }
+            let local = row["local_value"] as String? ?? ""
+            let remote = row["remote_value"] as String? ?? ""
+            let context = [
+                row["entry_title"] as String?,
+                row["block_type"] as String?
+            ].compactMap { $0 }.joined(separator: " / ")
+            return (
+                recordId: recordId,
+                fieldName: fieldName,
+                local: local,
+                remote: remote,
+                context: context.isEmpty ? nil : context,
+                entryUpdatedAt: row["entry_updated_at"]
+            )
+        }
+
+        guard let pending else { return false }
+        guard let merged = await mergeText(pending.local, pending.remote, pending.context),
+              !merged.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+
+        let applied = try await db.writer.write { dbConn -> Bool in
+            try dbConn.execute(
+                sql: """
+                    UPDATE notebook_entries
+                    SET "\(pending.fieldName)" = ?, updated_at = datetime('now')
+                    WHERE id = ?
+                      AND deleted_at IS NULL
+                      AND updated_at IS ?
+                      AND COALESCE("\(pending.fieldName)", '') = ?
+                    """,
+                arguments: [merged, pending.recordId, pending.entryUpdatedAt, pending.local]
+            )
+            guard dbConn.changesCount > 0 else { return false }
+            try dbConn.execute(
+                sql: "UPDATE _conflict_log SET winner = 'ai_merge', reviewed = 1 WHERE id = ?",
+                arguments: [conflictLogId]
+            )
+            return true
+        }
+        return applied
+    }
+
     /// Bulk-resolve all unreviewed conflicts for a notebook, keeping the specified version.
     ///
     /// Convenience method for "Keep All Local" or "Keep All Remote" actions.
@@ -1481,5 +1947,44 @@ public final class NotebooksService: Sendable {
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
         return message.contains("no such table") || message.contains("no such column")
+    }
+
+    private static let foundationMergeFields: Set<String> = ["title", "content", "block_data", "checklist_items"]
+
+    private static func lockTimestamp(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: date)
+    }
+
+    private static func makeEditLock(row: Row) -> NotebookEntryEditLock {
+        NotebookEntryEditLock(
+            id: row["id"] ?? 0,
+            entryId: row["entry_id"] ?? 0,
+            userId: row["user_id"] ?? 0,
+            userName: row["user_name"] ?? "Unknown",
+            deviceId: row["device_id"] ?? "",
+            lockedAt: row["locked_at"] ?? "",
+            expiresAt: row["expires_at"] ?? ""
+        )
+    }
+
+    private func fetchBlockEditLock(dbConn: Database, entryId: Int64, userId: Int64, deviceId: String) throws -> NotebookEntryEditLock? {
+        let row = try Row.fetchOne(dbConn, sql: """
+            SELECT l.id, l.entry_id, l.user_id, l.device_id, l.locked_at, l.expires_at,
+                   COALESCE(u.display_name, u.email, 'Unknown') AS user_name
+            FROM notebook_entry_edit_locks l
+            LEFT JOIN users u ON u.id = l.user_id AND u.deleted_at IS NULL
+            WHERE l.entry_id = ? AND l.user_id = ? AND l.device_id = ?
+            """, arguments: [entryId, userId, deviceId])
+        return row.map(Self.makeEditLock)
+    }
+
+    private func purgeExpiredBlockEditLocks(_ dbConn: Database, now: Date) throws {
+        let nowString = Self.lockTimestamp(now)
+        try dbConn.execute(
+            sql: "DELETE FROM notebook_entry_edit_locks WHERE expires_at <= ?",
+            arguments: [nowString]
+        )
     }
 }

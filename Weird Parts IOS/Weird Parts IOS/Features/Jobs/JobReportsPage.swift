@@ -69,6 +69,8 @@ struct JobReportsPage: View {
             .onDisappear {
                 NotificationCenter.default.post(name: .jobReportsPageInactive, object: nil)
             }
+            .onChange(of: searchText) { _, _ in postAIContext() }
+            .onChange(of: activeSheet?.id) { _, _ in postAIContext() }
     }
 
     // MARK: - Content
@@ -81,11 +83,11 @@ struct JobReportsPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadReports() }
         } else if reports.isEmpty {
-            ContentUnavailableView {
-                Label("No Reports", systemImage: "doc.plaintext")
-            } description: {
-                Text("Daily reports will appear here when generated.")
-            }
+            EmptyStateView(
+                icon: "doc.plaintext",
+                title: "No Reports",
+                message: "Daily reports will appear here when generated."
+            )
         } else {
             List(filteredReports, id: \.id) { report in
                 reportRow(report)

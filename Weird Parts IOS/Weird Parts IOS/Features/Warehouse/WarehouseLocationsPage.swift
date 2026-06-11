@@ -13,6 +13,126 @@ private struct DraggableUnit: Codable, Transferable {
     }
 }
 
+private struct StorageUnitTypeCatalogItem: Identifiable {
+    let id: String
+    let label: String
+    let icon: String
+    let color: Color
+    let defaultGridWidth: Int
+    let defaultGridHeight: Int
+    let defaultWidthInches: Int
+    let defaultDepthInches: Int
+    let defaultHeightInches: Int
+    let defaultLevelCount: Int
+    let defaultAreasPerLevel: Int
+    let defaultMovable: Bool
+    let defaultJobReady: Bool
+    let hierarchySummary: String
+}
+
+private let storageUnitTypeCatalog: [StorageUnitTypeCatalogItem] = [
+    StorageUnitTypeCatalogItem(
+        id: "shelving", label: "Shelving", icon: "cabinet.fill", color: .blue,
+        defaultGridWidth: 2, defaultGridHeight: 1,
+        defaultWidthInches: 48, defaultDepthInches: 24, defaultHeightInches: 72,
+        defaultLevelCount: 4, defaultAreasPerLevel: 4,
+        defaultMovable: false, defaultJobReady: false,
+        hierarchySummary: "Levels + areas"
+    ),
+    StorageUnitTypeCatalogItem(
+        id: "gang_box", label: "Gang Box", icon: "shippingbox.fill", color: .green,
+        defaultGridWidth: 2, defaultGridHeight: 1,
+        defaultWidthInches: 48, defaultDepthInches: 24, defaultHeightInches: 36,
+        defaultLevelCount: 2, defaultAreasPerLevel: 3,
+        defaultMovable: true, defaultJobReady: false,
+        hierarchySummary: "Trays + boxes"
+    ),
+    StorageUnitTypeCatalogItem(
+        id: "pipe_rack", label: "Pipe Rack", icon: "lines.measurement.horizontal", color: .orange,
+        defaultGridWidth: 3, defaultGridHeight: 1,
+        defaultWidthInches: 96, defaultDepthInches: 24, defaultHeightInches: 60,
+        defaultLevelCount: 3, defaultAreasPerLevel: 3,
+        defaultMovable: false, defaultJobReady: false,
+        hierarchySummary: "Tiers + areas"
+    ),
+    StorageUnitTypeCatalogItem(
+        id: "pallet_rack", label: "Pallet Rack", icon: "square.stack.3d.up.fill", color: .purple,
+        defaultGridWidth: 3, defaultGridHeight: 2,
+        defaultWidthInches: 96, defaultDepthInches: 48, defaultHeightInches: 144,
+        defaultLevelCount: 3, defaultAreasPerLevel: 4,
+        defaultMovable: false, defaultJobReady: false,
+        hierarchySummary: "Levels + areas"
+    ),
+    StorageUnitTypeCatalogItem(
+        id: "wall_mount", label: "Wall Mount", icon: "rectangle.portrait.and.arrow.right", color: .teal,
+        defaultGridWidth: 1, defaultGridHeight: 2,
+        defaultWidthInches: 36, defaultDepthInches: 6, defaultHeightInches: 48,
+        defaultLevelCount: 2, defaultAreasPerLevel: 4,
+        defaultMovable: false, defaultJobReady: false,
+        hierarchySummary: "Sections + areas"
+    ),
+    StorageUnitTypeCatalogItem(
+        id: "floor_area", label: "Floor Area", icon: "square.dashed", color: .brown,
+        defaultGridWidth: 3, defaultGridHeight: 2,
+        defaultWidthInches: 72, defaultDepthInches: 48, defaultHeightInches: 12,
+        defaultLevelCount: 1, defaultAreasPerLevel: 4,
+        defaultMovable: false, defaultJobReady: false,
+        hierarchySummary: "Zones + areas"
+    ),
+    StorageUnitTypeCatalogItem(
+        id: "cabinet", label: "Cabinet", icon: "cabinet.fill", color: .indigo,
+        defaultGridWidth: 1, defaultGridHeight: 1,
+        defaultWidthInches: 36, defaultDepthInches: 24, defaultHeightInches: 72,
+        defaultLevelCount: 4, defaultAreasPerLevel: 2,
+        defaultMovable: false, defaultJobReady: false,
+        hierarchySummary: "Drawers + areas"
+    ),
+    StorageUnitTypeCatalogItem(
+        id: "packout", label: "Packout Set", icon: "archivebox.fill", color: .red,
+        defaultGridWidth: 1, defaultGridHeight: 1,
+        defaultWidthInches: 24, defaultDepthInches: 18, defaultHeightInches: 24,
+        defaultLevelCount: 3, defaultAreasPerLevel: 4,
+        defaultMovable: true, defaultJobReady: true,
+        hierarchySummary: "Modules + compartments"
+    ),
+    StorageUnitTypeCatalogItem(
+        id: "tool_bag", label: "Tool Bag", icon: "bag.fill", color: .mint,
+        defaultGridWidth: 1, defaultGridHeight: 1,
+        defaultWidthInches: 18, defaultDepthInches: 12, defaultHeightInches: 18,
+        defaultLevelCount: 1, defaultAreasPerLevel: 6,
+        defaultMovable: true, defaultJobReady: false,
+        hierarchySummary: "Compartments"
+    ),
+    StorageUnitTypeCatalogItem(
+        id: "parts_bin", label: "Parts Bin", icon: "tray.full.fill", color: .cyan,
+        defaultGridWidth: 1, defaultGridHeight: 1,
+        defaultWidthInches: 18, defaultDepthInches: 12, defaultHeightInches: 12,
+        defaultLevelCount: 1, defaultAreasPerLevel: 8,
+        defaultMovable: true, defaultJobReady: false,
+        hierarchySummary: "Compartments"
+    ),
+    StorageUnitTypeCatalogItem(
+        id: "crate", label: "Crate/Tote", icon: "shippingbox", color: .pink,
+        defaultGridWidth: 1, defaultGridHeight: 1,
+        defaultWidthInches: 24, defaultDepthInches: 18, defaultHeightInches: 16,
+        defaultLevelCount: 1, defaultAreasPerLevel: 1,
+        defaultMovable: true, defaultJobReady: false,
+        hierarchySummary: "Single open container"
+    ),
+    StorageUnitTypeCatalogItem(
+        id: "custom", label: "Custom", icon: "plus.square", color: .gray,
+        defaultGridWidth: 1, defaultGridHeight: 1,
+        defaultWidthInches: 48, defaultDepthInches: 24, defaultHeightInches: 72,
+        defaultLevelCount: 4, defaultAreasPerLevel: 4,
+        defaultMovable: false, defaultJobReady: false,
+        hierarchySummary: "User-selected"
+    )
+]
+
+private func storageUnitCatalogItem(for type: String) -> StorageUnitTypeCatalogItem {
+    storageUnitTypeCatalog.first { $0.id == type } ?? storageUnitTypeCatalog.last!
+}
+
 /// Warehouse Locations — floor plan grid editor + storage hierarchy drill-down.
 ///
 /// Top level: Floor plan selector + grid view of storage units and features.
@@ -179,38 +299,42 @@ struct WarehouseLocationsPage: View {
 
     @ViewBuilder
     private var unitTypeToolbar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                unitTypeButton("Shelf", type: "shelving", icon: "cabinet.fill")
-                unitTypeButton("Pipe Rack", type: "pipe_rack", icon: "lines.measurement.horizontal")
-                unitTypeButton("Gang Box", type: "gang_box", icon: "shippingbox.fill")
-                unitTypeButton("Wall Mount", type: "wall_mount", icon: "rectangle.portrait.and.arrow.right")
-                unitTypeButton("Cabinet", type: "cabinet", icon: "cabinet.fill")
-                unitTypeButton("Pallet Rack", type: "pallet_rack", icon: "square.stack.3d.up.fill")
-                unitTypeButton("Floor Area", type: "floor_area", icon: "square.dashed")
-                unitTypeButton("Custom", type: "custom", icon: "plus.square")
+        let columns = [GridItem(.adaptive(minimum: 80), spacing: 8)]
+
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+            ForEach(storageUnitTypeCatalog) { item in
+                unitTypeButton(item)
             }
-            .padding(.horizontal)
-            .padding(.vertical, 6)
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .background(Color(.secondarySystemBackground))
     }
 
     @ViewBuilder
-    private func unitTypeButton(_ label: String, type: String, icon: String) -> some View {
-        Button { activeSheet = .addUnit(type) } label: {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.caption2)
-                Text(label)
+    private func unitTypeButton(_ item: StorageUnitTypeCatalogItem) -> some View {
+        Button { activeSheet = .addUnit(item.id) } label: {
+            Label {
+                Text(item.label)
                     .font(.caption)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            } icon: {
+                Image(systemName: item.icon)
+                    .font(.caption)
+                    .accessibilityHidden(true)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color.blue.opacity(0.1))
-            .foregroundStyle(.blue)
-            .clipShape(Capsule())
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .padding(.horizontal, 8)
+            .background(item.color.opacity(0.12))
+            .foregroundStyle(item.color)
+            .contentShape(Rectangle())
+            .clipShape(RoundedRectangle(cornerRadius: 8))
         }
+        .simultaneousGesture(TapGesture().onEnded {
+            activeSheet = .addUnit(item.id)
+        })
+        .accessibilityIdentifier("warehouse-unit-type-\(item.id)")
     }
 
     // MARK: - Floor Plan Grid
@@ -320,6 +444,9 @@ struct WarehouseLocationsPage: View {
         RoundedRectangle(cornerRadius: 4)
             .fill(unitColor(unit.unitType))
             .overlay(
+                frontFaceMarker(unit.frontFace, width: w - 2, height: h - 2)
+            )
+            .overlay(
                 RoundedRectangle(cornerRadius: 4)
                     .strokeBorder(.white.opacity(0.3), lineWidth: 1)
             )
@@ -356,6 +483,40 @@ struct WarehouseLocationsPage: View {
                     Label("Remove", systemImage: "trash")
                 }
             }
+    }
+
+    @ViewBuilder
+    private func frontFaceMarker(_ frontFace: String?, width: CGFloat, height: CGFloat) -> some View {
+        let face = (frontFace ?? "south").lowercased()
+        let markerColor = Color.yellow.opacity(0.95)
+        let markerThickness: CGFloat = 5
+        let markerLength = max(14, min(width, height) * 0.55)
+
+        ZStack(alignment: .topLeading) {
+            switch face {
+            case "north":
+                Rectangle()
+                    .fill(markerColor)
+                    .frame(width: markerLength, height: markerThickness)
+                    .offset(x: max(0, (width - markerLength) / 2), y: 0)
+            case "east":
+                Rectangle()
+                    .fill(markerColor)
+                    .frame(width: markerThickness, height: markerLength)
+                    .offset(x: max(0, width - markerThickness), y: max(0, (height - markerLength) / 2))
+            case "west":
+                Rectangle()
+                    .fill(markerColor)
+                    .frame(width: markerThickness, height: markerLength)
+                    .offset(x: 0, y: max(0, (height - markerLength) / 2))
+            default:
+                Rectangle()
+                    .fill(markerColor)
+                    .frame(width: markerLength, height: markerThickness)
+                    .offset(x: max(0, (width - markerLength) / 2), y: max(0, height - markerThickness))
+            }
+        }
+        .frame(width: width, height: height)
     }
 
     // MARK: - Movable Storage Section
@@ -495,7 +656,10 @@ struct WarehouseLocationsPage: View {
 
     /// Moves a storage unit to a new grid position via drag-and-drop.
     private func moveUnit(unitId: Int64, toGridX gridX: Int, gridY: Int) -> Bool {
-        guard let service = appCore.warehouseService else { return false }
+        guard let service = appCore.warehouseService else {
+            loadError = "Warehouse service unavailable"
+            return false
+        }
         do {
             try service.updateStorageUnit(id: unitId, gridX: gridX, gridY: gridY)
             loadPlanData()
@@ -520,9 +684,21 @@ struct WarehouseLocationsPage: View {
 
         do {
             floorPlans = try service.listFloorPlans()
-            if selectedPlanId == nil {
+            if let selectedPlanId, floorPlans.contains(where: { $0.id == selectedPlanId }) {
+                // Keep the user's current selection when it still exists.
+            } else {
                 selectedPlanId = floorPlans.first?.id
             }
+
+            guard selectedPlanId != nil else {
+                storageUnits = []
+                floorFeatures = []
+                loadError = nil
+                isLoading = false
+                postAIContext()
+                return
+            }
+
             loadPlanData()
         } catch {
             loadError = userFriendlyError(error, context: "load locations")
@@ -531,11 +707,21 @@ struct WarehouseLocationsPage: View {
     }
 
     private func loadPlanData() {
-        guard let service = appCore.warehouseService, let planId = selectedPlanId else {
-            loadError = "Service not available"
+        guard let service = appCore.warehouseService else {
+            loadError = "Warehouse service unavailable"
             isLoading = false
             return
         }
+
+        guard let planId = selectedPlanId else {
+            storageUnits = []
+            floorFeatures = []
+            loadError = nil
+            isLoading = false
+            postAIContext()
+            return
+        }
+
         do {
             storageUnits = try service.listStorageUnits(floorPlanId: planId)
             floorFeatures = try service.listFloorFeatures(floorPlanId: planId)
@@ -575,48 +761,15 @@ struct WarehouseLocationsPage: View {
     // MARK: - Helpers
 
     private func unitColor(_ type: String) -> Color {
-        switch type {
-        case "shelving": .blue
-        case "pipe_rack": .orange
-        case "gang_box": .green
-        case "pallet_rack": .purple
-        case "wall_mount": .teal
-        case "cabinet": .indigo
-        case "floor_area": .brown
-        default: .gray
-        }
+        storageUnitCatalogItem(for: type).color
     }
 
     private func unitIcon(_ type: String) -> String {
-        switch type {
-        case "shelving": "cabinet.fill"
-        case "pipe_rack": "lines.measurement.horizontal"
-        case "gang_box": "shippingbox.fill"
-        case "pallet_rack": "square.stack.3d.up.fill"
-        case "wall_mount": "rectangle.portrait.and.arrow.right"
-        case "cabinet": "cabinet.fill"
-        case "floor_area": "square.dashed"
-        case "tool_bag": "bag.fill"
-        case "packout": "archivebox.fill"
-        default: "square.fill"
-        }
+        storageUnitCatalogItem(for: type).icon
     }
 
     private func unitTypeLabel(_ type: String) -> String {
-        switch type {
-        case "shelving": "Shelf"
-        case "pipe_rack": "Pipe Rack"
-        case "gang_box": "Gang Box"
-        case "pallet_rack": "Pallet Rack"
-        case "wall_mount": "Wall Mount"
-        case "cabinet": "Cabinet"
-        case "floor_area": "Floor Area"
-        case "packout": "Packout"
-        case "tool_bag": "Tool Bag"
-        case "parts_bin": "Parts Bin"
-        case "crate": "Crate"
-        default: type.replacingOccurrences(of: "_", with: " ").capitalized
-        }
+        storageUnitCatalogItem(for: type).label
     }
 
     private func featureColor(_ type: String) -> Color {
@@ -735,6 +888,25 @@ private struct AddStorageUnitSheet: View {
     @State private var error: String?
 
     private let faceOptions = ["north", "south", "east", "west"]
+    private var catalogItem: StorageUnitTypeCatalogItem {
+        storageUnitCatalogItem(for: unitType)
+    }
+
+    init(floorPlanId: Int64, unitType: String, onCreated: @escaping () -> Void) {
+        let defaults = storageUnitCatalogItem(for: unitType)
+        self.floorPlanId = floorPlanId
+        self.unitType = unitType
+        self.onCreated = onCreated
+        _widthInches = State(initialValue: defaults.defaultWidthInches)
+        _depthInches = State(initialValue: defaults.defaultDepthInches)
+        _heightInches = State(initialValue: defaults.defaultHeightInches)
+        _levelCount = State(initialValue: defaults.defaultLevelCount)
+        _areasPerLevel = State(initialValue: defaults.defaultAreasPerLevel)
+        _gridWidth = State(initialValue: defaults.defaultGridWidth)
+        _gridHeight = State(initialValue: defaults.defaultGridHeight)
+        _isMovable = State(initialValue: defaults.defaultMovable)
+        _isJobReady = State(initialValue: defaults.defaultJobReady)
+    }
 
     var body: some View {
         NavigationStack {
@@ -743,6 +915,10 @@ private struct AddStorageUnitSheet: View {
                     TextField("Name", text: $name)
                     TextField("Row (e.g. R01)", text: $rowNumber)
                     TextField("Unit (e.g. U01)", text: $unitNumber)
+                }
+
+                Section("Type") {
+                    typeSummaryRow(catalogItem)
                 }
 
                 Section("Dimensions") {
@@ -758,12 +934,22 @@ private struct AddStorageUnitSheet: View {
                     Stepper("Height: \(gridHeight) cells", value: $gridHeight, in: 1...10)
                 }
 
-                Section("Configuration") {
-                    Stepper("Levels: \(levelCount)", value: $levelCount, in: 1...20)
-                    Stepper("Areas/Level: \(areasPerLevel)", value: $areasPerLevel, in: 1...24)
+                Section {
                     Picker("Front Face", selection: $frontFace) {
                         ForEach(faceOptions, id: \.self) { Text($0.capitalized) }
                     }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("warehouse-add-unit-front-face")
+                    Text("Side with stickers and aisle access.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("Orientation")
+                }
+
+                Section("Structure") {
+                    Stepper("Levels: \(levelCount)", value: $levelCount, in: 1...20)
+                    Stepper("Areas/Level: \(areasPerLevel)", value: $areasPerLevel, in: 1...24)
                 }
 
                 Section("Options") {
@@ -776,7 +962,7 @@ private struct AddStorageUnitSheet: View {
                 }
             }
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle("Add \(unitType.replacingOccurrences(of: "_", with: " ").capitalized)")
+            .navigationTitle("Add \(catalogItem.label)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -788,6 +974,24 @@ private struct AddStorageUnitSheet: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func typeSummaryRow(_ item: StorageUnitTypeCatalogItem) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: item.icon)
+                .foregroundStyle(item.color)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.label)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Text(item.hierarchySummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private func create() {
@@ -869,6 +1073,9 @@ private struct EditStorageUnitSheet: View {
     @State private var error: String?
 
     private let faceOptions = ["north", "south", "east", "west"]
+    private var catalogItem: StorageUnitTypeCatalogItem {
+        storageUnitCatalogItem(for: unit.unitType)
+    }
 
     init(unit: WarehouseStorageUnit, onUpdated: @escaping () -> Void) {
         self.unit = unit
@@ -892,6 +1099,10 @@ private struct EditStorageUnitSheet: View {
                     TextField("Unit (e.g. U01)", text: $unitNumber)
                 }
 
+                Section("Type") {
+                    typeSummaryRow(catalogItem)
+                }
+
                 Section("Grid Placement") {
                     Stepper("X: \(gridX)", value: $gridX, in: 0...100)
                     Stepper("Y: \(gridY)", value: $gridY, in: 0...100)
@@ -899,10 +1110,17 @@ private struct EditStorageUnitSheet: View {
                     Stepper("Height: \(gridHeight) cells", value: $gridHeight, in: 1...10)
                 }
 
-                Section("Orientation") {
+                Section {
                     Picker("Front Face", selection: $frontFace) {
                         ForEach(faceOptions, id: \.self) { Text($0.capitalized) }
                     }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("warehouse-edit-unit-front-face")
+                    Text("Side with stickers and aisle access.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("Orientation")
                 }
 
                 if let error {
@@ -921,6 +1139,24 @@ private struct EditStorageUnitSheet: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func typeSummaryRow(_ item: StorageUnitTypeCatalogItem) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: item.icon)
+                .foregroundStyle(item.color)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.label)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Text(item.hierarchySummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private func save() {
@@ -965,7 +1201,7 @@ private struct StorageUnitDetailSheet: View {
         NavigationStack {
             List {
                 Section {
-                    LabeledContent("Type", value: unit.unitType.replacingOccurrences(of: "_", with: " ").capitalized)
+                    LabeledContent("Type", value: storageUnitCatalogItem(for: unit.unitType).label)
                     if let row = unit.rowNumber { LabeledContent("Row", value: row) }
                     if let un = unit.unitNumber { LabeledContent("Unit", value: un) }
                     if unit.isMovable {
@@ -982,7 +1218,7 @@ private struct StorageUnitDetailSheet: View {
                         directionRow(
                             step: unit.rowNumber != nil ? 3 : 2,
                             icon: "cabinet.fill",
-                            text: "\(unit.name) — \(unit.unitType.replacingOccurrences(of: "_", with: " ").capitalized)"
+                            text: "\(unit.name) — \(storageUnitCatalogItem(for: unit.unitType).label)"
                         )
                         if let x = unit.gridX, let y = unit.gridY {
                             directionRow(

@@ -98,7 +98,8 @@ struct IOSQuestionsPage: View {
         case .all: return threads.count
         case .open: return threads.filter { QAThreadStatusBuckets.isOpen($0.status) }.count
         case .myQuestions:
-            return threads.count // All shown for now — user-specific filtering added later
+            guard let currentUserId = appCore.currentUser?.id else { return 0 }
+            return threads.filter { $0.askedById == currentUserId }.count
         case .needsMyReview: return threads.filter { $0.status == "open" }.count
         case .resolved: return threads.filter { QAThreadStatusBuckets.isResolved($0.status) }.count
         }
@@ -163,11 +164,11 @@ struct IOSQuestionsPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredThreads.isEmpty {
-            ContentUnavailableView {
-                Label("No Questions", systemImage: "questionmark.circle")
-            } description: {
-                Text("No Q&A threads match your criteria.")
-            }
+            EmptyStateView(
+                icon: "questionmark.circle",
+                title: "No Questions",
+                message: "No Q&A threads match your criteria."
+            )
         } else {
             List(filteredThreads, id: \.id) { thread in
                 NavigationLink {
@@ -189,7 +190,12 @@ struct IOSQuestionsPage: View {
         switch statusFilter {
         case .all: break
         case .open: items = items.filter { QAThreadStatusBuckets.isOpen($0.status) }
-        case .myQuestions: break // Show all for now
+        case .myQuestions:
+            guard let currentUserId = appCore.currentUser?.id else {
+                items = []
+                break
+            }
+            items = items.filter { $0.askedById == currentUserId }
         case .needsMyReview: items = items.filter { $0.status == "open" }
         case .resolved: items = items.filter { QAThreadStatusBuckets.isResolved($0.status) }
         }
@@ -211,7 +217,7 @@ struct IOSQuestionsPage: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    priorityBadge(thread.priority)
+                    priorityBadge(thread.priority, dueDate: thread.dueDate)
                     levelBadge(thread.currentLevel)
                 }
                 Text(thread.question)
@@ -268,9 +274,10 @@ struct IOSQuestionsPage: View {
             .foregroundStyle(color)
     }
 
-    // TODO: When QAThreadRow gains a dueDate field, replace fallback with TimelinePriorityColor.color(priority:dueDateString:)
-    private func priorityBadge(_ priority: String) -> some View {
-        let color = TimelinePriorityColor.fallbackColor(priority: priority)
+    private func priorityBadge(_ priority: String, dueDate: String?) -> some View {
+        let color: Color = dueDate != nil
+            ? TimelinePriorityColor.color(priority: priority, dueDateString: dueDate)
+            : TimelinePriorityColor.fallbackColor(priority: priority)
         return Text(priority.capitalized)
             .font(.caption2)
             .foregroundStyle(color)

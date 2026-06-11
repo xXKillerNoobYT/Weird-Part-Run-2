@@ -29,7 +29,7 @@ struct WizardStepWalkingPath: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if proxy.size.width >= 1100 {
                     HStack(spacing: 0) {
-                        stopList
+                        stopList()
                             .frame(minWidth: 360, idealWidth: 420, maxWidth: 460)
                         Divider()
                         previewPanel
@@ -40,14 +40,17 @@ struct WizardStepWalkingPath: View {
                     }
                 } else if proxy.size.width >= 700 {
                     HStack(spacing: 0) {
-                        stopList
+                        stopList()
                             .frame(minWidth: 320, maxWidth: 420)
                         Divider()
                         previewPanel
                             .frame(maxWidth: .infinity)
                     }
                 } else {
-                    stopList
+                    stopList(showPreviewActions: false)
+                        .safeAreaInset(edge: .bottom, spacing: 0) {
+                            compactPreviewActions
+                        }
                 }
             }
         }
@@ -61,15 +64,15 @@ struct WizardStepWalkingPath: View {
         }
     }
 
-    private var stopList: some View {
+    private func stopList(showPreviewActions: Bool = true) -> some View {
         List {
             Section {
                 if displayedStops.isEmpty {
-                    ContentUnavailableView {
-                        Label("No Walking Path", systemImage: "figure.walk")
-                    } description: {
-                        Text("Add stops or preview a suggested path before saving.")
-                    }
+                    EmptyStateView(
+                        icon: "figure.walk",
+                        title: "No Walking Path",
+                        message: "Add stops or preview a suggested path before saving."
+                    )
                 } else {
                     ForEach(Array(displayedStops.enumerated()), id: \.element) { index, areaId in
                         stopRow(areaId: areaId, index: index)
@@ -101,7 +104,7 @@ struct WizardStepWalkingPath: View {
                     Label("Suggest path", systemImage: "sparkles")
                 }
 
-                if isPreviewing {
+                if isPreviewing && showPreviewActions {
                     Button {
                         applyPreview()
                     } label: {
@@ -120,6 +123,36 @@ struct WizardStepWalkingPath: View {
         }
         .listStyle(.insetGrouped)
         .toolbar { EditButton() }
+    }
+
+    @ViewBuilder
+    private var compactPreviewActions: some View {
+        if isPreviewing {
+            VStack(spacing: 8) {
+                Button {
+                    applyPreview()
+                } label: {
+                    Label("Use suggested order", systemImage: "checkmark.circle")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isSaving)
+                .accessibilityLabel("Use suggested order")
+                .accessibilityIdentifier("walkingPathCompact_useSuggestedOrder")
+
+                Button(role: .destructive) {
+                    clearPath()
+                } label: {
+                    Label("Dismiss preview", systemImage: "trash")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Dismiss preview")
+            }
+            .padding()
+            .background(.regularMaterial)
+        }
     }
 
     private func stopRow(areaId: Int64, index: Int) -> some View {
@@ -170,7 +203,11 @@ struct WizardStepWalkingPath: View {
             } else if let first = displayedStops.first, let area = areaById[first] {
                 areaPreview(area)
             } else {
-                ContentUnavailableView("Select a Stop", systemImage: "rectangle.dashed", description: Text("Tap a stop to preview its location."))
+                EmptyStateView(
+                    icon: "rectangle.dashed",
+                    title: "Select a Stop",
+                    message: "Tap a stop to preview its location."
+                )
             }
             Spacer()
         }
@@ -278,7 +315,10 @@ struct WizardStepWalkingPath: View {
     }
 
     private func suggestPath() {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            stepError = "Warehouse service unavailable"
+            return
+        }
         do {
             previewStops = try service.suggestWalkingPath(floorPlanId: floorPlanId)
         } catch {

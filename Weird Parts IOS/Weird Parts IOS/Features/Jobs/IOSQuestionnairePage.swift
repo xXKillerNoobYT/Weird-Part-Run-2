@@ -25,21 +25,16 @@ struct IOSQuestionnairePage: View {
     @State private var isLoading = true
     @State private var isSubmitting = false
     @State private var errorMessage: String?
+    @State private var dailyReportText = ""
 
     // Companion poll questions
     @State private var companionPolls: [(pollId: Int64, questionText: String, hasVoted: Bool)] = []
     @State private var companionVotes: [Int64: Bool] = [:]  // pollId -> true=accept, false=reject
 
     // Break verification
-    @State private var breakVerification: BreakAnswer = .allTaken
+    @State private var breakVerification: QuestionnaireBreakVerification = .allTaken
     @State private var missedBreaks: Set<String> = []
     @State private var hadBreakButtons = false  // Did the user use break buttons today?
-
-    private enum BreakAnswer: String, CaseIterable {
-        case allTaken = "Yes, all"
-        case forgot = "I forgot / didn't"
-        case partial = "Partial"
-    }
 
     var body: some View {
         NavigationStack {
@@ -63,6 +58,12 @@ struct IOSQuestionnairePage: View {
                 .onDisappear {
                     NotificationCenter.default.post(name: .questionnairePageInactive, object: nil)
                 }
+                .onChange(of: answers) { _, _ in postAIContext() }
+                .onChange(of: dailyReportText) { _, _ in postAIContext() }
+                .onChange(of: breakVerification) { _, _ in postAIContext() }
+                .onChange(of: missedBreaks) { _, _ in postAIContext() }
+                .onChange(of: companionVotes) { _, _ in postAIContext() }
+                .onChange(of: isSubmitting) { _, _ in postAIContext() }
         }
     }
 
@@ -73,12 +74,6 @@ struct IOSQuestionnairePage: View {
         if isLoading {
             ProgressView("Loading questions...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if questions.isEmpty && companionPolls.isEmpty {
-            ContentUnavailableView {
-                Label("No Questions", systemImage: "questionmark.circle")
-            } description: {
-                Text("No clock-out questions are configured. You can close this screen.")
-            }
         } else {
             List {
                 // Error banner
@@ -92,13 +87,19 @@ struct IOSQuestionnairePage: View {
 
                 // Instructions
                 Section {
-                    Text("Please answer the following questions before clocking out.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    if questions.isEmpty && companionPolls.isEmpty {
+                        Label("No configured questions today. Submit after confirming your breaks.", systemImage: "questionmark.circle")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Please answer the following questions before clocking out.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 // Question list
-                ForEach(questions, id: \.questionId) { question in
+                ForEach(displayedQuestions, id: \.questionId) { question in
                     Section {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack(alignment: .top, spacing: 6) {
@@ -135,7 +136,7 @@ struct IOSQuestionnairePage: View {
                             .fontWeight(.medium)
 
                         Picker("Breaks", selection: $breakVerification) {
-                            ForEach(BreakAnswer.allCases, id: \.self) { answer in
+                            ForEach(QuestionnaireBreakVerification.allCases, id: \.self) { answer in
                                 Text(answer.rawValue).tag(answer)
                             }
                         }
@@ -166,6 +167,44 @@ struct IOSQuestionnairePage: View {
                             .foregroundStyle(.purple)
                             .accessibilityHidden(true)
                         Text("Break Verification")
+                    }
+                }
+
+                // Daily report narrative captured at clock-out
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Daily Report")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+
+                        if isDailyReportRequired {
+                            Text("*")
+                                .foregroundStyle(.red)
+                                .fontWeight(.bold)
+                        }
+
+                        Text("Add the work summary, progress, blockers, or notes the office needs from today.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        TextField("What got done today?", text: $dailyReportText, axis: .vertical)
+                            .lineLimit(3...8)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.subheadline)
+
+                        if isDailyReportRequired && dailyReportAnswer.isEmpty {
+                            Label("This question is required", systemImage: "exclamationmark.circle")
+                                .font(.caption2)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                } header: {
+                    HStack {
+                        Image(systemName: "doc.text")
+                            .foregroundStyle(.blue)
+                            .accessibilityHidden(true)
+                        Text("Daily Report")
                     }
                 }
 
@@ -273,14 +312,35 @@ struct IOSQuestionnairePage: View {
 
     /// True when at least one required question has no answer yet.
     private var hasUnansweredRequired: Bool {
-        questions.contains { question in
+        let hasUnansweredConfiguredQuestion = displayedQuestions.contains { question in
             question.isRequired &&
             (answers[question.questionId] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
+        return hasUnansweredConfiguredQuestion || (isDailyReportRequired && dailyReportAnswer.isEmpty)
     }
 
     private var allRequiredAnswered: Bool {
         !hasUnansweredRequired
+    }
+
+    private var displayedQuestions: [JobsService.QuestionnaireItem] {
+        questions.filter { !isDailyReportQuestion($0) }
+    }
+
+    private var dailyReportQuestions: [JobsService.QuestionnaireItem] {
+        questions.filter(isDailyReportQuestion)
+    }
+
+    private var isDailyReportRequired: Bool {
+        dailyReportQuestions.contains { $0.isRequired }
+    }
+
+    private var dailyReportAnswer: String {
+        dailyReportText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func isDailyReportQuestion(_ question: JobsService.QuestionnaireItem) -> Bool {
+        question.questionText.localizedCaseInsensitiveContains("daily report")
     }
 
     // MARK: - Actions
@@ -294,17 +354,21 @@ struct IOSQuestionnairePage: View {
         errorMessage = nil
 
         let responses: [(questionId: Int64, answer: String)] = questions.map { q in
-            (questionId: q.questionId, answer: answers[q.questionId] ?? "")
+            (questionId: q.questionId, answer: isDailyReportQuestion(q) ? dailyReportAnswer : (answers[q.questionId] ?? ""))
         }
+        let dailyReportBody = dailyReportAnswer
 
         do {
+            try handleBreakVerification()
+
             try service.saveClockOutResponses(
                 laborEntryId: laborEntryId,
                 responses: responses
             )
-
-            // Handle break verification
-            handleBreakVerification()
+            try service.saveClockOutDailyReport(
+                laborEntryId: laborEntryId,
+                dailyReport: dailyReportBody
+            )
 
             // Save companion poll votes (separate from clock-out responses)
             if let partsService = appCore.partsService,
@@ -320,8 +384,12 @@ struct IOSQuestionnairePage: View {
 
             onComplete?()
             dismiss()
+        } catch QuestionnaireBreakComplianceError.serviceUnavailable {
+            errorMessage = "Break service not available"
+        } catch QuestionnaireBreakComplianceError.userUnavailable {
+            errorMessage = "User session not available"
         } catch {
-            errorMessage = userFriendlyError(error, context: "save responses")
+            errorMessage = userFriendlyError(error, context: "complete questionnaire")
         }
         isSubmitting = false
     }
@@ -329,42 +397,23 @@ struct IOSQuestionnairePage: View {
     /// Handle break verification logic:
     /// - "Yes, all taken" + no break buttons used → auto-fill at defaults
     /// - "Forgot" or "Partial" → report missed breaks to office
-    private func handleBreakVerification() {
-        guard let breakSvc = appCore.breakService,
-              let userId = appCore.currentUser?.id else {
-            errorMessage = "Break service not available"
-            return
+    private func handleBreakVerification() throws {
+        guard let breakSvc = appCore.breakService else {
+            throw QuestionnaireBreakComplianceError.serviceUnavailable
+        }
+        guard let userId = appCore.currentUser?.id else {
+            throw QuestionnaireBreakComplianceError.userUnavailable
         }
 
-        switch breakVerification {
-        case .allTaken:
-            // If user said "yes, all taken" but didn't actually use break buttons,
-            // auto-fill break records at default times for compliance
-            if !hadBreakButtons {
-                try? breakSvc.autoFillBreaksForDay(
-                    userId: userId,
-                    laborEntryId: laborEntryId
-                )
-            }
-            // Note: if hadBreakButtons == true, bonus is eligible (handled by compliance calc)
-
-        case .forgot:
-            // All breaks missed — mark all as missed, auto-fill for compliance
-            try? breakSvc.autoFillBreaksForDay(
+        try QuestionnaireBreakComplianceSubmitter.submit(
+            verification: breakVerification,
+            hadBreakButtons: hadBreakButtons,
+            missedBreaks: missedBreaks
+        ) {
+            try breakSvc.autoFillBreaksForDay(
                 userId: userId,
                 laborEntryId: laborEntryId
             )
-            // Bonus NOT eligible since questionnaire had to ask
-
-        case .partial:
-            // Some breaks missed — auto-fill the ones that were missed
-            if !missedBreaks.isEmpty {
-                try? breakSvc.autoFillBreaksForDay(
-                    userId: userId,
-                    laborEntryId: laborEntryId
-                )
-            }
-            // Bonus NOT eligible since questionnaire had to ask
         }
     }
 
@@ -431,13 +480,46 @@ struct IOSQuestionnairePage: View {
         let context = """
         Clock-Out Questionnaire page. Read-only context.
         Labor entry id: \(laborEntryId), questions loaded: \(questions.count), required questions: \(requiredCount), answered fields: \(answeredCount), unanswered required: \(hasUnansweredRequired).
-        Answer types: \(answerTypes.isEmpty ? "none" : answerTypes), companion polls: \(companionPolls.count), break verification: \(breakVerification.rawValue), missed break selections: \(missedBreaks.count), submitting: \(isSubmitting).
-        Available read-only guidance: explain required questions, answer types, break verification, companion poll section, and submit/skip availability. Do not submit or change answers directly.
+        Answer types: \(answerTypes.isEmpty ? "none" : answerTypes), companion polls: \(companionPolls.count), companion votes pending: \(companionVotes.count), break verification: \(breakVerification.rawValue), missed break selections: \(missedBreaks.count), daily report characters: \(dailyReportText.trimmingCharacters(in: .whitespacesAndNewlines).count), submitting: \(isSubmitting).
+        Available read-only guidance: explain required questions, answer types, break verification, Daily Report field, companion poll section, and submit/skip availability. Do not submit or change answers directly.
         """
         NotificationCenter.default.post(
             name: .questionnairePageActive,
             object: nil,
             userInfo: ["context": context]
         )
+    }
+
+    enum QuestionnaireBreakVerification: String, CaseIterable {
+        case allTaken = "Yes, all"
+        case forgot = "I forgot / didn't"
+        case partial = "Partial"
+    }
+
+    enum QuestionnaireBreakComplianceError: Error {
+        case serviceUnavailable
+        case userUnavailable
+    }
+
+    enum QuestionnaireBreakComplianceSubmitter {
+        static func submit(
+            verification: QuestionnaireBreakVerification,
+            hadBreakButtons: Bool,
+            missedBreaks: Set<String>,
+            autoFillBreaks: () throws -> Void
+        ) throws {
+            switch verification {
+            case .allTaken:
+                if !hadBreakButtons {
+                    try autoFillBreaks()
+                }
+            case .forgot:
+                try autoFillBreaks()
+            case .partial:
+                if !missedBreaks.isEmpty {
+                    try autoFillBreaks()
+                }
+            }
+        }
     }
 }

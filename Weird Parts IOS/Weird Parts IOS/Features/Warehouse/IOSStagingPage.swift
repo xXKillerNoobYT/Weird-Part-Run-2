@@ -19,6 +19,7 @@ struct IOSStagingPage: View {
 
     @State private var stagedItems: [WarehouseService.StagedItem] = []
     @State private var stagingBoxes: [WarehouseService.StagingBox] = []
+    @State private var boxContents: [Int64: [WarehouseService.StagingBoxContent]] = [:]
     @State private var jobs: [JobsService.JobListItem] = []
     @State private var isLoading = true
     @State private var searchText = ""
@@ -185,6 +186,12 @@ struct IOSStagingPage: View {
         .onDisappear {
             NotificationCenter.default.post(name: .warehouseStagingPageInactive, object: nil)
         }
+        .onChange(of: searchText) { _, _ in postAIContext() }
+        .onChange(of: selectedFilter) { _, _ in postAIContext() }
+        .onChange(of: activeTab) { _, _ in postAIContext() }
+        .onChange(of: isSelecting) { _, _ in postAIContext() }
+        .onChange(of: selectedItems) { _, _ in postAIContext() }
+        .onChange(of: activeSheet?.id) { _, _ in postAIContext() }
     }
 
     // MARK: - Items Tab Toolbar
@@ -428,9 +435,30 @@ struct IOSStagingPage: View {
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
+                assignBoxMenu(for: item)
             }
         }
         .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func assignBoxMenu(for item: WarehouseService.StagedItem) -> some View {
+        let boxes = eligibleBoxes(for: item)
+        if !boxes.isEmpty {
+            Menu {
+                ForEach(boxes, id: \.id) { box in
+                    Button {
+                        assign(item: item, to: box)
+                    } label: {
+                        Label(box.labelText, systemImage: "shippingbox")
+                    }
+                }
+            } label: {
+                Image(systemName: "shippingbox.and.arrow.backward")
+                    .foregroundStyle(.blue)
+            }
+            .accessibilityLabel("Assign \(item.partName) to box")
+        }
     }
 
     // MARK: - Boxes Content
@@ -534,67 +562,97 @@ struct IOSStagingPage: View {
     }
 
     private func boxRow(_ box: WarehouseService.StagingBox) -> some View {
-        HStack(spacing: 12) {
-            // Status icon: checkmark for full, half-circle for open
-            ZStack {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(box.isFull ? Color.green.opacity(0.15) : Color.orange.opacity(0.15))
-                    .frame(width: 40, height: 40)
-                Image(systemName: box.isFull ? "checkmark.circle.fill" : "circle.bottomhalf.filled")
-                    .font(.title3)
-                    .foregroundStyle(box.isFull ? .green : .orange)
-                    .accessibilityLabel(box.isFull ? "Status: Full" : "Status: Open")
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                // Label guidance — the text to write on the box
-                Text(box.labelText)
-                    .font(.system(.headline, design: .monospaced))
-                    .fontWeight(.bold)
-                    .foregroundStyle(box.isFull ? .secondary : .primary)
-
-                HStack(spacing: 8) {
-                    // Size badge
-                    boxSizeBadge(box.boxSize)
-
-                    Text(box.isFull ? "FULL" : "OPEN")
-                        .font(.caption2)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(box.isFull ? .green : .orange)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            Capsule()
-                                .fill(box.isFull ? Color.green.opacity(0.12) : Color.orange.opacity(0.12))
-                        )
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(boxStatusColor(box).opacity(0.15))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: boxStatusIcon(box))
+                        .font(.title3)
+                        .foregroundStyle(boxStatusColor(box))
                 }
 
-                if let created = box.createdAt {
-                    Text("Created \(formatDate(created))")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(box.labelText)
+                        .font(.system(.headline, design: .monospaced))
+                        .fontWeight(.bold)
+                        .foregroundStyle(box.isFull ? .secondary : .primary)
+
+                    HStack(spacing: 8) {
+                        boxSizeBadge(box.boxSize)
+                        statusBadge(box.status)
+                        Text("\(box.contentCount) item\(box.contentCount == 1 ? "" : "s")")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let created = box.createdAt {
+                        Text("Created \(formatDate(created))")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
+
+                Spacer()
+
+                Menu {
+                    Button {
+                        if box.isFull { reopenBox(boxId: box.id) } else { markFull(boxId: box.id) }
+                    } label: {
+                        Label(box.isFull ? "Reopen" : "Mark Full", systemImage: box.isFull ? "arrow.uturn.backward" : "checkmark.circle")
+                    }
+                    Button { updateBox(boxId: box.id, status: "staged") } label: {
+                        Label("Staged", systemImage: "tray.2")
+                    }
+                    Button { updateBox(boxId: box.id, status: "loaded") } label: {
+                        Label("Loaded", systemImage: "truck.box")
+                    }
+                    Button { updateBox(boxId: box.id, status: "delivered") } label: {
+                        Label("Delivered", systemImage: "checkmark.seal")
+                    }
+                    Button { updateBox(boxId: box.id, status: "returned_cancelled") } label: {
+                        Label("Returned/Cancelled", systemImage: "arrow.uturn.left")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityLabel("Box actions")
             }
 
-            Spacer()
-
-            // Quick full/open toggle
-            Button {
-                if box.isFull {
-                    reopenBox(boxId: box.id)
-                } else {
-                    markFull(boxId: box.id)
+            let contents = boxContents[box.id] ?? []
+            if !contents.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(contents, id: \.id) { content in
+                        HStack(spacing: 8) {
+                            Image(systemName: "cube.box")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(content.partName)
+                                .font(.caption)
+                                .lineLimit(1)
+                            Spacer()
+                            Text("x\(content.qty)")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                            Button {
+                                remove(content: content, from: box)
+                            } label: {
+                                Image(systemName: "xmark.circle")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Remove \(content.partName) from box")
+                        }
+                    }
                 }
-            } label: {
-                Image(systemName: box.isFull ? "arrow.uturn.backward.circle" : "checkmark.circle")
-                    .font(.title2)
-                    .foregroundStyle(box.isFull ? .orange : .green)
+                .padding(.leading, 52)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(box.isFull ? "Reopen box" : "Mark box full")
         }
         .padding(.vertical, 4)
-        .opacity(box.isFull ? 0.7 : 1.0)
+        .opacity(box.status == "delivered" ? 0.7 : 1.0)
     }
 
     private func boxSizeBadge(_ size: String) -> some View {
@@ -619,6 +677,16 @@ struct IOSStagingPage: View {
                 .font(.caption2)
         }
         .foregroundStyle(color)
+    }
+
+    private func statusBadge(_ status: String) -> some View {
+        Text(statusLabel(status).uppercased())
+            .font(.caption2)
+            .fontWeight(.semibold)
+            .foregroundStyle(statusColor(status))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(statusColor(status).opacity(0.12)))
     }
 
     // MARK: - Create Box Sheet
@@ -742,6 +810,51 @@ struct IOSStagingPage: View {
         return label.uppercased()
     }
 
+    private func eligibleBoxes(for item: WarehouseService.StagedItem) -> [WarehouseService.StagingBox] {
+        stagingBoxes.filter { box in
+            box.status == "staged" &&
+            !box.isFull &&
+            !isItem(item.id, assignedTo: box.id) &&
+            (item.destinationType != "job" || item.destinationId == nil || item.destinationId == box.jobId)
+        }
+    }
+
+    private func isItem(_ itemId: Int64, assignedTo boxId: Int64) -> Bool {
+        boxContents[boxId, default: []].contains { $0.stagingTagId == itemId }
+    }
+
+    private func statusLabel(_ status: String) -> String {
+        switch status {
+        case "loaded": return "Loaded"
+        case "delivered": return "Delivered"
+        case "returned_cancelled": return "Returned/Cancelled"
+        default: return "Staged"
+        }
+    }
+
+    private func statusColor(_ status: String) -> Color {
+        switch status {
+        case "loaded": return .blue
+        case "delivered": return .green
+        case "returned_cancelled": return .orange
+        default: return .purple
+        }
+    }
+
+    private func boxStatusColor(_ box: WarehouseService.StagingBox) -> Color {
+        box.isFull && box.status == "staged" ? .green : statusColor(box.status)
+    }
+
+    private func boxStatusIcon(_ box: WarehouseService.StagingBox) -> String {
+        if box.isFull && box.status == "staged" { return "checkmark.circle.fill" }
+        switch box.status {
+        case "loaded": return "truck.box.fill"
+        case "delivered": return "checkmark.seal.fill"
+        case "returned_cancelled": return "arrow.uturn.left.circle.fill"
+        default: return "shippingbox.fill"
+        }
+    }
+
     // MARK: - Actions
 
     private func clearItem(id: Int64) {
@@ -792,6 +905,45 @@ struct IOSStagingPage: View {
             loadData()
         } catch {
             actionError = userFriendlyError(error, context: "update staging")
+        }
+    }
+
+    private func assign(item: WarehouseService.StagedItem, to box: WarehouseService.StagingBox) {
+        guard let service = appCore.warehouseService else {
+            actionError = "Service not available"
+            return
+        }
+        do {
+            _ = try service.assignStagedItemToBox(stagingTagId: item.id, boxId: box.id)
+            loadData()
+        } catch {
+            actionError = userFriendlyError(error, context: "assign item to box")
+        }
+    }
+
+    private func remove(content: WarehouseService.StagingBoxContent, from box: WarehouseService.StagingBox) {
+        guard let service = appCore.warehouseService else {
+            actionError = "Service not available"
+            return
+        }
+        do {
+            try service.removeStagedItemFromBox(stagingTagId: content.stagingTagId, boxId: box.id)
+            loadData()
+        } catch {
+            actionError = userFriendlyError(error, context: "remove item from box")
+        }
+    }
+
+    private func updateBox(boxId: Int64, status: String) {
+        guard let service = appCore.warehouseService else {
+            actionError = "Service not available"
+            return
+        }
+        do {
+            try service.updateStagingBoxDeliveryState(boxId: boxId, status: status)
+            loadData()
+        } catch {
+            actionError = userFriendlyError(error, context: "update box state")
         }
     }
 
@@ -847,6 +999,7 @@ struct IOSStagingPage: View {
         do {
             stagedItems = try service.getStagedItems()
             stagingBoxes = try service.listStagingBoxes()
+            boxContents = Dictionary(grouping: try service.listStagingBoxContents(), by: { $0.boxId })
             if let jobsService = appCore.jobsService {
                 jobs = try jobsService.listJobs(status: "active", limit: 200)
             }

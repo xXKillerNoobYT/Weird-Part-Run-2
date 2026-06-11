@@ -11,8 +11,15 @@ struct IOSCreateTrailerSheet: View {
     @State private var notes = ""
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @State private var showDiscardConfirmation = false
 
     private let trailerTypes = ["flatbed", "enclosed", "utility", "dump", "lowboy", "other"]
+
+    private var isDirty: Bool {
+        !trailerNumber.trimmingCharacters(in: .whitespaces).isEmpty ||
+        trailerType != "flatbed" ||
+        !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         NavigationStack {
@@ -41,10 +48,22 @@ struct IOSCreateTrailerSheet: View {
             }
             .navigationTitle("New Trailer")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(isSaving)
+            .dismissSafety(
+                isDirty: isDirty,
+                isSaving: isSaving,
+                showDiscardConfirmation: $showDiscardConfirmation,
+                onDiscard: { dismiss() }
+            )
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        DismissSafety.cancelOrConfirm(
+                            isDirty: isDirty,
+                            isSaving: isSaving,
+                            dismiss: dismiss,
+                            showDiscardConfirmation: $showDiscardConfirmation
+                        )
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { saveTrailer() }

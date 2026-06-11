@@ -49,6 +49,15 @@ struct IOSToolDetailPage: View {
             case .help: "help"
             }
         }
+
+        var presentationDetents: Set<PresentationDetent> {
+            switch self {
+            case .help:
+                [.medium, .large]
+            default:
+                [.large]
+            }
+        }
     }
 
     var body: some View {
@@ -107,6 +116,8 @@ struct IOSToolDetailPage: View {
         }
         .sheet(item: $activeSheet) { sheet in
             sheetContent(sheet)
+                .presentationDetents(sheet.presentationDetents)
+                .presentationDragIndicator(.visible)
         }
         .refreshable { loadAllData() }
         .task { loadAllData() }
@@ -1470,6 +1481,11 @@ struct TradeResponseSheet: View {
     @State private var notes: String = ""
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var showDiscardConfirmation = false
+
+    private var isDirty: Bool {
+        condition != .good || !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         NavigationStack {
@@ -1522,10 +1538,22 @@ struct TradeResponseSheet: View {
                 }
             }
             .navigationTitle("Respond to Trade")
-            .interactiveDismissDisabled(isSaving)
+            .dismissSafety(
+                isDirty: isDirty,
+                isSaving: isSaving,
+                showDiscardConfirmation: $showDiscardConfirmation,
+                onDiscard: { dismiss() }
+            )
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        DismissSafety.cancelOrConfirm(
+                            isDirty: isDirty,
+                            isSaving: isSaving,
+                            dismiss: dismiss,
+                            showDiscardConfirmation: $showDiscardConfirmation
+                        )
+                    }
                         .disabled(isSaving)
                 }
             }

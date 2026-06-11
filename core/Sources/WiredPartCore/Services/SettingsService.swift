@@ -1,6 +1,20 @@
 import Foundation
 import GRDB
 
+public enum PurchaseOrderGroupingMode: String, Codable, Sendable, CaseIterable {
+    case perSupplierMixed = "per_supplier_mixed"
+    case perSupplierPerJob = "per_supplier_per_job"
+
+    public var displayName: String {
+        switch self {
+        case .perSupplierMixed:
+            return "Per supplier mixed"
+        case .perSupplierPerJob:
+            return "Per supplier per job"
+        }
+    }
+}
+
 /// Local Settings Service — theme, app configuration, company profiles, billing/pay cycles.
 ///
 /// Settings are stored as key-value rows in the `settings` table;
@@ -8,9 +22,13 @@ import GRDB
 /// with one row per field.
 ///
 /// Ported from: `src/local/services/settings-service.ts`
-// When sync is implemented (Phase 11), filter settings by SyncScope:
-// .company → company-wide sync, .personal → per-user sync, .device → exclude.
-// Tracked: https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/258
+///
+/// Sync scope contract for Phase 11 sync:
+/// - `.company` settings participate in company-wide sync.
+/// - `.personal` settings participate in per-user sync.
+/// - `.device` settings are local-only and excluded from sync payloads.
+///
+/// Tracked: https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/258
 
 public final class SettingsService: Sendable {
     private let db: AppDatabase
@@ -20,6 +38,19 @@ public final class SettingsService: Sendable {
     }
 
     // MARK: - Types
+
+    public enum SyncScope: String, CaseIterable, Sendable {
+        case company
+        case personal
+        case device
+    }
+
+    public struct SettingRow: Sendable, Equatable {
+        public let key: String
+        public let value: String
+        public let category: String
+        public let syncScope: SyncScope
+    }
 
     public struct ThemeSettings: Codable, Sendable {
         public var themeMode: String   // "light", "dark", "system"
@@ -90,6 +121,16 @@ public final class SettingsService: Sendable {
         public static let defaults = PayPeriodSettings(periodType: "biweekly", startDay: 1)
     }
 
+    public struct PurchaseOrderSettings: Codable, Sendable {
+        public var groupingMode: PurchaseOrderGroupingMode
+
+        public init(groupingMode: PurchaseOrderGroupingMode) {
+            self.groupingMode = groupingMode
+        }
+
+        public static let defaults = PurchaseOrderSettings(groupingMode: .perSupplierMixed)
+    }
+
     // MARK: - Helpers
 
     /// Read a single setting value by key. Returns nil when not found.
@@ -135,10 +176,85 @@ public final class SettingsService: Sendable {
         }
     }
 
+    /// Whether automatic background/launch sync is enabled.
+    ///
+    /// Missing settings default to enabled so existing configured sync installs
+    /// keep their prior behavior; only an explicit "false" opts out.
+    public func isAutoSyncEnabled() throws -> Bool {
+        let value = try getSettingsByCategory("sync")["auto_sync"]
+        return value != "false"
+    }
+
     /// Bulk upsert a dictionary of key->value pairs under one category.
+    ///
+    /// This must be a single database write transaction so a mid-map failure cannot
+    /// leave only some keys persisted. Several settings screens save compound
+    /// values through this method and expect the category to move between coherent
+    /// snapshots, not partially-updated field sets.
     public func upsertSettingsMap(_ data: [String: String], category: String) throws {
-        for (key, value) in data {
-            try upsertSetting(key: key, value: value, category: category)
+        try db.writer.write { dbConnection in
+            for (key, value) in data {
+                try dbConnection.execute(
+                    sql: """
+                        INSERT INTO settings (key, value, category, updated_at)
+                        VALUES (?, ?, ?, datetime('now'))
+                        ON CONFLICT(key) DO UPDATE SET value = ?, category = ?, updated_at = datetime('now')
+                        """,
+                    arguments: [key, value, category, value, category]
+                )
+            }
+        }
+    }
+
+    /// Canonical settings sync classifier.
+    ///
+    /// Key-specific rules win over category rules so legacy rows with `general`
+    /// category can still be scoped safely. Unknown settings default to `.company`
+    /// because company-visible configuration is the safer sync default than silently
+    /// dropping operational state.
+    public static func syncScope(for key: String, category: String? = nil) -> SyncScope {
+        let normalizedKey = key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normalizedCategory = (category ?? "general")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        if deviceSettingKeys.contains(normalizedKey) || deviceSettingCategories.contains(normalizedCategory) {
+            return .device
+        }
+        if personalSettingKeys.contains(normalizedKey) || personalSettingCategories.contains(normalizedCategory) {
+            return .personal
+        }
+        return .company
+    }
+
+    /// Return flat setting rows classified for sync payload construction.
+    public func getSettings(scope: SyncScope) throws -> [SettingRow] {
+        try getSettingRows().filter { $0.syncScope == scope }
+    }
+
+    /// Return flat setting rows except the requested scope. Use `.device` to build
+    /// syncable settings while excluding local-only device state.
+    public func getSettings(excludingScope excludedScope: SyncScope) throws -> [SettingRow] {
+        try getSettingRows().filter { $0.syncScope != excludedScope }
+    }
+
+    private func getSettingRows() throws -> [SettingRow] {
+        try db.writer.read { dbConnection in
+            let rows = try Row.fetchAll(
+                dbConnection,
+                sql: "SELECT key, value, category FROM settings ORDER BY category, key"
+            )
+            return rows.map { row in
+                let key: String = row["key"]
+                let value: String = row["value"] ?? ""
+                let category: String = row["category"] ?? "general"
+                return SettingRow(
+                    key: key,
+                    value: value,
+                    category: category,
+                    syncScope: Self.syncScope(for: key, category: category)
+                )
+            }
         }
     }
 
@@ -193,6 +309,21 @@ public final class SettingsService: Sendable {
     /// Upsert a single setting by key.
     public func updateSetting(key: String, value: String, category: String = "general") throws {
         try upsertSetting(key: key, value: value, category: category)
+    }
+
+    // MARK: - Purchase Orders
+
+    public func getPurchaseOrderSettings() throws -> PurchaseOrderSettings {
+        let rawValue = try getSettingValue("po_grouping_mode")
+        return PurchaseOrderSettings(
+            groupingMode: PurchaseOrderGroupingMode(rawValue: rawValue ?? "") ?? PurchaseOrderSettings.defaults.groupingMode
+        )
+    }
+
+    @discardableResult
+    public func updatePurchaseOrderSettings(_ settings: PurchaseOrderSettings) throws -> PurchaseOrderSettings {
+        try upsertSetting(key: "po_grouping_mode", value: settings.groupingMode.rawValue, category: "orders")
+        return try getPurchaseOrderSettings()
     }
 
     // MARK: - Warranty
@@ -802,4 +933,48 @@ public final class SettingsService: Sendable {
         let message = String(describing: error)
         return message.contains("no such table") || message.contains("no such column")
     }
+
+    private static let personalSettingCategories: Set<String> = [
+        "notifications",
+        "personal",
+        "theme",
+        "ui",
+        "user_preferences",
+    ]
+
+    private static let personalSettingKeys: Set<String> = [
+        "dashboard_layout",
+        "default_landing_page",
+        "font_family",
+        "notification_preferences",
+        "notifications_enabled",
+        "preferred_language",
+        "primary_color",
+        "reduced_motion",
+        "tab_order",
+        "theme_mode",
+    ]
+
+    private static let deviceSettingCategories: Set<String> = [
+        "backup",
+        "device",
+        "device_keys",
+        "local",
+        "updates",
+    ]
+
+    private static let deviceSettingKeys: Set<String> = [
+        "app_version",
+        "available_version",
+        "backup_count",
+        "bluetooth_enabled",
+        "device_fingerprint",
+        "device_id",
+        "device_name",
+        "device_private_key",
+        "last_backup_time",
+        "last_update_check",
+        "local_database_path",
+        "update_channel",
+    ]
 }

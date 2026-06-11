@@ -171,6 +171,71 @@ public struct LaborEntry: Codable, FetchableRecord, MutablePersistableRecord, Se
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
 }
 
+// MARK: - OvertimeSettings
+
+public struct OvertimeSettings: Codable, FetchableRecord, MutablePersistableRecord, Sendable, Equatable {
+    public static let databaseTableName = "overtime_settings"
+    public var id: Int64?
+    public var calculationRule: String
+    public var dailyThresholdHours: Double
+    public var weeklyThresholdHours: Double?
+    public var weekStartWeekday: Int
+    public var updatedBy: Int64?
+    public var updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case calculationRule = "calculation_rule"
+        case dailyThresholdHours = "daily_threshold_hours"
+        case weeklyThresholdHours = "weekly_threshold_hours"
+        case weekStartWeekday = "week_start_weekday"
+        case updatedBy = "updated_by"
+        case updatedAt = "updated_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
+// MARK: - LaborEntryCorrectionAudit
+
+public struct LaborEntryCorrectionAudit: Codable, FetchableRecord, MutablePersistableRecord, Sendable, Equatable {
+    public static let databaseTableName = "labor_entry_correction_audits"
+    public var id: Int64?
+    public var laborEntryId: Int64
+    public var correctedBy: Int64
+    public var reason: String
+    public var oldClockIn: String
+    public var newClockIn: String
+    public var oldClockOut: String?
+    public var newClockOut: String?
+    public var oldRegularHours: Double
+    public var newRegularHours: Double
+    public var oldOvertimeHours: Double
+    public var newOvertimeHours: Double
+    public var oldStatus: String
+    public var newStatus: String
+    public var createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, reason
+        case laborEntryId = "labor_entry_id"
+        case correctedBy = "corrected_by"
+        case oldClockIn = "old_clock_in"
+        case newClockIn = "new_clock_in"
+        case oldClockOut = "old_clock_out"
+        case newClockOut = "new_clock_out"
+        case oldRegularHours = "old_regular_hours"
+        case newRegularHours = "new_regular_hours"
+        case oldOvertimeHours = "old_overtime_hours"
+        case newOvertimeHours = "new_overtime_hours"
+        case oldStatus = "old_status"
+        case newStatus = "new_status"
+        case createdAt = "created_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
 // MARK: - ClockOutQuestion
 
 public struct ClockOutQuestion: Codable, FetchableRecord, MutablePersistableRecord, Sendable {

@@ -1,0 +1,33 @@
+name: Artifact Guard
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+
+jobs:
+  tracked-artifacts:
+    name: Tracked artifact guard
+    # WPR2 is a private repo with a repo-specific local Mac runner. Keep even
+    # lightweight required PR checks on that runner so PRs do not get blocked by
+    # cloud Actions billing/hosted-runner availability.
+    runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
+    timeout-minutes: 5
+    steps:
+      - name: Verify self-hosted macOS runner
+        shell: bash
+        run: |
+          test "$RUNNER_OS" = "macOS"
+          test "$(uname -s)" = "Darwin"
+          echo "Runner: $RUNNER_NAME"
+          echo "Architecture: $RUNNER_ARCH"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify guard catches representative artifacts
+        run: python3 scripts/guard-tracked-artifacts.py --self-test
+
+      - name: Fail on tracked local runtime artifacts
+        run: python3 scripts/guard-tracked-artifacts.py

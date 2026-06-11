@@ -23,6 +23,7 @@ public final class ChatService: Sendable {
         case channelNotFound(Int64)
         case messageNotFound(Int64)
         case threadNotFound(Int64)
+        case notChannelMember(channelId: Int64, userId: Int64)
         case requiredFieldEmpty
     }
 
@@ -105,7 +106,9 @@ public final class ChatService: Sendable {
                         WHERE cm.deleted_at IS NULL
                           AND cm.id > COALESCE(
                             (SELECT crr.last_read_message_id FROM chat_read_receipts crr
-                             WHERE crr.channel_id = cm.channel_id AND crr.user_id = ?),
+                             WHERE crr.channel_id = cm.channel_id
+                               AND crr.user_id = ?
+                               AND crr.deleted_at IS NULL),
                             0
                           )
                         GROUP BY cm.channel_id
@@ -158,7 +161,9 @@ public final class ChatService: Sendable {
                     WHERE cm.deleted_at IS NULL
                       AND cm.id > COALESCE(
                         (SELECT crr.last_read_message_id FROM chat_read_receipts crr
-                         WHERE crr.channel_id = cm.channel_id AND crr.user_id = ?),
+                         WHERE crr.channel_id = cm.channel_id
+                           AND crr.user_id = ?
+                           AND crr.deleted_at IS NULL),
                         0
                       )
                     """, arguments: [userId, userId])
@@ -196,26 +201,31 @@ public final class ChatService: Sendable {
     public struct QAThreadRow: Sendable, Identifiable {
         public let id: Int64
         public let jobId: Int64
+        public let askedById: Int64?
         public let question: String
         public let askedByName: String
         public let currentLevel: String
         public let status: String
         public let priority: String
+        public let dueDate: String?
         public let answer: String?
         public let answeredByName: String?
 
         public init(
-            id: Int64, jobId: Int64 = 0, question: String, askedByName: String,
-            currentLevel: String, status: String, priority: String,
+            id: Int64, jobId: Int64 = 0, askedById: Int64? = nil,
+            question: String, askedByName: String,
+            currentLevel: String, status: String, priority: String, dueDate: String? = nil,
             answer: String?, answeredByName: String?
         ) {
             self.id = id
             self.jobId = jobId
+            self.askedById = askedById
             self.question = question
             self.askedByName = askedByName
             self.currentLevel = currentLevel
             self.status = status
             self.priority = priority
+            self.dueDate = dueDate
             self.answer = answer
             self.answeredByName = answeredByName
         }
@@ -318,6 +328,7 @@ public final class ChatService: Sendable {
             throw ChatError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
+            try requireActiveChannelMembership(dbConn, channelId: channelId, userId: senderId)
             try dbConn.execute(
                 sql: """
                     INSERT INTO chat_messages
@@ -353,6 +364,10 @@ public final class ChatService: Sendable {
         jobId: Int64? = nil,
         createdBy: Int64
     ) throws -> Int64 {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_chat")
+        }
+
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw ChatError.requiredFieldEmpty
         }
@@ -396,11 +411,12 @@ public final class ChatService: Sendable {
                 }
 
                 let sql = """
-                    SELECT qa.id, COALESCE(qa.job_id, 0) AS job_id, qa.subject, qa.current_level, qa.status, qa.priority,
-                           qa.answer_text,
+                    SELECT qa.id, COALESCE(qa.job_id, 0) AS job_id, qa.asked_by, qa.subject, qa.current_level, qa.status, qa.priority,
+                           qa.answer_text, j.due_date,
                            COALESCE(ua.display_name, ua.email, 'Unknown') AS asked_by_name,
                            COALESCE(ub.display_name, ub.email) AS answered_by_name
                     FROM qa_threads qa
+                    LEFT JOIN jobs j ON j.id = qa.job_id AND j.deleted_at IS NULL
                     LEFT JOIN users ua ON ua.id = qa.asked_by AND ua.deleted_at IS NULL
                     LEFT JOIN users ub ON ub.id = qa.answered_by AND ub.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
@@ -412,11 +428,13 @@ public final class ChatService: Sendable {
                     QAThreadRow(
                         id: row["id"] ?? 0,
                         jobId: row["job_id"] ?? 0,
+                        askedById: row["asked_by"] as Int64?,
                         question: row["subject"] ?? "",
                         askedByName: row["asked_by_name"] ?? "Unknown",
                         currentLevel: row["current_level"] ?? "field",
                         status: row["status"] ?? "open",
                         priority: row["priority"] ?? "normal",
+                        dueDate: row["due_date"] as String?,
                         answer: row["answer_text"] as String?,
                         answeredByName: row["answered_by_name"] as String?
                     )
@@ -441,11 +459,12 @@ public final class ChatService: Sendable {
                 }
 
                 let sql = """
-                    SELECT qa.id, COALESCE(qa.job_id, 0) AS job_id, qa.subject, qa.current_level, qa.status, qa.priority,
-                           qa.answer_text,
+                    SELECT qa.id, COALESCE(qa.job_id, 0) AS job_id, qa.asked_by, qa.subject, qa.current_level, qa.status, qa.priority,
+                           qa.answer_text, j.due_date,
                            COALESCE(ua.display_name, ua.email, 'Unknown') AS asked_by_name,
                            COALESCE(ub.display_name, ub.email) AS answered_by_name
                     FROM qa_threads qa
+                    LEFT JOIN jobs j ON j.id = qa.job_id AND j.deleted_at IS NULL
                     LEFT JOIN users ua ON ua.id = qa.asked_by AND ua.deleted_at IS NULL
                     LEFT JOIN users ub ON ub.id = qa.answered_by AND ub.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
@@ -457,11 +476,13 @@ public final class ChatService: Sendable {
                     QAThreadRow(
                         id: row["id"] ?? 0,
                         jobId: row["job_id"] ?? 0,
+                        askedById: row["asked_by"] as Int64?,
                         question: row["subject"] ?? "",
                         askedByName: row["asked_by_name"] ?? "Unknown",
                         currentLevel: row["current_level"] ?? "field",
                         status: row["status"] ?? "open",
                         priority: row["priority"] ?? "normal",
+                        dueDate: row["due_date"] as String?,
                         answer: row["answer_text"] as String?,
                         answeredByName: row["answered_by_name"] as String?
                     )
@@ -648,7 +669,11 @@ public final class ChatService: Sendable {
         holdReason: String?,
         userId: Int64
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "manage_orders")
+        }
+
+        return try db.writer.write { dbConn in
             let channelName = "Hold: \(partName) (\(jpoNumber))"
 
             // Check if a thread already exists for this part + JPO
@@ -756,6 +781,26 @@ public final class ChatService: Sendable {
         return message.contains("no such table") || message.contains("no such column")
     }
 
+    /// Enforce the active-channel/current-member gate for message writes.
+    ///
+    /// This closes the phantom-member write gap where a removed or never-added user
+    /// could still insert messages if they kept or guessed a channel ID. Read-side
+    /// membership enforcement is handled separately by the call sites that have a
+    /// requesting-user context.
+    private func requireActiveChannelMembership(_ dbConn: Database, channelId: Int64, userId: Int64) throws {
+        let channelExists = (try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM chat_channels
+            WHERE id = ? AND is_active = 1 AND deleted_at IS NULL
+            """, arguments: [channelId]) ?? 0) > 0
+        guard channelExists else { throw ChatError.channelNotFound(channelId) }
+
+        let isMember = (try Int.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) FROM chat_channel_members
+            WHERE channel_id = ? AND user_id = ? AND left_at IS NULL AND deleted_at IS NULL
+            """, arguments: [channelId, userId]) ?? 0) > 0
+        guard isMember else { throw ChatError.notChannelMember(channelId: channelId, userId: userId) }
+    }
+
     /// Parse an ISO 8601 date string from SQLite.
     private func parseDate(_ string: String) -> Date? { CoreFormatters.parseDateTime(string) }
 
@@ -808,6 +853,7 @@ public final class ChatService: Sendable {
         attachments: [PendingAttachment]
     ) throws -> Int64 {
         try db.writer.write { dbConn in
+            try requireActiveChannelMembership(dbConn, channelId: channelId, userId: userId)
             // Insert message
             try dbConn.execute(
                 sql: """
@@ -910,6 +956,10 @@ public final class ChatService: Sendable {
     /// `userId` must flow from the session; no default to prevent hardcoded user 1
     /// attribution on auto-created notebooks (documented in memory/feedback_hardcoded_user_ids.md).
     public func autoSaveToJobNotebook(channelId: Int64, attachment: MessageAttachment, userId: Int64) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "manage_notebooks")
+        }
+
         try db.writer.write { dbConn in
             // Get job ID from channel
             guard let row = try Row.fetchOne(dbConn, sql: """
@@ -1213,6 +1263,10 @@ public final class ChatService: Sendable {
 
     /// Escalate a Q&A thread to the next level.
     public func escalateThread(threadId: Int64, escalatedBy: Int64, notes: String?) throws {
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: escalatedBy, permissionKey: "moderate_chat")
+        }
+
         try db.writer.write { dbConn in
             guard let row = try Row.fetchOne(dbConn, sql: """
                 SELECT current_level FROM qa_threads WHERE id = ? AND deleted_at IS NULL
@@ -1315,7 +1369,11 @@ public final class ChatService: Sendable {
         createdBy: Int64,
         jobId: Int64? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        try db.writer.read { dbConn in
+            try ServicePermissionGate.requirePermission(dbConn, userId: createdBy, permissionKey: "manage_chat")
+        }
+
+        return try db.writer.write { dbConn in
             // Create the channel with type "supplier" and optional job link
             try dbConn.execute(sql: """
                 INSERT INTO chat_channels (channel_type, job_id, name, created_by, is_active, created_at)
@@ -1351,14 +1409,24 @@ public final class ChatService: Sendable {
                        (SELECT MAX(created_at) FROM chat_messages WHERE channel_id = cc.id AND deleted_at IS NULL) AS last_message_at,
                        (SELECT COUNT(*) FROM chat_messages cm
                         WHERE cm.channel_id = cc.id AND cm.deleted_at IS NULL
-                        AND cm.created_at > COALESCE(
-                            (SELECT read_at FROM chat_read_receipts WHERE channel_id = cc.id AND user_id = ?), '1970-01-01'
-                        )) AS unread_count
+                          AND cm.id > COALESCE(
+                              (SELECT crr.last_read_message_id
+                               FROM chat_read_receipts crr
+                               WHERE crr.channel_id = cc.id
+                                 AND crr.user_id = ?
+                                 AND crr.deleted_at IS NULL), 0
+                          )) AS unread_count
                 FROM chat_channels cc
-                JOIN chat_channel_members ccm ON ccm.channel_id = cc.id AND ccm.user_id = ?
+                JOIN chat_channel_members ccm
+                    ON ccm.channel_id = cc.id
+                   AND ccm.user_id = ?
+                   AND ccm.left_at IS NULL
+                   AND ccm.deleted_at IS NULL
                 JOIN supplier_channel_bridges scb ON scb.channel_id = cc.id AND scb.deleted_at IS NULL
                 JOIN suppliers s ON s.id = scb.supplier_id AND s.deleted_at IS NULL
-                WHERE cc.channel_type = 'supplier' AND cc.deleted_at IS NULL
+                WHERE cc.channel_type = 'supplier'
+                  AND cc.is_active = 1
+                  AND cc.deleted_at IS NULL
                 ORDER BY last_message_at DESC NULLS LAST
                 """, arguments: [userId, userId])
 
@@ -1387,6 +1455,7 @@ public final class ChatService: Sendable {
         attachmentRef: String? = nil
     ) throws -> Int64 {
         try db.writer.write { dbConn in
+            try requireActiveChannelMembership(dbConn, channelId: channelId, userId: senderId)
             // Send as regular chat message
             try dbConn.execute(sql: """
                 INSERT INTO chat_messages (channel_id, sender_id, message_type, content, created_at)
@@ -1442,15 +1511,27 @@ public final class ChatService: Sendable {
                        (SELECT MAX(created_at) FROM chat_messages WHERE channel_id = cc.id AND deleted_at IS NULL) AS last_message_at,
                        (SELECT COUNT(*) FROM chat_messages cm
                         WHERE cm.channel_id = cc.id AND cm.deleted_at IS NULL
-                        AND cm.created_at > COALESCE(
-                            (SELECT read_at FROM chat_read_receipts WHERE channel_id = cc.id AND user_id = ?), '1970-01-01'
-                        )) AS unread_count
+                          AND cm.id > COALESCE(
+                              (SELECT crr.last_read_message_id
+                               FROM chat_read_receipts crr
+                               WHERE crr.channel_id = cc.id
+                                 AND crr.user_id = ?
+                                 AND crr.deleted_at IS NULL), 0
+                          )) AS unread_count
                 FROM chat_channels cc
+                JOIN chat_channel_members ccm
+                    ON ccm.channel_id = cc.id
+                   AND ccm.user_id = ?
+                   AND ccm.left_at IS NULL
+                   AND ccm.deleted_at IS NULL
                 JOIN supplier_channel_bridges scb ON scb.channel_id = cc.id AND scb.deleted_at IS NULL
                 JOIN suppliers s ON s.id = scb.supplier_id AND s.deleted_at IS NULL
-                WHERE cc.channel_type = 'supplier' AND cc.job_id = ? AND cc.deleted_at IS NULL
+                WHERE cc.channel_type = 'supplier'
+                  AND cc.job_id = ?
+                  AND cc.is_active = 1
+                  AND cc.deleted_at IS NULL
                 ORDER BY last_message_at DESC NULLS LAST
-                """, arguments: [userId, jobId])
+                """, arguments: [userId, userId, jobId])
 
             return rows.map { row in
                 SupplierChannelRow(

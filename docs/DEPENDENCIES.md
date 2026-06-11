@@ -2,6 +2,7 @@
 
 > Last updated: 2026-03-10
 > Purpose: Reliable dependency map for backend/frontend and deployment prep.
+> Paperclip staging update: Treat this as historical dependency context until a promoted stage requires dependency changes. Current execution order lives in `docs/plans/staged-paperclip-goals.md`.
 
 ---
 

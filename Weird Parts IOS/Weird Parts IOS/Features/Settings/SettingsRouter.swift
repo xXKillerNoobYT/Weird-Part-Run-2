@@ -19,6 +19,16 @@ struct SettingsRouter: View {
                     .padding(.horizontal)
                     .padding(.vertical, 6)
             }
+            .onAppear {
+                NotificationCenter.default.post(
+                    name: .settingsPageActive,
+                    object: nil,
+                    userInfo: ["context": settingsPageContext]
+                )
+            }
+            .onDisappear {
+                NotificationCenter.default.post(name: .settingsPageInactive, object: nil)
+            }
     }
 
     @ViewBuilder
@@ -82,6 +92,8 @@ struct SettingsRouter: View {
             IOSPreTripChecklistPage()
         case "settings-dispatch-preferences":
             IOSDispatchPreferencesPage()
+        case "settings-purchase-orders":
+            IOSPurchaseOrderSettingsPage()
         // Warehouse pages — implemented in 52C
         case "settings-forecast-config":
             IOSForecastSettingsPage()
@@ -96,6 +108,8 @@ struct SettingsRouter: View {
             IOSEstimationSettingsPage()
         case "settings-report-templates":
             IOSReportTemplatesPage()
+        case "settings-job-stage-templates":
+            IOSJobStageTemplatesSettingsPage()
         case "settings-payment-tracking":
             comingSoonPage("Payment Tracking", icon: "banknote.fill")
 
@@ -106,7 +120,120 @@ struct SettingsRouter: View {
     }
 
     private func comingSoonPage(_ title: String, icon: String) -> some View {
-        ContentUnavailableView(title, systemImage: icon, description: Text("This page is being built."))
+        EmptyStateView(icon: icon, title: title, message: "This page is being built.")
             .navigationTitle(title)
+    }
+
+    private var settingsPageContext: String {
+        let scope = SyncScope.scope(for: tabId)
+        return "page=Settings; tab_id=\(tabId); sync_scope=\(scope.rawValue)"
+    }
+}
+
+/// Company-wide purchase order drafting settings.
+private struct IOSPurchaseOrderSettingsPage: View {
+    @EnvironmentObject private var appCore: AppCore
+
+    @State private var groupingMode: PurchaseOrderGroupingMode = .perSupplierMixed
+    @State private var isLoading = true
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+    @State private var successMessage: String?
+
+    var body: some View {
+        Form {
+            if isLoading {
+                ProgressView("Loading purchase order settings...")
+            } else {
+                Section("PO Grouping") {
+                    Picker("Grouping mode", selection: $groupingMode) {
+                        Text("Mixed").tag(PurchaseOrderGroupingMode.perSupplierMixed)
+                        Text("Per job").tag(PurchaseOrderGroupingMode.perSupplierPerJob)
+                    }
+                    .pickerStyle(.segmented)
+
+                    modeSummary
+                }
+
+                Section {
+                    Button {
+                        saveSettings()
+                    } label: {
+                        if isSaving {
+                            ProgressView()
+                        } else {
+                            Text("Save Settings")
+                        }
+                    }
+                    .disabled(isSaving)
+                }
+            }
+
+            if let errorMessage {
+                Section {
+                    Text(errorMessage)
+                        .foregroundStyle(.red)
+                }
+            }
+
+            if let successMessage {
+                Section {
+                    Text(successMessage)
+                        .foregroundStyle(.green)
+                }
+            }
+        }
+        .navigationTitle("Purchase Orders")
+        .task { loadSettings() }
+    }
+
+    private var modeSummary: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(groupingMode.displayName, systemImage: groupingMode == .perSupplierMixed ? "shippingbox.fill" : "folder.badge.gearshape")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+            Text(groupingMode == .perSupplierMixed
+                 ? "Creates one draft PO per supplier. Job attribution stays on each line item."
+                 : "Creates separate draft POs for each supplier and job. Job attribution still stays on each line item.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func loadSettings() {
+        guard let service = appCore.settingsService else {
+            errorMessage = "Settings service not available"
+            isLoading = false
+            return
+        }
+
+        do {
+            groupingMode = try service.getPurchaseOrderSettings().groupingMode
+        } catch {
+            errorMessage = userFriendlyError(error, context: "load purchase order settings")
+        }
+        isLoading = false
+    }
+
+    private func saveSettings() {
+        guard let service = appCore.settingsService else {
+            errorMessage = "Settings service not available"
+            return
+        }
+
+        isSaving = true
+        errorMessage = nil
+        successMessage = nil
+        do {
+            let saved = try service.updatePurchaseOrderSettings(
+                SettingsService.PurchaseOrderSettings(groupingMode: groupingMode)
+            )
+            groupingMode = saved.groupingMode
+            successMessage = "Purchase order settings saved."
+        } catch {
+            errorMessage = userFriendlyError(error, context: "save purchase order settings")
+        }
+        isSaving = false
     }
 }

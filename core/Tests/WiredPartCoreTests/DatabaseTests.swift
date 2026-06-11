@@ -85,6 +85,8 @@ struct DatabaseTests {
             // Wishlist & background tasks (057-058)
             "wishlist_items",    // 057
             "background_task_log", // 058
+            "vehicle_location_logs", // 089
+            "timesheet_correction_audits", // 103
             // Audit assignments & permissions (059-060)
         ]
 
@@ -96,9 +98,109 @@ struct DatabaseTests {
         }
     }
 
-    @Test("Schema version is 83")
+
+    @Test("Migration 097 creates part import audit session tables")
+    func testMigration097CreatesPartImportAuditTables() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let tables = try db.writer.read { db in
+            try String.fetchAll(db, sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('part_import_sessions', 'part_import_row_evidence') ORDER BY name")
+        }
+        #expect(tables == ["part_import_row_evidence", "part_import_sessions"])
+    }
+
+    @Test("Schema version is 103")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 83)
+        #expect(AppDatabase.schemaVersion == 103)
+    }
+
+    @Test("Migration 095 normalizes duplicate legacy stage sort orders and category maps")
+    func testMigration095NormalizesDuplicateLegacyStageDataBeforeUniqueIndexes() throws {
+        var config = Configuration()
+        config.foreignKeysEnabled = true
+        let queue = try DatabaseQueue(configuration: config)
+        var migrator = DatabaseMigrator()
+        AppDatabase.registerMigrations(&migrator)
+        try migrator.migrate(queue, upTo: "094_short_term_pipeline_category_override")
+
+        try queue.write { db in
+            try db.execute(sql: "INSERT INTO part_categories (name, description) VALUES ('Legacy Duplicate Category', 'migration fixture')")
+            let categoryId = db.lastInsertedRowID
+            let originalStageId = try Int64.fetchOne(db, sql: "SELECT id FROM job_stages WHERE sort_order = 1 ORDER BY id LIMIT 1")!
+            try db.execute(sql: "INSERT INTO job_stages (name, sort_order, created_at) VALUES ('Legacy Duplicate Rough-in', 1, datetime('now'))")
+            let duplicateStageId = db.lastInsertedRowID
+            try db.execute(sql: "INSERT INTO job_stage_category_map (stage_id, category_id, created_at) VALUES (?, ?, datetime('now'))", arguments: [originalStageId, categoryId])
+            try db.execute(sql: "INSERT INTO job_stage_category_map (stage_id, category_id, created_at) VALUES (?, ?, datetime('now'))", arguments: [duplicateStageId, categoryId])
+        }
+
+        try migrator.migrate(queue)
+
+        let result = try queue.read { db -> (sortOrders: [Int], mapStageIds: [Int64], templateMapCount: Int) in
+            let sortOrders = try Int.fetchAll(db, sql: """
+                SELECT sort_order FROM job_stages
+                WHERE deleted_at IS NULL
+                ORDER BY sort_order ASC, id ASC
+                """)
+            let mapStageIds = try Int64.fetchAll(db, sql: """
+                SELECT m.stage_id
+                FROM job_stage_category_map m
+                JOIN part_categories c ON c.id = m.category_id
+                WHERE c.name = 'Legacy Duplicate Category'
+                ORDER BY m.id ASC
+                """)
+            let templateMapCount = try Int.fetchOne(db, sql: """
+                SELECT COUNT(*)
+                FROM job_stage_category_map
+                WHERE template_id = (SELECT id FROM job_stage_templates WHERE is_default = 1 AND archived_at IS NULL)
+                GROUP BY template_id, category_id
+                HAVING COUNT(*) > 1
+                """) ?? 0
+            return (sortOrders, mapStageIds, templateMapCount)
+        }
+
+        #expect(result.sortOrders == Array(1...result.sortOrders.count))
+        #expect(result.mapStageIds.count == 1)
+        #expect(result.templateMapCount == 0)
+    }
+
+    @Test("Migration 089 creates vehicle location logs table and latest-location indexes")
+    func testMigration089VehicleLocationLogsIndexes() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+
+        let result = try db.writer.read { db -> (tableExists: Bool, columns: [String], indexes: [String]) in
+            let tableExists = try db.tableExists("vehicle_location_logs")
+            let columns = tableExists ? try db.columns(in: "vehicle_location_logs").map(\.name) : []
+            let indexes = try Row.fetchAll(db, sql: "PRAGMA index_list('vehicle_location_logs')")
+                .map { row in row["name"] as String }
+            return (tableExists, columns, indexes)
+        }
+
+        #expect(result.tableExists, "vehicle_location_logs should be managed by migrations")
+        #expect(result.columns.contains("vehicle_id"))
+        #expect(result.columns.contains("user_id"))
+        #expect(result.columns.contains("latitude"))
+        #expect(result.columns.contains("longitude"))
+        #expect(result.columns.contains("recorded_at"))
+        #expect(result.columns.contains("deleted_at"))
+        #expect(result.indexes.contains("idx_vll_vehicle"))
+        #expect(result.indexes.contains("idx_vll_latest_active"))
+        #expect(result.indexes.contains("idx_vll_recorded_at"))
+    }
+
+    @Test("Migration 088 adds fleet inspection dashboard lookup index")
+    func testMigration088FleetInspectionDashboardLookupIndex() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+
+        let indexedColumns = try db.writer.read { db -> [String] in
+            let indexes = try Row.fetchAll(db, sql: "PRAGMA index_list('inspection_records')")
+            guard indexes.contains(where: { ($0["name"] as String) == "idx_ir_vehicle_performed_at" }) else {
+                return []
+            }
+
+            return try Row.fetchAll(db, sql: "PRAGMA index_info('idx_ir_vehicle_performed_at')")
+                .map { row in row["name"] as String }
+        }
+
+        #expect(indexedColumns == ["vehicle_id", "performed_at"])
     }
 
     @Test("Migration 082 adds structured estimation review columns")
@@ -112,6 +214,25 @@ struct DatabaseTests {
         #expect(columns.contains("unresolved_question_count"))
         #expect(columns.contains("crew_feedback"))
         #expect(columns.contains("gc_rating"))
+    }
+
+    @Test("Migration 087 creates vehicle location log table and latest-location indexes")
+    func testMigration087VehicleLocationLogsIndexes() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+
+        let result = try db.writer.read { db -> (tableExists: Bool, columns: [String], indexes: [String]) in
+            let tableExists = try db.tableExists("vehicle_location_logs")
+            let columns = tableExists ? try db.columns(in: "vehicle_location_logs").map(\.name) : []
+            let indexes = try Row.fetchAll(db, sql: "PRAGMA index_list('vehicle_location_logs')")
+                .map { row in row["name"] as String }
+            return (tableExists, columns, indexes)
+        }
+
+        #expect(result.tableExists, "vehicle_location_logs should be managed by migrations")
+        #expect(result.columns.contains("vehicle_id"))
+        #expect(result.columns.contains("deleted_at"))
+        #expect(result.indexes.contains("idx_vll_vehicle"))
+        #expect(result.indexes.contains("idx_vll_latest_active"))
     }
 
     @Test("Migration 073 adds grid_rows and grid_cols to warehouse_floor_plans")

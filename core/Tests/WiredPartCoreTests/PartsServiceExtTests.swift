@@ -62,6 +62,49 @@ struct PartsServiceExtTests {
         try env.parts.deletePart(id: partId)
     }
 
+    @Test("auto-add-to-wishlist flag defaults off and can be toggled by catalog editor")
+    func testAutoAddToWishlistWhenLowToggle() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "AutoWishlistCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Auto Wishlist Part", categoryId: catId)
+
+        #expect(try env.parts.getAutoAddToWishlistWhenLow(partId: partId) == false)
+        #expect(try env.parts.getPart(id: partId).part.autoAddToWishlistWhenLow == 0)
+
+        try env.parts.setAutoAddToWishlistWhenLow(partId: partId, enabled: true, byUserId: env.adminUserId)
+
+        #expect(try env.parts.getAutoAddToWishlistWhenLow(partId: partId))
+        #expect(try env.parts.getPart(id: partId).part.autoAddToWishlistWhenLow == 1)
+    }
+
+    @Test("auto-add-to-wishlist toggle audit records old and new values")
+    func testAutoAddToWishlistWhenLowToggleAuditValues() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "AutoWishlistAuditCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Auto Wishlist Audit", categoryId: catId)
+
+        try env.parts.setAutoAddToWishlistWhenLow(partId: partId, enabled: true, byUserId: env.adminUserId)
+        try env.parts.setAutoAddToWishlistWhenLow(partId: partId, enabled: false, byUserId: env.adminUserId)
+
+        let entries = try env.parts.getPartChangeLog(partId: partId)
+            .filter { $0.fieldName == "auto_add_to_wishlist_when_low" }
+        #expect(entries.count == 2)
+        #expect(entries.contains { $0.oldValue == "0" && $0.newValue == "1" })
+        #expect(entries.contains { $0.oldValue == "1" && $0.newValue == "0" })
+    }
+
+    @Test("auto-add-to-wishlist toggle rejects users without edit_parts_catalog")
+    func testAutoAddToWishlistWhenLowRequiresCatalogEditPermission() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "AutoWishlistPermCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Auto Wishlist Restricted", categoryId: catId)
+        let unprivilegedId = try env.auth.createUser(displayName: "NoCatalogEdit", pin: "7777")
+
+        #expect(throws: PartsService.PartsError.insufficientPermissions(required: "edit_parts_catalog")) {
+            try env.parts.setAutoAddToWishlistWhenLow(partId: partId, enabled: true, byUserId: unprivilegedId)
+        }
+    }
+
     @Test("getPart throws partNotFound for soft-deleted parts")
     func testGetPart_throwsForDeletedPart() throws {
         let env = try E2ETestHelpers.setUp()
@@ -168,6 +211,90 @@ struct PartsServiceExtTests {
         #expect(supplierId > 0)
         let suppliers = try env.parts.listSuppliers()
         #expect(suppliers.contains(where: { $0.supplier.name == "ElecSupply Co" }))
+    }
+
+    @Test("Supplier-brand links can be managed from supplier side")
+    func testSetSupplierBrandsLinksAndUnlinksExistingBrands() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try env.parts.createSupplier(name: "Supplier Brand Manager")
+        let keepBrandId = try env.parts.createBrand(name: "Keep Brand")
+        let removeBrandId = try env.parts.createBrand(name: "Remove Brand")
+        let addBrandId = try env.parts.createBrand(name: "Add Brand")
+
+        try env.parts.setSupplierBrands(supplierId: supplierId, brandIds: [keepBrandId, removeBrandId])
+        try env.parts.setSupplierBrands(supplierId: supplierId, brandIds: [keepBrandId, addBrandId])
+
+        let linkedBrands = try env.parts.getSupplierBrandRows(supplierId: supplierId)
+        #expect(linkedBrands.map(\.brandId).sorted() == [addBrandId, keepBrandId].sorted())
+        #expect(linkedBrands.allSatisfy { $0.carryStatus == "carry_on_shelf" })
+    }
+
+    @Test("Supplier creation can atomically link initial active brands")
+    func testCreateSupplierLinksInitialBrandsAtomically() throws {
+        let env = try E2ETestHelpers.setUp()
+        let firstBrandId = try env.parts.createBrand(name: "Initial Brand One")
+        let secondBrandId = try env.parts.createBrand(name: "Initial Brand Two")
+
+        let supplierId = try env.parts.createSupplier(
+            name: "Supplier With Initial Brands",
+            initialBrandIds: [firstBrandId, secondBrandId]
+        )
+
+        let linkedBrands = try env.parts.getSupplierBrandRows(supplierId: supplierId)
+        #expect(linkedBrands.map(\.brandId).sorted() == [firstBrandId, secondBrandId].sorted())
+        #expect(linkedBrands.allSatisfy { $0.carryStatus == "carry_on_shelf" })
+    }
+
+    @Test("Supplier creation rejects inactive initial brands without creating supplier")
+    func testCreateSupplierRejectsInactiveInitialBrandWithoutPartialSupplier() throws {
+        let env = try E2ETestHelpers.setUp()
+        let inactiveBrandId = try env.parts.createBrand(name: "Inactive Initial Brand")
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE brands SET is_active = 0 WHERE id = ?",
+                arguments: [inactiveBrandId]
+            )
+        }
+
+        #expect(throws: (any Error).self) {
+            _ = try env.parts.createSupplier(
+                name: "Should Not Persist",
+                initialBrandIds: [inactiveBrandId]
+            )
+        }
+
+        let suppliers = try env.parts.listSuppliers()
+        #expect(!suppliers.contains { $0.supplier.name == "Should Not Persist" })
+    }
+
+    @Test("Supplier-side brand picker only offers active unlinked brands")
+    func testListBrandsAvailableForSupplierExcludesLinkedAndDeletedBrands() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try env.parts.createSupplier(name: "Picker Supplier")
+        let linkedBrandId = try env.parts.createBrand(name: "Already Linked")
+        let availableBrandId = try env.parts.createBrand(name: "Available Brand")
+        let deletedBrandId = try env.parts.createBrand(name: "Deleted Brand")
+        let inactiveBrandId = try env.parts.createBrand(name: "Inactive Brand")
+        let inactiveLinkBrandId = try env.parts.createBrand(name: "Inactive Link Brand")
+        try env.parts.linkBrandToSupplier(brandId: linkedBrandId, supplierId: supplierId)
+        try env.parts.linkBrandToSupplier(brandId: inactiveLinkBrandId, supplierId: supplierId)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE brands SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [deletedBrandId]
+            )
+            try db.execute(
+                sql: "UPDATE brands SET is_active = 0 WHERE id = ?",
+                arguments: [inactiveBrandId]
+            )
+            try db.execute(
+                sql: "UPDATE brand_supplier_links SET is_active = 0 WHERE brand_id = ? AND supplier_id = ?",
+                arguments: [inactiveLinkBrandId, supplierId]
+            )
+        }
+
+        let availableBrands = try env.parts.listBrandsAvailableForSupplier(supplierId: supplierId)
+        #expect(availableBrands.compactMap(\.id) == [availableBrandId, inactiveLinkBrandId])
     }
 
     @Test("Part-supplier link")
@@ -670,6 +797,54 @@ struct PartsServiceExtTests {
         #expect(reactivated[0].isActive == true)
     }
 
+    @Test("upsertColorBrandSKU can explicitly clear nullable SKU fields")
+    func testUpsertColorBrandSKUCanClearNullableFields() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let colorId = try env.parts.createColor(name: "Clearable", hexCode: "#112233")
+        let brandId = try E2ETestHelpers.seedBrand(env)
+
+        try env.parts.upsertColorBrandSKU(
+            colorId: colorId,
+            brandId: brandId,
+            typeId: typeId,
+            partNumber: "CLEAR-ME",
+            unitCost: 12.34
+        )
+        try env.parts.upsertColorBrandSKU(
+            colorId: colorId,
+            brandId: brandId,
+            typeId: typeId,
+            partNumber: nil,
+            unitCost: nil,
+            clearPartNumber: true,
+            clearUnitCost: true
+        )
+
+        let skus = try env.parts.getColorBrandSKUs(typeId: typeId, brandId: brandId)
+        #expect(skus.count == 1)
+        #expect(skus[0].partNumber == nil)
+        #expect(skus[0].unitCost == nil)
+    }
+
+    @Test("getColorBrandSKUsForType returns active SKU rows across brands in one query")
+    func testGetColorBrandSKUsForType() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let colorId1 = try env.parts.createColor(name: "Batch Red", hexCode: "#FF0000")
+        let colorId2 = try env.parts.createColor(name: "Batch Blue", hexCode: "#0000FF")
+        let brandId1 = try E2ETestHelpers.seedBrand(env, name: "Batch Brand A")
+        let brandId2 = try E2ETestHelpers.seedBrand(env, name: "Batch Brand B")
+
+        try env.parts.upsertColorBrandSKU(colorId: colorId1, brandId: brandId1, typeId: typeId, partNumber: "A-RED")
+        try env.parts.upsertColorBrandSKU(colorId: colorId2, brandId: brandId2, typeId: typeId, partNumber: "B-BLUE")
+
+        let skus = try env.parts.getColorBrandSKUsForType(typeId: typeId)
+        #expect(skus.count == 2)
+        #expect(Set(skus.map(\.brandId)) == Set([brandId1, brandId2]))
+        #expect(Set(skus.map(\.colorId)) == Set([colorId1, colorId2]))
+    }
+
     @Test("getSKUsForColor returns all active SKUs across brands and types")
     func testGetSKUsForColor() throws {
         let env = try E2ETestHelpers.setUp()
@@ -744,6 +919,18 @@ struct PartsServiceExtTests {
         #expect(match != nil)
         #expect(match?.name == "Fire-Rated")
         #expect(match?.hexCode == nil, "Named-only variant must have nil hex_code")
+    }
+
+    @Test("updateColor clears hex_code to NULL when passed an empty string")
+    func testUpdateColorClearsHexCode() throws {
+        let env = try E2ETestHelpers.setUp()
+        let colorId = try env.parts.createColor(name: "VisibleThenNamedOnly", hexCode: "#112233")
+
+        try env.parts.updateColor(id: colorId, hexCode: "")
+
+        let colors = try env.parts.listColors()
+        let match = colors.first { $0.id == colorId }
+        #expect(match?.hexCode == nil, "Empty update hex should clear to NULL for named-only variants")
     }
 
     @Test("PE-COLORS Plan Test 4: searchParts finds a part by its SKU-level part_number")
@@ -879,6 +1066,27 @@ struct PartsServiceExtTests {
         #expect(skus[0].partNumber == "BLUE-002")
         #expect(skus[0].unitCost == 3.75,
                 "unitCost must be preserved when updateColorBrandSKU is called with nil unitCost")
+    }
+
+    @Test("updateColorBrandSKU updates stock quantity for editor panel")
+    func testUpdateColorBrandSKU_updatesStockQty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let colorId = try env.parts.createColor(name: "Green", hexCode: "#00FF00")
+        let brandId = try E2ETestHelpers.seedBrand(env)
+
+        let skuId = try env.parts.upsertColorBrandSKU(
+            colorId: colorId, brandId: brandId, typeId: typeId,
+            partNumber: "GREEN-001", unitCost: 4.25, stockQty: 3
+        )
+
+        try env.parts.updateColorBrandSKU(skuId: skuId, stockQty: 9)
+
+        let skus = try env.parts.getColorBrandSKUs(typeId: typeId, brandId: brandId)
+        #expect(skus[0].stockQty == 9,
+                "Categories editor must be able to persist color_brand_skus.stock_qty changes")
+        #expect(skus[0].partNumber == "GREEN-001")
+        #expect(skus[0].unitCost == 4.25)
     }
 
     @Test("upsertColorBrandSKU reactivation preserves existing data when nil passed")

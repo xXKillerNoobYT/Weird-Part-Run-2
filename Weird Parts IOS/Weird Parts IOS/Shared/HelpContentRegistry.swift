@@ -123,9 +123,32 @@ struct HelpContentRegistry {
         "WiredPart.dispatchPageActive": "scheduling-dispatch",
         "WiredPart.scheduleCalendarPageActive": "scheduling-calendar",
         "WiredPart.employeesPageActive": "people-employees",
+        "WiredPart.peopleDashboardPageActive": "people-dashboard",
+        "WiredPart.customersPageActive": "people-customers",
+        "WiredPart.contactsPageActive": "people-contacts",
+        "WiredPart.officeDashboardPageActive": "office-dashboard",
+        "WiredPart.officeApprovalsPageActive": "office-approvals",
+        "WiredPart.officeSpendingPageActive": "office-spending",
+        "WiredPart.reportsLaborPageActive": "reports-labor",
+        "WiredPart.reportsSpendingPageActive": "reports-spending",
+        "WiredPart.reportsProfitabilityPageActive": "reports-profitability",
+        "WiredPart.reportsTimesheetsPageActive": "reports-timesheets",
+        "WiredPart.reportsPrebillingPageActive": "reports-prebilling",
+        "WiredPart.reportsBookkeeperPageActive": "reports-bookkeeper",
+        "WiredPart.reportsDailySummaryPageActive": "reports-daily-summary",
         "WiredPart.vehiclesPageActive": "fleet-vehicles",
+        "WiredPart.fleetDashboardPageActive": "fleet-dashboard",
+        "WiredPart.fleetTrailersPageActive": "fleet-trailers",
+        "WiredPart.fleetMaintenancePageActive": "fleet-maintenance",
+        "WiredPart.fleetMileagePageActive": "fleet-mileage",
+        "WiredPart.fleetFuelPageActive": "fleet-fuel",
+        "WiredPart.fleetInspectionsPageActive": "fleet-inspections",
+        "WiredPart.fleetTrackingPageActive": "fleet-tracking",
+        "WiredPart.fleetTelematicsPageActive": "fleet-telematics",
+        "WiredPart.fleetMyTruckPageActive": "fleet-my-truck",
         "WiredPart.toolRegistryPageActive": "tools-registry",
         "WiredPart.notebooksListPageActive": "notebooks-all",
+        "WiredPart.settingsPageActive": "settings-app-config",
     ]
 
     // MARK: - All Entries (extracted from PageHelpSheet usages)
@@ -143,6 +166,16 @@ struct HelpContentRegistry {
                 ("Overview", "Your daily command center. See clock status, KPI stats, charts, alerts, and quick actions all in one place."),
                 ("KPI Cards", "Tap any KPI card to see detailed breakdowns. Cards show part types, total stock, active jobs, pending orders, and low stock warnings."),
                 ("Quick Actions", "Use the quick action buttons at the bottom to scan QR codes, clock in/out, view the daily report, move stock, or create new orders."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "settings-app-config",
+            title: "App Config Help",
+            sections: [
+                ("What This Page Does", "General application configuration including auto-lock timeout, stale data warnings, archive retention, warranty defaults, and payment tracking settings."),
+                ("How to Use It", "Adjust values for each setting and tap Save. Auto-lock controls how long before the app locks. Stale data warning triggers when sync data is old."),
+                ("Payment Tracking", "When enabled, customer payment tracking shows payment status, terms, overdue warnings, and automatic payment holds."),
             ]
         ),
 
@@ -619,14 +652,50 @@ struct HelpContentRegistry {
         ),
 
         HelpEntry(
+            pageId: "people-dashboard",
+            title: "People Dashboard Help",
+            sections: [
+                ("What This Page Does", "The People Dashboard gives you a real-time overview of your workforce. See who is clocked in, who is off today, which certifications are expiring, and which teams are assigned to jobs."),
+                ("How to Use It", "The smart cards at the top summarize key numbers at a glance. Scroll down to see details for Working Now, Off Today, Certifications Expiring Soon, and Team Assignments Today."),
+                ("Payment Alerts", "When payment tracking is enabled, overdue customer invoices appear at the bottom with the amount and number of days overdue."),
+                ("Tips", "Pull down to refresh the dashboard with the latest data. Tap into other People pages from the navigation menu to manage employees, customers, contractors, teams, and contacts."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "people-customers",
+            title: "Customers Help",
+            sections: [
+                ("What This Page Does", "View and manage all customers. Each row shows the company name, primary contact, email, and phone number."),
+                ("How to Use It", "Type in the search bar to filter customers by company name, contact name, or email. Tap a customer to see their full detail page with contacts, job history, billing, and communication logs. Tap the + button to add a new customer."),
+                ("Adding a Customer", "The contact name is required. You can also add a company name, email, phone, and address. Customers appear in the list immediately after saving."),
+                ("Tips", "Pull down to refresh the customer list. Tap into a customer to add additional contacts, record payments, or log communications like calls and meetings."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "people-contacts",
+            title: "Contacts Help",
+            sections: [
+                ("What This Page Does", "View and manage all contacts across your organization. Contacts include GCs, suppliers, contractors, owners, vendors, and other external people you work with."),
+                ("Smart Card Filters", "Tap the type cards at the top to filter by contact type: All, GC, Supplier, Contractor, Owner, Vendor, Active, or Inactive. The count on each card shows how many contacts match that type."),
+                ("Sorting & Search", "Use the sort button to order contacts by Recently Updated, Name, or Type. The search bar filters by first name, last name, company, or email."),
+                ("Tips", "Pull down to refresh. Contact type badges are color-coded by type. Tap the + button to add a new contact with a first name and phone number."),
+            ]
+        ),
+
+        HelpEntry(
             pageId: "people-employee-detail",
             title: "Employee Detail Help",
             sections: [
-                ("What This Page Does", "View and edit a single employee's profile, hat assignments, and team memberships. Use the tabs to switch between Profile, Hats, and Teams views."),
+                ("What This Page Does", "View and edit a single employee's profile, hat assignments, skills, team memberships, certifications, and recent activity. Use the tabs to switch between Profile, Hats, Skills, Teams, Certifications, and Activity views."),
                 ("Profile Tab", "Shows the employee's basic info: name, email, phone, role, status, and important dates. Tap Edit in the toolbar to update their contact information."),
                 ("Hats Tab", "Displays all available hats (roles) and which ones are assigned to this employee. If you have manage_people permission, you can toggle hats on and off directly. Each hat grants a set of permissions."),
+                ("Skills Tab", "Shows employee skills, proficiency, and years of experience. If you have manage_people permission, you can add or remove skills."),
                 ("Teams Tab", "Shows which teams this employee belongs to, their role within each team, and when they joined."),
-                ("Tips", "Pull down to refresh all data. Only managers and admins can toggle hat assignments. The Edit button updates contact info only — use the Hats tab for role changes."),
+                ("Certifications Tab", "Shows employee certifications, issuing details, certificate numbers, and expiry status. Managers can add or remove certifications."),
+                ("Activity Tab", "Shows recent job sessions worked by this employee, including the job, clock times, status, and recorded hours."),
+                ("Tips", "Pull down to refresh all data. Only managers and admins can toggle hat assignments or change skills. The Edit button updates contact info only — use the Hats tab for role changes."),
             ]
         ),
 
@@ -668,6 +737,83 @@ struct HelpContentRegistry {
             ]
         ),
 
+        HelpEntry(
+            pageId: "fleet-trailers",
+            title: "Trailers Help",
+            sections: [
+                ("Overview", "The Trailers page tracks every trailer, its assigned truck or job, current location, status, capacity, and registration/inspection dates."),
+                ("Searching", "Use search to find a trailer by number, name, type, status, or assignment. The AI context includes visible trailer counts so help reflects the current filtered list."),
+                ("Assignments", "Rows show whether a trailer is assigned, available, out of service, or waiting for inspection. Tap a row for details before changing assignments."),
+                ("Tips", "Check inspection and registration badges before dispatch. Out-of-service trailers should stay off active jobs until maintenance clears them."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "fleet-mileage",
+            title: "Mileage Help",
+            sections: [
+                ("Overview", "The Mileage page shows odometer readings and trip logs so you can verify usage trends and catch missing mileage entries."),
+                ("Searching", "Filter by vehicle, driver, or notes to find recent readings. The visible count in AI context updates with search state."),
+                ("Reading Entries", "Compare current mileage, last reading, and trip distance to spot unusual jumps before reports or maintenance schedules use the data."),
+                ("Tips", "Review mileage after route-heavy days and before scheduled maintenance so odometer-based reminders stay accurate."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "fleet-fuel",
+            title: "Fuel Help",
+            sections: [
+                ("Overview", "The Fuel page tracks fuel purchases by vehicle, driver, gallons, price, station, and mileage so office and field teams can review fuel spend."),
+                ("Searching", "Use the search bar to narrow fuel logs by vehicle, driver, station, or notes. The assistant context reports whether search is active and how many rows are visible."),
+                ("Reading Entries", "Each fuel row combines cost, gallons, and vehicle context. Look for missing mileage or unusually high cost before exporting spend reports."),
+                ("Tips", "Keep fuel logs current so Fleet cost cards and reporting pages reflect true month-to-date spend."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "fleet-inspections",
+            title: "Inspections Help",
+            sections: [
+                ("Overview", "The Inspections page lists pre-trip and safety inspection records for fleet assets, including completion status, vehicle, driver, and issues found."),
+                ("Searching", "Search by vehicle, driver, status, or notes to focus on open inspection concerns. AI help uses the current visible count."),
+                ("Inspection Status", "Open or failed inspections should be reviewed before dispatch. Completed inspections provide an audit trail for compliance."),
+                ("Tips", "Use this page at the start of the day to confirm required checks are complete and at the end of the day to follow up on reported defects."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "fleet-tracking",
+            title: "Fleet Tracking Help",
+            sections: [
+                ("Overview", "Fleet Tracking summarizes current asset tracking and location signals so dispatch can reason about where vehicles and trailers are."),
+                ("Filtering", "Search and filters narrow the tracking list by asset, status, or location. The assistant context includes the active filter and visible rows."),
+                ("Using Tracking Data", "Treat tracking information as read-only operational context. Verify stale or missing location signals with the driver before making dispatch decisions."),
+                ("Tips", "Use tracking with Fleet Dashboard and Dispatch rather than as the only source of truth for safety-critical routing."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "fleet-telematics",
+            title: "Telematics Help",
+            sections: [
+                ("Overview", "The Telematics page summarizes connected vehicle signals such as device status, last update, alerts, and high-level health."),
+                ("Reading Signals", "Use status and freshness indicators to spot vehicles whose device data may be stale before relying on the telemetry for dispatch decisions."),
+                ("Context", "AI help is read-only and should explain current telematics health, visible rows, and stale-signal risk without changing device assignments."),
+                ("Tips", "Pair telematics with driver confirmation for safety-critical decisions, especially when a device has not reported recently."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "fleet-my-truck",
+            title: "My Truck Help",
+            sections: [
+                ("Overview", "My Truck is the driver-focused view for the currently assigned vehicle, including assignment, inspection, mileage, and maintenance reminders."),
+                ("Daily Workflow", "Start by confirming the assigned truck, then complete required inspections and review any open maintenance warnings before heading out."),
+                ("Context", "The assistant context is read-only and should explain current assignment, checklist, and reminders without changing vehicle or inspection data."),
+                ("Tips", "If the assigned vehicle looks wrong, contact dispatch or a manager instead of editing historical logs from this page."),
+            ]
+        ),
+
         // ── TOOLS ─────────────────────────────────────────────────────────
 
         HelpEntry(
@@ -696,6 +842,19 @@ struct HelpContentRegistry {
             ]
         ),
 
+        // ── SETTINGS ──────────────────────────────────────────────────────
+
+        HelpEntry(
+            pageId: "settings-app-config",
+            title: "App Config Help",
+            sections: [
+                ("What This Page Does", "General application configuration including auto-lock timeout, stale data warnings, archive retention, warranty defaults, payment tracking settings, and app tour reset."),
+                ("How to Use It", "Adjust the editable values, review the payment tracking controls if enabled, then tap Save Configuration to persist changes. Auto-lock controls how long before the app locks. Stale data warning triggers when sync data is old. Archive and warranty values control default retention and coverage windows."),
+                ("Payment Tracking", "Enable payment tracking to monitor invoices and payments per customer. Configure payment terms, overdue warning timing, and whether overdue customers should be placed on automatic payment hold."),
+                ("Tips", "Use Restart App Tour when a user needs onboarding again. Invalid or empty numeric settings keep Save Configuration disabled until corrected."),
+            ]
+        ),
+
         // ── OFFICE ────────────────────────────────────────────────────────
 
         HelpEntry(
@@ -716,6 +875,16 @@ struct HelpContentRegistry {
                 ("What This Page Does", "Shows all items waiting for manager approval in one place. This includes JPO requests from field workers, scheduled part deletions, time-off requests, and tool edit verifications."),
                 ("How to Use It", "Use the filter cards at the top to narrow by type (JPOs, Deletions, Time-Off, Tool Edits). Search by name or requester. For each item, tap Approve or Reject. Rejections require a reason that gets sent back to the requester."),
                 ("Tips", "Pull down to refresh the list. Items disappear from this page once approved or rejected. If you reject a JPO, the field worker gets notified with your reason so they can revise and resubmit. This same page is accessible from both Office > Approvals and Orders > Approvals."),
+            ]
+        ),
+
+        HelpEntry(
+            pageId: "office-spending",
+            title: "Spending Dashboard Help",
+            sections: [
+                ("Overview", "Aggregate spending data across all jobs. See total parts costs, labor costs, and budget utilization at a glance."),
+                ("Breakdown", "Cards show spending by category. Tap for detailed breakdowns by job, supplier, or time period."),
+                ("Permissions", "This page requires the show dollar values permission. Contact your admin if you cannot see cost data."),
             ]
         ),
 

@@ -48,6 +48,7 @@ struct IOSPreTripChecklistPage: View {
 
     @State private var selectedVehicleType: String = "all"
     @State private var checklists: [String: VehicleChecklist] = [:]
+    @State private var isDirty = false
 
     @State private var showAddItem = false
     @State private var addItemSectionId: String?
@@ -81,7 +82,7 @@ struct IOSPreTripChecklistPage: View {
                 ProgressView("Loading checklist...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let loadError {
-                ContentUnavailableView("Unable to Load", systemImage: "exclamationmark.triangle", description: Text(loadError))
+                ErrorStateView(message: loadError)
             } else {
                 checklistEditor
             }
@@ -228,10 +229,13 @@ struct IOSPreTripChecklistPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!isDirty)
+                .accessibilityHint(isDirty ? "" : "Make changes to the checklist to enable saving.")
             }
         }
         // Fix #149: dismiss keyboard when scrolling checklist editor
         .scrollDismissesKeyboard(.interactively)
+        .onChange(of: checklists) { _, _ in isDirty = true }
         .alert("Add Item", isPresented: $showAddItem) {
             TextField("Item name", text: $newItemName)
             Toggle("Critical item", isOn: $newItemCritical)
@@ -331,6 +335,7 @@ struct IOSPreTripChecklistPage: View {
             checklists = ["all": VehicleChecklist(useDefault: false, sections: Self.defaultSections)]
         }
         isLoading = false
+        isDirty = false
     }
 
     private func saveSettings() {
@@ -344,6 +349,7 @@ struct IOSPreTripChecklistPage: View {
             let json = String(data: data, encoding: .utf8) ?? "{}"
             try service.upsertSetting(key: "pretrip_checklist_config", value: json, category: "pretrip")
             saveError = nil
+            isDirty = false
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }

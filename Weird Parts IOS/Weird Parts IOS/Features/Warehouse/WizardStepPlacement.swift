@@ -400,10 +400,10 @@ struct WizardStepPlacement: View {
     private var cartBinBrowser: some View {
         Group {
             if allBins.isEmpty {
-                ContentUnavailableView(
-                    "No Bins",
-                    systemImage: "tray",
-                    description: Text("Create bins in storage areas first.")
+                EmptyStateView(
+                    icon: "tray",
+                    title: "No Bins",
+                    message: "Create bins in storage areas first."
                 )
             } else {
                 List {
@@ -456,10 +456,10 @@ struct WizardStepPlacement: View {
                     .font(.headline)
 
                 if allAreas.isEmpty {
-                    ContentUnavailableView(
-                        "No Areas",
-                        systemImage: "square.dashed",
-                        description: Text("Create storage areas first.")
+                    EmptyStateView(
+                        icon: "square.dashed",
+                        title: "No Areas",
+                        message: "Create storage areas first."
                     )
                 } else {
                     List(allAreas, id: \.id, selection: $selectedAreaId) { area in
@@ -535,7 +535,10 @@ struct WizardStepPlacement: View {
     // MARK: - Cart Mode Actions
 
     private func loadBinsForCartMode() {
-        guard let svc = appCore.warehouseService else { return }
+        guard let svc = appCore.warehouseService else {
+            stepError = "Warehouse service unavailable"
+            return
+        }
         var loadedBins: [FloorPlanBinInfo] = []
         var loadedAreas: [WarehouseStorageArea] = []
 

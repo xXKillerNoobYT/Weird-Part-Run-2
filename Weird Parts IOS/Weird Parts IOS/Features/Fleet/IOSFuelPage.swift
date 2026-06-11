@@ -13,7 +13,9 @@ struct IOSFuelPage: View {
     // MARK: - State
 
     @State private var fuelLogs: [FleetService.FuelRow] = []
-    @State private var isLoading = true
+    @State private var isInitialLoading = true
+    @State private var isRefreshing = false
+    @State private var hasLoadedOnce = false
     @State private var searchText = ""
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
@@ -46,6 +48,16 @@ struct IOSFuelPage: View {
             .onChange(of: dateRange) { loadData() }
             .onChange(of: customStart) { loadData() }
             .onChange(of: customEnd) { loadData() }
+            .onAppear {
+                NotificationCenter.default.post(
+                    name: .fleetFuelPageActive,
+                    object: nil,
+                    userInfo: ["context": fleetFuelContext]
+                )
+            }
+            .onDisappear {
+                NotificationCenter.default.post(name: .fleetFuelPageInactive, object: nil)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
@@ -69,24 +81,46 @@ struct IOSFuelPage: View {
 
     // MARK: - Fuel List
 
+    private var fleetFuelContext: String {
+        let searchState = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "none" : "active"
+        return "page=Fleet Fuel; total_logs=\(fuelLogs.count); visible_logs=\(filteredLogs.count); date_range=\(dateRange.rawValue); search=\(searchState)"
+    }
+
     @ViewBuilder
     private var fuelList: some View {
-        if isLoading {
-            ProgressView("Loading fuel logs...")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error = loadError {
-            ErrorStateView(message: error) { loadData() }
-        } else if filteredLogs.isEmpty {
-            ContentUnavailableView {
-                Label("No Fuel Logs", systemImage: "fuelpump")
-            } description: {
-                Text("No fuel logs found.")
+        Group {
+            if isInitialLoading {
+                ProgressView("Loading fuel logs...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ErrorStateView(message: error) { loadData() }
+            } else if filteredLogs.isEmpty {
+                EmptyStateView(
+                    icon: "fuelpump",
+                    title: "No Fuel Logs",
+                    message: "No fuel logs found."
+                )
+            } else {
+                List(filteredLogs, id: \.id) { log in
+                    fuelRow(log)
+                }
+                .listStyle(.insetGrouped)
             }
-        } else {
-            List(filteredLogs, id: \.id) { log in
-                fuelRow(log)
-            }
-            .listStyle(.insetGrouped)
+        }
+        .overlay(alignment: .top) {
+            refreshingOverlay
+        }
+    }
+
+    @ViewBuilder
+    private var refreshingOverlay: some View {
+        if isRefreshing {
+            ProgressView()
+                .progressViewStyle(.linear)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .transition(.opacity)
+                .accessibilityLabel("Refreshing fuel logs")
         }
     }
 
@@ -147,20 +181,33 @@ struct IOSFuelPage: View {
     private func loadData() {
         guard let service = appCore.fleetService else {
             loadError = "Fleet service not available"
-            isLoading = false
+            hasLoadedOnce = true
+            isInitialLoading = false
+            isRefreshing = false
             return
         }
-        isLoading = fuelLogs.isEmpty
-        loadError = nil
-        do {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd"
-            let startStr = formatter.string(from: effectiveStart)
-            let endStr = formatter.string(from: effectiveEnd)
-            fuelLogs = try service.listFuelLogs(start: startStr, end: endStr)
-        } catch {
-            loadError = userFriendlyError(error, context: "load fuel data")
+
+        if hasLoadedOnce {
+            isRefreshing = true
+        } else {
+            isInitialLoading = true
         }
-        isLoading = false
+
+        DispatchQueue.main.async {
+            defer {
+                self.hasLoadedOnce = true
+                self.isInitialLoading = false
+                self.isRefreshing = false
+            }
+
+            self.loadError = nil
+            do {
+                let startStr = Formatters.localDateFormatter.string(from: self.effectiveStart)
+                let endStr = Formatters.localDateFormatter.string(from: self.effectiveEnd)
+                self.fuelLogs = try service.listFuelLogs(start: startStr, end: endStr)
+            } catch {
+                self.loadError = userFriendlyError(error, context: "load fuel data")
+            }
+        }
     }
 }

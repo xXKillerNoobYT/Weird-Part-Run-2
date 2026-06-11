@@ -54,9 +54,9 @@ struct IOSMovementWizard: View {
     // Derived
     private var movementType: String {
         switch (fromLocationType, toLocationType) {
-        case ("job", _): return "return_to_supplier"
-        case (_, "job"): return "consume"
-        default: return "transfer"
+        case ("job", _): return StockMovement.MovementType.returnToSupplier.rawValue
+        case (_, "job"): return StockMovement.MovementType.consume.rawValue
+        default: return StockMovement.MovementType.transfer.rawValue
         }
     }
 
@@ -911,7 +911,7 @@ struct IOSMovementWizard: View {
             name: part.name,
             code: part.code,
             qty: 1,
-            availableQty: part.availableQty ?? 999
+            availableQty: part.availableQty ?? 0
         ))
     }
 
@@ -923,9 +923,9 @@ struct IOSMovementWizard: View {
         guard !selectedParts.contains(where: { $0.partId == partId }) else { return }
         guard selectedParts.count < 20 else { return }
 
-        var availableQty = 999
+        var availableQty = 0
         if let service = appCore.partsService {
-            availableQty = (try? service.getPartStockSummary(partId: partId).total) ?? 999
+            availableQty = (try? service.getPartStockSummary(partId: partId).total) ?? 0
         }
 
         selectedParts.append(WizardPart(

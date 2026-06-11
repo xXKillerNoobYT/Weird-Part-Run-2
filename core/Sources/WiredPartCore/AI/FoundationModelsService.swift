@@ -257,6 +257,41 @@ public actor FoundationModelsService {
         return await generate(instructions: instructions, prompt: text)
     }
 
+    // MARK: - Conflict Merge
+
+    /// Attempt to merge two text-compatible conflict versions.
+    public func mergeTextConflict(
+        localText: String,
+        remoteText: String,
+        context: String? = nil
+    ) async -> AIResult {
+        guard !localText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+              !remoteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return .fail("No text to merge")
+        }
+
+        var instructions = domainInstructions + "\n\n"
+        instructions += """
+            Merge two conflicting notebook block versions into one clear version. \
+            Preserve all distinct factual details from both versions. \
+            Do not invent details. If details disagree, include both in a concise \
+            way that signals the discrepancy for manual review. \
+            Only output the merged notebook text.
+            """
+        if let context, !context.isEmpty {
+            instructions += "\nContext: \(context)"
+        }
+
+        let prompt = """
+            Local version:
+            \(localText)
+
+            Remote version:
+            \(remoteText)
+            """
+        return await generate(instructions: instructions, prompt: prompt)
+    }
+
     // MARK: - Pre-Fill Generation
 
     /// Generate draft content for an empty field based on context.
@@ -516,6 +551,24 @@ public actor FoundationModelsService {
                     preview: row["preview"] as String
                 )
             }
+        }
+    }
+
+    /// Return the most recently active conversation ID, if any persisted chat exists.
+    ///
+    /// The AI assistant panel uses this to resume the last conversation across app launches
+    /// instead of generating a new UUID every time the panel is rebuilt.
+    public static func latestConversationId(from db: AppDatabase) async throws -> String? {
+        try await db.writer.read { dbConn in
+            try String.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT conversation_id
+                    FROM ai_conversation_messages
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """
+            )
         }
     }
 
