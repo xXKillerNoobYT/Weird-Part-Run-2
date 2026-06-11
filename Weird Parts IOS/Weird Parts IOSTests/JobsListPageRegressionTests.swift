@@ -44,3 +44,6 @@ final class JobsListPageRegressionTests: XCTestCase {
             .appendingPathComponent("Features")
             .appendingPathComponent("Jobs")
             .appendingPathComponent("JobsListPage.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+}
