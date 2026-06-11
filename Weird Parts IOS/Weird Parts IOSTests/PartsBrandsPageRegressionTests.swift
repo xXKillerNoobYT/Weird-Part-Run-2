@@ -142,6 +142,70 @@ final class PartsBrandsPageRegressionTests: XCTestCase {
         )
     }
 
+    func testJobMaterialPullUsesSelectedSourceInsteadOfWarehouseOneDefault() throws {
+        let source = try Self.readJobsPageSource(named: "IOSJobDetailPage.swift")
+
+        XCTAssertTrue(
+            source.contains("@State private var selectedPullSource: WarehouseService.LedgerLocationSummary?"),
+            "Pull material should track the selected source location."
+        )
+        XCTAssertTrue(
+            source.contains("loadPullSourceLocations(for: part)"),
+            "Selecting a pull part should load available stock locations for that part."
+        )
+        XCTAssertTrue(
+            source.contains("pullMaterialSourceLocationTypes: Set<String>") &&
+                source.contains("\"warehouse\"") &&
+                source.contains("\"truck\"") &&
+                source.contains("\"trailer\"") &&
+                source.contains("\"shop\""),
+            "Pull material should only expose external inventory source buckets."
+        )
+        let allowlistStart = try XCTUnwrap(source.range(of: "pullMaterialSourceLocationTypes: Set<String>"))
+        let allowlistTail = source[allowlistStart.lowerBound...]
+        let allowlistEnd = try XCTUnwrap(allowlistTail.range(of: "]"))
+        let allowlistSource = String(allowlistTail[..<allowlistEnd.upperBound])
+        XCTAssertFalse(
+            allowlistSource.contains("\"pulled\"") || allowlistSource.contains("\"job\""),
+            "Pull material source allowlist must exclude internal pulled/job stock buckets."
+        )
+        XCTAssertTrue(
+            source.contains("pullSourceLocations = ledger?.locations.filter(Self.isPullMaterialSourceLocation)"),
+            "Pull material should filter ledger locations through the source-bucket predicate."
+        )
+        XCTAssertTrue(
+            source.contains("ForEach(pullSourceLocations.indices, id: \\.self)"),
+            "Pull source picker should not use displayName as its row identity because source names are not guaranteed unique."
+        )
+        XCTAssertTrue(
+            source.contains("DispatchQueue.global(qos: .userInitiated).async") &&
+                source.contains("DispatchQueue.main.async") &&
+                source.contains("guard selectedPullPart?.id == requestedPartId else { return }"),
+            "Pull source loading should run the ledger read off the main thread and ignore stale completions."
+        )
+        XCTAssertTrue(
+            source.contains("location.qty > 0 && pullMaterialSourceLocationTypes.contains(location.locationType.lowercased())"),
+            "The pull source predicate should require positive stock and an allowed external source type."
+        )
+        XCTAssertFalse(
+            source.contains("pullSourceLocations = ledger?.locations.filter { $0.qty > 0 }"),
+            "The pull source picker must not expose every positive ledger bucket, because pulled/job rows are not valid sources."
+        )
+        XCTAssertTrue(
+            source.contains("fromLocationType: source.locationType") &&
+                source.contains("fromLocationId: source.locationId"),
+            "Pull material must pass the selected source location into JobsService.pullJobMaterial."
+        )
+        XCTAssertFalse(
+            source.contains("fromLocationType: \"warehouse\",\n                    fromLocationId: 1"),
+            "The iOS pull flow must not hard-code warehouse/1 as the source location."
+        )
+        XCTAssertFalse(
+            source.contains("Source: Warehouse 1"),
+            "The pull sheet subtitle should describe the selected source, not a hard-coded Warehouse 1."
+        )
+    }
+
     private static func readPartsBrandsPageSource(
         file: StaticString = #filePath
     ) throws -> String {
