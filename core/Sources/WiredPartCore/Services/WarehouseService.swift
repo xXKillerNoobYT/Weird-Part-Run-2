@@ -1541,9 +1541,11 @@ public final class WarehouseService: Sendable {
             try dbConn.execute(
                 sql: """
                     INSERT INTO receiving_session_items (session_id, po_line_id, expected_qty, created_at)
-                    SELECT ?, id, qty_ordered, datetime('now')
+                    SELECT ?, id, MAX(qty_ordered - COALESCE(qty_received, 0), 0), datetime('now')
                     FROM po_line_items
-                    WHERE po_id = ? AND deleted_at IS NULL
+                    WHERE po_id = ?
+                      AND deleted_at IS NULL
+                      AND COALESCE(qty_received, 0) < qty_ordered
                     """,
                 arguments: [sessionId, poId]
             )
@@ -1668,17 +1670,20 @@ public final class WarehouseService: Sendable {
         }
     }
 
-    /// Update a receiving session item's received quantity.
-    public func updateSessionItem(itemId: Int64, receivedQty: Int, notes: String? = nil) throws {
+    /// Update a receiving session item's received quantity and optional verified receipt cost.
+    public func updateSessionItem(itemId: Int64, receivedQty: Int, notes: String? = nil, actualCost: Double? = nil) throws {
         guard receivedQty >= 0 else { throw WarehouseError.invalidQuantity }
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     UPDATE receiving_session_items
-                    SET received_qty = ?, notes = COALESCE(?, notes), scanned_at = datetime('now')
+                    SET received_qty = ?,
+                        notes = COALESCE(?, notes),
+                        actual_cost = COALESCE(?, actual_cost),
+                        scanned_at = datetime('now')
                     WHERE id = ? AND deleted_at IS NULL
                     """,
-                arguments: [receivedQty, notes, itemId]
+                arguments: [receivedQty, notes, actualCost, itemId]
             )
         }
     }
@@ -1832,6 +1837,163 @@ public final class WarehouseService: Sendable {
                     )
                 }
             }
+
+            try updateOrderLifecycleAfterReceiving(sessionId: sessionId, completedBy: completedBy, dbConn: dbConn)
+        }
+    }
+
+    private func updateOrderLifecycleAfterReceiving(sessionId: Int64, completedBy: Int64, dbConn: Database) throws {
+        guard let poId = try Int64.fetchOne(dbConn, sql: """
+            SELECT po_id
+            FROM receiving_sessions
+            WHERE id = ? AND deleted_at IS NULL
+            """, arguments: [sessionId]) else {
+            throw WarehouseError.sessionNotFound(sessionId)
+        }
+
+        let receivedRows = try Row.fetchAll(dbConn, sql: """
+            SELECT rsi.po_line_id, rsi.received_qty, rsi.actual_cost
+            FROM receiving_session_items rsi
+            JOIN po_line_items pli ON pli.id = rsi.po_line_id AND pli.deleted_at IS NULL
+            WHERE rsi.session_id = ?
+              AND rsi.deleted_at IS NULL
+            """, arguments: [sessionId])
+
+        for row in receivedRows {
+            let lineId: Int64 = row["po_line_id"] ?? 0
+            let receivedQty: Int = row["received_qty"] ?? 0
+            let actualCost: Double? = row["actual_cost"] as Double?
+            guard lineId > 0 else { continue }
+
+            try dbConn.execute(sql: """
+                UPDATE po_line_items
+                SET qty_received = COALESCE(qty_received, 0) + ?,
+                    received_unit_cost = COALESCE(?, received_unit_cost),
+                    status = CASE
+                        WHEN COALESCE(qty_received, 0) + ? >= qty_ordered THEN 'received'
+                        WHEN COALESCE(qty_received, 0) + ? > 0 THEN 'backorder'
+                        ELSE status
+                    END
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [receivedQty, actualCost, receivedQty, receivedQty, lineId])
+
+            try dbConn.execute(sql: """
+                UPDATE jpo_line_items
+                SET line_status = (
+                        SELECT CASE
+                            WHEN COALESCE(pli.qty_received, 0) >= pli.qty_ordered THEN 'received'
+                            WHEN COALESCE(pli.qty_received, 0) > 0 THEN 'backorder'
+                            ELSE line_status
+                        END
+                        FROM po_line_items pli
+                        WHERE pli.id = ?
+                          AND pli.deleted_at IS NULL
+                    ),
+                    status_updated_at = datetime('now'),
+                    status_updated_by = ?
+                WHERE id = (
+                    SELECT jpo_line_id
+                    FROM po_line_items
+                    WHERE id = ?
+                      AND deleted_at IS NULL
+                      AND jpo_line_id IS NOT NULL
+                )
+                  AND deleted_at IS NULL
+                """, arguments: [lineId, completedBy, lineId])
+        }
+
+        try rollUpPurchaseOrderStatus(poId: poId, changedBy: completedBy, dbConn: dbConn)
+        try rollUpLinkedJPOStatuses(poId: poId, changedBy: completedBy, dbConn: dbConn)
+    }
+
+    private func rollUpPurchaseOrderStatus(poId: Int64, changedBy: Int64, dbConn: Database) throws {
+        guard let oldStatus = try String.fetchOne(dbConn, sql: """
+            SELECT status FROM purchase_orders WHERE id = ? AND deleted_at IS NULL
+            """, arguments: [poId]) else { return }
+        guard !["received", "complete", "cancelled"].contains(oldStatus) else { return }
+
+        let row = try Row.fetchOne(dbConn, sql: """
+            SELECT COUNT(*) AS line_count,
+                   SUM(CASE WHEN COALESCE(qty_received, 0) >= qty_ordered THEN 1 ELSE 0 END) AS fully_received_count,
+                   SUM(CASE WHEN COALESCE(qty_received, 0) > 0 THEN 1 ELSE 0 END) AS touched_count
+            FROM po_line_items
+            WHERE po_id = ? AND deleted_at IS NULL
+            """, arguments: [poId])
+        let lineCount: Int = row?["line_count"] ?? 0
+        let fullyReceivedCount: Int = row?["fully_received_count"] ?? 0
+        let touchedCount: Int = row?["touched_count"] ?? 0
+        guard lineCount > 0 else { return }
+
+        let newStatus: String?
+        if fullyReceivedCount == lineCount {
+            newStatus = "received"
+        } else if touchedCount > 0 {
+            newStatus = "partial"
+        } else {
+            newStatus = nil
+        }
+        guard let newStatus, newStatus != oldStatus else { return }
+
+        try dbConn.execute(sql: """
+            UPDATE purchase_orders
+            SET status = ?, actual_delivery = COALESCE(actual_delivery, date('now')), updated_at = datetime('now')
+            WHERE id = ? AND deleted_at IS NULL
+            """, arguments: [newStatus, poId])
+
+        try dbConn.execute(sql: """
+            INSERT INTO order_status_history (entity_type, entity_id, old_status, new_status, changed_by, created_at)
+            VALUES ('purchase_order', ?, ?, ?, ?, datetime('now'))
+            """, arguments: [poId, oldStatus, newStatus, changedBy])
+    }
+
+    private func rollUpLinkedJPOStatuses(poId: Int64, changedBy: Int64, dbConn: Database) throws {
+        let jpoIds = try Int64.fetchAll(dbConn, sql: """
+            SELECT DISTINCT jli.jpo_id
+            FROM po_line_items pli
+            JOIN jpo_line_items jli ON jli.id = pli.jpo_line_id AND jli.deleted_at IS NULL
+            WHERE pli.po_id = ?
+              AND pli.deleted_at IS NULL
+              AND jli.jpo_id IS NOT NULL
+            """, arguments: [poId])
+
+        for jpoId in jpoIds {
+            guard let oldStatus = try String.fetchOne(dbConn, sql: """
+                SELECT status FROM job_parts_orders WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [jpoId]) else { continue }
+            guard !["received", "complete", "cancelled", "rejected"].contains(oldStatus) else { continue }
+
+            let row = try Row.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) AS line_count,
+                       SUM(CASE WHEN line_status = 'received' THEN 1 ELSE 0 END) AS received_count,
+                       SUM(CASE WHEN line_status = 'backorder' THEN 1 ELSE 0 END) AS backorder_count
+                FROM jpo_line_items
+                WHERE jpo_id = ? AND deleted_at IS NULL
+                """, arguments: [jpoId])
+            let lineCount: Int = row?["line_count"] ?? 0
+            let receivedCount: Int = row?["received_count"] ?? 0
+            let backorderCount: Int = row?["backorder_count"] ?? 0
+            guard lineCount > 0 else { continue }
+
+            let newStatus: String?
+            if receivedCount == lineCount {
+                newStatus = "received"
+            } else if backorderCount > 0 {
+                newStatus = "backorder"
+            } else {
+                newStatus = nil
+            }
+            guard let newStatus, newStatus != oldStatus else { continue }
+
+            try dbConn.execute(sql: """
+                UPDATE job_parts_orders
+                SET status = ?, updated_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [newStatus, jpoId])
+
+            try dbConn.execute(sql: """
+                INSERT INTO order_status_history (entity_type, entity_id, old_status, new_status, changed_by, created_at)
+                VALUES ('jpo', ?, ?, ?, ?, datetime('now'))
+                """, arguments: [jpoId, oldStatus, newStatus, changedBy])
         }
     }
 

@@ -143,6 +143,7 @@ extension AppDatabase {
         registerMigration101OvertimeAndLaborCorrectionAudit(&migrator)
         registerMigration102PartImportSavedMappings(&migrator)
         registerMigration103TimesheetCorrectionAudit(&migrator)
+        registerMigration104AuthTokenSessionDeviceId(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5842,6 +5843,20 @@ extension AppDatabase {
                 )
                 WHERE deleted_at IS NULL
                 """)
+        }
+    }
+
+    private static func registerMigration104AuthTokenSessionDeviceId(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("104_auth_token_session_device_id") { db in
+            try addColumnIfMissing(db, table: "auth_token_sessions", column: "device_id", type: .text)
+            try db.create(index: "idx_auth_token_sessions_active_refresh",
+                          on: "auth_token_sessions",
+                          columns: ["token_type", "revoked_at", "expires_at_ms"],
+                          ifNotExists: true)
+            try db.create(index: "idx_auth_token_sessions_parent_refresh",
+                          on: "auth_token_sessions",
+                          columns: ["parent_refresh_id"],
+                          ifNotExists: true)
         }
     }
 }
