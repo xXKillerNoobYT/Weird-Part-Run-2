@@ -34,13 +34,18 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
     // The test is skipped automatically on a clean install so it never blocks CI.
     // To run it explicitly, set the environment variable before launching the test:
     //
-    //   UI_TEST_CONFLICT_SCREENSHOTS=1 xcodebuild test -scheme "Weird Parts IOS" …
+    //   UI_TEST_CONFLICT_SCREENSHOTS=1 xcodebuild test -scheme "Weird Parts" …
+    //
+    // Xcode may not expose the shell environment to the XCTest runner, so the
+    // explicit conflict-capture launch argument also opts this focused capture
+    // test into execution once setUp has prepared the app fixture mode.
     //
     // In Xcode: Edit Scheme → Test → Arguments → Environment Variables →
     //   Name: UI_TEST_CONFLICT_SCREENSHOTS   Value: 1
     func testCaptureConflictScreenshots() throws {
         let shouldCaptureScreenshots = ProcessInfo.processInfo.environment["UI_TEST_CONFLICT_SCREENSHOTS"] == "1"
             || app.launchEnvironment["UI_TEST_CONFLICT_SCREENSHOTS"] == "1"
+            || app.launchArguments.contains("-UITestingConflictCapture")
 
         guard shouldCaptureScreenshots else {
             throw XCTSkip(
