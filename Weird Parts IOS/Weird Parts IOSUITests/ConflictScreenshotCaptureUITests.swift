@@ -15,6 +15,9 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
         // Signal both general UI-testing mode and the specific conflict-capture
         // mode so the app can (now or in the future) seed the required fixtures.
         app.launchArguments += ["-UITesting", "-UITestingConflictCapture"]
+        if let captureScreenshots = ProcessInfo.processInfo.environment["UI_TEST_CONFLICT_SCREENSHOTS"] {
+            app.launchEnvironment["UI_TEST_CONFLICT_SCREENSHOTS"] = captureScreenshots
+        }
     }
 
     override func tearDownWithError() throws {
@@ -36,7 +39,10 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
     // In Xcode: Edit Scheme → Test → Arguments → Environment Variables →
     //   Name: UI_TEST_CONFLICT_SCREENSHOTS   Value: 1
     func testCaptureConflictScreenshots() throws {
-        guard ProcessInfo.processInfo.environment["UI_TEST_CONFLICT_SCREENSHOTS"] == "1" else {
+        let shouldCaptureScreenshots = ProcessInfo.processInfo.environment["UI_TEST_CONFLICT_SCREENSHOTS"] == "1"
+            || app.launchEnvironment["UI_TEST_CONFLICT_SCREENSHOTS"] == "1"
+
+        guard shouldCaptureScreenshots else {
             throw XCTSkip(
                 "Skipped: set the environment variable UI_TEST_CONFLICT_SCREENSHOTS=1 " +
                 "and ensure the simulator has a seeded admin user (PIN 1234) with " +

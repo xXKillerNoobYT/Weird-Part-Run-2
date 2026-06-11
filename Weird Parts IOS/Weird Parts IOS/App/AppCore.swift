@@ -960,7 +960,6 @@ final class AppCore: ObservableObject {
 
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
-        UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
         if !suppressPostLoginOnboarding {
             UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
         }
