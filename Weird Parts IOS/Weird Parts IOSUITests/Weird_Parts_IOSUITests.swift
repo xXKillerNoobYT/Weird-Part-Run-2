@@ -284,7 +284,10 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Bookkeeper Export"].waitForExistence(timeout: 20) || app.staticTexts["Bookkeeper Export"].waitForExistence(timeout: 20), "Bookkeeper Export page should open directly")
         XCTAssertTrue(app.staticTexts["Labor by Employee"].waitForExistence(timeout: 20), "Bookkeeper Export should render labor section")
         XCTAssertTrue(app.staticTexts["Material Purchase Orders"].waitForExistence(timeout: 10), "Bookkeeper Export should render material PO section")
-        XCTAssertTrue(app.staticTexts["PO-WEI3295-STAGE8"].waitForExistence(timeout: 10), "Bookkeeper Export should render seeded purchase order")
+        let seededPurchaseOrderRow = app.descendants(matching: .any)["bookkeeper-material-row-PO-WEI3295-STAGE8"].firstMatch
+        XCTAssertTrue(seededPurchaseOrderRow.waitForExistence(timeout: 10), "Bookkeeper Export should render seeded purchase order row")
+        XCTAssertFalse(seededPurchaseOrderRow.frame.isEmpty, "Seeded purchase order row should have a rendered frame")
+        XCTAssertTrue(app.windows.firstMatch.frame.intersects(seededPurchaseOrderRow.frame), "Seeded purchase order row should be visible in the mobile smoke viewport")
         captureWEI3295("04-\(viewport)-bookkeeper-populated")
         openExportMenuIfPresent()
         captureWEI3295("05-\(viewport)-bookkeeper-export-menu")

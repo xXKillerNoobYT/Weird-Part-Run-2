@@ -219,9 +219,12 @@ struct IOSBookkeeperExportPage: View {
                 Text(row.poNumber)
                     .fontWeight(.medium)
                     .font(.system(.body, design: .monospaced))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
                 Text(row.supplierName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 if !row.jobNames.isEmpty {
                     Text(row.jobNames)
                         .font(.caption2)
@@ -234,15 +237,19 @@ struct IOSBookkeeperExportPage: View {
                         .foregroundStyle(.tertiary)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Spacer()
 
             Text(formatCurrency(row.totalAmount))
                 .font(.subheadline)
                 .fontWeight(.semibold)
+                .lineLimit(1)
+                .layoutPriority(1)
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("bookkeeper-material-row-\(row.poNumber)")
         .accessibilityLabel("\(row.poNumber), supplier \(row.supplierName), total \(formatCurrency(row.totalAmount)).")
     }
 
