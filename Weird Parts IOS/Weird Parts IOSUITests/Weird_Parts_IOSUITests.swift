@@ -213,11 +213,12 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.staticTexts["WEI-3144 Materials QA Job"].waitForExistence(timeout: 20), "Seeded job detail should open")
-        scrollUntilVisible(app.descendants(matching: .any)["jobMaterialsTab"])
         XCTAssertTrue(app.descendants(matching: .any)["jobMaterialsTab"].waitForExistence(timeout: 10), "Materials tab content should render")
 
         for segment in ["Ready", "Used", "Returns", "History"] {
-            XCTAssertTrue(app.buttons[segment].waitForExistence(timeout: 5), "Materials segment \(segment) should be visible")
+            let button = app.buttons[segment]
+            XCTAssertTrue(button.waitForExistence(timeout: 5), "Materials segment \(segment) should be visible")
+            XCTAssertTrue(button.isHittable, "Materials segment \(segment) should be tappable on the current viewport")
         }
 
         captureWEI3144("01-materials-ready")
