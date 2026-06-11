@@ -685,6 +685,36 @@ struct PartsServiceAdvancedTests {
         #expect((firstEvidence["row_payload_json"] as String?)?.contains("Audit Category") == true)
     }
 
+    @Test("commitPartsImport commits XLSX preview through source-agnostic audit path")
+    func testCommitPartsImportCommitsXLSXWithSourceEvidence() throws {
+        let env = try E2ETestHelpers.setUp()
+        let xlsx = try makeMinimalXLSX(sheetName: "Commit Sheet", rows: [
+            ["name", "code", "category", "brand"],
+            ["XLSX Commit Part", "XLSX-COMMIT-001", "XLSX Commit Category", "XLSX Commit Brand"]
+        ])
+        var preview = try env.parts.previewPartsImportXLSX(xlsx)
+        preview.source?.filename = "parts.xlsx"
+        preview.source?.userId = env.adminUserId
+
+        let result = try env.parts.commitPartsImport(preview)
+
+        #expect(result.created == 1)
+        let sessionId = try #require(result.importSessionId)
+        let session = try #require(try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT * FROM part_import_sessions WHERE id = ?", arguments: [sessionId])
+        })
+        #expect(session["source_kind"] as String == "xlsx")
+        #expect(session["filename"] as String? == "parts.xlsx")
+        #expect(session["status"] as String == "committed")
+
+        let payload = try #require(try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT row_payload_json FROM part_import_row_evidence WHERE session_id = ?", arguments: [sessionId])
+        })
+        #expect(payload.contains("\"sourceKind\":\"xlsx\""))
+        #expect(payload.contains("\"sourceHash\":\"sha256:"))
+        #expect(payload.contains("\"sheetName\":\"Commit Sheet\""))
+    }
+
     @Test("commitPartsImportCSV records skipped new rows in audit evidence")
     func testCommitPartsImportCSVRecordsSkippedNewRowEvidence() throws {
         let env = try E2ETestHelpers.setUp()
@@ -723,6 +753,29 @@ struct PartsServiceAdvancedTests {
         #expect(skippedEvidence["source_code"] as String? == "SKIP-AUD-001")
         #expect(skippedEvidence["part_id"] as Int64? == nil)
         #expect((skippedEvidence["row_payload_json"] as String?)?.contains("Skipped Part") == true)
+        #expect((skippedEvidence["row_payload_json"] as String?)?.contains("\"sourceKind\":\"csv\"") == true)
+    }
+
+    @Test("commitPartsImport rejects tampered source metadata before audit session creation")
+    func testCommitPartsImportRejectsTamperedSourceMetadata() throws {
+        let env = try E2ETestHelpers.setUp()
+        var preview = try env.parts.previewPartsImportCSV("""
+        name,code,category
+        Tampered Source,TAMPER-SOURCE-001,Tamper Category
+        """)
+        preview.source?.sourceHash = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+
+        do {
+            _ = try env.parts.commitPartsImport(preview)
+            Issue.record("commitPartsImport should reject source/parser hash mismatches")
+        } catch {
+            #expect("\(error)".contains("source hash does not match parser metadata"))
+            #expect(try env.parts.findPartByCode("TAMPER-SOURCE-001") == nil)
+            let sessionCount = try env.db.writer.read { db in
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM part_import_sessions") ?? -1
+            }
+            #expect(sessionCount == 0)
+        }
     }
 
     @Test("commitPartsImportCSV records failed import session while rolling back partial writes")
@@ -737,7 +790,7 @@ struct PartsServiceAdvancedTests {
         preview.source = PartsService.PartsImportSourceMetadata(
             sourceKind: "csv",
             filename: "duplicate.csv",
-            sourceHash: "sha256:duplicate",
+            sourceHash: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
             userId: env.adminUserId
         )
 
@@ -751,7 +804,7 @@ struct PartsServiceAdvancedTests {
             #expect(try env.parts.findPartByCode("DUP-AUD-001") == nil)
 
             let session = try #require(try env.db.writer.read { db in
-                try Row.fetchOne(db, sql: "SELECT * FROM part_import_sessions WHERE source_hash = ?", arguments: ["sha256:duplicate"])
+                try Row.fetchOne(db, sql: "SELECT * FROM part_import_sessions WHERE source_hash = ?", arguments: ["sha256:1111111111111111111111111111111111111111111111111111111111111111"])
             })
             #expect(session["status"] as String == "failed")
             #expect(session["error_message"] as String? != nil)
