@@ -1,6 +1,20 @@
 import Foundation
 import GRDB
 
+public enum PurchaseOrderGroupingMode: String, Codable, Sendable, CaseIterable {
+    case perSupplierMixed = "per_supplier_mixed"
+    case perSupplierPerJob = "per_supplier_per_job"
+
+    public var displayName: String {
+        switch self {
+        case .perSupplierMixed:
+            return "Per supplier mixed"
+        case .perSupplierPerJob:
+            return "Per supplier per job"
+        }
+    }
+}
+
 /// Local Settings Service — theme, app configuration, company profiles, billing/pay cycles.
 ///
 /// Settings are stored as key-value rows in the `settings` table;
@@ -107,6 +121,16 @@ public final class SettingsService: Sendable {
         public static let defaults = PayPeriodSettings(periodType: "biweekly", startDay: 1)
     }
 
+    public struct PurchaseOrderSettings: Codable, Sendable {
+        public var groupingMode: PurchaseOrderGroupingMode
+
+        public init(groupingMode: PurchaseOrderGroupingMode) {
+            self.groupingMode = groupingMode
+        }
+
+        public static let defaults = PurchaseOrderSettings(groupingMode: .perSupplierMixed)
+    }
+
     // MARK: - Helpers
 
     /// Read a single setting value by key. Returns nil when not found.
@@ -150,6 +174,15 @@ public final class SettingsService: Sendable {
             }
             return map
         }
+    }
+
+    /// Whether automatic background/launch sync is enabled.
+    ///
+    /// Missing settings default to enabled so existing configured sync installs
+    /// keep their prior behavior; only an explicit "false" opts out.
+    public func isAutoSyncEnabled() throws -> Bool {
+        let value = try getSettingsByCategory("sync")["auto_sync"]
+        return value != "false"
     }
 
     /// Bulk upsert a dictionary of key->value pairs under one category.
@@ -276,6 +309,21 @@ public final class SettingsService: Sendable {
     /// Upsert a single setting by key.
     public func updateSetting(key: String, value: String, category: String = "general") throws {
         try upsertSetting(key: key, value: value, category: category)
+    }
+
+    // MARK: - Purchase Orders
+
+    public func getPurchaseOrderSettings() throws -> PurchaseOrderSettings {
+        let rawValue = try getSettingValue("po_grouping_mode")
+        return PurchaseOrderSettings(
+            groupingMode: PurchaseOrderGroupingMode(rawValue: rawValue ?? "") ?? PurchaseOrderSettings.defaults.groupingMode
+        )
+    }
+
+    @discardableResult
+    public func updatePurchaseOrderSettings(_ settings: PurchaseOrderSettings) throws -> PurchaseOrderSettings {
+        try upsertSetting(key: "po_grouping_mode", value: settings.groupingMode.rawValue, category: "orders")
+        return try getPurchaseOrderSettings()
     }
 
     // MARK: - Warranty

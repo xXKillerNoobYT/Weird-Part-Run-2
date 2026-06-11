@@ -3,6 +3,8 @@
 > **What this is.** A single onboarding document for the AI agent at [paperclipai.net](https://paperclipai.net) taking over autonomous development of the WiredPart project from Claude Code. Read this top-to-bottom before doing any work. Every section ends with pointers to deeper reference docs — read those when the moment calls for them, not all upfront.
 >
 > **Authored by Claude (final session, 2026-05-08).** All facts in §5 (state) are accurate as of that date; verify with `git log` / `gh issue list` / heartbeat-file freshness before assuming.
+>
+> **Paperclip staging update (2026-05-26):** For execution order, use `docs/plans/staged-paperclip-goals.md`. Stage 1 is the only active Paperclip implementation stage; later stages in this handoff are planning/backlog until Isaac/Paperclip promotes them.
 
 ---
 
@@ -24,6 +26,7 @@
 ### What "preserving discipline" means
 
 - **Plans before prompts.** ALL design decisions go to `docs/plans/*.md` BEFORE any code is generated. CLAUDE.md §"Plan Filing & History" is the rule. If you find yourself coding without a plan, stop and ask the user (Q&A workflow in §7).
+- **Goal -> plan -> issue -> PR loop.** For Paperclip/GitHub routing, read `docs/plans/paperclip-agentic-execution-loop.md`. It defines the required fields for GitHub issues, Paperclip child issues, branch/worktree hygiene, PR evidence, and closeout comments.
 - **Slow, focused, one-area-at-a-time.** AUTO GO's soul (`docs/auto-go-soul.md`) is the canonical statement. Convergence over breadth. 25-minute cap per iteration. No spraying.
 - **No finding gets lost.** Anything you notice that's out-of-scope for the current check goes to a GitHub issue with the right area label and tier (T1/T2/T3) BEFORE you continue. See `feedback_issue_ordering.md`.
 - **Per-POV Q&A.** Each `Answer: _pending_` line in `docs/dev-qa.md` waits for a role-specific answer (Owner / Manager / Developer / User). Never collapse. See `feedback_qa_workflow.md`.
@@ -45,7 +48,8 @@ In this order. Stop if anything is unclear and ask the user before going further
 7. **`~/.claude/projects/-Users-IA-GitHub-Weird-Part-Run-2/memory/MEMORY.md`** — index of all the user-feedback files. Each linked file is < 100 lines and tells you something specific about how the user works.
 8. **`docs/dev-pipeline.md`** — the master pipeline tracker. Read the top "Master Status" table; skip the Active Work Items table unless investigating a specific item.
 9. **`docs/dev-qa.md`** — the Q&A file. Pending Questions section first; if non-empty, those need owner ratification before code.
-10. The plan files in `docs/plans/` that are tagged "Status: Design approved, implementation pending" — these are the on-deck work items.
+10. **`docs/plans/paperclip-agentic-execution-loop.md`** — how Paperclip goals, repo plans, GitHub issues, Paperclip execution issues, PRs, CI, and closeout evidence connect.
+11. The plan files in `docs/plans/` that are tagged "Status: Design approved, implementation pending" — these are the on-deck work items.
 
 After this 30–45 minutes you should have the model in your head: who the user is, what we're building, what's queued, and how the loop is supposed to run.
 

@@ -7,6 +7,7 @@ import WiredPartCore
 /// stale data threshold, and archive days via SettingsService.
 struct AppConfigPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
     @State private var activeSheet: ActiveSheet?
     @State private var autoLockMinutes = "15"
     @State private var staleDataHours = "4"
@@ -20,6 +21,9 @@ struct AppConfigPage: View {
     @State private var loadError: String?
     @State private var actionError: String?
     @State private var didLoadConfig = false
+    @State private var hasUnsavedChanges = false
+    @State private var showDiscardConfirmation = false
+    @State private var baselineFormSignature = ""
 
     /// Fix #150: input validity gate for the Save button — all numeric text fields must be non-empty positive integers.
     private var isFormValid: Bool {
@@ -27,6 +31,19 @@ struct AppConfigPage: View {
         Int(staleDataHours).map { $0 > 0 } == true &&
         Int(archiveDays).map { $0 > 0 } == true &&
         Int(warrantyDays).map { $0 > 0 } == true
+    }
+
+    private var formSignature: String {
+        [
+            autoLockMinutes,
+            staleDataHours,
+            archiveDays,
+            warrantyDays,
+            String(paymentTrackingEnabled),
+            String(paymentTermsDays),
+            String(overdueWarningDays),
+            String(autoPaymentHold),
+        ].joined(separator: "|")
     }
 
     var body: some View {
@@ -115,7 +132,14 @@ struct AppConfigPage: View {
         // Fix #149: dismiss keyboard on scroll to free space when keyboard covers field
         .scrollDismissesKeyboard(.interactively)
         .navigationTitle("App Config")
+        .navigationBarBackButtonHidden(hasUnsavedChanges)
+        .interactiveDismissDisabled(hasUnsavedChanges)
         .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                if hasUnsavedChanges {
+                    Button("Back") { showDiscardConfirmation = true }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -143,6 +167,20 @@ struct AppConfigPage: View {
         .onChange(of: paymentTermsDays) { _, _ in postAIContextIfLoaded() }
         .onChange(of: overdueWarningDays) { _, _ in postAIContextIfLoaded() }
         .onChange(of: autoPaymentHold) { _, _ in postAIContextIfLoaded() }
+        .onChange(of: formSignature) { _, _ in
+            updateDirtyStateIfLoaded()
+        }
+        .confirmationDialog(
+            "Discard changes?",
+            isPresented: $showDiscardConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Discard", role: .destructive) {
+                hasUnsavedChanges = false
+                dismiss()
+            }
+            Button("Keep editing", role: .cancel) {}
+        }
         .alert("Error", isPresented: Binding(get: { loadError != nil || actionError != nil }, set: { if !$0 { loadError = nil; actionError = nil } })) {
             Button("OK") { loadError = nil; actionError = nil }
         } message: {
@@ -179,10 +217,12 @@ struct AppConfigPage: View {
                 autoPaymentHold = paySettings?.autoHold ?? false
             }
             didLoadConfig = true
+            resetDirtyTracking()
             postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load settings")
             didLoadConfig = true
+            resetDirtyTracking()
             postAIContext()
         }
     }
@@ -210,6 +250,7 @@ struct AppConfigPage: View {
                 )
             }
             saved = true
+            resetDirtyTracking()
             postAIContext()
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(2))
@@ -223,6 +264,16 @@ struct AppConfigPage: View {
     private func postAIContextIfLoaded() {
         guard didLoadConfig else { return }
         postAIContext()
+    }
+
+    private func updateDirtyStateIfLoaded() {
+        guard didLoadConfig else { return }
+        hasUnsavedChanges = formSignature != baselineFormSignature
+    }
+
+    private func resetDirtyTracking() {
+        baselineFormSignature = formSignature
+        hasUnsavedChanges = false
     }
 
     private func postAIContext() {

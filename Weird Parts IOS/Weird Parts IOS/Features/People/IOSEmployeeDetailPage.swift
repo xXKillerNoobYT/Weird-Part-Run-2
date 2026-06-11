@@ -119,7 +119,7 @@ struct IOSEmployeeDetailPage: View {
                 PageHelpSheet(
                     title: "Employee Detail Help",
                     sections: [
-                        ("What This Page Does", "View and edit a single employee's profile, hat assignments, skills, team memberships, and certifications. Use the tabs to switch between Profile, Hats, Skills, Teams, and Certifications views."),
+                        ("What This Page Does", "View and edit a single employee's profile, hat assignments, skills, team memberships, certifications, and recent activity. Use the tabs to switch between Profile, Hats, Skills, Teams, Certifications, and Activity views."),
                         ("Profile Tab", "Shows the employee's basic info: name, email, phone, role, status, and important dates. Tap Edit in the toolbar to update their contact information."),
                         ("Hats Tab", "Displays all available hats (roles) and which ones are assigned to this employee. If you have manage_people permission, you can toggle hats on and off directly. Each hat grants a set of permissions."),
                         ("Skills Tab", "Shows employee skills, proficiency, and years of experience. If you have manage_people permission, you can add or remove skills."),
@@ -168,10 +168,11 @@ struct IOSEmployeeDetailPage: View {
                             .foregroundStyle(selectedTab == tab ? .white : .primary)
                             .frame(minWidth: 44, minHeight: 44)
                             .contentShape(Rectangle())
-                            .accessibilityLabel(Text("\(tab.capitalized) tab"))
-                            .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(Text("\(tab.capitalized) tab"))
+                    .accessibilityIdentifier("employeeDetailTab_\(tab)")
+                    .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
                 }
             }
             .padding(.horizontal)

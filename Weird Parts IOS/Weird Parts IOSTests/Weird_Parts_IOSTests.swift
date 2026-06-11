@@ -6,12 +6,20 @@
 //
 
 import Foundation
+import Security
 import Testing
 import WiredPartCore
 @testable import Weird_Parts
 
+private enum QuestionnaireBreakTestError: Error {
+    case autoFillFailed
+}
 
 struct Weird_Parts_IOSTests {
+
+    struct LANPeerDiscoveryStartupError: Error, LocalizedError {
+        var errorDescription: String? { "port unavailable" }
+    }
 
     @Test func example() async throws {
         // Write your test here and use APIs like `#expect(...)` to check expected conditions.
@@ -24,6 +32,36 @@ struct Weird_Parts_IOSTests {
         #expect(QAThreadStatusBuckets.isResolved("closed"))
         #expect(!QAThreadStatusBuckets.isResolved("open"))
         #expect(!QAThreadStatusBuckets.isResolved("escalated"))
+    }
+
+    @MainActor
+    @Test func lanPeerDiscoveryStartupFailureSurfacesErrorAndStopsLanOnlyScan() async throws {
+        let manager = IOSSyncManager()
+        manager.isScanning = true
+
+        manager.handleLanPeerDiscoveryStartupFailure(
+            LANPeerDiscoveryStartupError(),
+            hasActiveMultipeerDiscovery: false
+        )
+
+        #expect(manager.syncStatus == .error)
+        #expect(manager.errorMessage == "LAN peer discovery failed: port unavailable")
+        #expect(!manager.isScanning)
+    }
+
+    @MainActor
+    @Test func lanPeerDiscoveryStartupFailureKeepsBluetoothScanTruthful() async throws {
+        let manager = IOSSyncManager()
+        manager.isScanning = true
+
+        manager.handleLanPeerDiscoveryStartupFailure(
+            LANPeerDiscoveryStartupError(),
+            hasActiveMultipeerDiscovery: true
+        )
+
+        #expect(manager.syncStatus == .error)
+        #expect(manager.errorMessage == "LAN peer discovery failed: port unavailable")
+        #expect(manager.isScanning)
     }
 
     @MainActor
@@ -58,6 +96,45 @@ struct Weird_Parts_IOSTests {
 
         #expect(keyHex == "8f1df32f4be04d5fcde1e8e6ddf9187f53a4b68370d5aafc56f0d43f2e9732a1")
         #expect(keyHex.count == 64)
+    }
+
+    @Test func simulatorMissingEntitlementCanUseLocalBootstrapKeyFallback() {
+        #if targetEnvironment(simulator) || targetEnvironment(macCatalyst)
+        #expect(AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecMissingEntitlement))
+        #else
+        #expect(!AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecMissingEntitlement))
+        #endif
+        #expect(!AppCore.shouldUseLocalBootstrapKeyFallback(for: errSecAuthFailed))
+    }
+
+    @Test func debugCipherRecoveryOnlyMatchesDecryptNotADB() {
+        let sqlCipherError = NSError(
+            domain: "GRDB.DatabaseError",
+            code: 26,
+            userInfo: [NSLocalizedDescriptionKey: "SQLite error 26: file is not a database - while executing `PRAGMA journal_mode = WAL`"]
+        )
+        let unrelatedDatabaseError = NSError(
+            domain: "GRDB.DatabaseError",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "SQLite error 1: no such table: settings"]
+        )
+
+        #expect(AppCore.isRecoverableDebugCipherOpenFailure(sqlCipherError))
+        #expect(!AppCore.isRecoverableDebugCipherOpenFailure(unrelatedDatabaseError))
+    }
+
+    @Test func debugCipherDatabaseResetGateIsSimulatorOnly() {
+        let sqlCipherError = NSError(
+            domain: "GRDB.DatabaseError",
+            code: 26,
+            userInfo: [NSLocalizedDescriptionKey: "SQLite error 26: file is not a database - while executing `PRAGMA journal_mode = WAL`"]
+        )
+
+        #if DEBUG && targetEnvironment(simulator)
+        #expect(AppCore.shouldResetLocalDatabaseAfterCipherOpenFailure(sqlCipherError))
+        #else
+        #expect(!AppCore.shouldResetLocalDatabaseAfterCipherOpenFailure(sqlCipherError))
+        #endif
     }
 
     @MainActor
@@ -195,6 +272,99 @@ struct Weird_Parts_IOSTests {
         #expect(scannerSource.contains("catch {"), "The modal scanner start path needs explicit do/catch error handling")
         #expect(scannerSource.contains("activeContinuation?.yield(.error(errorMessage))"), "Startup failures should emit an actionable QRScanEvent error")
         #expect(scannerSource.contains("activeContinuation?.finish()"), "Startup failures should finish the scan stream instead of leaving a dead sheet")
+    }
+
+    @Test func dispatchAssignmentConflictCheckFailureShowsActionError() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let dispatchURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Scheduling/IOSDispatchPage.swift")
+        let source = try String(contentsOf: dispatchURL, encoding: .utf8)
+
+        #expect(source.contains("actionError = userFriendlyError(error, context: \"check time-off conflicts\")"))
+        #expect(
+            source.contains("actionError = userFriendlyError(error, context: \"check time-off conflicts\")\n            return"),
+            "Conflict-check failures should stop assignment creation."
+        )
+    }
+
+    @Test @MainActor func questionnaireBreakAutofillDoesNotSwallowSubmitErrors() throws {
+        var autoFillAttempts = 0
+
+        do {
+            try IOSQuestionnairePage.QuestionnaireBreakComplianceSubmitter.submit(
+                verification: .allTaken,
+                hadBreakButtons: false,
+                missedBreaks: []
+            ) {
+                autoFillAttempts += 1
+                throw QuestionnaireBreakTestError.autoFillFailed
+            }
+            Issue.record("Expected auto-fill failure to propagate")
+        } catch QuestionnaireBreakTestError.autoFillFailed {
+            #expect(autoFillAttempts == 1)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test @MainActor func questionnaireBreakAutofillSkipsWhenExistingBreakButtonsWereUsed() throws {
+        var autoFillAttempts = 0
+
+        try IOSQuestionnairePage.QuestionnaireBreakComplianceSubmitter.submit(
+            verification: .allTaken,
+            hadBreakButtons: true,
+            missedBreaks: []
+        ) {
+            autoFillAttempts += 1
+        }
+
+        #expect(autoFillAttempts == 0)
+    }
+
+    @Test @MainActor func questionnaireBreakAutofillRunsForForgotBreakPath() throws {
+        var autoFillAttempts = 0
+
+        try IOSQuestionnairePage.QuestionnaireBreakComplianceSubmitter.submit(
+            verification: .forgot,
+            hadBreakButtons: false,
+            missedBreaks: ["morning_break", "lunch", "afternoon_break"]
+        ) {
+            autoFillAttempts += 1
+        }
+
+        #expect(autoFillAttempts == 1)
+    }
+
+    @Test func questionnaireSubmitRunsBreakVerificationBeforeSavingResponses() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let pageURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Jobs/IOSQuestionnairePage.swift")
+        let pageSource = try String(contentsOf: pageURL, encoding: .utf8)
+
+        #expect(!pageSource.contains("try? breakSvc.autoFillBreaksForDay"), "Break auto-fill failures in submit flow must not be swallowed")
+        #expect(pageSource.contains("try handleBreakVerification()"), "Submit flow should fail and show error when break auto-fill fails")
+        #expect(pageSource.contains("private func handleBreakVerification() throws"), "Break verification helper should throw to propagate save failures")
+        let verificationCall = try #require(pageSource.range(of: "try handleBreakVerification()"))
+        let responseSaveCall = try #require(pageSource.range(of: "try service.saveClockOutResponses"))
+        #expect(verificationCall.lowerBound < responseSaveCall.lowerBound, "Break compliance auto-fill should succeed before questionnaire responses are saved")
+    }
+
+    @Test func supplierChannelCreationFailureShowsLoadError() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let suppliersURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Parts/PartsSuppliersPage.swift")
+        let source = try String(contentsOf: suppliersURL, encoding: .utf8)
+
+        #expect(source.contains("loadError = userFriendlyError(error, context: \"create supplier channel\")"))
     }
 
     @Test func uiTestingFixturesSeedJPOFlowDataForQASmoke() throws {

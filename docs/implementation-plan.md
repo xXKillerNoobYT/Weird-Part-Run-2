@@ -1,5 +1,7 @@
 # Wired-Part: Full Implementation Plan
 
+> **Paperclip staging authority (2026-05-26):** For new agent execution, use `docs/plans/staged-paperclip-goals.md` as the ordering source. Stage 1 is the only active implementation focus: app shell, identity, local DB, onboarding, and navigation. Stages 2-10 are planned/backlog until Isaac/Paperclip explicitly promotes them. Older phase/status labels below are historical implementation context, not permission to start later-stage work.
+
 > **Last updated:** 2026-03-15
 > **Status:** Phases 1–10 complete + Phase 9 Chat & Q&A complete + V1.0 infra (A–D) + gap closure M1-M4 (44/44 done) + scheduling enhancements (035) + all 13 feature audits complete + **Phase 17 orders audit closure complete (5/5 gaps)** + **Phases 13-15 Windows AI/App/Cleanup complete (Option B: Tauri/React, llama.cpp AI)**. V1.0.0 remaining: mobile builds (Tasks 16-18) + smoke test (22) + release packaging (23) + MSVC Build Tools for Windows Tauri build + approved Phase 16 add-ons (UX/Admin Hub + Multi-Warehouse/Trailers).
 > **Full vision document:** `docs/The Full Plan.md`

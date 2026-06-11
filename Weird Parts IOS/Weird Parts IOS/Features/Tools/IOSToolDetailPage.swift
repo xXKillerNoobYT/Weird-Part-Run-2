@@ -1481,6 +1481,11 @@ struct TradeResponseSheet: View {
     @State private var notes: String = ""
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var showDiscardConfirmation = false
+
+    private var isDirty: Bool {
+        condition != .good || !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         NavigationStack {
@@ -1533,10 +1538,22 @@ struct TradeResponseSheet: View {
                 }
             }
             .navigationTitle("Respond to Trade")
-            .interactiveDismissDisabled(isSaving)
+            .dismissSafety(
+                isDirty: isDirty,
+                isSaving: isSaving,
+                showDiscardConfirmation: $showDiscardConfirmation,
+                onDiscard: { dismiss() }
+            )
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        DismissSafety.cancelOrConfirm(
+                            isDirty: isDirty,
+                            isSaving: isSaving,
+                            dismiss: dismiss,
+                            showDiscardConfirmation: $showDiscardConfirmation
+                        )
+                    }
                         .disabled(isSaving)
                 }
             }

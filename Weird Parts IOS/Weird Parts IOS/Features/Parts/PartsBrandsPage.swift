@@ -651,7 +651,10 @@ private struct BrandDetailSheet: View {
     }
 
     private func refreshDisplayedBrand() async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            loadError = "Parts service unavailable"
+            return
+        }
         do {
             if let refreshed = try service.listBrands().first(where: { $0.brand.id == displayedBrand.id }) {
                 displayedBrand = BrandListRow(

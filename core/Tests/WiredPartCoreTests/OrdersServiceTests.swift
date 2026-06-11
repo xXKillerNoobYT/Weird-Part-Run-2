@@ -1334,6 +1334,70 @@ struct OrdersServiceTests {
         #expect(result.totalLineItems == 2)
     }
 
+    @Test("generatePOsFromProcurement splits same-supplier JPO demand by job when configured")
+    func testGeneratePOsPerSupplierPerJobGrouping() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Job Split Wire", categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Job Split Supplier")
+        let jobA = try E2ETestHelpers.seedJob(env, jobNumber: "J-PO-GROUP-A", name: "PO Group A")
+        let jobB = try E2ETestHelpers.seedJob(env, jobNumber: "J-PO-GROUP-B", name: "PO Group B")
+        let lineA = try approvedJPOLine(env, jobId: jobA, partId: partId, quantity: 2)
+        let lineB = try approvedJPOLine(env, jobId: jobB, partId: partId, quantity: 3)
+
+        let mixed = try env.orders.generatePOsFromProcurement(
+            items: [
+                OrdersService.ProcurementGenerateItem(
+                    partId: partId,
+                    supplierId: supplierId,
+                    quantity: 5,
+                    unitCost: 1.50,
+                    jpoLineIds: [lineA, lineB]
+                )
+            ],
+            groupingMode: .perSupplierMixed
+        )
+
+        #expect(mixed.createdPOs.count == 1)
+
+        let lineC = try approvedJPOLine(env, jobId: jobA, partId: partId, quantity: 4)
+        let lineD = try approvedJPOLine(env, jobId: jobB, partId: partId, quantity: 6)
+        let perJob = try env.orders.generatePOsFromProcurement(
+            items: [
+                OrdersService.ProcurementGenerateItem(
+                    partId: partId,
+                    supplierId: supplierId,
+                    quantity: 10,
+                    unitCost: 1.50,
+                    jpoLineIds: [lineC, lineD]
+                )
+            ],
+            groupingMode: .perSupplierPerJob
+        )
+
+        #expect(perJob.createdPOs.count == 2)
+        #expect(perJob.totalLineItems == 2)
+
+        let jobCounts: [Int64: Int] = try env.db.writer.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT jpo.job_id, COUNT(DISTINCT pli.po_id) AS po_count
+                FROM po_line_items pli
+                JOIN jpo_line_items jl ON jl.id = pli.jpo_line_id
+                JOIN job_parts_orders jpo ON jpo.id = jl.jpo_id
+                WHERE pli.po_id IN (?, ?)
+                GROUP BY jpo.job_id
+                """, arguments: [perJob.createdPOs[0].poId, perJob.createdPOs[1].poId])
+            var counts: [Int64: Int] = [:]
+            for row in rows {
+                let jobId: Int64 = row["job_id"] ?? 0
+                counts[jobId] = row["po_count"] ?? 0
+            }
+            return counts
+        }
+        #expect(jobCounts[jobA] == 1)
+        #expect(jobCounts[jobB] == 1)
+    }
+
     @Test("generatePOsFromProcurement with empty input returns empty result")
     func testGeneratePOsEmpty() throws {
         let env = try E2ETestHelpers.setUp()

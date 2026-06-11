@@ -65,6 +65,14 @@ struct IOSReceiveShipmentPage: View {
                 "Damaged - returning"
             case .wrongPart:
                 "Wrong part"
+            case .jobReturnHolding:
+                "Job return held"
+            case .jobReturnDamagedReview:
+                "Job return damaged review"
+            case .jobReturnSupplierReview:
+                "Job return supplier review"
+            case .jobReturnWrongPartReview:
+                "Job return wrong part review"
             }
         }
         var icon: String {
@@ -75,6 +83,10 @@ struct IOSReceiveShipmentPage: View {
             case .usedWriteOff: "xmark.bin.fill"
             case .damagedReturn: "exclamationmark.triangle.fill"
             case .wrongPart: "questionmark.circle.fill"
+            case .jobReturnHolding: "tray.full.fill"
+            case .jobReturnDamagedReview: "exclamationmark.triangle.fill"
+            case .jobReturnSupplierReview: "arrow.uturn.backward.circle.fill"
+            case .jobReturnWrongPartReview: "questionmark.circle.fill"
             }
         }
         var color: Color {
@@ -87,6 +99,10 @@ struct IOSReceiveShipmentPage: View {
             case .usedWriteOff: .orange
             case .damagedReturn: .red
             case .wrongPart: .red
+            case .jobReturnHolding: .blue
+            case .jobReturnDamagedReview: .red
+            case .jobReturnSupplierReview: .orange
+            case .jobReturnWrongPartReview: .red
             }
         }
     }
@@ -161,7 +177,7 @@ struct IOSReceiveShipmentPage: View {
                     } label: {
                         Image(systemName: "qrcode.viewfinder")
                     }
-                    .accessibilityLabel("Scan QR code")
+                    .accessibilityLabel("Scan PO")
                 }
             }
             ToolbarItem(placement: .primaryAction) {
@@ -937,10 +953,19 @@ struct IOSReceiveShipmentPage: View {
         actionError = nil
 
         do {
-            // Update received quantities
+            // Update received quantities and any verified invoice cost before completion.
             for item in sessionItems {
                 let qty = receivedQtys[item.id] ?? item.expectedQty
-                try warehouseService.updateSessionItem(itemId: item.id, receivedQty: qty)
+                let verifiedCost: Double?
+                switch priceVerifications[item.id] {
+                case .matches:
+                    verifiedCost = item.unitPrice
+                case .different(let newPrice):
+                    verifiedCost = newPrice > 0 ? newPrice : nil
+                case .notShown, .none:
+                    verifiedCost = nil
+                }
+                try warehouseService.updateSessionItem(itemId: item.id, receivedQty: qty, actualCost: verifiedCost)
             }
 
             // Complete the session (creates stock movements for non-routed items)
@@ -1015,6 +1040,7 @@ struct IOSReceiveShipmentPage: View {
                 let returnCount = routingResults.values.filter { result in
                     switch result.route {
                     case .recommendReturn, .returnOverstock, .damagedReturn: return true
+                    case .jobReturnDamagedReview, .jobReturnSupplierReview: return true
                     default: return false
                     }
                 }.count
