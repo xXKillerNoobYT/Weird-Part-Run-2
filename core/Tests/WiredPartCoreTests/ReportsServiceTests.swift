@@ -715,7 +715,7 @@ struct ReportsServiceTests {
         #expect(row?.regularHours ?? 0.0 >= 4.0)
     }
 
-    @Test("getPreBillingData includes deterministic material, JPO, PO, and audit provenance")
+    @Test("getPreBillingData includes deterministic material, JPO, and PO provenance")
     func testPreBillingDataIncludesStage8ReadModelProvenance() throws {
         let env = try E2ETestHelpers.setUp()
         let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-PB-STAGE8", name: "Stage 8 Read Model Job")
@@ -811,8 +811,77 @@ struct ReportsServiceTests {
         #expect(row?.materialLineCount == 1)
         #expect(row?.jpoCount == 1)
         #expect(row?.purchaseOrderCount == 1)
-        #expect(row?.auditDiscrepancyCount == 1)
+        #expect(row?.auditDiscrepancyCount == 0)
         #expect(row?.sourceSummary.contains("1 labor entry") == true)
+    }
+
+    @Test("getPreBillingData does not attribute shared-part audit counts to jobs")
+    func testPreBillingDataDoesNotExposeUnprovenSharedPartAuditAttribution() throws {
+        let env = try E2ETestHelpers.setUp()
+        let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-PB-AUDIT-1", name: "Audit Shared Part A")
+        let secondJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-PB-AUDIT-2", name: "Audit Shared Part B")
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Shared Audit Category")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Shared Audit Part", categoryId: categoryId)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET billing_rate = 100.0 WHERE id IN (?, ?)", arguments: [firstJobId, secondJobId])
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES
+                    (?, ?, '2026-06-04 07:00:00', '2026-06-04 11:00:00', 4.0, 0.0, 'completed', datetime('now')),
+                    (?, ?, '2026-06-04 12:00:00', '2026-06-04 16:00:00', 4.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, firstJobId, env.adminUserId, secondJobId])
+            try db.execute(sql: """
+                INSERT INTO stock_movements
+                (part_id, qty, to_location_type, to_location_id, movement_type, reason, job_id, performed_by, unit_cost_at_move, created_at)
+                VALUES
+                    (?, -1, 'job', ?, 'job_consumed', 'First shared-part job movement', ?, ?, 10.0, '2026-06-04 09:00:00'),
+                    (?, -1, 'job', ?, 'job_consumed', 'Second shared-part job movement', ?, ?, 10.0, '2026-06-04 13:00:00')
+                """, arguments: [
+                    partId, firstJobId, firstJobId, env.adminUserId,
+                    partId, secondJobId, secondJobId, env.adminUserId
+                ])
+            try db.execute(sql: """
+                INSERT INTO warehouse_floor_plans (name, width_inches, length_inches, created_at)
+                VALUES ('Shared Audit Floor', 120, 120, datetime('now'))
+                """)
+            let floorPlanId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO warehouse_storage_units (floor_plan_id, name, unit_type, created_at)
+                VALUES (?, 'Shared Audit Unit', 'rack', datetime('now'))
+                """, arguments: [floorPlanId])
+            let unitId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO warehouse_storage_levels (unit_id, level_code, created_at)
+                VALUES (?, 'A', datetime('now'))
+                """, arguments: [unitId])
+            let levelId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO warehouse_storage_areas (level_id, area_code, area_number, full_location_code, created_at)
+                VALUES (?, 'A1', 1, 'A-1', datetime('now'))
+                """, arguments: [levelId])
+            let areaId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO audit_sessions_v2 (session_type, started_by, status, started_at)
+                VALUES ('count', ?, 'completed', '2026-06-04 10:15:00')
+                """, arguments: [env.adminUserId])
+            let sessionId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO audit_counts
+                (session_id, part_id, area_id, system_count, user_count, variance, variance_dollars, variance_percent, result, counted_by, counted_at)
+                VALUES (?, ?, ?, 5, 4, -1, -10.0, -20.0, 'variance', ?, '2026-06-04 10:20:00')
+                """, arguments: [sessionId, partId, areaId, env.adminUserId])
+        }
+
+        let rows = try env.reports.getPreBillingData(startDate: "2026-06-04", endDate: "2026-06-04")
+        let firstRow = rows.first(where: { $0.id == firstJobId })
+        let secondRow = rows.first(where: { $0.id == secondJobId })
+
+        #expect(firstRow?.auditDiscrepancyCount == 0)
+        #expect(secondRow?.auditDiscrepancyCount == 0)
+        #expect(firstRow?.sourceSummary.contains("audit discrep") == false)
+        #expect(secondRow?.sourceSummary.contains("audit discrep") == false)
     }
 
     @Test("getPreBillingData excludes labor from locked billing periods")

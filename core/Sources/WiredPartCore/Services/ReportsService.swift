@@ -699,6 +699,8 @@ public final class ReportsService: Sendable {
         public let materialLineCount: Int
         public let jpoCount: Int
         public let purchaseOrderCount: Int
+        /// Compatibility field only. `audit_counts` is not job-scoped, so
+        /// pre-billing does not expose per-job audit discrepancy attribution.
         public let auditDiscrepancyCount: Int
         public let sourceSummary: String
 
@@ -791,18 +793,6 @@ public final class ReportsService: Sendable {
                           AND date(jpo.created_at) >= date(?)
                           AND date(jpo.created_at) <= date(?)
                         GROUP BY jpo.job_id
-                    ),
-                    audit_rollup AS (
-                        SELECT sm.job_id,
-                               COUNT(DISTINCT ac.id) AS audit_discrepancy_count
-                        FROM audit_counts ac
-                        JOIN stock_movements sm ON sm.part_id = ac.part_id
-                            AND sm.job_id IS NOT NULL
-                            AND sm.deleted_at IS NULL
-                        WHERE ac.variance != 0
-                          AND date(ac.counted_at) >= date(?)
-                          AND date(ac.counted_at) <= date(?)
-                        GROUP BY sm.job_id
                     )
                     SELECT j.id,
                            COALESCE(j.job_number, '') AS job_number,
@@ -814,13 +804,11 @@ public final class ReportsService: Sendable {
                            COALESCE(lr.labor_entry_count, 0) AS labor_entry_count,
                            COALESCE(mr.material_line_count, 0) AS material_line_count,
                            COALESCE(pr.jpo_count, 0) AS jpo_count,
-                           COALESCE(pr.purchase_order_count, 0) AS purchase_order_count,
-                           COALESCE(ar.audit_discrepancy_count, 0) AS audit_discrepancy_count
+                           COALESCE(pr.purchase_order_count, 0) AS purchase_order_count
                     FROM jobs j
                     LEFT JOIN labor_rollup lr ON lr.job_id = j.id
                     LEFT JOIN material_rollup mr ON mr.job_id = j.id
                     LEFT JOIN po_rollup pr ON pr.job_id = j.id
-                    LEFT JOIN audit_rollup ar ON ar.job_id = j.id
                     WHERE j.deleted_at IS NULL
                     GROUP BY j.id
                     HAVING regular_hours > 0 OR overtime_hours > 0 OR material_cost > 0
@@ -830,14 +818,13 @@ public final class ReportsService: Sendable {
                 let rows = try Row.fetchAll(
                     dbConn,
                     sql: sql,
-                    arguments: [startDate, endDate, startDate, endDate, startDate, endDate, startDate, endDate]
+                    arguments: [startDate, endDate, startDate, endDate, startDate, endDate]
                 )
                 return rows.map { row in
                     let laborEntryCount: Int = row["labor_entry_count"] ?? 0
                     let materialLineCount: Int = row["material_line_count"] ?? 0
                     let jpoCount: Int = row["jpo_count"] ?? 0
                     let purchaseOrderCount: Int = row["purchase_order_count"] ?? 0
-                    let auditDiscrepancyCount: Int = row["audit_discrepancy_count"] ?? 0
                     return PreBillingRow(
                         id: row["id"] ?? 0,
                         jobNumber: row["job_number"] ?? "",
@@ -850,13 +837,12 @@ public final class ReportsService: Sendable {
                         materialLineCount: materialLineCount,
                         jpoCount: jpoCount,
                         purchaseOrderCount: purchaseOrderCount,
-                        auditDiscrepancyCount: auditDiscrepancyCount,
+                        auditDiscrepancyCount: 0,
                         sourceSummary: Self.reportSourceSummary(
                             laborEntryCount: laborEntryCount,
                             materialLineCount: materialLineCount,
                             jpoCount: jpoCount,
-                            purchaseOrderCount: purchaseOrderCount,
-                            auditDiscrepancyCount: auditDiscrepancyCount
+                            purchaseOrderCount: purchaseOrderCount
                         )
                     )
                 }
@@ -1190,15 +1176,13 @@ public final class ReportsService: Sendable {
         laborEntryCount: Int,
         materialLineCount: Int,
         jpoCount: Int,
-        purchaseOrderCount: Int,
-        auditDiscrepancyCount: Int
+        purchaseOrderCount: Int
     ) -> String {
         [
             "\(laborEntryCount) labor entr\(laborEntryCount == 1 ? "y" : "ies")",
             "\(materialLineCount) material line\(materialLineCount == 1 ? "" : "s")",
             "\(jpoCount) JPO\(jpoCount == 1 ? "" : "s")",
-            "\(purchaseOrderCount) PO\(purchaseOrderCount == 1 ? "" : "s")",
-            "\(auditDiscrepancyCount) audit discrepanc\(auditDiscrepancyCount == 1 ? "y" : "ies")"
+            "\(purchaseOrderCount) PO\(purchaseOrderCount == 1 ? "" : "s")"
         ].joined(separator: ", ")
     }
 
