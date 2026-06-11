@@ -688,11 +688,14 @@ struct HelpContentRegistry {
             pageId: "people-employee-detail",
             title: "Employee Detail Help",
             sections: [
-                ("What This Page Does", "View and edit a single employee's profile, hat assignments, and team memberships. Use the tabs to switch between Profile, Hats, and Teams views."),
+                ("What This Page Does", "View and edit a single employee's profile, hat assignments, skills, team memberships, certifications, and recent activity. Use the tabs to switch between Profile, Hats, Skills, Teams, Certifications, and Activity views."),
                 ("Profile Tab", "Shows the employee's basic info: name, email, phone, role, status, and important dates. Tap Edit in the toolbar to update their contact information."),
                 ("Hats Tab", "Displays all available hats (roles) and which ones are assigned to this employee. If you have manage_people permission, you can toggle hats on and off directly. Each hat grants a set of permissions."),
+                ("Skills Tab", "Shows employee skills, proficiency, and years of experience. If you have manage_people permission, you can add or remove skills."),
                 ("Teams Tab", "Shows which teams this employee belongs to, their role within each team, and when they joined."),
-                ("Tips", "Pull down to refresh all data. Only managers and admins can toggle hat assignments. The Edit button updates contact info only — use the Hats tab for role changes."),
+                ("Certifications Tab", "Shows employee certifications, issuing details, certificate numbers, and expiry status. Managers can add or remove certifications."),
+                ("Activity Tab", "Shows recent job sessions worked by this employee, including the job, clock times, status, and recorded hours."),
+                ("Tips", "Pull down to refresh all data. Only managers and admins can toggle hat assignments or change skills. The Edit button updates contact info only — use the Hats tab for role changes."),
             ]
         ),
 

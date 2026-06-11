@@ -141,7 +141,9 @@ extension AppDatabase {
         registerMigration100POEmailRequestType(&migrator)
         registerMigration100StagingBoxContentsAndDeliveryState(&migrator)
         registerMigration101OvertimeAndLaborCorrectionAudit(&migrator)
+        registerMigration102PartImportSavedMappings(&migrator)
         registerMigration103TimesheetCorrectionAudit(&migrator)
+        registerMigration104AuthTokenSessionDeviceId(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5809,6 +5811,52 @@ extension AppDatabase {
             }
             try db.create(index: "idx_labor_correction_audits_entry", on: "labor_entry_correction_audits", columns: ["labor_entry_id", "created_at"], ifNotExists: true)
             try db.create(index: "idx_labor_correction_audits_actor", on: "labor_entry_correction_audits", columns: ["corrected_by", "created_at"], ifNotExists: true)
+        }
+    }
+
+    // MARK: - Migration 102: Saved part import mappings
+
+    private static func registerMigration102PartImportSavedMappings(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("102_part_import_saved_mappings") { db in
+            try db.create(table: "part_import_saved_mappings", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("supplier_id", .integer).references("suppliers", onDelete: .cascade)
+                t.column("source_kind", .text).notNull()
+                t.column("header_fingerprint", .text).notNull()
+                t.column("schema_version", .integer).notNull()
+                t.column("column_mapping_json", .text).notNull()
+                t.column("source_headers_json", .text).notNull()
+                t.column("accepted_by", .integer).references("users")
+                t.column("use_count", .integer).notNull().defaults(to: 0)
+                t.column("last_used_at", .text)
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("deleted_at", .text)
+            }
+            try db.execute(sql: """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_part_import_saved_mappings_lookup
+                ON part_import_saved_mappings (
+                    COALESCE(supplier_id, -1),
+                    source_kind,
+                    header_fingerprint,
+                    schema_version
+                )
+                WHERE deleted_at IS NULL
+                """)
+        }
+    }
+
+    private static func registerMigration104AuthTokenSessionDeviceId(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("104_auth_token_session_device_id") { db in
+            try addColumnIfMissing(db, table: "auth_token_sessions", column: "device_id", type: .text)
+            try db.create(index: "idx_auth_token_sessions_active_refresh",
+                          on: "auth_token_sessions",
+                          columns: ["token_type", "revoked_at", "expires_at_ms"],
+                          ifNotExists: true)
+            try db.create(index: "idx_auth_token_sessions_parent_refresh",
+                          on: "auth_token_sessions",
+                          columns: ["parent_refresh_id"],
+                          ifNotExists: true)
         }
     }
 }

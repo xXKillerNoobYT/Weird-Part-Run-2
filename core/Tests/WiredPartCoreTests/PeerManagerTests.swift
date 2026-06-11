@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import Network
 @testable import WiredPartCore
 
 @Suite("PeerManager Tests")
@@ -141,6 +142,238 @@ struct PeerManagerTests {
         await pm.stopPeerSync()
     }
 
+    @Test("LAN sync reports HTTP pull errors as failed peer sync")
+    func testLANSyncHTTPPullErrorReturnsFailure() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+
+        try await pm.startPeerSync(
+            deviceId: "local-dev",
+            deviceName: "Local Device",
+            companyId: "local-company"
+        )
+
+        let foreignState = SyncServerState(
+            deviceId: "foreign-dev",
+            deviceName: "Foreign Device",
+            companyId: "foreign-company"
+        )
+        let foreignServer = LanSyncServer(state: foreignState)
+        let foreignPort = try await foreignServer.start()
+
+        let peer = DiscoveredPeer(
+            deviceId: "foreign-dev",
+            deviceName: "Foreign Device",
+            companyId: "foreign-company",
+            host: "127.0.0.1",
+            port: foreignPort,
+            transport: "lan"
+        )
+
+        let result = await pm.syncWithPeer(peer)
+
+        #expect(result.success == false)
+        #expect(result.error == "LAN sync pull failed: HTTP 403")
+        #expect(result.peerDeviceId == "foreign-dev")
+
+        let state = await pm.getState()
+        #expect(state.lastPeerSyncs["foreign-dev"]?.success == false)
+
+        await foreignServer.stop()
+        await pm.stopPeerSync()
+    }
+
+    @Test("LAN sync reports malformed 200 pull responses as failed peer sync")
+    func testLANSyncMalformedPullResponseReturnsFailure() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+
+        try await pm.startPeerSync(
+            deviceId: "local-dev",
+            deviceName: "Local Device",
+            companyId: "local-company"
+        )
+
+        let malformedServer = try HTTPStubServer(
+            statusCode: 200,
+            body: #"{"not":"a-sync-pull-response"}"#
+        )
+        let port = try await malformedServer.start()
+
+        let peer = DiscoveredPeer(
+            deviceId: "malformed-dev",
+            deviceName: "Malformed Peer",
+            companyId: "local-company",
+            host: "127.0.0.1",
+            port: port,
+            transport: "lan"
+        )
+
+        let result = await pm.syncWithPeer(peer)
+
+        #expect(result.success == false)
+        #expect(result.error != nil)
+        #expect(result.peerDeviceId == "malformed-dev")
+
+        let state = await pm.getState()
+        #expect(state.lastPeerSyncs["malformed-dev"]?.success == false)
+
+        malformedServer.stop()
+        await pm.stopPeerSync()
+    }
+
+    @Test("LAN sync reports HTTP push errors as failed peer sync")
+    func testLANSyncHTTPPushErrorReturnsFailure() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+
+        try await db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO users (display_name, pin_hash, is_active)
+                VALUES ('Alice', 'hash123', 1)
+                """)
+        }
+        try ChangeTracker.trackChange(
+            db: db,
+            tableName: "users",
+            recordId: 1,
+            operation: .insert,
+            deviceId: "local-dev"
+        )
+
+        try await pm.startPeerSync(
+            deviceId: "local-dev",
+            deviceName: "Local Device",
+            companyId: "local-company"
+        )
+
+        let foreignState = SyncServerState(
+            deviceId: "foreign-dev",
+            deviceName: "Foreign Device",
+            companyId: "foreign-company"
+        )
+        let foreignServer = LanSyncServer(state: foreignState)
+        let foreignPort = try await foreignServer.start()
+
+        let peer = DiscoveredPeer(
+            deviceId: "foreign-dev",
+            deviceName: "Foreign Device",
+            companyId: "foreign-company",
+            host: "127.0.0.1",
+            port: foreignPort,
+            transport: "lan"
+        )
+
+        let result = await pm.syncWithPeer(peer)
+
+        #expect(result.success == false)
+        #expect(result.error == "LAN sync push failed: HTTP 403")
+        #expect(result.peerDeviceId == "foreign-dev")
+        #expect(try ChangeTracker.getPendingChangeCount(db: db) == 1)
+
+        await foreignServer.stop()
+        await pm.stopPeerSync()
+    }
+
+    @Test("LAN sync base URL is built from host and discovered port")
+    func testLANSyncBaseURLUsesPeerHostAndPort() throws {
+        let peer = DiscoveredPeer(
+            deviceId: "dev-url",
+            deviceName: "Office Mac",
+            companyId: "co",
+            host: "192.168.1.50",
+            port: 51943
+        )
+
+        let baseURL = try PeerManager.makeLANSyncBaseURL(for: peer)
+
+        #expect(baseURL.absoluteString == "http://192.168.1.50:51943")
+        #expect(baseURL.appendingPathComponent("sync/pull").absoluteString == "http://192.168.1.50:51943/sync/pull")
+    }
+
+    @Test("LAN sync base URL normalizes bracketless IPv6")
+    func testLANSyncBaseURLNormalizesIPv6() throws {
+        let peer = DiscoveredPeer(
+            deviceId: "dev-ipv6",
+            deviceName: "Office Mac",
+            companyId: "co",
+            host: "fe80::1",
+            port: 51943
+        )
+
+        let baseURL = try PeerManager.makeLANSyncBaseURL(for: peer)
+
+        #expect(baseURL.absoluteString == "http://[fe80::1]:51943")
+    }
+
+    @Test("LAN sync base URL rejects incomplete Bonjour endpoint data")
+    func testLANSyncBaseURLRejectsMissingPort() {
+        let peer = DiscoveredPeer(
+            deviceId: "dev-bad",
+            deviceName: "Office Mac",
+            companyId: "co",
+            host: "WiredPart-dev-bad",
+            port: 0
+        )
+
+        #expect(throws: URLError.self) {
+            _ = try PeerManager.makeLANSyncBaseURL(for: peer)
+        }
+    }
+
+    @Test("LAN sync base URL rejects raw Bonjour service instance hosts")
+    func testLANSyncBaseURLRejectsRawBonjourInstanceName() {
+        let peer = DiscoveredPeer(
+            deviceId: "dev-bonjour",
+            deviceName: "Office Mac",
+            companyId: "co",
+            host: "WiredPart-dev-bonjour",
+            port: 51943
+        )
+
+        #expect(throws: URLError.self) {
+            _ = try PeerManager.makeLANSyncBaseURL(for: peer)
+        }
+    }
+
+    @Test("PeerManager issued pairing code activates sync pair endpoint")
+    func testIssuedPairingCodePairsThroughSyncServer() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+
+        try await pm.startPeerSync(
+            deviceId: "shop-dev",
+            deviceName: "Shop Mac",
+            companyId: "co-1"
+        )
+        let issuedCode = try await pm.issuePairingCode()
+        #expect(SyncCrypto.normalizedPairingCode(issuedCode) != nil)
+
+        let state = await pm.getState()
+        let body = try JSONEncoder().encode(SyncPairRequest(
+            deviceId: "phone-dev",
+            deviceName: "Phone",
+            pairingCode: issuedCode,
+            platform: "iOS"
+        ))
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(state.syncPort)/sync/pair")!)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        #expect((response as! HTTPURLResponse).statusCode == 200)
+        let pairResponse = try JSONDecoder().decode(SyncPairResponse.self, from: data)
+        #expect(pairResponse.accepted)
+        #expect(pairResponse.serverDeviceId == "shop-dev")
+        #expect(pairResponse.companyId == "co-1")
+
+        let (_, secondResponse) = try await URLSession.shared.data(for: request)
+        #expect((secondResponse as! HTTPURLResponse).statusCode == 403)
+
+        await pm.stopPeerSync()
+    }
+
     @Test("PeerSyncResult stores all fields correctly")
     func testPeerSyncResult() {
         let result = PeerSyncResult(
@@ -164,5 +397,78 @@ struct PeerManagerTests {
 extension PeerManager {
     func testEnrichChanges(_ entries: [ChangeLogEntry]) throws -> [IncomingChange] {
         try enrichChangesWithData(entries)
+    }
+}
+
+private final class HTTPStubServer: @unchecked Sendable {
+    private let listener: NWListener
+    private let statusCode: Int
+    private let body: String
+    private let queue = DispatchQueue(label: "com.wiredpart.tests.httpstub")
+
+    init(statusCode: Int, body: String) throws {
+        self.listener = try NWListener(using: .tcp, on: .any)
+        self.statusCode = statusCode
+        self.body = body
+    }
+
+    func start() async throws -> UInt16 {
+        try await withCheckedThrowingContinuation { continuation in
+            let continuationBox = OneShotContinuationBox(continuation)
+
+            listener.stateUpdateHandler = { [listener] state in
+                switch state {
+                case .ready:
+                    if let port = listener.port {
+                        continuationBox.resume(.success(port.rawValue))
+                    } else {
+                        continuationBox.resume(.failure(URLError(.badServerResponse)))
+                    }
+                case .failed(let error):
+                    continuationBox.resume(.failure(error))
+                default:
+                    break
+                }
+            }
+            listener.newConnectionHandler = { [body, statusCode, queue] connection in
+                connection.start(queue: queue)
+                connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { _, _, _, _ in
+                    let statusText = statusCode == 200 ? "OK" : "Error"
+                    let response = """
+                    HTTP/1.1 \(statusCode) \(statusText)\r
+                    Content-Type: application/json\r
+                    Content-Length: \(body.utf8.count)\r
+                    Connection: close\r
+                    \r
+                    \(body)
+                    """
+                    connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in
+                        connection.cancel()
+                    })
+                }
+            }
+            listener.start(queue: queue)
+        }
+    }
+
+    func stop() {
+        listener.cancel()
+    }
+}
+
+private final class OneShotContinuationBox: @unchecked Sendable {
+    private var continuation: CheckedContinuation<UInt16, Error>?
+    private let lock = NSLock()
+
+    init(_ continuation: CheckedContinuation<UInt16, Error>) {
+        self.continuation = continuation
+    }
+
+    func resume(_ result: Result<UInt16, Error>) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(with: result)
     }
 }

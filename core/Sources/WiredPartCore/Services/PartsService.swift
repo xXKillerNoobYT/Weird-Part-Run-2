@@ -1170,6 +1170,7 @@ public final class PartsService: Sendable {
                                AND cbs.type_id = p.type_id
                                AND cbs.deleted_at IS NULL
                             WHERE p.deleted_at IS NULL
+                              AND p.is_active = 1
                               AND (p.name LIKE ? OR p.code LIKE ?
                                    OR pc.part_number LIKE ?
                                    OR pc.name LIKE ?
@@ -1189,6 +1190,7 @@ public final class PartsService: Sendable {
                             SELECT DISTINCT p.* FROM parts p
                             LEFT JOIN part_colors pc ON pc.id = p.color_id AND pc.deleted_at IS NULL
                             WHERE p.deleted_at IS NULL
+                              AND p.is_active = 1
                               AND (p.name LIKE ? OR p.code LIKE ? OR pc.name LIKE ?)
                             ORDER BY p.name ASC
                             LIMIT ?
@@ -5818,7 +5820,7 @@ public final class PartsService: Sendable {
     /// Get summary stats for the import/export page.
     public func getImportExportStats() throws -> ImportExportStats {
         try db.writer.read { dbConn in
-            let parts = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM parts WHERE deleted_at IS NULL") ?? 0
+            let parts = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM parts WHERE deleted_at IS NULL AND is_active = 1") ?? 0
             let cats = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM part_categories WHERE deleted_at IS NULL") ?? 0
             let brands = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM brands WHERE deleted_at IS NULL") ?? 0
             let suppliers = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM suppliers WHERE deleted_at IS NULL") ?? 0
@@ -5871,6 +5873,7 @@ public final class PartsService: Sendable {
                 LEFT JOIN brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
                 LEFT JOIN part_colors pco ON pco.id = p.color_id AND pco.deleted_at IS NULL
                 WHERE p.deleted_at IS NULL
+                  AND p.is_active = 1
                 ORDER BY p.name ASC
                 """
 
@@ -5959,6 +5962,19 @@ public final class PartsService: Sendable {
         public let category: String
         public let brand: String?
         public let fields: [String: String]
+
+        public var supplierPartNumber: String? {
+            fields["supplier_part_number"]
+        }
+
+        public init(rowNumber: Int, name: String, code: String?, category: String, brand: String?, fields: [String: String]) {
+            self.rowNumber = rowNumber
+            self.name = name
+            self.code = code
+            self.category = category
+            self.brand = brand
+            self.fields = fields
+        }
     }
 
     /// A validation error surfaced during import preview. The row number is 1-based
@@ -5966,6 +5982,11 @@ public final class PartsService: Sendable {
     public struct PartsImportError: Error, Sendable {
         public let rowNumber: Int
         public let message: String
+
+        public init(rowNumber: Int, message: String) {
+            self.rowNumber = rowNumber
+            self.message = message
+        }
     }
 
     public enum PartsImportConflictResolution: Sendable {
@@ -5980,7 +6001,51 @@ public final class PartsService: Sendable {
         public let existingPartId: Int64
         public let existingPartName: String
         public let existingPartCode: String?
+        public let matchReason: String
         public var resolution: PartsImportConflictResolution = .ask
+
+        public init(
+            parsedRow: PartsImportParsedRow,
+            existingPartId: Int64,
+            existingPartName: String,
+            existingPartCode: String?,
+            matchReason: String = "code",
+            resolution: PartsImportConflictResolution = .ask
+        ) {
+            self.parsedRow = parsedRow
+            self.existingPartId = existingPartId
+            self.existingPartName = existingPartName
+            self.existingPartCode = existingPartCode
+            self.matchReason = matchReason
+            self.resolution = resolution
+        }
+    }
+
+    public enum PartsImportPreviewClassification: String, Sendable {
+        case new
+        case update
+        case duplicateSkip = "duplicate_skip"
+        case conflictReview = "conflict_review"
+        case quarantined
+    }
+
+    public struct PartsImportPreviewRowDecision: Sendable {
+        public let rowNumber: Int
+        public let classification: PartsImportPreviewClassification
+        public let parsedRow: PartsImportParsedRow?
+        public let existingPartId: Int64?
+        public let matchReason: String?
+        public let message: String?
+    }
+
+    public struct PartsImportSavedMapping: Sendable {
+        public let id: Int64
+        public let supplierId: Int64?
+        public let sourceKind: String
+        public let headerFingerprint: String
+        public let schemaVersion: Int
+        public let columnMapping: [String: String]
+        public let sourceHeaders: [String]
     }
 
     public enum PartsImportSourceKind: String, Sendable {
@@ -6123,20 +6188,48 @@ public final class PartsService: Sendable {
 
     /// Metadata that ties an import preview/commit to a durable source artifact.
     public struct PartsImportSourceMetadata: Sendable {
+        public static let mappingSchemaVersion = 1
+
         public var sourceKind: String
         public var filename: String?
         public var sheetName: String?
         public var sourceHash: String?
         public var userId: Int64?
+        public var supplierId: Int64?
+        public var headerFingerprint: String?
+        public var mappingSchemaVersion: Int
+        public var sourceHeaders: [String]
+        public var acceptedColumnMapping: [String: String]
+        public var savedMappingId: Int64?
         public var parserMetadata: PartsImportParserMetadata?
         public var evidence: [PartsImportSourceEvidence]
 
-        public init(sourceKind: String, filename: String? = nil, sheetName: String? = nil, sourceHash: String? = nil, userId: Int64? = nil, parserMetadata: PartsImportParserMetadata? = nil, evidence: [PartsImportSourceEvidence] = []) {
+        public init(
+            sourceKind: String,
+            filename: String? = nil,
+            sheetName: String? = nil,
+            sourceHash: String? = nil,
+            userId: Int64? = nil,
+            supplierId: Int64? = nil,
+            headerFingerprint: String? = nil,
+            mappingSchemaVersion: Int = PartsImportSourceMetadata.mappingSchemaVersion,
+            sourceHeaders: [String] = [],
+            acceptedColumnMapping: [String: String] = [:],
+            savedMappingId: Int64? = nil,
+            parserMetadata: PartsImportParserMetadata? = nil,
+            evidence: [PartsImportSourceEvidence] = []
+        ) {
             self.sourceKind = sourceKind
             self.filename = filename
             self.sheetName = sheetName
             self.sourceHash = sourceHash
             self.userId = userId
+            self.supplierId = supplierId
+            self.headerFingerprint = headerFingerprint
+            self.mappingSchemaVersion = mappingSchemaVersion
+            self.sourceHeaders = sourceHeaders
+            self.acceptedColumnMapping = acceptedColumnMapping
+            self.savedMappingId = savedMappingId
             self.parserMetadata = parserMetadata
             self.evidence = evidence
         }
@@ -6145,15 +6238,19 @@ public final class PartsService: Sendable {
     /// Preview generated before any import writes occur.
     public struct PartsImportPreview: Sendable {
         public var newParts: [PartsImportParsedRow] = []
+        public var skippedNewParts: [PartsImportParsedRow] = []
         public var conflicts: [PartsImportConflict] = []
         public var errors: [PartsImportError] = []
+        public var decisions: [PartsImportPreviewRowDecision] = []
         public var totalRows: Int = 0
         public var source: PartsImportSourceMetadata?
 
-        public init(newParts: [PartsImportParsedRow] = [], conflicts: [PartsImportConflict] = [], errors: [PartsImportError] = [], totalRows: Int = 0, source: PartsImportSourceMetadata? = nil) {
+        public init(newParts: [PartsImportParsedRow] = [], skippedNewParts: [PartsImportParsedRow] = [], conflicts: [PartsImportConflict] = [], errors: [PartsImportError] = [], decisions: [PartsImportPreviewRowDecision] = [], totalRows: Int = 0, source: PartsImportSourceMetadata? = nil) {
             self.newParts = newParts
+            self.skippedNewParts = skippedNewParts
             self.conflicts = conflicts
             self.errors = errors
+            self.decisions = decisions
             self.totalRows = totalRows
             self.source = source
         }
@@ -6178,32 +6275,72 @@ public final class PartsService: Sendable {
         let columns: [String]
     }
 
-    public func previewPartsImportCSV(_ csv: String) throws -> PartsImportPreview {
+    public func previewPartsImportCSV(_ csv: String, supplierId: Int64? = nil) throws -> PartsImportPreview {
         let parsedSource = PartsImportCSVAdapter(service: self).parse(csv)
         let rows = parsedSource.table.rows.map {
             PartsImportTabularRow(rowNumber: $0.rowNumber, columns: $0.columns)
         }
-        var preview = try previewPartsImportRows(rows, emptyDescription: "CSV file is empty or has no data rows.")
-        preview.source = parsedSource.source
+        var preview = try previewPartsImportRows(rows, emptyDescription: "CSV file is empty or has no data rows.", sourceKind: "csv", supplierId: supplierId)
+        preview.source = PartsImportSourceMetadata(
+            sourceKind: parsedSource.source.sourceKind,
+            filename: parsedSource.source.filename,
+            sheetName: parsedSource.source.sheetName,
+            sourceHash: parsedSource.source.sourceHash,
+            userId: parsedSource.source.userId,
+            supplierId: supplierId,
+            headerFingerprint: preview.source?.headerFingerprint,
+            sourceHeaders: preview.source?.sourceHeaders ?? [],
+            acceptedColumnMapping: preview.source?.acceptedColumnMapping ?? [:],
+            savedMappingId: preview.source?.savedMappingId,
+            parserMetadata: parsedSource.source.parserMetadata,
+            evidence: parsedSource.source.evidence
+        )
         return preview
     }
 
-    func previewPartsImportRows(_ rows: [PartsImportTabularRow], emptyDescription: String) throws -> PartsImportPreview {
+    func previewPartsImportRows(
+        _ rows: [PartsImportTabularRow],
+        emptyDescription: String,
+        sourceKind: String = "tabular",
+        supplierId: Int64? = nil
+    ) throws -> PartsImportPreview {
         guard rows.count > 1 else {
             throw PartsError.invalidInput(emptyDescription)
         }
 
-        let headers = rows[0].columns.map { $0.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) }
-        guard let nameIdx = headers.firstIndex(of: "name") else {
+        let rawHeaders = rows[0].columns.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let headerFingerprint = importHeaderFingerprint(rawHeaders)
+        let savedMapping = try findSavedPartsImportMapping(
+            supplierId: supplierId,
+            sourceKind: sourceKind,
+            headerFingerprint: headerFingerprint
+        )
+        let columnMapping = savedMapping?.columnMapping ?? deterministicPartsImportColumnMapping(rawHeaders)
+        let canonicalHeaders = rawHeaders.enumerated().map { index, header in
+            let normalized = normalizedImportHeader(header)
+            return columnMapping[header] ?? columnMapping[normalized] ?? (normalized.isEmpty ? "column_\(index + 1)" : normalized)
+        }
+        guard let nameIdx = canonicalHeaders.firstIndex(of: "name") else {
             throw PartsError.invalidInput("CSV must have a 'name' column.")
         }
-        guard let categoryIdx = headers.firstIndex(of: "category") else {
+        guard let categoryIdx = canonicalHeaders.firstIndex(of: "category") else {
             throw PartsError.invalidInput("CSV must have a 'category' column.")
         }
-        let codeIdx = headers.firstIndex(of: "code")
-        let brandIdx = headers.firstIndex(of: "brand")
+        let codeIdx = canonicalHeaders.firstIndex(of: "code")
+        let brandIdx = canonicalHeaders.firstIndex(of: "brand")
 
-        var preview = PartsImportPreview(totalRows: rows.count - 1)
+        var preview = PartsImportPreview(
+            totalRows: rows.count - 1,
+            source: PartsImportSourceMetadata(
+                sourceKind: sourceKind,
+                supplierId: supplierId,
+                headerFingerprint: headerFingerprint,
+                sourceHeaders: rawHeaders,
+                acceptedColumnMapping: columnMapping,
+                savedMappingId: savedMapping?.id
+            )
+        )
+        var errorsByRowNumber: [Int: [String]] = [:]
         for row in rows.dropFirst() {
             let rowNumber = row.rowNumber
             let columns = row.columns
@@ -6215,34 +6352,50 @@ public final class PartsService: Sendable {
 
             guard let name = value(at: nameIdx) else {
                 preview.errors.append(PartsImportError(rowNumber: rowNumber, message: "Missing required name"))
+                errorsByRowNumber[rowNumber, default: []].append("Missing required name")
                 continue
             }
             guard let category = value(at: categoryIdx) else {
                 preview.errors.append(PartsImportError(rowNumber: rowNumber, message: "Missing required category"))
+                errorsByRowNumber[rowNumber, default: []].append("Missing required category")
                 continue
             }
 
             var fields: [String: String] = [:]
-            for (index, header) in headers.enumerated() {
+            for (index, header) in canonicalHeaders.enumerated() {
                 guard index < columns.count else { continue }
                 guard !["name", "code", "category", "brand"].contains(header) else { continue }
                 let trimmed = columns[index].trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty { fields[header] = trimmed }
             }
 
-            for numericHeader in ["cost_price", "markup_percent"] {
+            for numericHeader in ["cost_price", "markup_percent", "sell_price"] {
                 if let raw = fields[numericHeader] {
                     guard let value = Double(raw) else {
-                        preview.errors.append(PartsImportError(rowNumber: rowNumber, message: "Invalid number for \(numericHeader): \(raw)"))
+                        let message = "Invalid number for \(numericHeader): \(raw)"
+                        preview.errors.append(PartsImportError(rowNumber: rowNumber, message: message))
+                        errorsByRowNumber[rowNumber, default: []].append(message)
                         continue
                     }
                     if value < 0 {
-                        preview.errors.append(PartsImportError(rowNumber: rowNumber, message: "\(numericHeader) cannot be negative"))
+                        let message = "\(numericHeader) cannot be negative"
+                        preview.errors.append(PartsImportError(rowNumber: rowNumber, message: message))
+                        errorsByRowNumber[rowNumber, default: []].append(message)
                         continue
                     }
                 }
             }
-            if preview.errors.contains(where: { $0.rowNumber == rowNumber }) { continue }
+            if let messages = errorsByRowNumber[rowNumber] {
+                preview.decisions.append(PartsImportPreviewRowDecision(
+                    rowNumber: rowNumber,
+                    classification: .quarantined,
+                    parsedRow: nil,
+                    existingPartId: nil,
+                    matchReason: nil,
+                    message: messages.joined(separator: "; ")
+                ))
+                continue
+            }
 
             let parsed = PartsImportParsedRow(
                 rowNumber: rowNumber,
@@ -6253,26 +6406,360 @@ public final class PartsService: Sendable {
                 fields: fields
             )
 
-            let existingPart = try db.writer.read { dbConn -> Part? in
-                if let code = parsed.code, !code.isEmpty,
-                   let byCode = try Part.fetchOne(dbConn, sql: "SELECT * FROM parts WHERE code = ? AND deleted_at IS NULL", arguments: [code]) {
-                    return byCode
-                }
-                return try Part.fetchOne(dbConn, sql: "SELECT * FROM parts WHERE LOWER(name) = LOWER(?) AND deleted_at IS NULL", arguments: [parsed.name])
-            }
+            let match = try findPartsImportMatch(parsed, supplierId: supplierId)
 
-            if let existingPart, let id = existingPart.id {
+            if let match, let existingPart = match.part, let id = existingPart.id {
+                let classification: PartsImportPreviewClassification = if match.isAmbiguous {
+                    .conflictReview
+                } else {
+                    try previewClassification(for: parsed, existingPart: existingPart, matchReason: match.reason)
+                }
                 preview.conflicts.append(PartsImportConflict(
                     parsedRow: parsed,
                     existingPartId: id,
                     existingPartName: existingPart.name,
-                    existingPartCode: existingPart.code
+                    existingPartCode: existingPart.code,
+                    matchReason: match.reason
+                ))
+                preview.decisions.append(PartsImportPreviewRowDecision(
+                    rowNumber: rowNumber,
+                    classification: classification,
+                    parsedRow: parsed,
+                    existingPartId: id,
+                    matchReason: match.reason,
+                    message: match.isAmbiguous ? "Multiple existing parts matched \(match.reason); review before commit." : nil
                 ))
             } else {
                 preview.newParts.append(parsed)
+                preview.decisions.append(PartsImportPreviewRowDecision(
+                    rowNumber: rowNumber,
+                    classification: .new,
+                    parsedRow: parsed,
+                    existingPartId: nil,
+                    matchReason: nil,
+                    message: nil
+                ))
             }
         }
         return preview
+    }
+
+    public func saveAcceptedPartsImportMapping(
+        supplierId: Int64?,
+        sourceKind: String,
+        sourceHeaders: [String],
+        columnMapping: [String: String],
+        acceptedBy: Int64? = nil,
+        schemaVersion: Int = PartsImportSourceMetadata.mappingSchemaVersion
+    ) throws -> PartsImportSavedMapping {
+        let fingerprint = importHeaderFingerprint(sourceHeaders)
+        return try upsertPartsImportSavedMapping(
+            supplierId: supplierId,
+            sourceKind: sourceKind,
+            headerFingerprint: fingerprint,
+            schemaVersion: schemaVersion,
+            sourceHeaders: sourceHeaders,
+            columnMapping: columnMapping,
+            acceptedBy: acceptedBy
+        )
+    }
+
+    public func findSavedPartsImportMapping(
+        supplierId: Int64?,
+        sourceKind: String,
+        headerFingerprint: String,
+        schemaVersion: Int = PartsImportSourceMetadata.mappingSchemaVersion
+    ) throws -> PartsImportSavedMapping? {
+        try db.writer.read { dbConn in
+            let row = try Row.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT * FROM part_import_saved_mappings
+                    WHERE source_kind = ?
+                      AND header_fingerprint = ?
+                      AND schema_version = ?
+                      AND deleted_at IS NULL
+                      AND (supplier_id = ? OR (supplier_id IS NULL AND ? IS NULL))
+                    ORDER BY supplier_id IS NULL ASC
+                    LIMIT 1
+                    """,
+                arguments: [sourceKind, headerFingerprint, schemaVersion, supplierId, supplierId]
+            )
+            guard let row else { return nil }
+            let id: Int64 = row["id"]
+            return PartsImportSavedMapping(
+                id: id,
+                supplierId: row["supplier_id"] as Int64?,
+                sourceKind: row["source_kind"] as String,
+                headerFingerprint: row["header_fingerprint"] as String,
+                schemaVersion: row["schema_version"] as Int,
+                columnMapping: decodeJSONStringDictionary(row["column_mapping_json"] as String?),
+                sourceHeaders: decodeJSONStringArray(row["source_headers_json"] as String?)
+            )
+        }
+    }
+
+    private struct PartsImportMatch {
+        let part: Part?
+        let reason: String
+        let isAmbiguous: Bool
+    }
+
+    private func findPartsImportMatch(_ parsed: PartsImportParsedRow, supplierId: Int64?) throws -> PartsImportMatch? {
+        try db.writer.read { dbConn in
+            if let supplierId,
+               let supplierPartNumber = parsed.supplierPartNumber?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !supplierPartNumber.isEmpty {
+                let rows = try Part.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT p.*
+                        FROM parts p
+                        JOIN part_supplier_links psl ON psl.part_id = p.id AND psl.deleted_at IS NULL
+                        WHERE psl.supplier_id = ?
+                          AND LOWER(psl.supplier_part_number) = LOWER(?)
+                          AND p.deleted_at IS NULL
+                        ORDER BY p.id ASC
+                        """,
+                    arguments: [supplierId, supplierPartNumber]
+                )
+                if let first = rows.first {
+                    return PartsImportMatch(part: first, reason: "supplier_part_number", isAmbiguous: rows.count > 1)
+                }
+            }
+
+            if let code = parsed.code?.trimmingCharacters(in: .whitespacesAndNewlines), !code.isEmpty {
+                let rows = try Part.fetchAll(
+                    dbConn,
+                    sql: "SELECT * FROM parts WHERE LOWER(code) = LOWER(?) AND deleted_at IS NULL ORDER BY id ASC",
+                    arguments: [code]
+                )
+                if let first = rows.first {
+                    return PartsImportMatch(part: first, reason: "code", isAmbiguous: rows.count > 1)
+                }
+            }
+
+            let normalizedName = normalizedImportValue(parsed.name)
+            let normalizedCategory = normalizedImportValue(parsed.category)
+            let normalizedBrand = normalizedImportValue(parsed.brand ?? "")
+            let rows = try Part.fetchAll(
+                dbConn,
+                sql: """
+                    SELECT p.*
+                    FROM parts p
+                    JOIN part_categories c ON c.id = p.category_id AND c.deleted_at IS NULL
+                    LEFT JOIN brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
+                    WHERE LOWER(TRIM(p.name)) = ?
+                      AND LOWER(TRIM(c.name)) = ?
+                      AND LOWER(TRIM(COALESCE(b.name, ''))) = ?
+                      AND p.deleted_at IS NULL
+                    ORDER BY p.id ASC
+                    """,
+                arguments: [normalizedName, normalizedCategory, normalizedBrand]
+            )
+            guard let first = rows.first else { return nil }
+            return PartsImportMatch(part: first, reason: "name_category_brand", isAmbiguous: rows.count > 1)
+        }
+    }
+
+    private func previewClassification(for parsed: PartsImportParsedRow, existingPart: Part, matchReason: String) throws -> PartsImportPreviewClassification {
+        if try rowsAreEquivalent(parsed, existingPart: existingPart, matchReason: matchReason) {
+            return .duplicateSkip
+        }
+        return matchReason == "name_category_brand" ? .conflictReview : .update
+    }
+
+    private func rowsAreEquivalent(_ parsed: PartsImportParsedRow, existingPart: Part, matchReason: String) throws -> Bool {
+        guard normalizedImportValue(parsed.name) == normalizedImportValue(existingPart.name),
+              normalizedImportValue(parsed.code ?? "") == normalizedImportValue(existingPart.code ?? "") else {
+            return false
+        }
+
+        guard let existingPartId = existingPart.id else { return false }
+        return try db.writer.read { dbConn in
+            let categoryName = try String.fetchOne(
+                dbConn,
+                sql: "SELECT name FROM part_categories WHERE id = ? AND deleted_at IS NULL",
+                arguments: [existingPart.categoryId]
+            ) ?? ""
+            guard normalizedImportValue(parsed.category) == normalizedImportValue(categoryName) else {
+                return false
+            }
+
+            let brandName: String
+            if let brandId = existingPart.brandId {
+                brandName = try String.fetchOne(
+                    dbConn,
+                    sql: "SELECT name FROM brands WHERE id = ? AND deleted_at IS NULL",
+                    arguments: [brandId]
+                ) ?? ""
+            } else {
+                brandName = ""
+            }
+            guard normalizedImportValue(parsed.brand ?? "") == normalizedImportValue(brandName) else {
+                return false
+            }
+
+            if let supplierPartNumber = parsed.supplierPartNumber?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !supplierPartNumber.isEmpty,
+               matchReason != "supplier_part_number" {
+                return false
+            }
+
+            return optionalImportFieldMatches(parsed.fields["part_type"], existingPart.partType)
+                && optionalImportFieldMatches(parsed.fields["description"], existingPart.description)
+                && optionalImportFieldMatches(parsed.fields["unit_of_measure"], existingPart.unitOfMeasure)
+                && optionalImportNumberMatches(parsed.fields["cost_price"], existingPart.companyCostPrice)
+                && optionalImportNumberMatches(parsed.fields["markup_percent"], existingPart.companyMarkupPercent)
+                && optionalImportFieldMatches(parsed.fields["shelf_location"], existingPart.shelfLocation)
+                && optionalImportFieldMatches(parsed.fields["bin_location"], existingPart.binLocation)
+                && existingPartId > 0
+        }
+    }
+
+    private func optionalImportFieldMatches(_ imported: String?, _ existing: String?) -> Bool {
+        guard let imported else { return true }
+        return normalizedImportValue(imported) == normalizedImportValue(existing ?? "")
+    }
+
+    private func optionalImportNumberMatches(_ imported: String?, _ existing: Double) -> Bool {
+        guard let imported else { return true }
+        guard let importedNumber = Double(imported.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
+        return abs(importedNumber - existing) < 0.000_001
+    }
+
+    private func deterministicPartsImportColumnMapping(_ headers: [String]) -> [String: String] {
+        var mapping: [String: String] = [:]
+        for header in headers {
+            let normalized = normalizedImportHeader(header)
+            if let canonical = canonicalImportHeader(for: normalized) {
+                mapping[header] = canonical
+                mapping[normalized] = canonical
+            }
+        }
+        return mapping
+    }
+
+    private func canonicalImportHeader(for normalized: String) -> String? {
+        let aliases: [String: Set<String>] = [
+            "name": ["name", "part_name", "part", "item_name"],
+            "code": ["code", "part_code", "part_number", "item_code", "sku", "internal_code"],
+            "category": ["category", "part_category", "type"],
+            "brand": ["brand", "manufacturer", "mfg"],
+            "supplier_part_number": ["supplier_part_number", "supplier_part", "supplier_code", "vendor_part_number", "vendor_part", "vendor_code", "mfr_part_number"],
+            "cost_price": ["cost_price", "cost", "unit_cost", "price"],
+            "markup_percent": ["markup_percent", "markup", "margin_percent"],
+            "unit_of_measure": ["unit_of_measure", "uom", "unit"],
+            "shelf_location": ["shelf_location", "shelf"],
+            "bin_location": ["bin_location", "bin"],
+            "part_type": ["part_type"],
+            "description": ["description", "part_description", "notes"]
+        ]
+        return aliases.first { $0.value.contains(normalized) }?.key
+    }
+
+    private func importHeaderFingerprint(_ headers: [String]) -> String {
+        let canonical = headers.map(normalizedImportHeader).joined(separator: "|")
+        let digest = SHA256.hash(data: Data(canonical.utf8))
+        return "sha256:\(digest.map { String(format: "%02x", $0) }.joined())"
+    }
+
+    private func normalizedImportHeader(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "[^a-z0-9]+", with: "_", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+    }
+
+    private func normalizedImportValue(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private func upsertPartsImportSavedMapping(
+        supplierId: Int64?,
+        sourceKind: String,
+        headerFingerprint: String,
+        schemaVersion: Int,
+        sourceHeaders: [String],
+        columnMapping: [String: String],
+        acceptedBy: Int64?
+    ) throws -> PartsImportSavedMapping {
+        let mappingJSON = try encodeJSONDictionary(columnMapping)
+        let headersJSON = try encodeJSONArray(sourceHeaders)
+        return try db.writer.write { dbConn in
+            try upsertPartsImportSavedMapping(
+                dbConn,
+                supplierId: supplierId,
+                sourceKind: sourceKind,
+                headerFingerprint: headerFingerprint,
+                schemaVersion: schemaVersion,
+                sourceHeaders: sourceHeaders,
+                columnMapping: columnMapping,
+                acceptedBy: acceptedBy,
+                mappingJSON: mappingJSON,
+                headersJSON: headersJSON
+            )
+        }
+    }
+
+    private func upsertPartsImportSavedMapping(
+        _ dbConn: Database,
+        supplierId: Int64?,
+        sourceKind: String,
+        headerFingerprint: String,
+        schemaVersion: Int,
+        sourceHeaders: [String],
+        columnMapping: [String: String],
+        acceptedBy: Int64?,
+        mappingJSON: String? = nil,
+        headersJSON: String? = nil
+    ) throws -> PartsImportSavedMapping {
+        let resolvedMappingJSON: String
+        if let mappingJSON {
+            resolvedMappingJSON = mappingJSON
+        } else {
+            resolvedMappingJSON = try encodeJSONDictionary(columnMapping)
+        }
+        let resolvedHeadersJSON: String
+        if let headersJSON {
+            resolvedHeadersJSON = headersJSON
+        } else {
+            resolvedHeadersJSON = try encodeJSONArray(sourceHeaders)
+        }
+        let existingId = try Int64.fetchOne(
+            dbConn,
+            sql: """
+                SELECT id FROM part_import_saved_mappings
+                WHERE source_kind = ?
+                  AND header_fingerprint = ?
+                  AND schema_version = ?
+                  AND deleted_at IS NULL
+                  AND (supplier_id = ? OR (supplier_id IS NULL AND ? IS NULL))
+                """,
+            arguments: [sourceKind, headerFingerprint, schemaVersion, supplierId, supplierId]
+        )
+        if let existingId {
+            try dbConn.execute(
+                sql: """
+                    UPDATE part_import_saved_mappings
+                    SET column_mapping_json = ?, source_headers_json = ?, accepted_by = COALESCE(?, accepted_by),
+                        updated_at = datetime('now'), deleted_at = NULL
+                    WHERE id = ?
+                    """,
+                arguments: [resolvedMappingJSON, resolvedHeadersJSON, acceptedBy, existingId]
+            )
+            return PartsImportSavedMapping(id: existingId, supplierId: supplierId, sourceKind: sourceKind, headerFingerprint: headerFingerprint, schemaVersion: schemaVersion, columnMapping: columnMapping, sourceHeaders: sourceHeaders)
+        }
+        try dbConn.execute(
+            sql: """
+                INSERT INTO part_import_saved_mappings (
+                    supplier_id, source_kind, header_fingerprint, schema_version,
+                    column_mapping_json, source_headers_json, accepted_by, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                """,
+            arguments: [supplierId, sourceKind, headerFingerprint, schemaVersion, resolvedMappingJSON, resolvedHeadersJSON, acceptedBy]
+        )
+        return PartsImportSavedMapping(id: dbConn.lastInsertedRowID, supplierId: supplierId, sourceKind: sourceKind, headerFingerprint: headerFingerprint, schemaVersion: schemaVersion, columnMapping: columnMapping, sourceHeaders: sourceHeaders)
     }
 
     /// Commit a clean import preview atomically. If the preview has validation
@@ -6288,7 +6775,7 @@ public final class PartsService: Sendable {
 
             var created = 0
             var updated = 0
-            var skipped = 0
+            var skipped = preview.skippedNewParts.count
 
             try db.writer.write { dbConn in
                 func parseImportNumeric(_ rawValue: String?, header: String, rowNumber: Int) throws -> Double? {
@@ -6396,19 +6883,26 @@ public final class PartsService: Sendable {
 
                 for row in preview.newParts {
                     let partId = try create(row)
+                    try upsertSupplierLinkIfNeeded(dbConn, row: row, partId: partId, supplierId: preview.source?.supplierId)
                     try recordImportRowEvidence(dbConn, sessionId: importSessionId, row: row, action: "created", partId: partId)
                     created += 1
+                }
+                for row in preview.skippedNewParts {
+                    try recordImportRowEvidence(dbConn, sessionId: importSessionId, row: row, action: "skipped", partId: nil)
                 }
                 for conflict in preview.conflicts {
                     switch conflict.resolution {
                     case .update:
                         try update(conflict)
+                        try upsertSupplierLinkIfNeeded(dbConn, row: conflict.parsedRow, partId: conflict.existingPartId, supplierId: preview.source?.supplierId)
                         try recordImportRowEvidence(dbConn, sessionId: importSessionId, row: conflict.parsedRow, action: "updated", partId: conflict.existingPartId)
                         updated += 1
                     case .skip, .ask:
+                        try recordImportRowEvidence(dbConn, sessionId: importSessionId, row: conflict.parsedRow, action: "skipped", partId: conflict.existingPartId)
                         skipped += 1
                     }
                 }
+                try persistAcceptedMappingAfterCommit(dbConn, preview: preview)
             }
 
             try finishImportSessionIfNeeded(id: importSessionId, status: "committed", created: created, updated: updated, skipped: skipped, error: nil)
@@ -6450,7 +6944,7 @@ public final class PartsService: Sendable {
         }
     }
 
-    private func recordImportRowEvidence(_ dbConn: Database, sessionId: Int64?, row: PartsImportParsedRow, action: String, partId: Int64) throws {
+    private func recordImportRowEvidence(_ dbConn: Database, sessionId: Int64?, row: PartsImportParsedRow, action: String, partId: Int64?) throws {
         guard let sessionId else { return }
         try dbConn.execute(sql: """
             INSERT INTO part_import_row_evidence (
@@ -6485,6 +6979,95 @@ public final class PartsService: Sendable {
             return "{}"
         }
         return json
+    }
+
+    private func encodeJSONDictionary(_ dictionary: [String: String]) throws -> String {
+        try encodeJSONValue(dictionary)
+    }
+
+    private func encodeJSONArray(_ array: [String]) throws -> String {
+        try encodeJSONValue(array)
+    }
+
+    private func encodeJSONValue(_ value: Any) throws -> String {
+        guard JSONSerialization.isValidJSONObject(value) else {
+            throw PartsError.invalidInput("Invalid JSON value for parts import metadata.")
+        }
+        let data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw PartsError.invalidInput("Unable to encode parts import metadata JSON.")
+        }
+        return json
+    }
+
+    private func decodeJSONStringDictionary(_ json: String?) -> [String: String] {
+        guard let json,
+              let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
+            return [:]
+        }
+        return object
+    }
+
+    private func decodeJSONStringArray(_ json: String?) -> [String] {
+        guard let json,
+              let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String] else {
+            return []
+        }
+        return object
+    }
+
+    private func upsertSupplierLinkIfNeeded(_ dbConn: Database, row: PartsImportParsedRow, partId: Int64, supplierId: Int64?) throws {
+        guard let supplierId,
+              let supplierPartNumber = row.supplierPartNumber?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !supplierPartNumber.isEmpty else { return }
+
+        let cost = row.fields["cost_price"].flatMap { Double($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        let existingId = try Int64.fetchOne(
+            dbConn,
+            sql: """
+                SELECT id FROM part_supplier_links
+                WHERE part_id = ? AND supplier_id = ? AND deleted_at IS NULL
+                """,
+            arguments: [partId, supplierId]
+        )
+        if let existingId {
+            try dbConn.execute(
+                sql: """
+                    UPDATE part_supplier_links
+                    SET supplier_part_number = ?, supplier_cost_price = COALESCE(?, supplier_cost_price)
+                    WHERE id = ?
+                    """,
+                arguments: [supplierPartNumber, cost, existingId]
+            )
+        } else {
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO part_supplier_links (
+                        part_id, supplier_id, supplier_part_number, supplier_cost_price, is_preferred, created_at
+                    ) VALUES (?, ?, ?, ?, 0, datetime('now'))
+                    """,
+                arguments: [partId, supplierId, supplierPartNumber, cost]
+            )
+        }
+    }
+
+    private func persistAcceptedMappingAfterCommit(_ dbConn: Database, preview: PartsImportPreview) throws {
+        guard let source = preview.source,
+              let headerFingerprint = source.headerFingerprint,
+              !source.acceptedColumnMapping.isEmpty,
+              !source.sourceHeaders.isEmpty else { return }
+        _ = try upsertPartsImportSavedMapping(
+            dbConn,
+            supplierId: source.supplierId,
+            sourceKind: source.sourceKind,
+            headerFingerprint: headerFingerprint,
+            schemaVersion: source.mappingSchemaVersion,
+            sourceHeaders: source.sourceHeaders,
+            columnMapping: source.acceptedColumnMapping,
+            acceptedBy: source.userId
+        )
     }
 
     func importSourceHash(_ data: Data) -> String {

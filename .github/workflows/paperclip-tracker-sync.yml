@@ -11,6 +11,8 @@ permissions:
 
 jobs:
   sync-tracker:
+    # Scheduled repo automation uses the local Mac runner while cloud Actions
+    # billing is unavailable for this private repo.
     runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]
     timeout-minutes: 10
     env:
@@ -23,6 +25,14 @@ jobs:
       GH_TOKEN: ${{ github.token }}
 
     steps:
+      - name: Verify self-hosted macOS runner
+        shell: bash
+        run: |
+          test "$RUNNER_OS" = "macOS"
+          test "$(uname -s)" = "Darwin"
+          echo "Runner: $RUNNER_NAME"
+          echo "Architecture: $RUNNER_ARCH"
+
       - name: Checkout
         uses: actions/checkout@v4
 
