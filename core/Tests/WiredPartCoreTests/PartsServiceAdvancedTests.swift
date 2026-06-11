@@ -27,6 +27,10 @@ private func insertPoweredVote(
 // MARK: - Helper: Build a minimal XLSX workbook for import tests
 
 private func makeMinimalXLSX(sheetName: String, rows: [[String]], rowNumbers: [Int]? = nil) throws -> Data {
+    try makeMinimalXLSX(sheets: [(sheetName, rows, rowNumbers)])
+}
+
+private func makeMinimalXLSX(sheets: [(name: String, rows: [[String]], rowNumbers: [Int]?)]) throws -> Data {
     func escapeXML(_ value: String) -> String {
         value
             .replacingOccurrences(of: "&", with: "&amp;")
@@ -47,43 +51,58 @@ private func makeMinimalXLSX(sheetName: String, rows: [[String]], rowNumbers: [I
         return result
     }
 
+    let sheetContentTypes = sheets.enumerated().map { offset, _ in
+        "  <Override PartName=\"/xl/worksheets/sheet\(offset + 1).xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>"
+    }.joined(separator: "\n")
     let contentTypesXML = """
     <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
       <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
       <Default Extension="xml" ContentType="application/xml"/>
       <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-      <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+    \(sheetContentTypes)
     </Types>
     """
 
+    let sheetListXML = sheets.enumerated().map { offset, sheet in
+        "<sheet name=\"\(escapeXML(sheet.name))\" sheetId=\"\(offset + 1)\" r:id=\"rId\(offset + 1)\"/>"
+    }.joined()
     let workbookXML = """
     <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-      <sheets><sheet name="\(escapeXML(sheetName))" sheetId="1" r:id="rId1"/></sheets>
+      <sheets>\(sheetListXML)</sheets>
     </workbook>
     """
 
+    let relationships = sheets.enumerated().map { offset, _ in
+        "  <Relationship Id=\"rId\(offset + 1)\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet\(offset + 1).xml\"/>"
+    }.joined(separator: "\n")
     let workbookRelationshipsXML = """
     <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-      <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+    \(relationships)
     </Relationships>
     """
 
-    let rowXML: String = rows.enumerated().map { rowIndex, values in
-        let spreadsheetRow = rowNumbers?[rowIndex] ?? rowIndex + 1
-        let cells: String = values.enumerated().map { columnIndex, value in
-            "<c r=\"\(columnName(columnIndex))\(spreadsheetRow)\" t=\"inlineStr\"><is><t>\(escapeXML(value))</t></is></c>"
+    func worksheetXML(rows: [[String]], rowNumbers: [Int]?) -> String {
+        let rowXML: String = rows.enumerated().map { rowIndex, values in
+            let spreadsheetRow = rowNumbers?[rowIndex] ?? rowIndex + 1
+            let cells: String = values.enumerated().map { columnIndex, value in
+                "<c r=\"\(columnName(columnIndex))\(spreadsheetRow)\" t=\"inlineStr\"><is><t>\(escapeXML(value))</t></is></c>"
+            }.joined()
+            return "<row r=\"\(spreadsheetRow)\">\(cells)</row>"
         }.joined()
-        return "<row r=\"\(spreadsheetRow)\">\(cells)</row>"
-    }.joined()
-    let worksheetXML = """
-    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-    <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-      <sheetData>\(rowXML)</sheetData>
-    </worksheet>
-    """
+        return """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+          <sheetData>\(rowXML)</sheetData>
+        </worksheet>
+        """
+    }
+
+    let worksheetEntries = sheets.enumerated().map { offset, sheet in
+        ("xl/worksheets/sheet\(offset + 1).xml", Data(worksheetXML(rows: sheet.rows, rowNumbers: sheet.rowNumbers).utf8))
+    }
 
     let temporaryURL = FileManager.default.temporaryDirectory
         .appendingPathComponent("xlsx-test-\(UUID().uuidString).xlsx")
@@ -93,9 +112,8 @@ private func makeMinimalXLSX(sheetName: String, rows: [[String]], rowNumbers: [I
     let entries: [(String, Data)] = [
         ("[Content_Types].xml", Data(contentTypesXML.utf8)),
         ("xl/workbook.xml", Data(workbookXML.utf8)),
-        ("xl/_rels/workbook.xml.rels", Data(workbookRelationshipsXML.utf8)),
-        ("xl/worksheets/sheet1.xml", Data(worksheetXML.utf8))
-    ]
+        ("xl/_rels/workbook.xml.rels", Data(workbookRelationshipsXML.utf8))
+    ] + worksheetEntries
     for (path, data) in entries {
         try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(data.count)) { position, size in
             data.subdata(in: Int(position)..<Int(position) + size)
@@ -235,6 +253,25 @@ struct PartsServiceAdvancedTests {
         #expect(after.totalSuppliers == before.totalSuppliers + 1)
     }
 
+    @Test("getImportExportStats excludes inactive parts from active catalog total")
+    func testGetImportExportStatsExcludesInactiveParts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let before = try env.parts.getImportExportStats()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let activePartId = try E2ETestHelpers.seedPart(env, name: "Active Stats Part", categoryId: catId)
+        let inactivePartId = try E2ETestHelpers.seedPart(env, name: "Inactive Stats Part", categoryId: catId)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET is_active = 0 WHERE id = ?", arguments: [inactivePartId])
+        }
+
+        let stats = try env.parts.getImportExportStats()
+        let listedParts = try env.parts.listParts()
+        #expect(stats.totalParts == before.totalParts + 1)
+        #expect(try env.parts.getPart(id: activePartId).part.id == activePartId)
+        #expect(!listedParts.contains { $0.part.id == inactivePartId })
+    }
+
     @Test("getImportExportStats returns zeros on empty catalog")
     func testGetImportExportStatsEmpty() throws {
         let env = try E2ETestHelpers.setUp()
@@ -287,6 +324,21 @@ struct PartsServiceAdvancedTests {
         #expect(preview.errors.count == 2)
         #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid number for cost_price: N/A" })
         #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid number for markup_percent: forty" })
+    }
+
+    @Test("previewPartsImportCSV rejects invalid exported sell_price values")
+    func testPreviewPartsImportCSVRejectsInvalidSellPriceValue() throws {
+        let env = try E2ETestHelpers.setUp()
+        let csv = """
+        name,code,category,cost_price,markup_percent,sell_price
+        Bad Sell Price Part,BAD-SELL-001,Test,12.5,20,not-a-number
+        """
+
+        let preview = try env.parts.previewPartsImportCSV(csv)
+
+        #expect(preview.newParts.isEmpty)
+        #expect(preview.errors.count == 1)
+        #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid number for sell_price: not-a-number" })
     }
 
     @Test("previewPartsImportCSV keeps rows with valid numeric pricing fields")
@@ -448,6 +500,12 @@ struct PartsServiceAdvancedTests {
         #expect(source.filename == nil)
         #expect(source.sourceHash?.hasPrefix("sha256:") == true)
         #expect(source.sourceHash?.count == 71)
+        #expect(source.parserMetadata?.parserName == "wiredpart.csv")
+        #expect(source.parserMetadata?.sourceKind == .csv)
+        #expect(source.parserMetadata?.sourceHash == source.sourceHash)
+        #expect(source.parserMetadata?.rowCount == 2)
+        #expect(source.parserMetadata?.columnCount == 3)
+        #expect(source.evidence.contains(where: { $0.kind == .sourceHash }) == true)
     }
 
     @Test("previewPartsImportXLSX attaches source metadata for audit sessions")
@@ -465,6 +523,126 @@ struct PartsServiceAdvancedTests {
         #expect(source.filename == nil)
         #expect(source.sourceHash?.hasPrefix("sha256:") == true)
         #expect(source.sourceHash?.count == 71)
+        #expect(source.parserMetadata?.parserName == "wiredpart.xlsx")
+        #expect(source.parserMetadata?.sourceKind == .xlsx)
+        #expect(source.parserMetadata?.sourceHash == source.sourceHash)
+        #expect(source.parserMetadata?.boundedArchiveProtectionsApplied == true)
+        #expect(source.parserMetadata?.sheetMetadata.first?.name == "Audit")
+        #expect(source.parserMetadata?.sheetMetadata.first?.rowCount == 2)
+        #expect(source.parserMetadata?.sheetMetadata.first?.columnCount == 3)
+    }
+
+    @Test("shared import source contracts cover future parser source kinds")
+    func testSharedImportSourceContractsCoverFutureParserKinds() {
+        let kinds: Set<PartsService.PartsImportSourceKind> = [.csv, .xlsx, .digitalPDFText, .ocr, .vision]
+        #expect(kinds.map(\.rawValue).contains("digital_pdf_text"))
+        #expect(kinds.count == 5)
+
+        let evidence = PartsService.PartsImportSourceEvidence(
+            kind: .boundingBox,
+            pageNumber: 2,
+            text: "OCR cell",
+            confidence: 0.92,
+            boundingBox: [1, 2, 3, 4]
+        )
+        let draftRow = PartsService.PartsImportDraftRow(rowNumber: 7, columns: ["Part", "Cost"], evidence: [evidence])
+        let table = PartsService.PartsImportExtractedTable(
+            id: "vision:page:2",
+            sourceKind: .vision,
+            pageNumber: 2,
+            headerRowNumber: 7,
+            rows: [draftRow],
+            evidence: [evidence]
+        )
+
+        #expect(table.sourceKind == .vision)
+        #expect(table.rows.first?.evidence.first?.kind == .boundingBox)
+        #expect(PartsService.PartsImportPreviewDecision.conflict.rawValue == "conflict")
+    }
+
+    @Test("CSV and XLSX adapters produce compatible preview rows and source hashes")
+    func testCSVAndXLSXAdapterParity() throws {
+        let env = try E2ETestHelpers.setUp()
+        let csv = """
+        name,code,category,brand,cost_price
+        Adapter Parity Part,PAR-001,Parity Category,Parity Brand,10.5
+        """
+        let xlsx = try makeMinimalXLSX(sheetName: "Parity", rows: [
+            ["name", "code", "category", "brand", "cost_price"],
+            ["Adapter Parity Part", "PAR-001", "Parity Category", "Parity Brand", "10.5"]
+        ])
+
+        let csvPreview = try env.parts.previewPartsImportCSV(csv)
+        let xlsxPreview = try env.parts.previewPartsImportXLSX(xlsx)
+
+        #expect(csvPreview.newParts.count == 1)
+        #expect(xlsxPreview.newParts.count == 1)
+        #expect(csvPreview.newParts.first?.fields == xlsxPreview.newParts.first?.fields)
+        #expect(csvPreview.newParts.first?.name == xlsxPreview.newParts.first?.name)
+        #expect(csvPreview.source?.parserMetadata?.sourceKind == .csv)
+        #expect(xlsxPreview.source?.parserMetadata?.sourceKind == .xlsx)
+        #expect(csvPreview.source?.sourceHash?.hasPrefix("sha256:") == true)
+        #expect(xlsxPreview.source?.sourceHash?.hasPrefix("sha256:") == true)
+    }
+
+    @Test("preview adapters do not create import sessions or row evidence")
+    func testImportPreviewAdaptersDoNotWriteAuditTables() throws {
+        let env = try E2ETestHelpers.setUp()
+        let beforeSessions = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM part_import_sessions") ?? -1
+        }
+        let beforeEvidence = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM part_import_row_evidence") ?? -1
+        }
+
+        _ = try env.parts.previewPartsImportCSV("""
+        name,code,category
+        Preview CSV Only,PREVIEW-CSV-001,Preview Category
+        """)
+        let xlsx = try makeMinimalXLSX(sheetName: "Preview", rows: [
+            ["name", "code", "category"],
+            ["Preview XLSX Only", "PREVIEW-XLSX-001", "Preview Category"]
+        ])
+        _ = try env.parts.previewPartsImportXLSX(xlsx)
+
+        let afterSessions = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM part_import_sessions") ?? -1
+        }
+        let afterEvidence = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM part_import_row_evidence") ?? -1
+        }
+        #expect(afterSessions == beforeSessions)
+        #expect(afterEvidence == beforeEvidence)
+        #expect(try env.parts.findPartByCode("PREVIEW-CSV-001") == nil)
+        #expect(try env.parts.findPartByCode("PREVIEW-XLSX-001") == nil)
+    }
+
+    @Test("XLSX adapter exposes workbook sheet metadata while preserving first sheet preview behavior")
+    func testPreviewPartsImportXLSXExposesWorkbookSheetMetadata() throws {
+        let env = try E2ETestHelpers.setUp()
+        let xlsx = try makeMinimalXLSX(sheets: [
+            ("First", [
+                ["name", "code", "category"],
+                ["First Sheet Part", "FIRST-XLSX-001", "First Category"]
+            ], nil),
+            ("Second", [
+                ["name", "code", "category", "cost_price"],
+                ["Second Sheet Part", "SECOND-XLSX-001", "Second Category", "42"]
+            ], nil)
+        ])
+
+        let preview = try env.parts.previewPartsImportXLSX(xlsx)
+        let metadata = try #require(preview.source?.parserMetadata)
+
+        #expect(preview.newParts.count == 1)
+        #expect(preview.newParts.first?.code == "FIRST-XLSX-001")
+        #expect(preview.source?.sheetName == "First")
+        #expect(metadata.sheetMetadata.count == 2)
+        #expect(metadata.sheetMetadata.map(\.name) == ["First", "Second"])
+        #expect(metadata.sheetMetadata[0].path == "xl/worksheets/sheet1.xml")
+        #expect(metadata.sheetMetadata[1].path == "xl/worksheets/sheet2.xml")
+        #expect(metadata.sheetMetadata[1].rowCount == 2)
+        #expect(metadata.sheetMetadata[1].columnCount == 4)
     }
 
     @Test("commitPartsImportCSV records durable import session and accepted row evidence")
@@ -505,6 +683,46 @@ struct PartsServiceAdvancedTests {
         #expect(firstEvidence["source_name"] as String == "Audited Part")
         #expect(firstEvidence["part_id"] as Int64? != nil)
         #expect((firstEvidence["row_payload_json"] as String?)?.contains("Audit Category") == true)
+    }
+
+    @Test("commitPartsImportCSV records skipped new rows in audit evidence")
+    func testCommitPartsImportCSVRecordsSkippedNewRowEvidence() throws {
+        let env = try E2ETestHelpers.setUp()
+        var preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,brand,cost_price
+        Imported Part,IMPORT-AUD-001,Audit Category,Audit Brand,12.25
+        Skipped Part,SKIP-AUD-001,Audit Category,Audit Brand,13.50
+        """)
+        preview.source?.filename = "parts-with-skips.csv"
+        preview.source?.userId = env.adminUserId
+        let skipped = try #require(preview.newParts.first { $0.code == "SKIP-AUD-001" })
+        preview.newParts.removeAll { $0.code == "SKIP-AUD-001" }
+        preview.skippedNewParts.append(skipped)
+
+        let result = try env.parts.commitPartsImportCSV(preview)
+
+        #expect(result.created == 1)
+        #expect(result.updated == 0)
+        #expect(result.skipped == 1)
+        #expect(try env.parts.findPartByCode("IMPORT-AUD-001") != nil)
+        #expect(try env.parts.findPartByCode("SKIP-AUD-001") == nil)
+
+        let sessionId = try #require(result.importSessionId)
+        let session = try #require(try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT * FROM part_import_sessions WHERE id = ?", arguments: [sessionId])
+        })
+        #expect(session["created_count"] as Int == 1)
+        #expect(session["skipped_count"] as Int == 1)
+
+        let evidence = try env.db.writer.read { db in
+            try Row.fetchAll(db, sql: "SELECT * FROM part_import_row_evidence WHERE session_id = ? ORDER BY row_number", arguments: [sessionId])
+        }
+        #expect(evidence.count == 2)
+        let skippedEvidence = try #require(evidence.first { ($0["action"] as String) == "skipped" })
+        #expect(skippedEvidence["row_number"] as Int == 3)
+        #expect(skippedEvidence["source_code"] as String? == "SKIP-AUD-001")
+        #expect(skippedEvidence["part_id"] as Int64? == nil)
+        #expect((skippedEvidence["row_payload_json"] as String?)?.contains("Skipped Part") == true)
     }
 
     @Test("commitPartsImportCSV records failed import session while rolling back partial writes")
@@ -712,6 +930,135 @@ struct PartsServiceAdvancedTests {
             _ = try env.parts.previewPartsImportXLSX(xlsx)
         }
         #expect(try env.parts.findPartByCode("NO-NAME") == nil)
+    }
+
+    @Test("commitPartsImportCSV persists saved supplier mapping only after successful commit")
+    func testCommitPartsImportCSVPersistsSavedSupplierMappingAfterCommit() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Mapping Supplier")
+
+        let previewOnly = try env.parts.previewPartsImportCSV("""
+        Part Name,Vendor Code,Category
+        Preview Only,PV-001,Preview Category
+        """, supplierId: supplierId)
+        let previewFingerprint = try #require(previewOnly.source?.headerFingerprint)
+        #expect(try env.parts.findSavedPartsImportMapping(supplierId: supplierId, sourceKind: "csv", headerFingerprint: previewFingerprint) == nil)
+
+        let result = try env.parts.commitPartsImportCSV(previewOnly)
+        #expect(result.created == 1)
+
+        let saved = try #require(try env.parts.findSavedPartsImportMapping(supplierId: supplierId, sourceKind: "csv", headerFingerprint: previewFingerprint))
+        #expect(saved.supplierId == supplierId)
+        #expect(saved.columnMapping["Part Name"] == "name")
+        #expect(saved.columnMapping["Vendor Code"] == "supplier_part_number")
+        #expect(saved.schemaVersion == PartsService.PartsImportSourceMetadata.mappingSchemaVersion)
+    }
+
+    @Test("accepted mapping flow saves mapping without committing preview rows")
+    func testAcceptedPartsImportMappingFlowPersistsMapping() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Accepted Mapping Supplier")
+
+        let saved = try env.parts.saveAcceptedPartsImportMapping(
+            supplierId: supplierId,
+            sourceKind: "csv",
+            sourceHeaders: ["Item", "Vendor Part", "Group"],
+            columnMapping: ["Item": "name", "Vendor Part": "supplier_part_number", "Group": "category"],
+            acceptedBy: env.adminUserId
+        )
+
+        let lookup = try #require(try env.parts.findSavedPartsImportMapping(
+            supplierId: supplierId,
+            sourceKind: "csv",
+            headerFingerprint: saved.headerFingerprint
+        ))
+        #expect(lookup.id == saved.id)
+        #expect(lookup.columnMapping["Vendor Part"] == "supplier_part_number")
+        #expect(try env.parts.findPartByCode("Vendor Part") == nil)
+
+        _ = try env.parts.saveAcceptedPartsImportMapping(
+            supplierId: supplierId,
+            sourceKind: "csv",
+            sourceHeaders: ["Item", "Vendor Part", "Group"],
+            columnMapping: ["Item": "name", "Vendor Part": "supplier_part_number", "Group": "category"],
+            acceptedBy: nil
+        )
+        let acceptedBy = try env.db.writer.read { db in
+            try Int64.fetchOne(
+                db,
+                sql: "SELECT accepted_by FROM part_import_saved_mappings WHERE id = ?",
+                arguments: [saved.id]
+            )
+        }
+        #expect(acceptedBy == env.adminUserId)
+    }
+
+    @Test("previewPartsImportCSV prefers supplier part number matches before internal code")
+    func testPreviewPartsImportCSVPrefersSupplierAwareMatch() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "Supplier Match")
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Supplier Match Category")
+        let supplierPartId = try env.parts.createPart(categoryId: categoryId, name: "Supplier Existing", code: "SUP-INTERNAL")
+        let codePartId = try env.parts.createPart(categoryId: categoryId, name: "Code Existing", code: "CODE-MATCH")
+        _ = try env.parts.addPartSupplierLink(partId: supplierPartId, supplierId: supplierId, supplierPartNumber: "V-100")
+
+        let preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,supplier_part_number
+        Supplier Replacement,CODE-MATCH,Supplier Match Category,V-100
+        """, supplierId: supplierId)
+
+        let decision = try #require(preview.decisions.first)
+        #expect(decision.classification == .update)
+        #expect(decision.existingPartId == supplierPartId)
+        #expect(decision.existingPartId != codePartId)
+        #expect(decision.matchReason == "supplier_part_number")
+        #expect(preview.conflicts.first?.existingPartId == supplierPartId)
+    }
+
+    @Test("previewPartsImportCSV classifies duplicate, ambiguous, conflict, and quarantined rows")
+    func testPreviewPartsImportCSVClassifiesStage2Decisions() throws {
+        let env = try E2ETestHelpers.setUp()
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Decision Category")
+        _ = try env.parts.createPart(categoryId: categoryId, name: "Same Part", code: "SAME-001")
+        _ = try env.parts.createPart(categoryId: categoryId, name: "Ambiguous Part")
+        _ = try env.parts.createPart(categoryId: categoryId, name: "Ambiguous Part")
+
+        let preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,cost_price
+        Same Part,SAME-001,Decision Category,
+        Changed Name,SAME-001,Decision Category,
+        Ambiguous Part,,Decision Category,
+        Bad Cost,BAD-001,Decision Category,not-a-number
+        New Part,NEW-DEC-001,Decision Category,
+        """)
+
+        let decisionsByRow = Dictionary(uniqueKeysWithValues: preview.decisions.map { ($0.rowNumber, $0.classification) })
+        #expect(decisionsByRow[2] == .duplicateSkip)
+        #expect(decisionsByRow[3] == .update)
+        #expect(decisionsByRow[4] == .conflictReview)
+        #expect(decisionsByRow[5] == .quarantined)
+        #expect(decisionsByRow[6] == .new)
+        #expect(preview.errors.contains { $0.rowNumber == 5 })
+    }
+
+    @Test("previewPartsImportCSV classifies update when mutable import fields differ")
+    func testPreviewPartsImportCSVClassifiesUpdateWhenMutableFieldsDiffer() throws {
+        let env = try E2ETestHelpers.setUp()
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Mutable Field Category")
+        _ = try env.parts.createPart(
+            categoryId: categoryId,
+            name: "Mutable Field Part",
+            code: "MUT-001",
+            description: "old description"
+        )
+
+        let preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,description
+        Mutable Field Part,MUT-001,Mutable Field Category,new description
+        """)
+
+        let decision = try #require(preview.decisions.first)
+        #expect(decision.classification == .update)
     }
 
     // MARK: - approveScheduledDeletion

@@ -61,6 +61,18 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         return repoRoot.appendingPathComponent("docs/testing/artifacts/wei-936/wei-1451-current", isDirectory: true)
     }
 
+    private var wei3144ArtifactDirectory: URL {
+        if let path = ProcessInfo.processInfo.environment["WEI_3144_ARTIFACT_DIR"], !path.isEmpty {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        let source = URL(fileURLWithPath: #filePath)
+        let repoRoot = source
+            .deletingLastPathComponent() // Weird Parts IOSUITests
+            .deletingLastPathComponent() // Weird Parts IOS
+            .deletingLastPathComponent() // repo root
+        return repoRoot.appendingPathComponent("docs/testing/artifacts/wei-3144/current", isDirectory: true)
+    }
+
     // MARK: - Setup & Teardown
 
     override func setUpWithError() throws {
@@ -106,6 +118,12 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
     private var categoryFormSheet: XCUIElement {
         app.descendants(matching: .any)["categoryFormSheet"]
+    }
+
+    private func configureUITestingEnvironment(_ app: XCUIApplication) {
+        if !app.launchArguments.contains("-UITesting") {
+            app.launchArguments += ["-UITesting"]
+        }
     }
 
     override func tearDownWithError() throws {
@@ -164,6 +182,68 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         - VoiceOver/accessibility traversal smoke: core evidence controls expose labels for Dismiss checklist, Checklist dismissed. Undo, Required tour steps complete, and the welcome/celebration headings.
         """
         try verification.write(to: artifactDirectory.appendingPathComponent("07-accessibility-reduce-motion-voiceover-notes.txt"), atomically: true, encoding: .utf8)
+    }
+
+    @MainActor
+    func testWEI3144JobMaterialsWalkthroughEvidence() throws {
+        let artifactDirectory = wei3144ArtifactDirectory
+        try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
+
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments += [
+            "-UITesting",
+            "-UITestingWEI936AutoLogin",
+            "-UITestingWEI3144JobMaterials"
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["WEI-3144 Materials QA Job"].waitForExistence(timeout: 20), "Seeded job detail should open")
+        scrollUntilVisible(app.descendants(matching: .any)["jobMaterialsTab"])
+        XCTAssertTrue(app.descendants(matching: .any)["jobMaterialsTab"].waitForExistence(timeout: 10), "Materials tab content should render")
+
+        for segment in ["Ready", "Used", "Returns", "History"] {
+            XCTAssertTrue(app.buttons[segment].waitForExistence(timeout: 5), "Materials segment \(segment) should be visible")
+        }
+
+        captureWEI3144("01-materials-ready")
+
+        app.buttons["Used"].tap()
+        XCTAssertTrue(app.staticTexts["WEI-3144 Wire Nut"].waitForExistence(timeout: 5), "Used segment should show consumed wire nuts")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '7 used'")).firstMatch.waitForExistence(timeout: 5), "Used segment should show 7 consumed")
+        captureWEI3144("02-materials-used")
+
+        let correctButton = app.buttons["Correct"].firstMatch
+        XCTAssertTrue(correctButton.waitForExistence(timeout: 5), "Used material row should expose correction action")
+        correctButton.tap()
+        XCTAssertTrue(app.navigationBars["Correct Material"].waitForExistence(timeout: 5), "Correction sheet should open")
+        let auditNoteField = app.textFields["Required audit note"].firstMatch
+        XCTAssertTrue(auditNoteField.waitForExistence(timeout: 5), "Correction flow should label the audit note field")
+        XCTAssertFalse(app.buttons["Save Correction"].isEnabled, "Save Correction should stay disabled until an audit note is entered")
+        captureWEI3144("03-correction-requires-audit-note")
+        app.buttons["Cancel"].tap()
+
+        app.buttons["Returns"].tap()
+        captureWEI3144("04-materials-returns")
+        XCTAssertTrue(app.staticTexts["WEI-3144 Wire Nut"].waitForExistence(timeout: 5), "Returns segment should show the returned wire nut")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'qty 3'")).firstMatch.waitForExistence(timeout: 5), "Returns segment should show the returned quantity")
+
+        app.buttons["History"].tap()
+        captureWEI3144("05-materials-history")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Pulled 10 wire nuts'")).firstMatch.waitForExistence(timeout: 5), "History should show seeded pull note")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'original_qty=9'")).firstMatch.waitForExistence(timeout: 5), "History should show original correction value")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'adjusted_qty=7'")).firstMatch.waitForExistence(timeout: 5), "History should show adjusted correction value")
+
+        let viewport = UIDevice.current.userInterfaceIdiom == .pad ? "tablet" : "phone"
+        let verification = """
+        WEI-3144 Materials walkthrough evidence (\(viewport))
+        - Route: Job Detail -> Materials for seeded job UITEST-MAT-3144.
+        - Segments visible: Ready, Used, Returns, History.
+        - Seed path exercised through production services: pull 10 WEI-3144 Wire Nut, consume 7, return 3 unused.
+        - Correction flow verified: Save Correction is disabled with an empty required audit note.
+        - History verified: seeded correction row includes original_qty=9 and adjusted_qty=7.
+        """
+        try verification.write(to: artifactDirectory.appendingPathComponent("\(viewport)-verification.txt"), atomically: true, encoding: .utf8)
     }
 
     @MainActor
@@ -331,6 +411,56 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'R2C2'")).firstMatch.waitForExistence(timeout: 10),
                       "Zone placement should persist after leaving and resuming the wizard")
         captureWEI1185("06-storage-persisted-after-resume")
+    }
+
+    @MainActor
+    func testWEI2475WarehouseLocationsDirectRouteReachesSeededFloorPlan() throws {
+        app.terminate()
+        app = XCUIApplication()
+        configureUITestingEnvironment(app)
+        app.launchArguments += [
+            "-UITesting",
+            "-UITestingWEI936AutoLogin",
+            "-UITestingWarehouseLocations"
+        ]
+        app.launch()
+
+        XCTAssertTrue(
+            app.navigationBars["Warehouse"].waitForExistence(timeout: 30) ||
+                app.staticTexts["Warehouse"].waitForExistence(timeout: 30),
+            "Warehouse module should open without the manual login/PIN route"
+        )
+        XCTAssertTrue(
+            app.buttons["Shelving"].waitForExistence(timeout: 10) ||
+                app.staticTexts["UITesting Shelf A"].waitForExistence(timeout: 10),
+            "Warehouse Locations should render its floor-plan controls or seeded shelf"
+        )
+        let requiredToolbarItems = [
+            "shelving", "gang_box", "pipe_rack", "pallet_rack", "wall_mount", "floor_area",
+            "cabinet", "packout", "tool_bag", "parts_bin", "crate", "custom"
+        ]
+        for unitType in requiredToolbarItems {
+            let button = app.buttons["warehouse-unit-type-\(unitType)"]
+            XCTAssertTrue(button.waitForExistence(timeout: 10), "\(unitType) toolbar item should be present")
+            XCTAssertTrue(button.isHittable, "\(unitType) toolbar item should be reachable at iPhone width")
+        }
+        let packoutToolbarButton = app.buttons["warehouse-unit-type-packout"]
+        packoutToolbarButton.tap()
+        XCTAssertTrue(
+            app.textFields.firstMatch.waitForExistence(timeout: 8),
+            "Packout Set toolbar action should open the add-unit sheet with a name field"
+        )
+        XCTAssertTrue(
+            app.buttons["East"].waitForExistence(timeout: 3) ||
+                app.buttons["West"].waitForExistence(timeout: 3),
+            "Add Packout Set sheet should expose Front Face controls"
+        )
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(
+            app.staticTexts["UITesting Shelf A"].waitForExistence(timeout: 10) ||
+                app.staticTexts["UITesting Pipe Rack"].waitForExistence(timeout: 10),
+            "Warehouse Locations should show a seeded storage unit for visual QA"
+        )
     }
 
     @MainActor
@@ -1094,6 +1224,29 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         try? screenshot.pngRepresentation.write(to: file, options: .atomic)
     }
 
+    private func captureWEI3144(_ name: String) {
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let viewport = UIDevice.current.userInterfaceIdiom == .pad ? "tablet" : "phone"
+        let file = wei3144ArtifactDirectory.appendingPathComponent("\(viewport)-\(name).png")
+        try? screenshot.pngRepresentation.write(to: file, options: .atomic)
+    }
+
+    private func scrollUntilVisible(_ element: XCUIElement, maxSwipes: Int = 8) {
+        for _ in 0..<maxSwipes where !element.exists || !element.isHittable {
+            app.swipeUp()
+        }
+    }
+
+    private func configureUITestingEnvironment(_ app: XCUIApplication) {
+        app.launchEnvironment["OS_ACTIVITY_MODE"] = "disable"
+        app.launchEnvironment["UITEST_DISABLE_ANIMATIONS"] = "1"
+    }
+
     private func currentWizardStepNumber(timeout: TimeInterval = 5) -> Int? {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
@@ -1539,15 +1692,15 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     func testWEI1303EmployeeDetailTabsMeetMinimumTouchTargets() throws {
         app.terminate()
         app = XCUIApplication()
-        app.launchArguments += ["-UITesting"]
+        configureUITestingEnvironment(app)
         app.launch()
 
         logInAsUITestOwnerIfNeeded()
         openEmployeeDetailForUITestOwner()
 
-        let profile = app.buttons["Profile"]
-        let hats = app.buttons["Hats"]
-        let teams = app.buttons["Teams"]
+        let profile = employeeDetailTab("profile", label: "Profile")
+        let hats = employeeDetailTab("hats", label: "Hats")
+        let teams = employeeDetailTab("teams", label: "Teams")
         XCTAssertTrue(profile.waitForExistence(timeout: 10), "Profile tab should be visible")
         XCTAssertTrue(hats.waitForExistence(timeout: 5), "Hats tab should be visible")
         XCTAssertTrue(teams.waitForExistence(timeout: 5), "Teams tab should be visible")
@@ -1595,15 +1748,35 @@ final class Weird_Parts_IOSUITests: XCTestCase {
             employees.tap()
         }
 
-        let owner = app.staticTexts["UITest Owner"]
-        XCTAssertTrue(owner.waitForExistence(timeout: 10), "UITest Owner should be visible in employees list")
-        owner.tap()
+        let ownerRow = app.buttons.matching(NSPredicate(format: "label CONTAINS 'UITest Owner'")).firstMatch
+        let ownerLabel = app.staticTexts["UITest Owner"]
+        XCTAssertTrue(
+            ownerRow.waitForExistence(timeout: 10) || ownerLabel.waitForExistence(timeout: 10),
+            "UITest Owner should be visible in employees list"
+        )
+        if ownerRow.exists && ownerRow.isHittable {
+            ownerRow.tap()
+        } else {
+            ownerLabel.tap()
+        }
 
         XCTAssertTrue(
             app.navigationBars["UITest Owner"].waitForExistence(timeout: 10) ||
                 app.staticTexts["Basic Info"].waitForExistence(timeout: 10),
             "Employee detail should open for UITest Owner"
         )
+    }
+
+    private func employeeDetailTab(_ id: String, label: String) -> XCUIElement {
+        let identified = app.buttons["employeeDetailTab_\(id)"]
+        if identified.exists {
+            return identified
+        }
+        let labeled = app.buttons[label]
+        if labeled.exists {
+            return labeled
+        }
+        return app.buttons["\(label) tab"]
     }
 
     private func captureWEI1303(_ name: String) {
@@ -1622,4 +1795,56 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try? screenshot.pngRepresentation.write(to: dir.appendingPathComponent("\(name).png"), options: .atomic)
     }
+
+    @MainActor
+    func testWEI3140CSVMappingPreviewScreenshot() throws {
+        launchWEI3140Fixture(mode: "csv")
+        XCTAssertTrue(app.navigationBars["Import Preview"].waitForExistence(timeout: 12))
+        captureWEI3140("01-csv-mapping-preview")
+    }
+
+    @MainActor
+    func testWEI3140LargeErrorQuarantineScreenshot() throws {
+        launchWEI3140Fixture(mode: "error")
+        XCTAssertTrue(app.navigationBars["Import Preview"].waitForExistence(timeout: 12))
+        captureWEI3140("02-large-error-preview-top")
+        app.swipeUp()
+        app.swipeUp()
+        captureWEI3140("03-large-error-quarantine-commit-disabled")
+    }
+
+    @MainActor
+    func testWEI3140PDFPreviewOnlyScreenshot() throws {
+        launchWEI3140Fixture(mode: "pdf")
+        XCTAssertTrue(app.staticTexts["PDF / OCR Review"].waitForExistence(timeout: 12))
+        captureWEI3140("04-pdf-ocr-preview-only")
+        app.swipeUp()
+        captureWEI3140("05-pdf-ocr-commit-disabled")
+    }
+
+    private func launchWEI3140Fixture(mode: String) {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = ["-UITestingWEI3140ImportPreviewFixture", "-WEI3140FixtureMode", mode]
+        app.launch()
+    }
+
+    private var wei3140ArtifactDirectory: URL {
+        if let path = ProcessInfo.processInfo.environment["WEI_3140_ARTIFACT_DIR"], !path.isEmpty {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        return URL(fileURLWithPath: "/tmp/wpr2-pr955-wei3140-screens", isDirectory: true)
+    }
+
+    private func captureWEI3140(_ name: String) {
+        try? FileManager.default.createDirectory(at: wei3140ArtifactDirectory, withIntermediateDirectories: true)
+        let screenshot = XCUIScreen.main.screenshot()
+        let url = wei3140ArtifactDirectory.appendingPathComponent("\(name).png")
+        try? screenshot.pngRepresentation.write(to: url)
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
 }

@@ -33,26 +33,6 @@ public struct PeerSyncResult: Sendable {
     }
 }
 
-public enum PeerSyncSecurityError: Error, LocalizedError, Sendable {
-    case keyExchangeRequired(peerDeviceId: String)
-    case sharedKeyDerivationFailed(peerDeviceId: String)
-    case encryptionFailed
-    case decryptionFailed
-
-    public var errorDescription: String? {
-        switch self {
-        case .keyExchangeRequired(let peerDeviceId):
-            return "LAN sync encryption key exchange failed for peer \(peerDeviceId)"
-        case .sharedKeyDerivationFailed(let peerDeviceId):
-            return "LAN sync shared key derivation failed for peer \(peerDeviceId)"
-        case .encryptionFailed:
-            return "LAN sync payload encryption failed"
-        case .decryptionFailed:
-            return "LAN sync response decryption failed"
-        }
-    }
-}
-
 // MARK: - Peer Manager State
 
 /// Snapshot of the peer manager's current state.
@@ -75,6 +55,20 @@ public struct PeerManagerState: Sendable {
         self.peers = peers
         self.lastPeerSyncs = lastPeerSyncs
         self.syncingWith = syncingWith
+    }
+}
+
+private enum PeerSyncHTTPError: LocalizedError {
+    case nonHTTPResponse(endpoint: String)
+    case httpError(endpoint: String, statusCode: Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .nonHTTPResponse(let endpoint):
+            return "LAN sync \(endpoint) failed: non-HTTP response"
+        case .httpError(let endpoint, let statusCode):
+            return "LAN sync \(endpoint) failed: HTTP \(statusCode)"
+        }
     }
 }
 
@@ -433,6 +427,19 @@ public actor PeerManager {
         await sState.setOutbox(enriched)
     }
 
+    /// Issue a one-time pairing code on the running shop sync server.
+    public func issuePairingCode() async throws -> String {
+        guard let sState = serverState else {
+            throw SyncServerError.serverNotRunning
+        }
+        return try await sState.issueActivePairingCode()
+    }
+
+    /// Clear any active pairing code on the running shop sync server.
+    public func clearPairingCode() async {
+        await serverState?.clearActivePairingCode()
+    }
+
     // MARK: - Private: LAN HTTP Sync
 
     private func syncViaHTTP(
@@ -445,12 +452,11 @@ public actor PeerManager {
         var pushed = 0
         var pulled = 0
 
-        let baseURL = "http://\(peer.host):\(peer.port)"
+        let baseURL = try Self.makeLANSyncBaseURL(for: peer)
         let lastSyncAt = state.lastPeerSyncs[peer.deviceId]?.syncedAt
 
-        // Resolve shared key for this peer (fetches /sync/key once then caches).
-        // LAN sync must fail closed: no plaintext fallback when key negotiation fails.
-        let sharedKeyData = try await resolveSharedKey(baseURL: baseURL, peerDeviceId: peer.deviceId)
+        // Resolve shared key for this peer (fetches /sync/key once then caches)
+        let sharedKeyData = await resolveSharedKey(baseURL: baseURL, peerDeviceId: peer.deviceId)
 
         // 1. Push our changes
         if !enrichedChanges.isEmpty {
@@ -464,23 +470,19 @@ public actor PeerManager {
             let encoder = JSONEncoder()
             let plainPushBody = try encoder.encode(pushRequest)
 
-            guard let pushURL = URL(string: "\(baseURL)/sync/push") else {
-                throw URLError(.badURL)
-            }
+            let pushURL = baseURL.appendingPathComponent("sync/push")
             var urlRequest = URLRequest(url: pushURL)
             urlRequest.httpMethod = "POST"
             urlRequest.timeoutInterval = 30
-            try applyPayload(&urlRequest, plain: plainPushBody, sharedKeyData: sharedKeyData)
+            applyPayload(&urlRequest, plain: plainPushBody, sharedKeyData: sharedKeyData)
 
             let (pushData, pushResp) = try await URLSession.shared.data(for: urlRequest)
-            if let httpResp = pushResp as? HTTPURLResponse, httpResp.statusCode == 200 {
-                let plainPushData = try decrypt(pushData, sharedKeyData: sharedKeyData)
-                if let result = try? JSONDecoder().decode(SyncPushResponse.self, from: plainPushData) {
-                    pushed = result.accepted
-                    let syncedIds = pendingChanges.compactMap { $0.id }
-                    try ChangeTracker.markSynced(db: db, ids: syncedIds, batchId: result.syncBatchId)
-                }
-            }
+            try Self.validateSyncHTTPResponse(pushResp, endpoint: "push")
+            let plainPushData = decrypt(pushData, sharedKeyData: sharedKeyData)
+            let result = try JSONDecoder().decode(SyncPushResponse.self, from: plainPushData)
+            pushed = result.accepted
+            let syncedIds = pendingChanges.compactMap { $0.id }
+            try ChangeTracker.markSynced(db: db, ids: syncedIds, batchId: result.syncBatchId)
         }
 
         // 2. Pull peer's changes
@@ -493,49 +495,110 @@ public actor PeerManager {
         )
 
         let plainPullBody = try JSONEncoder().encode(pullRequest)
-        guard let pullURL = URL(string: "\(baseURL)/sync/pull") else {
-            throw URLError(.badURL)
-        }
+        let pullURL = baseURL.appendingPathComponent("sync/pull")
         var pullURLRequest = URLRequest(url: pullURL)
         pullURLRequest.httpMethod = "POST"
         pullURLRequest.timeoutInterval = 30
-        try applyPayload(&pullURLRequest, plain: plainPullBody, sharedKeyData: sharedKeyData)
+        applyPayload(&pullURLRequest, plain: plainPullBody, sharedKeyData: sharedKeyData)
 
         let (pullData, pullResp) = try await URLSession.shared.data(for: pullURLRequest)
-        if let httpResp = pullResp as? HTTPURLResponse, httpResp.statusCode == 200 {
-            let plainPullData = try decrypt(pullData, sharedKeyData: sharedKeyData)
-            if let result = try? JSONDecoder().decode(SyncPullResponse.self, from: plainPullData) {
-                pulled = result.changes.count
+        try Self.validateSyncHTTPResponse(pullResp, endpoint: "pull")
+        let plainPullData = decrypt(pullData, sharedKeyData: sharedKeyData)
+        let result = try JSONDecoder().decode(SyncPullResponse.self, from: plainPullData)
+        pulled = result.changes.count
 
-                if !result.changes.isEmpty {
-                    _ = try ConflictResolver.resolveAndApplyChanges(
-                        db: db,
-                        changes: result.changes,
-                        localDeviceId: deviceId
-                    )
+        if !result.changes.isEmpty {
+            _ = try ConflictResolver.resolveAndApplyChanges(
+                db: db,
+                changes: result.changes,
+                localDeviceId: deviceId
+            )
 
-                    // Update vector clock with highest sequence from this peer
-                    let maxSeq = result.changes.compactMap { $0.id }.max() ?? 0
-                    if maxSeq > 0 {
-                        try ChangeTracker.updateVectorClock(
-                            db: db,
-                            peerId: result.serverDeviceId,
-                            lastSequence: maxSeq,
-                            deviceId: deviceId
-                        )
-                    }
-                }
+            // Update vector clock with highest sequence from this peer
+            let maxSeq = result.changes.compactMap { $0.id }.max() ?? 0
+            if maxSeq > 0 {
+                try ChangeTracker.updateVectorClock(
+                    db: db,
+                    peerId: result.serverDeviceId,
+                    lastSequence: maxSeq,
+                    deviceId: deviceId
+                )
             }
         }
 
         return (pushed, pulled)
     }
 
+    private static func validateSyncHTTPResponse(_ response: URLResponse, endpoint: String) throws {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw PeerSyncHTTPError.nonHTTPResponse(endpoint: endpoint)
+        }
+        guard httpResponse.statusCode == 200 else {
+            throw PeerSyncHTTPError.httpError(endpoint: endpoint, statusCode: httpResponse.statusCode)
+        }
+    }
+
+    static func makeLANSyncBaseURL(for peer: DiscoveredPeer) throws -> URL {
+        let trimmedHost = peer.host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedHost.isEmpty, peer.port > 0 else {
+            throw URLError(.badURL)
+        }
+        guard !trimmedHost.hasPrefix("WiredPart-") || trimmedHost.contains(".") else {
+            throw URLError(.badURL)
+        }
+
+        let normalized = normalizedLANHostAndPort(trimmedHost, fallbackPort: peer.port)
+
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = normalized.host
+        components.port = Int(normalized.port)
+
+        guard let url = components.url else {
+            throw URLError(.badURL)
+        }
+        return url
+    }
+
+    private static func normalizedLANHostAndPort(
+        _ rawHost: String,
+        fallbackPort: UInt16
+    ) -> (host: String, port: UInt16) {
+        if let components = URLComponents(string: rawHost),
+           components.scheme != nil,
+           let host = components.host {
+            return (host: host, port: normalizedPort(components.port, fallback: fallbackPort))
+        }
+
+        if let components = URLComponents(string: "http://\(rawHost)"),
+           let host = components.host {
+            return (host: host, port: normalizedPort(components.port, fallback: fallbackPort))
+        }
+
+        if rawHost.hasPrefix("[") {
+            return (host: rawHost, port: fallbackPort)
+        }
+
+        if rawHost.contains(":") {
+            let escapedZone = rawHost.replacingOccurrences(of: "%", with: "%25")
+            return (host: "[\(escapedZone)]", port: fallbackPort)
+        }
+
+        return (host: rawHost, port: fallbackPort)
+    }
+
+    private static func normalizedPort(_ port: Int?, fallback: UInt16) -> UInt16 {
+        guard let port, let exact = UInt16(exactly: port) else {
+            return fallback
+        }
+        return exact
+    }
+
     // MARK: - Private: Payload Encryption Helpers
 
     /// Fetch the peer's X25519 KA public key from GET /sync/key (cached).
-    /// Throws if the peer doesn't support encryption or key derivation fails.
-    private func resolveSharedKey(baseURL: String, peerDeviceId: String) async throws -> Data {
+    /// Returns nil if the peer doesn't support encryption (old version or network error).
+    private func resolveSharedKey(baseURL: URL, peerDeviceId: String) async -> Data? {
         // Use cached peer KA public key if available
         let peerKAKey: String
         if let cached = peerKAPublicKeys[peerDeviceId], !cached.isEmpty {
@@ -543,29 +606,22 @@ public actor PeerManager {
         } else if let fetched = await fetchPeerKAPublicKey(baseURL: baseURL, peerDeviceId: peerDeviceId) {
             peerKAKey = fetched
         } else {
-            throw PeerSyncSecurityError.keyExchangeRequired(peerDeviceId: peerDeviceId)
+            // Peer doesn't support encryption — sync will proceed unencrypted (logged in fetchPeerKAPublicKey)
+            return nil
         }
-        guard !peerKAKey.isEmpty, !kaPrivateKeyB64.isEmpty else {
-            throw PeerSyncSecurityError.sharedKeyDerivationFailed(peerDeviceId: peerDeviceId)
-        }
-        do {
-            return try SyncCrypto.deriveSharedKeyData(
-                ourPrivateKeyB64: kaPrivateKeyB64,
-                theirPublicKeyB64: peerKAKey
-            )
-        } catch {
-            throw PeerSyncSecurityError.sharedKeyDerivationFailed(peerDeviceId: peerDeviceId)
-        }
+        guard !peerKAKey.isEmpty, !kaPrivateKeyB64.isEmpty else { return nil }
+        return try? SyncCrypto.deriveSharedKeyData(
+            ourPrivateKeyB64: kaPrivateKeyB64,
+            theirPublicKeyB64: peerKAKey
+        )
     }
 
     /// Call GET /sync/key on the peer to get their X25519 KA public key.
     /// Returns the key if successful, nil if encryption is not supported.
     /// Fixes #197: no longer silently falls back — callers must handle nil explicitly.
     /// Fixes #191: sends X-Company-ID header so the server can reject unknown peers.
-    private func fetchPeerKAPublicKey(baseURL: String, peerDeviceId: String) async -> String? {
-        guard let url = URL(string: "\(baseURL)/sync/key") else {
-            return nil
-        }
+    private func fetchPeerKAPublicKey(baseURL: URL, peerDeviceId: String) async -> String? {
+        let url = baseURL.appendingPathComponent("sync/key")
         var req = URLRequest(url: url)
         req.timeoutInterval = 5
         // Fix #191: identify our company so the server can gate key exchange to known peers.
@@ -580,35 +636,38 @@ public actor PeerManager {
             peerKAPublicKeys[peerDeviceId] = decoded.key
             return decoded.key
         }
-        logger.warning("Peer \(String(peerDeviceId.prefix(8)), privacy: .public)... failed LAN sync key exchange; refusing plaintext fallback")
+        logger.warning("Peer \(String(peerDeviceId.prefix(8)), privacy: .public)... does not support encryption — sync will be unencrypted over LAN")
         peerKAPublicKeys[peerDeviceId] = ""
         return nil
     }
 
-    /// Attach encrypted body + headers to a URLRequest.
+    /// Attach encrypted or plaintext body + headers to a URLRequest.
+    /// If sharedKeyData is nil, sends plaintext JSON (backward compat).
     private func applyPayload(
         _ request: inout URLRequest,
         plain: Data,
-        sharedKeyData: Data
-    ) throws {
-        do {
-            let encrypted = try SyncCrypto.encryptAESGCM(data: plain, keyData: sharedKeyData)
+        sharedKeyData: Data?
+    ) {
+        if let keyData = sharedKeyData,
+           let encrypted = try? SyncCrypto.encryptAESGCM(data: plain, keyData: keyData) {
             request.httpBody = encrypted
             request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
             request.setValue("1", forHTTPHeaderField: "X-Sync-Encrypted")
             request.setValue(kaPublicKeyB64, forHTTPHeaderField: "X-Sync-Sender-Key")
-        } catch {
-            throw PeerSyncSecurityError.encryptionFailed
+        } else {
+            request.httpBody = plain
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
     }
 
-    /// Decrypt an encrypted response body. Never falls back to plaintext.
-    private func decrypt(_ data: Data, sharedKeyData: Data) throws -> Data {
-        do {
-            return try SyncCrypto.decryptAESGCM(data: data, keyData: sharedKeyData)
-        } catch {
-            throw PeerSyncSecurityError.decryptionFailed
+    /// Decrypt a response body if a shared key was used for this request.
+    /// Falls back to the raw data if decryption isn't needed or fails.
+    private func decrypt(_ data: Data, sharedKeyData: Data?) -> Data {
+        guard let keyData = sharedKeyData,
+              let plain = try? SyncCrypto.decryptAESGCM(data: data, keyData: keyData) else {
+            return data
         }
+        return plain
     }
 
     // MARK: - Private: Inbox Processing

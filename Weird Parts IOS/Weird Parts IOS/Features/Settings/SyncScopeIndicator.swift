@@ -50,6 +50,7 @@ enum SyncScope: String, CaseIterable {
              "settings-tool-policies",
              "settings-pretrip-checklists",
              "settings-dispatch-preferences",
+             "settings-purchase-orders",
              "settings-forecast-config",
              "settings-org-thresholds",
              "settings-audit-settings",

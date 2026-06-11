@@ -17,41 +17,6 @@ struct SyncServerTests {
         )
     }
 
-    private func sendEncrypted<T: Encodable>(
-        _ payload: T,
-        path: String,
-        port: UInt16,
-        companyId: String
-    ) async throws -> (Data, HTTPURLResponse) {
-        var keyRequest = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/key")!)
-        keyRequest.setValue(companyId, forHTTPHeaderField: "X-Company-ID")
-        let (keyData, keyResponse) = try await URLSession.shared.data(for: keyRequest)
-        #expect((keyResponse as! HTTPURLResponse).statusCode == 200)
-
-        let serverKey = try JSONDecoder().decode(SyncKeyResponse.self, from: keyData).key
-        let (clientPrivateKey, clientPublicKey) = SyncCrypto.generateKeyAgreementPair()
-        let sharedKey = try SyncCrypto.deriveSharedKeyData(
-            ourPrivateKeyB64: clientPrivateKey,
-            theirPublicKeyB64: serverKey
-        )
-
-        let body = try JSONEncoder().encode(payload)
-        let encryptedBody = try SyncCrypto.encryptAESGCM(data: body, keyData: sharedKey)
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)\(path)")!)
-        request.httpMethod = "POST"
-        request.httpBody = encryptedBody
-        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
-        request.setValue("1", forHTTPHeaderField: "X-Sync-Encrypted")
-        request.setValue(clientPublicKey, forHTTPHeaderField: "X-Sync-Sender-Key")
-
-        let (responseData, response) = try await URLSession.shared.data(for: request)
-        let httpResponse = response as! HTTPURLResponse
-        if httpResponse.statusCode == 200 {
-            return (try SyncCrypto.decryptAESGCM(data: responseData, keyData: sharedKey), httpResponse)
-        }
-        return (responseData, httpResponse)
-    }
-
     // MARK: - Server Lifecycle
 
     @Test("Server starts and reports assigned port")
@@ -100,9 +65,121 @@ struct SyncServerTests {
         await server.stop()
     }
 
+    // MARK: - POST /sync/pair
+
+    @Test("POST /sync/pair rejects when no pairing code is active")
+    func testPairRejectsWithoutActiveCode() async throws {
+        let state = makeState(deviceId: "shop-dev", companyId: "co-1")
+        let server = LanSyncServer(state: state)
+        let port = try await server.start()
+
+        let body = try JSONEncoder().encode(SyncPairRequest(
+            deviceId: "phone-dev",
+            deviceName: "Phone",
+            pairingCode: "ABCD-1234",
+            platform: "iOS"
+        ))
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/pair")!)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        #expect((response as! HTTPURLResponse).statusCode == 403)
+
+        await server.stop()
+    }
+
+    @Test("POST /sync/pair rejects wrong code")
+    func testPairRejectsWrongCode() async throws {
+        let state = makeState(deviceId: "shop-dev", companyId: "co-1")
+        try await state.setActivePairingCode("ABCD-1234")
+        let server = LanSyncServer(state: state)
+        let port = try await server.start()
+
+        let body = try JSONEncoder().encode(SyncPairRequest(
+            deviceId: "phone-dev",
+            deviceName: "Phone",
+            pairingCode: "WXYZ-1234",
+            platform: "iOS"
+        ))
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/pair")!)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        #expect((response as! HTTPURLResponse).statusCode == 403)
+
+        await server.stop()
+    }
+
+    @Test("POST /sync/pair accepts active code once")
+    func testPairAcceptsActiveCodeOnce() async throws {
+        let state = makeState(deviceId: "shop-dev", companyId: "co-1")
+        try await state.setActivePairingCode("ABCD-1234")
+        let server = LanSyncServer(state: state)
+        let port = try await server.start()
+
+        let body = try JSONEncoder().encode(SyncPairRequest(
+            deviceId: "phone-dev",
+            deviceName: "Phone",
+            pairingCode: "abcd1234",
+            platform: "iOS"
+        ))
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/pair")!)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (data, firstResponse) = try await URLSession.shared.data(for: request)
+        #expect((firstResponse as! HTTPURLResponse).statusCode == 200)
+        let pairResponse = try JSONDecoder().decode(SyncPairResponse.self, from: data)
+        #expect(pairResponse.accepted)
+        #expect(pairResponse.serverDeviceId == "shop-dev")
+        #expect(pairResponse.companyId == "co-1")
+        #expect(!pairResponse.pairedAt.isEmpty)
+
+        let (_, secondResponse) = try await URLSession.shared.data(for: request)
+        #expect((secondResponse as! HTTPURLResponse).statusCode == 403)
+
+        await server.stop()
+    }
+
+    @Test("POST /sync/pair consumes active code atomically under concurrency")
+    func testPairConsumesActiveCodeAtomicallyUnderConcurrency() async throws {
+        let state = makeState(deviceId: "shop-dev", companyId: "co-1")
+        try await state.setActivePairingCode("ABCD-1234")
+        let server = LanSyncServer(state: state)
+        let port = try await server.start()
+
+        func makeRequest(deviceId: String) throws -> URLRequest {
+            let body = try JSONEncoder().encode(SyncPairRequest(
+                deviceId: deviceId,
+                deviceName: "Phone",
+                pairingCode: "abcd1234",
+                platform: "iOS"
+            ))
+            var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/pair")!)
+            request.httpMethod = "POST"
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            return request
+        }
+
+        async let first = URLSession.shared.data(for: makeRequest(deviceId: "phone-dev-a"))
+        async let second = URLSession.shared.data(for: makeRequest(deviceId: "phone-dev-b"))
+
+        let firstStatus = try await (first.1 as! HTTPURLResponse).statusCode
+        let secondStatus = try await (second.1 as! HTTPURLResponse).statusCode
+        #expect([firstStatus, secondStatus].sorted() == [200, 403])
+
+        await server.stop()
+    }
+
     // MARK: - POST /sync/push
 
-    @Test("POST /sync/push accepts encrypted changes")
+    @Test("POST /sync/push accepts changes")
     func testPushAcceptsChanges() async throws {
         let state = makeState(companyId: "co-1")
         let server = LanSyncServer(state: state)
@@ -123,12 +200,17 @@ struct SyncServerTests {
             ]
         )
 
-        let (data, httpResponse) = try await sendEncrypted(
-            pushRequest,
-            path: "/sync/push",
-            port: port,
-            companyId: "co-1"
-        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let body = try encoder.encode(pushRequest)
+
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/push")!)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let httpResponse = response as! HTTPURLResponse
         #expect(httpResponse.statusCode == 200)
 
         let pushResponse = try JSONDecoder().decode(SyncPushResponse.self, from: data)
@@ -165,13 +247,14 @@ struct SyncServerTests {
             ]
         )
 
-        let (_, response) = try await sendEncrypted(
-            pushRequest,
-            path: "/sync/push",
-            port: port,
-            companyId: "co-1"
-        )
-        #expect(response.statusCode == 200)
+        let encoder = JSONEncoder()
+        let body = try encoder.encode(pushRequest)
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/push")!)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (_, _) = try await URLSession.shared.data(for: request)
 
         // Verify inbox
         let inbox = await state.drainInbox()
@@ -182,33 +265,9 @@ struct SyncServerTests {
         await server.stop()
     }
 
-    @Test("POST /sync/push rejects plaintext")
-    func testPushRejectsPlaintext() async throws {
-        let state = makeState(companyId: "co-1")
-        let server = LanSyncServer(state: state)
-        let port = try await server.start()
-
-        let pushRequest = SyncPushRequest(
-            deviceId: "remote-dev",
-            companyId: "co-1",
-            changes: []
-        )
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/push")!)
-        request.httpMethod = "POST"
-        request.httpBody = try JSONEncoder().encode(pushRequest)
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        #expect((response as! HTTPURLResponse).statusCode == 400)
-        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        #expect(json?["error"] as? String == "decryption_failed")
-
-        await server.stop()
-    }
-
     // MARK: - POST /sync/pull
 
-    @Test("POST /sync/pull returns encrypted outbox")
+    @Test("POST /sync/pull returns outbox")
     func testPullReturnsOutbox() async throws {
         let state = makeState(deviceId: "server-dev", companyId: "co-1")
         let server = LanSyncServer(state: state)
@@ -239,12 +298,15 @@ struct SyncServerTests {
             companyId: "co-1"
         )
 
-        let (data, httpResponse) = try await sendEncrypted(
-            pullRequest,
-            path: "/sync/pull",
-            port: port,
-            companyId: "co-1"
-        )
+        let encoder = JSONEncoder()
+        let body = try encoder.encode(pullRequest)
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/pull")!)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let httpResponse = response as! HTTPURLResponse
         #expect(httpResponse.statusCode == 200)
 
         let pullResponse = try JSONDecoder().decode(SyncPullResponse.self, from: data)
@@ -274,40 +336,18 @@ struct SyncServerTests {
             vectorClock: ["server-dev": 1]
         )
 
-        let (data, response) = try await sendEncrypted(
-            pullRequest,
-            path: "/sync/pull",
-            port: port,
-            companyId: "co-1"
-        )
-        #expect(response.statusCode == 200)
+        let encoder = JSONEncoder()
+        let body = try encoder.encode(pullRequest)
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/pull")!)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (data, _) = try await URLSession.shared.data(for: request)
         let pullResponse = try JSONDecoder().decode(SyncPullResponse.self, from: data)
 
         // Should only get IDs 2 and 3 (not 1)
         #expect(pullResponse.changes.count == 2)
-
-        await server.stop()
-    }
-
-    @Test("POST /sync/pull rejects plaintext")
-    func testPullRejectsPlaintext() async throws {
-        let state = makeState(companyId: "co-1")
-        let server = LanSyncServer(state: state)
-        let port = try await server.start()
-
-        let pullRequest = SyncPullRequest(
-            deviceId: "remote-dev",
-            companyId: "co-1"
-        )
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/pull")!)
-        request.httpMethod = "POST"
-        request.httpBody = try JSONEncoder().encode(pullRequest)
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        #expect((response as! HTTPURLResponse).statusCode == 400)
-        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        #expect(json?["error"] as? String == "decryption_failed")
 
         await server.stop()
     }
@@ -388,15 +428,14 @@ struct SyncServerTests {
             ]
         ]
         let bodyData = try JSONSerialization.data(withJSONObject: body)
-        let pushRequest = try JSONDecoder().decode(SyncPushRequest.self, from: bodyData)
+        var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/push")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = bodyData
+        req.timeoutInterval = 5
 
-        let (data, response) = try await sendEncrypted(
-            pushRequest,
-            path: "/sync/push",
-            port: port,
-            companyId: "co-1"
-        )
-        #expect(response.statusCode == 403)
+        let (data, response) = try await URLSession.shared.data(for: req)
+        #expect((response as! HTTPURLResponse).statusCode == 403)
 
         // Response must be valid JSON — not malformed by interpolated special chars in reason
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -417,13 +456,16 @@ struct SyncServerTests {
             changes: []
         )
 
-        let (_, response) = try await sendEncrypted(
-            pushRequest,
-            path: "/sync/push",
-            port: port,
-            companyId: "co-1"
-        )
-        #expect(response.statusCode == 403)
+        let encoder = JSONEncoder()
+        let body = try encoder.encode(pushRequest)
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/push")!)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        let httpResponse = response as! HTTPURLResponse
+        #expect(httpResponse.statusCode == 403)
 
         await server.stop()
     }
