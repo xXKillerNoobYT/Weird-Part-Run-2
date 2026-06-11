@@ -741,12 +741,13 @@ struct AuthServiceTests {
     func testListActiveSessionsReturnsTokenSessions() throws {
         let db = try freshDB()
         let auth = AuthService(db: db)
-        _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
+        let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
+        let expectedUserId = try #require(seed.user?.id)
 
         let sessions = try auth.listActiveSessions()
         #expect(sessions.count == 1)
         #expect(sessions[0].userName == "Admin")
-        #expect(sessions[0].userId == "1")
+        #expect(sessions[0].userId == "\(expectedUserId)")
         #expect(!sessions[0].id.isEmpty)
     }
 
