@@ -295,7 +295,14 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         relaunchForWEI3295Stage8Reports(["-UITestingStage8AuditSummary"])
         XCTAssertTrue(app.navigationBars["Audit Summary"].waitForExistence(timeout: 20) || app.staticTexts["Audit Summary"].waitForExistence(timeout: 20), "Audit Summary page should open directly")
         XCTAssertTrue(app.staticTexts["Overview"].waitForExistence(timeout: 20), "Audit Summary should render overview section")
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'WEI-3295 Stage 8 Breaker'")).firstMatch.waitForExistence(timeout: 10), "Audit Summary should render seeded discrepancy")
+        let seededDiscrepancy = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'WEI-3295 Stage 8 Breaker'")).firstMatch
+        if !seededDiscrepancy.waitForExistence(timeout: 3) {
+            for _ in 0..<4 where !seededDiscrepancy.exists {
+                app.swipeUp()
+                _ = seededDiscrepancy.waitForExistence(timeout: 2)
+            }
+        }
+        XCTAssertTrue(seededDiscrepancy.exists, "Audit Summary should render seeded discrepancy")
         captureWEI3295("06-\(viewport)-audit-summary-discrepancy")
 
         let verification = """
