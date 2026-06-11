@@ -209,14 +209,15 @@ Response shapes:
 
 ```swift
 AuditSummaryRow {
+  id: Int64
   partId: Int64
   partName: String
-  areaId: Int64?
-  areaLabel: String
-  expectedQty: Int
-  countedQty: Int
-  variance: Int
-  lastCountedAt: String
+  areaName: String
+  countCount: Int
+  discrepancyCount: Int
+  totalVariance: Int
+  totalVarianceDollars: Double
+  lastCountedAt: String?
   sourceSummary: String
 }
 
@@ -243,9 +244,12 @@ AuditDiscrepancy {
 Rules:
 
 - `ReportsService.getAuditSummaries(startDate:endDate:)` reads `audit_counts` in the requested inclusive date range and groups variance by part plus area.
+- `areaName` is the deterministic display label for the counted area, falling back to `"Unknown Area"` when the area row is unavailable.
+- `countCount` is the number of audit count rows in the group; `discrepancyCount` counts rows with non-zero variance.
+- `totalVariance` and `totalVarianceDollars` sum variance quantity and dollar impact for the grouped audit counts.
 - Report summary rows must include deterministic labels and source summaries suitable for Stage 8 UI/export display.
 - Summary scope is warehouse stock only.
-- Counted/discrepancy totals are for records counted today.
+- `ReportsService` counted/discrepancy totals are scoped to the requested inclusive date range; `WarehouseService` audit totals are scoped to the current warehouse audit summary.
 - `lastAuditDate` propagates database errors except missing optional tables; do not represent real failures as "never audited".
 - Discrepancy `difference` is counted quantity minus system quantity.
 
