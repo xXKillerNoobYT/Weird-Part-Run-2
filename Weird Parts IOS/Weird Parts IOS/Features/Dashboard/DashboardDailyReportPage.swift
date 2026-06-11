@@ -9,6 +9,14 @@ import WiredPartCore
 struct DashboardDailyReportPage: View {
     @EnvironmentObject private var appCore: AppCore
 
+    private enum FastActionKind: String, Identifiable {
+        case lunch
+        case breakTime
+        case supplyRun
+
+        var id: String { rawValue }
+    }
+
     // Data state
     @State private var pendingJPOs: Int = 0
     @State private var pendingPOs: Int = 0
@@ -29,6 +37,11 @@ struct DashboardDailyReportPage: View {
     @State private var myCurrentJob: String?
     @State private var myBreakMinutes: Int = 0
     @State private var myJobBreakdown: [JobTimeEntry] = []
+    @State private var activeLaborEntryId: Int64?
+    @State private var activeBreakRecord: BreakRecord?
+    @State private var activityStatus: String = "working"
+    @State private var processingFastAction: FastActionKind?
+    @State private var fastActionFeedback: (severity: DSAlertSeverity, title: String, message: String?)?
 
     // Team (managers only)
     @State private var teamClockedIn: [TeamMemberStatus] = []
@@ -40,6 +53,7 @@ struct DashboardDailyReportPage: View {
         case help
         var id: String { rawValue }
     }
+
     @State private var activeSheet: ActiveSheet?
 
     private let refreshTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
@@ -59,6 +73,16 @@ struct DashboardDailyReportPage: View {
                     // Fast Actions Bar
                     fastActionsBar
                         .padding(.horizontal, DS.Space.lg)
+
+                    if let feedback = fastActionFeedback {
+                        DSAlertBanner(
+                            severity: feedback.severity,
+                            icon: feedback.severity == .error ? "exclamationmark.triangle.fill" : "checkmark.circle.fill",
+                            title: feedback.title,
+                            message: feedback.message
+                        )
+                        .padding(.horizontal, DS.Space.lg)
+                    }
 
                     // Overdue alert banner
                     if overdueDeliveries > 0 {
@@ -234,6 +258,25 @@ struct DashboardDailyReportPage: View {
                     }
                 }
 
+                if let userId = currentUserId {
+                    let activeEntry = try? appCore.jobsService?.getActiveClockEntry(userId: userId)
+                    activeLaborEntryId = activeEntry?.id
+
+                    if let entryId = activeEntry?.id,
+                       let notes = try? appCore.jobsService?.getLaborEntryNotes(laborEntryId: entryId),
+                       JobsService.isOnSupplyRun(notes: notes) {
+                        activityStatus = "supply_run"
+                    } else {
+                        activityStatus = "working"
+                    }
+
+                    activeBreakRecord = try? appCore.breakService?.getActiveBreak(userId: userId)
+                } else {
+                    activeLaborEntryId = nil
+                    activeBreakRecord = nil
+                    activityStatus = "working"
+                }
+
                 teamClockedIn = teamResult.map { member in
                     // Calculate duration text from raw clock-in timestamp
                     let durationText: String = {
@@ -345,11 +388,23 @@ struct DashboardDailyReportPage: View {
     private var fastActionsBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: DS.Space.md) {
-                DSQuickActionButton(title: "Lunch", icon: "fork.knife", color: .green) {
-                    startLunchOrBreak()
+                DSQuickActionButton(
+                    title: lunchActionTitle,
+                    icon: "fork.knife",
+                    color: .green,
+                    isLoading: processingFastAction == .lunch,
+                    isDisabled: isLunchActionDisabled
+                ) {
+                    Task { await toggleLunch() }
                 }
-                DSQuickActionButton(title: "Break", icon: "cup.and.saucer.fill", color: .purple) {
-                    startLunchOrBreak()
+                DSQuickActionButton(
+                    title: breakActionTitle,
+                    icon: "cup.and.saucer.fill",
+                    color: .purple,
+                    isLoading: processingFastAction == .breakTime,
+                    isDisabled: isBreakActionDisabled
+                ) {
+                    Task { await toggleBreak() }
                 }
                 DSQuickActionButton(title: "Problem", icon: "exclamationmark.triangle.fill", color: .red) {
                     activeSheet = .reportProblem
@@ -357,30 +412,194 @@ struct DashboardDailyReportPage: View {
                 DSQuickActionButton(title: "Day Report", icon: "doc.text.fill", color: .indigo) {
                     activeSheet = .submitReport
                 }
-                DSQuickActionButton(title: "Supply Run", icon: "truck.box.fill", color: .blue) {
-                    // Geofencing (12D) handles supply run transitions automatically.
-                    // This button clocks out as a quick action.
-                    startLunchOrBreak()
+                DSQuickActionButton(
+                    title: supplyRunActionTitle,
+                    icon: activityStatus == "supply_run" ? "checkmark.circle.fill" : "truck.box.fill",
+                    color: .blue,
+                    isLoading: processingFastAction == .supplyRun,
+                    isDisabled: isSupplyRunActionDisabled
+                ) {
+                    Task { await toggleSupplyRun() }
                 }
             }
+            .padding(.vertical, 2)
         }
     }
 
-    /// Clocks out the current user (for lunch, break, or supply run).
-    private func startLunchOrBreak() {
-        guard let service = appCore.jobsService,
+    private var activeBreakType: String? {
+        activeBreakRecord?.breakType
+    }
+
+    private var isLunchActive: Bool {
+        activeBreakType?.hasPrefix("lunch") == true
+    }
+
+    private var isBreakActive: Bool {
+        activeBreakType == "break"
+    }
+
+    private var lunchActionTitle: String {
+        isLunchActive ? "End Lunch" : "Start Lunch"
+    }
+
+    private var breakActionTitle: String {
+        isBreakActive ? "End Break" : "Start Break"
+    }
+
+    private var supplyRunActionTitle: String {
+        activityStatus == "supply_run" ? "End Supply Run" : "Start Supply Run"
+    }
+
+    private var hasActiveClockEntry: Bool {
+        activeLaborEntryId != nil
+    }
+
+    private var isLunchActionDisabled: Bool {
+        processingFastAction != nil || !hasActiveClockEntry || isBreakActive || activityStatus == "supply_run"
+    }
+
+    private var isBreakActionDisabled: Bool {
+        processingFastAction != nil || !hasActiveClockEntry || isLunchActive || activityStatus == "supply_run"
+    }
+
+    private var isSupplyRunActionDisabled: Bool {
+        processingFastAction != nil || !hasActiveClockEntry || activeBreakRecord != nil
+    }
+
+    @MainActor
+    private func setFastActionError(_ error: Error, context: String) {
+        fastActionFeedback = (.error, "Action failed", userFriendlyError(error, context: context))
+    }
+
+    private func toggleLunch() async {
+        await MainActor.run {
+            processingFastAction = .lunch
+            fastActionFeedback = nil
+        }
+
+        guard let breakSvc = appCore.breakService,
               let userId = appCore.currentUser?.id else {
-            loadError = "Jobs service not available"
+            await MainActor.run {
+                fastActionFeedback = (.error, "Lunch unavailable", "Break service is not available.")
+                processingFastAction = nil
+            }
             return
         }
+
         do {
-            if let active = try service.getActiveClockEntry(userId: userId) {
-                try service.clockOut(laborEntryId: active.id)
+            if let record = activeBreakRecord, activeBreakType?.hasPrefix("lunch") == true {
+                if let recordId = record.id {
+                    try breakSvc.endBreak(recordId: recordId)
+                }
+                await MainActor.run {
+                    activeBreakRecord = nil
+                    fastActionFeedback = (.info, "Lunch ended", "Your daily report hours are refreshed.")
+                }
+            } else if let entryId = activeLaborEntryId {
+                let settings = try breakSvc.getCompanyBreakSettings()
+                let policies = try breakSvc.getBreakPolicy(stateCode: settings.stateCode)
+                let lunchPolicy = policies.first { $0.policyType == "state_required_paid" }
+                let record = try breakSvc.startBreak(
+                    userId: userId,
+                    breakType: "lunch_paid",
+                    laborEntryId: entryId,
+                    timerMinutes: lunchPolicy?.lunchMinutes ?? 30
+                )
+                await MainActor.run {
+                    activeBreakRecord = record
+                    fastActionFeedback = (.info, "Lunch started", "Timer started without using the generic clock-out path.")
+                }
+            } else {
+                await MainActor.run {
+                    fastActionFeedback = (.warning, "Clock in first", "Lunch tracking needs an active clock entry.")
+                }
             }
-            Task { await loadData() }
         } catch {
-            loadError = userFriendlyError(error, context: "load daily report")
+            await setFastActionError(error, context: "update lunch")
         }
+
+        await loadData()
+        await MainActor.run { processingFastAction = nil }
+    }
+
+    private func toggleBreak() async {
+        await MainActor.run {
+            processingFastAction = .breakTime
+            fastActionFeedback = nil
+        }
+
+        guard let breakSvc = appCore.breakService,
+              let userId = appCore.currentUser?.id else {
+            await MainActor.run {
+                fastActionFeedback = (.error, "Break unavailable", "Break service is not available.")
+                processingFastAction = nil
+            }
+            return
+        }
+
+        do {
+            if let record = activeBreakRecord, activeBreakType == "break" {
+                if let recordId = record.id {
+                    try breakSvc.endBreak(recordId: recordId)
+                }
+                await MainActor.run {
+                    activeBreakRecord = nil
+                    fastActionFeedback = (.info, "Break ended", "Your daily report hours are refreshed.")
+                }
+            } else if let entryId = activeLaborEntryId {
+                let settings = try breakSvc.getCompanyBreakSettings()
+                let record = try breakSvc.startBreak(
+                    userId: userId,
+                    breakType: "break",
+                    laborEntryId: entryId,
+                    timerMinutes: settings.roundingMinutes > 0 ? 15 : nil
+                )
+                await MainActor.run {
+                    activeBreakRecord = record
+                    fastActionFeedback = (.info, "Break started", "Paid break timer started.")
+                }
+            } else {
+                await MainActor.run {
+                    fastActionFeedback = (.warning, "Clock in first", "Break tracking needs an active clock entry.")
+                }
+            }
+        } catch {
+            await setFastActionError(error, context: "update break")
+        }
+
+        await loadData()
+        await MainActor.run { processingFastAction = nil }
+    }
+
+    private func toggleSupplyRun() async {
+        await MainActor.run {
+            processingFastAction = .supplyRun
+            fastActionFeedback = nil
+        }
+
+        guard let service = appCore.jobsService,
+              let entryId = activeLaborEntryId else {
+            await MainActor.run {
+                fastActionFeedback = (.warning, "Clock in first", "Supply runs need an active clock entry.")
+                processingFastAction = nil
+            }
+            return
+        }
+
+        do {
+            let newStatus = try service.toggleSupplyRun(laborEntryId: entryId)
+            await MainActor.run {
+                activityStatus = newStatus
+                fastActionFeedback = newStatus == "supply_run"
+                    ? (.info, "Supply run started", "You stay clocked in while the run is marked on this labor entry.")
+                    : (.info, "Supply run ended", "The run marker was closed on this labor entry.")
+            }
+        } catch {
+            await setFastActionError(error, context: "toggle supply run")
+        }
+
+        await loadData()
+        await MainActor.run { processingFastAction = nil }
     }
 
     // MARK: - Pending Actions Card

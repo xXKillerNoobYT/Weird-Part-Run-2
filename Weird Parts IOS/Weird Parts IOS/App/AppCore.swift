@@ -118,15 +118,28 @@ final class AppCore: ObservableObject {
                     // Remove the .unencrypted.bak file after it has been retained for 7 days.
                     AppDatabase.cleanupStaleUnencryptedBackup(atPath: path)
                 } catch {
+                    #if DEBUG && targetEnvironment(simulator)
+                    if Self.shouldResetLocalDatabaseAfterCipherOpenFailure(error) {
+                        self.logger.warning(
+                            "[AppCore] DEBUG SQLCipher open failed with decrypt/notadb; resetting local simulator database and retrying."
+                        )
+                        try DeviceResetService.deleteDatabaseStorage(atPath: path)
+                        let keyHex = try Self.deviceBootstrapKeyHex()
+                        database = try AppDatabase.openEncryptedDatabase(atPath: path, keyHex: keyHex)
+                    } else {
+                        throw error
+                    }
+                    #else
                     #if !DEBUG
                     // Migration failed — try to restore from backup
                     if let backup = backupPath {
                         try? AppDatabase.restoreDatabase(from: backup, to: path)
                         // Retry with restored DB (old schema, but data preserved)
-                        logger.error("[AppCore] Migration failed, restored from backup. Error: \(error.localizedDescription)")
+                        self.logger.error("[AppCore] Migration failed, restored from backup. Error: \(error.localizedDescription)")
                     }
                     #endif
                     throw error
+                    #endif
                 }
 
                 let auth = AuthService(db: database)
@@ -214,7 +227,9 @@ final class AppCore: ObservableObject {
                 needsOnboarding = false
             }
 
-            if uiTestingMode && ProcessInfo.processInfo.arguments.contains("-UITestingWEI936AutoLogin"),
+            if uiTestingMode &&
+               ProcessInfo.processInfo.arguments.contains("-UITestingWEI936AutoLogin") &&
+               !ProcessInfo.processInfo.arguments.contains("-UITestingForceLogin"),
                let uiTestUser = result.users.first(where: { $0.displayName == "UITest Owner" }),
                let userId = uiTestUser.id {
                 currentUser = uiTestUser
@@ -238,7 +253,7 @@ final class AppCore: ObservableObject {
                 syncManager.setupAppLifecycleSync()
 
                 // Auto-sync on launch if configured
-                if syncManager.isSyncAvailable {
+                if syncManager.isSyncAvailable && syncManager.isAutoSyncEnabled {
                     Task { [syncManager] in
                         await syncManager.syncNow()
                         syncManager.startPeerDiscovery()
@@ -346,6 +361,24 @@ final class AppCore: ObservableObject {
         Task { @MainActor in
             await bootstrap()
         }
+    }
+
+    nonisolated static func isRecoverableDebugCipherOpenFailure(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        guard nsError.code == 26 else { return false }
+
+        let description = error.localizedDescription.lowercased()
+        return description.contains("file is not a database")
+            || description.contains("not a database")
+            || description.contains("decrypt")
+    }
+
+    nonisolated static func shouldResetLocalDatabaseAfterCipherOpenFailure(_ error: Error) -> Bool {
+        #if DEBUG && targetEnvironment(simulator)
+        return isRecoverableDebugCipherOpenFailure(error)
+        #else
+        return false
+        #endif
     }
 
     // MARK: - Auth Actions
@@ -611,35 +644,39 @@ final class AppCore: ObservableObject {
             if retryAddStatus == errSecSuccess {
                 return keyData.map { String(format: "%02x", $0) }.joined()
             }
-            #if targetEnvironment(macCatalyst)
-            if retryAddStatus == errSecMissingEntitlement {
-                return try catalystFallbackBootstrapKeyHex()
+            if shouldUseLocalBootstrapKeyFallback(for: retryAddStatus) {
+                return try localFallbackBootstrapKeyHex()
             }
-            #endif
             throw CipherKeyError.keychainAccessFailed(retryAddStatus)
-        } else if addStatus == errSecMissingEntitlement {
-            #if targetEnvironment(macCatalyst)
-            return try catalystFallbackBootstrapKeyHex()
-            #else
-            throw CipherKeyError.keychainAccessFailed(addStatus)
-            #endif
+        } else if shouldUseLocalBootstrapKeyFallback(for: addStatus) {
+            return try localFallbackBootstrapKeyHex()
         } else if addStatus != errSecSuccess {
             throw CipherKeyError.keychainAccessFailed(addStatus)
         }
         return keyData.map { String(format: "%02x", $0) }.joined()
     }
 
-    #if targetEnvironment(macCatalyst)
-    /// Catalyst fallback when Keychain is unavailable (e.g. missing entitlement in local dev).
+    nonisolated static func shouldUseLocalBootstrapKeyFallback(for status: OSStatus) -> Bool {
+        guard status == errSecMissingEntitlement else { return false }
+        #if targetEnvironment(simulator) || targetEnvironment(macCatalyst)
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    #if targetEnvironment(simulator) || targetEnvironment(macCatalyst)
+    /// Local-development fallback when Keychain is unavailable (e.g. unsigned simulator
+    /// launch or missing Catalyst entitlement).
     /// Stores a random device key inside the app container to keep DB encryption stable
     /// across launches on the same machine/account.
-    nonisolated private static func catalystFallbackBootstrapKeyHex() throws -> String {
+    nonisolated private static func localFallbackBootstrapKeyHex() throws -> String {
         guard let supportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             throw AppCoreError.noDocumentsDirectory
         }
         let dir = supportURL.appendingPathComponent("WiredPart", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let keyURL = dir.appendingPathComponent("catalyst-bootstrap-key.bin")
+        let keyURL = dir.appendingPathComponent("local-bootstrap-key.bin")
 
         if let data = try? Data(contentsOf: keyURL), data.count == 32 {
             return data.map { String(format: "%02x", $0) }.joined()
@@ -653,6 +690,10 @@ final class AppCore: ObservableObject {
         let keyData = Data(keyBytes)
         try keyData.write(to: keyURL, options: .atomic)
         return keyData.map { String(format: "%02x", $0) }.joined()
+    }
+    #else
+    nonisolated private static func localFallbackBootstrapKeyHex() throws -> String {
+        throw CipherKeyError.keychainAccessFailed(errSecMissingEntitlement)
     }
     #endif
 
@@ -726,14 +767,8 @@ final class AppCore: ObservableObject {
         }
     }
 
-    nonisolated private static var uiTestingFixturePIN: String {
-        let configuredPIN = ProcessInfo.processInfo.environment["WEIRD_PARTS_UI_TEST_PIN"] ?? "8396"
-        let isDigitsOnly = configuredPIN.allSatisfy { $0.isNumber }
-        return isDigitsOnly && (4...6).contains(configuredPIN.count) ? configuredPIN : "8396"
-    }
-
     nonisolated static func seedUITestingFixtures(db: AppDatabase, authService: AuthService) throws {
-        let seedResult = try authService.seedFirstAdmin(displayName: "UITest Owner", pin: uiTestingFixturePIN)
+        let seedResult = try authService.seedFirstAdmin(displayName: "UITest Owner", pin: "1234")
         let activeUsers = try authService.getActiveUsers()
         let fixtureUserId = seedResult.user?.id ??
             activeUsers.first(where: { $0.displayName == "UITest Owner" })?.id ??
@@ -908,15 +943,194 @@ final class AppCore: ObservableObject {
             }
         }
 
+        if ProcessInfo.processInfo.arguments.contains("-UITestingWarehouseLocations") {
+            try seedWarehouseLocationsUITestingFixtures(db: db)
+        }
+
         if ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard") {
             try seedDispatchBoardUITestingFixtures(db: db)
+            UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
+            UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("-UITestingWEI3144JobMaterials") {
+            try seedWEI3144JobMaterialsFixtures(db: db, userId: fixtureUserId)
         }
 
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
-        UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        if !ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard") {
+            UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        }
 
         seedWEI936OnboardingStateIfRequested(userId: fixtureUserId)
+    }
+
+    nonisolated static func uiTestingWEI3144JobMaterialsJobId(db: AppDatabase?) -> Int64? {
+        guard ProcessInfo.processInfo.arguments.contains("-UITestingWEI3144JobMaterials"),
+              let db
+        else { return nil }
+        return try? db.writer.read { dbConn in
+            try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM jobs WHERE job_number = 'UITEST-MAT-3144' AND deleted_at IS NULL"
+            )
+        }
+    }
+
+    nonisolated private static func seedWEI3144JobMaterialsFixtures(db: AppDatabase, userId: Int64?) throws {
+        guard let userId else { return }
+
+        // Guard against duplicate seeding when the app is relaunched with the same
+        // persisted DB (e.g. repeated Simulator runs with -UITestingWEI3144JobMaterials).
+        let alreadySeeded = (try? db.writer.read { dbConn in
+            try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM jobs WHERE job_number = 'UITEST-MAT-3144' AND deleted_at IS NULL"
+            )
+        }) != nil
+        if alreadySeeded { return }
+
+        let parts = PartsService(db: db, auth: AuthService(db: db))
+        let warehouse = WarehouseService(db: db)
+        let jobs = JobsService(db: db)
+        let categoryId = try parts.createCategory(name: "UITesting WEI-3144 Electrical", description: "Seeded material QA category")
+
+        let wireNutId = try parts.createPart(
+            categoryId: categoryId,
+            name: "WEI-3144 Wire Nut",
+            code: "WEI3144-WIRE-NUT",
+            description: "Seeded wire nut for pull, consume, and return mobile QA"
+        )
+        let correctionPartId = try parts.createPart(
+            categoryId: categoryId,
+            name: "WEI-3144 Correction Wire Nut",
+            code: "WEI3144-CORRECT",
+            description: "Seeded material correction row for audit-note QA"
+        )
+        let jobId = try jobs.createJob(
+            jobNumber: "UITEST-MAT-3144",
+            jobName: "WEI-3144 Materials QA Job",
+            customerName: "Seeded QA Customer",
+            status: "active",
+            priority: "high",
+            jobType: "service",
+            notes: "Seeded for Stage 6 parts-on-jobs mobile/tablet Materials QA.",
+            createdBy: userId
+        )
+
+        _ = try warehouse.createMovement(
+            partId: wireNutId,
+            qty: 10,
+            fromLocationType: nil,
+            fromLocationId: nil,
+            toLocationType: "warehouse",
+            toLocationId: 1,
+            movementType: StockMovement.MovementType.receive.rawValue,
+            reason: "WEI-3144 seed stock",
+            performedBy: userId
+        )
+        _ = try jobs.pullJobMaterial(
+            jobId: jobId,
+            partId: wireNutId,
+            qty: 10,
+            fromLocationType: "warehouse",
+            fromLocationId: 1,
+            performedBy: userId,
+            notes: "Pulled 10 wire nuts for seeded Materials QA"
+        )
+        _ = try jobs.consumeStagedJobMaterial(
+            jobId: jobId,
+            partId: wireNutId,
+            qty: 7,
+            performedBy: userId,
+            notes: "Consumed 7 wire nuts in seeded Materials QA"
+        )
+        _ = try jobs.returnPulledJobMaterial(
+            jobId: jobId,
+            partId: wireNutId,
+            qty: 3,
+            toLocationType: "warehouse",
+            toLocationId: 1,
+            performedBy: userId,
+            notes: "Returned 3 unused wire nuts in seeded Materials QA"
+        )
+
+        let correctionJobPartId = try jobs.addJobPart(
+            jobId: jobId,
+            partId: correctionPartId,
+            qty: 9,
+            costAtConsume: 1.25,
+            performedBy: userId
+        )
+        try jobs.correctConsumedJobMaterial(
+            jobPartId: correctionJobPartId,
+            adjustedQty: 7,
+            performedBy: userId,
+            note: "Seeded correction validates required audit note."
+        )
+    }
+
+    nonisolated private static func seedWarehouseLocationsUITestingFixtures(db: AppDatabase) throws {
+        let service = WarehouseService(db: db)
+        let planName = "UITesting Warehouse Floor Plan"
+        let plan = try service.listFloorPlans().first { $0.name == planName }
+            ?? (try service.createFloorPlan(name: planName, widthInches: 720, lengthInches: 480))
+
+        guard let planId = plan.id else { return }
+        try service.updateFloorPlanGrid(floorPlanId: planId, rows: 3, cols: 5)
+
+        if try service.listZones(floorPlanId: planId).isEmpty {
+            _ = try service.addZone(
+                floorPlanId: planId,
+                zoneType: "storage",
+                label: "UITesting Storage",
+                colorHex: "#2563EB",
+                gridX: 0,
+                gridY: 0,
+                gridWidth: 2,
+                gridHeight: 2
+            )
+        }
+
+        let existingUnits = try service.listStorageUnits(floorPlanId: planId)
+        if existingUnits.isEmpty {
+            let shelf = try service.createStorageUnit(
+                floorPlanId: planId,
+                name: "UITesting Shelf A",
+                unitType: "shelf",
+                levels: 2,
+                areasPerLevel: 3
+            )
+            if let shelfId = shelf.id {
+                try service.updateStorageUnit(
+                    id: shelfId,
+                    gridX: 0,
+                    gridY: 0,
+                    gridWidth: 1,
+                    gridHeight: 2,
+                    frontFace: "south"
+                )
+            }
+
+            let rack = try service.createStorageUnit(
+                floorPlanId: planId,
+                name: "UITesting Pipe Rack",
+                unitType: "rack",
+                levels: 1,
+                areasPerLevel: 4
+            )
+            if let rackId = rack.id {
+                try service.updateStorageUnit(
+                    id: rackId,
+                    gridX: 2,
+                    gridY: 1,
+                    gridWidth: 2,
+                    gridHeight: 1,
+                    frontFace: "east"
+                )
+            }
+        }
     }
 
     nonisolated private static func seedWEI936OnboardingStateIfRequested(userId: Int64?) {
@@ -948,8 +1162,9 @@ final class AppCore: ObservableObject {
             // UITestingWEI936TourActive: begin with an empty task set so the
             // "Try This" guidance banner renders on pages with incomplete required
             // tasks. The dashboard auto-marks dashboard-view-kpis via its .task
-            // modifier; the dedicated WEI936 QA harness navigates to the Jobs page
-            // where required tasks are never auto-completed for a stable capture.
+            // modifier; the dedicated WEI936 QA harness navigates to the Jobs page,
+            // where jobs-create and jobs-tap-detail remain incomplete for a stable
+            // capture even after jobs-view-list is auto-marked.
             if args.contains("-UITestingWEI936RequiredDone") {
                 completedTasks.formUnion(["dashboard-view-kpis", "dashboard-tap-kpi"])
             }

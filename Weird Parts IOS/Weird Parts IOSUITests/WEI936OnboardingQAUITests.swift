@@ -17,9 +17,9 @@ import XCTest
 /// # How to run
 /// ```
 /// xcodebuild test \
-///   -scheme "Weird Parts IOS" \
+///   -scheme "WiredPart-iOS" \
 ///   -destination "platform=iOS Simulator,name=iPad Pro (12.9-inch)" \
-///   -only-testing "Weird Parts IOSUITests/WEI936OnboardingQAUITests"
+///   -only-testing "Weird PartsUITests/WEI936OnboardingQAUITests"
 /// ```
 /// For landscape evidence set `WEI_1185_LANDSCAPE=1` in the scheme environment.
 final class WEI936OnboardingQAUITests: XCTestCase {
@@ -74,15 +74,15 @@ final class WEI936OnboardingQAUITests: XCTestCase {
 
     /// Verifies the per-page OnboardingBanner shows "Try This" when the guided
     /// tour is active and required tasks are incomplete.  Navigates to the Jobs
-    /// list where required tasks (`jobs-view-list`, `jobs-create`,
-    /// `jobs-tap-detail`) are never auto-completed, giving a stable capture.
+    /// list where `jobs-create` and `jobs-tap-detail` remain incomplete, giving
+    /// a stable capture after `jobs-view-list` is auto-marked.
     @MainActor
     func testWEI936State3InProgress() {
         launchForWEI936(["-UITestingWEI936TourActive", "-UITestingWEI936AutoLogin"])
         waitForDashboard()
 
-        // Navigate to the Jobs tab — "Try This" is stable here because Jobs list
-        // tasks are never auto-marked complete by the list page itself.
+        // Navigate to the Jobs tab — "Try This" is stable here because create and
+        // detail tasks remain incomplete after the list page auto-marks itself.
         let jobsTab = app.buttons["tab_jobs"]
         if jobsTab.waitForExistence(timeout: 10) && jobsTab.isHittable {
             jobsTab.tap()

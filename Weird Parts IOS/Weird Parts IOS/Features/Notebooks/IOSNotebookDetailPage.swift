@@ -15,12 +15,14 @@ struct IOSNotebookDetailPage: View {
     @State private var loadError: String?
     @State private var actionError: String?
     @State private var activeSheet: ActiveSheet?
+    @State private var activeEditLockEntryId: Int64?
     @State private var expandedGroups: Set<Int64> = []
     @State private var expandedSections: Set<Int64> = []
     @State private var isWarrantyJob = false
     @State private var todosNeedingReview: [NotebooksService.NotebookEntryRow] = []
     @State private var panelSchedule = PanelSchedule()
     @State private var blockConflicts: [NotebookBlockConflict] = []
+    @State private var activeEditLocks: [NotebookEntryEditLock] = []
     @State private var pendingDelete: PendingDelete?
     @State private var selectedPageId: Int64?
     @State private var compactPageId: Int64?
@@ -140,7 +142,12 @@ struct IOSNotebookDetailPage: View {
                 .accessibilityLabel("Help")
             }
         }
-        .sheet(item: $activeSheet) { sheet in
+        .sheet(item: $activeSheet, onDismiss: {
+            if let entryId = activeEditLockEntryId {
+                releaseEditLock(entryId: entryId)
+                activeEditLockEntryId = nil
+            }
+        }) { sheet in
             sheetContent(for: sheet)
                 .environmentObject(appCore)
         }
@@ -1027,8 +1034,16 @@ struct IOSNotebookDetailPage: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
+            if let lock = activeLock(for: entry.id) {
+                Label(lock.userName, systemImage: "person.crop.circle.badge.clock")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .labelStyle(.iconOnly)
+                    .accessibilityLabel("\(lock.userName) is editing this block")
+            }
+
             Button {
-                activeSheet = .editEntry(entry)
+                beginEditing(entry)
             } label: {
                 Image(systemName: "pencil.circle")
                     .imageScale(.large)
@@ -1039,7 +1054,7 @@ struct IOSNotebookDetailPage: View {
         }
         .contextMenu {
             Button {
-                activeSheet = .editEntry(entry)
+                beginEditing(entry)
             } label: {
                 Label("Edit", systemImage: "pencil")
             }
@@ -1198,7 +1213,11 @@ struct IOSNotebookDetailPage: View {
                 notebookId: notebookId,
                 sectionId: nil,
                 editingEntry: entry,
-                onSave: { loadData() }
+                onSave: {
+                    releaseEditLock(entryId: entry.id)
+                    activeEditLockEntryId = nil
+                    loadData()
+                }
             )
 
         case .addSection(let groupId):
@@ -1241,6 +1260,9 @@ struct IOSNotebookDetailPage: View {
                 conflicts: blockConflicts,
                 onResolve: { conflictLogId, keepVersion in
                     resolveConflict(conflictLogId: conflictLogId, keepVersion: keepVersion)
+                },
+                onAIMerge: { conflictLogId in
+                    mergeConflictWithAI(conflictLogId: conflictLogId)
                 },
                 onResolveAll: { keepVersion in
                     resolveAllConflicts(keepVersion: keepVersion)
@@ -1353,6 +1375,7 @@ struct IOSNotebookDetailPage: View {
             }
             // Check for sync conflicts on this notebook's entries (62J)
             blockConflicts = (try? service.detectBlockConflicts(notebookId: notebookId)) ?? []
+            activeEditLocks = (try? service.activeBlockEditLocks(notebookId: notebookId)) ?? []
 
             // Load panel schedule from first panel_schedule block entry
             loadPanelScheduleFromEntries(service: service)
@@ -1579,6 +1602,37 @@ struct IOSNotebookDetailPage: View {
         }
     }
 
+    private func activeLock(for entryId: Int64) -> NotebookEntryEditLock? {
+        activeEditLocks.first { $0.entryId == entryId }
+    }
+
+    private func beginEditing(_ entry: NotebooksService.NotebookEntryRow) {
+        guard let service = appCore.notebooksService else {
+            actionError = "Notebooks service unavailable"
+            return
+        }
+        guard let userId = appCore.currentUser?.id else {
+            actionError = "Not logged in. Please log in and try again."
+            return
+        }
+        do {
+            _ = try service.acquireBlockEditLock(entryId: entry.id, userId: userId)
+            activeEditLockEntryId = entry.id
+            activeSheet = .editEntry(entry)
+            activeEditLocks = (try? service.activeBlockEditLocks(notebookId: notebookId)) ?? activeEditLocks
+        } catch {
+            actionError = userFriendlyError(error, context: "start editing")
+            activeEditLockEntryId = entry.id
+            activeSheet = .editEntry(entry)
+        }
+    }
+
+    private func releaseEditLock(entryId: Int64) {
+        guard let service = appCore.notebooksService,
+              let userId = appCore.currentUser?.id else { return }
+        try? service.releaseBlockEditLock(entryId: entryId, userId: userId)
+    }
+
     // MARK: - Conflict Resolution (62J)
 
     private func resolveConflict(conflictLogId: Int64, keepVersion: String) {
@@ -1607,6 +1661,24 @@ struct IOSNotebookDetailPage: View {
             actionError = userFriendlyError(error, context: "complete action")
         }
     }
+
+    private func mergeConflictWithAI(conflictLogId: Int64) {
+        guard let service = appCore.notebooksService else {
+            actionError = "Notebooks service unavailable"
+            return
+        }
+        Task {
+            do {
+                let merged = try await service.resolveBlockConflictWithFoundationModels(conflictLogId: conflictLogId)
+                if !merged {
+                    actionError = "AI merge unavailable. Both versions were preserved for manual resolution."
+                }
+                loadData()
+            } catch {
+                actionError = userFriendlyError(error, context: "merge conflict")
+            }
+        }
+    }
 }
 
 // MARK: - NotebookConflictResolutionSheet (62J)
@@ -1617,6 +1689,7 @@ private struct NotebookConflictResolutionSheet: View {
     @Environment(\.dismiss) private var dismiss
     let conflicts: [NotebookBlockConflict]
     let onResolve: (Int64, String) -> Void      // (conflictLogId, "local" | "remote")
+    let onAIMerge: (Int64) -> Void
     let onResolveAll: (String) -> Void           // "local" | "remote"
 
     var body: some View {
@@ -1740,7 +1813,7 @@ private struct NotebookConflictResolutionSheet: View {
                         }
 
                         // Resolution buttons
-                        HStack(spacing: 12) {
+                        HStack(spacing: 8) {
                             Button {
                                 onResolve(conflict.conflictLogId, "local")
                             } label: {
@@ -1753,6 +1826,19 @@ private struct NotebookConflictResolutionSheet: View {
                             .buttonStyle(.borderedProminent)
                             .tint(.blue)
                             .controlSize(.small)
+
+                            Button {
+                                onAIMerge(conflict.conflictLogId)
+                            } label: {
+                                HStack {
+                                    Image(systemName: "sparkles")
+                                    Text("AI Merge")
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(!["title", "content", "block_data", "checklist_items"].contains(conflict.fieldName))
 
                             Button {
                                 onResolve(conflict.conflictLogId, "remote")

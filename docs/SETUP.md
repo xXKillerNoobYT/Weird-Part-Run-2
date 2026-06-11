@@ -1,226 +1,135 @@
-# Wired-Part — Customer Setup Guide
+# WiredPart Local Setup
 
-Everything you need to get Wired-Part running at your shop.
+Tracking:
 
----
+- GitHub: [xXKillerNoobYT/Weird-Part-Run-2#942](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/942)
+- Paperclip parent: `WEI-3096`
+- Paperclip active implementation: `WEI-3099`
+- Paperclip QA review: `WEI-3100`
 
-## What You Need
+This guide is for the current native iOS and Swift package repository. Older web/server deployment notes may still exist in historical plans, but they are not the front-door setup path for this repo.
 
-| Item | Purpose | Notes |
-|------|---------|-------|
-| **Shop computer** | Runs the server (Windows 10/11 or Mac) | Any desktop/laptop at the shop |
-| **Wi-Fi router** | Connects all devices on same network | Any standard home/office router |
-| **Web browser** | Access from shop desktops | Chrome, Edge, or Safari |
-| **Mobile devices** (optional) | iPads, iPhones, Android phones for field workers | Requires Capacitor app install |
+## Prerequisites
 
----
+| Requirement | Purpose |
+| --- | --- |
+| macOS with Xcode installed | builds the SwiftUI iOS app and runs simulators |
+| Xcode command line tools | provides `xcodebuild`, `xcrun`, SwiftPM |
+| Swift 6-compatible toolchain | builds `core/Package.swift` |
+| GitHub CLI `gh` | optional, for PR/runner checks |
+| Python 3 | optional, for repo guard scripts |
 
-## Step 1: Install on the Shop Computer
+Check local tools:
 
-### Prerequisites
-
-1. **Python 3.12+** — Download from [python.org](https://www.python.org/downloads/)
-   - During install, check "Add Python to PATH"
-2. **Node.js 18+** — Download from [nodejs.org](https://nodejs.org/)
-
-### Installation
-
-1. Copy the `Weird-Part-Run-2` folder to your shop computer (e.g., `C:\WiredPart`)
-2. Open **Terminal** (Mac) or **PowerShell** (Windows)
-3. Run the startup script:
-
-**Windows:**
-```powershell
-cd C:\WiredPart
-powershell -ExecutionPolicy Bypass -File scripts\start-server.ps1
-```
-
-**Mac:**
 ```bash
-cd ~/WiredPart
-bash scripts/start-server.sh
+xcodebuild -version
+swift --version
+python3 --version
+gh --version
 ```
 
-The script will:
-- Create a Python virtual environment
-- Install backend dependencies
-- Build the frontend
-- Detect your LAN IP address
-- Start the server
+## Clone And Open
 
-You'll see output like:
-```
-  Server starting at:
-    Local:   http://localhost:8000
-    Network: http://192.168.1.100:8000
-
-  Field devices connect to: http://192.168.1.100:8000
-```
-
-**Write down the Network URL** — you'll need it for Step 3.
-
----
-
-## Step 2: Access from Shop Computers
-
-On any computer connected to the same Wi-Fi:
-
-1. Open a web browser (Chrome, Edge, or Safari)
-2. Go to `http://<shop-ip>:8000` (the Network URL from Step 1)
-3. The first time, you'll see the login screen
-
-### First Login
-
-1. Select the admin user ("Admin")
-2. Enter the admin PIN created during setup
-3. You're in! Go to **Settings → People** to create employee accounts
-
-### Create Employee Accounts
-
-1. Go to **People → Employees**
-2. Click **Add Employee**
-3. Set their name, email, phone, and a 4-6 digit PIN
-4. Assign their **hats** (roles) — this controls what they can see and do
-5. A default Mon-Fri schedule is automatically created
-
----
-
-## Step 3: Connect Mobile Devices (Optional)
-
-### For iPads/iPhones
-
-1. Install the Wired-Part app via sideloading (see `docs/plans/sideloading-guide.md`)
-2. Open the app
-3. Go to **Settings → Sync**
-4. Enter the shop server URL: `http://<shop-ip>:8000`
-5. Tap **Test** to verify connection
-6. Tap **Sync Now** for initial data load
-
-### For Android
-
-1. Install the APK (transfer via USB or file share)
-2. Same setup as iOS above
-
-### How Sync Works
-
-- Mobile devices work **fully offline** — no Wi-Fi needed for daily tasks
-- When on the shop Wi-Fi, changes sync automatically every 5 minutes
-- You can also tap the sync icon in the header to sync manually
-- The shop server is the "truth" — if two people edit the same thing, the last edit wins
-
----
-
-## Step 4: Daily Operations
-
-### For Field Workers (Mobile)
-
-- **Clock in/out** — Tap a job, then Clock In. Clock Out prompts questionnaire.
-- **Move parts** — Use the warehouse movement wizard to pull/transfer parts
-- **Create orders** — Submit parts requests from job sites
-- **Check tools** — View assigned tools, do kit verification
-- **Write notes** — Job notebooks for daily updates
-
-### For Office Staff (Desktop)
-
-- **Dashboard** — KPI overview, quick actions
-- **Manage orders** — Review parts requests, create purchase orders
-- **Approve time-off** — Review and approve/deny requests
-- **Dispatch** — Assign workers to jobs for the day
-- **Reports** — Pre-billing, timesheets, labor overview, profitability
-- **Cost tracking** — FIFO/LIFO cost analysis, budget monitoring
-
----
-
-## Step 5: Auto-Start on Boot
-
-### Windows
-
-1. Press `Win+R`, type `taskschd.msc`, press Enter
-2. Click **Create Basic Task**
-3. Name: "Wired-Part Server"
-4. Trigger: "When the computer starts"
-5. Action: "Start a program"
-6. Program: `powershell.exe`
-7. Arguments: `-ExecutionPolicy Bypass -File C:\WiredPart\scripts\start-server.ps1`
-8. Finish
-
-### Mac
-
-Create `~/Library/LaunchAgents/com.wiredpart.server.plist`:
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key><string>com.wiredpart.server</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>bash</string>
-        <string>/Users/YOU/WiredPart/scripts/start-server.sh</string>
-    </array>
-    <key>RunAtLoad</key><true/>
-    <key>KeepAlive</key><true/>
-</dict>
-</plist>
-```
-
-Then run: `launchctl load ~/Library/LaunchAgents/com.wiredpart.server.plist`
-
----
-
-## Backups
-
-### Automatic Backups
-
-Set up a daily backup using the backup script:
-
-**Windows** (Task Scheduler):
-- Program: `powershell.exe`
-- Arguments: `-File C:\WiredPart\scripts\backup-db.ps1`
-- Schedule: Daily at midnight
-
-**Mac** (cron):
 ```bash
-crontab -e
-# Add this line:
-0 0 * * * bash /Users/YOU/WiredPart/scripts/backup-db.sh
+git clone git@github.com:xXKillerNoobYT/Weird-Part-Run-2.git
+cd Weird-Part-Run-2
+open "Weird Parts IOS/Weird Parts.xcodeproj"
 ```
 
-Backups are saved to `backups/` and the last 30 are kept automatically.
+The app target lives under `Weird Parts IOS/`. The shared package lives under `core/` and is the preferred place for business logic, persistence, sync, QR/OCR, and service tests.
 
-### Restore from Backup
+## Build The Core Package
 
-If something goes wrong, restore from a backup:
-
-**Windows:**
-```powershell
-powershell -File scripts\restore-db.ps1
-```
-
-**Mac:**
 ```bash
-bash scripts/restore-db.sh
+cd core
+swift build
+swift test
 ```
 
-The script will show available backups and let you choose one. A safety backup of your current database is created before restoring.
+Use focused tests while iterating:
 
----
+```bash
+cd core
+swift test --filter "AuthServiceTests"
+```
+
+## Build The iOS App
+
+From the repo root:
+
+```bash
+xcrun simctl list devices available
+
+xcodebuild \
+  -project "Weird Parts IOS/Weird Parts.xcodeproj" \
+  -scheme "Weird Parts" \
+  -destination 'generic/platform=iOS Simulator' \
+  build
+```
+
+For manual simulator validation, replace the generic destination with an installed device from `xcrun simctl list devices available` and record the destination in your handoff.
+
+## Run App Tests
+
+```bash
+xcodebuild \
+  -project "Weird Parts IOS/Weird Parts.xcodeproj" \
+  -scheme "Weird Parts" \
+  -destination 'generic/platform=iOS Simulator' \
+  test
+```
+
+For UI work, capture route/screen evidence using Xcode test attachments, simulator screenshots, or a concise manual note with device, orientation, and result. See [QA-PROCESS.md](QA-PROCESS.md).
+
+## Repo Guards
+
+Before handing off:
+
+```bash
+git diff --check
+python3 scripts/guard-tracked-artifacts.py
+git status --short
+```
+
+Do not commit:
+
+- `.env`, tokens, credentials, provisioning secrets, or API keys.
+- Local databases, DerivedData, build products, caches, or logs.
+- Runtime screenshots unless the issue explicitly requests checked-in documentation images.
+- Temporary agent workspaces or generated artifacts.
+
+## GitHub Actions And PR Validation
+
+Static checks can run on GitHub-hosted Linux/macOS as configured. For iOS/macOS/Xcode PR work, use the local self-hosted Mac runner path before declaring CI blocked by hosted runner billing/capacity.
+
+```bash
+gh api repos/xXKillerNoobYT/Weird-Part-Run-2/actions/runners \
+  --jq '.runners[] | {name,status,busy,labels:[.labels[].name]}'
+
+gh run list -R xXKillerNoobYT/Weird-Part-Run-2 --limit 10
+grep -R "runs-on:" .github/workflows
+```
+
+Known local runner:
+
+- Directory: `/Users/IA/actions-runner/Weird-Part-Run-2`
+- Service: `IA-Mac-WPR2`
+- Labels: `self-hosted`, `macOS`, `ARM64`/`arm64`, `xcode`, `ios`, `local-mac`
+
+Runner tracking: GitHub [#943](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/943), Paperclip `WEI-3097`.
 
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
-| Server won't start | Check Python is installed: `python --version` |
-| Can't access from other computers | Ensure all devices are on the same Wi-Fi network |
-| Mobile app can't connect | Check the shop URL in Settings → Sync. Must include `http://` and port |
-| "Invalid PIN" | Ask your admin to reset your PIN |
-| Slow performance | The database grows over time. Regular backups + cleanup help |
-| Data not syncing | Tap the sync icon in the header. Check if shop is reachable |
+| Symptom | Check |
+| --- | --- |
+| Swift package dependency fails | Confirm `core/Package.resolved` is present and rerun `swift package resolve` from `core`. |
+| Simulator destination not found | Run `xcrun simctl list devices available` and use an installed device name. |
+| App build cannot find package products | Reopen the Xcode project and let package resolution finish. |
+| Xcode test hangs in CI | Check local runner availability and workflow `runs-on` labels before treating it as a cloud blocker. |
+| Guard script fails | Remove generated/runtime artifact from tracking or update ignore/guard rules only when the artifact is intentionally source-controlled. |
 
----
+## Next Reads
 
-## Getting Help
-
-- Check the **API docs** at `http://<shop-ip>:8000/docs`
-- Review logs at `backend/logs/wiredpart.log`
-- Database is at `backend/wiredpart.db` (SQLite — can browse with DB Browser)
+- [README.md](../README.md) for the repo map.
+- [WORKING-AREAS.md](WORKING-AREAS.md) for area ownership.
+- [QA-PROCESS.md](QA-PROCESS.md) for evidence expectations.

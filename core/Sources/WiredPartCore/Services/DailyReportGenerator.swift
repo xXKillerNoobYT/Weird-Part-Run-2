@@ -68,7 +68,7 @@ public final class DailyReportGenerator: Sendable {
             let clockRows = try Row.fetchAll(dbConn, sql: """
                 SELECT clock_in, clock_out, regular_hours, overtime_hours
                 FROM labor_entries
-                WHERE user_id = ? AND job_id = ? AND date(clock_in) = ?
+                WHERE user_id = ? AND job_id = ? AND \(Self.localDateSQL("clock_in")) = ?
                   AND deleted_at IS NULL
                 ORDER BY clock_in ASC
                 """, arguments: [userId, jobId, dateStr])
@@ -206,7 +206,7 @@ public final class DailyReportGenerator: Sendable {
                            ) as total_hours
                     FROM labor_entries le
                     LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
-                    WHERE le.user_id = ? AND date(le.clock_in) = ?
+                    WHERE le.user_id = ? AND \(Self.localDateSQL("le.clock_in")) = ?
                       AND le.deleted_at IS NULL
                     GROUP BY le.job_id
                     ORDER BY total_hours DESC
@@ -234,6 +234,10 @@ public final class DailyReportGenerator: Sendable {
     }
 
     private func parseDateTime(_ str: String) -> Date? { CoreFormatters.parseDateTime(str) }
+
+    private static func localDateSQL(_ expression: String) -> String {
+        "CASE WHEN length(\(expression)) <= 10 THEN date(\(expression)) ELSE date(\(expression), 'localtime') END"
+    }
 
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)

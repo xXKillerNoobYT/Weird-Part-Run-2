@@ -424,6 +424,29 @@ struct ChatServiceTests {
         #expect(channels.contains(where: { $0.channelId == channelId }))
     }
 
+    @Test("listSupplierChannelsForJob hides channels from non-members")
+    func testListSupplierChannelsForJobRequiresMembership() throws {
+        let env = try E2ETestHelpers.setUp()
+        let nonMemberUserId = try env.auth.createUser(displayName: "Non Member", pin: "5678")
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SC-03", name: "Private Supplier Job")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "PrivateJobSupplier")
+        let channelId = try env.chat.createSupplierChannel(
+            name: "Private Job Supplier Chat",
+            supplierId: supplierId,
+            supplierDisplayName: "PrivateJobSupplier",
+            contactId: nil,
+            role: "quoted",
+            createdBy: env.adminUserId,
+            jobId: jobId
+        )
+
+        let creatorChannels = try env.chat.listSupplierChannelsForJob(jobId: jobId, userId: env.adminUserId)
+        #expect(creatorChannels.contains(where: { $0.channelId == channelId }))
+
+        let nonMemberChannels = try env.chat.listSupplierChannelsForJob(jobId: jobId, userId: nonMemberUserId)
+        #expect(nonMemberChannels.isEmpty)
+    }
+
     @Test("listSupplierChannelsForJob returns empty for unlinked job")
     func testListSupplierChannelsForJobEmpty() throws {
         let env = try E2ETestHelpers.setUp()

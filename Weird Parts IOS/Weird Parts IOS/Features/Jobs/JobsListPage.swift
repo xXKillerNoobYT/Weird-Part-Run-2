@@ -47,11 +47,13 @@ struct JobsListPage: View {
     private enum ActiveSheet: Identifiable {
         case help
         case createJob
+        case jobDetail(Int64)
 
         var id: String {
             switch self {
             case .help: return "help"
             case .createJob: return "createJob"
+            case .jobDetail(let id): return "jobDetail-\(id)"
             }
         }
     }
@@ -140,6 +142,42 @@ struct JobsListPage: View {
                     loadJobs()
                 }
                 .environmentObject(appCore)
+            case .jobDetail(let jobId):
+                NavigationStack {
+                    IOSJobDetailTabView(jobId: jobId)
+                        .environmentObject(appCore)
+                }
+            }
+        }
+        .confirmationDialog(
+            "Change Status",
+            isPresented: Binding(
+                get: { quickStatusTarget != nil },
+                set: { if !$0 { quickStatusTarget = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let target = quickStatusTarget {
+                let statuses: [(String, String)] = [
+                    ("active", "Active"),
+                    ("on_hold", "On Hold"),
+                    ("payment_hold", "Payment Hold"),
+                    ("completed", "Completed"),
+                    ("warranty", "Warranty"),
+                    ("continuous", "Continuous")
+                ]
+                ForEach(statuses, id: \.0) { status, label in
+                    if target.job.status != status {
+                        Button(label) {
+                            updateJobStatus(job: target.job, newStatus: status)
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) { quickStatusTarget = nil }
+            }
+        } message: {
+            if let target = quickStatusTarget {
+                Text("Job: \(target.job.jobName ?? target.job.jobNumber)"  )
             }
         }
         .onChange(of: searchText) { loadJobs() }
@@ -259,12 +297,12 @@ struct JobsListPage: View {
                     jobCard(job)
                 }
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    Button { } label: {
+                    Button { quickStatusTarget = QuickStatusTarget(job: job) } label: {
                         Label("Status", systemImage: "arrow.triangle.2.circlepath")
                     }
                     .tint(.blue)
 
-                    Button { } label: {
+                    Button { activeSheet = .jobDetail(job.id) } label: {
                         Label("Detail", systemImage: "doc.text.magnifyingglass")
                     }
                     .tint(.indigo)
@@ -543,6 +581,20 @@ struct JobsListPage: View {
         return Text(priority.capitalized)
             .font(.caption2)
             .foregroundStyle(color)
+    }
+
+    // MARK: - Status Change
+
+    private func updateJobStatus(job: JobsService.JobListItem, newStatus: String) {
+        guard let service = appCore.jobsService else { return }
+        do {
+            try service.updateJob(id: job.id, status: newStatus)
+            quickStatusTarget = nil
+            loadJobs()
+        } catch {
+            loadError = "Could not update status: \(error.localizedDescription)"
+            quickStatusTarget = nil
+        }
     }
 
     // MARK: - Data Loading

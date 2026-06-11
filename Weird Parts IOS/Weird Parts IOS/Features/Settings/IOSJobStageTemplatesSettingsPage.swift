@@ -254,7 +254,11 @@ struct IOSJobStageTemplatesSettingsPage: View {
     }
 
     private func loadStages(for templateId: Int64) {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            errorMessage = "Jobs service unavailable"
+            draftStages = []
+            return
+        }
         do {
             draftStages = try service.listAllJobStages(templateId: templateId).map {
                 StageDraft(existingId: $0.id, name: $0.name, sortOrder: $0.sortOrder)
@@ -280,7 +284,10 @@ struct IOSJobStageTemplatesSettingsPage: View {
     }
 
     private func createTemplate() {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            errorMessage = "Jobs service unavailable"
+            return
+        }
         do {
             let templateId = try service.createJobStageTemplate(
                 name: newTemplateName,

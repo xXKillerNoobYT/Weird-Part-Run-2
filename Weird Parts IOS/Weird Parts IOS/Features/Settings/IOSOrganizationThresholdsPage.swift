@@ -6,6 +6,7 @@ import WiredPartCore
 /// All values stored with `org_` prefix via SettingsService.
 struct IOSOrganizationThresholdsPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
 
     // MARK: - State
 
@@ -32,10 +33,33 @@ struct IOSOrganizationThresholdsPage: View {
     @State private var targetScore: Double = 85
     @State private var showOnDashboard = true
     @State private var includeInDailyReport = false
+    @State private var hasUnsavedChanges = false
+    @State private var showDiscardConfirmation = false
+    @State private var baselineFormSignature = ""
 
     private enum ActiveSheet: Identifiable {
         case help
         var id: String { "help" }
+    }
+
+    private var hasValidSettings: Bool {
+        baseDecayRate > 0 && movementDecayFactor > 0
+    }
+
+    private var formSignature: String {
+        [
+            String(baseDecayRate),
+            String(movementDecayFactor),
+            String(auditThreshold),
+            String(maxRecsPerDay),
+            String(recCooldownDays),
+            String(votingTimeoutDays),
+            String(minVotesRequired),
+            String(autoApproveUnanimous),
+            String(targetScore),
+            String(showOnDashboard),
+            String(includeInDailyReport),
+        ].joined(separator: "|")
     }
 
     var body: some View {
@@ -51,7 +75,14 @@ struct IOSOrganizationThresholdsPage: View {
         }
         .navigationTitle("Organization Thresholds")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(hasUnsavedChanges)
+        .interactiveDismissDisabled(hasUnsavedChanges)
         .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                if hasUnsavedChanges {
+                    Button("Back") { showDiscardConfirmation = true }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -68,6 +99,21 @@ struct IOSOrganizationThresholdsPage: View {
             ])
         }
         .task { loadSettings() }
+        .onChange(of: formSignature) { _, _ in
+            guard !isLoading else { return }
+            hasUnsavedChanges = formSignature != baselineFormSignature
+        }
+        .confirmationDialog(
+            "Discard changes?",
+            isPresented: $showDiscardConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Discard", role: .destructive) {
+                hasUnsavedChanges = false
+                dismiss()
+            }
+            Button("Keep editing", role: .cancel) {}
+        }
     }
 
     // MARK: - Form
@@ -157,6 +203,8 @@ struct IOSOrganizationThresholdsPage: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!hasValidSettings)
+                .accessibilityHint(hasValidSettings ? "" : "Base decay rate and movement decay factor must be greater than zero.")
             }
         }
         // Fix #149: dismiss keyboard when scrolling threshold settings
@@ -193,6 +241,7 @@ struct IOSOrganizationThresholdsPage: View {
             loadError = userFriendlyError(error, context: "load")
         }
         isLoading = false
+        resetDirtyTracking()
     }
 
     private func saveSettings() {
@@ -217,8 +266,14 @@ struct IOSOrganizationThresholdsPage: View {
             ]
             try service.upsertSettingsMap(data, category: "org")
             saveError = nil
+            resetDirtyTracking()
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }
+    }
+
+    private func resetDirtyTracking() {
+        baselineFormSignature = formSignature
+        hasUnsavedChanges = false
     }
 }
