@@ -23,16 +23,15 @@ struct IOSBookkeeperExportPage: View {
 
     private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
+    private var effectiveStart: Date { dateRange.dateInterval?.start ?? startDate }
+    private var effectiveEnd: Date { dateRange.dateInterval?.end ?? endDate }
+
     private var startDateString: String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: startDate)
+        Formatters.localDateFormatter.string(from: effectiveStart)
     }
 
     private var endDateString: String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: endDate)
+        Formatters.localDateFormatter.string(from: effectiveEnd)
     }
 
     var body: some View {
@@ -43,12 +42,28 @@ struct IOSBookkeeperExportPage: View {
         .navigationTitle("Bookkeeper Export")
         .reportExportToolbar(
             title: "Bookkeeper_Export",
-            columns: ["Type", "Name", "Regular", "Overtime", "Amount"],
-            rows: laborRows.map { ["Labor", $0.employeeName,
-                                   String(format: "%.1f", $0.regularHours),
-                                   String(format: "%.1f", $0.overtimeHours), ""] }
-                 + materialRows.map { ["Material", $0.supplierName, $0.poNumber, "",
-                                       String(format: "$%.2f", $0.totalAmount)] }
+            columns: ["Type", "Name", "Regular", "Overtime", "Amount", "Sources", "Jobs"],
+            rows: filteredLaborRows.map {
+                [
+                    "Labor",
+                    $0.employeeName,
+                    String(format: "%.1f", $0.regularHours),
+                    String(format: "%.1f", $0.overtimeHours),
+                    formatCurrency($0.grossPay),
+                    $0.sourceSummary,
+                    ""
+                ]
+            } + filteredMaterialRows.map {
+                [
+                    "Material",
+                    "\($0.poNumber) - \($0.supplierName)",
+                    "",
+                    "",
+                    formatCurrency($0.totalAmount),
+                    $0.sourceSummary,
+                    $0.jobNames
+                ]
+            }
         )
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -72,6 +87,7 @@ struct IOSBookkeeperExportPage: View {
         .onDisappear {
             NotificationCenter.default.post(name: .reportsBookkeeperPageInactive, object: nil)
         }
+        .onChange(of: dateRange) { _, _ in loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
     }
@@ -89,7 +105,8 @@ struct IOSBookkeeperExportPage: View {
         if searchText.isEmpty { return materialRows }
         return materialRows.filter {
             $0.poNumber.localizedCaseInsensitiveContains(searchText) ||
-            $0.supplierName.localizedCaseInsensitiveContains(searchText)
+            $0.supplierName.localizedCaseInsensitiveContains(searchText) ||
+            $0.jobNames.localizedCaseInsensitiveContains(searchText)
         }
     }
 
@@ -108,11 +125,17 @@ struct IOSBookkeeperExportPage: View {
                 title: "No Data",
                 message: "No labor or material data for the selected period."
             )
+        } else if filteredLaborRows.isEmpty && filteredMaterialRows.isEmpty {
+            EmptyStateView(
+                icon: "magnifyingglass",
+                title: "No Matching Export Rows",
+                message: "No employees, purchase orders, suppliers, or jobs match the current search."
+            )
         } else {
             List {
-                if !laborRows.isEmpty {
+                if !filteredLaborRows.isEmpty {
                     Section("Labor by Employee") {
-                        ForEach(laborRows) { row in
+                        ForEach(filteredLaborRows) { row in
                             laborRow(row)
                         }
                     }
@@ -143,6 +166,7 @@ struct IOSBookkeeperExportPage: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(row.employeeName)
                     .fontWeight(.medium)
+                    .lineLimit(2)
                 HStack(spacing: 12) {
                     Label(String(format: "%.1f reg", row.regularHours), systemImage: "clock")
                         .font(.caption)
@@ -153,15 +177,32 @@ struct IOSBookkeeperExportPage: View {
                             .foregroundStyle(.orange)
                     }
                 }
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                if !row.sourceSummary.isEmpty {
+                    Text(row.sourceSummary)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
             }
 
             Spacer()
 
-            Text(String(format: "%.1f hrs", row.regularHours + row.overtimeHours))
-                .font(.subheadline)
-                .fontWeight(.semibold)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(String(format: "%.1f hrs", row.regularHours + row.overtimeHours))
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Text(formatCurrency(row.grossPay))
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Text("gross")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(row.employeeName), \(String(format: "%.1f", row.regularHours)) regular hours, \(String(format: "%.1f", row.overtimeHours)) overtime hours, \(formatCurrency(row.grossPay)) gross pay.")
     }
 
     // MARK: - Material Row
@@ -181,6 +222,17 @@ struct IOSBookkeeperExportPage: View {
                 Text(row.supplierName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if !row.jobNames.isEmpty {
+                    Text(row.jobNames)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(2)
+                }
+                if !row.sourceSummary.isEmpty {
+                    Text(row.sourceSummary)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
             }
 
             Spacer()
@@ -190,6 +242,8 @@ struct IOSBookkeeperExportPage: View {
                 .fontWeight(.semibold)
         }
         .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(row.poNumber), supplier \(row.supplierName), total \(formatCurrency(row.totalAmount)).")
     }
 
     // MARK: - Helpers
