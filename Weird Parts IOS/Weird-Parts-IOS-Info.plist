@@ -8,7 +8,7 @@
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>WiredPart uses the camera to scan QR codes, barcodes, and documents for parts, tools, OCR import review, and device pairing.</string>
+	<string>WiredPart uses the camera to scan QR codes, barcodes, and documents for parts, tools, text recognition, document scanning, and device pairing.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>WiredPart connects to the shop computer and nearby devices on your local network to sync data.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

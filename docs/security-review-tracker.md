@@ -24,7 +24,7 @@
 
 ### Phase results
 - **Provider gates:** PASS — AI generation uses Apple Foundation Models behind `canImport(FoundationModels)` and OS availability checks; repo search found no OpenAI/Anthropic/Gemini/cloud AI provider calls in the AI/OCR/vision import path.
-- **Vision/OCR privacy:** FIXED — camera usage disclosure now names document/OCR import review, matching `VNDocumentCameraViewController` use.
+- **Vision/OCR privacy:** FIXED — camera usage disclosure now names document scanning and text recognition, matching `VNDocumentCameraViewController` use.
 - **Import commit gate:** PASS — OCR parts import remains preview-only with `isCommitAllowed == false`; tests assert no parts are written by `previewPartsImportOCR`.
 - **Local processing:** PASS — OCR and image matching use Apple Vision/VisionKit locally; network scan found only LAN/peer sync paths, not AI/image provider uploads.
 - **Evidence handling:** PASS — OCR import candidates keep page/snippet evidence for human review; raw OCR text is displayed transiently in scan UI and accepted fields are explicitly user-confirmed.
@@ -34,10 +34,10 @@
 
 | # | Severity | Description | Resolution |
 |---|----------|-------------|------------|
-| 1 | Low | iOS camera permission string mentioned QR/barcodes/device pairing but not document OCR scanning. | Updated `NSCameraUsageDescription` to include documents and OCR import review. |
+| 1 | Low | iOS camera permission string mentioned QR/barcodes/device pairing but not document scanning or text recognition. | Updated `NSCameraUsageDescription` to include documents, text recognition, and document scanning. |
 
 ### Verdict
-**PASS** — AI/vision import paths are on-device/provider-gated and preview-only. Remote provider fallback is not enabled. Security/go-no-go criteria for enabling provider fallback are documented in [WEI-2812 AI Vision Security Gates](/Users/IA/GitHub/Weird-Part-Run-2/.paperclip/worktrees/WEI-2963-wei-2812-security-review-ai-vision-import-privacy-and-provider-gates/docs/WEI-2812-ai-vision-security-gates.md).
+**PASS** — AI/vision import paths are on-device/provider-gated and preview-only. Remote provider fallback is not enabled. Security/go/no-go criteria for enabling provider fallback are captured under the WEI-2812 AI Vision Security Gates plan/evidence set.
 
 ---
 
