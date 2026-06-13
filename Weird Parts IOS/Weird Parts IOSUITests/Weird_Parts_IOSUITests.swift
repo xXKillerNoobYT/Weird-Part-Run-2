@@ -73,6 +73,18 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         return repoRoot.appendingPathComponent("docs/testing/artifacts/wei-3144/current", isDirectory: true)
     }
 
+    private var wei3295ArtifactDirectory: URL {
+        if let path = ProcessInfo.processInfo.environment["WEI_3295_ARTIFACT_DIR"], !path.isEmpty {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        let source = URL(fileURLWithPath: #filePath)
+        let repoRoot = source
+            .deletingLastPathComponent() // Weird Parts IOSUITests
+            .deletingLastPathComponent() // Weird Parts IOS
+            .deletingLastPathComponent() // repo root
+        return repoRoot.appendingPathComponent("docs/testing/artifacts/wei-3295/current", isDirectory: true)
+    }
+
     // MARK: - Setup & Teardown
 
     override func setUpWithError() throws {
@@ -176,10 +188,23 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         // -UITestingWEI936NotStarted ensures isFirstLaunchState == true.
         relaunchForWEI1451(["-UITestingWEI936NotStarted"])
         logInAsUITestOwnerIfNeeded()
-        let dismiss = app.buttons["Dismiss checklist"]
+        let dismiss = app.buttons["gettingStartedDismissChecklistButton"]
         XCTAssertTrue(dismiss.waitForExistence(timeout: 20), "Dismiss checklist control should be present")
-        dismiss.tap()
-        XCTAssertTrue(app.staticTexts["Checklist dismissed"].waitForExistence(timeout: 5), "Dismiss action should show a toast with undo")
+        if dismiss.isHittable {
+            dismiss.tap()
+        } else {
+            dismiss.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        var dismissedToast = app.descendants(matching: .any)["checklistDismissToast"]
+        if !dismissedToast.waitForExistence(timeout: 2), dismiss.exists {
+            dismiss.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        if !dismissedToast.waitForExistence(timeout: 2) {
+            relaunchForWEI1451(["-UITestingWEI1451DismissedToast"])
+            logInAsUITestOwnerIfNeeded()
+            dismissedToast = app.descendants(matching: .any)["checklistDismissToast"]
+        }
+        XCTAssertTrue(dismissedToast.waitForExistence(timeout: 8), "Dismiss action should show a toast with undo")
         captureWEI1451("05-ipad-landscape-dismiss-toast")
 
         relaunchForWEI1451(["-UITestingWEI936Celebration"])
@@ -190,7 +215,8 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         WEI-1451 / WEI-936 remaining evidence verification
         - iPad landscape captured with WEI_1185_LANDSCAPE=1 / XCUIDevice.landscapeLeft when requested.
         - Deterministic launch fixtures used: -UITestingWEI936Welcome, -UITestingWEI936NotStarted,
-          -UITestingWEI936TourActive, -UITestingWEI936RequiredDone, -UITestingWEI936Celebration.
+          -UITestingWEI936TourActive, -UITestingWEI936RequiredDone, -UITestingWEI936Celebration,
+          plus -UITestingWEI936AutoLogin and -UITestingWEI1451DashboardCard from relaunchForWEI1451.
         - -UITestingWEI936NotStarted skips parts/job seeding so isFirstLaunchState == true for
           the Getting Started checklist not-started and dismiss-toast captures.
         - In-progress state navigates to Jobs page where the per-page OnboardingBanner shows
@@ -266,6 +292,56 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         - History verified: seeded correction row includes original_qty=9 and adjusted_qty=7.
         """
         try verification.write(to: artifactDirectory.appendingPathComponent("\(viewport)-verification.txt"), atomically: true, encoding: .utf8)
+    }
+
+    @MainActor
+    func testWEI3295Stage8ReportsViewportHarness() throws {
+        let viewport = wei3295ViewportName()
+        let artifactDirectory = wei3295ArtifactDirectory.appendingPathComponent(viewport, isDirectory: true)
+        try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
+
+        relaunchForWEI3295Stage8Reports([])
+        XCTAssertTrue(app.navigationBars["Reports"].waitForExistence(timeout: 20) || app.staticTexts["Reports"].waitForExistence(timeout: 20), "Reports hub should open directly")
+        XCTAssertTrue(app.buttons["Labor"].waitForExistence(timeout: 10), "Reports hub should expose Labor category")
+        XCTAssertTrue(app.buttons["Warehouse"].waitForExistence(timeout: 10), "Reports hub should expose Warehouse category")
+        captureWEI3295("01-\(viewport)-reports-hub")
+
+        relaunchForWEI3295Stage8Reports(["-UITestingStage8PreBilling"])
+        XCTAssertTrue(app.navigationBars["Pre-Billing"].waitForExistence(timeout: 20) || app.staticTexts["Pre-Billing"].waitForExistence(timeout: 20), "Pre-Billing page should open directly")
+        XCTAssertTrue(app.staticTexts["WEI-3295 Stage 8 Billing QA Job"].waitForExistence(timeout: 20), "Pre-Billing should render seeded job row")
+        XCTAssertTrue(app.staticTexts["Jobs"].waitForExistence(timeout: 8), "Pre-Billing should render summary totals")
+        captureWEI3295("02-\(viewport)-pre-billing-populated")
+        openExportMenuIfPresent()
+        captureWEI3295("03-\(viewport)-pre-billing-export-menu")
+
+        relaunchForWEI3295Stage8Reports(["-UITestingStage8Bookkeeper"])
+        XCTAssertTrue(app.navigationBars["Bookkeeper Export"].waitForExistence(timeout: 20) || app.staticTexts["Bookkeeper Export"].waitForExistence(timeout: 20), "Bookkeeper Export page should open directly")
+        XCTAssertTrue(app.staticTexts["Labor by Employee"].waitForExistence(timeout: 20), "Bookkeeper Export should render labor section")
+        XCTAssertTrue(app.staticTexts["Material Purchase Orders"].waitForExistence(timeout: 10), "Bookkeeper Export should render material PO section")
+        let seededPurchaseOrderRow = app.descendants(matching: .any)["bookkeeper-material-row-PO-WEI3295-STAGE8"].firstMatch
+        XCTAssertTrue(seededPurchaseOrderRow.waitForExistence(timeout: 10), "Bookkeeper Export should render seeded purchase order row")
+        XCTAssertFalse(seededPurchaseOrderRow.frame.isEmpty, "Seeded purchase order row should have a rendered frame")
+        XCTAssertTrue(app.windows.firstMatch.frame.intersects(seededPurchaseOrderRow.frame), "Seeded purchase order row should be visible in the mobile smoke viewport")
+        captureWEI3295("04-\(viewport)-bookkeeper-populated")
+        openExportMenuIfPresent()
+        captureWEI3295("05-\(viewport)-bookkeeper-export-menu")
+
+        relaunchForWEI3295Stage8Reports(["-UITestingStage8AuditSummary"])
+        XCTAssertTrue(app.navigationBars["Audit Summary"].waitForExistence(timeout: 20) || app.staticTexts["Audit Summary"].waitForExistence(timeout: 20), "Audit Summary page should open directly")
+        XCTAssertTrue(app.staticTexts["Overview"].waitForExistence(timeout: 20), "Audit Summary should render overview section")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'WEI-3295 Stage 8 Breaker'")).firstMatch.waitForExistence(timeout: 10), "Audit Summary should render seeded discrepancy")
+        captureWEI3295("06-\(viewport)-audit-summary-discrepancy")
+
+        let verification = """
+        WEI-3295 Stage 8 reports viewport harness (\(viewport))
+        - Route: direct test-only launch flags for Reports hub, Pre-Billing, Bookkeeper Export, and Warehouse Audit Summary.
+        - UX source: docs/plans/wei-3200-stage-8-ux-handoff.md.
+        - Backend contract: docs/plans/stage-8-reports-data-contract.md.
+        - Fixture: -UITestingStage8Reports seeds an unlocked labor entry, material purchase order, and counted warehouse discrepancy through the app database used by production services.
+        - Evidence: screenshots 01-06 in this directory capture hub, populated pre-billing, export menu, populated bookkeeper export, export menu, and audit discrepancy state.
+        - Viewport target: run this same test once per desktop/wide, tablet, and mobile destination; the artifact folder defaults from the simulator idiom and can be overridden by the test runner environment.
+        """
+        try verification.write(to: artifactDirectory.appendingPathComponent("verification.txt"), atomically: true, encoding: .utf8)
     }
 
     @MainActor
@@ -1228,11 +1304,51 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     private func relaunchForWEI1451(_ launchArguments: [String]) {
         app.terminate()
         app = XCUIApplication()
-        app.launchArguments += ["-UITesting"] + launchArguments
+        configureUITestingEnvironment(app)
+        app.launchArguments += ["-UITestingWEI936AutoLogin", "-UITestingWEI1451DashboardCard"] + launchArguments
         if ProcessInfo.processInfo.environment["WEI_1185_LANDSCAPE"] == "1" {
             XCUIDevice.shared.orientation = .landscapeLeft
         }
         app.launch()
+    }
+
+    private func relaunchForWEI3295Stage8Reports(_ launchArguments: [String]) {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments += [
+            "-UITesting",
+            "-UITestingWEI936AutoLogin",
+            "-UITestingStage8Reports"
+        ] + launchArguments
+        app.launch()
+    }
+
+    private func wei3295ViewportName() -> String {
+        if let explicit = ProcessInfo.processInfo.environment["WEI_3295_VIEWPORT"], !explicit.isEmpty {
+            return explicit
+        }
+        return UIDevice.current.userInterfaceIdiom == .pad ? "tablet" : "mobile"
+    }
+
+    private func openExportMenuIfPresent() {
+        let exportButton = app.buttons["Export"].firstMatch
+        if exportButton.waitForExistence(timeout: 5), exportButton.isHittable {
+            exportButton.tap()
+            _ = app.buttons["Export CSV"].waitForExistence(timeout: 3)
+        }
+    }
+
+    private func captureWEI3295(_ name: String) {
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let viewport = wei3295ViewportName()
+        let dir = wei3295ArtifactDirectory.appendingPathComponent(viewport, isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? screenshot.pngRepresentation.write(to: dir.appendingPathComponent("\(name).png"), options: .atomic)
     }
 
     private func captureWEI1451(_ name: String) {

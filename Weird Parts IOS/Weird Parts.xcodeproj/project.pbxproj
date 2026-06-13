@@ -29,7 +29,7 @@
 
 /* Begin PBXFileReference section */
 		08F2BE322F67A53500944E97 /* Weird Parts.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Weird Parts.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		08F2BE442F67A53700944E97 /* Weird PartsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Weird PartsTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		08F2BE442F67A53700944E97 /* Weird Parts IOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Weird Parts IOSTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		08F2BE4E2F67A53700944E97 /* Weird PartsUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Weird PartsUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -92,7 +92,7 @@
 			isa = PBXGroup;
 			children = (
 				08F2BE322F67A53500944E97 /* Weird Parts.app */,
-				08F2BE442F67A53700944E97 /* Weird PartsTests.xctest */,
+				08F2BE442F67A53700944E97 /* Weird Parts IOSTests.xctest */,
 				08F2BE4E2F67A53700944E97 /* Weird PartsUITests.xctest */,
 			);
 			name = Products;
@@ -131,9 +131,9 @@
 			productReference = 08F2BE322F67A53500944E97 /* Weird Parts.app */;
 			productType = "com.apple.product-type.application";
 		};
-		08F2BE432F67A53700944E97 /* Weird PartsTests */ = {
+		08F2BE432F67A53700944E97 /* Weird Parts IOSTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 08F2BE5B2F67A53800944E97 /* Build configuration list for PBXNativeTarget "Weird PartsTests" */;
+			buildConfigurationList = 08F2BE5B2F67A53800944E97 /* Build configuration list for PBXNativeTarget "Weird Parts IOSTests" */;
 			buildPhases = (
 				08F2BE402F67A53700944E97 /* Sources */,
 				08F2BE412F67A53700944E97 /* Frameworks */,
@@ -147,11 +147,11 @@
 			fileSystemSynchronizedGroups = (
 				08F2BE472F67A53700944E97 /* Weird Parts IOSTests */,
 			);
-			name = "Weird PartsTests";
+			name = "Weird Parts IOSTests";
 			packageProductDependencies = (
 			);
 			productName = "Weird Parts IOSTests";
-			productReference = 08F2BE442F67A53700944E97 /* Weird PartsTests.xctest */;
+			productReference = 08F2BE442F67A53700944E97 /* Weird Parts IOSTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		08F2BE4D2F67A53700944E97 /* Weird PartsUITests */ = {
@@ -221,7 +221,7 @@
 			projectRoot = "";
 			targets = (
 				08F2BE312F67A53500944E97 /* Weird Parts */,
-				08F2BE432F67A53700944E97 /* Weird PartsTests */,
+				08F2BE432F67A53700944E97 /* Weird Parts IOSTests */,
 				08F2BE4D2F67A53700944E97 /* Weird PartsUITests */,
 			);
 		};
@@ -625,7 +625,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		08F2BE5B2F67A53800944E97 /* Build configuration list for PBXNativeTarget "Weird PartsTests" */ = {
+		08F2BE5B2F67A53800944E97 /* Build configuration list for PBXNativeTarget "Weird Parts IOSTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				08F2BE5C2F67A53800944E97 /* Debug */,
