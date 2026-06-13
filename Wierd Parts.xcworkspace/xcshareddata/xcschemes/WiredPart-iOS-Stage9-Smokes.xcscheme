@@ -9,28 +9,14 @@
          <BuildActionEntry
             buildForTesting = "YES"
             buildForRunning = "YES"
-            buildForProfiling = "YES"
-            buildForArchiving = "YES"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "08F2BE312F67A53500944E97"
                BuildableName = "Weird Parts.app"
                BlueprintName = "Weird Parts"
-               ReferencedContainer = "container:Weird Parts IOS/Weird Parts.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "NO"
-            buildForProfiling = "NO"
-            buildForArchiving = "NO"
-            buildForAnalyzing = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "08F2BE432F67A53700944E97"
-               BuildableName = "Weird Parts IOSTests.xctest"
-               BlueprintName = "Weird Parts IOSTests"
                ReferencedContainer = "container:Weird Parts IOS/Weird Parts.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -56,18 +42,13 @@
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES"
       shouldAutocreateTestPlan = "NO">
+      <TestPlans>
+         <TestPlanReference
+            reference = "container:Weird Parts IOS/Stage9DeterministicUISmokes.xctestplan"
+            default = "YES">
+         </TestPlanReference>
+      </TestPlans>
       <Testables>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "08F2BE432F67A53700944E97"
-               BuildableName = "Weird Parts IOSTests.xctest"
-               BlueprintName = "Weird Parts IOSTests"
-               ReferencedContainer = "container:Weird Parts IOS/Weird Parts.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
          <TestableReference
             skipped = "NO"
             parallelizable = "NO">
@@ -77,17 +58,6 @@
                BuildableName = "Weird PartsUITests.xctest"
                BlueprintName = "Weird PartsUITests"
                ReferencedContainer = "container:Weird Parts IOS/Weird Parts.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "WiredPartCoreTests"
-               BuildableName = "WiredPartCoreTests"
-               BlueprintName = "WiredPartCoreTests"
-               ReferencedContainer = "container:core">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -121,10 +91,6 @@
             ReferencedContainer = "container:Weird Parts IOS/Weird Parts.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
-      <LocationScenarioReference
-         identifier = "com.apple.dt.IDEFoundation.CurrentLocationScenarioIdentifier"
-         referenceType = "1">
-      </LocationScenarioReference>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

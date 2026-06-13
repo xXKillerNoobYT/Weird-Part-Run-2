@@ -168,6 +168,7 @@ struct DashboardView: View {
                         .accessibilityHidden(true)
                     Text("Checklist dismissed")
                         .font(.subheadline)
+                        .accessibilityIdentifier("checklistToastMessage")
                     Spacer(minLength: DS.Space.sm)
                     Button("Undo") {
                         checklistDismissToastTask?.cancel()
@@ -177,6 +178,7 @@ struct DashboardView: View {
                         }
                     }
                     .font(.subheadline.weight(.semibold))
+                    .accessibilityIdentifier("checklistUndoDismissToast")
                 }
                 .padding(.horizontal, DS.Space.md)
                 .padding(.vertical, DS.Space.sm)
@@ -271,6 +273,9 @@ struct DashboardView: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("gettingStartedDismissChecklistButton")
                     .accessibilityLabel("Dismiss checklist")
+                    .accessibilityIdentifier("dismissChecklistButton")
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
                 }
 
                 Text("Welcome to WiredPart! Complete these steps to set up your business.")
