@@ -414,3 +414,24 @@ struct Weird_Parts_IOSTests {
         #expect(detail.lines.allSatisfy { $0.partId != nil })
     }
 }
+
+struct PartsFlowDraftStoreTests {
+    @MainActor
+    @Test func preservesAndClearsDraftCountsAndLocations() async throws {
+        PartsFlowDraftStore.clear()
+        defer { PartsFlowDraftStore.clear() }
+
+        PartsFlowDraftStore.save(
+            counts: [101: "7", 202: ""],
+            locations: [101: "Shelf A", 303: "Van 2"]
+        )
+
+        #expect(PartsFlowDraftStore.loadCounts() == [101: "7", 202: ""])
+        #expect(PartsFlowDraftStore.loadLocations() == [101: "Shelf A", 303: "Van 2"])
+
+        PartsFlowDraftStore.clear()
+
+        #expect(PartsFlowDraftStore.loadCounts().isEmpty)
+        #expect(PartsFlowDraftStore.loadLocations().isEmpty)
+    }
+}
