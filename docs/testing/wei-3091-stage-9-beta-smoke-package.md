@@ -167,6 +167,72 @@ Remaining before beta go:
 - Run the tablet install/launch smoke from this package.
 - Resolve or classify the SwiftPM test-helper no-output behavior so the core service gate can produce a terminal pass/fail result.
 
+## WEI-3389 Final Beta Smoke Rerun — 2026-06-11
+
+Candidate:
+
+- Branch: `WEI-3091-stage-9-gate-field-test-smoke-package-and-beta-readiness-checklist`
+- SHA: `9dc62939595a249fd166bfc2fd61b53377315023` (`Fix audit summary seeded smoke`)
+- Contains fix branch: `origin/WEI-3388-fix-audit-summary-seeded-smoke` is an ancestor/equal to candidate HEAD.
+- Worktree note: branch is ahead 4 / behind 3 vs `origin/main`; pre-existing tracked Stage 6 screenshot artifact changes were present before this rerun and tablet Stage 6 rerun updated tablet screenshots too.
+
+Device matrix:
+
+- Phone A: `WEI-2499 QA iPhone SE 375 26.4.1` / `145DE584-9492-43FE-8C19-A9573D24DC7F` / iOS 26.4.1.
+- Phone B: `WEI-899 iPhone 13 mini 375pt` / `98CEE4F6-D8F5-49C3-A1B3-0F4CD6C11EA8` / iOS 26.4.1.
+- Tablet: `WEI936-QA-iPad-9th` / `665A02E3-FF43-4A2E-ADAA-E084ED1BCAE9` / iOS 26.4.1.
+
+Commands and results:
+
+- `git diff --check`: PASS.
+- `python3 scripts/guard-tracked-artifacts.py`: PASS (`No tracked Paperclip/Xcode runtime artifacts found.`).
+- `cd core && swift test`: INCONCLUSIVE/NO-GO. Build completed and many suites started, but the run did not complete within the 600s bound and was terminated by the harness; log: `/tmp/wei-3389-stage9-smoke/swift-test.log`.
+- `xcodebuild -workspace "Wierd Parts.xcworkspace" -scheme "WiredPart-iOS" -destination 'generic/platform=iOS Simulator' build`: PASS (`** BUILD SUCCEEDED **`); log: `/tmp/wei-3389-stage9-smoke/xcodebuild-ios-build.log`.
+- Phone Stage 6+8 full Stage9 scheme on iPhone SE: FAIL. Result bundle: `/tmp/wei-3389-stage9-smoke/phone-stage9-smokes.xcresult`. `testWEI3144JobMaterialsWalkthroughEvidence` crashed/killed before completing.
+- Phone Stage 8 only on iPhone SE: FAIL. Result bundle: `/tmp/wei-3389-stage9-smoke/phone-stage8.xcresult`. Reports hub, Pre-Billing, Bookkeeper Export started, then `testWEI3295Stage8ReportsViewportHarness` crashed/killed during the Audit Summary discrepancy step.
+- Phone Stage 8 only on iPhone 13 mini: FAIL. Result bundle: `/tmp/wei-3389-stage9-smoke/phone13mini-stage8.xcresult`. Failed at `Weird_Parts_IOSUITests.swift:277` because Pre-Billing did not render seeded row `WEI-3295 Stage 8 Billing QA Job`.
+- Tablet Stage 8 only on iPad 9th: PASS. Result bundle: `/tmp/wei-3389-stage9-smoke/tablet-stage8.xcresult`; `testWEI3295Stage8ReportsViewportHarness` passed in 70.703s.
+- Tablet Stage 6 only on iPad 9th: PASS. Result bundle: `/tmp/wei-3389-stage9-smoke/tablet-stage6.xcresult`; `testWEI3144JobMaterialsWalkthroughEvidence` passed in 46.137s.
+
+Critical journeys:
+
+- Stage 5 time: INCONCLUSIVE because the full SwiftPM core suite did not complete inside the bounded 600s run.
+- Stage 6 parts-on-jobs: TABLET PASS, PHONE FAIL/crash-kill in the Stage9 scheme on iPhone SE before completion.
+- Stage 7 PO/JPO: Not separately proven in this rerun beyond successful iOS build and core tests starting; no PASS claim.
+- Stage 8 reports/pre-billing/bookkeeper/audit: TABLET PASS, PHONE FAIL on both compact phone attempts; iPhone SE reached Audit Summary then crashed/killed, iPhone 13 mini failed to render the seeded Pre-Billing job row.
+
+Blocking issue scan:
+
+- Data loss: no new data-loss issue observed from this rerun, but core service test completion is inconclusive.
+- Privacy/security: no new privacy/security issue observed from this rerun.
+- Install/launch: iOS candidate builds and tests install/launch on simulator, but compact phone deterministic smoke is not passing.
+
+Go/no-go:
+
+- NO-GO for beta. Required phone deterministic Stage 6/Stage 8 smoke evidence is failing, and the full SwiftPM suite did not produce a pass within the bounded run.
+- First-class blockers from this evidence: `WEI-3400` (phone Stage 8/Pre-Billing), `WEI-3402` (phone Stage 6 materials), and `WEI-3401` (core SwiftPM gate). Duplicate aggregate `WEI-3403` was cancelled.
+
+## WEI-3406 Final Smoke Gate — 2026-06-11
+
+Candidate:
+
+- Branch: `WEI-3091-stage-9-gate-field-test-smoke-package-and-beta-readiness-checklist`
+- SHA: `39585ab3f1d429b5b0a0f74f6d7feaf15ebf1319` (`Fix core service test gate failures`)
+
+Commands and results:
+
+- `git diff --check`: PASS.
+- `python3 scripts/guard-tracked-artifacts.py`: PASS.
+- `cd core && swift test`: PASS, 2106 tests in 62 suites after 69.336s.
+- `xcodebuild -workspace "Wierd Parts.xcworkspace" -scheme "WiredPart-iOS" -destination 'generic/platform=iOS Simulator' build`: PASS.
+- Phone Stage 9 deterministic smokes: PASS, 2 tests / 0 failures.
+- Tablet Stage 9 deterministic smokes: PASS, 2 tests / 0 failures.
+
+Go/no-go:
+
+- GO for Stage 9 smoke gate review and parent handoff.
+- Remaining merge-lane caveat at the time of PR #984 disposition: update the branch against current `main`, then send through LocalFirst review before broader review/merge.
+
 ## Go/No-Go Rule
 
 Go only if every required command passes, both phone and tablet install/run smokes pass, and there are no known P0/P1 data-loss, privacy, security, install, launch, or migration blockers.
