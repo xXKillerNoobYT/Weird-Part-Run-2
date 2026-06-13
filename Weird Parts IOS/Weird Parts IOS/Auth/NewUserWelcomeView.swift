@@ -8,14 +8,16 @@ struct NewUserWelcomeView: View {
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
 
     var body: some View {
-        if !hasSeenWelcome && !shouldSuppressForWarehouseLocationsUITest {
+        if !hasSeenWelcome && !shouldSuppressForUITestFixture {
             welcomeOverlay
         }
     }
 
-    private var shouldSuppressForWarehouseLocationsUITest: Bool {
+    private var shouldSuppressForUITestFixture: Bool {
         let args = ProcessInfo.processInfo.arguments
-        return args.contains("-UITesting") && args.contains("-UITestingWarehouseLocations")
+        return args.contains("-UITesting") &&
+            (args.contains("-UITestingWarehouseLocations") ||
+             args.contains("-UITestingWEI936AutoLogin"))
     }
 
     private var welcomeOverlay: some View {

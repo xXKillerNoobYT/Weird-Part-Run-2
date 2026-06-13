@@ -160,14 +160,23 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["WiredPart"].waitForExistence(timeout: 20), "Welcome fixture should render the first-launch welcome screen")
         captureWEI1451("01-ipad-landscape-welcome-sheet")
 
+        // State 2: not-started — Getting Started checklist visible with zero app data.
+        // -UITestingWEI936NotStarted skips parts/job seeding so isFirstLaunchState == true.
         relaunchForWEI1451(["-UITestingWEI936NotStarted"])
         logInAsUITestOwnerIfNeeded()
         XCTAssertTrue(app.staticTexts["Getting Started"].waitForExistence(timeout: 20), "Dashboard should show the not-started Getting Started card")
         XCTAssertFalse(app.staticTexts["Try This"].exists, "Not-started fixture should not show the active onboarding tour banner")
         captureWEI1451("02-ipad-landscape-card-not-started")
 
+        // State 3: in-progress — per-page OnboardingBanner shows "Try This".
+        // Tour is active with empty completedTasks; navigate to Jobs where the
+        // create/detail required tasks remain incomplete, so the "Try This" banner
+        // stays visible for the capture.
         relaunchForWEI1451(["-UITestingWEI936TourActive"])
         logInAsUITestOwnerIfNeeded()
+        if app.buttons["tab_jobs"].waitForExistence(timeout: 10) {
+            app.buttons["tab_jobs"].tap()
+        }
         XCTAssertTrue(app.staticTexts["Try This"].waitForExistence(timeout: 20), "Tour active fixture should show in-progress onboarding tasks")
         captureWEI1451("03-ipad-landscape-in-progress")
 
@@ -176,6 +185,8 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Required tour steps complete"].waitForExistence(timeout: 20), "Required-done fixture should collapse the per-page banner")
         captureWEI1451("04-ipad-landscape-required-done-collapsed-strip")
 
+        // State 5: dismiss toast — checklist must be visible first.
+        // -UITestingWEI936NotStarted ensures isFirstLaunchState == true.
         relaunchForWEI1451(["-UITestingWEI936NotStarted"])
         logInAsUITestOwnerIfNeeded()
         let dismiss = app.descendants(matching: .any)["dismissChecklistButton"].firstMatch
@@ -212,10 +223,20 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         let verification = """
         WEI-1451 / WEI-936 remaining evidence verification
         - iPad landscape captured with WEI_1185_LANDSCAPE=1 / XCUIDevice.landscapeLeft when requested.
-        - Deterministic launch fixtures used: -UITestingWEI936AutoLogin, -UITestingWEI1451DashboardCard, -UITestingWEI936Welcome, -UITestingWEI936NotStarted, -UITestingWEI936TourActive, -UITestingWEI936RequiredDone, -UITestingWEI936Celebration.
-        - Dismiss toast verified by tapping the Dashboard Getting Started dismiss button and waiting for the Checklist dismissed toast.
-        - Reduce Motion: OnboardingCompleteView now renders the checkmark without a spring animation when accessibilityReduceMotion is true.
-        - VoiceOver/accessibility traversal smoke: core evidence controls expose labels for Dismiss checklist, Checklist dismissed. Undo, Required tour steps complete, and the welcome/celebration headings.
+        - Deterministic launch fixtures used: -UITestingWEI936Welcome, -UITestingWEI936NotStarted,
+          -UITestingWEI936TourActive, -UITestingWEI936RequiredDone, -UITestingWEI936Celebration,
+          plus -UITestingWEI936AutoLogin and -UITestingWEI1451DashboardCard from relaunchForWEI1451.
+        - -UITestingWEI936NotStarted skips parts/job seeding so isFirstLaunchState == true for
+          the Getting Started checklist not-started and dismiss-toast captures.
+        - In-progress state navigates to Jobs page where the per-page OnboardingBanner shows
+          "Try This" stably (create/detail required tasks stay incomplete on the Jobs list page).
+        - Dismiss toast verified by tapping the Dashboard Getting Started dismiss button and
+          waiting for the Checklist dismissed toast.
+        - Reduce Motion: OnboardingCompleteView now renders the checkmark without a spring
+          animation when accessibilityReduceMotion is true.
+        - VoiceOver/accessibility traversal smoke: core evidence controls expose labels for
+          Dismiss checklist, Checklist dismissed. Undo, Required tour steps complete, and the
+          welcome/celebration headings.
         """
         try verification.write(to: artifactDirectory.appendingPathComponent("07-accessibility-reduce-motion-voiceover-notes.txt"), atomically: true, encoding: .utf8)
     }
