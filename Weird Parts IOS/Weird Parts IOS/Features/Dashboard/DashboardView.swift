@@ -385,6 +385,7 @@ struct DashboardView: View {
                     .shadow(color: .black.opacity(0.1), radius: 8, y: 2)
             )
             .padding(.horizontal, DS.Space.lg)
+            .accessibilityIdentifier("gettingStartedChecklist")
         }
     }
 
@@ -457,6 +458,8 @@ struct DashboardView: View {
             }
         }
         .contentShape(Rectangle())
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("gettingStartedChecklistStep\(step)")
     }
 
     // MARK: - Onboarding Progress

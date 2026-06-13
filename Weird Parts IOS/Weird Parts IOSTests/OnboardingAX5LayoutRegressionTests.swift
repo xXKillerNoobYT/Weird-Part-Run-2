@@ -60,6 +60,19 @@ final class OnboardingAX5LayoutRegressionTests: XCTestCase {
         )
     }
 
+    func testNotStartedFixtureSuppressesModuleTourForChecklistEvidence() throws {
+        let source = try Self.readSource("App/AppCore.swift")
+
+        XCTAssertTrue(
+            source.contains("if args.contains(\"-UITestingWEI936NotStarted\")"),
+            "The not-started fixture should branch explicitly so checklist visual evidence has deterministic launch state."
+        )
+        XCTAssertTrue(
+            source.contains("UserDefaults.standard.set(true, forKey: \"hasSeenModuleTour\")"),
+            "The not-started fixture should suppress the Quick Tour overlay before capturing Getting Started checklist rows."
+        )
+    }
+
     private static func readSource(_ relativePath: String, file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL
