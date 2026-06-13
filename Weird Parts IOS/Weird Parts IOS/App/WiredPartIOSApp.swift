@@ -58,6 +58,10 @@ struct WiredPartIOSApp: App {
         ProcessInfo.processInfo.arguments.contains("-UITestingWEI3144JobMaterials")
     }
 
+    private var stage8ReportsUITestTarget: Stage8ReportsUITestTarget? {
+        Stage8ReportsUITestTarget(processArguments: ProcessInfo.processInfo.arguments)
+    }
+
     #if DEBUG
     private var shouldShowWEI3140ImportPreviewFixture: Bool {
         ProcessInfo.processInfo.arguments.contains("-UITestingWEI3140ImportPreviewFixture")
@@ -109,6 +113,11 @@ struct WiredPartIOSApp: App {
                     } else if appCore.currentUser == nil {
                         LoginView()
                             .environmentObject(appCore)
+                    } else if let stage8ReportsUITestTarget {
+                        NavigationStack {
+                            stage8ReportsUITestTarget.view(appCore: appCore)
+                                .environmentObject(appCore)
+                        }
                     } else if shouldOpenWEI3144MaterialsFixture,
                               let jobId = AppCore.uiTestingWEI3144JobMaterialsJobId(db: appCore.db) {
                         NavigationStack {
@@ -161,6 +170,40 @@ struct WiredPartIOSApp: App {
             }
             .preferredColorScheme(resolvedColorScheme)
             .tint(accentColor)
+        }
+    }
+}
+
+private enum Stage8ReportsUITestTarget {
+    case hub
+    case preBilling
+    case bookkeeper
+    case auditSummary
+
+    init?(processArguments: [String]) {
+        guard processArguments.contains("-UITestingStage8Reports") else { return nil }
+        if processArguments.contains("-UITestingStage8PreBilling") {
+            self = .preBilling
+        } else if processArguments.contains("-UITestingStage8Bookkeeper") {
+            self = .bookkeeper
+        } else if processArguments.contains("-UITestingStage8AuditSummary") {
+            self = .auditSummary
+        } else {
+            self = .hub
+        }
+    }
+
+    @ViewBuilder
+    func view(appCore: AppCore) -> some View {
+        switch self {
+        case .hub:
+            IOSReportsRouter(tabId: "reports-hub")
+        case .preBilling:
+            IOSPreBillingPage()
+        case .bookkeeper:
+            IOSBookkeeperExportPage()
+        case .auditSummary:
+            IOSAuditSummaryView(sessionId: AppCore.stage8ReportsUITestAuditSessionId(db: appCore.db) ?? 0)
         }
     }
 }
