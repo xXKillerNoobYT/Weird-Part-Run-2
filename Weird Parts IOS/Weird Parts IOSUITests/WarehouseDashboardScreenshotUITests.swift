@@ -61,13 +61,9 @@ final class WarehouseDashboardScreenshotUITests: XCTestCase {
     }
 
     private func defaultScreenshotDirectory() -> String {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-
-        return repoRoot
-            .appendingPathComponent("docs/testing/artifacts/WEI-2545")
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("weird-parts-ui-screenshots")
+            .appendingPathComponent("WEI-2545")
             .path
     }
 
