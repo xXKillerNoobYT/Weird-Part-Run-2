@@ -125,7 +125,7 @@ try db.fetch(
 
 ## 7. Issue Title Tier Tags
 
-All issues use tier tags to signal priority/complexity:
+Use tier tags when they help communicate severity or implementation complexity. They are not required for every issue.
 
 | Tag | Meaning |
 |---|---|
@@ -138,6 +138,8 @@ When filing a follow-up issue from PR work, use the same `[Area][Type]` + tier f
 ```
 [Orders][Bug][T1] PO receiver FK not validated on save
 ```
+
+GitHub `priority:P*` labels are optional severity labels. Do not add `priority:P0` through `priority:P5` just to make an issue fit a process bucket; use them only when the issue needs explicit release or scheduling escalation.
 
 ---
 

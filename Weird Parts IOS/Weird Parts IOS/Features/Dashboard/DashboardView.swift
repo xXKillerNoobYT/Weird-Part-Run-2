@@ -144,7 +144,11 @@ struct DashboardView: View {
                     .accessibilityLabel("Help")
                 }
             }
-            .task { appCore.onboardingManager?.markCompleted("dashboard-view-kpis") }
+            .task {
+                if !ProcessInfo.processInfo.arguments.contains("-UITestingWEI936TourActive") {
+                    appCore.onboardingManager?.markCompleted("dashboard-view-kpis")
+                }
+            }
             .navigationDestination(for: DashboardDestination.self) { dest in
                 switch dest {
                 case .scanner:
@@ -157,7 +161,7 @@ struct DashboardView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if showChecklistDismissToast {
+            if showChecklistDismissToast || (isWEI1451DashboardCardFixture && checklistDismissed) {
                 HStack(spacing: DS.Space.sm) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
@@ -184,6 +188,7 @@ struct DashboardView: View {
                 .padding(.bottom, DS.Space.lg)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("checklistDismissToast")
+                .accessibilityLabel("Checklist dismissed")
             }
         }
         // Sheet placed OUTSIDE NavigationStack so @Environment(\.dismiss) in sheet content
@@ -217,9 +222,16 @@ struct DashboardView: View {
 
     /// True if the app has no meaningful data — indicates first-launch or empty state.
     private var isFirstLaunchState: Bool {
-        stats.activeJobs == 0 &&
+        if isWEI1451DashboardCardFixture {
+            return true
+        }
+        return stats.activeJobs == 0 &&
         stats.partTypes == 0 &&
         stats.totalStock == 0
+    }
+
+    private var isWEI1451DashboardCardFixture: Bool {
+        ProcessInfo.processInfo.arguments.contains("-UITestingWEI1451DashboardCard")
     }
 
     // MARK: - Getting Started Checklist
@@ -255,8 +267,11 @@ struct DashboardView: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
+                            .padding(8)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("gettingStartedDismissChecklistButton")
                     .accessibilityLabel("Dismiss checklist")
                     .accessibilityIdentifier("dismissChecklistButton")
                     .frame(minWidth: 44, minHeight: 44)
@@ -1093,4 +1108,3 @@ private struct VehicleAlert: Sendable {
     let vehicleNumber: String
     let alertMessage: String
 }
-

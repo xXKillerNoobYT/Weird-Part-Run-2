@@ -35,7 +35,7 @@ struct Weird_Parts_IOSTests {
     }
 
     @MainActor
-    @Test func shopServerAddressScopedAsDeviceSetting() async throws {
+    @Test func shopServerAddressSettingsAreDeviceScoped() async throws {
         #expect(IOSSyncManager.settingSyncScope(for: "sync_server_address") == .device)
         #expect(IOSSyncManager.settingSyncScope(for: "shop_server_address") == .device)
     }

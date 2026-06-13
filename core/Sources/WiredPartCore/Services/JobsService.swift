@@ -59,6 +59,7 @@ public final class JobsService: Sendable {
         public let status: String
         public let priority: String
         public let jobType: String
+        public let stageTemplateId: Int64?
         public let teamCount: Int
         public let startDate: String?
         public let dueDate: String?
@@ -71,6 +72,7 @@ public final class JobsService: Sendable {
         public init(
             id: Int64, jobNumber: String, jobName: String, customerName: String?,
             status: String, priority: String, jobType: String = "service",
+            stageTemplateId: Int64? = nil,
             teamCount: Int, startDate: String?, dueDate: String?,
             currentStageId: Int64? = nil,
             estimatedHours: Double? = nil,
@@ -85,6 +87,7 @@ public final class JobsService: Sendable {
             self.status = status
             self.priority = priority
             self.jobType = jobType
+            self.stageTemplateId = stageTemplateId
             self.teamCount = teamCount
             self.startDate = startDate
             self.dueDate = dueDate
@@ -685,7 +688,7 @@ public final class JobsService: Sendable {
                         GROUP BY jpo.job_id
                     )
                     SELECT j.id, j.job_number, j.job_name, j.customer_name,
-                           j.status, j.priority, j.job_type, j.start_date, j.due_date,
+                           j.status, j.priority, j.job_type, j.stage_template_id, j.start_date, j.due_date,
                            j.current_stage_id, j.estimated_hours, j.budget_limit,
                            COALESCE(tc.team_count, 0) AS team_count,
                            COALESCE(lt.labor_hours, 0) AS labor_hours,
@@ -709,6 +712,7 @@ public final class JobsService: Sendable {
                         status: row["status"] ?? "active",
                         priority: row["priority"] ?? "normal",
                         jobType: row["job_type"] ?? "service",
+                        stageTemplateId: row["stage_template_id"] as Int64?,
                         teamCount: row["team_count"] ?? 0,
                         startDate: row["start_date"] as String?,
                         dueDate: row["due_date"] as String?,

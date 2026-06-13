@@ -83,10 +83,45 @@ struct SettingsServiceTests {
         #expect(SettingsService.syncScope(for: "paired_shop_device_id", category: "sync") == .device)
         #expect(SettingsService.syncScope(for: "paired_company_id", category: "sync") == .device)
         #expect(SettingsService.syncScope(for: "device_pairing_verified_at", category: "sync") == .device)
+        #expect(SettingsService.syncScope(for: "sync_server_address", category: "general") == .device)
+        #expect(SettingsService.syncScope(for: "shop_server_address", category: "general") == .device)
+        #expect(SettingsService.syncScope(for: "paired_shop_device_id", category: "general") == .device)
+        #expect(SettingsService.syncScope(for: "paired_company_id", category: "general") == .device)
+        #expect(SettingsService.syncScope(for: "device_pairing_verified_at", category: "general") == .device)
+        #expect(SettingsService.syncScope(for: "local_database_path", category: "general") == .device)
         #expect(SettingsService.syncScope(for: "local_db_path", category: "general") == .device)
 
         #expect(SettingsService.syncScope(for: "payment_terms", category: "pdf") == .company)
         #expect(SettingsService.syncScope(for: "unknown_future_setting") == .company)
+    }
+
+    @Test("server pairing and local database settings stay out of company sync rows")
+    func testDeviceOnlySyncSettingsExcludedFromCompanySyncRows() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+        let deviceOnlyKeys = [
+            "sync_server_address",
+            "shop_server_address",
+            "paired_shop_device_id",
+            "paired_company_id",
+            "device_pairing_verified_at",
+            "local_database_path",
+            "local_db_path",
+        ]
+
+        for key in deviceOnlyKeys {
+            try svc.upsertSetting(key: key, value: "device-only", category: "general")
+        }
+        try svc.upsertSetting(key: "payment_terms", value: "Net 30", category: "pdf")
+
+        let deviceRows = try svc.getSettings(scope: .device)
+        let syncableRows = try svc.getSettings(excludingScope: .device)
+
+        for key in deviceOnlyKeys {
+            #expect(deviceRows.contains { $0.key == key && $0.syncScope == .device })
+            #expect(!syncableRows.contains { $0.key == key })
+        }
+        #expect(syncableRows.contains { $0.key == "payment_terms" && $0.syncScope == .company })
     }
 
     @Test("getSettings filters rows by sync scope")
