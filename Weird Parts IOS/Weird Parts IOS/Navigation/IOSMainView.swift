@@ -56,7 +56,7 @@ struct IOSMainView: View {
     /// Filtered modules in the user's preferred order.
     private var orderedModules: [AppModule] {
         let modules = tabPrefs.orderedModules(from: filteredModules)
-        if isUITestingOpenWarehouseLocations {
+        if isUITestingOpenWarehouse {
             guard let warehouseIndex = modules.firstIndex(where: { $0.id == "warehouse" }) else {
                 return modules
             }
@@ -92,6 +92,17 @@ struct IOSMainView: View {
     private var isUITestingOpenWarehouseLocations: Bool {
         let args = ProcessInfo.processInfo.arguments
         return args.contains("-UITesting") && args.contains("-UITestingWarehouseLocations")
+    }
+
+    /// Test-only deep link for screenshot runs that must capture the KPI
+    /// dashboard without depending on compact tab traversal.
+    private var isUITestingOpenWarehouseDashboard: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-UITesting") && args.contains("-UITestingWarehouseDashboard")
+    }
+
+    private var isUITestingOpenWarehouse: Bool {
+        isUITestingOpenWarehouseLocations || isUITestingOpenWarehouseDashboard
     }
 
     /// First 4 ordered modules shown as dedicated bottom tabs.
@@ -158,6 +169,14 @@ struct IOSMainView: View {
                 moduleNavigationRequests["warehouse"] = ModuleNavigationRequest(
                     moduleId: "warehouse",
                     tabId: "warehouse-locations"
+                )
+            } else if isUITestingOpenWarehouseDashboard {
+                selectedModuleId = "warehouse"
+                expandedModuleId = "warehouse"
+                selectedTabPath = "/warehouse/dashboard"
+                moduleNavigationRequests["warehouse"] = ModuleNavigationRequest(
+                    moduleId: "warehouse",
+                    tabId: "warehouse-dashboard"
                 )
             }
             badgeManager.refresh()
@@ -725,6 +744,8 @@ struct ModuleHostView: View {
             applyNavigationRequest(navigationRequest)
             if isUITestingOpenPartsCategories, module.id == "parts" {
                 selectedTabId = "parts-categories"
+            } else if isUITestingOpenWarehouseDashboard, module.id == "warehouse" {
+                selectedTabId = "warehouse-dashboard"
             } else if isUITestingOpenWarehouseLocations, module.id == "warehouse" {
                 selectedTabId = "warehouse-locations"
             } else if selectedTabId.isEmpty, let first = visibleTabsList.first {
@@ -747,6 +768,11 @@ struct ModuleHostView: View {
     private var isUITestingOpenWarehouseLocations: Bool {
         let args = ProcessInfo.processInfo.arguments
         return args.contains("-UITesting") && args.contains("-UITestingWarehouseLocations")
+    }
+
+    private var isUITestingOpenWarehouseDashboard: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-UITesting") && args.contains("-UITestingWarehouseDashboard")
     }
 
     private var currentPath: String {
