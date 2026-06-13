@@ -2016,13 +2016,8 @@ struct IOSPODetailPage: View {
                 }
 
             case "submitted":
-                HStack(spacing: 8) {
-                    actionButton("Send to Supplier", icon: "envelope.badge.fill", color: .green) {
-                        loadSupplierContactsThen { activeSheet = .sendToSupplier }
-                    }
-                    actionButton("Mark Ordered", icon: "checkmark.circle.fill", color: .blue) {
-                        await transitionPO(to: "ordered")
-                    }
+                actionButton("Send to Supplier", icon: "envelope.badge.fill", color: .green) {
+                    loadSupplierContactsThen { activeSheet = .sendToSupplier }
                 }
                 HStack(spacing: 8) {
                     actionButton("Drafting / Unclear", icon: "questionmark.circle", color: .yellow) {

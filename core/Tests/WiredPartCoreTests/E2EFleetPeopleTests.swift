@@ -360,10 +360,14 @@ struct E2EFleetPeopleTests {
         }
         #expect(nbId > 0)
 
-        let jobNbCount = try env.db.writer.read { db in
-            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM notebooks WHERE job_id = ?", arguments: [jobId])!
+        let insertedJobNotebookCount = try env.db.writer.read { db in
+            try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM notebooks WHERE id = ? AND job_id = ?",
+                arguments: [nbId, jobId]
+            )!
         }
-        #expect(jobNbCount == 1)
+        #expect(insertedJobNotebookCount == 1)
     }
 
     @Test("Notebook templates listing")

@@ -140,7 +140,7 @@ struct AuthServiceTests {
     @Test("seedFirstAdmin creates user, hats, permissions, settings")
     func testSeedFirstAdmin() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
 
         let result = try auth.seedFirstAdmin(displayName: "TestAdmin", pin: "1234")
         #expect(result.success)
@@ -153,7 +153,7 @@ struct AuthServiceTests {
     @Test("seedFirstAdmin creates 7 built-in hats")
     func testSeedCreatesHats() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
 
         let hatCount = try db.writer.read { dbConn -> Int in
@@ -165,7 +165,7 @@ struct AuthServiceTests {
     @Test("seedFirstAdmin assigns Admin hat to user")
     func testSeedAssignsAdminHat() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let result = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
 
         let hatNames = try auth.getUserHatNames(result.user!.id!)
@@ -175,7 +175,7 @@ struct AuthServiceTests {
     @Test("seedFirstAdmin seeds default settings")
     func testSeedCreatesSettings() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
 
         let companyName = try db.writer.read { dbConn -> String? in
@@ -187,7 +187,7 @@ struct AuthServiceTests {
     @Test("seedFirstAdmin prevents double-seed")
     func testSeedPreventsDouble() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
 
         _ = try auth.seedFirstAdmin(displayName: "Admin1", pin: "1234")
         let second = try auth.seedFirstAdmin(displayName: "Admin2", pin: "5678")
@@ -202,7 +202,7 @@ struct AuthServiceTests {
     func testAuthSuccess() throws {
         AuthService.resetAllLoginAttempts()
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
         let userId = seed.user!.id!
 
@@ -217,7 +217,7 @@ struct AuthServiceTests {
     func testAuthWrongPin() throws {
         AuthService.resetAllLoginAttempts()
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
         let userId = seed.user!.id!
 
@@ -230,7 +230,7 @@ struct AuthServiceTests {
     func testAuthRejectsDeletedUser() throws {
         AuthService.resetAllLoginAttempts()
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "DeletedAdmin", pin: "1234")
         let userId = seed.user!.id!
 
@@ -253,7 +253,7 @@ struct AuthServiceTests {
     func testGetActiveUsers_excludesDeletedUsers() throws {
         AuthService.resetAllLoginAttempts()
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "LoginAdmin", pin: "1234")
         let userId = seed.user!.id!
 
@@ -285,7 +285,7 @@ struct AuthServiceTests {
     func testLockoutAfterFiveFailures() throws {
         AuthService.resetAllLoginAttempts()
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "LockAdmin", pin: "9999")
         let userId = seed.user!.id!
 
@@ -307,7 +307,7 @@ struct AuthServiceTests {
         AuthService.resetAllLoginAttempts()
 
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "ResetAdmin", pin: "7777")
         let userId = seed.user!.id!
 
@@ -325,7 +325,7 @@ struct AuthServiceTests {
     func testLockoutClearedOnSuccessfulAuth() throws {
         AuthService.resetAllLoginAttempts()
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "ClearAdmin", pin: "5555")
         let userId = seed.user!.id!
 
@@ -345,7 +345,7 @@ struct AuthServiceTests {
     @Test("authenticateByPin rejects non-existent user")
     func testAuthBadUser() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
 
         let result = try auth.authenticateByPin(userId: 9999, pin: "1234")
         #expect(!result.success)
@@ -357,7 +357,7 @@ struct AuthServiceTests {
     @Test("Admin user has all expected permissions")
     func testAdminPermissions() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
         let userId = seed.user!.id!
 
@@ -373,7 +373,7 @@ struct AuthServiceTests {
     @Test("hasPermission returns true for admin")
     func testHasPermission() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
         let userId = seed.user!.id!
 
@@ -384,7 +384,7 @@ struct AuthServiceTests {
     @Test("hasPermission returns false for non-existent permission")
     func testHasPermissionFalse() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
         let userId = seed.user!.id!
 
@@ -396,7 +396,7 @@ struct AuthServiceTests {
     @Test("getLocalUserProfile builds full profile from token")
     func testGetUserProfile() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
 
         let profile = try auth.getLocalUserProfile(token: seed.token!)
@@ -410,7 +410,7 @@ struct AuthServiceTests {
     @Test("getLocalUserProfile throws for invalid token")
     func testProfileInvalidToken() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
 
         #expect(throws: AuthService.AuthError.self) {
             _ = try auth.getLocalUserProfile(token: "garbage-token")
@@ -420,7 +420,7 @@ struct AuthServiceTests {
     @Test("revoked local session token is denied by getLocalUserProfile")
     func testRevokedTokenDenied() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
         let token = try #require(seed.token)
 
@@ -435,7 +435,7 @@ struct AuthServiceTests {
     @Test("force logout revokes access and refresh token family")
     func testForceLogoutRevokesTokenFamily() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
         let accessToken = try #require(seed.token)
         let refreshToken = try #require(seed.refreshToken)
@@ -460,7 +460,7 @@ struct AuthServiceTests {
     @Test("getLegacyHashedUserCount returns 0 when all users have pin_salt")
     func testLegacyCountZeroWhenSalted() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
         #expect(try auth.getLegacyHashedUserCount() == 0)
     }
@@ -468,7 +468,7 @@ struct AuthServiceTests {
     @Test("getLegacyHashedUserCount returns 1 for user with NULL pin_salt")
     func testLegacyCountOneLegacyUser() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
 
         try db.writer.write { dbConn in
@@ -483,7 +483,7 @@ struct AuthServiceTests {
     @Test("getLegacyHashedUserCount returns 1 for user with iterated SHA-256 hash")
     func testLegacyCountIteratedSHA256User() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
 
         // Insert a user with iterated SHA-256 (has salt but no scrypt prefix)
@@ -502,7 +502,7 @@ struct AuthServiceTests {
     @Test("getLegacyHashedUserCount ignores placeholder hashes and inactive users")
     func testLegacyCountIgnoresPlaceholdersAndInactive() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
 
         try db.writer.write { dbConn in
             try dbConn.execute(
@@ -519,7 +519,7 @@ struct AuthServiceTests {
     @Test("getLegacyHashedUserCount drops to 0 after legacy user logs in (upgrades to scrypt)")
     func testLegacyCountDecrementOnLogin() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "5555")
 
         // Build a legacy hash (SHA256("9999:wiredpart") with no iterations, no per-user salt)
@@ -553,7 +553,7 @@ struct AuthServiceTests {
     func testIteratedSHA256UpgradesToScryptOnLogin() throws {
         AuthService.resetAllLoginAttempts()
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "0000")
 
         // Insert a user with iterated SHA-256 hash (has salt, but not scrypt)
@@ -588,7 +588,7 @@ struct AuthServiceTests {
     @Test("getActiveUsers returns only active users")
     func testGetActiveUsers() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
 
         // Add an inactive user
@@ -608,7 +608,7 @@ struct AuthServiceTests {
     @Test("createUser inserts a new active user and returns a valid id")
     func testCreateUser() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "0000")
 
         let newId = try auth.createUser(displayName: "Bob", pin: "5678", email: "bob@example.com")
@@ -623,7 +623,7 @@ struct AuthServiceTests {
     @Test("createUser stores a salted pin that authenticates correctly")
     func testCreateUserPinAuthenticates() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "0000")
 
         let newId = try auth.createUser(displayName: "Alice", pin: "4321")
@@ -636,7 +636,7 @@ struct AuthServiceTests {
     @Test("addHatPermission and getHatPermissions round-trip")
     func testAddAndGetHatPermissions() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "0000")
 
         let hatId = try db.writer.write { dbConn -> Int64 in
@@ -656,7 +656,7 @@ struct AuthServiceTests {
     @Test("addHatPermission is idempotent (INSERT OR IGNORE)")
     func testAddHatPermissionIdempotent() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "0000")
 
         let hatId = try db.writer.write { dbConn -> Int64 in
@@ -674,7 +674,7 @@ struct AuthServiceTests {
     @Test("removeHatPermission deletes the specified permission")
     func testRemoveHatPermission() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "0000")
 
         let hatId = try db.writer.write { dbConn -> Int64 in
@@ -696,7 +696,7 @@ struct AuthServiceTests {
     @Test("getUserHats returns hat summaries for a seeded admin")
     func testGetUserHats() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let result = try auth.seedFirstAdmin(displayName: "Admin", pin: "0000")
 
         let hats = try auth.getUserHats(result.user!.id!)
@@ -707,7 +707,7 @@ struct AuthServiceTests {
     @Test("getUserHats returns empty for user with no hats")
     func testGetUserHatsEmpty() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "0000")
 
         let userId = try auth.createUser(displayName: "Bare User", pin: "1111")
@@ -720,7 +720,7 @@ struct AuthServiceTests {
     @Test("listRegisteredDevices returns empty on fresh database")
     func testListRegisteredDevicesEmpty() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
 
         let devices = try auth.listRegisteredDevices()
         #expect(devices.isEmpty)
@@ -731,7 +731,7 @@ struct AuthServiceTests {
     @Test("listActiveSessions returns empty on fresh database")
     func testListActiveSessionsEmpty() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
 
         let sessions = try auth.listActiveSessions()
         #expect(sessions.isEmpty)
@@ -740,7 +740,7 @@ struct AuthServiceTests {
     @Test("listActiveSessions returns active token sessions")
     func testListActiveSessionsReturnsTokenSessions() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
         let expectedUserId = try #require(seed.user?.id)
 
@@ -754,7 +754,7 @@ struct AuthServiceTests {
     @Test("deactivateSession still marks a legacy device-registry row as deactivated")
     func testDeactivateSession() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
 
         let rowId = try db.writer.write { dbConn -> Int64 in
             try dbConn.execute(sql: """
@@ -775,7 +775,7 @@ struct AuthServiceTests {
     @Test("deactivateSession revokes rotated token family")
     func testDeactivateSessionRevokesRotatedTokenFamily() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
         let originalRefreshToken = try #require(seed.refreshToken)
         let originalSessionId = try #require(AuthService.parseLocalToken(originalRefreshToken)?.jti)
@@ -910,7 +910,7 @@ struct AuthServiceTests {
             salt: Data(repeating: 0x34, count: 32)
         )
         let db = try AppDatabase.openEncryptedDatabase(atPath: dbPath, keyHex: bootstrapKeyHex)
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
         let userId = try #require(seed.user?.id)
 
@@ -986,7 +986,7 @@ struct AuthServiceTests {
     @Test("hasPermission returns true for an active admin user (regression guard)")
     func testHasPermission_returnsTrueForActiveUser() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "ActiveAdmin", pin: "1234")
         let userId = seed.user!.id!
 
@@ -997,7 +997,7 @@ struct AuthServiceTests {
     @Test("hasPermission returns false after user is soft-deleted even if user_hats row is still active")
     func testHasPermission_returnsFalseAfterSoftDelete() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "SoftDeletedAdmin", pin: "1234")
         let userId = seed.user!.id!
 
@@ -1019,7 +1019,7 @@ struct AuthServiceTests {
     @Test("getUserPermissions returns empty for a soft-deleted user")
     func testGetUserPermissions_emptyForSoftDeletedUser() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "PermDeletedAdmin", pin: "1234")
         let userId = seed.user!.id!
 
@@ -1041,7 +1041,7 @@ struct AuthServiceTests {
     @Test("softDeleteUser sets deleted_at and is_active=0 on the user row")
     func testSoftDeleteUser_marksUserDeleted() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "ToDelete", pin: "1234")
         let userId = seed.user!.id!
 
@@ -1059,7 +1059,7 @@ struct AuthServiceTests {
     @Test("softDeleteUser cascades to deactivate user_hats rows")
     func testSoftDeleteUser_cascadesUserHats() throws {
         let db = try freshDB()
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let seed = try auth.seedFirstAdmin(displayName: "HatCascade", pin: "1234")
         let userId = seed.user!.id!
 
