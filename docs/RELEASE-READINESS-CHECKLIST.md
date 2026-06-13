@@ -131,6 +131,8 @@
 
 ## 4. Testing Gates
 
+Stage 9 beta field-test smoke package: [`docs/testing/wei-3091-stage-9-beta-smoke-package.md`](testing/wei-3091-stage-9-beta-smoke-package.md). Use it for the current beta go/no-go evidence ledger after Stage 8 resolves.
+
 ### 4.1 Core Test Suite (MUST ALL PASS SIMULTANEOUSLY)
 
 | # | Check | Metric | Status |
