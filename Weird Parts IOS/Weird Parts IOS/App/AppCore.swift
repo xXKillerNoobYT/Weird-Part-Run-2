@@ -959,7 +959,13 @@ final class AppCore: ObservableObject {
             UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
         }
 
-        if ProcessInfo.processInfo.arguments.contains("-UITestingWEI3144JobMaterials") {
+        let uiTestingArgs = ProcessInfo.processInfo.arguments
+        let shouldRunWEI936NotStartedFixture = uiTestingArgs.contains("-UITestingWEI936NotStarted")
+        if shouldRunWEI936NotStartedFixture {
+            try clearWEI936OnboardingFixtureSeedDataIfNeeded(db: db)
+        }
+
+        if uiTestingArgs.contains("-UITestingWEI3144JobMaterials") {
             try seedWEI3144JobMaterialsFixtures(db: db, userId: fixtureUserId)
         }
 
@@ -973,7 +979,7 @@ final class AppCore: ObservableObject {
             UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
         }
 
-        seedWEI936OnboardingStateIfRequested(userId: fixtureUserId)
+        seedWEI936OnboardingStateIfRequested(args: uiTestingArgs, userId: fixtureUserId)
     }
 
     nonisolated static func uiTestingWEI3144JobMaterialsJobId(db: AppDatabase?) -> Int64? {
@@ -1301,34 +1307,37 @@ final class AppCore: ObservableObject {
         }
     }
 
-    nonisolated private static func seedWEI936OnboardingStateIfRequested(userId: Int64?) {
-        let args = ProcessInfo.processInfo.arguments
+    nonisolated private static func clearWEI936OnboardingFixtureSeedDataIfNeeded(db: AppDatabase) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: "DELETE FROM job_parts_orders WHERE order_number = 'UITEST-JPO-001'")
+            try dbConn.execute(sql: "DELETE FROM jobs WHERE job_number = 'UITEST-JPO-001'")
+            try dbConn.execute(sql: "DELETE FROM parts WHERE code IN ('UITEST-QA-CONDUIT', 'UITEST-QA-WIRE')")
+            try dbConn.execute(sql: "DELETE FROM part_categories WHERE name = 'UITesting Electrical'")
+            try dbConn.execute(sql: "DELETE FROM _conflict_log WHERE table_name IN ('parts','jobs') AND record_id IN ('1001', '1002', '2001')")
+        }
+    }
+
+    nonisolated private static func seedWEI936OnboardingStateIfRequested(args: [String], userId: Int64?) {
         guard args.contains("-UITestingWEI936TourActive") ||
             args.contains("-UITestingWEI936RequiredDone") ||
             args.contains("-UITestingWEI1451DashboardCard") ||
             args.contains("-UITestingWEI1451DismissedToast") ||
             args.contains("-UITestingWEI936DismissedChecklist") ||
-            args.contains("-UITestingWEI936NotStarted") else { return }
-
-        // Not-started: ensure the Getting Started checklist is visible and the
-        // app tour is inactive. No per-page guidance banner, no pre-completed tasks.
-        if args.contains("-UITestingWEI936NotStarted") {
-            UserDefaults.standard.removeObject(forKey: "onboarding_checklist_dismissed")
-            if let userId {
-                let storageKey = "onboarding_progress_\(userId)"
-                UserDefaults.standard.set(false, forKey: storageKey + "_active")
-                UserDefaults.standard.removeObject(forKey: storageKey)
-            }
-            return
-        }
+            args.contains("-UITestingWEI936NotStarted") ||
+            args.contains("-UITestingWEI936Celebration") else { return }
 
         UserDefaults.standard.removeObject(forKey: "onboarding_checklist_dismissed")
+        UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
 
         if let userId {
             let storageKey = "onboarding_progress_\(userId)"
-            UserDefaults.standard.set(true, forKey: storageKey + "_active")
+            let shouldActivateTour = !args.contains("-UITestingWEI936NotStarted")
+            UserDefaults.standard.set(shouldActivateTour, forKey: storageKey + "_active")
 
             var completedTasks: Set<String> = []
+            // UITestingWEI936NotStarted: ensure the Getting Started checklist is
+            // visible and the app tour is inactive. No per-page guidance banner,
+            // no pre-completed tasks.
             // UITestingWEI936TourActive: begin with an empty task set so the
             // "Try This" guidance banner renders on pages with incomplete required
             // tasks. The dashboard auto-marks dashboard-view-kpis via its .task
@@ -1338,8 +1347,10 @@ final class AppCore: ObservableObject {
             if args.contains("-UITestingWEI936RequiredDone") {
                 completedTasks.formUnion(["dashboard-view-kpis", "dashboard-tap-kpi"])
             }
-            if let data = try? JSONEncoder().encode(completedTasks) {
+            if shouldActivateTour, let data = try? JSONEncoder().encode(completedTasks) {
                 UserDefaults.standard.set(data, forKey: storageKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: storageKey)
             }
         }
 

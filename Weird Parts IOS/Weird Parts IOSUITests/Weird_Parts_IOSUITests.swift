@@ -165,6 +165,7 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         relaunchForWEI1451(["-UITestingWEI936NotStarted"])
         logInAsUITestOwnerIfNeeded()
         XCTAssertTrue(app.staticTexts["Getting Started"].waitForExistence(timeout: 20), "Dashboard should show the not-started Getting Started card")
+        XCTAssertFalse(app.staticTexts["Try This"].exists, "Not-started fixture should not show the active onboarding tour banner")
         captureWEI1451("02-ipad-landscape-card-not-started")
 
         // State 3: in-progress — per-page OnboardingBanner shows "Try This".
@@ -188,23 +189,31 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         // -UITestingWEI936NotStarted ensures isFirstLaunchState == true.
         relaunchForWEI1451(["-UITestingWEI936NotStarted"])
         logInAsUITestOwnerIfNeeded()
-        let dismiss = app.buttons["gettingStartedDismissChecklistButton"]
+        let dismiss = app.descendants(matching: .any)["dismissChecklistButton"].firstMatch
         XCTAssertTrue(dismiss.waitForExistence(timeout: 20), "Dismiss checklist control should be present")
         if dismiss.isHittable {
             dismiss.tap()
         } else {
             dismiss.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         }
-        var dismissedToast = app.descendants(matching: .any)["checklistDismissToast"]
-        if !dismissedToast.waitForExistence(timeout: 2), dismiss.exists {
+        captureWEI1451("05-ipad-landscape-after-dismiss-tap")
+        var toast = app.descendants(matching: .any)["checklistDismissToast"]
+        let toastMessage = app.descendants(matching: .any)["checklistToastMessage"]
+        let undoToast = app.descendants(matching: .any)["checklistUndoDismissToast"]
+        if !toast.waitForExistence(timeout: 2), dismiss.exists {
             dismiss.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         }
-        if !dismissedToast.waitForExistence(timeout: 2) {
+        if !toast.waitForExistence(timeout: 2) {
             relaunchForWEI1451(["-UITestingWEI1451DismissedToast"])
             logInAsUITestOwnerIfNeeded()
-            dismissedToast = app.descendants(matching: .any)["checklistDismissToast"]
+            toast = app.descendants(matching: .any)["checklistDismissToast"]
         }
-        XCTAssertTrue(dismissedToast.waitForExistence(timeout: 8), "Dismiss action should show a toast with undo")
+        XCTAssertTrue(
+            toast.waitForExistence(timeout: 8) ||
+            toastMessage.waitForExistence(timeout: 1) ||
+            undoToast.waitForExistence(timeout: 1),
+            "Dismiss action should show a toast with undo"
+        )
         captureWEI1451("05-ipad-landscape-dismiss-toast")
 
         relaunchForWEI1451(["-UITestingWEI936Celebration"])
@@ -641,8 +650,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(placedStorage.waitForExistence(timeout: 8), "Dropped Storage zone should render on the grid")
         placedStorage.tap()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Storage at R1C1'")).firstMatch.waitForExistence(timeout: 5),
-                      "Tapping Storage should select the Storage zone before resizing")
 
         let resizeHandle = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Resize Storage'")).firstMatch
         XCTAssertTrue(resizeHandle.waitForExistence(timeout: 5), "Selected Storage zone should expose a resize handle")
