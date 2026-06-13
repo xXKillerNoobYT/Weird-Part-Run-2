@@ -191,6 +191,19 @@ struct JobsServiceTests {
         #expect(abs(otherJob.actualCost) < 0.0001)
     }
 
+    @Test("listJobs includes stage template id for template-aware UIs")
+    func testListJobsIncludesStageTemplateId() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-STAGE-TEMPLATE", name: "Template Job")
+        let templateId = try env.jobs.createJobStageTemplate(name: "Template A", stageNames: ["Stage 1", "Stage 2"])
+
+        try env.jobs.assignJobStageTemplate(jobId: jobId, templateId: templateId)
+
+        let jobs = try env.jobs.listJobs()
+        let job = try #require(jobs.first(where: { $0.id == jobId }))
+        #expect(job.stageTemplateId == templateId)
+    }
+
     @Test("Get job detail")
     func testGetJobDetail() throws {
         let env = try E2ETestHelpers.setUp()
@@ -842,6 +855,43 @@ struct JobsServiceTests {
         #expect(history.contains { $0.eventType == StockMovement.MovementType.transfer.rawValue && $0.qty == 10 })
         #expect(history.contains { $0.eventType == StockMovement.MovementType.jobPull.rawValue && $0.qty == 7 })
         #expect(history.contains { $0.eventType == StockMovement.MovementType.stockReturn.rawValue && $0.qty == 3 })
+    }
+
+    @Test("job material pull uses selected non-warehouse source")
+    func testJobMaterialPullUsesSelectedNonWarehouseSource() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-MAT-TRUCK", name: "Truck Material Job")
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Truck Stock Only Part", categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 5, locationType: "truck", locationId: 42)
+
+        _ = try env.jobs.pullJobMaterial(
+            jobId: jobId,
+            partId: partId,
+            qty: 3,
+            fromLocationType: "truck",
+            fromLocationId: 42,
+            performedBy: env.adminUserId,
+            notes: "Pulled from service truck"
+        )
+
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "truck", locationId: 42) == 2)
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1) == 0)
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "pulled", locationId: jobId) == 3)
+
+        let movement = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT from_location_type, from_location_id, to_location_type, to_location_id
+                FROM stock_movements
+                WHERE job_id = ? AND part_id = ? AND qty = 3 AND deleted_at IS NULL
+                ORDER BY id DESC
+                LIMIT 1
+                """, arguments: [jobId, partId])
+        }
+        #expect(movement?["from_location_type"] as String? == "truck")
+        #expect(movement?["from_location_id"] as Int64? == 42)
+        #expect(movement?["to_location_type"] as String? == "pulled")
+        #expect(movement?["to_location_id"] as Int64? == jobId)
     }
 
     @Test("returnConsumedJobMaterial credits job totals once and creates return intake")
