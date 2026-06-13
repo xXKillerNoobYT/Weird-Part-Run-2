@@ -1114,19 +1114,25 @@ final class AppCore: ObservableObject {
 
             try dbConn.execute(
                 sql: """
-                    INSERT OR IGNORE INTO stock
+                    DELETE FROM stock
+                    WHERE part_id = ? AND location_type = 'warehouse' AND location_id = 1
+                    """,
+                arguments: [partId]
+            )
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO stock
                     (part_id, location_type, location_id, qty, supplier_id, last_counted, counted_qty, deleted_at, updated_at)
                     VALUES (?, 'warehouse', 1, 12, ?, datetime('now'), 9, NULL, datetime('now'))
                     """,
                 arguments: [partId, supplierId]
             )
+
             try dbConn.execute(
                 sql: """
-                    UPDATE stock
-                    SET qty = 12, counted_qty = 9, last_counted = datetime('now'), deleted_at = NULL, updated_at = datetime('now')
-                    WHERE part_id = ? AND location_type = 'warehouse' AND location_id = 1
+                    DELETE FROM audit_sessions_v2
+                    WHERE notes = 'WEI-3295 Stage 8 reports viewport seed'
                     """,
-                arguments: [partId]
             )
 
             try dbConn.execute(

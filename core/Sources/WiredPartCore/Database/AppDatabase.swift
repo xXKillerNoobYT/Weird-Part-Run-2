@@ -6,6 +6,12 @@ import GRDB
 public final class AppDatabase: Sendable {
     /// The underlying GRDB database writer (DatabasePool for file-based, DatabaseQueue for in-memory).
     public let writer: any DatabaseWriter
+    private static let inMemoryTemplateCache = InMemoryTemplateCache()
+
+    private final class InMemoryTemplateCache: @unchecked Sendable {
+        let lock = NSLock()
+        var path: String?
+    }
 
     /// The total number of registered migrations. Update when adding new migrations.
     /// Migrations are 000-103.
@@ -14,6 +20,17 @@ public final class AppDatabase: Sendable {
     /// Initialize with an existing database writer and run all migrations.
     public init(_ writer: any DatabaseWriter) throws {
         self.writer = writer
+        try Self.migrate(writer)
+    }
+
+    private init(_ writer: any DatabaseWriter, runMigrations: Bool) throws {
+        self.writer = writer
+        if runMigrations {
+            try Self.migrate(writer)
+        }
+    }
+
+    private static func migrate(_ writer: any DatabaseWriter) throws {
         var migrator = DatabaseMigrator()
         Self.registerMigrations(&migrator)
         try migrator.migrate(writer)
@@ -45,8 +62,30 @@ public final class AppDatabase: Sendable {
     public static func openInMemoryDatabase() throws -> AppDatabase {
         var config = Configuration()
         config.foreignKeysEnabled = true
-        let queue = try DatabaseQueue(configuration: config)
-        return try AppDatabase(queue)
+        let templatePath = try migratedInMemoryTemplatePath()
+        let queue = try DatabaseQueue.inMemoryCopy(fromPath: templatePath, configuration: config)
+        return try AppDatabase(queue, runMigrations: false)
+    }
+
+    private static func migratedInMemoryTemplatePath() throws -> String {
+        let cache = inMemoryTemplateCache
+        cache.lock.lock()
+        defer { cache.lock.unlock() }
+
+        if let path = cache.path, FileManager.default.fileExists(atPath: path) {
+            return path
+        }
+
+        let path = (NSTemporaryDirectory() as NSString)
+            .appendingPathComponent("WiredPartCore-schema-\(schemaVersion)-test-template-\(ProcessInfo.processInfo.processIdentifier).sqlite")
+        if !FileManager.default.fileExists(atPath: path) {
+            var config = Configuration()
+            config.foreignKeysEnabled = true
+            let queue = try DatabaseQueue(path: path, configuration: config)
+            _ = try AppDatabase(queue)
+        }
+        cache.path = path
+        return path
     }
 
     // MARK: - Backup & Restore
