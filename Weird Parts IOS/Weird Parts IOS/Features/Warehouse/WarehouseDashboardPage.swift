@@ -484,33 +484,50 @@ struct WarehouseDashboardPage: View {
         let shortfalls = kpis?.shortfallCount ?? 0
 
         return LazyVGrid(columns: [
-            GridItem(.flexible(), spacing: 12),
-            GridItem(.flexible(), spacing: 12),
-            GridItem(.flexible(), spacing: 12),
+            GridItem(.adaptive(minimum: kpiMinimumCardWidth), spacing: 12),
         ], spacing: 12) {
             miniKPI(
                 title: "Audit Score",
                 value: "\(Int(warehouseScorePercent.rounded()))%",
                 icon: "gauge.with.dots.needle.bottom.50percent",
-                color: scoreColor(warehouseScorePercent)
+                color: scoreColor(warehouseScorePercent),
+                accessibilityIdentifier: "warehouseKPIAuditScore"
             )
-            miniKPI(title: "Total Stock", value: "\(totalStock)", icon: "shippingbox.fill", color: .blue)
+            miniKPI(
+                title: "Total Stock",
+                value: "\(totalStock)",
+                icon: "shippingbox.fill",
+                color: .blue,
+                accessibilityIdentifier: "warehouseKPITotalStock"
+            )
             miniKPI(
                 title: "Health",
                 value: "\(healthPct)%",
                 icon: "heart.fill",
-                color: healthPct >= 80 ? .green : healthPct >= 50 ? .orange : .red
+                color: healthPct >= 80 ? .green : healthPct >= 50 ? .orange : .red,
+                accessibilityIdentifier: "warehouseKPIHealth"
             )
             miniKPI(
                 title: "Shortfalls",
                 value: "\(shortfalls)",
                 icon: "exclamationmark.triangle.fill",
-                color: shortfalls > 0 ? .red : .green
+                color: shortfalls > 0 ? .red : .green,
+                accessibilityIdentifier: "warehouseKPIShortfalls"
             )
         }
     }
 
-    private func miniKPI(title: String, value: String, icon: String, color: Color) -> some View {
+    private var kpiMinimumCardWidth: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 240 : 150
+    }
+
+    private func miniKPI(
+        title: String,
+        value: String,
+        icon: String,
+        color: Color,
+        accessibilityIdentifier: String
+    ) -> some View {
         VStack(spacing: 4) {
             Image(systemName: icon)
                 .font(.caption)
@@ -519,15 +536,20 @@ struct WarehouseDashboardPage: View {
             Text(value)
                 .font(.headline)
                 .fontWeight(.bold)
+                .accessibilityHidden(true)
             Text(title)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
         }
         .frame(maxWidth: .infinity)
+        .frame(minHeight: 74)
         .padding(.vertical, 10)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityIdentifier(accessibilityIdentifier)
         .accessibilityLabel("\(title): \(value)")
     }
 

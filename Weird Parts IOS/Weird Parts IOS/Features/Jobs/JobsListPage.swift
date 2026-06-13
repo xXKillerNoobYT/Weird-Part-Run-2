@@ -297,10 +297,12 @@ struct JobsListPage: View {
                     jobCard(job)
                 }
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    Button { quickStatusTarget = QuickStatusTarget(job: job) } label: {
-                        Label("Status", systemImage: "arrow.triangle.2.circlepath")
+                    if appCore.hasPermission("manage_jobs") {
+                        Button { quickStatusTarget = QuickStatusTarget(job: job) } label: {
+                            Label("Status", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        .tint(.blue)
                     }
-                    .tint(.blue)
 
                     Button { activeSheet = .jobDetail(job.id) } label: {
                         Label("Detail", systemImage: "doc.text.magnifyingglass")
