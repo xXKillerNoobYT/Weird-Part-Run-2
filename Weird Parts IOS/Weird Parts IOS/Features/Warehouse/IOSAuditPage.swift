@@ -31,7 +31,6 @@ struct IOSAuditPage: View {
     @State private var warehouseScore: Double = 5.0
     @State private var activeCounts: [AuditCount] = []
     @State private var selectedItemForVerification: CountingItem?
-    @State private var fixtureFallbackItem: CountingItem?
 
     // Count flow
     @State private var activeSession: AuditSessionV2?
@@ -440,6 +439,34 @@ struct IOSAuditPage: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .accessibilityIdentifier("qaFixturePartMissingMessage")
+                    }
+                }
+            }
+
+            // My Verification Assignments link
+            Section("My Assignments") {
+                NavigationLink {
+                    IOSMyVerificationsPage()
+                        .environmentObject(appCore)
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "person.2.badge.gearshape")
+                            .foregroundStyle(.orange)
+                            .frame(width: 28)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("My Verification Assignments")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text("Submit counts for parts assigned to you")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
                     }
                 }
             }
@@ -963,7 +990,7 @@ struct IOSAuditPage: View {
         buildQueue().first {
             $0.partCode == Self.multiUserFixturePartCode ||
             $0.partName == "UITest Verification Part"
-        } ?? fixtureFallbackItem
+        }
     }
 
     private func buildQueue() -> [CountingItem] {
@@ -1264,7 +1291,6 @@ struct IOSAuditPage: View {
 
             // Build lookup caches from confidence records
             loadNameCaches(service: service)
-            loadFixtureFallbackItem(service: service)
 
             loadWalkingPath(service: service)
             postAIContext()
@@ -1307,44 +1333,6 @@ struct IOSAuditPage: View {
                     locationCodeCache[conf.areaId] = code
                 }
             }
-        }
-    }
-
-    private func loadFixtureFallbackItem(service: WarehouseService) {
-        guard isMultiUserVerificationFixtureEnabled,
-              let userId = appCore.currentUser?.id else {
-            fixtureFallbackItem = nil
-            return
-        }
-
-        do {
-            let assignments = try service.getMyMultiUserAuditAssignments(userId: userId)
-            guard let assignment = assignments.first(where: {
-                if $0.partName == "UITest Verification Part" { return true }
-                return (try? service.getPartCode(partId: $0.partId)) == Self.multiUserFixturePartCode
-            }) else {
-                fixtureFallbackItem = nil
-                return
-            }
-
-            let code = (try? service.getPartCode(partId: assignment.partId)) ?? Self.multiUserFixturePartCode
-            let fallbackConfidence = confidenceRecords.first { $0.partId == assignment.partId }
-            let areaId = fallbackConfidence?.areaId ?? 0
-            let fallbackLocation = areaId > 0 ? locationCode(for: areaId) : (assignment.binLocation ?? "—")
-            let expectedQty = assignment.expectedQuantity ?? fallbackConfidence?.systemCount ?? 0
-
-            fixtureFallbackItem = CountingItem(
-                partId: assignment.partId,
-                areaId: areaId,
-                partName: assignment.partName,
-                partCode: code,
-                locationCode: fallbackLocation,
-                systemCount: expectedQty,
-                confidence: fallbackConfidence?.confidencePercent ?? 0
-            )
-        } catch {
-            fixtureFallbackItem = nil
-            auditLog.error("loadFixtureFallbackItem failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 

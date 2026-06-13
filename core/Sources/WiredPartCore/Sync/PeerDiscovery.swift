@@ -69,7 +69,7 @@ public struct DiscoveredPeer: Sendable, Identifiable {
 ///   from any queue. See #187 for the setter protection.
 /// - Any NEW mutable property MUST either go through `queue` or get its own
 ///   lock. Adding a bare `var` is a data race that the compiler won't catch.
-public final class PeerDiscovery: @unchecked Sendable {
+public final class PeerDiscovery: NSObject, @unchecked Sendable {
 
     /// Called when the peer list changes.
     ///
@@ -91,10 +91,11 @@ public final class PeerDiscovery: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.wiredpart.peer-discovery", qos: .utility)
     private let logger = Logger(subsystem: "com.wiredpart.core", category: "PeerDiscovery")
     private var browser: NWBrowser?
-    private var listener: NWListener?
+    private var advertisedService: NetService?
     private var peers: [String: DiscoveredPeer] = [:]  // keyed by device_id
     private var isRunning = false
     private var browseGeneration = 0
+    private var usesDedicatedAdvertisingListener = false
 
     public init(
         deviceId: String,
@@ -106,6 +107,7 @@ public final class PeerDiscovery: @unchecked Sendable {
         self.companyId = companyId
         self.deviceName = deviceName
         self.port = port
+        super.init()
     }
 
     /// Start advertising this device and browsing for peers.
@@ -125,8 +127,8 @@ public final class PeerDiscovery: @unchecked Sendable {
             self.isRunning = false
             self.browser?.cancel()
             self.browser = nil
-            self.listener?.cancel()
-            self.listener = nil
+            self.advertisedService?.stop()
+            self.advertisedService = nil
             self.peers.removeAll()
         }
     }
@@ -138,52 +140,45 @@ public final class PeerDiscovery: @unchecked Sendable {
         }
     }
 
+    #if DEBUG
+    /// Test hook for the LAN advertisement ownership contract.
+    public func debugUsesDedicatedAdvertisingListener() -> Bool {
+        queue.sync { usesDedicatedAdvertisingListener }
+    }
+    #endif
+
     // MARK: - Private: Advertising
 
     private func startAdvertising() {
-        let txtData: [String: String] = [
+        usesDedicatedAdvertisingListener = false
+        let txtData: [String: Data] = [
             "device_id": deviceId,
             "device_name": deviceName,
             "company_id": companyId,
             "version": "1.0.0",
             "sync_port": String(port)
-        ]
-
-        // Build TXT record
-        let txtRecord = NWTXTRecord(txtData)
+        ].compactMapValues { $0.data(using: .utf8) }
 
         // Instance name: first 8 chars of device_id
         let shortId = String(deviceId.prefix(8))
         let instanceName = "WiredPart-\(shortId)"
 
-        do {
-            let listener = try NWListener(using: .tcp, on: NWEndpoint.Port(rawValue: port) ?? .any)
-            listener.service = NWListener.Service(
-                name: instanceName,
-                type: "_wiredpart._tcp",
-                txtRecord: txtRecord
-            )
-            listener.stateUpdateHandler = { [logger] state in
-                switch state {
-                case .ready:
-                    break // Advertising active
-                case .failed(let error):
-                    logger.error("[PeerDiscovery] Listener failed: \(error)")
-                default:
-                    break
-                }
-            }
-            // We don't actually accept connections on this listener —
-            // it's only used for mDNS advertisement. The real HTTP server
-            // is the LanSyncServer. Auto-reject any incoming connections.
-            listener.newConnectionHandler = { connection in
-                connection.cancel()
-            }
-            listener.start(queue: queue)
-            self.listener = listener
-        } catch {
-            logger.error("[PeerDiscovery] Failed to create listener: \(error)")
-        }
+        let txtRecord = NetService.data(fromTXTRecord: txtData)
+
+        // Advertise the already-running LanSyncServer port. Do not create an
+        // NWListener here: binding a second listener to the sync server port
+        // fails on devices and can make discovery appear offline.
+        let service = NetService(
+            domain: "local.",
+            type: "_wiredpart._tcp.",
+            name: instanceName,
+            port: Int32(port)
+        )
+        service.delegate = self
+        service.setTXTRecord(txtRecord)
+        service.schedule(in: .main, forMode: .default)
+        service.publish()
+        self.advertisedService = service
     }
 
     // MARK: - Private: Browsing
@@ -381,5 +376,11 @@ private final class BonjourServiceResolver: NSObject, NetServiceDelegate {
             let bytes = hostBuffer.prefix(count).map { UInt8(bitPattern: $0) }
             return String(decoding: bytes, as: UTF8.self)
         }
+    }
+}
+
+extension PeerDiscovery: NetServiceDelegate {
+    public func netService(_ sender: NetService, didNotPublish errorDict: [String: NSNumber]) {
+        logger.error("[PeerDiscovery] Bonjour publish failed: \(String(describing: errorDict))")
     }
 }

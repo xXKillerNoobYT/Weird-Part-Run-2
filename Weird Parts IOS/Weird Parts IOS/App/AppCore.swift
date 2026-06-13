@@ -942,8 +942,14 @@ final class AppCore: ObservableObject {
             try seedWarehouseLocationsUITestingFixtures(db: db)
         }
 
+        let suppressPostLoginOnboarding = ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard")
+            || ProcessInfo.processInfo.arguments.contains("-UITestingConflictCapture")
+
         if ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard") {
             try seedDispatchBoardUITestingFixtures(db: db)
+        }
+
+        if suppressPostLoginOnboarding {
             UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
             UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
         }
@@ -958,7 +964,7 @@ final class AppCore: ObservableObject {
 
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
-        if !ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard") {
+        if !suppressPostLoginOnboarding {
             UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
         }
 
@@ -1294,6 +1300,8 @@ final class AppCore: ObservableObject {
         let args = ProcessInfo.processInfo.arguments
         guard args.contains("-UITestingWEI936TourActive") ||
             args.contains("-UITestingWEI936RequiredDone") ||
+            args.contains("-UITestingWEI1451DashboardCard") ||
+            args.contains("-UITestingWEI1451DismissedToast") ||
             args.contains("-UITestingWEI936DismissedChecklist") else { return }
 
         UserDefaults.standard.removeObject(forKey: "onboarding_checklist_dismissed")
@@ -1303,9 +1311,6 @@ final class AppCore: ObservableObject {
             UserDefaults.standard.set(true, forKey: storageKey + "_active")
 
             var completedTasks: Set<String> = []
-            if args.contains("-UITestingWEI936TourActive") {
-                completedTasks.insert("dashboard-view-kpis")
-            }
             if args.contains("-UITestingWEI936RequiredDone") {
                 completedTasks.formUnion(["dashboard-view-kpis", "dashboard-tap-kpi"])
             }
@@ -1314,7 +1319,8 @@ final class AppCore: ObservableObject {
             }
         }
 
-        if args.contains("-UITestingWEI936DismissedChecklist") {
+        if args.contains("-UITestingWEI936DismissedChecklist") ||
+            args.contains("-UITestingWEI1451DismissedToast") {
             UserDefaults.standard.set(true, forKey: "onboarding_checklist_dismissed")
         }
     }

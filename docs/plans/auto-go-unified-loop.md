@@ -121,6 +121,20 @@ Idempotency: each task checks its own tracker for "last ran within 1 hour?"; if 
 
 See the verification section of `/Users/IA/.claude/plans/i-want-to-swich-inherited-pumpkin.md` (11 steps covering manual triggers, stop/resume, morning kickoff, rotation, collision avoidance, escalation paths, cron registration).
 
+## Routine Checklist Verification
+
+Every AUTO GO or HUNT FIX routine change must be verified against this checklist before it is marked done:
+
+- **Trigger path:** manual trigger phrase or slash command works, and the scheduled trigger spec is documented with cron, timezone/window, and enabled/disabled state.
+- **Stop/resume:** shared `AUTO GO STOP`/`AUTO GO RESUME` behavior is tested or explicitly declared not applicable, with the heartbeat state that proves it.
+- **State safety:** heartbeat file uses `stop_flag` and `in_progress` guards; skipped or paused runs log a durable reason and do not start work.
+- **Single-task discipline:** one firing selects one bounded task, writes the target tracker, and exits without polling another agent or waiting on long child work.
+- **Escalation path:** design questions, iOS UI work, native-device checks, App Store actions, destructive changes, and credential/provider gaps route to Q&A, Xcode prompts, DevTODO, Paperclip child issues, or board approval instead of spinning.
+- **Evidence:** routine closeout names the command or manual action run, tracker/heartbeat files touched, result, residual risk, and next owner.
+- **GitHub sync:** closeout states `not applicable with reason`, `existing PR/CI URL`, or `pushed/PR/commented URL`.
+
+If any checklist item cannot be verified locally, the issue must stay `in_review` with a real reviewer/monitor path or `blocked` with the named unblock owner/action. Do not leave routine-spec issues open with only a "Remaining" comment.
+
 ## User Roles Affected
 
 - **Owner:** gains a single kill-switch (`AUTO GO STOP`) and a single status view (`/auto-go-status`). Replaces 11 separate schedules to remember.
