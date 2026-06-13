@@ -81,8 +81,8 @@ struct JobsListPage: View {
     @State private var loadError: String?
     @State private var quickStatusTarget: QuickStatusTarget?
     @State private var jobSummaryCache: [Int64: CachedJobSummary] = [:]
-    /// Global job stages list (Rough-in, Prep/Makeup, Trim-out). Loaded once.
-    @State private var globalStages: [JobsService.JobStageStatus] = []
+    /// Cached stage definitions keyed by template id.
+    @State private var stagesByTemplateId: [Int64: [JobsService.JobStageStatus]] = [:]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -430,9 +430,13 @@ struct JobsListPage: View {
     }
 
     private func stageStatuses(for job: JobsService.JobListItem) -> [JobsService.JobStageStatus] {
-        guard !globalStages.isEmpty else { return [] }
+        guard
+            let templateId = job.stageTemplateId,
+            let templateStages = stagesByTemplateId[templateId],
+            !templateStages.isEmpty
+        else { return [] }
         return JobsService.computeStageStatuses(
-            allStages: globalStages,
+            allStages: templateStages,
             currentStageId: job.currentStageId,
             jobStatus: job.status
         )
@@ -612,10 +616,7 @@ struct JobsListPage: View {
                 search: searchText.isEmpty ? nil : searchText,
                 status: nil
             )
-            // Load global stages once for stage progression bars
-            if globalStages.isEmpty {
-                globalStages = try service.listAllJobStages()
-            }
+            stagesByTemplateId = try loadTemplateStageCache(service: service, jobs: allJobs)
             // Build status counts
             var counts: [String: Int] = [:]
             for j in allJobs {
@@ -628,6 +629,18 @@ struct JobsListPage: View {
             loadError = userFriendlyError(error, context: "load jobs")
         }
         isLoading = false
+    }
+
+    private func loadTemplateStageCache(
+        service: JobsService,
+        jobs: [JobsService.JobListItem]
+    ) throws -> [Int64: [JobsService.JobStageStatus]] {
+        var cache: [Int64: [JobsService.JobStageStatus]] = [:]
+        let templateIds = Set(jobs.compactMap(\.stageTemplateId))
+        for templateId in templateIds {
+            cache[templateId] = try service.listAllJobStages(templateId: templateId)
+        }
+        return cache
     }
 
     private func applyFilterAndSort() {

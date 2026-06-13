@@ -191,6 +191,19 @@ struct JobsServiceTests {
         #expect(abs(otherJob.actualCost) < 0.0001)
     }
 
+    @Test("listJobs includes stage template id for template-aware UIs")
+    func testListJobsIncludesStageTemplateId() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-STAGE-TEMPLATE", name: "Template Job")
+        let templateId = try env.jobs.createJobStageTemplate(name: "Template A", stageNames: ["Stage 1", "Stage 2"])
+
+        try env.jobs.assignJobStageTemplate(jobId: jobId, templateId: templateId)
+
+        let jobs = try env.jobs.listJobs()
+        let job = try #require(jobs.first(where: { $0.id == jobId }))
+        #expect(job.stageTemplateId == templateId)
+    }
+
     @Test("Get job detail")
     func testGetJobDetail() throws {
         let env = try E2ETestHelpers.setUp()
