@@ -323,7 +323,7 @@ struct IOSShortTermPipelinePage: View {
         }
         do {
             try service.markCallbackComplete(jobId: jobId, notes: notes)
-            loadData()
+            try refreshPipelineData()
             activeSheet = nil
         } catch {
             loadError = userFriendlyError(error, context: "complete callback")
@@ -338,7 +338,7 @@ struct IOSShortTermPipelinePage: View {
         let target = Calendar.current.date(byAdding: .day, value: days, to: Date()) ?? Date()
         do {
             try service.snoozeCallback(jobId: jobId, until: Formatters.localDateFormatter.string(from: target))
-            loadData()
+            try refreshPipelineData()
             activeSheet = nil
         } catch {
             loadError = userFriendlyError(error, context: "snooze callback")
@@ -391,6 +391,18 @@ struct IOSShortTermPipelinePage: View {
             loadError = userFriendlyError(error, context: "load pipeline data")
         }
         isLoading = false
+    }
+
+    private func refreshPipelineData() throws {
+        guard let service = appCore.schedulingService else {
+            throw NSError(
+                domain: "IOSShortTermPipelinePage",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Scheduling service not available."]
+            )
+        }
+        pipelineItems = try service.getShortTermPipeline()
+        loadError = nil
     }
 
     // MARK: - AI Dispatch
