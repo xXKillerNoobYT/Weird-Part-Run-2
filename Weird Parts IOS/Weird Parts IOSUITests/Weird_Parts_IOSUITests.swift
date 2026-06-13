@@ -235,11 +235,12 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.staticTexts["WEI-3144 Materials QA Job"].waitForExistence(timeout: 20), "Seeded job detail should open")
-        scrollUntilVisible(app.descendants(matching: .any)["jobMaterialsTab"])
         XCTAssertTrue(app.descendants(matching: .any)["jobMaterialsTab"].waitForExistence(timeout: 10), "Materials tab content should render")
 
         for segment in ["Ready", "Used", "Returns", "History"] {
-            XCTAssertTrue(app.buttons[segment].waitForExistence(timeout: 5), "Materials segment \(segment) should be visible")
+            let button = app.buttons[segment]
+            XCTAssertTrue(button.waitForExistence(timeout: 5), "Materials segment \(segment) should be visible")
+            XCTAssertTrue(button.isHittable, "Materials segment \(segment) should be tappable on the current viewport")
         }
 
         captureWEI3144("01-materials-ready")
@@ -296,8 +297,17 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
         relaunchForWEI3295Stage8Reports(["-UITestingStage8PreBilling"])
         XCTAssertTrue(app.navigationBars["Pre-Billing"].waitForExistence(timeout: 20) || app.staticTexts["Pre-Billing"].waitForExistence(timeout: 20), "Pre-Billing page should open directly")
-        XCTAssertTrue(app.staticTexts["WEI-3295 Stage 8 Billing QA Job"].waitForExistence(timeout: 20), "Pre-Billing should render seeded job row")
         XCTAssertTrue(app.staticTexts["Jobs"].waitForExistence(timeout: 8), "Pre-Billing should render summary totals")
+        let seededPreBillingRow = app.descendants(matching: .any)["pre-billing-row-UITEST-STAGE8-3295"].firstMatch
+        if !seededPreBillingRow.waitForExistence(timeout: 8) {
+            for _ in 0..<4 where !seededPreBillingRow.exists {
+                app.swipeUp()
+                _ = seededPreBillingRow.waitForExistence(timeout: 2)
+            }
+        }
+        XCTAssertTrue(seededPreBillingRow.exists, "Pre-Billing should render seeded job row")
+        XCTAssertFalse(seededPreBillingRow.frame.isEmpty, "Seeded pre-billing row should have a rendered frame")
+        XCTAssertTrue(app.windows.firstMatch.frame.intersects(seededPreBillingRow.frame), "Seeded pre-billing row should be visible in the phone smoke viewport")
         captureWEI3295("02-\(viewport)-pre-billing-populated")
         openExportMenuIfPresent()
         captureWEI3295("03-\(viewport)-pre-billing-export-menu")
@@ -307,7 +317,13 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Labor by Employee"].waitForExistence(timeout: 20), "Bookkeeper Export should render labor section")
         XCTAssertTrue(app.staticTexts["Material Purchase Orders"].waitForExistence(timeout: 10), "Bookkeeper Export should render material PO section")
         let seededPurchaseOrderRow = app.descendants(matching: .any)["bookkeeper-material-row-PO-WEI3295-STAGE8"].firstMatch
-        XCTAssertTrue(seededPurchaseOrderRow.waitForExistence(timeout: 10), "Bookkeeper Export should render seeded purchase order row")
+        if !seededPurchaseOrderRow.waitForExistence(timeout: 8) {
+            for _ in 0..<4 where !seededPurchaseOrderRow.exists {
+                app.swipeUp()
+                _ = seededPurchaseOrderRow.waitForExistence(timeout: 2)
+            }
+        }
+        XCTAssertTrue(seededPurchaseOrderRow.exists, "Bookkeeper Export should render seeded purchase order row")
         XCTAssertFalse(seededPurchaseOrderRow.frame.isEmpty, "Seeded purchase order row should have a rendered frame")
         XCTAssertTrue(app.windows.firstMatch.frame.intersects(seededPurchaseOrderRow.frame), "Seeded purchase order row should be visible in the mobile smoke viewport")
         captureWEI3295("04-\(viewport)-bookkeeper-populated")
@@ -317,7 +333,14 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         relaunchForWEI3295Stage8Reports(["-UITestingStage8AuditSummary"])
         XCTAssertTrue(app.navigationBars["Audit Summary"].waitForExistence(timeout: 20) || app.staticTexts["Audit Summary"].waitForExistence(timeout: 20), "Audit Summary page should open directly")
         XCTAssertTrue(app.staticTexts["Overview"].waitForExistence(timeout: 20), "Audit Summary should render overview section")
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'WEI-3295 Stage 8 Breaker'")).firstMatch.waitForExistence(timeout: 10), "Audit Summary should render seeded discrepancy")
+        let seededDiscrepancy = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'WEI-3295 Stage 8 Breaker'")).firstMatch
+        if !seededDiscrepancy.waitForExistence(timeout: 3) {
+            for _ in 0..<4 where !seededDiscrepancy.exists {
+                app.swipeUp()
+                _ = seededDiscrepancy.waitForExistence(timeout: 2)
+            }
+        }
+        XCTAssertTrue(seededDiscrepancy.exists, "Audit Summary should render seeded discrepancy")
         captureWEI3295("06-\(viewport)-audit-summary-discrepancy")
 
         let verification = """

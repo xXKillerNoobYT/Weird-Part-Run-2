@@ -20,6 +20,7 @@ import os.log
 /// Ported from: `src/local/services/auth-service.ts`
 public final class AuthService: Sendable {
     private let db: AppDatabase
+    private let hashingParams: ScryptParams
 
     /// Structured logger for Keychain / token / auth warnings. Unified log replaces
     /// `print(...)` calls so warnings surface via Console.app/os_log with proper
@@ -28,6 +29,22 @@ public final class AuthService: Sendable {
 
     public init(db: AppDatabase) {
         self.db = db
+        self.hashingParams = Self.currentScryptParams
+    }
+
+    enum HashingProfile {
+        case production
+        case test
+    }
+
+    init(db: AppDatabase, hashingProfile: HashingProfile) {
+        self.db = db
+        switch hashingProfile {
+        case .production:
+            self.hashingParams = Self.currentScryptParams
+        case .test:
+            self.hashingParams = Self.testScryptParams
+        }
     }
 
     // MARK: - Types
@@ -194,7 +211,7 @@ public final class AuthService: Sendable {
         let needsUpgrade = !Self.isScryptHash(pinHash)
         if needsUpgrade {
             let newSalt = Self.generateSalt()
-            let newHash = Self.hashPin(pin, salt: newSalt)
+            let newHash = hashPinForStorage(pin, salt: newSalt)
             let now = Self.currentTimestamp()
             try db.writer.write { dbConn in
                 try dbConn.execute(
@@ -243,7 +260,7 @@ public final class AuthService: Sendable {
 
         let now = Self.currentTimestamp()
         let salt = Self.generateSalt()
-        let pinHash = Self.hashPin(pin, salt: salt)
+        let pinHash = hashPinForStorage(pin, salt: salt)
 
         try db.writer.write { dbConnection in
             // 1. Create built-in hats
@@ -783,7 +800,7 @@ public final class AuthService: Sendable {
         }
 
         let salt = Self.generateSalt()
-        let pinHash = Self.hashPin(pin, salt: salt)
+        let pinHash = hashPinForStorage(pin, salt: salt)
         let now = Self.currentTimestamp()
         return try db.writer.write { dbConn in
             try dbConn.execute(
@@ -834,7 +851,7 @@ public final class AuthService: Sendable {
         // Persist new PIN hash using the trimmed (normalised) PIN so PIN validation
         // and key derivation are always consistent — no whitespace variants.
         let newSalt = Self.generateSalt()
-        let newHash = Self.hashPin(trimmed, salt: newSalt)
+        let newHash = hashPinForStorage(trimmed, salt: newSalt)
         let now = Self.currentTimestamp()
         try db.writer.write { dbConn in
             try dbConn.execute(
@@ -909,17 +926,32 @@ public final class AuthService: Sendable {
         dkLen: scryptDerivedKeyLength
     )
 
+    private static let testScryptParams = ScryptParams(
+        n: 16,
+        r: 1,
+        p: 1,
+        dkLen: scryptDerivedKeyLength
+    )
+
+    private func hashPinForStorage(_ pin: String, salt: String) -> String {
+        Self.hashPin(pin, salt: salt, params: hashingParams)
+    }
+
     /// Hash a PIN with scrypt. Returns `$wp-scrypt$N=<n>,r=<r>,p=<p>,dk=<len>$<salt-b64>$<hex>`.
     static func hashPin(_ pin: String, salt: String) -> String {
+        hashPin(pin, salt: salt, params: currentScryptParams)
+    }
+
+    private static func hashPin(_ pin: String, salt: String, params: ScryptParams) -> String {
         let password = Array(pin.utf8)
         let saltBytes = Array(salt.utf8)
-        guard let derivedKey = scrypt(password: password, salt: saltBytes, params: currentScryptParams) else {
+        guard let derivedKey = scrypt(password: password, salt: saltBytes, params: params) else {
             Self.logger.error("scrypt hashing failed, falling back to iterated SHA-256")
             return iteratedSHA256Pin(pin, salt: salt)
         }
         let saltB64 = Data(saltBytes).base64EncodedString()
         let hex = derivedKey.map { String(format: "%02x", $0) }.joined()
-        return "\(scryptPrefix)N=\(currentScryptParams.n),r=\(currentScryptParams.r),p=\(currentScryptParams.p),dk=\(currentScryptParams.dkLen)$\(saltB64)$\(hex)"
+        return "\(scryptPrefix)N=\(params.n),r=\(params.r),p=\(params.p),dk=\(params.dkLen)$\(saltB64)$\(hex)"
     }
 
     /// Internal helper for RFC test-vector coverage.
@@ -1479,6 +1511,7 @@ public final class AuthService: Sendable {
                 "view_reports", "export_reports", "manage_settings", "manage_devices",
                 "manage_templates", "manage_notebooks", "perform_audit", "manager_override", "view_activity_log",
                 "view_fleet", "manage_fleet", "log_fleet", "view_tools", "manage_tools",
+                "checkout_tools", "maintain_tools",
                 "view_scheduling", "manage_scheduling", "manage_dispatch",
                 "view_schedule", "manage_schedule", "dispatch_employees",
                 "manage_time_off", "manage_subcontractors",
@@ -1498,7 +1531,7 @@ public final class AuthService: Sendable {
                 // Forecasting / recommendation pipeline
                 "forecasting.approve_recommendation", "forecasting.dismiss_recommendation",
                 // Parts scheduled deletion approval
-                "parts.approve_scheduled_deletion",
+                "parts.approve_scheduled_deletion", "parts.manage_company_costs",
                 // Notebook work classification audit controls
                 "notebooks.classify_todo", "notebooks.reclassify_todo", "notebooks.review_classification",
             ],
@@ -1511,6 +1544,7 @@ public final class AuthService: Sendable {
                 "view_reports", "export_reports", "manage_templates", "manage_notebooks", "perform_audit",
                 "manager_override", "view_activity_log",
                 "view_fleet", "manage_fleet", "log_fleet", "view_tools", "manage_tools",
+                "checkout_tools", "maintain_tools",
                 "view_scheduling", "manage_scheduling", "manage_dispatch",
                 "view_schedule", "manage_schedule", "dispatch_employees",
                 "use_chat", "view_chat", "manage_chat", "ask_qa", "send_rfi",
@@ -1527,7 +1561,7 @@ public final class AuthService: Sendable {
                 // Forecasting / recommendation pipeline
                 "forecasting.approve_recommendation", "forecasting.dismiss_recommendation",
                 // Parts scheduled deletion approval
-                "parts.approve_scheduled_deletion",
+                "parts.approve_scheduled_deletion", "parts.manage_company_costs",
                 // Notebook work classification audit controls
                 "notebooks.classify_todo", "notebooks.reclassify_todo", "notebooks.review_classification",
             ],
