@@ -63,6 +63,41 @@ Every child issue created from this loop must state:
 
 For frontend/UX work, include the route or screen, expected viewport evidence, and whether UXDesigner, UIFirstRun, UIExpertVerifier, or FrontendCoder owns the next step.
 
+## Setup Workflow Spec Requirements
+
+Project setup, workspace setup, and internal-agent setup are technical governance workflows, not informal chat tasks. Before creating setup subtasks or asking an agent to execute setup work, the parent issue or plan must include a compact workflow spec with:
+
+- **Owner and lane:** accountable manager or agent role, plus whether the work is engineering, infrastructure, review, security, UX, or operations.
+- **Target system:** company, repo/project, local checkout, worktree, Paperclip goal, agent, routine, connector, or external service being changed.
+- **Prerequisites:** credentials, provider artifacts, existing approvals, linked parent issues, branch/worktree preflight requirements, and any destructive-action approvals.
+- **Exact setup steps:** bounded steps an executor can perform without guessing, including API routes, CLI commands, files, or UI screens when relevant.
+- **Acceptance criteria:** observable end state, not only "setup complete".
+- **Required evidence:** command output, API response, screenshot, linked issue/comment, PR URL, or config diff proving the setup state.
+- **Rollback or cleanup path:** how to reverse the setup if it is wrong, and who owns cleanup for worktrees, branches, routines, or generated artifacts.
+- **Review lane:** reviewer role or board/user confirmation path when setup changes authority, credentials, billing, production state, recurring automation, or agent instructions.
+- **Pass-up trigger:** the exact evidence that lets the parent issue advance or close.
+
+### Project Setup Gate
+
+New Weird Parts project/workspace setup must also record:
+
+- Canonical repo and checkout path. Default: `/Users/IA/GitHub/Weird-Part-Run-2`.
+- Branch/worktree hygiene preflight output or a linked cleanup issue when branch/worktree pressure should be drained first.
+- GitHub sync expectation: no GitHub action, existing PR/CI URL, or the branch/PR/comment URL to create.
+- First validation command or manual smoke, scoped to the setup being changed.
+- Final cleanup note for any agent-created worktree: branch state, PR state, whether the local worktree was removed or intentionally retained, and next owner if retained.
+
+### Internal-Agent Setup Gate
+
+Internal-agent setup, role changes, routine assignment, or instruction changes must also record:
+
+- Agent identity, reporting line, scope boundaries, and allowed issue classes.
+- Skills/connectors required and whether they already exist or need install/assignment.
+- Budget, recurring schedule, concurrency, pause/cancel, and escalation rules.
+- Secret and provider-access boundaries, including a statement that credentials are not copied into issue text.
+- Verification that the agent can receive an issue wake and leave a final issue comment/status update.
+- A rollback path for disabling the routine, removing skills, restoring prior instructions, or reassigning open work.
+
 ## Branch And Worktree Hygiene Gate
 
 Before starting new Weird Parts implementation work, run a preflight from the canonical checkout:

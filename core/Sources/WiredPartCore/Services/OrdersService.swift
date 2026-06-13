@@ -48,6 +48,7 @@ public final class OrdersService: Sendable {
         case missingJPOReference(lineId: Int64)
         case stageNotFound(Int64)
         case stageTemplateMismatch(stageId: Int64, jobId: Int64)
+        case invalidSupplierTransmission(String)
 
         public var errorDescription: String? {
             switch self {
@@ -81,6 +82,7 @@ public final class OrdersService: Sendable {
             case .missingJPOReference(let lineId): return "JPO line #\(lineId) is missing a required jpo_id reference"
             case .stageNotFound(let id): return "Job stage #\(id) not found or has been deleted"
             case .stageTemplateMismatch(let stageId, let jobId): return "Job stage #\(stageId) does not belong to job #\(jobId)'s assigned stage template"
+            case .invalidSupplierTransmission(let msg): return msg
             }
         }
     }
@@ -109,13 +111,11 @@ public final class OrdersService: Sendable {
 
     /// Valid PO status transitions.
     ///
-    /// PO lifecycle is documented in the iOS purchase-order plan as:
-    /// draft → submitted → ordered → partial → received, with cancellation
-    /// available before final receipt. `complete` is retained for legacy callers
-    /// that close a received PO after warehouse reconciliation.
+    /// `submitted` is internal-only. Supplier-facing `ordered` state is entered
+    /// through `markPOSentToSupplier`, which records the durable send audit first.
     private static let validPOTransitions: [String: Set<String>] = [
-        "draft":     ["submitted", "ordered", "cancelled"],
-        "submitted": ["ordered", "cancelled"],
+        "draft":     ["submitted", "cancelled"],
+        "submitted": ["cancelled"],
         "ordered":   ["partial", "received", "cancelled"],
         "partial":   ["received", "cancelled"],
         "received":  ["complete"],
@@ -3229,8 +3229,8 @@ public final class OrdersService: Sendable {
         }
     }
 
-    /// Mark a PO as sent to the supplier — records timestamp, acting user, and optional supplier confirmation number.
-    /// Also advances status from "submitted" → "ordered" since confirmation of send = order placed. (#750)
+    /// Mark a PO as sent to the supplier with a durable audit record.
+    /// Standard order sends advance draft/submitted POs to ordered; pricing requests do not. (#750)
     public func markPOSentToSupplier(
         id: Int64,
         sentByUserId: Int64,
@@ -3239,6 +3239,26 @@ public final class OrdersService: Sendable {
         sendGroupId: String? = nil
     ) throws {
         try db.writer.write { dbConn in
+            guard emailRequestType == "order" || emailRequestType == "pricing" else {
+                throw OrdersError.invalidSupplierTransmission("Supplier transmission type must be 'order' or 'pricing'")
+            }
+
+            guard let row = try Row.fetchOne(
+                dbConn,
+                sql: "SELECT status FROM purchase_orders WHERE id = ? AND deleted_at IS NULL",
+                arguments: [id]
+            ) else {
+                throw OrdersError.purchaseOrderNotFound(id)
+            }
+
+            let oldStatus: String = row["status"] ?? "draft"
+            guard oldStatus == "draft" || oldStatus == "submitted" else {
+                throw OrdersError.invalidSupplierTransmission(
+                    "Cannot send supplier \(emailRequestType) for PO in \(oldStatus) status"
+                )
+            }
+            let newStatus = emailRequestType == "order" ? "ordered" : oldStatus
+
             let now = ISO8601DateFormatter().string(from: Date())
             try dbConn.execute(
                 sql: """
@@ -3248,12 +3268,22 @@ public final class OrdersService: Sendable {
                         supplier_confirmation_num = ?,
                         email_request_type        = ?,
                         send_group_id             = COALESCE(?, send_group_id),
-                        status                    = CASE WHEN status = 'submitted' THEN 'ordered' ELSE status END,
+                        status                    = ?,
                         updated_at                = ?
                     WHERE id = ? AND deleted_at IS NULL
                     """,
-                arguments: [now, sentByUserId, confirmationNumber, emailRequestType, sendGroupId, now, id]
+                arguments: [now, sentByUserId, confirmationNumber, emailRequestType, sendGroupId, newStatus, now, id]
             )
+
+            if oldStatus != newStatus {
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO order_status_history (entity_type, entity_id, old_status, new_status, changed_by, created_at)
+                        VALUES ('purchase_order', ?, ?, ?, ?, datetime('now'))
+                        """,
+                    arguments: [id, oldStatus, newStatus, sentByUserId]
+                )
+            }
         }
     }
 

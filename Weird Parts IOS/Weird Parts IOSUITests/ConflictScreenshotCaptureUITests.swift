@@ -3,6 +3,7 @@ import XCTest
 final class ConflictScreenshotCaptureUITests: XCTestCase {
 
     private var app: XCUIApplication!
+    private let manualOptInMarkerPath = "/tmp/WeirdPartsConflictScreenshotCapture.opt-in"
 
     // MARK: - Setup & Teardown
 
@@ -12,9 +13,15 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
         continueAfterFailure = true
 
         app = XCUIApplication()
-        // Signal both general UI-testing mode and the specific conflict-capture
-        // mode so the app can (now or in the future) seed the required fixtures.
-        app.launchArguments += ["-UITesting", "-UITestingConflictCapture"]
+        // Always signal general UI-testing mode; only manual capture runs get
+        // the specific fixture mode that seeds and suppresses conflict overlays.
+        if let captureScreenshots = ProcessInfo.processInfo.environment["UI_TEST_CONFLICT_SCREENSHOTS"] {
+            app.launchEnvironment["UI_TEST_CONFLICT_SCREENSHOTS"] = captureScreenshots
+        }
+        app.launchArguments += ["-UITesting"]
+        if isManualCaptureOptedIn {
+            app.launchArguments += ["-UITestingConflictCapture"]
+        }
     }
 
     override func tearDownWithError() throws {
@@ -31,16 +38,21 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
     // The test is skipped automatically on a clean install so it never blocks CI.
     // To run it explicitly, set the environment variable before launching the test:
     //
-    //   UI_TEST_CONFLICT_SCREENSHOTS=1 xcodebuild test -scheme "Weird Parts IOS" …
+    //   UI_TEST_CONFLICT_SCREENSHOTS=1 xcodebuild test -scheme "Weird Parts" …
     //
     // In Xcode: Edit Scheme → Test → Arguments → Environment Variables →
     //   Name: UI_TEST_CONFLICT_SCREENSHOTS   Value: 1
+    //
+    // If this Xcode runner does not expose shell environment variables to the
+    // XCTest process, create /tmp/WeirdPartsConflictScreenshotCapture.opt-in
+    // before the focused run and remove it after.
     func testCaptureConflictScreenshots() throws {
-        guard ProcessInfo.processInfo.environment["UI_TEST_CONFLICT_SCREENSHOTS"] == "1" else {
+        guard isManualCaptureOptedIn else {
             throw XCTSkip(
                 "Skipped: set the environment variable UI_TEST_CONFLICT_SCREENSHOTS=1 " +
-                "and ensure the simulator has a seeded admin user (PIN 1234) with " +
-                "pending sync conflicts before running this test."
+                "or create /tmp/WeirdPartsConflictScreenshotCapture.opt-in, then ensure " +
+                "the simulator has a seeded admin user (PIN 1234) with pending sync " +
+                "conflicts before running this test."
             )
         }
 
@@ -60,20 +72,7 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
         XCTAssertTrue(signIn.waitForExistence(timeout: 5))
         signIn.tap()
 
-        // Auth is async, and the post-login Welcome / Quick Tour modals can
-        // appear after a fixed waitForExistence window expires. Poll
-        // adaptively for up to 30s and dismiss whichever modal is currently
-        // visible, until the sync conflict banner becomes hittable.
-        let welcomeCTA = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Got It'")).firstMatch
-        let skipTour = app.buttons["Skip"]
         let reviewButton = app.buttons["syncConflictBanner"]
-        let pollDeadline = Date().addingTimeInterval(30)
-        while Date() < pollDeadline {
-            if reviewButton.exists && reviewButton.isHittable { break }
-            if welcomeCTA.exists && welcomeCTA.isHittable { welcomeCTA.tap(); continue }
-            if skipTour.exists && skipTour.isHittable { skipTour.tap(); continue }
-            Thread.sleep(forTimeInterval: 0.5)
-        }
 
         // Capture dashboard (post-login, banner visible) before tapping Review,
         // so we always have evidence the seed produced unreviewed conflicts even
@@ -83,10 +82,6 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
 
         XCTAssertTrue(reviewButton.waitForExistence(timeout: 12),
                       "No sync conflict banner found — simulator may have no pending sync conflicts.")
-        // Defense-in-depth: a modal could have re-presented between capture and Review tap.
-        if welcomeCTA.exists && welcomeCTA.isHittable { welcomeCTA.tap() }
-        if skipTour.exists && skipTour.isHittable { skipTour.tap() }
-        _ = reviewButton.waitForExistence(timeout: 4)
         XCTAssertTrue(reviewButton.isHittable, "Sync conflict banner exists but is not hittable before tap")
         reviewButton.tap()
 
@@ -153,5 +148,11 @@ final class ConflictScreenshotCaptureUITests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    private var isManualCaptureOptedIn: Bool {
+        ProcessInfo.processInfo.environment["UI_TEST_CONFLICT_SCREENSHOTS"] == "1"
+            || app.launchEnvironment["UI_TEST_CONFLICT_SCREENSHOTS"] == "1"
+            || FileManager.default.fileExists(atPath: manualOptInMarkerPath)
     }
 }
