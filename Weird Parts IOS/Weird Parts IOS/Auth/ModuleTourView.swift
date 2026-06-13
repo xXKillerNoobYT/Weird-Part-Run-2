@@ -61,8 +61,15 @@ struct ModuleTourView: View {
                     .tag(index)
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: .always))
+            .tabViewStyle(.page(indexDisplayMode: dynamicTypeSize.isAccessibilitySize ? .never : .always))
             .frame(height: dynamicTypeSize.isAccessibilitySize ? 360 : 220)
+
+            if dynamicTypeSize.isAccessibilitySize {
+                Text("\(currentPage + 1) of \(pages.count)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Tour page \(currentPage + 1) of \(pages.count)")
+            }
 
             HStack(spacing: 16) {
                 Button("Skip") {

@@ -30,6 +30,10 @@ final class OnboardingAX5LayoutRegressionTests: XCTestCase {
             "Quick Tour page content should reserve AX5 space above the page dots."
         )
         XCTAssertTrue(
+            source.contains(".tabViewStyle(.page(indexDisplayMode: dynamicTypeSize.isAccessibilitySize ? .never : .always))"),
+            "Quick Tour should hide SwiftUI page dots at AX5 so pagination cannot overlap wrapped body copy."
+        )
+        XCTAssertTrue(
             source.contains(".lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 3)"),
             "Quick Tour descriptions should wrap at accessibility sizes instead of truncating."
         )
