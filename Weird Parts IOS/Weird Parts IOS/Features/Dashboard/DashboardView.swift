@@ -10,6 +10,7 @@ import WiredPartCore
 /// All data is fetched on appear, supports pull-to-refresh, and auto-refreshes every 60s.
 struct DashboardView: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     // KPI + alerts state
     @State private var stats = DashboardStats()
@@ -108,6 +109,7 @@ struct DashboardView: View {
                     }
                 }
                 .padding(.vertical)
+                .padding(.bottom, dynamicTypeSize.isAccessibilitySize ? DS.Space.xxxxl : 0)
             }
             .refreshable { await loadData() }
             .background(DS.Background.page)
@@ -142,7 +144,11 @@ struct DashboardView: View {
                     .accessibilityLabel("Help")
                 }
             }
-            .task { appCore.onboardingManager?.markCompleted("dashboard-view-kpis") }
+            .task {
+                if !ProcessInfo.processInfo.arguments.contains("-UITestingWEI936TourActive") {
+                    appCore.onboardingManager?.markCompleted("dashboard-view-kpis")
+                }
+            }
             .navigationDestination(for: DashboardDestination.self) { dest in
                 switch dest {
                 case .scanner:
@@ -155,13 +161,14 @@ struct DashboardView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if showChecklistDismissToast {
+            if showChecklistDismissToast || (isWEI1451DashboardCardFixture && checklistDismissed) {
                 HStack(spacing: DS.Space.sm) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                         .accessibilityHidden(true)
                     Text("Checklist dismissed")
                         .font(.subheadline)
+                        .accessibilityIdentifier("checklistToastMessage")
                     Spacer(minLength: DS.Space.sm)
                     Button("Undo") {
                         checklistDismissToastTask?.cancel()
@@ -171,6 +178,7 @@ struct DashboardView: View {
                         }
                     }
                     .font(.subheadline.weight(.semibold))
+                    .accessibilityIdentifier("checklistUndoDismissToast")
                 }
                 .padding(.horizontal, DS.Space.md)
                 .padding(.vertical, DS.Space.sm)
@@ -179,6 +187,8 @@ struct DashboardView: View {
                 .padding(.horizontal, DS.Space.lg)
                 .padding(.bottom, DS.Space.lg)
                 .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("checklistDismissToast")
+                .accessibilityLabel("Checklist dismissed")
             }
         }
         // Sheet placed OUTSIDE NavigationStack so @Environment(\.dismiss) in sheet content
@@ -212,9 +222,16 @@ struct DashboardView: View {
 
     /// True if the app has no meaningful data — indicates first-launch or empty state.
     private var isFirstLaunchState: Bool {
-        stats.activeJobs == 0 &&
+        if isWEI1451DashboardCardFixture {
+            return true
+        }
+        return stats.activeJobs == 0 &&
         stats.partTypes == 0 &&
         stats.totalStock == 0
+    }
+
+    private var isWEI1451DashboardCardFixture: Bool {
+        ProcessInfo.processInfo.arguments.contains("-UITestingWEI1451DashboardCard")
     }
 
     // MARK: - Getting Started Checklist
@@ -250,14 +267,21 @@ struct DashboardView: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
+                            .padding(8)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("gettingStartedDismissChecklistButton")
                     .accessibilityLabel("Dismiss checklist")
+                    .accessibilityIdentifier("dismissChecklistButton")
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
                 }
 
                 Text("Welcome to WiredPart! Complete these steps to set up your business.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 VStack(spacing: 12) {
                     checklistItem(
@@ -390,7 +414,7 @@ struct DashboardView: View {
         color: Color,
         isComplete: Bool
     ) -> some View {
-        HStack(spacing: 12) {
+        HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 12) {
             ZStack {
                 Circle()
                     .fill(isComplete ? Color.green : color.opacity(0.15))
@@ -414,15 +438,18 @@ struct DashboardView: View {
                     .fontWeight(.medium)
                     .strikethrough(isComplete)
                     .foregroundStyle(isComplete ? .secondary : .primary)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer()
 
-            if !isComplete {
+            if !isComplete && !dynamicTypeSize.isAccessibilitySize {
                 Image(systemName: "chevron.right")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -1081,5 +1108,3 @@ private struct VehicleAlert: Sendable {
     let vehicleNumber: String
     let alertMessage: String
 }
-
-

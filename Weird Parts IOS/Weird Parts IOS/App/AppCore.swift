@@ -942,23 +942,39 @@ final class AppCore: ObservableObject {
             try seedWarehouseLocationsUITestingFixtures(db: db)
         }
 
+        let suppressPostLoginOnboarding = ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard")
+            || ProcessInfo.processInfo.arguments.contains("-UITestingConflictCapture")
+
         if ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard") {
             try seedDispatchBoardUITestingFixtures(db: db)
+        }
+
+        if suppressPostLoginOnboarding {
             UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
             UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
         }
 
-        if ProcessInfo.processInfo.arguments.contains("-UITestingWEI3144JobMaterials") {
+        let uiTestingArgs = ProcessInfo.processInfo.arguments
+        let shouldRunWEI936NotStartedFixture = uiTestingArgs.contains("-UITestingWEI936NotStarted")
+        if shouldRunWEI936NotStartedFixture {
+            try clearWEI936OnboardingFixtureSeedDataIfNeeded(db: db)
+        }
+
+        if uiTestingArgs.contains("-UITestingWEI3144JobMaterials") {
             try seedWEI3144JobMaterialsFixtures(db: db, userId: fixtureUserId)
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("-UITestingStage8Reports") {
+            try seedStage8ReportsUITestingFixtures(db: db, userId: fixtureUserId)
         }
 
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
-        if !ProcessInfo.processInfo.arguments.contains("-UITestingDispatchBoard") {
+        if !suppressPostLoginOnboarding {
             UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
         }
 
-        seedWEI936OnboardingStateIfRequested(userId: fixtureUserId)
+        seedWEI936OnboardingStateIfRequested(args: uiTestingArgs, userId: fixtureUserId)
     }
 
     nonisolated static func uiTestingWEI3144JobMaterialsJobId(db: AppDatabase?) -> Int64? {
@@ -969,6 +985,164 @@ final class AppCore: ObservableObject {
             try Int64.fetchOne(
                 dbConn,
                 sql: "SELECT id FROM jobs WHERE job_number = 'UITEST-MAT-3144' AND deleted_at IS NULL"
+            )
+        }
+    }
+
+    nonisolated static func stage8ReportsUITestAuditSessionId(db: AppDatabase?) -> Int64? {
+        guard ProcessInfo.processInfo.arguments.contains("-UITestingStage8Reports"),
+              let db
+        else { return nil }
+
+        return try? db.writer.read { dbConn in
+            try Int64.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT id
+                    FROM audit_sessions_v2
+                    WHERE notes = 'WEI-3295 Stage 8 reports viewport seed'
+                      AND deleted_at IS NULL
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """
+            )
+        }
+    }
+
+    nonisolated private static func seedStage8ReportsUITestingFixtures(db: AppDatabase, userId: Int64?) throws {
+        guard let userId else { return }
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT OR IGNORE INTO suppliers
+                    (name, contact_name, email, is_active, deleted_at, created_at, updated_at)
+                    VALUES ('WEI-3295 Electrical Supply', 'Stage 8 QA', 'stage8@example.test', 1, NULL, datetime('now'), datetime('now'))
+                    """
+            )
+            let supplierId = try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM suppliers WHERE name = 'WEI-3295 Electrical Supply' AND deleted_at IS NULL"
+            )!
+
+            try dbConn.execute(
+                sql: """
+                    INSERT OR IGNORE INTO part_categories
+                    (name, description, sort_order, is_active, deleted_at, created_at, updated_at)
+                    VALUES ('WEI-3295 Stage 8 Reports', 'Deterministic report viewport fixture category', 0, 1, NULL, datetime('now'), datetime('now'))
+                    """
+            )
+            let categoryId = try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM part_categories WHERE name = 'WEI-3295 Stage 8 Reports' AND deleted_at IS NULL"
+            )!
+
+            try dbConn.execute(
+                sql: """
+                    INSERT OR IGNORE INTO parts
+                    (category_id, part_type, code, name, description, unit_of_measure,
+                     company_cost_price, company_markup_percent, is_active, deleted_at, created_at, updated_at)
+                    VALUES (?, 'general', 'WEI3295-STAGE8', 'WEI-3295 Stage 8 Breaker',
+                            'Seeded part for Stage 8 reports viewport harness', 'each',
+                            42.50, 25.0, 1, NULL, datetime('now'), datetime('now'))
+                    """,
+                arguments: [categoryId]
+            )
+            let partId = try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM parts WHERE code = 'WEI3295-STAGE8' AND deleted_at IS NULL"
+            )!
+
+            try dbConn.execute(
+                sql: """
+                    INSERT OR IGNORE INTO jobs
+                    (job_number, job_name, customer_name, status, priority, job_type,
+                     billing_rate, lead_user_id, created_by, notes, deleted_at, created_at, updated_at)
+                    VALUES ('UITEST-STAGE8-3295', 'WEI-3295 Stage 8 Billing QA Job',
+                            'Stage 8 Fixture Customer', 'active', 'high', 'service',
+                            125.0, ?, ?, 'Seeded for Stage 8 reports viewport verification.', NULL, datetime('now'), datetime('now'))
+                    """,
+                arguments: [userId, userId]
+            )
+            let jobId = try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM jobs WHERE job_number = 'UITEST-STAGE8-3295' AND deleted_at IS NULL"
+            )!
+
+            try dbConn.execute(
+                sql: """
+                    DELETE FROM labor_entries
+                    WHERE notes = 'WEI-3295 Stage 8 reports viewport seed'
+                    """
+            )
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours,
+                     status, notes, deleted_at, created_at)
+                    VALUES (?, ?, datetime('now', '-1 day'), datetime('now', '-1 day', '+9 hours'),
+                            8.0, 1.0, 'completed', 'WEI-3295 Stage 8 reports viewport seed', NULL, datetime('now', '-1 day'))
+                    """,
+                arguments: [userId, jobId]
+            )
+
+            try dbConn.execute(
+                sql: """
+                    INSERT OR IGNORE INTO purchase_orders
+                    (po_number, supplier_id, status, order_date, subtotal, tax_amount, shipping_cost,
+                     total_cost, notes, submitted_by, deleted_at, created_at, updated_at)
+                    VALUES ('PO-WEI3295-STAGE8', ?, 'ordered', date('now', '-1 day'), 127.50, 0, 0,
+                            127.50, 'WEI-3295 Stage 8 reports viewport seed', ?, NULL, datetime('now', '-1 day'), datetime('now'))
+                    """,
+                arguments: [supplierId, userId]
+            )
+            let poId = try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM purchase_orders WHERE po_number = 'PO-WEI3295-STAGE8' AND deleted_at IS NULL"
+            )!
+            try dbConn.execute(
+                sql: "DELETE FROM po_line_items WHERE po_id = ?",
+                arguments: [poId]
+            )
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO po_line_items
+                    (po_id, part_id, qty_ordered, qty_received, unit_cost, status, notes, deleted_at, created_at)
+                    VALUES (?, ?, 3, 0, 42.50, 'pending', 'WEI-3295 Stage 8 reports viewport seed', NULL, datetime('now'))
+                    """,
+                arguments: [poId, partId]
+            )
+
+            try dbConn.execute(
+                sql: """
+                    DELETE FROM stock
+                    WHERE part_id = ? AND location_type = 'warehouse' AND location_id = 1
+                    """,
+                arguments: [partId]
+            )
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO stock
+                    (part_id, location_type, location_id, qty, supplier_id, last_counted, counted_qty, deleted_at, updated_at)
+                    VALUES (?, 'warehouse', 1, 12, ?, datetime('now'), 9, NULL, datetime('now'))
+                    """,
+                arguments: [partId, supplierId]
+            )
+
+            try dbConn.execute(
+                sql: """
+                    DELETE FROM audit_sessions_v2
+                    WHERE notes = 'WEI-3295 Stage 8 reports viewport seed'
+                    """,
+            )
+
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO audit_sessions_v2
+                    (session_type, started_by, status, parts_counted, discrepancies_found, notes, started_at, deleted_at)
+                    VALUES ('count', ?, 'active', 1, 1, 'WEI-3295 Stage 8 reports viewport seed', datetime('now'), NULL)
+                    """,
+                arguments: [userId]
             )
         }
     }
@@ -1128,31 +1302,46 @@ final class AppCore: ObservableObject {
         }
     }
 
-    nonisolated private static func seedWEI936OnboardingStateIfRequested(userId: Int64?) {
-        let args = ProcessInfo.processInfo.arguments
+    nonisolated private static func clearWEI936OnboardingFixtureSeedDataIfNeeded(db: AppDatabase) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: "DELETE FROM job_parts_orders WHERE order_number = 'UITEST-JPO-001'")
+            try dbConn.execute(sql: "DELETE FROM jobs WHERE job_number = 'UITEST-JPO-001'")
+            try dbConn.execute(sql: "DELETE FROM parts WHERE code IN ('UITEST-QA-CONDUIT', 'UITEST-QA-WIRE')")
+            try dbConn.execute(sql: "DELETE FROM part_categories WHERE name = 'UITesting Electrical'")
+            try dbConn.execute(sql: "DELETE FROM _conflict_log WHERE table_name IN ('parts','jobs') AND record_id IN ('1001', '1002', '2001')")
+        }
+    }
+
+    nonisolated private static func seedWEI936OnboardingStateIfRequested(args: [String], userId: Int64?) {
         guard args.contains("-UITestingWEI936TourActive") ||
             args.contains("-UITestingWEI936RequiredDone") ||
-            args.contains("-UITestingWEI936DismissedChecklist") else { return }
+            args.contains("-UITestingWEI1451DashboardCard") ||
+            args.contains("-UITestingWEI1451DismissedToast") ||
+            args.contains("-UITestingWEI936DismissedChecklist") ||
+            args.contains("-UITestingWEI936NotStarted") ||
+            args.contains("-UITestingWEI936Celebration") else { return }
 
         UserDefaults.standard.removeObject(forKey: "onboarding_checklist_dismissed")
+        UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
 
         if let userId {
             let storageKey = "onboarding_progress_\(userId)"
-            UserDefaults.standard.set(true, forKey: storageKey + "_active")
+            let shouldActivateTour = !args.contains("-UITestingWEI936NotStarted")
+            UserDefaults.standard.set(shouldActivateTour, forKey: storageKey + "_active")
 
             var completedTasks: Set<String> = []
-            if args.contains("-UITestingWEI936TourActive") {
-                completedTasks.insert("dashboard-view-kpis")
-            }
             if args.contains("-UITestingWEI936RequiredDone") {
                 completedTasks.formUnion(["dashboard-view-kpis", "dashboard-tap-kpi"])
             }
-            if let data = try? JSONEncoder().encode(completedTasks) {
+            if shouldActivateTour, let data = try? JSONEncoder().encode(completedTasks) {
                 UserDefaults.standard.set(data, forKey: storageKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: storageKey)
             }
         }
 
-        if args.contains("-UITestingWEI936DismissedChecklist") {
+        if args.contains("-UITestingWEI936DismissedChecklist") ||
+            args.contains("-UITestingWEI1451DismissedToast") {
             UserDefaults.standard.set(true, forKey: "onboarding_checklist_dismissed")
         }
     }

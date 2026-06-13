@@ -443,6 +443,34 @@ struct IOSAuditPage: View {
                 }
             }
 
+            // My Verification Assignments link
+            Section("My Assignments") {
+                NavigationLink {
+                    IOSMyVerificationsPage()
+                        .environmentObject(appCore)
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "person.2.badge.gearshape")
+                            .foregroundStyle(.orange)
+                            .frame(width: 28)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("My Verification Assignments")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text("Submit counts for parts assigned to you")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                    }
+                }
+            }
+
             // Organization Audit link
             Section("Organization") {
                 NavigationLink {
