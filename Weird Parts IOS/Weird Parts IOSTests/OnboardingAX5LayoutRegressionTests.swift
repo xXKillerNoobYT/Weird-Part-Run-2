@@ -22,8 +22,12 @@ final class OnboardingAX5LayoutRegressionTests: XCTestCase {
         let source = try Self.readSource("Auth/ModuleTourView.swift")
 
         XCTAssertTrue(
-            source.contains(".frame(height: dynamicTypeSize.isAccessibilitySize ? 360 : 220)"),
+            source.contains(".frame(height: dynamicTypeSize.isAccessibilitySize ? 430 : 220)"),
             "Quick Tour page height should grow at AX5 so body copy does not collide with pagination."
+        )
+        XCTAssertTrue(
+            source.contains("if !dynamicTypeSize.isAccessibilitySize"),
+            "Quick Tour should not spend scarce AX5 vertical space on centering spacers."
         )
         XCTAssertTrue(
             source.contains(".padding(.bottom, dynamicTypeSize.isAccessibilitySize ? 56 : 24)"),

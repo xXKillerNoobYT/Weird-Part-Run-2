@@ -26,7 +26,9 @@ struct ModuleTourView: View {
 
     private var tourOverlay: some View {
         VStack(spacing: dynamicTypeSize.isAccessibilitySize ? 16 : 20) {
-            Spacer()
+            if !dynamicTypeSize.isAccessibilitySize {
+                Spacer()
+            }
 
             Text("Quick Tour")
                 .font(.title2)
@@ -62,7 +64,7 @@ struct ModuleTourView: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: dynamicTypeSize.isAccessibilitySize ? .never : .always))
-            .frame(height: dynamicTypeSize.isAccessibilitySize ? 360 : 220)
+            .frame(height: dynamicTypeSize.isAccessibilitySize ? 430 : 220)
 
             if dynamicTypeSize.isAccessibilitySize {
                 Text("\(currentPage + 1) of \(pages.count)")
@@ -104,8 +106,11 @@ struct ModuleTourView: View {
             }
             .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 24 : 32)
 
-            Spacer()
+            if !dynamicTypeSize.isAccessibilitySize {
+                Spacer()
+            }
         }
+        .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 32 : 0)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.ultraThinMaterial)
     }
