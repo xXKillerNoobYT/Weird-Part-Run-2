@@ -70,6 +70,17 @@
          </TestableReference>
          <TestableReference
             skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "08F2BE4D2F67A53700944E97"
+               BuildableName = "Weird PartsUITests.xctest"
+               BlueprintName = "Weird PartsUITests"
+               ReferencedContainer = "container:Weird Parts IOS/Weird Parts.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
             parallelizable = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
