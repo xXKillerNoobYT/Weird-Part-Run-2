@@ -542,14 +542,15 @@ struct WarehouseDashboardPage: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
-                .accessibilityIdentifier(accessibilityIdentifier)
-                .accessibilityLabel("\(title): \(value)")
         }
         .frame(maxWidth: .infinity)
         .frame(minHeight: 74)
         .padding(.vertical, 10)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .accessibilityElement(children: .ignore)
+        .accessibilityIdentifier(accessibilityIdentifier)
+        .accessibilityLabel("\(title): \(value)")
     }
 
     // MARK: - Quick Actions
