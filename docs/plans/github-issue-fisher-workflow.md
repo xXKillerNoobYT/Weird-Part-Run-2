@@ -16,7 +16,7 @@ This workflow turns the WEI-2441 "keep GitHub issue work moving" prompt into a r
 
 The repo does not use a root `plans/` directory. If a caller passes a missing or empty plan directory, the runner exits with an error instead of falling back to placeholders.
 
-## Priority Order
+## Work Order
 
 Every run enforces this order:
 
@@ -24,7 +24,9 @@ Every run enforces this order:
 2. `todo`: open issues with priority, triage, bug, or enhancement labels
 3. `backlog`: remaining open issues
 
-The runner selects at most three actions per pass. Within a bucket it prefers higher priority labels first, then older updated issues.
+The runner selects at most three actions per pass. Within a bucket it prefers higher priority labels first when present, then older updated issues.
+
+Priority labels are optional severity signals, not a filing requirement. An issue can move through the workflow with only work-type labels such as `bug`, `enhancement`, `triage`, or `blocked`. Missing `priority:P*` labels do not fail a fisher run and do not require mass relabeling. Use a priority label only when severity materially changes scheduling, release risk, or escalation.
 
 Backlog entries are never treated as promotions by the report itself. When the pass reaches backlog because blocked/todo supply fewer than the requested limit, those entries are labeled as non-promotion candidates and require a separate human or approved-routine confirmation of concrete plan/repo evidence before any GitHub or Paperclip mutation.
 
@@ -64,4 +66,5 @@ Successful verification proves:
 - `docs/plans/` exists and contains markdown plans;
 - GitHub issues can be read with `gh`;
 - actions are ordered `blocked -> todo -> backlog`;
+- priority-label coverage is reported without requiring every GitHub issue to have `priority:P0` through `priority:P5`;
 - the local run report is written without creating fake findings, committing generated artifacts, or mutating GitHub.

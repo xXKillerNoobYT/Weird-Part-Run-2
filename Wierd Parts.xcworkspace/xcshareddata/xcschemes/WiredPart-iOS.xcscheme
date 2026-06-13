@@ -28,9 +28,9 @@
             buildForAnalyzing = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "08F2BE4D2F67A53700944E97"
-               BuildableName = "Weird PartsUITests.xctest"
-               BlueprintName = "Weird PartsUITests"
+               BlueprintIdentifier = "08F2BE432F67A53700944E97"
+               BuildableName = "Weird Parts IOSTests.xctest"
+               BlueprintName = "Weird Parts IOSTests"
                ReferencedContainer = "container:Weird Parts IOS/Weird Parts.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -49,8 +49,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "08F2BE432F67A53700944E97"
-               BuildableName = "Weird PartsTests.xctest"
-               BlueprintName = "Weird PartsTests"
+               BuildableName = "Weird Parts IOSTests.xctest"
+               BlueprintName = "Weird Parts IOSTests"
                ReferencedContainer = "container:Weird Parts IOS/Weird Parts.xcodeproj">
             </BuildableReference>
          </TestableReference>
@@ -63,17 +63,6 @@
                BuildableName = "WiredPartCoreTests"
                BlueprintName = "WiredPartCoreTests"
                ReferencedContainer = "container:core">
-            </BuildableReference>
-         </TestableReference>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "08F2BE4D2F67A53700944E97"
-               BuildableName = "Weird PartsUITests.xctest"
-               BlueprintName = "Weird PartsUITests"
-               ReferencedContainer = "container:Weird Parts IOS/Weird Parts.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>

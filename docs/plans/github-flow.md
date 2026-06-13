@@ -217,6 +217,21 @@ Separate stop of just GITHUB FLOW: `GITHUB FLOW STOP` / `GITHUB FLOW RESUME` —
 5. Type `GITHUB FLOW STOP` — same behavior but scoped to just this routine.
 6. Verify `mcp__scheduled-tasks__list_scheduled_tasks` shows `github-flow-loop` enabled with cron `13,43 6-22 * * *`.
 
+## Routine Checklist Verification
+
+Every GITHUB FLOW change must also satisfy this checklist before closeout:
+
+- **Cursor safety:** the run records or preserves `last_comment_cursor` so repeated firings do not reprocess old activity.
+- **Branch scope:** PR and branch sweeps state whether they covered `main`, open PR branches, feature branches without PRs, Copilot branches, and release/hotfix branches.
+- **Public-comment safety:** comments exclude secrets, private credentials, and unsupported claims; ambiguous human comments route to Q&A instead of a speculative public reply.
+- **Copilot governance:** every considered trigger is classified as Tier 1, Tier 2, or Tier 3, rate-limited, and logged in `docs/github-flow-tracker.md`; Tier 2/3 actions require user approval before posting.
+- **Security routing:** Dependabot, CodeQL, secret scanning, and other bot/security activity routes through the security sweep path rather than ordinary human-comment handling.
+- **Stop/resume:** shared stop plus GITHUB-FLOW-only stop are tested or assigned to a reviewer/monitor when local verification is unavailable.
+- **Evidence:** closeout names the command/API query run, tracker/heartbeat files touched, GitHub issue/PR/comment URLs affected, residual risk, and next owner.
+- **GitHub sync:** closeout states `not applicable with reason`, `existing PR/CI URL`, or `pushed/PR/commented URL`.
+
+If checklist evidence cannot be produced in the current heartbeat, leave the Paperclip issue `in_review` only with a real reviewer/monitor path, or `blocked` with the named owner and unblock action.
+
 ---
 
 ## Risks and mitigations
