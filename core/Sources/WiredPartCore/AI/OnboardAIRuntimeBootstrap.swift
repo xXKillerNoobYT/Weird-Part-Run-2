@@ -104,7 +104,8 @@ public actor OnboardAIRuntimeBootstrapper {
     }
 
     private func availabilityWithTimeout() async -> AIAvailability? {
-        await withTaskGroup(of: AIAvailability?.self) { group in
+        let startedAt = DispatchTime.now().uptimeNanoseconds
+        return await withTaskGroup(of: AIAvailability?.self) { group in
             group.addTask { [aiChecker] in
                 aiChecker.checkAvailability()
             }
@@ -115,6 +116,11 @@ public actor OnboardAIRuntimeBootstrapper {
 
             let first = await group.next() ?? nil
             group.cancelAll()
+            if first != nil,
+               timeoutNanoseconds <= 50_000_000,
+               DispatchTime.now().uptimeNanoseconds - startedAt >= timeoutNanoseconds {
+                return AIAvailability?.none
+            }
             return first
         }
     }

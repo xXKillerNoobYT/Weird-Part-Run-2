@@ -848,7 +848,8 @@ public final class WarehouseService: Sendable {
         verifiedBy: Int64? = nil,
         scanConfirmed: Bool = false,
         gpsLat: Double? = nil,
-        gpsLng: Double? = nil
+        gpsLng: Double? = nil,
+        validatePath: Bool = true
     ) throws -> Int64 {
         try db.writer.read { dbConn in
             try ServicePermissionGate.requirePermission(dbConn, userId: performedBy, permissionKey: "move_stock_warehouse")
@@ -883,10 +884,12 @@ public final class WarehouseService: Sendable {
                 guard jobExists else { throw WarehouseError.jobNotFound(jid) }
             }
 
-            try Self.validateStockMutationPath(
-                fromLocationType: fromLocationType,
-                toLocationType: toLocationType
-            )
+            if validatePath {
+                try Self.validateStockMutationPath(
+                    fromLocationType: fromLocationType,
+                    toLocationType: toLocationType
+                )
+            }
 
             try dbConn.execute(
                 sql: """
@@ -2340,7 +2343,8 @@ public final class WarehouseService: Sendable {
             movementType: StockMovement.MovementType.stockReturn.rawValue,
             reason: isDamaged ? "damaged" : (reason ?? "return"),
             notes: notes,
-            performedBy: performedBy
+            performedBy: performedBy,
+            validatePath: false
         )
     }
 
