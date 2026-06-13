@@ -491,6 +491,47 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     }
 
     @MainActor
+    func testWEI3498WarehouseLocationsSelectedSubtabAutoScrollsIntoView() throws {
+        app.terminate()
+        app = XCUIApplication()
+        configureUITestingEnvironment(app)
+        app.launchArguments += [
+            "-UITesting",
+            "-UITestingWEI936AutoLogin",
+            "-UITestingWarehouseLocations"
+        ]
+        app.launch()
+
+        XCTAssertTrue(
+            app.navigationBars["Warehouse"].waitForExistence(timeout: 30) ||
+                app.staticTexts["Warehouse"].waitForExistence(timeout: 30),
+            "Warehouse module should open without the manual login/PIN route"
+        )
+
+        let selectedLocationsSubtab = app.buttons["subtab_warehouse-locations"]
+        XCTAssertTrue(
+            selectedLocationsSubtab.waitForExistence(timeout: 10),
+            "Warehouse Locations sub-tab should exist after direct route selection"
+        )
+        XCTAssertTrue(
+            selectedLocationsSubtab.isHittable,
+            "Selected off-screen Warehouse Locations sub-tab should be auto-scrolled into the narrow iPhone viewport"
+        )
+
+        XCTAssertTrue(
+            app.buttons["Shelving"].waitForExistence(timeout: 10) ||
+                app.staticTexts["UITesting Shelf A"].waitForExistence(timeout: 10),
+            "Warehouse Locations content should render after the auto-scrolled selected sub-tab is visible"
+        )
+
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = "WEI-3498 warehouse locations selected subtab visible"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    @MainActor
     func testWEI2475WarehouseLocationsDirectRouteReachesSeededFloorPlan() throws {
         app.terminate()
         app = XCUIApplication()
