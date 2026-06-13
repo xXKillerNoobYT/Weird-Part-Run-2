@@ -39,7 +39,7 @@ struct E2ETestHelpers {
         AuthService.resetAllLoginAttempts()
         let db = try AppDatabase.openInMemoryDatabase()
 
-        let auth = AuthService(db: db)
+        let auth = AuthService(db: db, hashingProfile: .test)
         let settings = SettingsService(db: db)
         let parts = PartsService(db: db, auth: auth)
         let warehouse = WarehouseService(db: db)

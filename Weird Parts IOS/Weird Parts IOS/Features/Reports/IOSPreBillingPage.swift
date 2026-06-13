@@ -198,6 +198,7 @@ struct IOSPreBillingPage: View {
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(preBillingAccessibilityLabel(row))
+        .accessibilityIdentifier("pre-billing-row-\(row.jobNumber)")
     }
 
     // MARK: - Computed
