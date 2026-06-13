@@ -33,6 +33,25 @@ final class OrdersSessionUnavailableRegressionTests: XCTestCase {
         )
     }
 
+    func testSubmittedPODetailDoesNotExposeDirectMarkOrderedAction() throws {
+        let poDetailSource = try Self.readOrdersSource(named: "IOSPODetailPage.swift")
+        let directOrderedLabel = "Mark " + "Ordered"
+        let directOrderedTransition = "transitionPO(to: " + "\"ordered\")"
+
+        XCTAssertFalse(
+            poDetailSource.contains(directOrderedLabel),
+            "Submitted POs should only advance to ordered through Send to Supplier / markPOSentToSupplier."
+        )
+        XCTAssertFalse(
+            poDetailSource.contains(directOrderedTransition),
+            "PO detail UI must not call updatePOStatus(status: \"ordered\") through transitionPO."
+        )
+        XCTAssertTrue(
+            poDetailSource.contains("activeSheet = .sendToSupplier"),
+            "Submitted PO detail should retain the Send to Supplier path."
+        )
+    }
+
     private static func readOrdersSource(named filename: String, file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL

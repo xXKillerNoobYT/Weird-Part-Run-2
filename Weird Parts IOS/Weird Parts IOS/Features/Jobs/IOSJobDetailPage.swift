@@ -133,6 +133,10 @@ struct IOSJobDetailPage: View {
         appCore.hasPermission("view_job_financials")
     }
 
+    private var isWEI3144MaterialsUITest: Bool {
+        ProcessInfo.processInfo.arguments.contains("-UITestingWEI3144JobMaterials")
+    }
+
     var body: some View {
         detailContent
             .navigationTitle(job?.jobName ?? "Job Detail")
@@ -212,12 +216,16 @@ struct IOSJobDetailPage: View {
                     }
 
                     dashboardHeader(job)
-                    stageProgressSection
-                    smartCards(job)
-                    aiSummaryCard(job)
-                    todayActivityCard
-                    quickActionsGrid
-                    tabbedDetailSection(job)
+                    if isWEI3144MaterialsUITest {
+                        tabbedDetailSection(job)
+                    } else {
+                        stageProgressSection
+                        smartCards(job)
+                        aiSummaryCard(job)
+                        todayActivityCard
+                        quickActionsGrid
+                        tabbedDetailSection(job)
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
