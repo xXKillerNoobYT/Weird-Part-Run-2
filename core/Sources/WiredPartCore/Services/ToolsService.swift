@@ -418,10 +418,6 @@ public final class ToolsService: Sendable {
     /// Logs the status change in `tool_change_log` with `performedBy` for
     /// audit traceability (#272).
     public func markToolMaintenance(toolId: Int64, performedBy: Int64) throws {
-        try db.writer.read { dbConn in
-            try ServicePermissionGate.requirePermission(dbConn, userId: performedBy, permissionKey: "maintain_tools")
-        }
-
         try db.writer.write { dbConn in
             // FK-orphan guards mirror the pattern in other write methods.
             let toolExists = (try Int.fetchOne(dbConn, sql: """
@@ -432,6 +428,7 @@ public final class ToolsService: Sendable {
                 SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [performedBy]) ?? 0) > 0
             guard userExists else { throw ToolsError.userNotFound(performedBy) }
+            try ServicePermissionGate.requirePermission(dbConn, userId: performedBy, permissionKey: "maintain_tools")
 
             // Capture old status before flipping so the log entry is meaningful.
             let oldStatus = try String.fetchOne(dbConn, sql: """
@@ -784,10 +781,6 @@ public final class ToolsService: Sendable {
     public func checkoutToolWithCondition(
         toolId: Int64, userId: Int64, condition: String, notes: String? = nil
     ) throws {
-        try db.writer.read { dbConn in
-            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "checkout_tools")
-        }
-
         guard !condition.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw ToolsError.requiredFieldEmpty("condition")
         }
@@ -804,6 +797,7 @@ public final class ToolsService: Sendable {
                 SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [userId]) ?? 0) > 0
             guard userExists else { throw ToolsError.userNotFound(userId) }
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "checkout_tools")
 
             // Update tool status + condition rating
             let conditionRating = Self.conditionToRating(condition)
@@ -833,10 +827,6 @@ public final class ToolsService: Sendable {
     public func returnToolWithCondition(
         toolId: Int64, userId: Int64, condition: String, notes: String? = nil
     ) throws {
-        try db.writer.read { dbConn in
-            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "checkout_tools")
-        }
-
         guard !condition.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw ToolsError.requiredFieldEmpty("condition")
         }
@@ -853,6 +843,7 @@ public final class ToolsService: Sendable {
                 SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [userId]) ?? 0) > 0
             guard userExists else { throw ToolsError.userNotFound(userId) }
+            try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "checkout_tools")
 
             let conditionRating = Self.conditionToRating(condition)
             try dbConn.execute(sql: """
@@ -1496,10 +1487,6 @@ public final class ToolsService: Sendable {
         performedBy: Int64, conditionBefore: String?, conditionAfter: String?,
         notes: String?, cost: Double?
     ) throws -> Int64 {
-        try db.writer.read { dbConn in
-            try ServicePermissionGate.requirePermission(dbConn, userId: performedBy, permissionKey: "maintain_tools")
-        }
-
         return try db.writer.write { dbConn in
             // Guard: tool must exist and not be tombstoned — otherwise the
             // INSERT INTO tool_maintenance_records below would create an orphan record.
@@ -1515,6 +1502,7 @@ public final class ToolsService: Sendable {
                 SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [performedBy]) ?? 0) > 0
             guard performerExists else { throw ToolsError.userNotFound(performedBy) }
+            try ServicePermissionGate.requirePermission(dbConn, userId: performedBy, permissionKey: "maintain_tools")
 
             // Ensure a default maintenance type exists for the FK constraint
             let typeCount = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM tool_maintenance_types") ?? 0
