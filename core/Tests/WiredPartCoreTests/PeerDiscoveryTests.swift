@@ -58,4 +58,21 @@ struct PeerDiscoveryTests {
         let peers = discovery.getPeers()
         #expect(peers.isEmpty)
     }
+
+    @Test("PeerDiscovery advertises existing LAN server port without opening a second listener")
+    func testAdvertisingDoesNotOpenDedicatedListener() {
+        let discovery = PeerDiscovery(
+            deviceId: "dev-001",
+            companyId: "company-abc",
+            deviceName: "Test Device",
+            port: 9090
+        )
+
+        discovery.start()
+        Thread.sleep(forTimeInterval: 0.1)
+
+        #expect(discovery.debugUsesDedicatedAdvertisingListener() == false)
+
+        discovery.stop()
+    }
 }
