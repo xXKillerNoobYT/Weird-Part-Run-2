@@ -8,7 +8,7 @@ Usage:
 
 Runs one GitHub issue-fisher pass:
   1. verifies the canonical plan directory exists and is non-empty;
-  2. classifies open GitHub issues in priority order: blocked, todo, backlog;
+  2. classifies open GitHub issues in work order: blocked, todo, backlog;
   3. performs an evidence scan against repo plans, DevTODOs, and code markers;
   4. writes a dated report with 1-3 issue-moving actions.
 
@@ -111,6 +111,14 @@ jq -n \
     elif (($labelNames | any(test("^priority:P[0-3]$"))) or ($labelNames | index("triage")) or ($labelNames | index("bug")) or ($labelNames | index("enhancement"))) then "todo"
     else "backlog"
     end;
+  def priority_rank($labelNames):
+    if ($labelNames | index("priority:P0")) then 0
+    elif ($labelNames | index("priority:P1")) then 1
+    elif ($labelNames | index("priority:P2")) then 2
+    elif ($labelNames | index("priority:P3")) then 3
+    elif ($labelNames | index("priority:P4")) then 4
+    elif ($labelNames | index("priority:P5")) then 5
+    else 6 end;
   $issues
   | map(. as $issue | ([$issue.labels[].name]) as $labelNames | $issue + {bucket: bucket($labelNames), labelNames: $labelNames})
   | group_by(.bucket)
@@ -118,11 +126,7 @@ jq -n \
       bucket: .[0].bucket,
       items: (
         sort_by(
-          if (.labelNames | index("priority:P0")) then 0
-          elif (.labelNames | index("priority:P1")) then 1
-          elif (.labelNames | index("priority:P2")) then 2
-          elif (.labelNames | index("priority:P3")) then 3
-          else 4 end,
+          priority_rank(.labelNames),
           .updatedAt
         )
       )
@@ -136,7 +140,7 @@ jq -n \
       issue: ("#" + (.number | tostring)),
       title,
       url,
-      evidence: ("Open GitHub issue classified as " + .bucket + " from labels: " + ((.labelNames | join(", ")) // "none")),
+      evidence: ("Open GitHub issue classified as " + .bucket + " from work labels: " + (((.labelNames | map(select(test("^priority:P[0-5]$") | not))) | join(", ")) // "none") + ". Priority labels are optional severity signals only."),
       nextAction: (
         if .bucket == "blocked" then "Resolve or replace the blocker before starting new implementation."
         elif .bucket == "todo" then "Assign the smallest implementation owner or move into an active Paperclip child issue."
@@ -165,6 +169,9 @@ jq -Rn '
 
 ACTION_COUNT="$(jq 'length' "$ACTIONS_JSON")"
 FINDING_COUNT="$(jq 'length' "$FINDINGS_JSON")"
+OPEN_ISSUE_COUNT="$(jq 'length' "$ISSUES_JSON")"
+PRIORITY_LABEL_COUNT="$(jq '[.[] | select([.labels[].name] | any(test("^priority:P[0-5]$")))] | length' "$ISSUES_JSON")"
+UNPRIORITIZED_COUNT="$((OPEN_ISSUE_COUNT - PRIORITY_LABEL_COUNT))"
 
 {
   echo "# GitHub Issue Fisher Report"
@@ -173,7 +180,9 @@ FINDING_COUNT="$(jq 'length' "$FINDINGS_JSON")"
   printf -- "- Run timestamp (UTC): \`%s\`\n" "$STAMP"
   printf -- "- Mode: \`%s\`\n" "$([[ "$DRY_RUN" -eq 1 ]] && echo dry-run || echo report-only)"
   printf -- "- Plan source: \`%s\` (%s markdown files)\n" "$PLANS_DIR" "$PLAN_COUNT"
-  printf -- "- Priority order: \`blocked -> todo -> backlog\`\n"
+  printf -- "- Work order: \`blocked -> todo -> backlog\`\n"
+  printf -- "- Open issues with optional priority labels: \`%s/%s\`\n" "$PRIORITY_LABEL_COUNT" "$OPEN_ISSUE_COUNT"
+  printf -- "- Open issues without priority labels: \`%s\`\n" "$UNPRIORITIZED_COUNT"
   printf -- "- Selected actions: \`%s\`\n" "$ACTION_COUNT"
   printf -- "- Evidence findings sampled: \`%s\`\n" "$FINDING_COUNT"
   echo
@@ -205,6 +214,7 @@ FINDING_COUNT="$(jq 'length' "$FINDINGS_JSON")"
   echo
   echo "- This run refuses to proceed when the plan directory is missing or empty."
   echo "- The workflow selects at most 3 actions per run."
+  printf '%s\n' '- GitHub priority labels are optional severity signals. Missing `priority:P*` labels do not fail the run and do not block issue movement.'
   echo "- Backlog selections are non-promotion candidates until a human or approved routine confirms concrete plan/repo evidence."
   echo "- Reports are evidence; GitHub mutation still requires an explicit follow-up owner or approved routine path."
 } > "$REPORT_MD"
