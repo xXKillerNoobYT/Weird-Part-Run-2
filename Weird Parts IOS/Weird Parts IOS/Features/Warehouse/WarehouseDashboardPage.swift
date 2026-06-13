@@ -490,20 +490,29 @@ struct WarehouseDashboardPage: View {
                 title: "Audit Score",
                 value: "\(Int(warehouseScorePercent.rounded()))%",
                 icon: "gauge.with.dots.needle.bottom.50percent",
-                color: scoreColor(warehouseScorePercent)
+                color: scoreColor(warehouseScorePercent),
+                accessibilityIdentifier: "warehouseKPIAuditScore"
             )
-            miniKPI(title: "Total Stock", value: "\(totalStock)", icon: "shippingbox.fill", color: .blue)
+            miniKPI(
+                title: "Total Stock",
+                value: "\(totalStock)",
+                icon: "shippingbox.fill",
+                color: .blue,
+                accessibilityIdentifier: "warehouseKPITotalStock"
+            )
             miniKPI(
                 title: "Health",
                 value: "\(healthPct)%",
                 icon: "heart.fill",
-                color: healthPct >= 80 ? .green : healthPct >= 50 ? .orange : .red
+                color: healthPct >= 80 ? .green : healthPct >= 50 ? .orange : .red,
+                accessibilityIdentifier: "warehouseKPIHealth"
             )
             miniKPI(
                 title: "Shortfalls",
                 value: "\(shortfalls)",
                 icon: "exclamationmark.triangle.fill",
-                color: shortfalls > 0 ? .red : .green
+                color: shortfalls > 0 ? .red : .green,
+                accessibilityIdentifier: "warehouseKPIShortfalls"
             )
         }
     }
@@ -512,7 +521,13 @@ struct WarehouseDashboardPage: View {
         dynamicTypeSize.isAccessibilitySize ? 240 : 150
     }
 
-    private func miniKPI(title: String, value: String, icon: String, color: Color) -> some View {
+    private func miniKPI(
+        title: String,
+        value: String,
+        icon: String,
+        color: Color,
+        accessibilityIdentifier: String
+    ) -> some View {
         VStack(spacing: 4) {
             Image(systemName: icon)
                 .font(.caption)
@@ -521,19 +536,20 @@ struct WarehouseDashboardPage: View {
             Text(value)
                 .font(.headline)
                 .fontWeight(.bold)
+                .accessibilityHidden(true)
             Text(title)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
+                .accessibilityIdentifier(accessibilityIdentifier)
+                .accessibilityLabel("\(title): \(value)")
         }
         .frame(maxWidth: .infinity)
         .frame(minHeight: 74)
         .padding(.vertical, 10)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(title): \(value)")
     }
 
     // MARK: - Quick Actions

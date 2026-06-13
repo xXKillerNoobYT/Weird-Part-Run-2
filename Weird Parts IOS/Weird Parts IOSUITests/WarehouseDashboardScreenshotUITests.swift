@@ -2,6 +2,8 @@ import UIKit
 import XCTest
 
 final class WarehouseDashboardScreenshotUITests: XCTestCase {
+    private static let uiTestingPIN = "8396"
+
     override func setUpWithError() throws {
         continueAfterFailure = false
     }
@@ -9,42 +11,72 @@ final class WarehouseDashboardScreenshotUITests: XCTestCase {
     @MainActor
     func testWarehouseDashboardScreenshot() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-UITesting"]
+        app.launchEnvironment["WEIRD_PARTS_UI_TEST_PIN"] = Self.uiTestingPIN
+        app.launchArguments += ["-UITesting", "-UITestingWEI936AutoLogin"]
         app.launch()
 
         navigateToWarehouse(in: app)
 
-        XCTAssertTrue(
-            app.staticTexts["Audit Score"].waitForExistence(timeout: 10),
-            "Warehouse dashboard should show the Audit Score KPI"
-        )
-        XCTAssertTrue(app.staticTexts["Total Stock"].exists, "Warehouse dashboard should show the Total Stock KPI")
-        XCTAssertTrue(app.staticTexts["Health"].exists, "Warehouse dashboard should show the Health KPI")
-        XCTAssertTrue(app.staticTexts["Shortfalls"].exists, "Warehouse dashboard should show the Shortfalls KPI")
+        assertKPIExists(in: app, identifier: "warehouseKPIAuditScore", title: "Audit Score")
+        assertKPIExists(in: app, identifier: "warehouseKPITotalStock", title: "Total Stock")
+        assertKPIExists(in: app, identifier: "warehouseKPIHealth", title: "Health")
+        assertKPIExists(in: app, identifier: "warehouseKPIShortfalls", title: "Shortfalls")
 
         try writeScreenshot(app.screenshot())
     }
 
+    private func assertKPIExists(
+        in app: XCUIApplication,
+        identifier: String,
+        title: String,
+        timeout: TimeInterval = 10
+    ) {
+        let kpi = app.staticTexts[identifier].firstMatch
+        let titleText = app.staticTexts[title].firstMatch
+        let deadline = Date().addingTimeInterval(timeout)
+        let scrollView = app.scrollViews.firstMatch
+        while !kpi.exists, !titleText.exists, Date() < deadline {
+            if scrollView.exists {
+                scrollView.swipeUp()
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+        XCTAssertTrue(
+            kpi.exists || titleText.exists,
+            "Warehouse dashboard should expose the \(title) KPI"
+        )
+    }
+
     private func navigateToWarehouse(in app: XCUIApplication) {
-        let warehouseTab = app.tabBars.buttons["Warehouse"]
-        if warehouseTab.waitForExistence(timeout: 5) {
+        if app.buttons["whAction_newMovement"].waitForExistence(timeout: 2) {
+            return
+        }
+
+        let warehouseTab = app.buttons["tab_warehouse"].firstMatch
+        if warehouseTab.waitForExistence(timeout: 8) {
             warehouseTab.tap()
-            return
+        } else if app.buttons["Warehouse"].firstMatch.waitForExistence(timeout: 3) {
+            app.buttons["Warehouse"].firstMatch.tap()
+        } else if app.tabBars.buttons["More"].waitForExistence(timeout: 3) {
+            app.tabBars.buttons["More"].tap()
+            let warehouse = app.buttons["Warehouse"].firstMatch
+            XCTAssertTrue(warehouse.waitForExistence(timeout: 8), "Warehouse module should be reachable")
+            warehouse.tap()
+        } else {
+            XCTFail("Warehouse module tab should be reachable")
         }
 
-        let moreTab = app.tabBars.buttons["More"]
-        XCTAssertTrue(moreTab.waitForExistence(timeout: 10), "More tab should be available when Warehouse overflows")
-        moreTab.tap()
-
-        let warehouseCell = app.cells.staticTexts["Warehouse"]
-        if warehouseCell.waitForExistence(timeout: 5) {
-            warehouseCell.tap()
-            return
+        if !app.buttons["whAction_newMovement"].waitForExistence(timeout: 8) {
+            let dashboard = app.buttons["Dashboard"].firstMatch
+            if dashboard.waitForExistence(timeout: 5), dashboard.isHittable {
+                dashboard.tap()
+            }
         }
 
-        let warehouseButton = app.buttons["Warehouse"]
-        XCTAssertTrue(warehouseButton.waitForExistence(timeout: 5), "Warehouse should be reachable from More")
-        warehouseButton.tap()
+        XCTAssertTrue(
+            app.buttons["whAction_newMovement"].waitForExistence(timeout: 10),
+            "Warehouse Dashboard should open and expose quick actions"
+        )
     }
 
     private func writeScreenshot(_ screenshot: XCUIScreenshot) throws {
