@@ -73,20 +73,13 @@ final class WEI936OnboardingQAUITests: XCTestCase {
     // MARK: - State 3: In-progress (per-page "Try This" guidance banner)
 
     /// Verifies the per-page OnboardingBanner shows "Try This" when the guided
-    /// tour is active and required tasks are incomplete.  Navigates to the Jobs
-    /// list where `jobs-create` and `jobs-tap-detail` remain incomplete, giving
-    /// a stable capture after `jobs-view-list` is auto-marked.
+    /// tour is active and required tasks are incomplete. The dashboard fixture
+    /// leaves `dashboard-view-kpis` incomplete so the banner is stable without
+    /// relying on cross-tab navigation.
     @MainActor
     func testWEI936State3InProgress() {
         launchForWEI936(["-UITestingWEI936TourActive", "-UITestingWEI936AutoLogin"])
         waitForDashboard()
-
-        // Navigate to the Jobs tab — "Try This" is stable here because create and
-        // detail tasks remain incomplete after the list page auto-marks itself.
-        let jobsTab = app.buttons["tab_jobs"]
-        if jobsTab.waitForExistence(timeout: 10) && jobsTab.isHittable {
-            jobsTab.tap()
-        }
 
         XCTAssertTrue(
             app.staticTexts["Try This"].waitForExistence(timeout: 20),
@@ -128,8 +121,9 @@ final class WEI936OnboardingQAUITests: XCTestCase {
         )
         dismissButton.tap()
 
+        let dismissToast = app.otherElements["checklistDismissToast"]
         XCTAssertTrue(
-            app.staticTexts["Checklist dismissed"].waitForExistence(timeout: 5),
+            dismissToast.waitForExistence(timeout: 5),
             "WEI-936 state 5: tapping dismiss must show the Checklist dismissed undo toast"
         )
         captureWEI936("wei936-05-dismiss-toast")
@@ -164,11 +158,23 @@ final class WEI936OnboardingQAUITests: XCTestCase {
         app.launch()
     }
 
-    /// Wait until the Dashboard tab or a recognisable main-app element is
-    /// visible.  When `-UITestingWEI936AutoLogin` is active the app bypasses
-    /// the login screen entirely, so we only need a short stabilisation wait.
+    /// Wait until the Dashboard tab or a recognisable dashboard fixture element
+    /// is visible. Some iPad simulator layouts do not expose the tab item as a
+    /// button, so use the seeded WEI-936 evidence labels as readiness signals.
     private func waitForDashboard(timeout: TimeInterval = 20) {
-        _ = app.buttons["tab_dashboard"].waitForExistence(timeout: timeout)
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if app.buttons["tab_dashboard"].exists ||
+                app.staticTexts["Getting Started"].exists ||
+                app.staticTexts["Try This"].exists ||
+                app.staticTexts["Required tour steps complete"].exists ||
+                app.buttons["Dismiss checklist"].exists {
+                return
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        } while Date() < deadline
+
+        XCTFail("WEI-936 fixture did not reach a recognisable dashboard state")
     }
 
     /// Attach a PNG screenshot to the test report and optionally write it to
