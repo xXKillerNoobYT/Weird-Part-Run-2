@@ -4,6 +4,7 @@ import SwiftUI
 /// Only visible when the onboarding tour is active and the page has incomplete tasks.
 struct OnboardingBanner: View {
     let pageId: String
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @EnvironmentObject private var appCore: AppCore
 
     var body: some View {
@@ -18,7 +19,7 @@ struct OnboardingBanner: View {
                 let completed = tasks.filter { onboardingManager.isCompleted($0.id) }
 
                 if requiredComplete {
-                    HStack(spacing: 10) {
+                    HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 10) {
                         Image(systemName: "checkmark.seal.fill")
                             .foregroundStyle(.green)
                             .accessibilityHidden(true)
@@ -26,9 +27,13 @@ struct OnboardingBanner: View {
                             Text("Required tour steps complete")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                                .fixedSize(horizontal: false, vertical: true)
                             Text("\(completed.count)/\(tasks.count) tour steps done")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
                     }
@@ -40,12 +45,15 @@ struct OnboardingBanner: View {
                     .accessibilityLabel("Required tour steps complete, \(completed.count) of \(tasks.count) tour steps done")
                 } else {
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack {
+                        HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center) {
                             Image(systemName: "graduationcap.fill")
                                 .foregroundStyle(.blue)
+                                .accessibilityHidden(true)
                             Text("Try This")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                                .fixedSize(horizontal: false, vertical: true)
                             Spacer()
                             Text("\(completed.count)/\(tasks.count)")
                                 .font(.caption)
@@ -54,32 +62,44 @@ struct OnboardingBanner: View {
 
                         // Show incomplete tasks first
                         ForEach(incomplete) { task in
-                            HStack(spacing: 8) {
+                            HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 8) {
                                 Image(systemName: task.isRequired ? "circle" : "circle.dashed")
                                     .font(.caption)
                                     .foregroundStyle(task.isRequired ? .blue : .secondary)
+                                    .padding(.top, dynamicTypeSize.isAccessibilitySize ? 4 : 0)
+                                    .accessibilityHidden(true)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(task.title)
                                         .font(.caption)
                                         .fontWeight(.medium)
+                                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                                        .fixedSize(horizontal: false, vertical: true)
                                     Text(task.description)
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
+                                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 3)
+                                        .fixedSize(horizontal: false, vertical: true)
                                 }
+                                Spacer(minLength: 0)
                             }
                         }
 
                         // Show completed tasks with checkmarks
                         if !completed.isEmpty {
                             ForEach(completed) { task in
-                                HStack(spacing: 8) {
+                                HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 8) {
                                     Image(systemName: "checkmark.circle.fill")
                                         .font(.caption)
                                         .foregroundStyle(.green)
+                                        .padding(.top, dynamicTypeSize.isAccessibilitySize ? 4 : 0)
+                                        .accessibilityHidden(true)
                                     Text(task.title)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                         .strikethrough()
+                                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Spacer(minLength: 0)
                                 }
                             }
                         }
