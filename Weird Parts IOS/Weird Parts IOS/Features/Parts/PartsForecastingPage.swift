@@ -1201,21 +1201,9 @@ private struct ForecastDetailSheet: View {
             return
         }
 
-        guard let min = Int(editMinStock) else {
-            editError = "Minimum stock must be a whole number."
-            isSaving = false
-            return
-        }
-        guard let target = Int(editTargetStock) else {
-            editError = "Target stock must be a whole number."
-            isSaving = false
-            return
-        }
-        guard let max = Int(editMaxStock) else {
-            editError = "Maximum stock must be a whole number."
-            isSaving = false
-            return
-        }
+        let min = Int(editMinStock) ?? 0
+        let target = Int(editTargetStock) ?? 0
+        let max = Int(editMaxStock) ?? 0
         guard min < target else {
             editError = "Min stock must be less than target stock"
             isSaving = false

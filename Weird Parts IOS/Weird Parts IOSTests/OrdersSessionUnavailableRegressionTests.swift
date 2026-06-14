@@ -52,6 +52,39 @@ final class OrdersSessionUnavailableRegressionTests: XCTestCase {
         )
     }
 
+    func testGroupedPOSendDoesNotSilentlyDropSiblingAttachments() throws {
+        let sendSheetSource = try Self.readOrdersSource(named: "POSendToSupplierSheet.swift")
+
+        XCTAssertFalse(
+            sendSheetSource.contains("(try? svc.listSendablePOs"),
+            "Grouped PO sibling lookup failures must be surfaced instead of falling back to an empty sibling list."
+        )
+        XCTAssertFalse(
+            sendSheetSource.contains("try? appCore.ordersService?.getPODetail"),
+            "Selected sibling detail failures must block send/share instead of silently omitting that PO attachment."
+        )
+        XCTAssertFalse(
+            sendSheetSource.contains("try? data.write(to: url)"),
+            "Share-sheet temp writes must append URLs only after a successful write."
+        )
+        XCTAssertTrue(
+            sendSheetSource.contains("selected sibling purchase orders could not be prepared"),
+            "Grouped send failures should tell the user that selected sibling POs were not prepared."
+        )
+        XCTAssertTrue(
+            sendSheetSource.contains("Share sheet could not prepare every selected PO attachment"),
+            "Share fallback failures should distinguish partial/blocked share preparation from complete success."
+        )
+        XCTAssertTrue(
+            sendSheetSource.contains("groupEnabled && siblingPOsError != nil"),
+            "Grouped send should keep the prep/send action disabled while sibling lookup is in a failed state."
+        )
+        XCTAssertTrue(
+            sendSheetSource.contains("if groupEnabled, let siblingPOsError"),
+            "Grouped send should defensively block prep if sibling lookup failed before the button state updates."
+        )
+    }
+
     private static func readOrdersSource(named filename: String, file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL
