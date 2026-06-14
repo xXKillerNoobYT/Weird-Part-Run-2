@@ -15,6 +15,10 @@ private enum QuestionnaireBreakTestError: Error {
     case autoFillFailed
 }
 
+private enum PeerDiscoveryCompanyIdTestError: Error {
+    case lookupFailed
+}
+
 struct Weird_Parts_IOSTests {
 
     struct LANPeerDiscoveryStartupError: Error, LocalizedError {
@@ -68,6 +72,46 @@ struct Weird_Parts_IOSTests {
         #expect(manager.syncStatus == .error)
         #expect(manager.errorMessage == "LAN peer discovery failed: port unavailable")
         #expect(manager.isScanning)
+    }
+
+    @MainActor
+    @Test func peerDiscoveryCompanyIdResolutionUsesStoredNonEmptyValue() throws {
+        let companyId = try IOSSyncManager.peerDiscoveryCompanyId {
+            ["company_id": "  company-123  "]
+        }
+
+        #expect(companyId == "company-123")
+    }
+
+    @MainActor
+    @Test func peerDiscoveryCompanyIdResolutionFailsClosedWhenMissing() throws {
+        #expect(throws: IOSSyncManager.SyncError.self) {
+            _ = try IOSSyncManager.peerDiscoveryCompanyId { [:] }
+        }
+        #expect(throws: IOSSyncManager.SyncError.self) {
+            _ = try IOSSyncManager.peerDiscoveryCompanyId { ["company_id": "   "] }
+        }
+    }
+
+    @MainActor
+    @Test func peerDiscoveryCompanyIdResolutionPropagatesSettingsLookupFailure() throws {
+        #expect(throws: PeerDiscoveryCompanyIdTestError.self) {
+            _ = try IOSSyncManager.peerDiscoveryCompanyId {
+                throw PeerDiscoveryCompanyIdTestError.lookupFailed
+            }
+        }
+    }
+
+    @MainActor
+    @Test func peerDiscoveryCompanyIdFailureSurfacesErrorAndStopsScanning() throws {
+        let manager = IOSSyncManager()
+        manager.isScanning = true
+
+        manager.handlePeerDiscoveryCompanyIdFailure(IOSSyncManager.SyncError.noCompanyIdConfigured)
+
+        #expect(manager.syncStatus == .error)
+        #expect(manager.errorMessage == "Peer discovery unavailable: Company ID is not configured. Open Settings and verify the company profile before starting peer discovery.")
+        #expect(!manager.isScanning)
     }
 
     @MainActor
