@@ -774,7 +774,23 @@ struct IOSWishlistPage: View {
         // processAutoApprovals was removed from getSectionedItems() to avoid main-thread
         // DB writes inside a read; we fire it here as a detached utility task instead.
         Task.detached(priority: .utility) {
-            _ = try? service.processAutoApprovals(byUserId: currentUserId)
+            // Use byUserId: nil for the system/background auto-approval path so permission
+            // failures on the current user don't silently swallow legitimate errors.
+            // Captures the count for telemetry but does not block the section read.
+            do {
+                let approvedCount = try service.processAutoApprovals(byUserId: nil)
+                if approvedCount > 0 {
+                    // Auto-approved items changed; section read below will reflect them.
+                    _ = approvedCount
+                }
+            } catch {
+                // Log failure but do not surface as a loadError — the section read
+                // below is still valid and should proceed. A future retry will run on
+                // the next loadData() call.
+                #if DEBUG
+                print("[WishlistPage] processAutoApprovals failed: \(error)")
+                #endif
+            }
             do {
                 let result = try service.getSectionedItems()
                 // Counts are computed independently so card totals reflect ALL items,
