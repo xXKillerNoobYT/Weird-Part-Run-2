@@ -111,7 +111,7 @@ let appModules: [AppModule] = [
         AppTab(id: "warehouse-tools", label: "Tools", icon: "wrench.and.screwdriver.fill", path: "/warehouse/tools"),
         AppTab(id: "warehouse-leaderboard", label: "Leaderboard", icon: "trophy.fill", path: "/warehouse/leaderboard", permission: "manage_warehouse"),
         AppTab(id: "warehouse-network", label: "Network", icon: "antenna.radiowaves.left.and.right", path: "/warehouse/network", permission: "manage_devices"),
-        AppTab(id: "warehouse-settings", label: "Settings", icon: "gearshape.fill", path: "/warehouse/settings", permission: "manage_warehouse"),
+        AppTab(id: "warehouse-settings", label: "Settings", icon: "gearshape.fill", path: "/warehouse/settings"),
     ], permission: "view_warehouse"),
     // 6. Orders — JPOs, POs, procurement
     AppModule(id: "orders", label: "Orders", icon: "cart.fill", tabs: [

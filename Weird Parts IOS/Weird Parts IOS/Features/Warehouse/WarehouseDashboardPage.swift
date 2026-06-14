@@ -44,6 +44,7 @@ struct WarehouseDashboardPage: View {
         case qrScanner
         case onboardingWizard
         case partsFlowWizard
+        case warehouseSettings
         case cartSheet
         case help
 
@@ -135,6 +136,11 @@ struct WarehouseDashboardPage: View {
         case .partsFlowWizard:
             PartsFlowWizard()
                 .environmentObject(appCore)
+        case .warehouseSettings:
+            NavigationStack {
+                IOSWarehouseSettingsPage()
+                    .environmentObject(appCore)
+            }
         case .cartSheet:
             CartSheetView(cartManager: cartManager)
                 .environmentObject(appCore)
@@ -237,6 +243,19 @@ struct WarehouseDashboardPage: View {
                         }
                         .buttonStyle(.plain)
                     }
+
+                    Button { activeSheet = .warehouseSettings } label: {
+                        Text("Warehouse Settings")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .padding(.horizontal, 14)
+                            .frame(minHeight: 44)
+                            .background(Color(.secondarySystemGroupedBackground))
+                            .foregroundStyle(.primary)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("whAction_warehouseSettings")
 
                     Spacer()
                 }
