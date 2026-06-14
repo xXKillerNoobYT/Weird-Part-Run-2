@@ -811,7 +811,12 @@ final class AppCore: ObservableObject {
             // selectable active job, at least one category, and a deterministic JPO
             // with 2+ selectable line items so the bulk hold/chat smoke can run
             // without manual simulator database surgery.
-            if let userId = fixtureUserId {
+            //
+            // -UITestingWEI936NotStarted opts out of this seeding to produce a true
+            // zero-data first-launch state where isFirstLaunchState == true, so the
+            // Dashboard Getting Started checklist is visible for C10 QA captures.
+            if let userId = fixtureUserId,
+               !ProcessInfo.processInfo.arguments.contains("-UITestingWEI936NotStarted") {
                 try dbConn.execute(
                     sql: """
                         INSERT OR IGNORE INTO part_categories
@@ -1418,6 +1423,9 @@ final class AppCore: ObservableObject {
 
         UserDefaults.standard.removeObject(forKey: "onboarding_checklist_dismissed")
         UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
+        if args.contains("-UITestingWEI936NotStarted") {
+            UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
+        }
 
         if let userId {
             let storageKey = "onboarding_progress_\(userId)"
@@ -1425,6 +1433,15 @@ final class AppCore: ObservableObject {
             UserDefaults.standard.set(shouldActivateTour, forKey: storageKey + "_active")
 
             var completedTasks: Set<String> = []
+            // UITestingWEI936NotStarted: ensure the Getting Started checklist is
+            // visible and the app tour is inactive. No per-page guidance banner,
+            // no pre-completed tasks.
+            // UITestingWEI936TourActive: begin with an empty task set so the
+            // "Try This" guidance banner renders on pages with incomplete required
+            // tasks. The dashboard auto-marks dashboard-view-kpis via its .task
+            // modifier; the dedicated WEI936 QA harness navigates to the Jobs page,
+            // where jobs-create and jobs-tap-detail remain incomplete for a stable
+            // capture even after jobs-view-list is auto-marked.
             if args.contains("-UITestingWEI936RequiredDone") {
                 completedTasks.formUnion(["dashboard-view-kpis", "dashboard-tap-kpi"])
             }

@@ -56,7 +56,7 @@ struct IOSMainView: View {
     /// Filtered modules in the user's preferred order.
     private var orderedModules: [AppModule] {
         let modules = tabPrefs.orderedModules(from: filteredModules)
-        if isUITestingOpenWarehouseLocations {
+        if isUITestingOpenWarehouse {
             guard let warehouseIndex = modules.firstIndex(where: { $0.id == "warehouse" }) else {
                 return modules
             }
@@ -92,6 +92,17 @@ struct IOSMainView: View {
     private var isUITestingOpenWarehouseLocations: Bool {
         let args = ProcessInfo.processInfo.arguments
         return args.contains("-UITesting") && args.contains("-UITestingWarehouseLocations")
+    }
+
+    /// Test-only deep link for screenshot runs that must capture the KPI
+    /// dashboard without depending on compact tab traversal.
+    private var isUITestingOpenWarehouseDashboard: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-UITesting") && args.contains("-UITestingWarehouseDashboard")
+    }
+
+    private var isUITestingOpenWarehouse: Bool {
+        isUITestingOpenWarehouseLocations || isUITestingOpenWarehouseDashboard
     }
 
     /// First 4 ordered modules shown as dedicated bottom tabs.
@@ -158,6 +169,14 @@ struct IOSMainView: View {
                 moduleNavigationRequests["warehouse"] = ModuleNavigationRequest(
                     moduleId: "warehouse",
                     tabId: "warehouse-locations"
+                )
+            } else if isUITestingOpenWarehouseDashboard {
+                selectedModuleId = "warehouse"
+                expandedModuleId = "warehouse"
+                selectedTabPath = "/warehouse/dashboard"
+                moduleNavigationRequests["warehouse"] = ModuleNavigationRequest(
+                    moduleId: "warehouse",
+                    tabId: "warehouse-dashboard"
                 )
             }
             badgeManager.refresh()
@@ -725,6 +744,8 @@ struct ModuleHostView: View {
             applyNavigationRequest(navigationRequest)
             if isUITestingOpenPartsCategories, module.id == "parts" {
                 selectedTabId = "parts-categories"
+            } else if isUITestingOpenWarehouseDashboard, module.id == "warehouse" {
+                selectedTabId = "warehouse-dashboard"
             } else if isUITestingOpenWarehouseLocations, module.id == "warehouse" {
                 selectedTabId = "warehouse-locations"
             } else if selectedTabId.isEmpty, let first = visibleTabsList.first {
@@ -747,6 +768,11 @@ struct ModuleHostView: View {
     private var isUITestingOpenWarehouseLocations: Bool {
         let args = ProcessInfo.processInfo.arguments
         return args.contains("-UITesting") && args.contains("-UITestingWarehouseLocations")
+    }
+
+    private var isUITestingOpenWarehouseDashboard: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-UITesting") && args.contains("-UITestingWarehouseDashboard")
     }
 
     private var currentPath: String {
@@ -847,28 +873,41 @@ struct ModuleHostView: View {
         let chipH: CGFloat = 14
         let isSelected: (AppTab) -> Bool = { $0.id == selectedTabId }
 
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: DS.Space.sm) {
-                ForEach(visibleTabsList) { tab in
-                    Button {
-                        dsAnimate(DS.Anim.fast) {
-                            selectedTabId = tab.id
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: DS.Space.sm) {
+                    ForEach(visibleTabsList) { tab in
+                        Button {
+                            dsAnimate(DS.Anim.fast) {
+                                selectedTabId = tab.id
+                            }
+                        } label: {
+                            subTabChip(tab: tab, selected: isSelected(tab), chipH: chipH)
                         }
-                    } label: {
-                        subTabChip(tab: tab, selected: isSelected(tab), chipH: chipH)
+                        // Glass buttons inside a horizontally scrolling, narrow iPhone
+                        // sub-tab strip can report invalid accessibility activation
+                        // points to XCTest. Keep the chip styling in `subTabChip`, but
+                        // give automation a plain, explicitly-sized hit region.
+                        .buttonStyle(.plain)
+                        .contentShape(Rectangle())
+                        .accessibilityIdentifier("subtab_\(tab.id)")
+                        .accessibilityLabel(tab.label)
+                        .id(tab.id)
                     }
-                    // Glass buttons inside a horizontally scrolling, narrow iPhone
-                    // sub-tab strip can report invalid accessibility activation
-                    // points to XCTest. Keep the chip styling in `subTabChip`, but
-                    // give automation a plain, explicitly-sized hit region.
-                    .buttonStyle(.plain)
-                    .contentShape(Rectangle())
-                    .accessibilityIdentifier("subtab_\(tab.id)")
-                    .accessibilityLabel(tab.label)
+                }
+                .padding(.horizontal, DS.Space.lg)
+                .padding(.vertical, DS.Space.sm)
+            }
+            .onAppear {
+                guard !selectedTabId.isEmpty else { return }
+                proxy.scrollTo(selectedTabId, anchor: .center)
+            }
+            .onChange(of: selectedTabId) { _, selectedId in
+                guard !selectedId.isEmpty else { return }
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    proxy.scrollTo(selectedId, anchor: .center)
                 }
             }
-            .padding(.horizontal, DS.Space.lg)
-            .padding(.vertical, DS.Space.sm)
         }
         .background(DS.Background.page)
     }

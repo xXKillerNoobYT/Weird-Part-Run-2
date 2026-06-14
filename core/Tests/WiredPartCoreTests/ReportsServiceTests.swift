@@ -949,6 +949,41 @@ struct ReportsServiceTests {
         #expect(row?.sourceSummary == "1 labor entry")
     }
 
+    @Test("Bookkeeper labor summary hides soft-deleted employee identity and payroll rate")
+    func testBookkeeperLaborSummaryHidesSoftDeletedEmployeeDetails() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BK-LABOR-DELETED", name: "Bookkeeper Deleted Labor Job")
+        let deletedUserId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: "UPDATE users SET pay_rate = 20.0 WHERE id = ?", arguments: [env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO users (display_name, email, pin_hash, pay_rate, is_active, deleted_at, created_at, updated_at)
+                VALUES ('Deleted Payroll Tech', 'deleted-payroll@example.test', 'hash-deleted', 99.0, 0,
+                        '2026-06-02 12:00:00', datetime('now'), datetime('now'))
+                """)
+            let userId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES
+                    (?, ?, '2026-06-02 07:00:00', '2026-06-02 18:00:00', 8.0, 2.0, 'completed', datetime('now')),
+                    (?, ?, '2026-06-02 08:00:00', '2026-06-02 12:00:00', 4.0, 1.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId, userId, jobId])
+            return userId
+        }
+
+        let rows = try env.reports.getBookkeeperLaborSummary(startDate: "2026-06-02", endDate: "2026-06-02")
+        let activeRow = rows.first { $0.id == env.adminUserId }
+        let deletedRow = rows.first { $0.id == deletedUserId }
+
+        #expect(abs((activeRow?.grossPay ?? 0) - 220.0) < 0.01)
+        #expect(deletedRow != nil)
+        #expect(deletedRow?.employeeName == "Unknown")
+        #expect(deletedRow?.employeeName != "Deleted Payroll Tech")
+        #expect(deletedRow?.employeeName != "deleted-payroll@example.test")
+        #expect(deletedRow?.grossPay == 0.0)
+        #expect(deletedRow?.laborEntryCount == 1)
+    }
+
     @Test("Bookkeeper material export is deterministic and excludes cancelled and deleted POs")
     func testBookkeeperMaterialPOsDeterministicExportRows() throws {
         let env = try E2ETestHelpers.setUp()

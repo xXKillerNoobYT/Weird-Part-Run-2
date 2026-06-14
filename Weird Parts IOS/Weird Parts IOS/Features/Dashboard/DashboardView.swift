@@ -385,6 +385,7 @@ struct DashboardView: View {
                     .shadow(color: .black.opacity(0.1), radius: 8, y: 2)
             )
             .padding(.horizontal, DS.Space.lg)
+            .accessibilityIdentifier("gettingStartedChecklist")
         }
     }
 
@@ -457,6 +458,8 @@ struct DashboardView: View {
             }
         }
         .contentShape(Rectangle())
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("gettingStartedChecklistStep\(step)")
     }
 
     // MARK: - Onboarding Progress
@@ -481,7 +484,7 @@ struct DashboardView: View {
                 ForEach(appModules, id: \.id) { module in
                     let progress = manager.moduleProgress(module.id, permissions: appCore.permissions)
                     if progress.total > 0 {
-                        HStack {
+                        HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center) {
                             Image(systemName: module.icon)
                                 .font(.caption)
                                 .frame(width: 24)
@@ -489,12 +492,24 @@ struct DashboardView: View {
                                 .accessibilityHidden(true)
                             Text(module.label)
                                 .font(.subheadline)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                                .fixedSize(horizontal: false, vertical: true)
                             Spacer()
-                            Text("\(progress.completed)/\(progress.total)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            ProgressView(value: Double(progress.completed), total: max(Double(progress.total), 1))
-                                .frame(width: 60)
+                            if dynamicTypeSize.isAccessibilitySize {
+                                VStack(alignment: .trailing, spacing: 4) {
+                                    Text("\(progress.completed)/\(progress.total)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    ProgressView(value: Double(progress.completed), total: max(Double(progress.total), 1))
+                                        .frame(width: 72)
+                                }
+                            } else {
+                                Text("\(progress.completed)/\(progress.total)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                ProgressView(value: Double(progress.completed), total: max(Double(progress.total), 1))
+                                    .frame(width: 60)
+                            }
                         }
                     }
                 }

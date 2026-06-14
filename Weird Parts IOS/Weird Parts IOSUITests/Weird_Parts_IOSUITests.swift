@@ -156,6 +156,42 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app = nil
     }
 
+    // MARK: - Panel Schedule Accessibility
+
+    @MainActor
+    func testPanelScheduleAccessibleCircuitButtonOpensEditor() throws {
+        relaunchForPanelScheduleBuilderFixture()
+
+        let accessibleCircuit = app.buttons["Circuit 1, Office lighting"]
+        XCTAssertTrue(
+            accessibleCircuit.waitForExistence(timeout: 20),
+            "Panel schedule fixture should expose populated circuit 1 as the user-facing accessibility button."
+        )
+        XCTAssertFalse(
+            app.buttons["1, 20, Office lighting"].exists,
+            "The visible row text must not remain as a nested second button competing with the accessible circuit control."
+        )
+
+        accessibleCircuit.tap()
+
+        XCTAssertTrue(
+            app.navigationBars["Circuit 1"].waitForExistence(timeout: 5) || app.staticTexts["Circuit 1"].waitForExistence(timeout: 5),
+            "Tapping the accessible circuit control should open the same circuit editor as a visual/user tap."
+        )
+        XCTAssertTrue(
+            app.textFields["Description (e.g. Kitchen Outlets)"].waitForExistence(timeout: 5),
+            "Circuit editor should show the description field after the accessible button is activated."
+        )
+    }
+
+    private func relaunchForPanelScheduleBuilderFixture() {
+        app?.terminate()
+        app = XCUIApplication()
+        configureUITestingEnvironment(app)
+        app.launchArguments += ["-UITestingPanelScheduleBuilderFixture"]
+        app.launch()
+    }
+
     // MARK: - Login Accessibility
 
 
@@ -230,14 +266,23 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["WiredPart"].waitForExistence(timeout: 20), "Welcome fixture should render the first-launch welcome screen")
         captureWEI1451("01-ipad-landscape-welcome-sheet")
 
+        // State 2: not-started — Getting Started checklist visible with zero app data.
+        // -UITestingWEI936NotStarted skips parts/job seeding so isFirstLaunchState == true.
         relaunchForWEI1451(["-UITestingWEI936NotStarted"])
         logInAsUITestOwnerIfNeeded()
         XCTAssertTrue(app.staticTexts["Getting Started"].waitForExistence(timeout: 20), "Dashboard should show the not-started Getting Started card")
         XCTAssertFalse(app.staticTexts["Try This"].exists, "Not-started fixture should not show the active onboarding tour banner")
         captureWEI1451("02-ipad-landscape-card-not-started")
 
+        // State 3: in-progress — per-page OnboardingBanner shows "Try This".
+        // Tour is active with empty completedTasks; navigate to Jobs where the
+        // create/detail required tasks remain incomplete, so the "Try This" banner
+        // stays visible for the capture.
         relaunchForWEI1451(["-UITestingWEI936TourActive"])
         logInAsUITestOwnerIfNeeded()
+        if app.buttons["tab_jobs"].waitForExistence(timeout: 10) {
+            app.buttons["tab_jobs"].tap()
+        }
         XCTAssertTrue(app.staticTexts["Try This"].waitForExistence(timeout: 20), "Tour active fixture should show in-progress onboarding tasks")
         captureWEI1451("03-ipad-landscape-in-progress")
 
@@ -246,6 +291,8 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Required tour steps complete"].waitForExistence(timeout: 20), "Required-done fixture should collapse the per-page banner")
         captureWEI1451("04-ipad-landscape-required-done-collapsed-strip")
 
+        // State 5: dismiss toast — checklist must be visible first.
+        // -UITestingWEI936NotStarted ensures isFirstLaunchState == true.
         relaunchForWEI1451(["-UITestingWEI936NotStarted"])
         logInAsUITestOwnerIfNeeded()
         let dismiss = app.descendants(matching: .any)["dismissChecklistButton"].firstMatch
@@ -282,10 +329,20 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         let verification = """
         WEI-1451 / WEI-936 remaining evidence verification
         - iPad landscape captured with WEI_1185_LANDSCAPE=1 / XCUIDevice.landscapeLeft when requested.
-        - Deterministic launch fixtures used: -UITestingWEI936AutoLogin, -UITestingWEI1451DashboardCard, -UITestingWEI936Welcome, -UITestingWEI936NotStarted, -UITestingWEI936TourActive, -UITestingWEI936RequiredDone, -UITestingWEI936Celebration.
-        - Dismiss toast verified by tapping the Dashboard Getting Started dismiss button and waiting for the Checklist dismissed toast.
-        - Reduce Motion: OnboardingCompleteView now renders the checkmark without a spring animation when accessibilityReduceMotion is true.
-        - VoiceOver/accessibility traversal smoke: core evidence controls expose labels for Dismiss checklist, Checklist dismissed. Undo, Required tour steps complete, and the welcome/celebration headings.
+        - Deterministic launch fixtures used: -UITestingWEI936Welcome, -UITestingWEI936NotStarted,
+          -UITestingWEI936TourActive, -UITestingWEI936RequiredDone, -UITestingWEI936Celebration,
+          plus -UITestingWEI936AutoLogin and -UITestingWEI1451DashboardCard from relaunchForWEI1451.
+        - -UITestingWEI936NotStarted skips parts/job seeding so isFirstLaunchState == true for
+          the Getting Started checklist not-started and dismiss-toast captures.
+        - In-progress state navigates to Jobs page where the per-page OnboardingBanner shows
+          "Try This" stably (create/detail required tasks stay incomplete on the Jobs list page).
+        - Dismiss toast verified by tapping the Dashboard Getting Started dismiss button and
+          waiting for the Checklist dismissed toast.
+        - Reduce Motion: OnboardingCompleteView now renders the checkmark without a spring
+          animation when accessibilityReduceMotion is true.
+        - VoiceOver/accessibility traversal smoke: core evidence controls expose labels for
+          Dismiss checklist, Checklist dismissed. Undo, Required tour steps complete, and the
+          welcome/celebration headings.
         """
         try verification.write(to: artifactDirectory.appendingPathComponent("07-accessibility-reduce-motion-voiceover-notes.txt"), atomically: true, encoding: .utf8)
     }
@@ -590,6 +647,47 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'R2C2'")).firstMatch.waitForExistence(timeout: 10),
                       "Zone placement should persist after leaving and resuming the wizard")
         captureWEI1185("06-storage-persisted-after-resume")
+    }
+
+    @MainActor
+    func testWEI3498WarehouseLocationsSelectedSubtabAutoScrollsIntoView() throws {
+        app.terminate()
+        app = XCUIApplication()
+        configureUITestingEnvironment(app)
+        app.launchArguments += [
+            "-UITesting",
+            "-UITestingWEI936AutoLogin",
+            "-UITestingWarehouseLocations"
+        ]
+        app.launch()
+
+        XCTAssertTrue(
+            app.navigationBars["Warehouse"].waitForExistence(timeout: 30) ||
+                app.staticTexts["Warehouse"].waitForExistence(timeout: 30),
+            "Warehouse module should open without the manual login/PIN route"
+        )
+
+        let selectedLocationsSubtab = app.buttons["subtab_warehouse-locations"]
+        XCTAssertTrue(
+            selectedLocationsSubtab.waitForExistence(timeout: 10),
+            "Warehouse Locations sub-tab should exist after direct route selection"
+        )
+        XCTAssertTrue(
+            selectedLocationsSubtab.isHittable,
+            "Selected off-screen Warehouse Locations sub-tab should be auto-scrolled into the narrow iPhone viewport"
+        )
+
+        XCTAssertTrue(
+            app.buttons["Shelving"].waitForExistence(timeout: 10) ||
+                app.staticTexts["UITesting Shelf A"].waitForExistence(timeout: 10),
+            "Warehouse Locations content should render after the auto-scrolled selected sub-tab is visible"
+        )
+
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = "WEI-3498 warehouse locations selected subtab visible"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     @MainActor

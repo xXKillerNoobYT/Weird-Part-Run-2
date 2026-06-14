@@ -31,6 +31,22 @@ struct IOSJobStageTemplatesSettingsPage: View {
         templates.first(where: { $0.id == selectedTemplateId })
     }
 
+    private var trimmedNewTemplateName: String {
+        newTemplateName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trimmedRenameTemplateName: String {
+        renameTemplateName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trimmedDuplicateTemplateName: String {
+        duplicateTemplateName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canCreateTemplate: Bool { !trimmedNewTemplateName.isEmpty }
+    private var canRenameTemplate: Bool { !trimmedRenameTemplateName.isEmpty }
+    private var canDuplicateTemplate: Bool { !trimmedDuplicateTemplateName.isEmpty }
+
     var body: some View {
         Group {
             if isLoading {
@@ -66,20 +82,36 @@ struct IOSJobStageTemplatesSettingsPage: View {
         }
         .alert("Create Template", isPresented: $showingCreateTemplate) {
             TextField("Template name", text: $newTemplateName)
+                .textInputAutocapitalization(.words)
             Button("Create") { createTemplate() }
+                .disabled(!canCreateTemplate)
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Creates a workflow with three starter stages. Rename, add, remove, or reorder stages after it is created.")
+            Text(canCreateTemplate
+                ? "Creates a workflow with three starter stages. Rename, add, remove, or reorder stages after it is created."
+                : "Enter a template name before creating this workflow.")
         }
         .alert("Duplicate Template", isPresented: $showingDuplicateTemplate) {
             TextField("New template name", text: $duplicateTemplateName)
+                .textInputAutocapitalization(.words)
             Button("Duplicate") { duplicateTemplate() }
+                .disabled(!canDuplicateTemplate)
             Button("Cancel", role: .cancel) { }
+        } message: {
+            Text(canDuplicateTemplate
+                ? "Creates a copy of the selected workflow using this new template name."
+                : "Enter a new template name before duplicating this workflow.")
         }
         .alert("Rename Template", isPresented: $showingRenameTemplate) {
             TextField("Template name", text: $renameTemplateName)
+                .textInputAutocapitalization(.words)
             Button("Rename") { renameTemplate() }
+                .disabled(!canRenameTemplate)
             Button("Cancel", role: .cancel) { }
+        } message: {
+            Text(canRenameTemplate
+                ? "Renames the selected workflow template. Existing jobs keep their current stage data."
+                : "Enter a template name before renaming this workflow.")
         }
         .confirmationDialog(
             "Archive this template?",
@@ -288,12 +320,14 @@ struct IOSJobStageTemplatesSettingsPage: View {
             errorMessage = "Jobs service unavailable"
             return
         }
+        guard canCreateTemplate else { return }
+        let templateName = trimmedNewTemplateName
         do {
             let templateId = try service.createJobStageTemplate(
-                name: newTemplateName,
+                name: templateName,
                 stageNames: ["Rough-In", "Trim", "Final"]
             )
-            successMessage = "Created \(newTemplateName.trimmingCharacters(in: .whitespacesAndNewlines))."
+            successMessage = "Created \(templateName)."
             errorMessage = nil
             loadTemplates(select: templateId)
         } catch {
@@ -308,8 +342,10 @@ struct IOSJobStageTemplatesSettingsPage: View {
 
     private func renameTemplate() {
         guard let service = appCore.jobsService, let selectedTemplateId else { return }
+        guard canRenameTemplate else { return }
+        let templateName = trimmedRenameTemplateName
         do {
-            try service.renameJobStageTemplate(templateId: selectedTemplateId, name: renameTemplateName)
+            try service.renameJobStageTemplate(templateId: selectedTemplateId, name: templateName)
             successMessage = "Renamed template."
             errorMessage = nil
             loadTemplates(select: selectedTemplateId)
@@ -325,8 +361,10 @@ struct IOSJobStageTemplatesSettingsPage: View {
 
     private func duplicateTemplate() {
         guard let service = appCore.jobsService, let selectedTemplateId else { return }
+        guard canDuplicateTemplate else { return }
+        let templateName = trimmedDuplicateTemplateName
         do {
-            let newId = try service.duplicateJobStageTemplate(templateId: selectedTemplateId, name: duplicateTemplateName)
+            let newId = try service.duplicateJobStageTemplate(templateId: selectedTemplateId, name: templateName)
             successMessage = "Duplicated template."
             errorMessage = nil
             loadTemplates(select: newId)

@@ -10,6 +10,32 @@ import WiredPartCore
 struct WiredPartIOSApp: App {
     @StateObject private var appCore = AppCore()
     @StateObject private var tabPrefs = TabBarPreferences()
+    @State private var uiTestingPanelSchedule = PanelSchedule(
+        panelName: "QA Panel A",
+        panelType: .loadCenter,
+        totalSpaces: 8,
+        mainBreakerAmps: 200,
+        voltage: 240,
+        phase: 1,
+        location: "Shop east wall",
+        circuits: [
+            CircuitEntry(
+                spaceNumber: 1,
+                breakerAmps: 20,
+                breakerType: .single,
+                circuitDescription: "Office lighting",
+                isSpare: false,
+                isFedFrom: "MDP"
+            ),
+            CircuitEntry(
+                spaceNumber: 2,
+                breakerAmps: 30,
+                breakerType: .double,
+                circuitDescription: "Compressor",
+                isSpare: false
+            ),
+        ]
+    )
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage("hasCompletedCompanySetup") private var hasCompletedCompanySetup = false
     @AppStorage("hasSeenOnboardAIMVPEntry") private var hasSeenOnboardAIMVPEntry = false
@@ -58,6 +84,10 @@ struct WiredPartIOSApp: App {
         ProcessInfo.processInfo.arguments.contains("-UITestingWEI3144JobMaterials")
     }
 
+    private var shouldShowPanelScheduleFixture: Bool {
+        ProcessInfo.processInfo.arguments.contains("-UITestingPanelScheduleBuilderFixture")
+    }
+
     private var stage8ReportsUITestTarget: Stage8ReportsUITestTarget? {
         Stage8ReportsUITestTarget(processArguments: ProcessInfo.processInfo.arguments)
     }
@@ -89,7 +119,15 @@ struct WiredPartIOSApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if shouldShowWEI3140ImportPreviewFixture {
+                if shouldShowPanelScheduleFixture {
+                    NavigationStack {
+                        PanelScheduleBuilder(schedule: $uiTestingPanelSchedule) { saved in
+                            uiTestingPanelSchedule = saved
+                        }
+                        .navigationTitle("Panel Schedule")
+                        .navigationBarTitleDisplayMode(.inline)
+                    }
+                } else if shouldShowWEI3140ImportPreviewFixture {
                     #if DEBUG
                     WEI3140ImportPreviewFixtureView()
                     #else

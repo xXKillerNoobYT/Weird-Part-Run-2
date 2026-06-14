@@ -1,6 +1,50 @@
 import SwiftUI
 import WiredPartCore
 
+enum PartsFlowDraftStore {
+    static let countsKey = "partsFlow_counts"
+    static let locationsKey = "partsFlow_locations"
+
+    static func loadCounts() -> [Int64: String] {
+        loadDictionary(forKey: countsKey)
+    }
+
+    static func loadLocations() -> [Int64: String] {
+        loadDictionary(forKey: locationsKey)
+    }
+
+    static func save(counts: [Int64: String], locations: [Int64: String]) {
+        saveDictionary(counts, forKey: countsKey)
+        saveDictionary(locations, forKey: locationsKey)
+    }
+
+    static func clear() {
+        UserDefaults.standard.removeObject(forKey: countsKey)
+        UserDefaults.standard.removeObject(forKey: locationsKey)
+    }
+
+    private static func loadDictionary(forKey key: String) -> [Int64: String] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let saved = try? JSONDecoder().decode([String: String].self, from: data) else {
+            return [:]
+        }
+
+        return saved.reduce(into: [Int64: String]()) { result, pair in
+            guard let id = Int64(pair.key) else { return }
+            result[id] = pair.value
+        }
+    }
+
+    private static func saveDictionary(_ dictionary: [Int64: String], forKey key: String) {
+        let keyed = dictionary.reduce(into: [String: String]()) { result, pair in
+            result["\(pair.key)"] = pair.value
+        }
+        if let data = try? JSONEncoder().encode(keyed) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
+}
+
 /// Standalone "Parts-First Setup" flow — works without any floor plan.
 ///
 /// Three simple steps:
@@ -78,16 +122,16 @@ struct PartsFlowWizard: View {
         VStack(spacing: 4) {
             HStack(spacing: 8) {
                 ForEach(1...totalSteps, id: \.self) { step in
-                    Circle()
-                        .fill(step == currentStep ? .blue :
-                              step < currentStep ? .green :
-                              .gray.opacity(0.3))
-                        .frame(width: 10, height: 10)
-                        .onTapGesture {
-                            if step <= currentStep {
-                                withAnimation { currentStep = step }
-                            }
-                        }
+                    WarehouseWizardProgressStepButton(
+                        step: step,
+                        totalSteps: totalSteps,
+                        title: stepLabels[step - 1],
+                        isCurrent: step == currentStep,
+                        isCompleted: step < currentStep,
+                        isEnabled: step <= currentStep
+                    ) {
+                        withAnimation { currentStep = step }
+                    }
                 }
             }
 
@@ -359,25 +403,24 @@ struct PartsFlowWizard: View {
     private func loadParts() {
         isLoading = true
         loadError = nil
-        do {
-            parts = try appCore.partsService?.listParts() ?? []
-            filteredParts = parts
+        partCounts = PartsFlowDraftStore.loadCounts()
+        partLocations = PartsFlowDraftStore.loadLocations()
 
-            // Restore saved progress from UserDefaults
-            if let countData = UserDefaults.standard.data(forKey: "partsFlow_counts"),
-               let saved = try? JSONDecoder().decode([String: String].self, from: countData) {
-                for (key, value) in saved {
-                    if let id = Int64(key) { partCounts[id] = value }
-                }
-            }
-            if let locData = UserDefaults.standard.data(forKey: "partsFlow_locations"),
-               let saved = try? JSONDecoder().decode([String: String].self, from: locData) {
-                for (key, value) in saved {
-                    if let id = Int64(key) { partLocations[id] = value }
-                }
-            }
+        guard let partsService = appCore.partsService else {
+            parts = []
+            filteredParts = []
+            loadError = "Parts service unavailable. Your saved draft is still on this device."
+            isLoading = false
+            return
+        }
+
+        do {
+            parts = try partsService.listParts()
+            filterParts(searchQuery)
         } catch {
-            loadError = userFriendlyError(error, context: "load parts")
+            parts = []
+            filteredParts = []
+            loadError = "\(userFriendlyError(error, context: "load parts")) Your saved draft is still on this device."
         }
         isLoading = false
     }
@@ -397,27 +440,23 @@ struct PartsFlowWizard: View {
     private func saveAllProgress(clearDraft: Bool, andDismiss: Bool) {
         guard !isSaving else { return }
         isSaving = true
+        saveErrorMessage = nil
 
-        // UserDefaults writes are synchronous + fast — safe on main thread
-        if clearDraft {
-            UserDefaults.standard.removeObject(forKey: "partsFlow_counts")
-            UserDefaults.standard.removeObject(forKey: "partsFlow_locations")
-        } else {
-            let countDict = partCounts.reduce(into: [String: String]()) { $0["\($1.key)"] = $1.value }
-            let locDict = partLocations.reduce(into: [String: String]()) { $0["\($1.key)"] = $1.value }
-            if let data = try? JSONEncoder().encode(countDict) {
-                UserDefaults.standard.set(data, forKey: "partsFlow_counts")
+        PartsFlowDraftStore.save(counts: partCounts, locations: partLocations)
+
+        guard let service = appCore.partsService else {
+            isSaving = false
+            if andDismiss && !clearDraft {
+                dismiss()
+            } else {
+                saveErrorMessage = "Parts service unavailable. Your draft is still saved on this device."
             }
-            if let data = try? JSONEncoder().encode(locDict) {
-                UserDefaults.standard.set(data, forKey: "partsFlow_locations")
-            }
+            return
         }
 
-        // Capture state for use inside the Task (avoid capturing mutable self)
         let snapshot = parts
         let counts = partCounts
         let locations = partLocations
-        let service = appCore.partsService
 
         // DB loop runs in a Task so SwiftUI renders isSaving=true before the loop starts
         Task {
@@ -432,12 +471,14 @@ struct PartsFlowWizard: View {
                 }
                 if let text = counts[partId], let qty = Int(text) {
                     notesParts.append("Initial count: \(qty)")
-                    count += 1
                 }
                 if !notesParts.isEmpty {
                     let combined = notesParts.joined(separator: " | ")
                     do {
-                        try service?.updatePart(id: partId, notes: combined)
+                        try service.updatePart(id: partId, notes: combined)
+                        if counts[partId].flatMap(Int.init) != nil {
+                            count += 1
+                        }
                     } catch {
                         failedParts.append(item.part.name)
                     }
@@ -445,9 +486,12 @@ struct PartsFlowWizard: View {
             }
             savedCount = count
             if !failedParts.isEmpty {
+                PartsFlowDraftStore.save(counts: counts, locations: locations)
                 let preview = failedParts.prefix(3).joined(separator: ", ")
                 let suffix = failedParts.count > 3 ? " and \(failedParts.count - 3) more" : ""
-                saveErrorMessage = "Failed to save \(failedParts.count) part(s): \(preview)\(suffix)"
+                saveErrorMessage = "Failed to save \(failedParts.count) part(s): \(preview)\(suffix). Your draft is still saved on this device."
+            } else if clearDraft {
+                PartsFlowDraftStore.clear()
             }
             isSaving = false
             if andDismiss && saveErrorMessage == nil {

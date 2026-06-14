@@ -85,6 +85,17 @@ public struct AIConversationMessage: Sendable, Codable {
     }
 }
 
+public enum AIConversationPersistenceError: LocalizedError, Sendable, Equatable {
+    case deleteVerificationFailed(conversationId: String, remainingMessageCount: Int)
+
+    public var errorDescription: String? {
+        switch self {
+        case .deleteVerificationFailed(let conversationId, let remainingMessageCount):
+            "Conversation \(conversationId) still has \(remainingMessageCount) stored message(s) after deletion."
+        }
+    }
+}
+
 /// Provides on-device AI text generation via Apple Foundation Models.
 ///
 /// This service wraps `LanguageModelSession` to provide:
@@ -524,6 +535,32 @@ public actor FoundationModelsService {
             try dbConn.execute(
                 sql: "DELETE FROM ai_conversation_messages WHERE conversation_id = ?",
                 arguments: [conversationId]
+            )
+        }
+    }
+
+    /// Delete all messages for a conversation and verify persistence is clear before
+    /// callers update UI state. This intentionally rethrows storage failures so the UI
+    /// can show a recoverable error instead of pretending private chat history was removed.
+    public static func clearPersistedConversation(_ conversationId: String, from db: AppDatabase) async throws {
+        try await deleteConversation(conversationId, from: db)
+
+        let remainingCount = try await db.writer.read { dbConn in
+            try Int.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT COUNT(*)
+                    FROM ai_conversation_messages
+                    WHERE conversation_id = ?
+                    """,
+                arguments: [conversationId]
+            ) ?? 0
+        }
+
+        guard remainingCount == 0 else {
+            throw AIConversationPersistenceError.deleteVerificationFailed(
+                conversationId: conversationId,
+                remainingMessageCount: remainingCount
             )
         }
     }

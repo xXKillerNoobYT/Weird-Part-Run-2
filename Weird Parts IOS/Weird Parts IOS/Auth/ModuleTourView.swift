@@ -3,6 +3,7 @@ import SwiftUI
 /// A brief horizontal carousel introducing key app modules.
 /// Shows after the NewUserWelcomeView is dismissed, only once per device.
 struct ModuleTourView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AppStorage("hasSeenModuleTour") private var hasSeenTour = false
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
     @State private var currentPage = 0
@@ -18,47 +19,74 @@ struct ModuleTourView: View {
 
     var body: some View {
         // Only show after welcome is dismissed, and only once
-        if hasSeenWelcome && !hasSeenTour {
+        if hasSeenWelcome && !hasSeenTour && !shouldSuppressForUITestFixture {
             tourOverlay
         }
     }
 
+    private var shouldSuppressForUITestFixture: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-UITesting") &&
+            (args.contains("-UITestingWarehouseLocations") ||
+             args.contains("-UITestingWarehouseDashboard") ||
+             args.contains("-UITestingWEI936AutoLogin"))
+    }
+
     private var tourOverlay: some View {
-        VStack(spacing: 20) {
-            Spacer()
+        VStack(spacing: dynamicTypeSize.isAccessibilitySize ? 16 : 20) {
+            if !dynamicTypeSize.isAccessibilitySize {
+                Spacer()
+            }
 
             Text("Quick Tour")
                 .font(.title2)
                 .fontWeight(.bold)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
 
             TabView(selection: $currentPage) {
                 ForEach(Array(pages.enumerated()), id: \.offset) { index, page in
-                    VStack(spacing: 16) {
+                    VStack(spacing: dynamicTypeSize.isAccessibilitySize ? 12 : 16) {
                         Image(systemName: page.icon)
-                            .decorativeIconFont(48)
+                            .decorativeIconFont(dynamicTypeSize.isAccessibilitySize ? 36 : 48)
                             .foregroundStyle(.blue)
+                            .accessibilityHidden(true)
 
                         Text(page.title)
                             .font(.title3)
                             .fontWeight(.semibold)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                            .fixedSize(horizontal: false, vertical: true)
 
                         Text(page.description)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, 32)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 3)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 24 : 32)
                     }
+                    .padding(.bottom, dynamicTypeSize.isAccessibilitySize ? 56 : 24)
                     .tag(index)
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: .always))
-            .frame(height: 220)
+            .tabViewStyle(.page(indexDisplayMode: dynamicTypeSize.isAccessibilitySize ? .never : .always))
+            .frame(height: dynamicTypeSize.isAccessibilitySize ? 430 : 220)
+
+            if dynamicTypeSize.isAccessibilitySize {
+                Text("\(currentPage + 1) of \(pages.count)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Tour page \(currentPage + 1) of \(pages.count)")
+            }
 
             HStack(spacing: 16) {
                 Button("Skip") {
                     withAnimation { hasSeenTour = true }
                 }
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
                 Spacer()
 
@@ -71,6 +99,7 @@ struct ModuleTourView: View {
                             Image(systemName: "chevron.right")
                         }
                         .fontWeight(.medium)
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                 } else {
                     Button {
@@ -78,14 +107,18 @@ struct ModuleTourView: View {
                     } label: {
                         Text("Get Started")
                             .fontWeight(.semibold)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .buttonStyle(.borderedProminent)
                 }
             }
-            .padding(.horizontal, 32)
+            .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 24 : 32)
 
-            Spacer()
+            if !dynamicTypeSize.isAccessibilitySize {
+                Spacer()
+            }
         }
+        .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 32 : 0)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.ultraThinMaterial)
     }

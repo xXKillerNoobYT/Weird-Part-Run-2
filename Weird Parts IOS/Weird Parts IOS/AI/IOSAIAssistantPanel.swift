@@ -33,6 +33,9 @@ struct IOSAIAssistantPanel: View {
     @State private var query = ""
     @State private var messages: [AssistantMessage] = []
     @State private var isProcessing = false
+    @State private var isClearingConversation = false
+    @State private var clearConversationError: String?
+    @State private var clearConversationRetryId: String?
     @State private var aiAvailability: AIAvailability = .notSupported
     @State private var catalogContext: String?
     @State private var pricingContext: String?
@@ -163,7 +166,7 @@ struct IOSAIAssistantPanel: View {
                         } label: {
                             Image(systemName: "trash")
                         }
-                        .disabled(messages.isEmpty)
+                        .disabled(messages.isEmpty || isClearingConversation)
                         .accessibilityLabel("Clear conversation")
                     }
                 }
@@ -240,7 +243,7 @@ struct IOSAIAssistantPanel: View {
                     .font(.caption)
             }
             .buttonStyle(.plain)
-            .disabled(messages.isEmpty)
+            .disabled(messages.isEmpty || isClearingConversation)
             .accessibilityLabel("Clear conversation")
 
             Button {
@@ -265,6 +268,7 @@ struct IOSAIAssistantPanel: View {
             if displayMode == .sheet {
                 availabilityHeader
             }
+            clearConversationStatus
             messagesArea
             inputBar
         }
@@ -394,6 +398,50 @@ struct IOSAIAssistantPanel: View {
         .background(Color(.secondarySystemGroupedBackground))
     }
 
+    @ViewBuilder
+    private var clearConversationStatus: some View {
+        if isClearingConversation {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .scaleEffect(0.7)
+                Text("Clearing conversation history…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity)
+            .background(Color(.secondarySystemGroupedBackground))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Clearing conversation history")
+        } else if let clearConversationError {
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Conversation was not cleared")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                    Text(clearConversationError)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 8)
+                Button("Retry") {
+                    retryClearConversation()
+                }
+                .font(.caption)
+                .disabled(isClearingConversation)
+                .accessibilityLabel("Retry clearing conversation")
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity)
+            .background(Color.red.opacity(0.12))
+            .accessibilityElement(children: .contain)
+        }
+    }
+
     // MARK: - Messages Area
 
     @ViewBuilder
@@ -470,7 +518,7 @@ struct IOSAIAssistantPanel: View {
                     .foregroundStyle(Color.accentColor)
             }
             .accessibilityLabel("Send message")
-            .disabled(query.trimmingCharacters(in: .whitespaces).isEmpty || isProcessing)
+            .disabled(query.trimmingCharacters(in: .whitespaces).isEmpty || isProcessing || isClearingConversation)
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
@@ -497,7 +545,7 @@ struct IOSAIAssistantPanel: View {
                             .fill(Color(.secondarySystemGroupedBackground))
                     )
             )
-            .disabled(isProcessing)
+            .disabled(isProcessing || isClearingConversation)
             .onKeyPress(.return, phases: .down) { keyPress in
                 if keyPress.modifiers.contains(.shift) {
                     // Shift+Enter: allow default (insert newline)
@@ -514,8 +562,10 @@ struct IOSAIAssistantPanel: View {
 
     private func sendQuery() {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty, !isClearingConversation else { return }
 
+        clearConversationError = nil
+        clearConversationRetryId = nil
         messages.append(AssistantMessage(role: .user, content: trimmed))
         query = ""
         isProcessing = true
@@ -531,29 +581,62 @@ struct IOSAIAssistantPanel: View {
 
     /// Start a brand-new conversation — clears the AI session, resets messages, generates a new ID.
     private func startNewConversation() {
+        clearConversationError = nil
+        clearConversationRetryId = nil
         Task { await aiService.clearConversation() }
         conversationId = UUID().uuidString
-        messages = [AssistantMessage(
-            role: .assistant,
-            content: "How can I help you today? I can search your data, answer questions about jobs, parts, orders, and help you navigate the app."
-        )]
+        messages = [welcomeMessage()]
     }
 
     /// Delete all messages from the current conversation (UI + DB) but keep the same conversation ID.
     private func clearCurrentConversation() {
-        let cid = conversationId
-        messages.removeAll()
-        Task { await aiService.clearConversation() }
-        if let db = appCore.db {
-            Task {
-                try? await FoundationModelsService.deleteConversation(cid, from: db)
+        clearPersistedConversation(conversationId)
+    }
+
+    private func retryClearConversation() {
+        clearPersistedConversation(clearConversationRetryId ?? conversationId)
+    }
+
+    /// Fail closed: do not clear the visible conversation until persistent deletion succeeds.
+    private func clearPersistedConversation(_ cid: String) {
+        guard !isClearingConversation else { return }
+        guard let db = appCore.db else {
+            clearConversationRetryId = cid
+            clearConversationError = "The app database is unavailable. Your stored messages were not deleted; try again after the app finishes loading."
+            return
+        }
+
+        isClearingConversation = true
+        clearConversationError = nil
+        clearConversationRetryId = cid
+
+        Task {
+            do {
+                try await FoundationModelsService.clearPersistedConversation(cid, from: db)
+                await aiService.clearConversation()
+                await MainActor.run {
+                    if conversationId == cid {
+                        messages = [welcomeMessage()]
+                    }
+                    clearConversationError = nil
+                    clearConversationRetryId = nil
+                    isClearingConversation = false
+                }
+            } catch {
+                await MainActor.run {
+                    clearConversationRetryId = cid
+                    clearConversationError = "Stored messages could not be deleted: \(error.localizedDescription)"
+                    isClearingConversation = false
+                }
             }
         }
-        // Re-add the welcome message
-        messages.append(AssistantMessage(
+    }
+
+    private func welcomeMessage() -> AssistantMessage {
+        AssistantMessage(
             role: .assistant,
             content: "How can I help you today? I can search your data, answer questions about jobs, parts, orders, and help you navigate the app."
-        ))
+        )
     }
 
     /// Load previously saved messages for the current conversation from the DB.
@@ -582,10 +665,7 @@ struct IOSAIAssistantPanel: View {
     /// Adds the default welcome message if the messages list is empty.
     private func addWelcomeMessageIfNeeded() {
         if messages.isEmpty {
-            messages.append(AssistantMessage(
-                role: .assistant,
-                content: "How can I help you today? I can search your data, answer questions about jobs, parts, orders, and help you navigate the app."
-            ))
+            messages.append(welcomeMessage())
         }
     }
 

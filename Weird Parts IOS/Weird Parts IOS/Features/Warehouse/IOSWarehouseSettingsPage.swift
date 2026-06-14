@@ -116,11 +116,20 @@ struct IOSWarehouseSettingsPage: View {
                 }
             }
 
+            if !appCore.hasPermission("manage_warehouse") {
+                Section("Settings Management") {
+                    Text("Warehouse setup wizards are available above. Advanced location, stock, movement, and audit settings require warehouse management permission.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             // Default locations
             Section("Default Locations") {
                 TextField("Receiving Location", text: $defaultReceivingLocation)
                 TextField("Staging Location", text: $defaultStagingLocation)
             }
+            .hideWithoutPermission("manage_warehouse")
 
             // Stock thresholds
             Section {
@@ -135,6 +144,7 @@ struct IOSWarehouseSettingsPage: View {
             } footer: {
                 Text("Parts below the low stock threshold will be flagged. Critical threshold triggers urgent alerts.")
             }
+            .hideWithoutPermission("manage_warehouse")
 
             // Movement policies
             Section {
@@ -150,6 +160,7 @@ struct IOSWarehouseSettingsPage: View {
             } footer: {
                 Text("Controls how warehouse movements are validated and approved.")
             }
+            .hideWithoutPermission("manage_warehouse")
 
             // Audit settings
             Section {
@@ -160,6 +171,7 @@ struct IOSWarehouseSettingsPage: View {
             } footer: {
                 Text("Configure how often audits should occur and what evidence is required.")
             }
+            .hideWithoutPermission("manage_warehouse")
 
             // Save
             Section {
@@ -180,6 +192,7 @@ struct IOSWarehouseSettingsPage: View {
                 }
                 .disabled(isSaving)
             }
+            .hideWithoutPermission("manage_warehouse")
         }
         .scrollDismissesKeyboard(.interactively)
     }
