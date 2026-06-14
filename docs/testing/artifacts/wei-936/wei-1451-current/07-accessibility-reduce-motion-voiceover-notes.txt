@@ -1,0 +1,6 @@
+WEI-1451 / WEI-936 remaining evidence verification
+- iPad landscape captured with WEI_1185_LANDSCAPE=1 / XCUIDevice.landscapeLeft when requested.
+- Deterministic launch fixtures used: -UITestingWEI936Welcome, -UITestingWEI936NotStarted, -UITestingWEI936TourActive, -UITestingWEI936RequiredDone, -UITestingWEI936Celebration.
+- Dismiss toast verified by tapping the Dashboard Getting Started dismiss button and waiting for the Checklist dismissed toast.
+- Reduce Motion: OnboardingCompleteView now renders the checkmark without a spring animation when accessibilityReduceMotion is true.
+- VoiceOver/accessibility traversal smoke: core evidence controls expose labels for Dismiss checklist, Checklist dismissed. Undo, Required tour steps complete, and the welcome/celebration headings.

@@ -122,16 +122,16 @@ struct PartsFlowWizard: View {
         VStack(spacing: 4) {
             HStack(spacing: 8) {
                 ForEach(1...totalSteps, id: \.self) { step in
-                    Circle()
-                        .fill(step == currentStep ? .blue :
-                              step < currentStep ? .green :
-                              .gray.opacity(0.3))
-                        .frame(width: 10, height: 10)
-                        .onTapGesture {
-                            if step <= currentStep {
-                                withAnimation { currentStep = step }
-                            }
-                        }
+                    WarehouseWizardProgressStepButton(
+                        step: step,
+                        totalSteps: totalSteps,
+                        title: stepLabels[step - 1],
+                        isCurrent: step == currentStep,
+                        isCompleted: step < currentStep,
+                        isEnabled: step <= currentStep
+                    ) {
+                        withAnimation { currentStep = step }
+                    }
                 }
             }
 
