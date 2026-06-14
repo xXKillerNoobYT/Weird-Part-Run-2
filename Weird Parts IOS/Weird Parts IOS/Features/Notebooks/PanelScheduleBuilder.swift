@@ -107,7 +107,8 @@ struct PanelScheduleBuilder: View {
 
                     Rectangle()
                         .fill(.gray)
-                        .frame(width: 4, height: 36)
+                        .frame(width: 4, height: 44)
+                        .accessibilityHidden(true)
 
                     circuitCell(spaceNumber: rightSpace, circuit: rightCircuit, isLeft: false)
                 }
@@ -148,10 +149,48 @@ struct PanelScheduleBuilder: View {
             }
             .padding(.horizontal, 4)
             .padding(.vertical, 6)
-            .frame(height: 36)
+            .frame(minHeight: 44)
             .background(circuitBackground(circuit))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(circuitAccessibilityLabel(spaceNumber: spaceNumber, circuit: circuit))
+        .accessibilityValue(circuitAccessibilityValue(circuit))
+        .accessibilityHint("Opens the editor for circuit \(spaceNumber).")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    private func circuitDisplayName(_ circuit: CircuitEntry?) -> String {
+        let description = circuit?.circuitDescription.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return description.isEmpty ? "SPARE" : description
+    }
+
+    private func circuitAccessibilityLabel(spaceNumber: Int, circuit: CircuitEntry?) -> String {
+        "Circuit \(spaceNumber), \(circuitDisplayName(circuit))"
+    }
+
+    private func circuitAccessibilityValue(_ circuit: CircuitEntry?) -> String {
+        guard let circuit, !circuit.isSpare else {
+            return "Spare circuit, no breaker assigned"
+        }
+
+        var details: [String] = []
+        if let amps = circuit.breakerAmps {
+            details.append("\(amps) amp")
+        } else {
+            details.append("No amp rating")
+        }
+        details.append("\(circuit.breakerType.rawValue) breaker")
+
+        let description = circuit.circuitDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !description.isEmpty {
+            details.append(description)
+        }
+        if let fedFrom = circuit.isFedFrom?.trimmingCharacters(in: .whitespacesAndNewlines), !fedFrom.isEmpty {
+            details.append("fed from \(fedFrom)")
+        }
+        return details.joined(separator: ", ")
     }
 
     private func circuitBackground(_ circuit: CircuitEntry?) -> Color {
