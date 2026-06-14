@@ -1,1 +1,0 @@
-APP=/Users/IA/GitHub/Weird-Part-Run-2/ui-evidence/WEI-3519/DerivedData/Build/Products/Debug-iphonesimulator/Weird Parts.app

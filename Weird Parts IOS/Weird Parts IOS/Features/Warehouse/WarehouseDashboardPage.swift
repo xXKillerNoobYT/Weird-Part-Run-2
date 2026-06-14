@@ -26,7 +26,6 @@ struct WarehouseDashboardPage: View {
     @State private var loadError: String?
     @State private var selectedFilter: DashboardFilter?
     @State private var activeSheet: ActiveSheet?
-    @State private var showSettingsInline = false
 
     private enum DashboardFilter: String, CaseIterable {
         case movesToday = "Moves Today"
@@ -75,9 +74,6 @@ struct WarehouseDashboardPage: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = loadError {
                 ErrorStateView(message: error) { loadData() }
-            } else if showSettingsInline {
-                IOSWarehouseSettingsPage()
-                    .environmentObject(appCore)
             } else {
                 dashboardContent
             }
@@ -671,6 +667,9 @@ struct WarehouseDashboardPage: View {
             quickActionButton(title: action.title, icon: action.icon, color: action.color)
         }
             .buttonStyle(.plain)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(action.title)
+            .accessibilityAddTraits(.isButton)
             .accessibilityIdentifier(action.identifier)
 
         if let requiredPermission = action.requiredPermission {
@@ -681,11 +680,6 @@ struct WarehouseDashboardPage: View {
     }
 
     private func performQuickAction(_ action: WarehouseQuickAction) {
-        if action.identifier == "whAction_settings" {
-            showSettingsInline = true
-            return
-        }
-
         if let sheet = action.sheet {
             activeSheet = sheet
         } else if let moduleId = action.moduleId {
@@ -743,32 +737,7 @@ struct WarehouseDashboardPage: View {
                 subPageLink(title: "Tools", icon: "wrench.and.screwdriver.fill", color: .brown, tabId: "warehouse-tools")
                 subPageLink(title: "Leaderboard", icon: "trophy.fill", color: .yellow, tabId: "warehouse-leaderboard")
                 subPageLink(title: "Network", icon: "antenna.radiowaves.left.and.right", color: .cyan, tabId: "warehouse-network")
-                Button {
-                    showSettingsInline = true
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "gearshape.fill")
-                            .font(.subheadline)
-                            .foregroundStyle(.gray)
-                            .accessibilityHidden(true)
-                        Text("Settings")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                            .accessibilityHidden(true)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(Color(.secondarySystemGroupedBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("whSubPage_warehouse-settings")
-                .accessibilityLabel("Settings")
+                subPageLink(title: "Settings", icon: "gearshape.fill", color: .gray, tabId: "warehouse-settings")
             }
         }
     }
