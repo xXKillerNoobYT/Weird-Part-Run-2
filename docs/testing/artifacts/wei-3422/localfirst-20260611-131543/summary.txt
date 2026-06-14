@@ -1,0 +1,2 @@
+xcodebuild_exit=65
+** TEST FAILED **
