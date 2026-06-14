@@ -203,8 +203,24 @@ struct CartSheetView: View {
         let currentPlacements = placements
         let service = appCore.partsService
 
+        if items.contains(where: { $0.partId != nil }) {
+            guard let service else {
+                placementError = "Inventory service is still loading. Cart items were not placed; keep the cart open and try again."
+                isPlacingItems = false
+                return
+            }
+
+            placeItems(items, placements: currentPlacements, partsService: service)
+        } else {
+            placeBins(items, placements: currentPlacements)
+        }
+    }
+
+    private func placeItems(_ items: [CartItem], placements currentPlacements: [UUID: String], partsService service: PartsService) {
+
         Task {
             var placed: Set<UUID> = []
+            var failedPartIDs: Set<UUID> = []
             var errorMsg: String?
 
             for item in items {
@@ -213,9 +229,10 @@ struct CartSheetView: View {
 
                 if let partId = item.partId {
                     do {
-                        try service?.updatePart(id: partId, notes: "Location: \(location)")
+                        try service.updatePart(id: partId, notes: "Location: \(location)")
                         placed.insert(item.id)
                     } catch {
+                        failedPartIDs.insert(item.id)
                         errorMsg = userFriendlyError(error, context: "place item")
                     }
                 } else {
@@ -224,8 +241,29 @@ struct CartSheetView: View {
                 }
             }
 
+            placed.subtract(failedPartIDs)
             placedItems.formUnion(placed)
             if let msg = errorMsg { placementError = msg }
+            isPlacingItems = false
+
+            if placedItems.count == cartManager.itemCount {
+                try? await Task.sleep(for: .milliseconds(500))
+                cartManager.removeAll()
+                dismiss()
+            }
+        }
+    }
+
+    private func placeBins(_ items: [CartItem], placements currentPlacements: [UUID: String]) {
+        Task {
+            var placed: Set<UUID> = []
+
+            for item in items {
+                guard currentPlacements[item.id]?.trimmingCharacters(in: .whitespaces).isEmpty == false else { continue }
+                placed.insert(item.id)
+            }
+
+            placedItems.formUnion(placed)
             isPlacingItems = false
 
             if placedItems.count == cartManager.itemCount {
