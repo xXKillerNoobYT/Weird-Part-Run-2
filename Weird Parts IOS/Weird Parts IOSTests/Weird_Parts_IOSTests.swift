@@ -19,6 +19,11 @@ private enum PeerDiscoveryCompanyIdTestError: Error {
     case lookupFailed
 }
 
+private enum DispatchSheetLoadTestError: Error {
+    case jobLoadFailed
+    case employeeLoadFailed
+}
+
 struct Weird_Parts_IOSTests {
 
     struct LANPeerDiscoveryStartupError: Error, LocalizedError {
@@ -340,6 +345,27 @@ struct Weird_Parts_IOSTests {
         )
     }
 
+    @Test func createDispatchSheetShowsActionableLoadFailures() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sheetURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Scheduling/CreateDispatchSheet.swift")
+        let source = try String(contentsOf: sheetURL, encoding: .utf8)
+
+        #expect(!source.contains("try? jobService.listJobs"), "Job load failures must not be swallowed into an empty active-jobs picker state")
+        #expect(!source.contains("try? peopleService.listEmployees"), "Employee load failures must not be swallowed into an empty employee picker state")
+        #expect(source.contains("jobLoadError = result.jobLoadError"), "Job load failures should be tracked separately from empty job results")
+        #expect(source.contains("employeeLoadError = result.employeeLoadError"), "Employee load failures should be tracked separately from empty employee results")
+        #expect(source.contains("userFriendlyError(error, context: context)"), "Service failures should be formatted as user-facing error copy")
+        #expect(source.contains("Text(\"No active jobs\")"), "Legitimate empty job results should still show the empty-state copy")
+        #expect(source.contains("Text(\"No employees found\")"), "Legitimate empty employee results should still show the empty-state copy")
+        #expect(source.contains("Label(\"Retry\", systemImage: \"arrow.clockwise\")"), "Load failures should offer an actionable retry")
+        #expect(source.contains("Retry loading jobs"), "Job retry control needs a specific accessibility label")
+        #expect(source.contains("Retry loading employees"), "Employee retry control needs a specific accessibility label")
+    }
+
     @Test @MainActor func questionnaireBreakAutofillDoesNotSwallowSubmitErrors() throws {
         var autoFillAttempts = 0
 
@@ -415,6 +441,88 @@ struct Weird_Parts_IOSTests {
         let source = try String(contentsOf: suppliersURL, encoding: .utf8)
 
         #expect(source.contains("loadError = userFriendlyError(error, context: \"create supplier channel\")"))
+    }
+
+    @MainActor
+    @Test func dispatchSheetJobLoadFailurePreservesEmployeeResultsAndShowsActionableJobError() throws {
+        let loadedEmployee = PeopleService.EmployeeListItem(
+            id: 42,
+            displayName: "Field Tech",
+            email: "tech@example.com",
+            phone: nil,
+            status: "active",
+            role: "employee",
+            hatNames: nil
+        )
+
+        let result = DispatchSheetLoadData.load(
+            jobsProvider: { throw DispatchSheetLoadTestError.jobLoadFailed },
+            employeesProvider: { [loadedEmployee] },
+            errorFormatter: { _, context in "Couldn't \(context). Retry." }
+        )
+
+        #expect(result.jobs.isEmpty)
+        #expect(result.employees.map(\.displayName) == ["Field Tech"])
+        #expect(result.jobLoadError == "Couldn't load active jobs. Retry.")
+        #expect(result.employeeLoadError == nil)
+        #expect(result.hasLoadFailure)
+    }
+
+    @MainActor
+    @Test func dispatchSheetEmployeeLoadFailurePreservesJobResultsAndShowsActionableEmployeeError() throws {
+        let loadedJob = JobsService.JobListItem(
+            id: 7,
+            jobNumber: "JOB-7",
+            jobName: "Warehouse Upgrade",
+            customerName: nil,
+            status: "active",
+            priority: "medium",
+            teamCount: 0,
+            startDate: nil,
+            dueDate: nil
+        )
+
+        let result = DispatchSheetLoadData.load(
+            jobsProvider: { [loadedJob] },
+            employeesProvider: { throw DispatchSheetLoadTestError.employeeLoadFailed },
+            errorFormatter: { _, context in "Couldn't \(context). Retry." }
+        )
+
+        #expect(result.jobs.map(\.jobName) == ["Warehouse Upgrade"])
+        #expect(result.employees.isEmpty)
+        #expect(result.jobLoadError == nil)
+        #expect(result.employeeLoadError == "Couldn't load employees. Retry.")
+        #expect(result.hasLoadFailure)
+    }
+
+    @MainActor
+    @Test func dispatchSheetBothLoadFailuresExposeBothActionableMessages() throws {
+        let result = DispatchSheetLoadData.load(
+            jobsProvider: { throw DispatchSheetLoadTestError.jobLoadFailed },
+            employeesProvider: { throw DispatchSheetLoadTestError.employeeLoadFailed },
+            errorFormatter: { _, context in "Couldn't \(context). Retry." }
+        )
+
+        #expect(result.jobs.isEmpty)
+        #expect(result.employees.isEmpty)
+        #expect(result.jobLoadError == "Couldn't load active jobs. Retry.")
+        #expect(result.employeeLoadError == "Couldn't load employees. Retry.")
+        #expect(result.hasLoadFailure)
+    }
+
+    @MainActor
+    @Test func dispatchSheetEmptyResultsRemainLegitimateEmptyStatesWithoutLoadFailure() throws {
+        let result = DispatchSheetLoadData.load(
+            jobsProvider: { [] },
+            employeesProvider: { [] },
+            errorFormatter: { _, context in "Couldn't \(context). Retry." }
+        )
+
+        #expect(result.jobs.isEmpty)
+        #expect(result.employees.isEmpty)
+        #expect(result.jobLoadError == nil)
+        #expect(result.employeeLoadError == nil)
+        #expect(!result.hasLoadFailure)
     }
 
     @Test func uiTestingFixturesSeedJPOFlowDataForQASmoke() throws {
