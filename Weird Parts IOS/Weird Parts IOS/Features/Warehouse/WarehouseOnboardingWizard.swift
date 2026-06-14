@@ -213,16 +213,16 @@ struct WarehouseOnboardingWizard: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(1...totalSteps, id: \.self) { step in
-                        Circle()
-                            .fill(step == currentStep ? .blue :
-                                  completedWizardSteps.contains(step) ? .green :
-                                  .gray.opacity(0.3))
-                            .frame(width: 10, height: 10)
-                            .onTapGesture {
-                                if step <= currentStep || completedWizardSteps.contains(step) {
-                                    withAnimation { currentStep = step }
-                                }
-                            }
+                        WarehouseWizardProgressStepButton(
+                            step: step,
+                            totalSteps: totalSteps,
+                            title: stepLabels[step - 1],
+                            isCurrent: step == currentStep,
+                            isCompleted: completedWizardSteps.contains(step),
+                            isEnabled: canNavigateToStep(step)
+                        ) {
+                            withAnimation { currentStep = step }
+                        }
                     }
                 }
             }
@@ -241,6 +241,10 @@ struct WarehouseOnboardingWizard: View {
         .padding(.horizontal)
         .padding(.vertical, 8)
         .background(Color(.secondarySystemBackground))
+    }
+
+    private func canNavigateToStep(_ step: Int) -> Bool {
+        step <= currentStep || completedWizardSteps.contains(step)
     }
 
     // MARK: - Step 1: Define Space
