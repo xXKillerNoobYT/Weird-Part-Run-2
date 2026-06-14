@@ -214,6 +214,15 @@ final class IOSSyncManager {
             errorMessage = "Sync not configured. Enable Bluetooth sync or set a server address in Settings."
             return
         }
+
+        let companyId: String
+        do {
+            companyId = try peerDiscoveryCompanyId()
+        } catch {
+            handlePeerDiscoveryCompanyIdFailure(error)
+            return
+        }
+
         isScanning = true
 
         // Start multipeer if BT is enabled
@@ -222,7 +231,6 @@ final class IOSSyncManager {
             if multipeerManager == nil {
                 let deviceId = DeviceIdentity.current
                 let deviceName = UIDevice.current.name
-                let companyId = (try? settingsService?.getSettingsByCategory("company"))?["company_id"] ?? "default"
                 multipeerManager = MultipeerManager(
                     deviceId: deviceId,
                     deviceName: deviceName,
@@ -242,7 +250,6 @@ final class IOSSyncManager {
             Task {
                 let deviceId = DeviceIdentity.current
                 let deviceName = UIDevice.current.name
-                let companyId = (try? settingsService?.getSettingsByCategory("company"))?["company_id"] ?? "default"
                 do {
                     try await pm.startPeerSync(
                         deviceId: deviceId,
@@ -282,6 +289,33 @@ final class IOSSyncManager {
         }
     }
 
+    private func peerDiscoveryCompanyId() throws -> String {
+        guard let settingsService else {
+            throw SyncError.noCompanyIdConfigured
+        }
+        return try Self.peerDiscoveryCompanyId {
+            try settingsService.getSettingsByCategory("company")
+        }
+    }
+
+    static func peerDiscoveryCompanyId(
+        loadCompanySettings: () throws -> [String: String]
+    ) throws -> String {
+        let settings = try loadCompanySettings()
+        let companyId = settings["company_id"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !companyId.isEmpty else {
+            throw SyncError.noCompanyIdConfigured
+        }
+        return companyId
+    }
+
+    func handlePeerDiscoveryCompanyIdFailure(_ error: Error) {
+        logger.error("[IOSSyncManager] Peer discovery blocked because company id could not be verified: \(error.localizedDescription)")
+        syncStatus = .error
+        errorMessage = "Peer discovery unavailable: \(error.localizedDescription)"
+        isScanning = false
+    }
+
     /// Issue a one-time pairing code from the shop-side sync server.
     func issueShopPairingCode() async throws -> String {
         guard let pm = peerManager else {
@@ -292,7 +326,13 @@ final class IOSSyncManager {
         if !currentState.running {
             let deviceId = DeviceIdentity.current
             let deviceName = UIDevice.current.name
-            let companyId = (try? settingsService?.getSettingsByCategory("company"))?["company_id"] ?? "default"
+            let companyId: String
+            do {
+                companyId = try peerDiscoveryCompanyId()
+            } catch {
+                handlePeerDiscoveryCompanyIdFailure(error)
+                throw error
+            }
             try await pm.startPeerSync(
                 deviceId: deviceId,
                 deviceName: deviceName,
@@ -682,6 +722,7 @@ final class IOSSyncManager {
     enum SyncError: LocalizedError {
         case noDatabaseAvailable
         case noServerConfigured
+        case noCompanyIdConfigured
         case invalidPairingCode
         case invalidShopAddress
         case pairingVerificationFailed(String)
@@ -691,6 +732,7 @@ final class IOSSyncManager {
             switch self {
             case .noDatabaseAvailable: return "Database not available."
             case .noServerConfigured: return "No sync server configured."
+            case .noCompanyIdConfigured: return "Company ID is not configured. Open Settings and verify the company profile before starting peer discovery."
             case .invalidPairingCode: return "Pairing code must be eight letters or numbers."
             case .invalidShopAddress: return "Shop address is invalid."
             case .pairingVerificationFailed(let msg): return msg
