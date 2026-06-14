@@ -136,6 +136,50 @@ final class SettingsSaveButtonValidationTests: XCTestCase {
         )
     }
 
+    // MARK: - IOSJobStageTemplatesSettingsPage
+
+    func testJobStageTemplateAlertsRejectBlankNamesBeforeDismissal() throws {
+        let source = try Self.readSettingsSource("IOSJobStageTemplatesSettingsPage.swift")
+
+        XCTAssertTrue(
+            source.contains("private var trimmedNewTemplateName: String") &&
+                source.contains("private var trimmedRenameTemplateName: String") &&
+                source.contains("private var trimmedDuplicateTemplateName: String"),
+            "Job stage template alerts should centralize whitespace-trimmed names for create, rename, and duplicate actions."
+        )
+        XCTAssertTrue(
+            source.contains("private var canCreateTemplate: Bool { !trimmedNewTemplateName.isEmpty }") &&
+                source.contains("private var canRenameTemplate: Bool { !trimmedRenameTemplateName.isEmpty }") &&
+                source.contains("private var canDuplicateTemplate: Bool { !trimmedDuplicateTemplateName.isEmpty }"),
+            "Job stage template alerts should expose validity flags so blank names cannot be submitted."
+        )
+        XCTAssertTrue(
+            source.contains("Button(\"Create\") { createTemplate() }\n                .disabled(!canCreateTemplate)") &&
+                source.contains("Button(\"Duplicate\") { duplicateTemplate() }\n                .disabled(!canDuplicateTemplate)") &&
+                source.contains("Button(\"Rename\") { renameTemplate() }\n                .disabled(!canRenameTemplate)"),
+            "Create, duplicate, and rename alert actions should stay disabled while their names are blank or whitespace-only."
+        )
+        XCTAssertTrue(
+            source.contains("Enter a template name before creating this workflow.") &&
+                source.contains("Enter a new template name before duplicating this workflow.") &&
+                source.contains("Enter a template name before renaming this workflow."),
+            "Each alert should provide visible validation copy instead of dismissing to a hidden page-level error."
+        )
+        XCTAssertTrue(
+            source.contains("guard canCreateTemplate else { return }") &&
+                source.contains("guard canRenameTemplate else { return }") &&
+                source.contains("guard canDuplicateTemplate else { return }"),
+            "Template actions should keep defensive guards so invalid names never reach JobsService."
+        )
+        XCTAssertTrue(
+            source.contains("name: templateName") &&
+                source.contains("let templateName = trimmedNewTemplateName") &&
+                source.contains("let templateName = trimmedRenameTemplateName") &&
+                source.contains("let templateName = trimmedDuplicateTemplateName"),
+            "Template actions should pass trimmed names to JobsService after validation."
+        )
+    }
+
     // MARK: - IOSAuditSettingsPage
 
     func testAuditSettingsPageHasBothIsDirtyAndValidSettingsGuard() throws {
