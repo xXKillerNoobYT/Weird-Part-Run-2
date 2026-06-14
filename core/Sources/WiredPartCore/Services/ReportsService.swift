@@ -928,7 +928,8 @@ public final class ReportsService: Sendable {
         do {
             return try db.writer.read { dbConn -> [BookkeeperLaborRow] in
                 let sql = """
-                    SELECT u.id, COALESCE(u.display_name, u.email, 'Unknown') AS name,
+                    SELECT le.user_id AS id,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS name,
                            COALESCE(SUM(le.regular_hours), 0) AS regular_hours,
                            COALESCE(SUM(le.overtime_hours), 0) AS overtime_hours,
                            ROUND(COALESCE(SUM(
@@ -936,13 +937,13 @@ public final class ReportsService: Sendable {
                                le.overtime_hours * COALESCE(u.pay_rate, 0) * 1.5
                            ), 0), 2) AS gross_pay,
                            COUNT(le.id) AS labor_entry_count
-                    FROM users u
-                    JOIN labor_entries le ON le.user_id = u.id
+                    FROM labor_entries le
+                    LEFT JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
                     WHERE \(Self.localDateSQL("le.clock_in")) >= date(?)
                       AND \(Self.localDateSQL("le.clock_in")) <= date(?)
                       AND le.deleted_at IS NULL
-                    GROUP BY u.id
-                    ORDER BY name, u.id
+                    GROUP BY le.user_id
+                    ORDER BY name, le.user_id
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [startDate, endDate])
