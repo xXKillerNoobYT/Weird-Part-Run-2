@@ -25,12 +25,17 @@ final class PanelScheduleBuilderAccessibilityTests: XCTestCase {
             source.contains(".contentShape(Rectangle())"),
             "The full 44pt row should be tappable, not just visible text."
         )
+        XCTAssertFalse(
+            source.contains(".accessibilityElement(children: .ignore)"),
+            "Do not wrap the Button in a separate explicit accessibility element; XCTest taps can hit that wrapper without firing the button action."
+        )
         XCTAssertTrue(
-            source.contains(".accessibilityElement(children: .ignore)") &&
+            source.contains("openCircuitEditor(spaceNumber: spaceNumber, circuit: circuit)") &&
                 source.contains(".accessibilityLabel(circuitAccessibilityLabel(spaceNumber: spaceNumber, circuit: circuit))") &&
                 source.contains(".accessibilityValue(circuitAccessibilityValue(circuit))") &&
-                source.contains(".accessibilityHint(\"Opens the editor for circuit \\(spaceNumber).\")"),
-            "Each circuit button should expose a single label/value/hint that explains it opens the editor."
+                source.contains(".accessibilityHint(\"Opens the editor for circuit \\(spaceNumber).\")") &&
+                source.contains(".accessibilityIdentifier(\"panel-schedule-circuit-\\(spaceNumber)\")"),
+            "Each real circuit button should expose label/value/hint/identifier directly while preserving its editor action."
         )
         XCTAssertTrue(
             source.contains("private func circuitAccessibilityLabel(spaceNumber: Int, circuit: CircuitEntry?) -> String") &&

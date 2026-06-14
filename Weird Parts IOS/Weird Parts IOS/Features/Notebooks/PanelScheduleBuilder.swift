@@ -119,10 +119,7 @@ struct PanelScheduleBuilder: View {
 
     private func circuitCell(spaceNumber: Int, circuit: CircuitEntry?, isLeft: Bool) -> some View {
         Button {
-            selectedCircuit = circuit ?? CircuitEntry(
-                spaceNumber: spaceNumber
-            )
-            activeSheet = .circuitEditor
+            openCircuitEditor(spaceNumber: spaceNumber, circuit: circuit)
         } label: {
             HStack(spacing: 2) {
                 if isLeft {
@@ -154,11 +151,15 @@ struct PanelScheduleBuilder: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
         .accessibilityLabel(circuitAccessibilityLabel(spaceNumber: spaceNumber, circuit: circuit))
         .accessibilityValue(circuitAccessibilityValue(circuit))
         .accessibilityHint("Opens the editor for circuit \(spaceNumber).")
-        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("panel-schedule-circuit-\(spaceNumber)")
+    }
+
+    private func openCircuitEditor(spaceNumber: Int, circuit: CircuitEntry?) {
+        selectedCircuit = circuit ?? CircuitEntry(spaceNumber: spaceNumber)
+        activeSheet = .circuitEditor
     }
 
     private func circuitDisplayName(_ circuit: CircuitEntry?) -> String {
