@@ -7,9 +7,13 @@ struct UsedStickerPicker: View {
     let grid: LabelGrid
     @Binding var usedPositions: Set<Int>
 
+    private var availablePositionCount: Int {
+        QRLabelPDFGenerator.availableStickerPositionCount(grid: grid, usedPositions: usedPositions)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Tap positions already used on your sheet:")
+            Text("Tap positions already used on your sheet. At least one blank position must remain available for the first page.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -20,7 +24,7 @@ struct UsedStickerPicker: View {
                     Button {
                         if usedPositions.contains(position) {
                             usedPositions.remove(position)
-                        } else {
+                        } else if availablePositionCount > 1 {
                             usedPositions.insert(position)
                         }
                     } label: {
@@ -45,18 +49,18 @@ struct UsedStickerPicker: View {
                     }
                     .buttonStyle(.plain)
                     .frame(minHeight: 30)
+                    .disabled(!usedPositions.contains(position) && availablePositionCount <= 1)
                     .accessibilityLabel(usedPositions.contains(position) ? "Position \(position + 1): Used" : "Position \(position + 1): Available")
+                    .accessibilityHint(!usedPositions.contains(position) && availablePositionCount <= 1 ? "At least one blank sticker position must remain available to print." : "Double tap to toggle whether this sticker position is already used.")
                 }
             }
 
             HStack {
-                Text("\(grid.totalPositions - usedPositions.count) labels will print")
+                Text("\(availablePositionCount) blank positions available on first page")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Clear All", role: .destructive) { usedPositions.removeAll() }
-                    .font(.caption)
-                Button("Use All") { usedPositions = Set(0..<grid.totalPositions) }
+                Button("Use Full Sheet") { usedPositions.removeAll() }
                     .font(.caption)
             }
         }
@@ -77,6 +81,10 @@ struct QRLabelPrintSheet: View {
     @State private var usedPositions: Set<Int> = []
     @State private var isPrinting = false
     @State private var printError: String?
+
+    private var isPrintUnavailable: Bool {
+        items.isEmpty || isPrinting || availablePositionsPerPage <= 0
+    }
 
     var body: some View {
         NavigationStack {
@@ -145,8 +153,13 @@ struct QRLabelPrintSheet: View {
                 // Page count estimate
                 Section {
                     let available = availablePositionsPerPage
-                    let pages = available > 0 ? Int(ceil(Double(items.count) / Double(available))) : 1
-                    LabeledContent("Pages to Print", value: "\(pages)")
+                    if available > 0 {
+                        let pages = Int(ceil(Double(items.count) / Double(available)))
+                        LabeledContent("Pages to Print", value: "\(pages)")
+                    } else {
+                        Label("Choose at least one available sticker position before printing.", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                    }
                 }
 
                 // Error
@@ -173,7 +186,7 @@ struct QRLabelPrintSheet: View {
                             Label("Print", systemImage: "printer")
                         }
                     }
-                    .disabled(items.isEmpty || isPrinting)
+                    .disabled(isPrintUnavailable)
                 }
             }
             .onChange(of: paperSize) {
@@ -260,7 +273,7 @@ struct QRLabelPrintSheet: View {
 
     private var availablePositionsPerPage: Int {
         if let grid = paperSize.labelGrid {
-            return grid.totalPositions - usedPositions.count
+            return QRLabelPDFGenerator.availableStickerPositionCount(grid: grid, usedPositions: usedPositions)
         }
         // Plain paper: auto-calculate
         let pageSize = paperSize.pageSizePoints
@@ -273,6 +286,12 @@ struct QRLabelPrintSheet: View {
     private func printLabels() {
         isPrinting = true
         printError = nil
+
+        guard availablePositionsPerPage > 0 else {
+            printError = "Choose at least one available sticker position before printing."
+            isPrinting = false
+            return
+        }
 
         guard let pdfData = QRLabelPDFGenerator.generatePDF(
             items: items,
