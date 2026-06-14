@@ -19,9 +19,17 @@ struct ModuleTourView: View {
 
     var body: some View {
         // Only show after welcome is dismissed, and only once
-        if hasSeenWelcome && !hasSeenTour {
+        if hasSeenWelcome && !hasSeenTour && !shouldSuppressForUITestFixture {
             tourOverlay
         }
+    }
+
+    private var shouldSuppressForUITestFixture: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-UITesting") &&
+            (args.contains("-UITestingWarehouseLocations") ||
+             args.contains("-UITestingWarehouseDashboard") ||
+             args.contains("-UITestingWEI936AutoLogin"))
     }
 
     private var tourOverlay: some View {
