@@ -144,6 +144,42 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app = nil
     }
 
+    // MARK: - Panel Schedule Accessibility
+
+    @MainActor
+    func testPanelScheduleAccessibleCircuitButtonOpensEditor() throws {
+        relaunchForPanelScheduleBuilderFixture()
+
+        let accessibleCircuit = app.buttons["Circuit 1, Office lighting"]
+        XCTAssertTrue(
+            accessibleCircuit.waitForExistence(timeout: 20),
+            "Panel schedule fixture should expose populated circuit 1 as the user-facing accessibility button."
+        )
+        XCTAssertFalse(
+            app.buttons["1, 20, Office lighting"].exists,
+            "The visible row text must not remain as a nested second button competing with the accessible circuit control."
+        )
+
+        accessibleCircuit.tap()
+
+        XCTAssertTrue(
+            app.navigationBars["Circuit 1"].waitForExistence(timeout: 5) || app.staticTexts["Circuit 1"].waitForExistence(timeout: 5),
+            "Tapping the accessible circuit control should open the same circuit editor as a visual/user tap."
+        )
+        XCTAssertTrue(
+            app.textFields["Description (e.g. Kitchen Outlets)"].waitForExistence(timeout: 5),
+            "Circuit editor should show the description field after the accessible button is activated."
+        )
+    }
+
+    private func relaunchForPanelScheduleBuilderFixture() {
+        app?.terminate()
+        app = XCUIApplication()
+        configureUITestingEnvironment(app)
+        app.launchArguments += ["-UITestingPanelScheduleBuilderFixture"]
+        app.launch()
+    }
+
     // MARK: - Login Accessibility
 
 
