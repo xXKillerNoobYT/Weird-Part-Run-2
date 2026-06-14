@@ -70,6 +70,7 @@ struct POSendToSupplierSheet: View {
     /// Other sendable POs for the same supplier, fetched lazily
     @State private var siblingPOs: [OrdersService.POListItem] = []
     @State private var siblingPOsLoading = false
+    @State private var siblingPOsError: String?
     /// IDs of sibling POs the user has toggled ON to include
     @State private var includedSiblingIds: Set<Int64> = []
 
@@ -267,6 +268,9 @@ struct POSendToSupplierSheet: View {
 
             if groupEnabled && siblingPOsLoading {
                 HStack { ProgressView(); Text("Checking for other POs…").font(.caption).foregroundStyle(.secondary) }
+            } else if groupEnabled, let siblingPOsError {
+                Label(siblingPOsError, systemImage: "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(.orange)
             } else if groupEnabled && siblingPOs.isEmpty {
                 Label("No other draft or submitted POs for this supplier.", systemImage: "info.circle")
                     .font(.caption).foregroundStyle(.secondary)
@@ -430,7 +434,7 @@ struct POSendToSupplierSheet: View {
             .buttonStyle(.borderedProminent)
             .tint(selectedRequestType.color)
             .controlSize(.large)
-            .disabled(isGeneratingPDF)
+            .disabled(isGeneratingPDF || siblingPOsLoading || (groupEnabled && siblingPOsError != nil))
 
             if !showConfirmSent {
                 Button { withAnimation { showConfirmSent = true } } label: {
@@ -526,15 +530,33 @@ struct POSendToSupplierSheet: View {
 
     private func fetchSiblingPOs() {
         let supplierId = po.supplierId
-        guard let svc = appCore.ordersService else { return }
+        guard let svc = appCore.ordersService else {
+            let message = "Orders service unavailable. Other POs for this supplier could not be checked."
+            siblingPOsError = message
+            pdfError = message
+            return
+        }
+        siblingPOsError = nil
         siblingPOsLoading = true
         Task {
-            let results = (try? svc.listSendablePOs(supplierId: supplierId, excludingId: po.id)) ?? []
-            await MainActor.run {
-                siblingPOs = results
-                // Default: select all siblings
-                includedSiblingIds = Set(results.map(\.id))
-                siblingPOsLoading = false
+            do {
+                let results = try svc.listSendablePOs(supplierId: supplierId, excludingId: po.id)
+                await MainActor.run {
+                    siblingPOs = results
+                    // Default: select all siblings
+                    includedSiblingIds = Set(results.map(\.id))
+                    siblingPOsError = nil
+                    siblingPOsLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    let message = "Could not check for other POs for this supplier. Grouped sending is blocked until the sibling lookup succeeds. Error: \(error.localizedDescription)"
+                    siblingPOs = []
+                    includedSiblingIds = []
+                    siblingPOsLoading = false
+                    siblingPOsError = message
+                    pdfError = message
+                }
             }
         }
     }
@@ -542,6 +564,11 @@ struct POSendToSupplierSheet: View {
     // MARK: - PDF generation + send
 
     private func prepAndSend() {
+        if groupEnabled, let siblingPOsError {
+            pdfError = siblingPOsError
+            return
+        }
+
         isGeneratingPDF = true
         pdfError = nil
         Task {
@@ -552,13 +579,32 @@ struct POSendToSupplierSheet: View {
             // Generate sibling PDFs if grouped
             var sibPDFs: [Int64: Data] = [:]
             if groupEnabled {
+                guard let ordersService = appCore.ordersService else {
+                    await MainActor.run {
+                        isGeneratingPDF = false
+                        pdfError = "Orders service unavailable. The selected sibling purchase orders could not be prepared."
+                    }
+                    return
+                }
+
+                var failedSiblings: [String] = []
                 for sibling in siblingPOs where includedSiblingIds.contains(sibling.id) {
-                    // We only have a POListItem for siblings — generate a lightweight PDF
-                    // using just the sibling header info (full lines not loaded; acceptable for send)
-                    if let detail = try? appCore.ordersService?.getPODetail(id: sibling.id) {
+                    do {
+                        let detail = try ordersService.getPODetail(id: sibling.id)
                         let gen = POPDFGenerator(po: detail, supplierEmail: primaryEmail, companyName: "WiredPart")
                         sibPDFs[sibling.id] = gen.generatePDF()
+                    } catch {
+                        failedSiblings.append("\(sibling.poNumber) (\(error.localizedDescription))")
                     }
+                }
+
+                if !failedSiblings.isEmpty {
+                    await MainActor.run {
+                        isGeneratingPDF = false
+                        siblingPDFs = sibPDFs
+                        pdfError = "One or more selected sibling purchase orders could not be prepared, so no partial supplier send was opened. Deselect the failed PO(s) or try again: \(failedSiblings.joined(separator: "; "))"
+                    }
+                    return
                 }
             }
 
@@ -576,13 +622,18 @@ struct POSendToSupplierSheet: View {
                     let allPDFs = [(primaryPDF, po.poNumber)] + sibPDFs.compactMap { (id, data) in
                         siblingPOs.first(where: { $0.id == id }).map { (data, $0.poNumber) }
                     }
-                    for (data, num) in allPDFs {
-                        let url = tmp.appendingPathComponent(pdfFileName(for: num))
-                        try? data.write(to: url)
-                        urls.append(url)
+                    do {
+                        for (data, num) in allPDFs {
+                            let url = tmp.appendingPathComponent(pdfFileName(for: num))
+                            try data.write(to: url)
+                            urls.append(url)
+                        }
+                        shareItems = urls
+                        showShareSheet = true
+                    } catch {
+                        shareItems = []
+                        pdfError = "Share sheet could not prepare every selected PO attachment, so no partial supplier share was opened. Error: \(error.localizedDescription)"
                     }
-                    shareItems = urls
-                    showShareSheet = true
                 }
             }
         }
