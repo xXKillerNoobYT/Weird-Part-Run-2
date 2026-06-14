@@ -1,6 +1,16 @@
 import XCTest
 
 final class WarehouseTabStripRegressionTests: XCTestCase {
+    func testWarehouseSettingsTabIsReachableForWarehouseDashboardSetupQA() throws {
+        let source = try Self.readNavigationConfigSource()
+        let settingsTab = try Self.lineContaining("id: \"warehouse-settings\"", in: source)
+
+        XCTAssertFalse(
+            settingsTab.contains("permission: \"manage_warehouse\""),
+            "Warehouse Settings must stay reachable to view_warehouse users so QA can open the Warehouse Setup section and both setup wizards."
+        )
+    }
+
     func testModuleHostSubTabPickerAutoScrollsToSelectedTab() throws {
         let source = try Self.readIOSMainViewSource()
 
@@ -21,6 +31,28 @@ final class WarehouseTabStripRegressionTests: XCTestCase {
             source.contains(".id(tab.id)"),
             "Sub-tab chips should provide stable IDs so ScrollViewReader can target the selected tab."
         )
+    }
+
+    private static func lineContaining(_ needle: String, in source: String) throws -> String {
+        guard let line = source.split(separator: "\n").first(where: { $0.contains(needle) }) else {
+            XCTFail("Missing expected source line containing \(needle)")
+            return ""
+        }
+        return String(line)
+    }
+
+    private static func readNavigationConfigSource(
+        file: StaticString = #filePath
+    ) throws -> String {
+        let testFileURL = URL(fileURLWithPath: "\(file)")
+        let projectRoot = testFileURL
+            .deletingLastPathComponent() // Weird Parts IOSTests
+            .deletingLastPathComponent() // Weird Parts IOS
+        let sourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent("Navigation")
+            .appendingPathComponent("NavigationConfig.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 
     private static func readIOSMainViewSource(

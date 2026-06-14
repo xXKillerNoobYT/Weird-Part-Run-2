@@ -190,6 +190,36 @@ struct FoundationModelsServiceTests {
         #expect(deleted.isEmpty)
     }
 
+    @Test("clearPersistedConversation deletes and verifies stored messages")
+    func testClearPersistedConversation_deletesAndVerifies() async throws {
+        let env = try E2ETestHelpers.setUp()
+        let msg = AIConversationMessage(
+            id: "clear-persisted-1",
+            conversationId: "conv-clear-persisted",
+            role: "user",
+            content: "Delete and verify me",
+            createdAt: "2026-04-20 12:05:00"
+        )
+        try await FoundationModelsService.saveMessage(msg, to: env.db)
+
+        try await FoundationModelsService.clearPersistedConversation("conv-clear-persisted", from: env.db)
+
+        let remaining = try await FoundationModelsService.loadConversation("conv-clear-persisted", from: env.db)
+        #expect(remaining.isEmpty)
+    }
+
+    @Test("clearPersistedConversation surfaces storage failures instead of swallowing them")
+    func testClearPersistedConversation_throwsWhenStorageDeleteFails() async throws {
+        let env = try E2ETestHelpers.setUp()
+        try await env.db.writer.write { db in
+            try db.drop(table: "ai_conversation_messages")
+        }
+
+        await #expect(throws: (any Error).self) {
+            try await FoundationModelsService.clearPersistedConversation("conv-delete-fails", from: env.db)
+        }
+    }
+
     @Test("listConversations returns one entry per distinct conversation ID")
     func testListConversations() async throws {
         let env = try E2ETestHelpers.setUp()
