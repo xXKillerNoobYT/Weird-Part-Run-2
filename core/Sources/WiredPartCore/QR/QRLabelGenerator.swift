@@ -192,6 +192,21 @@ public enum QRLabelLayout: String, CaseIterable, Codable, Sendable {
 
 public struct QRLabelPDFGenerator {
 
+    /// Positions on a sticker sheet that can receive labels after already-used slots are skipped.
+    /// Invalid position indexes are ignored so callers cannot accidentally reduce the first page to
+    /// zero printable labels by carrying stale state between different paper grids.
+    public static func availableStickerPositions(grid: LabelGrid, usedPositions: Set<Int>) -> [(col: Int, row: Int)] {
+        (0..<grid.totalPositions).compactMap { position in
+            guard !usedPositions.contains(position) else { return nil }
+            return (col: position % grid.columns, row: position / grid.columns)
+        }
+    }
+
+    /// Printable label slots available on the first sticker-sheet page.
+    public static func availableStickerPositionCount(grid: LabelGrid, usedPositions: Set<Int>) -> Int {
+        availableStickerPositions(grid: grid, usedPositions: usedPositions).count
+    }
+
     /// Generate a PDF containing labels for the given content items.
     ///
     /// - Parameters:
@@ -209,6 +224,12 @@ public struct QRLabelPDFGenerator {
         paperSize: QRPaperSize,
         usedPositions: Set<Int> = []
     ) -> Data? {
+        if let grid = paperSize.labelGrid,
+           !items.isEmpty,
+           availableStickerPositions(grid: grid, usedPositions: usedPositions).isEmpty {
+            return nil
+        }
+
         #if canImport(UIKit)
         let pdfRenderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero,
                                                                 size: paperSize.pageSizePoints))
@@ -245,15 +266,8 @@ public struct QRLabelPDFGenerator {
         usedPositions: Set<Int>
     ) {
         // Build list of available positions (skip used ones)
-        var availablePositions: [(col: Int, row: Int)] = []
-        for row in 0..<grid.rows {
-            for col in 0..<grid.columns {
-                let pos = row * grid.columns + col
-                if !usedPositions.contains(pos) {
-                    availablePositions.append((col, row))
-                }
-            }
-        }
+        var availablePositions = availableStickerPositions(grid: grid, usedPositions: usedPositions)
+        guard !availablePositions.isEmpty else { return }
 
         var itemIndex = 0
         var posIndex = 0
