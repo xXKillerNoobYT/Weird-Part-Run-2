@@ -63,9 +63,19 @@ final class WEI936OnboardingQAUITests: XCTestCase {
     func testWEI936State2NotStarted() {
         launchForWEI936(["-UITestingWEI936NotStarted", "-UITestingWEI936AutoLogin"])
         waitForDashboard()
+        scrollToGettingStartedChecklist()
         XCTAssertTrue(
             app.staticTexts["Getting Started"].waitForExistence(timeout: 20),
             "WEI-936 state 2: not-started fixture must show the Getting Started checklist"
+        )
+        XCTAssertFalse(
+            app.staticTexts["Quick Tour"].exists,
+            "WEI-936 state 2: not-started checklist evidence must not be covered by the Quick Tour overlay"
+        )
+        let firstChecklistRow = app.staticTexts["Add Your Team"]
+        XCTAssertTrue(
+            firstChecklistRow.waitForExistence(timeout: 5) && firstChecklistRow.isHittable,
+            "WEI-936 state 2: first checklist row must be visible for deterministic AX5 evidence"
         )
         captureWEI936("wei936-02-card-not-started")
     }
@@ -175,6 +185,22 @@ final class WEI936OnboardingQAUITests: XCTestCase {
         } while Date() < deadline
 
         XCTFail("WEI-936 fixture did not reach a recognisable dashboard state")
+    }
+
+    /// AX5 dashboard headings can consume the first screen. Scroll until the
+    /// checklist rows are actually visible so the captured evidence is not just
+    /// the top of the dashboard.
+    private func scrollToGettingStartedChecklist(maxSwipes: Int = 8) {
+        let firstChecklistRow = app.staticTexts["Add Your Team"]
+        guard !firstChecklistRow.isHittable else { return }
+
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.24))
+        for _ in 0..<maxSwipes {
+            if firstChecklistRow.isHittable { return }
+            start.press(forDuration: 0.05, thenDragTo: end)
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
     }
 
     /// Attach a PNG screenshot to the test report and optionally write it to
