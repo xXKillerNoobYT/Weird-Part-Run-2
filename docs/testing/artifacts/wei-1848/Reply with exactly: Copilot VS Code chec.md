@@ -1,1 +1,0 @@
-Reply with exactly: Copilot VS Code check OK

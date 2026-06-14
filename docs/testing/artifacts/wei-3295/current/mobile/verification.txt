@@ -1,7 +1,0 @@
-WEI-3295 Stage 8 reports viewport harness (mobile)
-- Route: direct test-only launch flags for Reports hub, Pre-Billing, Bookkeeper Export, and Warehouse Audit Summary.
-- UX source: docs/plans/wei-3200-stage-8-ux-handoff.md.
-- Backend contract: docs/plans/stage-8-reports-data-contract.md.
-- Fixture: -UITestingStage8Reports seeds an unlocked labor entry, material purchase order, and counted warehouse discrepancy through the app database used by production services.
-- Evidence: screenshots 01-06 in this directory capture hub, populated pre-billing, export menu, populated bookkeeper export, export menu, and audit discrepancy state.
-- Viewport target: run this same test once per desktop/wide, tablet, and mobile destination; the artifact folder defaults from the simulator idiom and can be overridden by the test runner environment.
