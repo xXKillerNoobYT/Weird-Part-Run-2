@@ -68,8 +68,7 @@ struct CompanySetupWizard: View {
             ) {
                 Button("Continue to App") {
                     saveProgress()
-                    cleanupDraft()
-                    hasCompletedCompanySetup = true
+                    completeSetupAfterDraftCleanup()
                 }
                 Button("Cancel", role: .cancel) { }
             } message: {
@@ -546,8 +545,7 @@ struct CompanySetupWizard: View {
             }
 
             Button {
-                cleanupDraft()
-                hasCompletedCompanySetup = true
+                completeSetupAfterDraftCleanup()
             } label: {
                 Text("Go to Dashboard")
                     .fontWeight(.semibold)
@@ -738,8 +736,23 @@ struct CompanySetupWizard: View {
         }
     }
 
-    /// Remove draft row after the wizard finishes successfully.
-    private func cleanupDraft() {
-        try? appCore.settingsService?.deleteSetupDraft()
+    /// Remove draft row before marking setup complete.
+    ///
+    /// The completion flag hides this wizard and exposes the Dashboard checklist instead.
+    /// Gate that flag on cleanup success so a stale setup draft cannot remain hidden after
+    /// a failed delete.
+    private func completeSetupAfterDraftCleanup() {
+        guard let settingsService = appCore.settingsService else {
+            saveError = "Settings are still loading. Please try again in a moment."
+            return
+        }
+
+        do {
+            try settingsService.deleteSetupDraft()
+            hasCompletedCompanySetup = true
+        } catch {
+            saveError = userFriendlyError(error, context: "clear setup draft")
+            logger.error("deleteSetupDraft failed; keeping company setup incomplete to avoid hiding a stale draft: \(error.localizedDescription)")
+        }
     }
 }
