@@ -73,6 +73,18 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         return repoRoot.appendingPathComponent("docs/testing/artifacts/wei-3144/current", isDirectory: true)
     }
 
+    private var wei3041ArtifactDirectory: URL {
+        if let path = ProcessInfo.processInfo.environment["WEI_3041_ARTIFACT_DIR"], !path.isEmpty {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        let source = URL(fileURLWithPath: #filePath)
+        let repoRoot = source
+            .deletingLastPathComponent() // Weird Parts IOSUITests
+            .deletingLastPathComponent() // Weird Parts IOS
+            .deletingLastPathComponent() // repo root
+        return repoRoot.appendingPathComponent("docs/testing/artifacts/wei-3041/current", isDirectory: true)
+    }
+
     private var wei3295ArtifactDirectory: URL {
         if let path = ProcessInfo.processInfo.environment["WEI_3295_ARTIFACT_DIR"], !path.isEmpty {
             return URL(fileURLWithPath: path, isDirectory: true)
@@ -182,6 +194,64 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
     // MARK: - Login Accessibility
 
+
+    @MainActor
+    func testWEI3041CorrectionSheetPolicyAllocationEvidence() throws {
+        relaunchForWEI3041Timesheets(preserveDatabase: false)
+        XCTAssertTrue(app.navigationBars["Timesheets"].waitForExistence(timeout: 25))
+        XCTAssertTrue(app.staticTexts["WEI-3041 Correction Overtime Job (#UITEST-WEI-3041)"].waitForExistence(timeout: 12))
+
+        let correctEntryButton = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'timesheetCorrectEntryButton-'")
+        ).firstMatch
+        XCTAssertTrue(correctEntryButton.waitForExistence(timeout: 8))
+        for _ in 0..<6 where !correctEntryButton.isHittable || correctEntryButton.frame.maxY > app.frame.maxY - 120 {
+            app.swipeUp()
+            _ = correctEntryButton.waitForExistence(timeout: 1)
+        }
+        captureWEI3041("01-timesheets-seeded-non-default-overtime")
+        if correctEntryButton.isHittable {
+            correctEntryButton.tap()
+        } else {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.36, dy: 0.56)).tap()
+        }
+
+        XCTAssertTrue(app.staticTexts["Paid Time Preview"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Paid Time Preview"].exists)
+        XCTAssertFalse(app.staticTexts["Adjusted Regular"].exists)
+        XCTAssertFalse(app.staticTexts["Adjusted Overtime"].exists)
+        captureWEI3041("02-correction-sheet-paid-time-policy-copy")
+
+        let reasonField = app.textFields["timesheetCorrectionReasonField"]
+        for _ in 0..<4 where !reasonField.exists {
+            app.swipeUp()
+            _ = reasonField.waitForExistence(timeout: 1)
+        }
+        XCTAssertTrue(reasonField.waitForExistence(timeout: 5))
+        reasonField.tap()
+        reasonField.typeText("QA correction verifies weekly overtime allocation.")
+
+        let save = app.buttons["timesheetCorrectionSaveButton"]
+        XCTAssertTrue(save.waitForExistence(timeout: 5))
+        save.tap()
+
+        let adjustedHistory = app.staticTexts.matching(
+            NSPredicate(format: "identifier == 'timesheetCorrectionHistoryAllocation' AND label CONTAINS 'Adjusted 2.0h regular / 2.0h overtime'")
+        ).firstMatch
+        XCTAssertTrue(adjustedHistory.waitForExistence(timeout: 12))
+        captureWEI3041("03-correction-history-after-save")
+
+        relaunchForWEI3041Timesheets(preserveDatabase: true)
+        XCTAssertTrue(app.navigationBars["Timesheets"].waitForExistence(timeout: 25))
+        XCTAssertTrue(app.staticTexts["WEI-3041 Correction Overtime Job (#UITEST-WEI-3041)"].waitForExistence(timeout: 12))
+        let reloadedHistory = app.staticTexts.matching(
+            NSPredicate(format: "identifier == 'timesheetCorrectionHistoryAllocation' AND label CONTAINS 'Adjusted 2.0h regular / 2.0h overtime'")
+        ).firstMatch
+        XCTAssertTrue(reloadedHistory.waitForExistence(timeout: 12))
+        captureWEI3041("04-correction-history-after-reload")
+
+        try writeWEI3041VerificationNotes()
+    }
 
     @MainActor
     func testWEI1451FirstLaunchOnboardingEvidence() throws {
@@ -1419,11 +1489,25 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app.launch()
     }
 
+    private func relaunchForWEI3041Timesheets(preserveDatabase: Bool) {
+        app.terminate()
+        app = XCUIApplication()
+        configureUITestingEnvironment(app)
+        app.launchArguments += [
+            "-UITestingWEI936AutoLogin",
+            "-UITestingWEI3041Timesheets"
+        ]
+        if preserveDatabase {
+            app.launchArguments += ["-UITestingPreserveDatabase"]
+        }
+        app.launch()
+    }
+
     private func relaunchForWEI3295Stage8Reports(_ launchArguments: [String]) {
         app.terminate()
         app = XCUIApplication()
+        configureUITestingEnvironment(app)
         app.launchArguments += [
-            "-UITesting",
             "-UITestingWEI936AutoLogin",
             "-UITestingStage8Reports"
         ] + launchArguments
@@ -1456,6 +1540,28 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         let dir = wei3295ArtifactDirectory.appendingPathComponent(viewport, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try? screenshot.pngRepresentation.write(to: dir.appendingPathComponent("\(name).png"), options: .atomic)
+    }
+
+    private func captureWEI3041(_ name: String) {
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        try? FileManager.default.createDirectory(at: wei3041ArtifactDirectory, withIntermediateDirectories: true)
+        try? screenshot.pngRepresentation.write(to: wei3041ArtifactDirectory.appendingPathComponent("\(name).png"), options: .atomic)
+    }
+
+    private func writeWEI3041VerificationNotes() throws {
+        let notes = """
+        WEI-3041 correction sheet evidence
+        - Fixture: -UITestingWEI3041Timesheets seeds weekly_only overtime with weeklyThresholdHours=6.0.
+        - The correction sheet exposes Paid Time Preview and policy-allocation copy, not editable adjusted regular/overtime preview fields.
+        - Save/reload assertion: correction history contains Adjusted 2.0h regular / 2.0h overtime after relaunch with -UITestingPreserveDatabase.
+        """
+        try FileManager.default.createDirectory(at: wei3041ArtifactDirectory, withIntermediateDirectories: true)
+        try notes.write(to: wei3041ArtifactDirectory.appendingPathComponent("verification-notes.txt"), atomically: true, encoding: .utf8)
     }
 
     private func captureWEI1451(_ name: String) {
