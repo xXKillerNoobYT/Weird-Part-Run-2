@@ -355,7 +355,8 @@ public final class ReportsService: Sendable {
                       AND \(Self.localDateSQL("le.clock_in")) <= date(?)
                       \(userClause)
                     GROUP BY le.id, le.user_id, user_name, le.job_id, job_name, job_number,
-                             le.clock_in, le.clock_out, le.regular_hours, le.overtime_hours, status
+                             le.clock_in, le.clock_out, le.regular_hours, le.overtime_hours,
+                             COALESCE(le.status, CASE WHEN le.clock_out IS NULL THEN 'open' ELSE 'completed' END)
                     ORDER BY user_name ASC, \(Self.localDateSQL("le.clock_in")) DESC, le.clock_in DESC
                     """
 
