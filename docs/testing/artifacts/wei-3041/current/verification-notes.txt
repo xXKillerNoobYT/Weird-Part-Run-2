@@ -1,0 +1,10 @@
+WEI-3041 correction sheet evidence
+- Fixture: -UITestingWEI3041Timesheets seeds weekly_only overtime with weeklyThresholdHours=6.0.
+- The correction sheet exposes Paid Time Preview and policy-allocation copy, not editable adjusted regular/overtime preview fields.
+- Save/reload assertion: correction history contains Adjusted 2.0h regular / 2.0h overtime after relaunch with -UITestingPreserveDatabase.
+
+Reconciliation note (WEI-3128 / PR #951 delta):
+- PR #951 (merged 2026-06-15T18:41Z, commit d3fd7cee) introduced seedWEI3041TimesheetsFixture, the testWEI3041CorrectionSheetPolicyAllocationEvidence UITest, and captureWEI3041/relaunchForWEI3041Timesheets helpers.
+- Code changes: AppCore.swift (seed path), WiredPartIOSApp.swift (arg routing), IOSTimesheetsPage.swift (correction-sheet AX hooks), Weird_Parts_IOSUITests.swift (evidence test), ReportsService.swift (GROUP BY disambiguation fix).
+- Screenshot artifacts (01-timesheets-seeded-non-default-overtime.png, 02-correction-sheet-paid-time-policy-copy.png, 03-correction-history-after-save.png, 04-correction-history-after-reload.png) are produced at iOS Simulator runtime by testWEI3041CorrectionSheetPolicyAllocationEvidence — requires Xcode/Simulator on a Mac with the full workspace.
+- This file is the source-level evidence record for the PR #951 delta reconciliation.
