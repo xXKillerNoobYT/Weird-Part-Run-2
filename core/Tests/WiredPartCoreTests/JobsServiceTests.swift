@@ -436,6 +436,40 @@ struct JobsServiceTests {
         }
     }
 
+    @Test("Switching jobs keeps current entry active when target job is not clockable")
+    func testSwitchClockedInJobRollsBackWhenTargetIsNotClockable() throws {
+        try withMountainTimeZone {
+            let env = try E2ETestHelpers.setUp()
+            let firstJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SW-STAY", name: "Switch Stays Active")
+            let closedJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SW-CLOSED", name: "Closed Switch Target")
+
+            let firstEntryId = try env.jobs.clockIn(
+                userId: env.adminUserId,
+                jobId: firstJobId,
+                at: try Self.localToday(hour: 7, minute: 0)
+            )
+            try env.jobs.updateJob(id: closedJobId, status: "completed")
+
+            #expect(throws: JobsService.JobsError.jobNotClockable(closedJobId)) {
+                try env.jobs.switchClockedInJob(
+                    userId: env.adminUserId,
+                    nextJobId: closedJobId,
+                    at: try Self.localToday(hour: 12, minute: 15)
+                )
+            }
+
+            let entries = try env.jobs.listLaborEntries(userId: env.adminUserId)
+            let originalEntry = try #require(entries.first { $0.id == firstEntryId })
+            let active = try env.jobs.getActiveClockEntry(userId: env.adminUserId)
+
+            #expect(entries.count == 1)
+            #expect(originalEntry.status == "clocked_in")
+            #expect(originalEntry.clockOut == nil)
+            #expect(active?.id == firstEntryId)
+            #expect(active?.jobId == firstJobId)
+        }
+    }
+
     @Test("Clock out subtracts unpaid breaks but keeps paid breaks compensable")
     func testClockOutBreakPayTreatmentIsDeterministic() throws {
         try withMountainTimeZone {
