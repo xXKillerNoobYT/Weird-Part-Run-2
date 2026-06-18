@@ -1645,15 +1645,18 @@ private struct MisplacedPartSheet: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top) {
                     lookupPartText(selectedPart)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityAddTraits(.isSelected)
                     Spacer()
                     Button("Change") {
                         self.selectedPart = nil
                         homeOptions = []
                         homeAreaId = nil
                     }
+                    .accessibilityLabel("Change selected part")
+                    .accessibilityHint("Clears the selected misplaced part so you can choose a different part.")
+                    .accessibilityIdentifier("misplaced-selected-part-change-button")
                 }
-                .accessibilityElement(children: .combine)
-                .accessibilityAddTraits(.isSelected)
             }
         } else {
             validationText("Select the part you found.")
@@ -1665,13 +1668,16 @@ private struct MisplacedPartSheet: View {
         if let selectedArea {
             HStack(alignment: .top) {
                 lookupAreaText(selectedArea, showsHomeBadge: false)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isSelected)
                 Spacer()
                 Button("Change") {
                     self.selectedArea = nil
                 }
+                .accessibilityLabel("Change selected area")
+                .accessibilityHint("Clears the selected misplaced part location so you can choose a different area.")
+                .accessibilityIdentifier("misplaced-selected-area-change-button")
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isSelected)
         } else {
             validationText("Select where you found it.")
         }
