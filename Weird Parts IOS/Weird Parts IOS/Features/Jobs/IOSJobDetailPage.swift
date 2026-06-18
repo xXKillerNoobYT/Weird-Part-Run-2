@@ -655,19 +655,24 @@ struct IOSJobDetailPage: View {
                     .fontWeight(.semibold)
                     .foregroundStyle(.blue)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(material.partName), \(material.partCode ?? "no part code"), \(material.sourceSummary), \(material.stagedQty) staged")
             HStack {
                 Button("Use") { prepareMaterialAction(.useReady(material)) }
                     .buttonStyle(.borderedProminent)
                     .accessibilityLabel("Use \(material.partName)")
+                    .accessibilityHint("Uses staged material on this job")
+                    .accessibilityIdentifier("job-ready-material-use-button-\(material.id)")
                 Button("Return") { prepareMaterialAction(.returnReady(material)) }
                     .buttonStyle(.bordered)
                     .accessibilityLabel("Return \(material.partName)")
+                    .accessibilityHint("Starts a return for staged material")
+                    .accessibilityIdentifier("job-ready-material-return-button-\(material.id)")
                 Spacer()
             }
             .font(.caption)
         }
         .padding(.vertical, 8)
-        .accessibilityElement(children: .combine)
     }
 
     private var usedMaterialsSegment: some View {
@@ -711,21 +716,26 @@ struct IOSJobDetailPage: View {
                     }
                 }
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(part.partName), \(part.partCode ?? "no part code"), \(part.qtyConsumed) used, \(part.qtyReturned) returned, \(netQty) net")
             HStack {
                 Button("Return") { prepareMaterialAction(.returnUsed(part)) }
                     .buttonStyle(.bordered)
                     .disabled(netQty <= 0)
+                    .accessibilityLabel("Return \(part.partName)")
                     .accessibilityHint(netQty > 0 ? "Returns used material to warehouse review" : "All used quantity has already been returned")
+                    .accessibilityIdentifier("job-used-material-return-button-\(part.id)")
                 Button("Correct") { prepareMaterialAction(.correctUsed(part)) }
                     .buttonStyle(.bordered)
+                    .accessibilityLabel("Correct \(part.partName)")
                     .accessibilityHint("Requires an audit note")
+                    .accessibilityIdentifier("job-used-material-correct-button-\(part.id)")
                 Spacer()
             }
             .font(.caption)
         }
         .padding(.vertical, 8)
         .background(highlightedJobPartId == part.id ? Color.green.opacity(0.10) : Color.clear)
-        .accessibilityElement(children: .combine)
     }
 
     private var returnsMaterialsSegment: some View {
