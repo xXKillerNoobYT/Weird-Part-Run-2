@@ -1459,7 +1459,7 @@ public final class ReportsService: Sendable {
                            COALESCE(tc.checkout_condition, '') AS condition_out,
                            COALESCE(tc.return_condition, '') AS condition_in
                     FROM tool_checkouts tc
-                    LEFT JOIN tools t ON t.id = tc.tool_id
+                    LEFT JOIN tools t ON t.id = tc.tool_id AND t.deleted_at IS NULL
                     LEFT JOIN users u ON u.id = tc.checked_out_by AND u.deleted_at IS NULL
                     WHERE tc.deleted_at IS NULL
                       AND date(tc.checked_out_at) >= ? AND date(tc.checked_out_at) <= ?
