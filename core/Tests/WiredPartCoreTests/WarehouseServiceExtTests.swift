@@ -171,6 +171,49 @@ struct WarehouseServiceExtTests {
         #expect(active.first?.movementType == "receiving_staged")
     }
 
+    @Test("Movement date filters apply before limit cap")
+    func testMovementDateFiltersApplyBeforeLimitCap() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let calendar = Calendar(identifier: .gregorian)
+        let oldDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let recentDate = calendar.date(byAdding: .day, value: 30, to: oldDate)!
+
+        for index in 0..<201 {
+            _ = try env.warehouse.createQuickLogMovement(
+                partId: partId,
+                qty: 1,
+                movementType: "received",
+                occurredAt: calendar.date(byAdding: .minute, value: index, to: oldDate)!,
+                toLocationType: "warehouse",
+                toLocationId: 1,
+                reason: "Old capped movement \(index)",
+                performedBy: env.adminUserId
+            )
+        }
+        _ = try env.warehouse.createQuickLogMovement(
+            partId: partId,
+            qty: 2,
+            movementType: "received",
+            occurredAt: recentDate,
+            toLocationType: "warehouse",
+            toLocationId: 1,
+            reason: "Recent filtered movement",
+            performedBy: env.adminUserId
+        )
+
+        let recentMovements = try env.warehouse.listMovements(
+            startDate: calendar.date(byAdding: .day, value: -1, to: recentDate),
+            endDate: calendar.date(byAdding: .day, value: 1, to: recentDate),
+            limit: 200,
+            sortOrder: .oldestFirst
+        )
+
+        #expect(recentMovements.count == 1)
+        #expect(recentMovements.first?.reason == "Recent filtered movement")
+    }
+
     @Test("Quick Log persists happened-at and audit trail fields")
     func testQuickLogPersistence() throws {
         let env = try E2ETestHelpers.setUp()
