@@ -362,6 +362,10 @@ struct Weird_Parts_IOSTests {
         #expect(source.contains("Text(\"No active jobs\")"), "Legitimate empty job results should still show the empty-state copy")
         #expect(source.contains("Text(\"No employees found\")"), "Legitimate empty employee results should still show the empty-state copy")
         #expect(source.contains("Label(\"Retry\", systemImage: \"arrow.clockwise\")"), "Load failures should offer an actionable retry")
+        #expect(
+            !source.contains(".accessibilityLabel(retryLabel)\n        }\n        .accessibilityElement(children: .combine)"),
+            "Load-failure rows must not combine the retry button into static failure copy"
+        )
         #expect(source.contains("Retry loading jobs"), "Job retry control needs a specific accessibility label")
         #expect(source.contains("Retry loading employees"), "Employee retry control needs a specific accessibility label")
     }
