@@ -453,6 +453,39 @@ struct ReportsServiceTests {
         }
     }
 
+    @Test("Tool checkout report hides soft-deleted tool names")
+    func testToolCheckoutReportHidesSoftDeletedToolName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let deletedToolName = "Deleted Torque Wrench"
+        let toolId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO tools (tool_number, name, category, status, has_kit, created_at, updated_at)
+                VALUES ('T-R002', ?, 'hand_tools', 'available', 0, datetime('now'), datetime('now'))
+                """, arguments: [deletedToolName])
+            return db.lastInsertedRowID
+        }
+
+        try env.tools.checkoutTool(toolId: toolId, userId: env.adminUserId)
+        try env.tools.returnTool(toolId: toolId, userId: env.adminUserId)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE tools SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [toolId]
+            )
+        }
+
+        let rows = try env.reports.generateCustomReport(
+            type: "tool_checkouts",
+            columns: ["tool_name", "employee_name"],
+            startDate: Date(timeIntervalSince1970: 0),
+            endDate: Date.distantFuture,
+            filters: [:]
+        )
+
+        #expect(rows.contains { $0.first == "Unknown" })
+        #expect(!rows.contains { $0.first == deletedToolName })
+    }
+
     // MARK: - Job Costs Report (budget_limit fix)
 
     // MARK: - generateCustomReport: Remaining Types
