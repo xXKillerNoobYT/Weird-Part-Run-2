@@ -48,6 +48,37 @@ struct ReportsServiceTests {
         #expect(data.count >= 1)
     }
 
+    @Test("Timesheet segments prefer is_paid over break_type for unpaid correction buckets")
+    func testTimesheetSegmentsUseIsPaidForContradictoryBreakRows() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SEG", name: "Segment Bucket Job")
+        let laborEntryId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-03-05T08:00:00Z', '2026-03-05T16:00:00Z', 7.5, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+            let entryId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO break_records
+                    (user_id, labor_entry_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
+                VALUES (?, ?, 'break', '2026-03-05T12:00:00Z', '2026-03-05T12:30:00Z', 30, 0, 0)
+                """, arguments: [env.adminUserId, entryId])
+            return entryId
+        }
+
+        let segments = try env.reports.getTimesheetSegments(
+            startDate: "2026-03-05",
+            endDate: "2026-03-05",
+            userId: env.adminUserId
+        )
+
+        let segment = segments.first { $0.id == laborEntryId }
+        #expect(segment?.paidBreakMinutes == 0)
+        #expect(segment?.paidLunchMinutes == 0)
+        #expect(segment?.unpaidLunchMinutes == 30)
+    }
+
     @Test("Timesheet data buckets UTC evening clock-in into local work day")
     func testTimesheetUsesLocalOperationalDayForUtcClockIn() throws {
         try withDenverTimeZone {
