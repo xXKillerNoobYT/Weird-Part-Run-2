@@ -171,6 +171,49 @@ struct WarehouseServiceExtTests {
         #expect(active.first?.movementType == "receiving_staged")
     }
 
+    @Test("Movement date filters are applied before limit")
+    func testMovementDateFiltersApplyBeforeLimit() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        try env.db.writer.write { db in
+            for index in 0..<201 {
+                try db.execute(sql: """
+                    INSERT INTO stock_movements
+                        (part_id, qty, from_location_type, from_location_id, to_location_type, to_location_id,
+                         movement_type, reason, performed_by, created_at)
+                    VALUES (?, 1, NULL, NULL, 'warehouse', 1, 'received', ?, ?, ?)
+                    """, arguments: [
+                    partId,
+                    "Old capped movement \(index)",
+                    env.adminUserId,
+                    "2026-01-01 00:\(String(format: "%02d", index % 60)):00"
+                ])
+            }
+            try db.execute(sql: """
+                INSERT INTO stock_movements
+                    (part_id, qty, from_location_type, from_location_id, to_location_type, to_location_id,
+                     movement_type, reason, performed_by, created_at)
+                VALUES (?, 1, NULL, NULL, 'warehouse', 1, 'received', 'Recent matching movement', ?, '2026-06-15 12:00:00')
+                """, arguments: [partId, env.adminUserId])
+        }
+
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(secondsFromGMT: 0)!
+        let startDate = utc.date(from: DateComponents(year: 2026, month: 6, day: 1))!
+        let endDate = utc.date(from: DateComponents(year: 2026, month: 6, day: 30, hour: 23, minute: 59, second: 59))!
+
+        let filtered = try env.warehouse.listMovements(
+            startDate: startDate,
+            endDate: endDate,
+            limit: 1,
+            sortOrder: .oldestFirst
+        )
+
+        #expect(filtered.map(\.reason) == ["Recent matching movement"])
+    }
+
     @Test("Quick Log persists happened-at and audit trail fields")
     func testQuickLogPersistence() throws {
         let env = try E2ETestHelpers.setUp()

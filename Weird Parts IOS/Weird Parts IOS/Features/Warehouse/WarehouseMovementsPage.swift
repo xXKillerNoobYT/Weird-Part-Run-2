@@ -387,7 +387,12 @@ struct WarehouseMovementsPage: View {
         isLoading = movements.isEmpty
         loadError = nil
         do {
-            movements = try service.listMovements(limit: 200, sortOrder: .oldestFirst)
+            movements = try service.listMovements(
+                startDate: effectiveStart,
+                endDate: effectiveEnd,
+                limit: 200,
+                sortOrder: .oldestFirst
+            )
             postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load movements")
