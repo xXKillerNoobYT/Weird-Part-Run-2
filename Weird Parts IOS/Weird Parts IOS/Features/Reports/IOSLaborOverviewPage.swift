@@ -62,6 +62,7 @@ struct IOSLaborOverviewPage: View {
         .refreshable { loadData() }
         .task { loadData() }
         .onAppear { postPageContext() }
+        .onChange(of: searchText) { postPageContext() }
         .onDisappear {
             NotificationCenter.default.post(name: .reportsLaborPageInactive, object: nil)
         }

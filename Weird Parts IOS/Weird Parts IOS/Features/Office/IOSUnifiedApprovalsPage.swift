@@ -200,6 +200,7 @@ struct IOSUnifiedApprovalsPage: View {
             appCore.onboardingManager?.markCompleted("approvals-view")
         }
         .onAppear { postPageContext() }
+        .onChange(of: searchText) { postPageContext() }
 
         .onDisappear {
             NotificationCenter.default.post(name: .officeApprovalsPageInactive, object: nil)
