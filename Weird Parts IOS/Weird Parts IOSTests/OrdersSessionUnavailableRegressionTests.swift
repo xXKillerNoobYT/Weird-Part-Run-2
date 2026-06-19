@@ -33,6 +33,31 @@ final class OrdersSessionUnavailableRegressionTests: XCTestCase {
         )
     }
 
+    func testPONoteWritesRequireRealCurrentUserAuthor() throws {
+        let poDetailSource = try Self.readOrdersSource(named: "IOSPODetailPage.swift")
+
+        XCTAssertFalse(
+            poDetailSource.contains("appCore.currentUser?.displayName ?? \"System\""),
+            "PO note audit records must not fall back to a synthetic System author."
+        )
+        XCTAssertFalse(
+            poDetailSource.contains("appCore.currentUser?.displayName ?? \"Unknown\""),
+            "Manual PO notes must not fall back to a synthetic Unknown author."
+        )
+        XCTAssertTrue(
+            poDetailSource.contains("guard let author = currentPONoteAuthor() else"),
+            "PO note writes should fail closed until a real current user author is available."
+        )
+        XCTAssertTrue(
+            poDetailSource.contains("guard appCore.currentUser?.id != nil else { return nil }"),
+            "The PO note author helper should require an authenticated current user id before audit writes."
+        )
+        XCTAssertTrue(
+            poDetailSource.contains("displayName.trimmingCharacters(in: .whitespacesAndNewlines)"),
+            "The PO note author helper should reject blank display names instead of writing unattributed notes."
+        )
+    }
+
     func testSubmittedPODetailDoesNotExposeDirectMarkOrderedAction() throws {
         let poDetailSource = try Self.readOrdersSource(named: "IOSPODetailPage.swift")
         let directOrderedLabel = "Mark " + "Ordered"
