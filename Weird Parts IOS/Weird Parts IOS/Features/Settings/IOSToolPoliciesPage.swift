@@ -12,6 +12,7 @@ struct IOSToolPoliciesPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var saveError: String?
+    @State private var saveSuccessMessage: String?
     @State private var activeSheet: ActiveSheet?
 
     // Checkout Limits
@@ -85,6 +86,15 @@ struct IOSToolPoliciesPage: View {
                 }
             }
 
+            if let saveSuccessMessage {
+                Section {
+                    Label(saveSuccessMessage, systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.caption)
+                }
+                .accessibilityIdentifier("toolPoliciesSaveSuccessMessage")
+            }
+
             // Checkout Limits
             Section {
                 Stepper("Max checkout: \(maxCheckoutDays) days", value: $maxCheckoutDays, in: 1...365)
@@ -141,17 +151,17 @@ struct IOSToolPoliciesPage: View {
                 .accessibilityHint(isDirty ? "" : "Make changes to enable saving.")
             }
         }
-        .onChange(of: maxCheckoutDays) { _, _ in isDirty = true }
-        .onChange(of: overdueNotificationDays) { _, _ in isDirty = true }
-        .onChange(of: autoExtendOnActiveJob) { _, _ in isDirty = true }
-        .onChange(of: requireCheckoutCondition) { _, _ in isDirty = true }
-        .onChange(of: requireReturnCondition) { _, _ in isDirty = true }
-        .onChange(of: requireDamagePhoto) { _, _ in isDirty = true }
-        .onChange(of: maintenanceAfterCheckouts) { _, _ in isDirty = true }
-        .onChange(of: maintenanceReminderDays) { _, _ in isDirty = true }
-        .onChange(of: allowTrades) { _, _ in isDirty = true }
-        .onChange(of: tradeTimeoutDays) { _, _ in isDirty = true }
-        .onChange(of: requireTradeCondition) { _, _ in isDirty = true }
+        .onChange(of: maxCheckoutDays) { _, _ in markDirty() }
+        .onChange(of: overdueNotificationDays) { _, _ in markDirty() }
+        .onChange(of: autoExtendOnActiveJob) { _, _ in markDirty() }
+        .onChange(of: requireCheckoutCondition) { _, _ in markDirty() }
+        .onChange(of: requireReturnCondition) { _, _ in markDirty() }
+        .onChange(of: requireDamagePhoto) { _, _ in markDirty() }
+        .onChange(of: maintenanceAfterCheckouts) { _, _ in markDirty() }
+        .onChange(of: maintenanceReminderDays) { _, _ in markDirty() }
+        .onChange(of: allowTrades) { _, _ in markDirty() }
+        .onChange(of: tradeTimeoutDays) { _, _ in markDirty() }
+        .onChange(of: requireTradeCondition) { _, _ in markDirty() }
     }
 
     // MARK: - Actions
@@ -162,6 +172,9 @@ struct IOSToolPoliciesPage: View {
             isLoading = false
             return
         }
+
+        saveError = nil
+        saveSuccessMessage = nil
 
         do {
             let map = try service.getSettingsByCategory("tool_policy")
@@ -188,6 +201,9 @@ struct IOSToolPoliciesPage: View {
     }
 
     private func saveSettings() {
+        saveError = nil
+        saveSuccessMessage = nil
+
         guard let service = appCore.settingsService else {
             saveError = "Settings service unavailable"
             return
@@ -209,9 +225,16 @@ struct IOSToolPoliciesPage: View {
             ]
             try service.upsertSettingsMap(data, category: "tool_policy")
             saveError = nil
+            saveSuccessMessage = "Tool policies saved."
             isDirty = false
         } catch {
+            saveSuccessMessage = nil
             saveError = userFriendlyError(error, context: "save order")
         }
+    }
+
+    private func markDirty() {
+        isDirty = true
+        saveSuccessMessage = nil
     }
 }
