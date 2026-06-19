@@ -1009,8 +1009,6 @@ struct IOSMovementWizard: View {
 
     // MARK: - Draft Persistence (#148)
 
-    private static let draftKey = "movementWizardDraft"
-
     private struct WizardDraftPayload: Codable {
         var currentStep: Int
         var fromLocationType: String
@@ -1036,13 +1034,13 @@ struct IOSMovementWizard: View {
             referenceNumber: referenceNumber
         )
         if let data = try? JSONEncoder().encode(draft) {
-            UserDefaults.standard.set(data, forKey: Self.draftKey)
+            MovementWizardDraftStore.save(data, userId: appCore.currentUser?.id)
         }
         dismiss()
     }
 
     private func restoreDraft() {
-        guard let data = UserDefaults.standard.data(forKey: Self.draftKey),
+        guard let data = MovementWizardDraftStore.loadData(userId: appCore.currentUser?.id),
               let draft = try? JSONDecoder().decode(WizardDraftPayload.self, from: data) else { return }
         currentStep = draft.currentStep
         fromLocationType = draft.fromLocationType
@@ -1057,7 +1055,28 @@ struct IOSMovementWizard: View {
     }
 
     private func clearDraft() {
-        UserDefaults.standard.removeObject(forKey: Self.draftKey)
+        MovementWizardDraftStore.clear(userId: appCore.currentUser?.id)
+    }
+}
+
+enum MovementWizardDraftStore {
+    static let baseKey = "movementWizardDraft"
+
+    static func key(userId: Int64?) -> String {
+        guard let userId else { return "\(baseKey)_anonymous" }
+        return "\(baseKey)_user_\(userId)"
+    }
+
+    static func save(_ data: Data, userId: Int64?) {
+        UserDefaults.standard.set(data, forKey: key(userId: userId))
+    }
+
+    static func loadData(userId: Int64?) -> Data? {
+        UserDefaults.standard.data(forKey: key(userId: userId))
+    }
+
+    static func clear(userId: Int64?) {
+        UserDefaults.standard.removeObject(forKey: key(userId: userId))
     }
 }
 
