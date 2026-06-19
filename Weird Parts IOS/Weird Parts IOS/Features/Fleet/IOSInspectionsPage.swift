@@ -29,18 +29,13 @@ struct IOSInspectionsPage: View {
         inspectionList
             .navigationTitle("Inspections")
             .searchable(text: $searchText, prompt: "Search inspections...")
+            .onChange(of: searchText) { _, _ in postFleetInspectionsContext() }
             .refreshable { loadData() }
             .task { loadData() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { loadData() }
             }
-            .onAppear {
-                NotificationCenter.default.post(
-                    name: .fleetInspectionsPageActive,
-                    object: nil,
-                    userInfo: ["context": fleetInspectionsContext]
-                )
-            }
+            .onAppear { postFleetInspectionsContext() }
             .onDisappear {
                 NotificationCenter.default.post(name: .fleetInspectionsPageInactive, object: nil)
             }
@@ -70,6 +65,14 @@ struct IOSInspectionsPage: View {
     private var fleetInspectionsContext: String {
         let searchState = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "none" : "active"
         return "page=Fleet Inspections; total_inspections=\(inspections.count); visible_inspections=\(filteredInspections.count); search=\(searchState)"
+    }
+
+    private func postFleetInspectionsContext() {
+        NotificationCenter.default.post(
+            name: .fleetInspectionsPageActive,
+            object: nil,
+            userInfo: ["context": fleetInspectionsContext]
+        )
     }
 
     @ViewBuilder

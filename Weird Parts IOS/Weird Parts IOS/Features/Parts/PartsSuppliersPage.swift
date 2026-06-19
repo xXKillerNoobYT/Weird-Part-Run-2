@@ -96,6 +96,7 @@ struct PartsSuppliersPage: View {
             }
         }
         .searchable(text: $searchText, prompt: "Search suppliers...")
+        .onChange(of: searchText) { _, _ in postSuppliersContext() }
         .refreshable { await loadData() }
         .toolbar {
             ToolbarItem(placement: .automatic) {
@@ -441,10 +442,11 @@ struct PartsSuppliersPage: View {
         } catch {
             context = "" // AI context non-critical; panel will work without it
         }
+        let searchableContext = context + " Supplier page search text is \(searchText.isEmpty ? "empty" : "active"); visible suppliers: \(filteredSuppliers.count) of \(suppliers.count)."
         NotificationCenter.default.post(
             name: .suppliersPageActive,
             object: nil,
-            userInfo: ["context": context]
+            userInfo: ["context": searchableContext]
         )
     }
 

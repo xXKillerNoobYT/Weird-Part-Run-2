@@ -107,6 +107,7 @@ struct PartsCompanionsPage: View {
             }
         }
         .searchable(text: $searchText, prompt: "Search companions...")
+        .onChange(of: searchText) { _, _ in postCompanionsContext() }
         .refreshable { await loadData() }
         .toolbar {
             ToolbarItem(placement: .automatic) {

@@ -84,6 +84,7 @@ struct IOSBookkeeperExportPage: View {
         .refreshable { loadData() }
         .task { loadData() }
         .onAppear { postPageContext() }
+        .onChange(of: searchText) { postPageContext() }
         .onDisappear {
             NotificationCenter.default.post(name: .reportsBookkeeperPageInactive, object: nil)
         }

@@ -73,6 +73,7 @@ struct IOSPreBillingPage: View {
         .refreshable { loadData() }
         .task { loadData() }
         .onAppear { postPageContext() }
+        .onChange(of: searchText) { postPageContext() }
         .onDisappear {
             NotificationCenter.default.post(name: .reportsPrebillingPageInactive, object: nil)
         }
