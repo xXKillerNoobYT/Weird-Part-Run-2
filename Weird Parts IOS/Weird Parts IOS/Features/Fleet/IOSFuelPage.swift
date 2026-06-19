@@ -40,6 +40,7 @@ struct IOSFuelPage: View {
         }
             .navigationTitle("Fuel Logs")
             .searchable(text: $searchText, prompt: "Search fuel logs...")
+            .onChange(of: searchText) { _, _ in postFleetFuelContext() }
             .refreshable { loadData() }
             .task { loadData() }
             .onChange(of: scenePhase) { _, phase in
@@ -48,13 +49,7 @@ struct IOSFuelPage: View {
             .onChange(of: dateRange) { loadData() }
             .onChange(of: customStart) { loadData() }
             .onChange(of: customEnd) { loadData() }
-            .onAppear {
-                NotificationCenter.default.post(
-                    name: .fleetFuelPageActive,
-                    object: nil,
-                    userInfo: ["context": fleetFuelContext]
-                )
-            }
+            .onAppear { postFleetFuelContext() }
             .onDisappear {
                 NotificationCenter.default.post(name: .fleetFuelPageInactive, object: nil)
             }
@@ -84,6 +79,14 @@ struct IOSFuelPage: View {
     private var fleetFuelContext: String {
         let searchState = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "none" : "active"
         return "page=Fleet Fuel; total_logs=\(fuelLogs.count); visible_logs=\(filteredLogs.count); date_range=\(dateRange.rawValue); search=\(searchState)"
+    }
+
+    private func postFleetFuelContext() {
+        NotificationCenter.default.post(
+            name: .fleetFuelPageActive,
+            object: nil,
+            userInfo: ["context": fleetFuelContext]
+        )
     }
 
     @ViewBuilder

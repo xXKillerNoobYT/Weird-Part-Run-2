@@ -52,6 +52,7 @@ struct PartsPricingPage: View {
             }
         }
         .searchable(text: $searchText, prompt: "Search parts by name or code...")
+        .onChange(of: searchText) { _, _ in postPricingContext() }
         .refreshable { await loadData() }
         .sheet(item: $activeSheet) { sheet in
             sheetContent(sheet)
@@ -104,6 +105,8 @@ struct PartsPricingPage: View {
             appCore.onboardingManager?.markCompleted("pricing-view")
         }
         .onAppear { postPricingContext() }
+        .onChange(of: filterCategory) { _, _ in postPricingContext() }
+        .onChange(of: showMissingPriceOnly) { _, _ in postPricingContext() }
         .onDisappear {
             NotificationCenter.default.post(name: .pricingPageInactive, object: nil)
         }

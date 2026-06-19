@@ -104,6 +104,7 @@ struct IOSPartsOrderManagementPage: View {
         }
         .navigationTitle("Parts Management")
         .searchable(text: $searchText, prompt: "Search parts by name, code, or job...")
+        .onChange(of: searchText) { _, _ in postAIContext() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
