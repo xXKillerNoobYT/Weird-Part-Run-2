@@ -120,6 +120,7 @@ struct IOSScheduleConfigPage: View {
             ShiftTemplateEditSheet(
                 existing: existing,
                 hats: allHats,
+                actionError: saveError,
                 onSave: { saveShiftTemplate($0) },
                 onDelete: existing.map { tpl in { deleteShiftTemplate(tpl.id) } }
             )
@@ -127,6 +128,7 @@ struct IOSScheduleConfigPage: View {
         case .editHoliday(let existing):
             HolidayEditSheet(
                 existing: existing,
+                actionError: saveError,
                 onSave: { saveHoliday($0) },
                 onDelete: existing.map { hol in { deleteHoliday(hol.id) } }
             )
@@ -476,12 +478,12 @@ struct IOSScheduleConfigPage: View {
 
     // MARK: - Template & Holiday Actions
 
-    private func saveShiftTemplate(_ data: ShiftTemplateEditSheet.TemplateData) {
+    private func saveShiftTemplate(_ data: ShiftTemplateEditSheet.TemplateData) -> Bool {
         guard let svc = appCore.schedulingService else {
             saveError = "Scheduling service not available"
-            activeSheet = nil
-            return
+            return false
         }
+        saveError = nil
         do {
             try svc.saveShiftTemplate(
                 id: data.existingId, name: data.name, hatId: data.hatId,
@@ -490,58 +492,66 @@ struct IOSScheduleConfigPage: View {
                 overtimeRule: data.overtimeRule
             )
             shiftTemplates = (try? svc.getShiftTemplates()) ?? []
+            activeSheet = nil
+            return true
         } catch {
             saveError = userFriendlyError(error, context: "save shift template")
+            return false
         }
-        activeSheet = nil
     }
 
-    private func deleteShiftTemplate(_ id: Int64) {
+    private func deleteShiftTemplate(_ id: Int64) -> Bool {
         guard let svc = appCore.schedulingService else {
             saveError = "Scheduling service not available"
-            activeSheet = nil
-            return
+            return false
         }
+        saveError = nil
         do {
             try svc.deleteShiftTemplate(id: id)
             shiftTemplates = (try? svc.getShiftTemplates()) ?? []
+            activeSheet = nil
+            return true
         } catch {
             saveError = userFriendlyError(error, context: "delete shift template")
+            return false
         }
-        activeSheet = nil
     }
 
-    private func saveHoliday(_ data: HolidayEditSheet.HolidayData) {
+    private func saveHoliday(_ data: HolidayEditSheet.HolidayData) -> Bool {
         guard let svc = appCore.schedulingService else {
             saveError = "Scheduling service not available"
-            activeSheet = nil
-            return
+            return false
         }
+        saveError = nil
         do {
             try svc.saveHoliday(
                 id: data.existingId, name: data.name, date: data.date,
                 isPaid: data.isPaid, isRecurring: data.isRecurring
             )
             holidays = (try? svc.getHolidays()) ?? []
+            activeSheet = nil
+            return true
         } catch {
             saveError = userFriendlyError(error, context: "save holiday")
+            return false
         }
-        activeSheet = nil
     }
 
-    private func deleteHoliday(_ id: Int64) {
+    private func deleteHoliday(_ id: Int64) -> Bool {
         guard let svc = appCore.schedulingService else {
             saveError = "Scheduling service not available"
-            activeSheet = nil
-            return
+            return false
         }
+        saveError = nil
         do {
             try svc.deleteHoliday(id: id)
             holidays = (try? svc.getHolidays()) ?? []
+            activeSheet = nil
+            return true
         } catch {
             saveError = userFriendlyError(error, context: "delete holiday")
+            return false
         }
-        activeSheet = nil
     }
 }
 
@@ -623,8 +633,9 @@ struct ShiftTemplateEditSheet: View {
 
     let existing: SchedulingService.ShiftTemplateRow?
     let hats: [PeopleService.HatListItem]
-    let onSave: (TemplateData) -> Void
-    let onDelete: (() -> Void)?
+    let actionError: String?
+    let onSave: (TemplateData) -> Bool
+    let onDelete: (() -> Bool)?
 
     @State private var name = ""
     @State private var selectedHatId: Int64 = 0
@@ -707,6 +718,15 @@ struct ShiftTemplateEditSheet: View {
                     }
                 }
 
+                if let actionError {
+                    Section {
+                        Label(actionError, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.red)
+                            .font(.callout)
+                            .accessibilityIdentifier("shiftTemplateActionError")
+                    }
+                }
+
                 if onDelete != nil {
                     Section {
                         Button(role: .destructive) {
@@ -733,8 +753,9 @@ struct ShiftTemplateEditSheet: View {
             .onAppear { populateFromExisting() }
             .confirmationDialog("Delete this template?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
                 Button("Delete Template", role: .destructive) {
-                    onDelete?()
-                    dismiss()
+                    if onDelete?() == true {
+                        dismiss()
+                    }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
@@ -765,7 +786,7 @@ struct ShiftTemplateEditSheet: View {
         let daysArray = dayOrder.filter { selectedDays.contains($0) }
         let daysJSON = (try? JSONEncoder().encode(daysArray)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
 
-        onSave(TemplateData(
+        if onSave(TemplateData(
             existingId: existing?.id,
             name: name.trimmingCharacters(in: .whitespaces),
             hatId: selectedHatId == 0 ? nil : selectedHatId,
@@ -775,7 +796,9 @@ struct ShiftTemplateEditSheet: View {
             breakMinutes: breakMinutes,
             breakPaid: breakPaid,
             overtimeRule: overtimeRule
-        ))
+        )) {
+            dismiss()
+        }
     }
 }
 
@@ -793,8 +816,9 @@ struct HolidayEditSheet: View {
     }
 
     let existing: SchedulingService.HolidayRow?
-    let onSave: (HolidayData) -> Void
-    let onDelete: (() -> Void)?
+    let actionError: String?
+    let onSave: (HolidayData) -> Bool
+    let onDelete: (() -> Bool)?
 
     @State private var name = ""
     @State private var selectedDate = Date()
@@ -817,6 +841,15 @@ struct HolidayEditSheet: View {
                 Section("Options") {
                     Toggle("Paid Holiday", isOn: $isPaid)
                     Toggle("Recurring Annually", isOn: $isRecurring)
+                }
+
+                if let actionError {
+                    Section {
+                        Label(actionError, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.red)
+                            .font(.callout)
+                            .accessibilityIdentifier("holidayActionError")
+                    }
                 }
 
                 if onDelete != nil {
@@ -845,8 +878,9 @@ struct HolidayEditSheet: View {
             .onAppear { populateFromExisting() }
             .confirmationDialog("Delete this holiday?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
                 Button("Delete Holiday", role: .destructive) {
-                    onDelete?()
-                    dismiss()
+                    if onDelete?() == true {
+                        dismiss()
+                    }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
@@ -865,12 +899,14 @@ struct HolidayEditSheet: View {
     }
 
     private func save() {
-        onSave(HolidayData(
+        if onSave(HolidayData(
             existingId: existing?.id,
             name: name.trimmingCharacters(in: .whitespaces),
             date: Formatters.localDateFormatter.string(from: selectedDate),
             isPaid: isPaid,
             isRecurring: isRecurring
-        ))
+        )) {
+            dismiss()
+        }
     }
 }
