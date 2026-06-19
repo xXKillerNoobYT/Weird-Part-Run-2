@@ -42,20 +42,24 @@ struct WiredPartIOSApp: App {
     @AppStorage(OnboardAIFeatureFlag.onboardingMVP) private var onboardAIMVPEnabled = false
 
     init() {
+        Self.migrateLegacyWelcomeFlags()
+    }
+
+    static func migrateLegacyWelcomeFlags(defaults: UserDefaults = .standard) {
         // One-time migration: users who already completed the old welcome flow
         // don't need to re-run the walkthrough or company-setup wizard.
         // Consume hasSeenWelcome immediately so this never re-fires on a
         // subsequent fresh build where the DB is empty but UserDefaults persisted.
-        if UserDefaults.standard.bool(forKey: "hasSeenWelcome") {
-            if !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") {
-                UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+        if defaults.bool(forKey: "hasSeenWelcome") {
+            if !defaults.bool(forKey: "hasCompletedOnboarding") {
+                defaults.set(true, forKey: "hasCompletedOnboarding")
             }
-            if !UserDefaults.standard.bool(forKey: "hasCompletedCompanySetup") {
-                UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
+            if !defaults.bool(forKey: "hasCompletedCompanySetup") {
+                defaults.set(true, forKey: "hasCompletedCompanySetup")
             }
             // Clear the trigger so a future fresh-DB build doesn't re-apply
             // these flags before bootstrap() can detect the empty database.
-            UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+            defaults.removeObject(forKey: "hasSeenWelcome")
         }
     }
 
