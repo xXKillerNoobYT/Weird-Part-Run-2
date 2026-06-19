@@ -921,19 +921,6 @@ private struct AddStorageUnitSheet: View {
                     typeSummaryRow(catalogItem)
                 }
 
-                Section("Dimensions") {
-                    Stepper("Width: \(widthInches)\"", value: $widthInches, in: 6...240, step: 6)
-                    Stepper("Depth: \(depthInches)\"", value: $depthInches, in: 6...120, step: 6)
-                    Stepper("Height: \(heightInches)\"", value: $heightInches, in: 12...240, step: 6)
-                }
-
-                Section("Grid Placement") {
-                    Stepper("X: \(gridX)", value: $gridX, in: 0...100)
-                    Stepper("Y: \(gridY)", value: $gridY, in: 0...100)
-                    Stepper("Width: \(gridWidth) cells", value: $gridWidth, in: 1...10)
-                    Stepper("Height: \(gridHeight) cells", value: $gridHeight, in: 1...10)
-                }
-
                 Section {
                     Picker("Front Face", selection: $frontFace) {
                         ForEach(faceOptions, id: \.self) { Text($0.capitalized) }
@@ -945,6 +932,19 @@ private struct AddStorageUnitSheet: View {
                         .foregroundStyle(.secondary)
                 } header: {
                     Text("Orientation")
+                }
+
+                Section("Dimensions") {
+                    Stepper("Width: \(widthInches)\"", value: $widthInches, in: 6...240, step: 6)
+                    Stepper("Depth: \(depthInches)\"", value: $depthInches, in: 6...120, step: 6)
+                    Stepper("Height: \(heightInches)\"", value: $heightInches, in: 12...240, step: 6)
+                }
+
+                Section("Grid Placement") {
+                    Stepper("X: \(gridX)", value: $gridX, in: 0...100)
+                    Stepper("Y: \(gridY)", value: $gridY, in: 0...100)
+                    Stepper("Width: \(gridWidth) cells", value: $gridWidth, in: 1...10)
+                    Stepper("Height: \(gridHeight) cells", value: $gridHeight, in: 1...10)
                 }
 
                 Section("Structure") {

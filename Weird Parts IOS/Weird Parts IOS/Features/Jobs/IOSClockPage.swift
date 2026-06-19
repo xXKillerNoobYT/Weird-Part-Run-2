@@ -656,6 +656,8 @@ struct IOSClockPage: View {
                     Text("You are still clocked into \(entry.jobName) since \(formatTime(entry.clockIn)).")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Active timer recovered. You are still clocked into \(entry.jobName) since \(formatTime(entry.clockIn)).")
                     HStack {
                         Button {
                             recoveredBannerDismissed = true
@@ -663,6 +665,9 @@ struct IOSClockPage: View {
                             Label("Continue Timer", systemImage: "play.circle")
                         }
                         .buttonStyle(.borderedProminent)
+                        .accessibilityLabel("Continue Timer")
+                        .accessibilityHint("Dismisses the recovered timer banner and keeps the active timer running.")
+                        .accessibilityIdentifier("clock-recovered-continue-timer-button")
 
                         Button(role: .destructive) {
                             pendingClockOutEntryId = entry.id
@@ -671,9 +676,11 @@ struct IOSClockPage: View {
                             Label("Clock Out", systemImage: "stop.circle")
                         }
                         .buttonStyle(.bordered)
+                        .accessibilityLabel("Clock Out")
+                        .accessibilityHint("Opens confirmation to clock out of \(entry.jobName).")
+                        .accessibilityIdentifier("clock-recovered-clock-out-button")
                     }
                 }
-                .accessibilityElement(children: .combine)
             }
         }
     }

@@ -45,6 +45,7 @@ struct IOSDailyReportsPage: View {
             )
         }
         .searchable(text: $searchText, prompt: "Search jobs...")
+        .onChange(of: searchText) { _, _ in postAIContext(dateString: isoDate(selectedDate)) }
         .refreshable { loadData() }
         .task { loadData() }
         .onDisappear {

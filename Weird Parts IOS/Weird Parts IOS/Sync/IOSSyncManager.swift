@@ -122,9 +122,23 @@ final class IOSSyncManager {
         syncTimer?.invalidate()
         syncTimer = Timer.scheduledTimer(withTimeInterval: syncIntervalSeconds, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                await self?.syncNow()
+                await self?.handleAutoSyncTimerTick()
             }
         }
+    }
+
+    /// Handles one scheduled auto-sync tick.
+    ///
+    /// Re-check persisted auto-sync opt-in at execution time so a timer that was
+    /// scheduled while enabled cannot keep syncing after another settings path
+    /// stores `auto_sync = false`.
+    func handleAutoSyncTimerTick() async {
+        guard isSyncAvailable else { return }
+        guard isAutoSyncEnabled else {
+            stopAutoSync()
+            return
+        }
+        await syncNow()
     }
 
     /// Stop automatic sync.

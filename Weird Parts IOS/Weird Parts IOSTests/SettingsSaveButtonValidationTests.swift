@@ -50,6 +50,21 @@ final class SettingsSaveButtonValidationTests: XCTestCase {
             source.contains("isDirty = false"),
             "IOSToolPoliciesPage must reset isDirty after save and after load."
         )
+        XCTAssertTrue(
+            source.contains("@State private var saveSuccessMessage: String?"),
+            "IOSToolPoliciesPage must declare a success state so saves get positive feedback."
+        )
+        XCTAssertTrue(
+            source.contains("Label(saveSuccessMessage, systemImage: \"checkmark.circle.fill\")") &&
+                source.contains(".foregroundStyle(.green)"),
+            "IOSToolPoliciesPage must show a visible green success confirmation after a successful save."
+        )
+        XCTAssertTrue(
+            source.contains("saveSuccessMessage = \"Tool policies saved.\"") &&
+                source.contains("saveSuccessMessage = nil") &&
+                source.contains("private func markDirty()"),
+            "IOSToolPoliciesPage must set success on save and clear stale success when fields change or a new save starts."
+        )
     }
 
     // MARK: - IOSForecastSettingsPage

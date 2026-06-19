@@ -35,18 +35,13 @@ struct IOSTrailersPage: View {
         trailerList
             .navigationTitle("Trailers")
             .searchable(text: $searchText, prompt: "Search trailers...")
+            .onChange(of: searchText) { _, _ in postFleetTrailersContext() }
             .refreshable { loadData() }
             .task { loadData() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { loadData() }
             }
-            .onAppear {
-                NotificationCenter.default.post(
-                    name: .fleetTrailersPageActive,
-                    object: nil,
-                    userInfo: ["context": fleetTrailersContext]
-                )
-            }
+            .onAppear { postFleetTrailersContext() }
             .onDisappear {
                 NotificationCenter.default.post(name: .fleetTrailersPageInactive, object: nil)
             }
@@ -91,6 +86,14 @@ struct IOSTrailersPage: View {
     private var fleetTrailersContext: String {
         let searchState = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "none" : "active"
         return "page=Fleet Trailers; total_trailers=\(trailers.count); visible_trailers=\(filteredTrailers.count); search=\(searchState)"
+    }
+
+    private func postFleetTrailersContext() {
+        NotificationCenter.default.post(
+            name: .fleetTrailersPageActive,
+            object: nil,
+            userInfo: ["context": fleetTrailersContext]
+        )
     }
 
     @ViewBuilder

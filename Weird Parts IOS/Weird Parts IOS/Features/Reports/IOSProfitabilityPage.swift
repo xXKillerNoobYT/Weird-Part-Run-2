@@ -59,6 +59,7 @@ struct IOSProfitabilityPage: View {
             .refreshable { loadData() }
             .task { loadData() }
             .onAppear { postPageContext() }
+            .onChange(of: searchText) { postPageContext() }
             .onDisappear {
                 NotificationCenter.default.post(name: .reportsProfitabilityPageInactive, object: nil)
             }

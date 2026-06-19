@@ -19,7 +19,60 @@ private enum PeerDiscoveryCompanyIdTestError: Error {
     case lookupFailed
 }
 
+private enum DispatchSheetLoadTestError: Error {
+    case jobLoadFailed
+    case employeeLoadFailed
+}
+
+private enum CreateNotebookJobPickerTestError: Error {
+    case loadFailed
+}
+
 struct Weird_Parts_IOSTests {
+
+    private func makeJobListItem(id: Int64, name: String, status: String) -> JobsService.JobListItem {
+        JobsService.JobListItem(
+            id: id,
+            jobNumber: "JOB-\(id)",
+            jobName: name,
+            customerName: nil,
+            status: status,
+            priority: "normal",
+            teamCount: 0,
+            startDate: nil,
+            dueDate: nil
+        )
+    }
+
+    @MainActor
+    @Test func createNotebookJobPickerIncludesInProgressJobsWithoutDuplicates() throws {
+        let activeJob = makeJobListItem(id: 1, name: "Active Job", status: "active")
+        let inProgressJob = makeJobListItem(id: 2, name: "Clocked Job", status: "in_progress")
+        let duplicateActiveJob = makeJobListItem(id: 1, name: "Active Job Duplicate", status: "active")
+
+        let jobs = try CreateNotebookJobPickerLoader.loadSelectableJobs { status, _ in
+            switch status {
+            case "active":
+                return [activeJob, duplicateActiveJob]
+            case "in_progress":
+                return [inProgressJob, duplicateActiveJob]
+            default:
+                return []
+            }
+        }
+
+        #expect(jobs.map(\.id) == [1, 2])
+        #expect(jobs.map(\.status) == ["active", "in_progress"])
+    }
+
+    @MainActor
+    @Test func createNotebookJobPickerPropagatesLoadFailures() throws {
+        #expect(throws: CreateNotebookJobPickerTestError.self) {
+            _ = try CreateNotebookJobPickerLoader.loadSelectableJobs { _, _ in
+                throw CreateNotebookJobPickerTestError.loadFailed
+            }
+        }
+    }
 
     struct LANPeerDiscoveryStartupError: Error, LocalizedError {
         var errorDescription: String? { "port unavailable" }
@@ -42,6 +95,80 @@ struct Weird_Parts_IOSTests {
     @Test func shopServerAddressSettingsAreDeviceScoped() async throws {
         #expect(IOSSyncManager.settingSyncScope(for: "sync_server_address") == .device)
         #expect(IOSSyncManager.settingSyncScope(for: "shop_server_address") == .device)
+    }
+
+    @MainActor
+    @Test func partsFlowDraftsAreScopedPerAuthenticatedUser() throws {
+        let userA: Int64 = 101
+        let userB: Int64 = 202
+        PartsFlowDraftStore.clear(userId: userA)
+        PartsFlowDraftStore.clear(userId: userB)
+        UserDefaults.standard.removeObject(forKey: PartsFlowDraftStore.countsKey)
+        UserDefaults.standard.removeObject(forKey: PartsFlowDraftStore.locationsKey)
+        defer {
+            PartsFlowDraftStore.clear(userId: userA)
+            PartsFlowDraftStore.clear(userId: userB)
+        }
+
+        UserDefaults.standard.set(Data("legacy".utf8), forKey: PartsFlowDraftStore.countsKey)
+        PartsFlowDraftStore.save(counts: [1: "7"], locations: [1: "Aisle 4"], userId: userA)
+
+        #expect(PartsFlowDraftStore.scopedKey(PartsFlowDraftStore.countsKey, userId: userA) != PartsFlowDraftStore.countsKey)
+        #expect(PartsFlowDraftStore.loadCounts(userId: userA) == [1: "7"])
+        #expect(PartsFlowDraftStore.loadLocations(userId: userA) == [1: "Aisle 4"])
+        #expect(PartsFlowDraftStore.loadCounts(userId: userB).isEmpty)
+        #expect(PartsFlowDraftStore.loadLocations(userId: userB).isEmpty)
+    }
+
+    @MainActor
+    @Test func movementWizardDraftsAreScopedPerAuthenticatedUser() throws {
+        let userA: Int64 = 303
+        let userB: Int64 = 404
+        MovementWizardDraftStore.clear(userId: userA)
+        MovementWizardDraftStore.clear(userId: userB)
+        UserDefaults.standard.removeObject(forKey: MovementWizardDraftStore.baseKey)
+        defer {
+            MovementWizardDraftStore.clear(userId: userA)
+            MovementWizardDraftStore.clear(userId: userB)
+        }
+
+        let draftData = Data("user-a-draft".utf8)
+        UserDefaults.standard.set(Data("legacy".utf8), forKey: MovementWizardDraftStore.baseKey)
+        MovementWizardDraftStore.save(draftData, userId: userA)
+
+        #expect(MovementWizardDraftStore.key(userId: userA) != MovementWizardDraftStore.baseKey)
+        #expect(MovementWizardDraftStore.loadData(userId: userA) == draftData)
+        #expect(MovementWizardDraftStore.loadData(userId: userB) == nil)
+    }
+
+    @MainActor
+    @Test func autoSyncTimerTickStopsWhenStoredOptOutBecomesFalse() async throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let settings = SettingsService(db: db)
+        try settings.upsertSetting(key: "shop_server_address", value: "http://127.0.0.1:9", category: "sync")
+        try settings.upsertSetting(key: "auto_sync", value: "false", category: "sync")
+        let manager = IOSSyncManager()
+        manager.configure(db: db, settingsService: settings)
+        manager.startAutoSync(intervalSeconds: 60)
+
+        await manager.handleAutoSyncTimerTick()
+
+        #expect(manager.syncStatus == .idle)
+        #expect(manager.syncStatusDescription == "Ready")
+    }
+
+    @MainActor
+    @Test func autoSyncTimerTickRunsWhenStoredOptInStaysTrue() async throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let settings = SettingsService(db: db)
+        try settings.upsertSetting(key: "shop_server_address", value: "http://127.0.0.1:9", category: "sync")
+        try settings.upsertSetting(key: "auto_sync", value: "true", category: "sync")
+        let manager = IOSSyncManager()
+        manager.configure(db: db, settingsService: settings)
+
+        await manager.handleAutoSyncTimerTick()
+
+        #expect(manager.syncStatus != .idle)
     }
 
     @MainActor
@@ -340,6 +467,31 @@ struct Weird_Parts_IOSTests {
         )
     }
 
+    @Test func createDispatchSheetShowsActionableLoadFailures() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sheetURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Scheduling/CreateDispatchSheet.swift")
+        let source = try String(contentsOf: sheetURL, encoding: .utf8)
+
+        #expect(!source.contains("try? jobService.listJobs"), "Job load failures must not be swallowed into an empty active-jobs picker state")
+        #expect(!source.contains("try? peopleService.listEmployees"), "Employee load failures must not be swallowed into an empty employee picker state")
+        #expect(source.contains("jobLoadError = result.jobLoadError"), "Job load failures should be tracked separately from empty job results")
+        #expect(source.contains("employeeLoadError = result.employeeLoadError"), "Employee load failures should be tracked separately from empty employee results")
+        #expect(source.contains("userFriendlyError(error, context: context)"), "Service failures should be formatted as user-facing error copy")
+        #expect(source.contains("Text(\"No active jobs\")"), "Legitimate empty job results should still show the empty-state copy")
+        #expect(source.contains("Text(\"No employees found\")"), "Legitimate empty employee results should still show the empty-state copy")
+        #expect(source.contains("Label(\"Retry\", systemImage: \"arrow.clockwise\")"), "Load failures should offer an actionable retry")
+        #expect(
+            !source.contains(".accessibilityLabel(retryLabel)\n        }\n        .accessibilityElement(children: .combine)"),
+            "Load-failure rows must not combine the retry button into static failure copy"
+        )
+        #expect(source.contains("Retry loading jobs"), "Job retry control needs a specific accessibility label")
+        #expect(source.contains("Retry loading employees"), "Employee retry control needs a specific accessibility label")
+    }
+
     @Test @MainActor func questionnaireBreakAutofillDoesNotSwallowSubmitErrors() throws {
         var autoFillAttempts = 0
 
@@ -417,6 +569,88 @@ struct Weird_Parts_IOSTests {
         #expect(source.contains("loadError = userFriendlyError(error, context: \"create supplier channel\")"))
     }
 
+    @MainActor
+    @Test func dispatchSheetJobLoadFailurePreservesEmployeeResultsAndShowsActionableJobError() throws {
+        let loadedEmployee = PeopleService.EmployeeListItem(
+            id: 42,
+            displayName: "Field Tech",
+            email: "tech@example.com",
+            phone: nil,
+            status: "active",
+            role: "employee",
+            hatNames: nil
+        )
+
+        let result = DispatchSheetLoadData.load(
+            jobsProvider: { throw DispatchSheetLoadTestError.jobLoadFailed },
+            employeesProvider: { [loadedEmployee] },
+            errorFormatter: { _, context in "Couldn't \(context). Retry." }
+        )
+
+        #expect(result.jobs.isEmpty)
+        #expect(result.employees.map(\.displayName) == ["Field Tech"])
+        #expect(result.jobLoadError == "Couldn't load active jobs. Retry.")
+        #expect(result.employeeLoadError == nil)
+        #expect(result.hasLoadFailure)
+    }
+
+    @MainActor
+    @Test func dispatchSheetEmployeeLoadFailurePreservesJobResultsAndShowsActionableEmployeeError() throws {
+        let loadedJob = JobsService.JobListItem(
+            id: 7,
+            jobNumber: "JOB-7",
+            jobName: "Warehouse Upgrade",
+            customerName: nil,
+            status: "active",
+            priority: "medium",
+            teamCount: 0,
+            startDate: nil,
+            dueDate: nil
+        )
+
+        let result = DispatchSheetLoadData.load(
+            jobsProvider: { [loadedJob] },
+            employeesProvider: { throw DispatchSheetLoadTestError.employeeLoadFailed },
+            errorFormatter: { _, context in "Couldn't \(context). Retry." }
+        )
+
+        #expect(result.jobs.map(\.jobName) == ["Warehouse Upgrade"])
+        #expect(result.employees.isEmpty)
+        #expect(result.jobLoadError == nil)
+        #expect(result.employeeLoadError == "Couldn't load employees. Retry.")
+        #expect(result.hasLoadFailure)
+    }
+
+    @MainActor
+    @Test func dispatchSheetBothLoadFailuresExposeBothActionableMessages() throws {
+        let result = DispatchSheetLoadData.load(
+            jobsProvider: { throw DispatchSheetLoadTestError.jobLoadFailed },
+            employeesProvider: { throw DispatchSheetLoadTestError.employeeLoadFailed },
+            errorFormatter: { _, context in "Couldn't \(context). Retry." }
+        )
+
+        #expect(result.jobs.isEmpty)
+        #expect(result.employees.isEmpty)
+        #expect(result.jobLoadError == "Couldn't load active jobs. Retry.")
+        #expect(result.employeeLoadError == "Couldn't load employees. Retry.")
+        #expect(result.hasLoadFailure)
+    }
+
+    @MainActor
+    @Test func dispatchSheetEmptyResultsRemainLegitimateEmptyStatesWithoutLoadFailure() throws {
+        let result = DispatchSheetLoadData.load(
+            jobsProvider: { [] },
+            employeesProvider: { [] },
+            errorFormatter: { _, context in "Couldn't \(context). Retry." }
+        )
+
+        #expect(result.jobs.isEmpty)
+        #expect(result.employees.isEmpty)
+        #expect(result.jobLoadError == nil)
+        #expect(result.employeeLoadError == nil)
+        #expect(!result.hasLoadFailure)
+    }
+
     @Test func uiTestingFixturesSeedJPOFlowDataForQASmoke() throws {
         let db = try AppDatabase.openInMemoryDatabase()
         let auth = AuthService(db: db)
@@ -462,20 +696,22 @@ struct Weird_Parts_IOSTests {
 struct PartsFlowDraftStoreTests {
     @MainActor
     @Test func preservesAndClearsDraftCountsAndLocations() async throws {
-        PartsFlowDraftStore.clear()
-        defer { PartsFlowDraftStore.clear() }
+        let userId: Int64 = 505
+        PartsFlowDraftStore.clear(userId: userId)
+        defer { PartsFlowDraftStore.clear(userId: userId) }
 
         PartsFlowDraftStore.save(
             counts: [101: "7", 202: ""],
-            locations: [101: "Shelf A", 303: "Van 2"]
+            locations: [101: "Shelf A", 303: "Van 2"],
+            userId: userId
         )
 
-        #expect(PartsFlowDraftStore.loadCounts() == [101: "7", 202: ""])
-        #expect(PartsFlowDraftStore.loadLocations() == [101: "Shelf A", 303: "Van 2"])
+        #expect(PartsFlowDraftStore.loadCounts(userId: userId) == [101: "7", 202: ""])
+        #expect(PartsFlowDraftStore.loadLocations(userId: userId) == [101: "Shelf A", 303: "Van 2"])
 
-        PartsFlowDraftStore.clear()
+        PartsFlowDraftStore.clear(userId: userId)
 
-        #expect(PartsFlowDraftStore.loadCounts().isEmpty)
-        #expect(PartsFlowDraftStore.loadLocations().isEmpty)
+        #expect(PartsFlowDraftStore.loadCounts(userId: userId).isEmpty)
+        #expect(PartsFlowDraftStore.loadLocations(userId: userId).isEmpty)
     }
 }

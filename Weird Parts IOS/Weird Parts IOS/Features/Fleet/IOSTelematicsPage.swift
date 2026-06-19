@@ -27,15 +27,10 @@ struct IOSTelematicsPage: View {
         locationList
             .navigationTitle("GPS & Telematics")
             .searchable(text: $searchText, prompt: "Search vehicles...")
+            .onChange(of: searchText) { _, _ in postFleetTelematicsContext() }
             .refreshable { loadData() }
             .task { loadData() }
-            .onAppear {
-                NotificationCenter.default.post(
-                    name: .fleetTelematicsPageActive,
-                    object: nil,
-                    userInfo: ["context": fleetTelematicsContext]
-                )
-            }
+            .onAppear { postFleetTelematicsContext() }
             .onDisappear {
                 NotificationCenter.default.post(name: .fleetTelematicsPageInactive, object: nil)
             }
@@ -65,6 +60,14 @@ struct IOSTelematicsPage: View {
     private var fleetTelematicsContext: String {
         let searchState = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "none" : "active"
         return "page=Fleet Telematics; total_locations=\(locations.count); visible_locations=\(filteredLocations.count); search=\(searchState)"
+    }
+
+    private func postFleetTelematicsContext() {
+        NotificationCenter.default.post(
+            name: .fleetTelematicsPageActive,
+            object: nil,
+            userInfo: ["context": fleetTelematicsContext]
+        )
     }
 
     @ViewBuilder

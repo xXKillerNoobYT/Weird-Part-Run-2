@@ -5,22 +5,27 @@ enum PartsFlowDraftStore {
     static let countsKey = "partsFlow_counts"
     static let locationsKey = "partsFlow_locations"
 
-    static func loadCounts() -> [Int64: String] {
-        loadDictionary(forKey: countsKey)
+    static func scopedKey(_ baseKey: String, userId: Int64?) -> String {
+        guard let userId else { return "\(baseKey)_anonymous" }
+        return "\(baseKey)_user_\(userId)"
     }
 
-    static func loadLocations() -> [Int64: String] {
-        loadDictionary(forKey: locationsKey)
+    static func loadCounts(userId: Int64?) -> [Int64: String] {
+        loadDictionary(forKey: scopedKey(countsKey, userId: userId))
     }
 
-    static func save(counts: [Int64: String], locations: [Int64: String]) {
-        saveDictionary(counts, forKey: countsKey)
-        saveDictionary(locations, forKey: locationsKey)
+    static func loadLocations(userId: Int64?) -> [Int64: String] {
+        loadDictionary(forKey: scopedKey(locationsKey, userId: userId))
     }
 
-    static func clear() {
-        UserDefaults.standard.removeObject(forKey: countsKey)
-        UserDefaults.standard.removeObject(forKey: locationsKey)
+    static func save(counts: [Int64: String], locations: [Int64: String], userId: Int64?) {
+        saveDictionary(counts, forKey: scopedKey(countsKey, userId: userId))
+        saveDictionary(locations, forKey: scopedKey(locationsKey, userId: userId))
+    }
+
+    static func clear(userId: Int64?) {
+        UserDefaults.standard.removeObject(forKey: scopedKey(countsKey, userId: userId))
+        UserDefaults.standard.removeObject(forKey: scopedKey(locationsKey, userId: userId))
     }
 
     private static func loadDictionary(forKey key: String) -> [Int64: String] {
@@ -403,8 +408,9 @@ struct PartsFlowWizard: View {
     private func loadParts() {
         isLoading = true
         loadError = nil
-        partCounts = PartsFlowDraftStore.loadCounts()
-        partLocations = PartsFlowDraftStore.loadLocations()
+        let userId = appCore.currentUser?.id
+        partCounts = PartsFlowDraftStore.loadCounts(userId: userId)
+        partLocations = PartsFlowDraftStore.loadLocations(userId: userId)
 
         guard let partsService = appCore.partsService else {
             parts = []
@@ -442,7 +448,8 @@ struct PartsFlowWizard: View {
         isSaving = true
         saveErrorMessage = nil
 
-        PartsFlowDraftStore.save(counts: partCounts, locations: partLocations)
+        let userId = appCore.currentUser?.id
+        PartsFlowDraftStore.save(counts: partCounts, locations: partLocations, userId: userId)
 
         guard let service = appCore.partsService else {
             isSaving = false
@@ -486,12 +493,12 @@ struct PartsFlowWizard: View {
             }
             savedCount = count
             if !failedParts.isEmpty {
-                PartsFlowDraftStore.save(counts: counts, locations: locations)
+                PartsFlowDraftStore.save(counts: counts, locations: locations, userId: userId)
                 let preview = failedParts.prefix(3).joined(separator: ", ")
                 let suffix = failedParts.count > 3 ? " and \(failedParts.count - 3) more" : ""
                 saveErrorMessage = "Failed to save \(failedParts.count) part(s): \(preview)\(suffix). Your draft is still saved on this device."
             } else if clearDraft {
-                PartsFlowDraftStore.clear()
+                PartsFlowDraftStore.clear(userId: userId)
             }
             isSaving = false
             if andDismiss && saveErrorMessage == nil {

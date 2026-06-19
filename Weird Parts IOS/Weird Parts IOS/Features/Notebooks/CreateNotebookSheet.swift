@@ -1,6 +1,27 @@
 import SwiftUI
 import WiredPartCore
 
+enum CreateNotebookJobPickerLoader {
+    private static let selectableStatuses = ["active", "in_progress"]
+
+    static func loadSelectableJobs(
+        limit: Int = 200,
+        using listJobs: (_ status: String, _ limit: Int) throws -> [JobsService.JobListItem]
+    ) throws -> [JobsService.JobListItem] {
+        var seenJobIds = Set<Int64>()
+        var mergedJobs: [JobsService.JobListItem] = []
+
+        for status in selectableStatuses {
+            let statusJobs = try listJobs(status, limit)
+            for job in statusJobs where seenJobIds.insert(job.id).inserted {
+                mergedJobs.append(job)
+            }
+        }
+
+        return mergedJobs
+    }
+}
+
 /// Sheet for creating a new notebook, optionally from a template.
 struct CreateNotebookSheet: View {
     @EnvironmentObject private var appCore: AppCore
@@ -17,6 +38,7 @@ struct CreateNotebookSheet: View {
     @State private var templates: [NotebooksService.NotebookTemplateItem] = []
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var jobsLoadError: String?
     @State private var wasAutoFilled = false
 
     private let typeOptions = ["general", "job", "daily_report", "checklist"]
@@ -40,8 +62,17 @@ struct CreateNotebookSheet: View {
 
                 if notebookType == "job" {
                     Section {
-                        if jobs.isEmpty {
-                            Text("No active jobs")
+                        if let jobsLoadError {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(jobsLoadError)
+                                    .foregroundStyle(.red)
+                                    .font(.caption)
+                                Button("Retry loading jobs") {
+                                    loadJobs()
+                                }
+                            }
+                        } else if jobs.isEmpty {
+                            Text("No active or in-progress jobs")
                                 .foregroundStyle(.secondary)
                         } else {
                             Picker("Job", selection: $selectedJobId) {
@@ -114,10 +145,20 @@ struct CreateNotebookSheet: View {
 
     private func loadJobs() {
         guard let service = appCore.jobsService else {
-            saveError = "Jobs service not available"
+            jobs = []
+            jobsLoadError = "Jobs service not available. Try again after app services finish loading."
             return
         }
-        jobs = (try? service.listJobs(status: "active", limit: 200)) ?? []
+
+        do {
+            jobs = try CreateNotebookJobPickerLoader.loadSelectableJobs { status, limit in
+                try service.listJobs(status: status, limit: limit)
+            }
+            jobsLoadError = nil
+        } catch {
+            jobs = []
+            jobsLoadError = userFriendlyError(error, context: "load jobs")
+        }
     }
 
     private func loadTemplates() {

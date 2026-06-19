@@ -66,6 +66,7 @@ struct PartsForecastingPage: View {
             }
         }
         .searchable(text: $searchText, prompt: "Search parts...")
+        .onChange(of: searchText) { _, _ in postForecastContext() }
         .refreshable { await loadData() }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
@@ -166,6 +167,7 @@ struct PartsForecastingPage: View {
             await loadRecommendations()
             appCore.onboardingManager?.markCompleted("forecast-view")
         }
+        .onChange(of: filterUrgency) { _, _ in postForecastContext() }
         .onDisappear {
             NotificationCenter.default.post(name: .forecastingPageInactive, object: nil)
         }
