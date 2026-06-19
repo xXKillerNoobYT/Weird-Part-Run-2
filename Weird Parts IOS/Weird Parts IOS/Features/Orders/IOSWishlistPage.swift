@@ -101,6 +101,7 @@ struct IOSWishlistPage: View {
         .task { appCore.onboardingManager?.markCompleted("wishlist-view") }
         .navigationTitle("Wishlist")
         .searchable(text: $searchText, prompt: "Search wishlist...")
+        .onChange(of: searchText) { postAIContext() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .addItem } label: { Image(systemName: "plus") }

@@ -65,6 +65,7 @@ struct IOSOrganizationAuditPage: View {
         }
         .navigationTitle("Organization Audit")
         .searchable(text: $searchText, prompt: "Search areas...")
+        .onChange(of: searchText) { postAIContext() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {

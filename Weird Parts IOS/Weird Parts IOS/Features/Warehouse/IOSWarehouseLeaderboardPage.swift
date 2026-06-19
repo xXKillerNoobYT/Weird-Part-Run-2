@@ -66,6 +66,7 @@ struct IOSWarehouseLeaderboardPage: View {
             sheetContent(for: sheet)
         }
         .searchable(text: $searchText, prompt: "Search users...")
+        .onChange(of: searchText) { postAIContext() }
         .refreshable { loadData() }
         .task { loadData() }
         .onDisappear {

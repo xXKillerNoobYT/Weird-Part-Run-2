@@ -121,6 +121,7 @@ struct IOSProcurementPage: View {
         }
         .navigationTitle("Procurement")
         .searchable(text: $searchText, prompt: "Search parts...")
+        .onChange(of: searchText) { postAIContext() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {

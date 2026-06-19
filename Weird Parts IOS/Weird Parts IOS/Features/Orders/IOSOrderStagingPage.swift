@@ -44,6 +44,7 @@ struct IOSOrderStagingPage: View {
         }
         .navigationTitle("Job Stage Planner")
         .searchable(text: $searchText, prompt: "Search parts...")
+        .onChange(of: searchText) { postAIContext() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .stageSettings } label: {
