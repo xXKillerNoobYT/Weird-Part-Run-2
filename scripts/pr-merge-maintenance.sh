@@ -17,7 +17,7 @@
 # Environment:
 #   GH_TOKEN                         Required in GitHub Actions.
 #   PR_MAINTENANCE_BASE              Base branch. Default: main.
-#   PR_MAINTENANCE_MAX_PRS           PRs to inspect for candidate. Default: 20.
+#   PR_MAINTENANCE_MAX_PRS           Optional explicit safety cap. Default: inspect all open PRs.
 #   PR_MAINTENANCE_DRY_RUN           Set to 1 to log without side effects.
 #   PR_MAINTENANCE_SKIP_LABELS       Comma-separated labels → manual only.
 #   PR_MAINTENANCE_SKIP_TITLE_REGEX  Extended regex for security/manual titles.
@@ -27,7 +27,7 @@ shopt -s nocasematch
 
 REPO="${1:-${GITHUB_REPOSITORY:-}}"
 BASE="${PR_MAINTENANCE_BASE:-main}"
-MAX_PRS="${PR_MAINTENANCE_MAX_PRS:-20}"
+MAX_PRS="${PR_MAINTENANCE_MAX_PRS:-}"
 DRY_RUN="${PR_MAINTENANCE_DRY_RUN:-0}"
 SKIP_LABELS="${PR_MAINTENANCE_SKIP_LABELS:-security,security-sensitive,manual-review,manual-merge,do-not-merge}"
 SKIP_TITLE_REGEX="${PR_MAINTENANCE_SKIP_TITLE_REGEX:-security|sqlcipher|encryption|auth|payment|credential|secret|keychain}"
@@ -62,28 +62,49 @@ run_or_log() {
   "$@"
 }
 
-echo "==> Scanning up to $MAX_PRS open PRs in $REPO targeting $BASE (one-at-a-time mode)"
+if [[ -n "$MAX_PRS" && ! "$MAX_PRS" =~ ^[0-9]+$ ]]; then
+  echo "error: PR_MAINTENANCE_MAX_PRS must be a positive integer when set, got '$MAX_PRS'" >&2
+  exit 1
+fi
+if [[ "$MAX_PRS" == "0" ]]; then
+  echo "error: PR_MAINTENANCE_MAX_PRS must be greater than zero when set" >&2
+  exit 1
+fi
 
-prs_json="$(gh pr list \
-  --repo "$REPO" \
-  --base "$BASE" \
-  --state open \
-  --limit "$MAX_PRS" \
-  --json number,title,isDraft,labels,headRepositoryOwner,mergeStateStatus,mergeable,autoMergeRequest)"
+echo "==> Scanning all open PRs in $REPO targeting $BASE (one-at-a-time mode)"
 
-total="$(jq 'length' <<<"$prs_json")"
+# Fetch the full matching queue with REST pagination first. `gh pr list --limit N`
+# silently caps results at N; the maintenance job needs the true queue length so
+# it can inspect every open PR by default and report explicit operator caps.
+pr_numbers_json="$(gh api --paginate --slurp "repos/$REPO/pulls?state=open&base=$BASE&per_page=100" \
+  | jq '[.[][] | .number]')"
+
+total="$(jq 'length' <<<"$pr_numbers_json")"
 if [[ "$total" -eq 0 ]]; then
   echo "No open PRs targeting $BASE. Nothing to do."
   exit 0
 fi
-echo "Found $total open PR(s)."
+
+if [[ -n "$MAX_PRS" ]]; then
+  pr_numbers_json="$(jq --argjson max "$MAX_PRS" 'sort | .[:$max]' <<<"$pr_numbers_json")"
+else
+  pr_numbers_json="$(jq 'sort' <<<"$pr_numbers_json")"
+fi
+
+inspected="$(jq 'length' <<<"$pr_numbers_json")"
+echo "Found $total open PR(s); inspecting $inspected."
+if [[ "$inspected" -lt "$total" ]]; then
+  echo "warning: explicit PR_MAINTENANCE_MAX_PRS=$MAX_PRS limits this run to $inspected of $total open PRs" >&2
+fi
 
 repo_owner="${REPO%%/*}"
 
 # Walk PRs in order (oldest first = lowest number first).
 # Pick the FIRST one we can act on and do exactly that one action, then exit.
-while IFS= read -r pr; do
-  number="$(jq -r '.number'            <<<"$pr")"
+while IFS= read -r number; do
+  pr="$(gh pr view "$number" \
+    --repo "$REPO" \
+    --json number,title,isDraft,labels,headRepositoryOwner,mergeStateStatus,mergeable,autoMergeRequest)"
   title="$(jq -r  '.title'             <<<"$pr")"
   is_draft="$(jq -r '.isDraft'         <<<"$pr")"
   merge_state="$(jq -r '.mergeStateStatus // "UNKNOWN"' <<<"$pr")"
@@ -161,7 +182,7 @@ while IFS= read -r pr; do
 
   echo "    skip: unhandled state '$merge_state'"
 
-done < <(jq -c 'sort_by(.number) | .[]' <<<"$prs_json")
+done < <(jq -r '.[]' <<<"$pr_numbers_json")
 
 echo ""
 echo "==> No actionable PR found this run. All remaining PRs are blocked, conflicting, or waiting on checks."
