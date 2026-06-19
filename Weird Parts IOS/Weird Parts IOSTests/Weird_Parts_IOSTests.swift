@@ -98,6 +98,36 @@ struct Weird_Parts_IOSTests {
     }
 
     @MainActor
+    @Test func autoSyncTimerTickStopsWhenStoredOptOutBecomesFalse() async throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let settings = SettingsService(db: db)
+        try settings.upsertSetting(key: "shop_server_address", value: "http://127.0.0.1:9", category: "sync")
+        try settings.upsertSetting(key: "auto_sync", value: "false", category: "sync")
+        let manager = IOSSyncManager()
+        manager.configure(db: db, settingsService: settings)
+        manager.startAutoSync(intervalSeconds: 60)
+
+        await manager.handleAutoSyncTimerTick()
+
+        #expect(manager.syncStatus == .idle)
+        #expect(manager.syncStatusDescription == "Ready")
+    }
+
+    @MainActor
+    @Test func autoSyncTimerTickRunsWhenStoredOptInStaysTrue() async throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let settings = SettingsService(db: db)
+        try settings.upsertSetting(key: "shop_server_address", value: "http://127.0.0.1:9", category: "sync")
+        try settings.upsertSetting(key: "auto_sync", value: "true", category: "sync")
+        let manager = IOSSyncManager()
+        manager.configure(db: db, settingsService: settings)
+
+        await manager.handleAutoSyncTimerTick()
+
+        #expect(manager.syncStatus != .idle)
+    }
+
+    @MainActor
     @Test func lanPeerDiscoveryStartupFailureSurfacesErrorAndStopsLanOnlyScan() async throws {
         let manager = IOSSyncManager()
         manager.isScanning = true
