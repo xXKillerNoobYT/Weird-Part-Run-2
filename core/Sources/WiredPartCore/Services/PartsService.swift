@@ -7212,20 +7212,19 @@ public final class PartsService: Sendable {
 
         func parse(_ csv: String) -> PartsImportParsedSource {
             let hash = service.importSourceHash(Data(csv.utf8))
-            let rows = csv.components(separatedBy: .newlines)
-                .enumerated()
-                .compactMap { offset, line -> PartsImportDraftRow? in
-                    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return nil }
-                    let rowNumber = offset + 1
-                    return PartsImportDraftRow(
-                        rowNumber: rowNumber,
-                        columns: service.parseImportCSVLine(trimmed),
-                        evidence: [
-                            PartsImportSourceEvidence(kind: .row, rowNumber: rowNumber, text: trimmed)
-                        ]
-                    )
+            let records = service.parseImportCSVRecords(csv)
+            let rows = records.compactMap { record -> PartsImportDraftRow? in
+                guard record.fields.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+                    return nil
                 }
+                return PartsImportDraftRow(
+                    rowNumber: record.rowNumber,
+                    columns: record.fields,
+                    evidence: [
+                        PartsImportSourceEvidence(kind: .row, rowNumber: record.rowNumber, text: record.text)
+                    ]
+                )
+            }
             let columnCount = rows.map(\.columns.count).max() ?? 0
             let table = PartsImportExtractedTable(
                 id: "csv:table:1",
@@ -7252,23 +7251,78 @@ public final class PartsService: Sendable {
         }
     }
 
-    fileprivate func parseImportCSVLine(_ line: String) -> [String] {
+    fileprivate struct PartsImportCSVRecord {
+        let rowNumber: Int
+        let fields: [String]
+        let text: String
+    }
+
+    fileprivate func parseImportCSVRecords(_ csv: String) -> [PartsImportCSVRecord] {
+        var records: [PartsImportCSVRecord] = []
         var fields: [String] = []
         var current = ""
+        var recordText = ""
         var inQuotes = false
-        var iterator = line.makeIterator()
-        while let char = iterator.next() {
+        var recordStartLine = 1
+        var currentLine = 1
+        var fieldHasQuotedContent = false
+        var index = csv.startIndex
+
+        func finishField() {
+            fields.append(fieldHasQuotedContent ? current : current.trimmingCharacters(in: .whitespacesAndNewlines))
+            current = ""
+            fieldHasQuotedContent = false
+        }
+
+        func finishRecord() {
+            finishField()
+            records.append(PartsImportCSVRecord(rowNumber: recordStartLine, fields: fields, text: recordText))
+            fields.removeAll(keepingCapacity: true)
+            recordText = ""
+            recordStartLine = currentLine
+        }
+
+        while index < csv.endIndex {
+            let char = csv[index]
+            let nextIndex = csv.index(after: index)
+            recordText.append(char)
+
             if char == "\"" {
+                if inQuotes, nextIndex < csv.endIndex, csv[nextIndex] == "\"" {
+                    current.append("\"")
+                    recordText.append("\"")
+                    index = csv.index(after: nextIndex)
+                    continue
+                }
                 inQuotes.toggle()
+                fieldHasQuotedContent = true
             } else if char == "," && !inQuotes {
-                fields.append(current)
-                current = ""
+                finishField()
+            } else if (char == "\n" || char == "\r") && !inQuotes {
+                finishRecord()
+                if char == "\r", nextIndex < csv.endIndex, csv[nextIndex] == "\n" {
+                    index = csv.index(after: nextIndex)
+                    currentLine += 1
+                    recordStartLine = currentLine
+                    continue
+                }
+                currentLine += 1
+                recordStartLine = currentLine
             } else {
                 current.append(char)
+                if char == "\n" { currentLine += 1 }
             }
+            index = nextIndex
         }
-        fields.append(current)
-        return fields
+
+        if !recordText.isEmpty || !current.isEmpty || !fields.isEmpty {
+            finishRecord()
+        }
+        return records
+    }
+
+    fileprivate func parseImportCSVLine(_ line: String) -> [String] {
+        parseImportCSVRecords(line).first?.fields ?? []
     }
 
     // =========================================================================
@@ -8382,12 +8436,24 @@ public final class PartsService: Sendable {
     }
 
     /// Escape a string for CSV output. Wraps in quotes if it contains commas,
-    /// double-quotes, or newlines. Doubles any existing double-quotes.
+    /// double-quotes, newlines, leading/trailing whitespace, or spreadsheet-prone
+    /// text such as numeric-looking codes. Doubles any existing double-quotes.
     private func csvEscape(_ value: String) -> String {
-        if value.contains(",") || value.contains("\"") || value.contains("\n") {
+        if valueRequiresCSVQuoting(value) {
             return "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\""
         }
         return value
+    }
+
+    private func valueRequiresCSVQuoting(_ value: String) -> Bool {
+        if value.isEmpty { return false }
+        if value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r") {
+            return true
+        }
+        if value != value.trimmingCharacters(in: .whitespacesAndNewlines) {
+            return true
+        }
+        return value.range(of: #"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$"#, options: .regularExpression) != nil
     }
 
     // MARK: - Catalog Search (Full Filters)
