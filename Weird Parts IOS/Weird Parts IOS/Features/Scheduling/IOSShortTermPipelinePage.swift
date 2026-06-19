@@ -4,6 +4,31 @@ import os
 
 private let pipelineLog = Logger(subsystem: "com.wiredpart", category: "scheduling.pipeline")
 
+struct IOSShortTermPipelineCallbackActionResult: Equatable {
+    let errorMessage: String?
+    let shouldDismissSheet: Bool
+}
+
+enum IOSShortTermPipelineCallbackActionHandler {
+    static func perform(
+        context: String,
+        operation: () throws -> Void,
+        reload: () -> Void,
+        errorFormatter: (Error, String) -> String
+    ) -> IOSShortTermPipelineCallbackActionResult {
+        do {
+            try operation()
+            reload()
+            return IOSShortTermPipelineCallbackActionResult(errorMessage: nil, shouldDismissSheet: true)
+        } catch {
+            return IOSShortTermPipelineCallbackActionResult(
+                errorMessage: errorFormatter(error, context),
+                shouldDismissSheet: false
+            )
+        }
+    }
+}
+
 /// Short-term pipeline page showing jobs ready or near-ready for scheduling.
 ///
 /// Categories: Start Anytime (target: 3), Schedule Needed (target: 2),
@@ -321,13 +346,18 @@ struct IOSShortTermPipelinePage: View {
             loadError = "Service not available"
             return
         }
-        do {
-            try service.markCallbackComplete(jobId: jobId, notes: notes)
-            loadData()
-        } catch {
-            loadError = userFriendlyError(error, context: "load pipeline data")
+        let result = IOSShortTermPipelineCallbackActionHandler.perform(
+            context: "complete callback",
+            operation: {
+                try service.markCallbackComplete(jobId: jobId, notes: notes)
+            },
+            reload: loadData,
+            errorFormatter: userFriendlyError
+        )
+        loadError = result.errorMessage
+        if result.shouldDismissSheet {
+            activeSheet = nil
         }
-        activeSheet = nil
     }
 
     private func snoozeCallback(jobId: Int64, days: Int) {
@@ -336,13 +366,18 @@ struct IOSShortTermPipelinePage: View {
             return
         }
         let target = Calendar.current.date(byAdding: .day, value: days, to: Date()) ?? Date()
-        do {
-            try service.snoozeCallback(jobId: jobId, until: Formatters.localDateFormatter.string(from: target))
-            loadData()
-        } catch {
-            loadError = userFriendlyError(error, context: "load pipeline data")
+        let result = IOSShortTermPipelineCallbackActionHandler.perform(
+            context: "snooze callback",
+            operation: {
+                try service.snoozeCallback(jobId: jobId, until: Formatters.localDateFormatter.string(from: target))
+            },
+            reload: loadData,
+            errorFormatter: userFriendlyError
+        )
+        loadError = result.errorMessage
+        if result.shouldDismissSheet {
+            activeSheet = nil
         }
-        activeSheet = nil
     }
 
     private func movePipelineItem(jobId: Int64, to category: String) {
