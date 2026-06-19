@@ -24,7 +24,55 @@ private enum DispatchSheetLoadTestError: Error {
     case employeeLoadFailed
 }
 
+private enum CreateNotebookJobPickerTestError: Error {
+    case loadFailed
+}
+
 struct Weird_Parts_IOSTests {
+
+    private func makeJobListItem(id: Int64, name: String, status: String) -> JobsService.JobListItem {
+        JobsService.JobListItem(
+            id: id,
+            jobNumber: "JOB-\(id)",
+            jobName: name,
+            customerName: nil,
+            status: status,
+            priority: "normal",
+            teamCount: 0,
+            startDate: nil,
+            dueDate: nil
+        )
+    }
+
+    @MainActor
+    @Test func createNotebookJobPickerIncludesInProgressJobsWithoutDuplicates() throws {
+        let activeJob = makeJobListItem(id: 1, name: "Active Job", status: "active")
+        let inProgressJob = makeJobListItem(id: 2, name: "Clocked Job", status: "in_progress")
+        let duplicateActiveJob = makeJobListItem(id: 1, name: "Active Job Duplicate", status: "active")
+
+        let jobs = try CreateNotebookJobPickerLoader.loadSelectableJobs { status, _ in
+            switch status {
+            case "active":
+                return [activeJob, duplicateActiveJob]
+            case "in_progress":
+                return [inProgressJob, duplicateActiveJob]
+            default:
+                return []
+            }
+        }
+
+        #expect(jobs.map(\.id) == [1, 2])
+        #expect(jobs.map(\.status) == ["active", "in_progress"])
+    }
+
+    @MainActor
+    @Test func createNotebookJobPickerPropagatesLoadFailures() throws {
+        #expect(throws: CreateNotebookJobPickerTestError.self) {
+            _ = try CreateNotebookJobPickerLoader.loadSelectableJobs { _, _ in
+                throw CreateNotebookJobPickerTestError.loadFailed
+            }
+        }
+    }
 
     struct LANPeerDiscoveryStartupError: Error, LocalizedError {
         var errorDescription: String? { "port unavailable" }
