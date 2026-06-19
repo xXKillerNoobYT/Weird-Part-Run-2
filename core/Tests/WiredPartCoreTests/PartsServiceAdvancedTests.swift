@@ -890,6 +890,62 @@ struct PartsServiceAdvancedTests {
         #expect(finalCosts["weighted_avg_cost"] as Double == 25.0)
     }
 
+    @Test("previewPartsImportCSV preserves quoted text with commas and escaped quotes")
+    func testPreviewPartsImportCSVPreservesQuotedText() throws {
+        let env = try E2ETestHelpers.setUp()
+        let csv = """
+        name,code,category,description
+        "Quoted, Part",Q-CSV-001,Quoted Category,"has, comma and ""quoted"" text"
+        """
+
+        let preview = try env.parts.previewPartsImportCSV(csv)
+
+        #expect(preview.errors.isEmpty)
+        let row = try #require(preview.newParts.first)
+        #expect(row.name == "Quoted, Part")
+        #expect(row.fields["description"] == "has, comma and \"quoted\" text")
+    }
+
+    @Test("exported hierarchy CSV imports style and type names without losing type data")
+    func testExportedHierarchyCSVImportsStyleAndTypeData() throws {
+        let source = try E2ETestHelpers.setUp()
+        let (categoryId, styleId, typeId) = try E2ETestHelpers.seedPartHierarchy(
+            source,
+            category: "Conduit",
+            style: "EMT",
+            type: "1/2\" EMT, thinwall"
+        )
+        _ = try source.parts.createPart(
+            categoryId: categoryId,
+            name: "Quoted Type Connector",
+            partType: "material",
+            styleId: styleId,
+            typeId: typeId,
+            code: "QTC-001"
+        )
+        let csv = try source.parts.exportPartsCSV(groups: [.hierarchy, .details])
+        #expect(csv.contains("\"1/2\"\" EMT, thinwall\""))
+
+        let target = try E2ETestHelpers.setUp()
+        let preview = try target.parts.previewPartsImportCSV(csv)
+        #expect(preview.errors.isEmpty)
+        let importedRow = try #require(preview.newParts.first)
+        #expect(importedRow.fields["style"] == "EMT")
+        #expect(importedRow.fields["type"] == "1/2\" EMT, thinwall")
+
+        _ = try target.parts.commitPartsImportCSV(preview)
+        let imported = try #require(try target.parts.findPartByCode("QTC-001"))
+        let importedTypeName = try target.db.writer.read { db in
+            try String.fetchOne(
+                db,
+                sql: "SELECT pt.name FROM parts p JOIN part_types pt ON pt.id = p.type_id WHERE p.id = ?",
+                arguments: [imported.id]
+            )
+        }
+        #expect(imported.partType == "material")
+        #expect(importedTypeName == "1/2\" EMT, thinwall")
+    }
+
     @Test("previewPartsImportXLSX parses first worksheet through shared import pipeline")
     func testPreviewPartsImportXLSXClassifiesRows() throws {
         let env = try E2ETestHelpers.setUp()

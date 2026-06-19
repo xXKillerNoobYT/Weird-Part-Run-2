@@ -6600,13 +6600,47 @@ public final class PartsService: Sendable {
                 return false
             }
 
+            let styleName: String
+            if let styleId = existingPart.styleId {
+                styleName = try String.fetchOne(
+                    dbConn,
+                    sql: "SELECT name FROM part_styles WHERE id = ? AND deleted_at IS NULL",
+                    arguments: [styleId]
+                ) ?? ""
+            } else {
+                styleName = ""
+            }
+            let typeName: String
+            if let typeId = existingPart.typeId {
+                typeName = try String.fetchOne(
+                    dbConn,
+                    sql: "SELECT name FROM part_types WHERE id = ? AND deleted_at IS NULL",
+                    arguments: [typeId]
+                ) ?? ""
+            } else {
+                typeName = ""
+            }
+            let colorName: String
+            if let colorId = existingPart.colorId {
+                colorName = try String.fetchOne(
+                    dbConn,
+                    sql: "SELECT name FROM part_colors WHERE id = ? AND deleted_at IS NULL",
+                    arguments: [colorId]
+                ) ?? ""
+            } else {
+                colorName = ""
+            }
+
             if let supplierPartNumber = parsed.supplierPartNumber?.trimmingCharacters(in: .whitespacesAndNewlines),
                !supplierPartNumber.isEmpty,
                matchReason != "supplier_part_number" {
                 return false
             }
 
-            return optionalImportFieldMatches(parsed.fields["part_type"], existingPart.partType)
+            return optionalImportFieldMatches(parsed.fields["style"], styleName)
+                && optionalImportFieldMatches(parsed.fields["type"], typeName)
+                && optionalImportFieldMatches(parsed.fields["color"], colorName)
+                && optionalImportFieldMatches(parsed.fields["part_type"], existingPart.partType)
                 && optionalImportFieldMatches(parsed.fields["description"], existingPart.description)
                 && optionalImportFieldMatches(parsed.fields["unit_of_measure"], existingPart.unitOfMeasure)
                 && optionalImportNumberMatches(parsed.fields["cost_price"], existingPart.companyCostPrice)
@@ -6630,9 +6664,17 @@ public final class PartsService: Sendable {
 
     private func deterministicPartsImportColumnMapping(_ headers: [String]) -> [String: String] {
         var mapping: [String: String] = [:]
+        let normalizedHeaders = Set(headers.map(normalizedImportHeader))
+        let hasExplicitCategory = normalizedHeaders.contains("category") || normalizedHeaders.contains("part_category")
         for header in headers {
             let normalized = normalizedImportHeader(header)
-            if let canonical = canonicalImportHeader(for: normalized) {
+            let canonical: String?
+            if normalized == "type", hasExplicitCategory {
+                canonical = "type"
+            } else {
+                canonical = canonicalImportHeader(for: normalized)
+            }
+            if let canonical {
                 mapping[header] = canonical
                 mapping[normalized] = canonical
             }
@@ -6645,6 +6687,9 @@ public final class PartsService: Sendable {
             "name": ["name", "part_name", "part", "item_name"],
             "code": ["code", "part_code", "part_number", "item_code", "sku", "internal_code"],
             "category": ["category", "part_category", "type"],
+            "style": ["style", "part_style"],
+            "type": ["part_hierarchy_type", "hierarchy_type"],
+            "color": ["color", "part_color"],
             "brand": ["brand", "manufacturer", "mfg"],
             "supplier_part_number": ["supplier_part_number", "supplier_part", "supplier_code", "vendor_part_number", "vendor_part", "vendor_code", "mfr_part_number"],
             "cost_price": ["cost_price", "cost", "unit_cost", "price"],
@@ -6817,8 +6862,59 @@ public final class PartsService: Sendable {
                     return dbConn.lastInsertedRowID
                 }
 
+                func findOrCreateStyleInTransaction(_ name: String?, categoryId: Int64) throws -> Int64? {
+                    guard let name, !name.isEmpty else { return nil }
+                    if let existing = try Row.fetchOne(
+                        dbConn,
+                        sql: "SELECT id FROM part_styles WHERE category_id = ? AND name = ? AND deleted_at IS NULL",
+                        arguments: [categoryId, name]
+                    ) {
+                        return existing["id"]
+                    }
+                    try Validators.requireName(name, field: "Style name")
+                    try dbConn.execute(sql: """
+                        INSERT INTO part_styles (category_id, name, sort_order, is_active, created_at, updated_at)
+                        VALUES (?, ?, 0, 1, datetime('now'), datetime('now'))
+                        """, arguments: [categoryId, name])
+                    return dbConn.lastInsertedRowID
+                }
+
+                func findOrCreateTypeInTransaction(_ name: String?, styleId: Int64?) throws -> Int64? {
+                    guard let name, !name.isEmpty else { return nil }
+                    guard let styleId else { return nil }
+                    if let existing = try Row.fetchOne(
+                        dbConn,
+                        sql: "SELECT id FROM part_types WHERE style_id = ? AND name = ? AND deleted_at IS NULL",
+                        arguments: [styleId, name]
+                    ) {
+                        return existing["id"]
+                    }
+                    try Validators.requireName(name, field: "Type name")
+                    try dbConn.execute(sql: """
+                        INSERT INTO part_types (style_id, name, sort_order, is_active, created_at, updated_at)
+                        VALUES (?, ?, 0, 1, datetime('now'), datetime('now'))
+                        """, arguments: [styleId, name])
+                    return dbConn.lastInsertedRowID
+                }
+
+                func findOrCreateColorInTransaction(_ name: String?) throws -> Int64? {
+                    guard let name, !name.isEmpty else { return nil }
+                    if let existing = try Row.fetchOne(dbConn, sql: "SELECT id FROM part_colors WHERE name = ? AND deleted_at IS NULL", arguments: [name]) {
+                        return existing["id"]
+                    }
+                    try Validators.requireName(name, field: "Color name")
+                    try dbConn.execute(sql: """
+                        INSERT INTO part_colors (name, sort_order, is_active, created_at)
+                        VALUES (?, 0, 1, datetime('now'))
+                        """, arguments: [name])
+                    return dbConn.lastInsertedRowID
+                }
+
                 func create(_ row: PartsImportParsedRow) throws -> Int64 {
                     let categoryId = try findOrCreateCategoryInTransaction(row.category)
+                    let styleId = try findOrCreateStyleInTransaction(row.fields["style"], categoryId: categoryId)
+                    let typeId = try findOrCreateTypeInTransaction(row.fields["type"], styleId: styleId)
+                    let colorId = try findOrCreateColorInTransaction(row.fields["color"])
                     let brandId = try findOrCreateBrandInTransaction(row.brand)
                     let cost = try parseImportNumeric(row.fields["cost_price"], header: "cost_price", rowNumber: row.rowNumber) ?? 0
                     let markup = try parseImportNumeric(row.fields["markup_percent"], header: "markup_percent", rowNumber: row.rowNumber) ?? 0
@@ -6831,14 +6927,17 @@ public final class PartsService: Sendable {
 
                     try dbConn.execute(sql: """
                         INSERT INTO parts (
-                            category_id, brand_id, part_type, code, name, description,
+                            category_id, style_id, type_id, color_id, brand_id, part_type, code, name, description,
                             unit_of_measure, company_cost_price, weighted_avg_cost,
                             company_markup_percent, shelf_location, bin_location,
                             auto_add_to_wishlist_when_low, is_deprecated, is_qr_tagged,
                             is_active, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 1, datetime('now'), datetime('now'))
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 1, datetime('now'), datetime('now'))
                         """, arguments: [
                             categoryId,
+                            styleId,
+                            typeId,
+                            colorId,
                             brandId,
                             partType,
                             row.code,
@@ -6857,6 +6956,9 @@ public final class PartsService: Sendable {
                 func update(_ conflict: PartsImportConflict) throws {
                     let row = conflict.parsedRow
                     let categoryId = try findOrCreateCategoryInTransaction(row.category)
+                    let styleId = try findOrCreateStyleInTransaction(row.fields["style"], categoryId: categoryId)
+                    let typeId = try findOrCreateTypeInTransaction(row.fields["type"], styleId: styleId)
+                    let colorId = try findOrCreateColorInTransaction(row.fields["color"])
                     let brandId = try findOrCreateBrandInTransaction(row.brand)
                     let cost = try parseImportNumeric(row.fields["cost_price"], header: "cost_price", rowNumber: row.rowNumber)
                     let markup = try parseImportNumeric(row.fields["markup_percent"], header: "markup_percent", rowNumber: row.rowNumber)
@@ -6869,6 +6971,9 @@ public final class PartsService: Sendable {
                     ]
                     var args: [DatabaseValueConvertible?] = [row.name, row.code, categoryId, brandId]
 
+                    if row.fields.keys.contains("style") { clauses.append("style_id = ?"); args.append(styleId) }
+                    if row.fields.keys.contains("type") { clauses.append("type_id = ?"); args.append(typeId) }
+                    if row.fields.keys.contains("color") { clauses.append("color_id = ?"); args.append(colorId) }
                     if let partType = row.fields["part_type"] { clauses.append("part_type = ?"); args.append(partType) }
                     if let description = row.fields["description"] { clauses.append("description = ?"); args.append(description) }
                     if let unit = row.fields["unit_of_measure"] { clauses.append("unit_of_measure = ?"); args.append(unit) }
@@ -7202,9 +7307,16 @@ public final class PartsService: Sendable {
         var fields: [String] = []
         var current = ""
         var inQuotes = false
-        var iterator = line.makeIterator()
-        while let char = iterator.next() {
+        var index = line.startIndex
+        while index < line.endIndex {
+            let char = line[index]
             if char == "\"" {
+                let nextIndex = line.index(after: index)
+                if inQuotes, nextIndex < line.endIndex, line[nextIndex] == "\"" {
+                    current.append("\"")
+                    index = line.index(after: nextIndex)
+                    continue
+                }
                 inQuotes.toggle()
             } else if char == "," && !inQuotes {
                 fields.append(current)
@@ -7212,6 +7324,7 @@ public final class PartsService: Sendable {
             } else {
                 current.append(char)
             }
+            index = line.index(after: index)
         }
         fields.append(current)
         return fields
