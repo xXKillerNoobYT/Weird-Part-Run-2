@@ -132,6 +132,43 @@ class AIHelpContextCoverageTests(unittest.TestCase):
                 "onChange(of: selectedFilter)",
                 "onChange(of: activeSheet?.id)",
             ],
+            # Regression coverage for GitHub #881: every searchable page named in the
+            # stale-context report must repost AI context when search text changes.
+            "Weird Parts IOS/Weird Parts IOS/Features/Jobs/IOSDailyReportsPage.swift": [
+                "onChange(of: searchText)",
+            ],
+            "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSOrderStagingPage.swift": [
+                "onChange(of: searchText)",
+                "onChange(of: stageFilter)",
+            ],
+            "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSProcurementPage.swift": [
+                "onChange(of: searchText)",
+                "onChange(of: sourceFilter)",
+                "onChange(of: selectedSupplier)",
+            ],
+            "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSWishlistPage.swift": [
+                "onChange(of: searchText)",
+                "onChange(of: selectedStatus)",
+            ],
+            "Weird Parts IOS/Weird Parts IOS/Features/Orders/IOSPartsOrderManagementPage.swift": [
+                "onChange(of: searchText)",
+                "onChange(of: showDraft)",
+                "onChange(of: showActive)",
+                "onChange(of: showPartial)",
+                "onChange(of: showReceived)",
+                "onChange(of: showCancelled)",
+                "onChange(of: showWaiting)",
+                "onChange(of: showBackorder)",
+                "onChange(of: showReceivedParts)",
+                "onChange(of: selectedPartIds)",
+            ],
+            "Weird Parts IOS/Weird Parts IOS/Features/Warehouse/IOSOrganizationAuditPage.swift": [
+                "onChange(of: searchText)",
+                "onChange(of: tab)",
+            ],
+            "Weird Parts IOS/Weird Parts IOS/Features/Warehouse/IOSWarehouseLeaderboardPage.swift": [
+                "onChange(of: searchText)",
+            ],
         }
         missing = {}
         for path, expected_snippets in freshness_expectations.items():

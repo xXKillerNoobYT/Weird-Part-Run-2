@@ -61,6 +61,7 @@ struct IOSOrderStagingPage: View {
         }
         .refreshable { loadData() }
         .task { await loadInitialData() }
+        .onChange(of: stageFilter) { _, _ in postAIContext() }
         .onDisappear {
             NotificationCenter.default.post(name: .orderStagingPageInactive, object: nil)
         }

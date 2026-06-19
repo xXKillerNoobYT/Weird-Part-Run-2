@@ -279,7 +279,7 @@ struct IOSWarehouseLeaderboardPage: View {
     }
 
     private func postAIContext() {
-        let topUser = leaderboard.first.map { userNames[$0.userId] ?? "User #\($0.userId)" } ?? "none"
+        let topUser = filteredLeaderboard.first.map { userNames[$0.userId] ?? "User #\($0.userId)" } ?? "none"
         let context = """
         Warehouse Leaderboard page. Read-only context.
         Loaded ratings: \(leaderboard.count), visible after search: \(filteredLeaderboard.count), search active: \(!searchText.isEmpty), manager detail access: \(isManager).

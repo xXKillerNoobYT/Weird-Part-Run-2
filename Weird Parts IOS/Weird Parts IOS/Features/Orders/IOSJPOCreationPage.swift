@@ -256,6 +256,8 @@ struct IOSJPOCreationPage: View {
             postAIContext()
         }
         .onChange(of: selectedJobId) { postAIContext() }
+        .onChange(of: priority) { postAIContext() }
+        .onChange(of: deliveryOption) { postAIContext() }
         .onDisappear {
             NotificationCenter.default.post(name: .jpoCreationPageInactive, object: nil)
         }
@@ -351,7 +353,10 @@ struct IOSJPOCreationPage: View {
                     .accessibilityHidden(true)
                 TextField("Search parts...", text: $searchText)
                     .textFieldStyle(.plain)
-                    .onChange(of: searchText) { searchParts() }
+                    .onChange(of: searchText) {
+                        searchParts()
+                        postAIContext()
+                    }
                 if !searchText.isEmpty {
                     Button {
                         searchText = ""

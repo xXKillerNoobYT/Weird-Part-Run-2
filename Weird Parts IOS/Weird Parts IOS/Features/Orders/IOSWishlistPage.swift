@@ -155,6 +155,8 @@ struct IOSWishlistPage: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onChange(of: searchText) { _, _ in postAIContext() }
+        .onChange(of: selectedStatus) { _, _ in postAIContext() }
         .onDisappear {
             NotificationCenter.default.post(name: .ordersWishlistPageInactive, object: nil)
         }

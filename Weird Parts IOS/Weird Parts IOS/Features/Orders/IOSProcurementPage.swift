@@ -148,8 +148,20 @@ struct IOSProcurementPage: View {
             loadData()
             appCore.onboardingManager?.markCompleted("procurement-view")
         }
-        .onChange(of: checkedParts) { updateReadyToGenerate() }
-        .onChange(of: selectedSupplier) { updateReadyToGenerate() }
+        .onChange(of: sourceFilter) { _, _ in
+            updateReadyToGenerate()
+            postAIContext()
+        }
+        .onChange(of: checkedParts) { _, _ in
+            updateReadyToGenerate()
+            postAIContext()
+        }
+        .onChange(of: selectedSupplier) { _, _ in
+            updateReadyToGenerate()
+            postAIContext()
+        }
+        .onChange(of: pullDecisions.keys.sorted()) { _, _ in postAIContext() }
+        .onChange(of: poGroupingMode) { _, _ in postAIContext() }
         .onDisappear {
             NotificationCenter.default.post(name: .procurementPageInactive, object: nil)
         }

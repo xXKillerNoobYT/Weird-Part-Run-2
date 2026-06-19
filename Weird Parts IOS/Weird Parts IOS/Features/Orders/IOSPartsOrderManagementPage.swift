@@ -150,6 +150,15 @@ struct IOSPartsOrderManagementPage: View {
             }
             loadData()
         }
+        .onChange(of: showDraft) { _, _ in postAIContext() }
+        .onChange(of: showActive) { _, _ in postAIContext() }
+        .onChange(of: showPartial) { _, _ in postAIContext() }
+        .onChange(of: showReceived) { _, _ in postAIContext() }
+        .onChange(of: showCancelled) { _, _ in postAIContext() }
+        .onChange(of: showWaiting) { _, _ in postAIContext() }
+        .onChange(of: showBackorder) { _, _ in postAIContext() }
+        .onChange(of: showReceivedParts) { _, _ in postAIContext() }
+        .onChange(of: selectedPartIds) { _, _ in postAIContext() }
         .onDisappear {
             NotificationCenter.default.post(name: .partsOrderManagementPageInactive, object: nil)
         }
