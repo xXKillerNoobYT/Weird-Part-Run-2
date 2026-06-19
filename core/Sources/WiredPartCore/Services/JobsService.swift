@@ -3637,16 +3637,30 @@ public final class JobsService: Sendable {
 
     /// Checks if the supply run markers in a notes string indicate an active supply run.
     public static func isOnSupplyRun(notes: String?) -> Bool {
-        guard let notes, notes.contains("[supply_run_start:") else { return false }
+        latestUnmatchedSupplyRunStart(notes: notes) != nil
+    }
+
+    /// Returns the latest unmatched supply-run start timestamp, if the notes show an active run.
+    ///
+    /// Supply-run state is tracked in the freeform labor-entry notes using append-only markers.
+    /// The clock page uses this helper to show the field user exactly when the current run
+    /// started and how long they have been out, while keeping the labor entry clocked in.
+    public static func activeSupplyRunStart(notes: String?) -> Date? {
+        guard let timestamp = latestUnmatchedSupplyRunStart(notes: notes) else { return nil }
+        return CoreFormatters.parseDateTime(timestamp)
+    }
+
+    private static func latestUnmatchedSupplyRunStart(notes: String?) -> String? {
+        guard let notes, notes.contains("[supply_run_start:") else { return nil }
         let lastStart = notes.range(of: "[supply_run_start:", options: .backwards)
         let lastEnd = notes.range(of: "[supply_run_end:", options: .backwards)
-        if let start = lastStart {
-            if let end = lastEnd {
-                return start.lowerBound > end.lowerBound
-            }
-            return true
+        guard let start = lastStart, lastEnd.map({ start.lowerBound > $0.lowerBound }) ?? true else {
+            return nil
         }
-        return false
+
+        let valueStart = start.upperBound
+        guard let valueEnd = notes[valueStart...].firstIndex(of: "]") else { return nil }
+        return String(notes[valueStart..<valueEnd])
     }
 
     // =========================================================================

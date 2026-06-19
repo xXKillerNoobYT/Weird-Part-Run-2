@@ -33,6 +33,7 @@ struct IOSClockPage: View {
 
     // Activity status (working, supply_run, break, lunch_paid, lunch_unpaid)
     @State private var activityStatus: String = "working"
+    @State private var supplyRunStartedAt: Date?
 
     // Break/lunch tracking
     @State private var activeBreakRecord: BreakRecord?
@@ -438,6 +439,28 @@ struct IOSClockPage: View {
                     Text(formatTime(entry.clockIn))
                         .font(.system(.subheadline, design: .monospaced))
                 }
+
+                if activityStatus == "supply_run", let supplyRunStartedAt {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "car.fill")
+                            .foregroundStyle(.orange)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Supply run started: \(formatClockTime(supplyRunStartedAt))")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                            Text("\(formatDuration(Date().timeIntervalSince(supplyRunStartedAt))) ago · still billable on this job")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Supply run started at \(formatClockTime(supplyRunStartedAt)), \(formatDuration(Date().timeIntervalSince(supplyRunStartedAt))) ago. Time is still billable on this job.")
+                }
+
                 Label("Saved on this device · waiting to sync", systemImage: "icloud.and.arrow.up")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -1563,8 +1586,12 @@ struct IOSClockPage: View {
             let newStatus = try service.toggleSupplyRun(laborEntryId: entryId)
             await MainActor.run {
                 activityStatus = newStatus
+                if newStatus != "supply_run" {
+                    supplyRunStartedAt = nil
+                }
                 errorMessage = nil
             }
+            loadData()
         } catch {
             await MainActor.run {
                 errorMessage = userFriendlyError(error, context: "toggle supply run")
@@ -1745,6 +1772,10 @@ struct IOSClockPage: View {
         return String(iso[start..<end])
     }
 
+    private func formatClockTime(_ date: Date) -> String {
+        DateFormatter.localizedString(from: date, dateStyle: .none, timeStyle: .short)
+    }
+
     private func formatDuration(_ interval: TimeInterval) -> String {
         let hours = Int(interval) / 3600
         let minutes = (Int(interval) % 3600) / 60
@@ -1831,9 +1862,11 @@ struct IOSClockPage: View {
 
             // Check activity status from notes (supply_run tracking)
             var currentActivity = "working"
+            var currentSupplyRunStart: Date?
             if let entry {
                 let notes = try? service.getLaborEntryNotes(laborEntryId: entry.id)
-                if JobsService.isOnSupplyRun(notes: notes) {
+                currentSupplyRunStart = JobsService.activeSupplyRunStart(notes: notes)
+                if currentSupplyRunStart != nil {
                     currentActivity = "supply_run"
                 }
             }
@@ -1884,9 +1917,11 @@ struct IOSClockPage: View {
                 lunchPaidMinutes = lunchPaid
                 if let brk = currentBreak {
                     activityStatus = brk.breakType
+                    supplyRunStartedAt = nil
                     startBreakTimer()
                 } else {
                     activityStatus = currentActivity
+                    supplyRunStartedAt = currentSupplyRunStart
                     breakTimer?.invalidate()
                     breakTimer = nil
                     breakElapsedText = ""
