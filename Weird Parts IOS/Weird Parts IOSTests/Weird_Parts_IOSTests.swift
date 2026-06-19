@@ -98,6 +98,50 @@ struct Weird_Parts_IOSTests {
     }
 
     @MainActor
+    @Test func partsFlowDraftsAreScopedPerAuthenticatedUser() throws {
+        let userA: Int64 = 101
+        let userB: Int64 = 202
+        PartsFlowDraftStore.clear(userId: userA)
+        PartsFlowDraftStore.clear(userId: userB)
+        UserDefaults.standard.removeObject(forKey: PartsFlowDraftStore.countsKey)
+        UserDefaults.standard.removeObject(forKey: PartsFlowDraftStore.locationsKey)
+        defer {
+            PartsFlowDraftStore.clear(userId: userA)
+            PartsFlowDraftStore.clear(userId: userB)
+        }
+
+        UserDefaults.standard.set(Data("legacy".utf8), forKey: PartsFlowDraftStore.countsKey)
+        PartsFlowDraftStore.save(counts: [1: "7"], locations: [1: "Aisle 4"], userId: userA)
+
+        #expect(PartsFlowDraftStore.scopedKey(PartsFlowDraftStore.countsKey, userId: userA) != PartsFlowDraftStore.countsKey)
+        #expect(PartsFlowDraftStore.loadCounts(userId: userA) == [1: "7"])
+        #expect(PartsFlowDraftStore.loadLocations(userId: userA) == [1: "Aisle 4"])
+        #expect(PartsFlowDraftStore.loadCounts(userId: userB).isEmpty)
+        #expect(PartsFlowDraftStore.loadLocations(userId: userB).isEmpty)
+    }
+
+    @MainActor
+    @Test func movementWizardDraftsAreScopedPerAuthenticatedUser() throws {
+        let userA: Int64 = 303
+        let userB: Int64 = 404
+        MovementWizardDraftStore.clear(userId: userA)
+        MovementWizardDraftStore.clear(userId: userB)
+        UserDefaults.standard.removeObject(forKey: MovementWizardDraftStore.baseKey)
+        defer {
+            MovementWizardDraftStore.clear(userId: userA)
+            MovementWizardDraftStore.clear(userId: userB)
+        }
+
+        let draftData = Data("user-a-draft".utf8)
+        UserDefaults.standard.set(Data("legacy".utf8), forKey: MovementWizardDraftStore.baseKey)
+        MovementWizardDraftStore.save(draftData, userId: userA)
+
+        #expect(MovementWizardDraftStore.key(userId: userA) != MovementWizardDraftStore.baseKey)
+        #expect(MovementWizardDraftStore.loadData(userId: userA) == draftData)
+        #expect(MovementWizardDraftStore.loadData(userId: userB) == nil)
+    }
+
+    @MainActor
     @Test func autoSyncTimerTickStopsWhenStoredOptOutBecomesFalse() async throws {
         let db = try AppDatabase.openInMemoryDatabase()
         let settings = SettingsService(db: db)
@@ -652,20 +696,22 @@ struct Weird_Parts_IOSTests {
 struct PartsFlowDraftStoreTests {
     @MainActor
     @Test func preservesAndClearsDraftCountsAndLocations() async throws {
-        PartsFlowDraftStore.clear()
-        defer { PartsFlowDraftStore.clear() }
+        let userId: Int64 = 505
+        PartsFlowDraftStore.clear(userId: userId)
+        defer { PartsFlowDraftStore.clear(userId: userId) }
 
         PartsFlowDraftStore.save(
             counts: [101: "7", 202: ""],
-            locations: [101: "Shelf A", 303: "Van 2"]
+            locations: [101: "Shelf A", 303: "Van 2"],
+            userId: userId
         )
 
-        #expect(PartsFlowDraftStore.loadCounts() == [101: "7", 202: ""])
-        #expect(PartsFlowDraftStore.loadLocations() == [101: "Shelf A", 303: "Van 2"])
+        #expect(PartsFlowDraftStore.loadCounts(userId: userId) == [101: "7", 202: ""])
+        #expect(PartsFlowDraftStore.loadLocations(userId: userId) == [101: "Shelf A", 303: "Van 2"])
 
-        PartsFlowDraftStore.clear()
+        PartsFlowDraftStore.clear(userId: userId)
 
-        #expect(PartsFlowDraftStore.loadCounts().isEmpty)
-        #expect(PartsFlowDraftStore.loadLocations().isEmpty)
+        #expect(PartsFlowDraftStore.loadCounts(userId: userId).isEmpty)
+        #expect(PartsFlowDraftStore.loadLocations(userId: userId).isEmpty)
     }
 }
