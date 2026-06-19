@@ -34,6 +34,11 @@ struct IOSReceiveShipmentPage: View {
     // Unrouted items warning (62H)
     @State private var showUnroutedWarning = false
 
+    init(sessionId: Int64? = nil) {
+        _activeSessionId = State(initialValue: sessionId)
+        _isLoading = State(initialValue: sessionId == nil)
+    }
+
     private enum ActiveSheet: Identifiable {
         case qrScanner
         case barcodeScanner
@@ -236,7 +241,13 @@ struct IOSReceiveShipmentPage: View {
                 )
             }
         }
-        .task { loadData() }
+        .task {
+            if activeSessionId != nil {
+                loadSessionItems()
+            } else {
+                loadData()
+            }
+        }
         .onDisappear {
             NotificationCenter.default.post(name: .receiveShipmentPageInactive, object: nil)
         }

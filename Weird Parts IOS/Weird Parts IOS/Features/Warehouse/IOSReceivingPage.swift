@@ -123,10 +123,9 @@ struct IOSReceivingPage: View {
                         }
                     }
             }
-        case .continueSession(_):
-            // IOSReceiveShipmentPage shows PO list; user picks the PO to continue
+        case .continueSession(let sessionId):
             NavigationStack {
-                IOSReceiveShipmentPage()
+                IOSReceiveShipmentPage(sessionId: sessionId)
                     .environmentObject(appCore)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
