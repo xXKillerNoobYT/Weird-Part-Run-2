@@ -584,17 +584,8 @@ struct OnboardingWalkthroughView: View {
     }
 
     private func finishOnboarding() {
+        OnboardingCompletionDefaults.markCompleted(skippedModules: skippedModules)
         hasCompletedOnboarding = true
-        // Mark only the tour overlay complete. Do not write the legacy
-        // hasSeenWelcome key here: app startup migrates that key into
-        // hasCompletedCompanySetup for true legacy installs, so writing it
-        // from the current walkthrough can skip required company setup after
-        // a relaunch.
-        UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
-        // Save skipped modules so post-onboarding hints can reference them
-        if let data = try? JSONEncoder().encode(skippedModules) {
-            UserDefaults.standard.set(data, forKey: "onboarding_skipped_modules")
-        }
         // Coordinate with OnboardingProgressManager — mark view tasks complete
         if let manager = appCore.onboardingManager {
             for moduleId in completedModules {
@@ -631,6 +622,21 @@ struct OnboardingWalkthroughView: View {
             UserDefaults.standard.set(data, forKey: "onboarding_skipped_modules")
         }
         UserDefaults.standard.set(currentStep, forKey: "onboarding_current_step")
+    }
+}
+
+enum OnboardingCompletionDefaults {
+    static func markCompleted(
+        skippedModules: Set<String>,
+        defaults: UserDefaults = .standard
+    ) {
+        defaults.set(true, forKey: "hasCompletedOnboarding")
+        // Keep current walkthrough completion separate from the legacy
+        // hasSeenWelcome migration trigger used by WiredPartIOSApp startup.
+        defaults.set(true, forKey: "hasSeenModuleTour")
+        if let data = try? JSONEncoder().encode(skippedModules) {
+            defaults.set(data, forKey: "onboarding_skipped_modules")
+        }
     }
 }
 
