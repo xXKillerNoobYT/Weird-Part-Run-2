@@ -585,8 +585,11 @@ struct OnboardingWalkthroughView: View {
 
     private func finishOnboarding() {
         hasCompletedOnboarding = true
-        // Also mark these so the older overlays don't re-show
-        UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
+        // Mark only the tour overlay complete. Do not write the legacy
+        // hasSeenWelcome key here: app startup migrates that key into
+        // hasCompletedCompanySetup for true legacy installs, so writing it
+        // from the current walkthrough can skip required company setup after
+        // a relaunch.
         UserDefaults.standard.set(true, forKey: "hasSeenModuleTour")
         // Save skipped modules so post-onboarding hints can reference them
         if let data = try? JSONEncoder().encode(skippedModules) {
