@@ -486,6 +486,73 @@ struct PartsServiceAdvancedTests {
         #expect(export.contains("Round Trip Cost Part,ROUND-COST-001,18.75,18.75,40.0,26.25"))
     }
 
+    @Test("commitPartsImportCSV preserves imported stock thresholds for new parts")
+    func testCommitPartsImportCSVPreservesStockThresholdsForNewParts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,min_stock,target_stock,max_stock
+        Round Trip Stock Part,ROUND-STOCK-001,Round Trip Stock,5,20,40
+        """)
+
+        _ = try env.parts.commitPartsImportCSV(preview)
+
+        let imported = try #require(try env.parts.findPartByCode("ROUND-STOCK-001"))
+        #expect(imported.minStockLevel == 5)
+        #expect(imported.targetStockLevel == 20)
+        #expect(imported.maxStockLevel == 40)
+
+        let export = try env.parts.exportPartsCSV(groups: [.stockLevels])
+        #expect(export.contains("Round Trip Stock Part,ROUND-STOCK-001,5,20,40,0"))
+    }
+
+    @Test("commitPartsImportCSV updates existing stock thresholds when conflict is accepted")
+    func testCommitPartsImportCSVUpdatesExistingStockThresholds() throws {
+        let env = try E2ETestHelpers.setUp()
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Stock Update")
+        _ = try env.parts.createPart(
+            categoryId: categoryId,
+            name: "Existing Stock Part",
+            code: "STOCK-UPD-001",
+            minStockLevel: 1,
+            maxStockLevel: 3,
+            targetStockLevel: 2
+        )
+
+        var preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,min_stock,target_stock,max_stock
+        Existing Stock Part,STOCK-UPD-001,Stock Update,7,14,21
+        """)
+        preview.conflicts = preview.conflicts.map { conflict in
+            var editable = conflict
+            editable.resolution = .update
+            return editable
+        }
+
+        _ = try env.parts.commitPartsImportCSV(preview)
+
+        let updated = try #require(try env.parts.findPartByCode("STOCK-UPD-001"))
+        #expect(updated.minStockLevel == 7)
+        #expect(updated.targetStockLevel == 14)
+        #expect(updated.maxStockLevel == 21)
+    }
+
+    @Test("previewPartsImportCSV rejects invalid stock threshold values")
+    func testPreviewPartsImportCSVRejectsInvalidStockThresholdValues() throws {
+        let env = try E2ETestHelpers.setUp()
+        let csv = """
+        name,code,category,min_stock,target_stock,max_stock
+        Bad Stock Part,BAD-STOCK-001,Stock Validation,N/A,2.5,-3
+        """
+
+        let preview = try env.parts.previewPartsImportCSV(csv)
+
+        #expect(preview.newParts.isEmpty)
+        #expect(preview.errors.count == 3)
+        #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid integer for min_stock: N/A" })
+        #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid integer for target_stock: 2.5" })
+        #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "max_stock cannot be negative" })
+    }
+
     @Test("previewPartsImportCSV attaches source metadata for audit sessions")
     func testPreviewPartsImportCSVAttachesSourceMetadata() throws {
         let env = try E2ETestHelpers.setUp()
