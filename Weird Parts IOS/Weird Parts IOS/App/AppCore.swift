@@ -5,6 +5,14 @@ import Security
 import GRDB
 import os.log
 
+protocol AppCoreBackgroundTaskAuditing: Sendable {
+    nonisolated func startTask(name: String, type: String, deviceId: String?) throws -> Int64
+    nonisolated func completeTask(id: Int64, summary: String?, itemsProcessed: Int) throws
+    nonisolated func failTask(id: Int64, error: String) throws
+}
+
+extension BackgroundTaskService: AppCoreBackgroundTaskAuditing {}
+
 /// Shared application state that owns the database and all services.
 ///
 /// Published as an `@EnvironmentObject` so every view in the tree
@@ -274,76 +282,43 @@ final class AppCore: ObservableObject {
 
             // Run scheduled Tools maintenance on launch so expired trades and
             // confidence-score decay are handled even when users do not open a tool detail page.
-            Task.detached { [toolsService, backgroundTaskService] in
-                let taskId = try? backgroundTaskService?.startTask(
+            Task.detached { [toolsService, backgroundTaskService, logger] in
+                Self.runAuditedBootstrapTask(
                     name: "Tools Scheduled Maintenance",
-                    type: "tools_maintenance"
-                )
-                do {
+                    type: "tools_maintenance",
+                    backgroundTaskService: backgroundTaskService,
+                    logger: logger
+                ) {
                     let result = try toolsService?.runScheduledMaintenance()
-                    if let taskId {
-                        let expiredTrades = result?.expiredTrades ?? 0
-                        let updatedScores = result?.updatedConfidenceScores ?? 0
-                        try? backgroundTaskService?.completeTask(
-                            id: taskId,
-                            summary: "Expired \(expiredTrades) trade(s); updated \(updatedScores) confidence score(s)"
-                        )
-                    }
-                } catch {
-                    if let taskId {
-                        try? backgroundTaskService?.failTask(
-                            id: taskId,
-                            error: error.localizedDescription
-                        )
-                    }
+                    let expiredTrades = result?.expiredTrades ?? 0
+                    let updatedScores = result?.updatedConfidenceScores ?? 0
+                    return "Expired \(expiredTrades) trade(s); updated \(updatedScores) confidence score(s)"
                 }
             }
 
             // Run companion auto-discovery cycle in the background (logged)
-            Task.detached { [partsService, backgroundTaskService] in
-                let taskId = try? backgroundTaskService?.startTask(
+            Task.detached { [partsService, backgroundTaskService, logger] in
+                Self.runAuditedBootstrapTask(
                     name: "Companion Auto-Discovery",
-                    type: "companion_discovery"
-                )
-                do {
+                    type: "companion_discovery",
+                    backgroundTaskService: backgroundTaskService,
+                    logger: logger
+                ) {
                     try partsService?.runAutoDiscoveryCycle()
-                    if let taskId {
-                        try? backgroundTaskService?.completeTask(
-                            id: taskId,
-                            summary: "Discovery cycle completed"
-                        )
-                    }
-                } catch {
-                    if let taskId {
-                        try? backgroundTaskService?.failTask(
-                            id: taskId,
-                            error: error.localizedDescription
-                        )
-                    }
+                    return "Discovery cycle completed"
                 }
             }
 
             // Ensure Office chat channel exists (auto-created system channel)
-            Task.detached { [chatService, backgroundTaskService] in
-                let taskId = try? backgroundTaskService?.startTask(
+            Task.detached { [chatService, backgroundTaskService, logger] in
+                Self.runAuditedBootstrapTask(
                     name: "Office Channel Setup",
-                    type: "system_setup"
-                )
-                do {
+                    type: "system_setup",
+                    backgroundTaskService: backgroundTaskService,
+                    logger: logger
+                ) {
                     try chatService?.ensureOfficeChannel()
-                    if let taskId {
-                        try? backgroundTaskService?.completeTask(
-                            id: taskId,
-                            summary: "Office channel ready"
-                        )
-                    }
-                } catch {
-                    if let taskId {
-                        try? backgroundTaskService?.failTask(
-                            id: taskId,
-                            error: error.localizedDescription
-                        )
-                    }
+                    return "Office channel ready"
                 }
             }
         } catch {
@@ -482,6 +457,54 @@ final class AppCore: ObservableObject {
         logger.info(
             "[OnboardAI] bootstrap route=\(result.route.rawValue, privacy: .public) latency_ms=\(latencyMs, privacy: .public) availability=\(result.availabilityLabel, privacy: .public) timeout_budget_ms=\(result.timeoutBudgetMs, privacy: .public) did_timeout=\(result.didTimeout, privacy: .public) fallback_model_unavailable=\(result.usedModelUnavailableFallback, privacy: .public) fallback_low_resource=\(result.usedLowResourceFallback, privacy: .public)"
         )
+    }
+
+    nonisolated static func runAuditedBootstrapTask(
+        name: String,
+        type: String,
+        backgroundTaskService: AppCoreBackgroundTaskAuditing?,
+        logger: Logger,
+        operation: @Sendable () throws -> String
+    ) {
+        var taskId: Int64?
+
+        if let backgroundTaskService {
+            do {
+                taskId = try backgroundTaskService.startTask(
+                    name: name,
+                    type: type,
+                    deviceId: nil
+                )
+            } catch {
+                logger.error("[AppCore] Failed to start background task audit record task_name=\(name, privacy: .public) task_type=\(type, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            }
+        }
+
+        let successSummary: String
+        do {
+            successSummary = try operation()
+        } catch {
+            logger.error("[AppCore] Bootstrap background task failed task_name=\(name, privacy: .public) task_type=\(type, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            guard let taskId, let backgroundTaskService else { return }
+
+            do {
+                try backgroundTaskService.failTask(id: taskId, error: error.localizedDescription)
+            } catch {
+                logger.error("[AppCore] Failed to mark background task audit record as failed task_name=\(name, privacy: .public) task_type=\(type, privacy: .public) task_id=\(taskId, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            }
+            return
+        }
+
+        guard let taskId, let backgroundTaskService else { return }
+        do {
+            try backgroundTaskService.completeTask(
+                id: taskId,
+                summary: successSummary,
+                itemsProcessed: 0
+            )
+        } catch {
+            logger.error("[AppCore] Failed to complete background task audit record task_name=\(name, privacy: .public) task_type=\(type, privacy: .public) task_id=\(taskId, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Reload theme settings from the database and apply them.
