@@ -401,7 +401,7 @@ struct PartsImportExportPage: View {
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .padding(.top, 4)
-                ForEach(["code", "brand", "cost_price", "markup_percent", "part_type", "description", "unit_of_measure", "shelf_location", "bin_location"], id: \.self) { col in
+                ForEach(["code", "brand", "cost_price", "markup_percent", "part_type", "description", "unit_of_measure", "shelf_location", "bin_location", "min_stock", "target_stock", "max_stock"], id: \.self) { col in
                     HStack(spacing: 6) {
                         Image(systemName: "circle")
                             .foregroundStyle(.secondary)
@@ -892,6 +892,9 @@ private enum ColumnMappingTarget: String, CaseIterable, Identifiable {
     case unitOfMeasure = "unit_of_measure"
     case shelfLocation = "shelf_location"
     case binLocation = "bin_location"
+    case minStock = "min_stock"
+    case targetStock = "target_stock"
+    case maxStock = "max_stock"
 
     var id: String { rawValue }
 
@@ -911,6 +914,9 @@ private enum ColumnMappingTarget: String, CaseIterable, Identifiable {
         case .unitOfMeasure: return "Unit of measure"
         case .shelfLocation: return "Shelf location"
         case .binLocation: return "Bin location"
+        case .minStock: return "Minimum stock"
+        case .targetStock: return "Target stock"
+        case .maxStock: return "Maximum stock"
         }
     }
 
@@ -928,6 +934,9 @@ private enum ColumnMappingTarget: String, CaseIterable, Identifiable {
         case .unitOfMeasure: return ["uom", "unit", "units"]
         case .shelfLocation: return ["shelf", "shelf loc"]
         case .binLocation: return ["bin", "bin loc"]
+        case .minStock: return ["minimum stock", "minimum stock level", "min stock level", "min"]
+        case .targetStock: return ["target stock level", "par stock", "ideal stock", "target"]
+        case .maxStock: return ["maximum stock", "maximum stock level", "max stock level", "max"]
         }
     }
 }
