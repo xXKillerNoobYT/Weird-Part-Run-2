@@ -6269,7 +6269,7 @@ public final class PartsService: Sendable {
     /// Required columns: `name`, `category`.
     /// Optional columns: `code`, `brand`, `cost_price`, `markup_percent`,
     /// `description`, `unit_of_measure`, `shelf_location`, `bin_location`,
-    /// `part_type`.
+    /// `part_type`, `min_stock`, `target_stock`, and `max_stock`.
     struct PartsImportTabularRow {
         let rowNumber: Int
         let columns: [String]
@@ -6379,6 +6379,22 @@ public final class PartsService: Sendable {
                     }
                     if value < 0 {
                         let message = "\(numericHeader) cannot be negative"
+                        preview.errors.append(PartsImportError(rowNumber: rowNumber, message: message))
+                        errorsByRowNumber[rowNumber, default: []].append(message)
+                        continue
+                    }
+                }
+            }
+            for stockHeader in ["min_stock", "target_stock", "max_stock"] {
+                if let raw = fields[stockHeader] {
+                    guard let value = Int(raw) else {
+                        let message = "Invalid whole number for \(stockHeader): \(raw)"
+                        preview.errors.append(PartsImportError(rowNumber: rowNumber, message: message))
+                        errorsByRowNumber[rowNumber, default: []].append(message)
+                        continue
+                    }
+                    if value < 0 {
+                        let message = "\(stockHeader) cannot be negative"
                         preview.errors.append(PartsImportError(rowNumber: rowNumber, message: message))
                         errorsByRowNumber[rowNumber, default: []].append(message)
                         continue
@@ -6611,6 +6627,9 @@ public final class PartsService: Sendable {
                 && optionalImportFieldMatches(parsed.fields["unit_of_measure"], existingPart.unitOfMeasure)
                 && optionalImportNumberMatches(parsed.fields["cost_price"], existingPart.companyCostPrice)
                 && optionalImportNumberMatches(parsed.fields["markup_percent"], existingPart.companyMarkupPercent)
+                && optionalImportIntMatches(parsed.fields["min_stock"], existingPart.minStockLevel ?? 0)
+                && optionalImportIntMatches(parsed.fields["target_stock"], existingPart.targetStockLevel ?? 0)
+                && optionalImportIntMatches(parsed.fields["max_stock"], existingPart.maxStockLevel ?? 0)
                 && optionalImportFieldMatches(parsed.fields["shelf_location"], existingPart.shelfLocation)
                 && optionalImportFieldMatches(parsed.fields["bin_location"], existingPart.binLocation)
                 && existingPartId > 0
@@ -6626,6 +6645,12 @@ public final class PartsService: Sendable {
         guard let imported else { return true }
         guard let importedNumber = Double(imported.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
         return abs(importedNumber - existing) < 0.000_001
+    }
+
+    private func optionalImportIntMatches(_ imported: String?, _ existing: Int) -> Bool {
+        guard let imported else { return true }
+        guard let importedNumber = Int(imported.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
+        return importedNumber == existing
     }
 
     private func deterministicPartsImportColumnMapping(_ headers: [String]) -> [String: String] {
@@ -6653,7 +6678,10 @@ public final class PartsService: Sendable {
             "shelf_location": ["shelf_location", "shelf"],
             "bin_location": ["bin_location", "bin"],
             "part_type": ["part_type"],
-            "description": ["description", "part_description", "notes"]
+            "description": ["description", "part_description", "notes"],
+            "min_stock": ["min_stock", "minimum_stock", "minimum_stock_level", "min_stock_level"],
+            "target_stock": ["target_stock", "target_stock_level", "par_stock", "ideal_stock"],
+            "max_stock": ["max_stock", "maximum_stock", "maximum_stock_level", "max_stock_level"]
         ]
         return aliases.first { $0.value.contains(normalized) }?.key
     }
@@ -6792,6 +6820,19 @@ public final class PartsService: Sendable {
                     return value
                 }
 
+                func parseImportWholeNumber(_ rawValue: String?, header: String, rowNumber: Int) throws -> Int? {
+                    guard let rawValue else { return nil }
+                    let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return nil }
+                    guard let value = Int(trimmed) else {
+                        throw PartsError.invalidInput("Invalid whole number for \(header) at row \(rowNumber): \(rawValue)")
+                    }
+                    if value < 0 {
+                        throw PartsError.invalidInput("\(header) cannot be negative at row \(rowNumber)")
+                    }
+                    return value
+                }
+
                 func findOrCreateCategoryInTransaction(_ name: String) throws -> Int64 {
                     if let existing = try Row.fetchOne(dbConn, sql: "SELECT id FROM part_categories WHERE name = ? AND deleted_at IS NULL", arguments: [name]) {
                         return existing["id"]
@@ -6822,6 +6863,9 @@ public final class PartsService: Sendable {
                     let brandId = try findOrCreateBrandInTransaction(row.brand)
                     let cost = try parseImportNumeric(row.fields["cost_price"], header: "cost_price", rowNumber: row.rowNumber) ?? 0
                     let markup = try parseImportNumeric(row.fields["markup_percent"], header: "markup_percent", rowNumber: row.rowNumber) ?? 0
+                    let minStock = try parseImportWholeNumber(row.fields["min_stock"], header: "min_stock", rowNumber: row.rowNumber) ?? 0
+                    let targetStock = try parseImportWholeNumber(row.fields["target_stock"], header: "target_stock", rowNumber: row.rowNumber) ?? 0
+                    let maxStock = try parseImportWholeNumber(row.fields["max_stock"], header: "max_stock", rowNumber: row.rowNumber) ?? 0
                     let partType = row.fields["part_type"] ?? "general"
 
                     try Validators.requireName(row.name, field: "Part name")
@@ -6833,10 +6877,11 @@ public final class PartsService: Sendable {
                         INSERT INTO parts (
                             category_id, brand_id, part_type, code, name, description,
                             unit_of_measure, company_cost_price, weighted_avg_cost,
-                            company_markup_percent, shelf_location, bin_location,
+                            company_markup_percent, min_stock_level, target_stock_level,
+                            max_stock_level, shelf_location, bin_location,
                             auto_add_to_wishlist_when_low, is_deprecated, is_qr_tagged,
                             is_active, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 1, datetime('now'), datetime('now'))
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 1, datetime('now'), datetime('now'))
                         """, arguments: [
                             categoryId,
                             brandId,
@@ -6848,6 +6893,9 @@ public final class PartsService: Sendable {
                             cost,
                             cost,
                             markup,
+                            minStock,
+                            targetStock,
+                            maxStock,
                             row.fields["shelf_location"],
                             row.fields["bin_location"]
                         ])
@@ -6860,6 +6908,9 @@ public final class PartsService: Sendable {
                     let brandId = try findOrCreateBrandInTransaction(row.brand)
                     let cost = try parseImportNumeric(row.fields["cost_price"], header: "cost_price", rowNumber: row.rowNumber)
                     let markup = try parseImportNumeric(row.fields["markup_percent"], header: "markup_percent", rowNumber: row.rowNumber)
+                    let minStock = try parseImportWholeNumber(row.fields["min_stock"], header: "min_stock", rowNumber: row.rowNumber)
+                    let targetStock = try parseImportWholeNumber(row.fields["target_stock"], header: "target_stock", rowNumber: row.rowNumber)
+                    let maxStock = try parseImportWholeNumber(row.fields["max_stock"], header: "max_stock", rowNumber: row.rowNumber)
 
                     var clauses = [
                         "name = ?",
@@ -6874,6 +6925,9 @@ public final class PartsService: Sendable {
                     if let unit = row.fields["unit_of_measure"] { clauses.append("unit_of_measure = ?"); args.append(unit) }
                     if let cost { clauses.append("company_cost_price = ?"); args.append(cost) }
                     if let markup { clauses.append("company_markup_percent = ?"); args.append(markup) }
+                    if let minStock { clauses.append("min_stock_level = ?"); args.append(minStock) }
+                    if let targetStock { clauses.append("target_stock_level = ?"); args.append(targetStock) }
+                    if let maxStock { clauses.append("max_stock_level = ?"); args.append(maxStock) }
                     if let shelf = row.fields["shelf_location"] { clauses.append("shelf_location = ?"); args.append(shelf) }
                     if let bin = row.fields["bin_location"] { clauses.append("bin_location = ?"); args.append(bin) }
                     clauses.append("updated_at = datetime('now')")
