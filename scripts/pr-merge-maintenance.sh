@@ -66,32 +66,50 @@ if [[ -n "$MAX_PRS" && ! "$MAX_PRS" =~ ^[0-9]+$ ]]; then
   echo "error: PR_MAINTENANCE_MAX_PRS must be a positive integer when set, got '$MAX_PRS'" >&2
   exit 1
 fi
+# Strip leading zeros to avoid jq JSON-number parse failures (e.g. "05" is not
+# valid JSON and --argjson would abort the script).
+if [[ -n "$MAX_PRS" ]]; then
+  MAX_PRS=$(( 10#$MAX_PRS ))
+fi
 if [[ "$MAX_PRS" == "0" ]]; then
   echo "error: PR_MAINTENANCE_MAX_PRS must be greater than zero when set" >&2
   exit 1
 fi
 
-echo "==> Scanning all open PRs in $REPO targeting $BASE (one-at-a-time mode)"
+if [[ -n "$MAX_PRS" ]]; then
+  echo "==> Scanning (capped at $MAX_PRS) open PRs in $REPO targeting $BASE (one-at-a-time mode)"
+else
+  echo "==> Scanning all open PRs in $REPO targeting $BASE (one-at-a-time mode)"
+fi
 
-# Fetch the full matching queue with REST pagination first. `gh pr list --limit N`
-# silently caps results at N; the maintenance job needs the true queue length so
-# it can inspect every open PR by default and report explicit operator caps.
-pr_numbers_json="$(gh api --paginate --slurp "repos/$REPO/pulls?state=open&base=$BASE&per_page=100" \
-  | jq '[.[][] | .number]')"
+# Fetch the full matching queue with REST pagination, capturing all fields needed
+# for processing in a single bulk request to avoid per-PR API calls in the loop.
+pr_data_json="$(gh api --paginate --slurp "repos/$REPO/pulls?state=open&base=$BASE&per_page=100" \
+  | jq '[.[][] | {
+      number:           .number,
+      title:            (.title // ""),
+      isDraft:          (.draft // false),
+      labels:           [(.labels // [])[].name],
+      headOwner:        (.head.repo.owner.login // ""),
+      mergeable:        (if .mergeable == true then "MERGEABLE"
+                         elif .mergeable == false then "CONFLICTING"
+                         else "UNKNOWN" end),
+      mergeStateStatus: ((.mergeable_state // "unknown") | ascii_upcase),
+      autoMerge:        (.auto_merge != null),
+      headSha:          (.head.sha // "")
+    }] | sort_by(.number)')"
 
-total="$(jq 'length' <<<"$pr_numbers_json")"
+total="$(jq 'length' <<<"$pr_data_json")"
 if [[ "$total" -eq 0 ]]; then
   echo "No open PRs targeting $BASE. Nothing to do."
   exit 0
 fi
 
 if [[ -n "$MAX_PRS" ]]; then
-  pr_numbers_json="$(jq --argjson max "$MAX_PRS" 'sort | .[:$max]' <<<"$pr_numbers_json")"
-else
-  pr_numbers_json="$(jq 'sort' <<<"$pr_numbers_json")"
+  pr_data_json="$(jq --argjson max "$MAX_PRS" '.[:$max]' <<<"$pr_data_json")"
 fi
 
-inspected="$(jq 'length' <<<"$pr_numbers_json")"
+inspected="$(jq 'length' <<<"$pr_data_json")"
 echo "Found $total open PR(s); inspecting $inspected."
 if [[ "$inspected" -lt "$total" ]]; then
   echo "warning: explicit PR_MAINTENANCE_MAX_PRS=$MAX_PRS limits this run to $inspected of $total open PRs" >&2
@@ -101,17 +119,16 @@ repo_owner="${REPO%%/*}"
 
 # Walk PRs in order (oldest first = lowest number first).
 # Pick the FIRST one we can act on and do exactly that one action, then exit.
-while IFS= read -r number; do
-  pr="$(gh pr view "$number" \
-    --repo "$REPO" \
-    --json number,title,isDraft,labels,headRepositoryOwner,mergeStateStatus,mergeable,autoMergeRequest)"
-  title="$(jq -r  '.title'             <<<"$pr")"
-  is_draft="$(jq -r '.isDraft'         <<<"$pr")"
-  merge_state="$(jq -r '.mergeStateStatus // "UNKNOWN"' <<<"$pr")"
-  mergeable="$(jq -r '.mergeable // "UNKNOWN"'           <<<"$pr")"
-  auto_merge="$(jq -r '.autoMergeRequest != null'        <<<"$pr")"
-  labels_json="$(jq -c '[.labels[]?.name]'               <<<"$pr")"
-  head_owner="$(jq -r '.headRepositoryOwner.login // ""' <<<"$pr")"
+while IFS= read -r pr; do
+  number="$(jq -r    '.number'                           <<<"$pr")"
+  title="$(jq -r     '.title'                            <<<"$pr")"
+  is_draft="$(jq -r  '.isDraft'                          <<<"$pr")"
+  merge_state="$(jq -r '.mergeStateStatus // "UNKNOWN"'  <<<"$pr")"
+  mergeable="$(jq -r   '.mergeable // "UNKNOWN"'         <<<"$pr")"
+  auto_merge="$(jq -r  '.autoMerge'                      <<<"$pr")"
+  labels_json="$(jq -c '.labels'                         <<<"$pr")"
+  head_owner="$(jq -r  '.headOwner'                      <<<"$pr")"
+  head_sha="$(jq -r    '.headSha'                        <<<"$pr")"
 
   echo ""
   echo "--- PR #$number: $title"
@@ -145,7 +162,6 @@ while IFS= read -r number; do
   fi
 
   # --- Check if all required status checks are passing ---
-  head_sha="$(gh pr view "$number" --repo "$REPO" --json headRefOid --jq '.headRefOid' 2>/dev/null || echo "")"
   if [[ -n "$head_sha" ]]; then
     failing_checks="$(gh api "repos/$REPO/commits/$head_sha/check-runs" \
       --jq '[.check_runs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != null and .status == "completed")] | length' 2>/dev/null || echo "0")"
@@ -182,7 +198,7 @@ while IFS= read -r number; do
 
   echo "    skip: unhandled state '$merge_state'"
 
-done < <(jq -r '.[]' <<<"$pr_numbers_json")
+done < <(jq -c '.[]' <<<"$pr_data_json")
 
 echo ""
 echo "==> No actionable PR found this run. All remaining PRs are blocked, conflicting, or waiting on checks."

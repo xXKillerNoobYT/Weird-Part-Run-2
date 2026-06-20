@@ -12,25 +12,19 @@ set -euo pipefail
 if [[ "${1:-}" == "api" ]]; then
   python3 - <<'PY'
 import json
-print(json.dumps([[{"number": n} for n in range(1, 56)]]))
-PY
-  exit 0
-fi
-if [[ "${1:-}" == "pr" && "${2:-}" == "view" ]]; then
-  number="$3"
-  python3 - "$number" <<'PY'
-import json, sys
-number = int(sys.argv[1])
-print(json.dumps({
-    "number": number,
-    "title": f"Mock PR {number}",
-    "isDraft": True,
+# Simulate REST /repos/.../pulls?state=open response (one slurped page).
+# The script transforms these fields; use realistic shapes to exercise the jq.
+prs = [{
+    "number": n,
+    "title": f"Mock PR {n}",
+    "draft": True,
     "labels": [],
-    "headRepositoryOwner": {"login": "xXKillerNoobYT"},
-    "mergeStateStatus": "CLEAN",
-    "mergeable": "MERGEABLE",
-    "autoMergeRequest": None,
-}))
+    "head": {"repo": {"owner": {"login": "xXKillerNoobYT"}}, "sha": ""},
+    "mergeable": None,
+    "mergeable_state": "unknown",
+    "auto_merge": None,
+} for n in range(1, 56)]
+print(json.dumps([prs]))
 PY
   exit 0
 fi
