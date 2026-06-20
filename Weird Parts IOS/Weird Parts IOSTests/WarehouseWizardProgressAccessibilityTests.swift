@@ -54,6 +54,48 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
         )
     }
 
+    func testMovementWizardLocationTilesExposeStableFromToAccessibilityTargets() throws {
+        let source = try Self.readWarehouseSource("IOSMovementWizard.swift")
+
+        XCTAssertTrue(
+            source.contains("role: \"from\"") && source.contains("role: \"to\""),
+            "Movement wizard must distinguish FROM and TO location tiles for user-like automation and VoiceOver."
+        )
+        XCTAssertTrue(
+            source.contains(".accessibilityIdentifier(\"movementWizard_\\(role)_\\(type)\")"),
+            "Movement wizard location tiles need stable role+type accessibility identifiers such as movementWizard_from_warehouse."
+        )
+        XCTAssertTrue(
+            source.contains(".accessibilityLabel(\"\\(roleLabel) \\(label)\")"),
+            "Movement wizard location tiles need unique spoken labels such as From Warehouse and To Truck."
+        )
+        XCTAssertTrue(
+            source.contains("Already selected as the other side of this movement"),
+            "Disabled duplicate-location tiles should explain why they cannot be selected."
+        )
+    }
+
+    func testMovementWizardPartSelectionDismissesKeyboardBeforeNextNavigation() throws {
+        let source = try Self.readWarehouseSource("IOSMovementWizard.swift")
+
+        XCTAssertTrue(
+            source.contains("@FocusState private var isPartSearchFocused"),
+            "Movement wizard must track part-search focus so the iOS keyboard can be dismissed after a part is selected."
+        )
+        XCTAssertTrue(
+            source.contains(".focused($isPartSearchFocused)"),
+            "The part search field must bind to focus state for deterministic keyboard dismissal."
+        )
+        XCTAssertTrue(
+            source.contains("isPartSearchFocused = false") && source.contains("partSearchResults = []"),
+            "Selecting a part should dismiss the keyboard and collapse search results so bottom navigation remains reachable."
+        )
+        XCTAssertTrue(
+            source.contains(".accessibilityIdentifier(\"movement_wizard_next\")"),
+            "The Next button needs a stable accessibility identifier for user-like UI verification."
+        )
+    }
+
     private static func progressBarSection(in source: String) throws -> String {
         guard let start = source.range(of: "private var progressBar") else {
             XCTFail("Missing progressBar property")
