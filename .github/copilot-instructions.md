@@ -32,6 +32,10 @@ rg -n "runs-on:" .github/workflows || grep -R "runs-on:" .github/workflows
 
 The runner API requires a GitHub token with permission to read repository Actions runner state. If API access is unavailable, use the repository Actions UI to inspect runner status and recent runs. Use `runs-on: [self-hosted, macOS, ARM64, xcode, ios, local-mac]` for trusted jobs that need macOS, iOS, Swift, or Xcode, required PR gates, and repo-owned automation jobs. Do not run untrusted fork PR code on the self-hosted runner. If the runner is offline or missing labels, record that exact evidence in the PR/issue comment and name the owner/action needed to restore the runner.
 
+### PR Review Gate
+
+Before any PR is merged, maintainers must request and receive a GitHub Copilot PR review/comment. If Copilot identifies issues, the fix work is routed through normal Codex/Hermes-local or human implementation lanes; Copilot comments are review input, not a local Paperclip provider/tooling path. After fixes, required tests/checks and self-review must pass, and materially changed PRs should be re-submitted for Copilot review/comment. Waiting about 30 minutes between Copilot review/fix cycles is acceptable; branches of branches and PRs of PRs are allowed when they improve quality. This requirement is tracked in Paperclip WEI-3851/WEI-3852 and supersedes older removal churn.
+
 ---
 
 ## 2. Schema Is Canonical

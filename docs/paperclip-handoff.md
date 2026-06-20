@@ -180,10 +180,11 @@ Per `feedback_delegate_to_copilot.md` and `feedback_copilot_delegation_workflow.
 2. Write prescriptive issue prompts
 3. Supervise (don't @copilot in body — let it pick up via assignment)
 4. File-as-a-whole review (single consolidated review comment)
-5. Squash-merge (CI-green is the merge gate)
-6. Sweep (clean up `[gone]` branches)
+5. Request/receive GitHub Copilot PR review/comment before merge; if Copilot finds issues, route fixes through Codex/Hermes-local or human lanes, test/self-review, then re-request/wait as needed (~30 minute cycles are acceptable)
+6. Squash-merge only after CI, required checks, unresolved threads, Paperclip blockers, and the Copilot review gate are clear
+7. Sweep (clean up `[gone]` branches)
 
-Cap: **5 concurrent open Copilot PRs.** Each issue gets its own branch. Merge is the user's; Copilot does not self-merge.
+Cap: **5 concurrent open Copilot PRs.** Each issue gets its own branch. Merge is the user's; Copilot does not self-merge. Paperclip WEI-3851/WEI-3852 supersedes older Copilot-removal churn: keep Copilot as a required GitHub PR reviewer/commenter before merge, but do not use it as a Paperclip local provider/tooling route.
 
 ### The 12 approved automation scanners (queued or partially built)
 
