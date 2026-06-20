@@ -1119,13 +1119,13 @@ struct IOSPODetailPage: View {
             isLoading = false
             return
         }
+        let remainingLines = po.lines.filter { $0.quantityOrdered > $0.quantityReceived }
+        guard !remainingLines.isEmpty else { return }
+
         guard let author = currentPONoteAuthor() else {
             actionMessage = "User session unavailable. Sign in again."
             return
         }
-
-        let remainingLines = po.lines.filter { $0.quantityOrdered > $0.quantityReceived }
-        guard !remainingLines.isEmpty else { return }
 
         do {
             // Generate a new PO number
