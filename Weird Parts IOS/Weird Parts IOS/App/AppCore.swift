@@ -476,7 +476,8 @@ final class AppCore: ObservableObject {
                     deviceId: nil
                 )
             } catch {
-                logger.error("[AppCore] Failed to start background task audit record task_name=\(name, privacy: .public) task_type=\(type, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+                let nsError = error as NSError
+                logger.error("[AppCore] Failed to start background task audit record task_name=\(name, privacy: .public) task_type=\(type, privacy: .public) error_domain=\(nsError.domain, privacy: .public) error_code=\(nsError.code, privacy: .public) error=\(error.localizedDescription, privacy: .private)")
             }
         }
 
@@ -484,13 +485,15 @@ final class AppCore: ObservableObject {
         do {
             successSummary = try operation()
         } catch {
-            logger.error("[AppCore] Bootstrap background task failed task_name=\(name, privacy: .public) task_type=\(type, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            let nsError = error as NSError
+            logger.error("[AppCore] Bootstrap background task failed task_name=\(name, privacy: .public) task_type=\(type, privacy: .public) error=\(error.localizedDescription, privacy: .private) error_domain=\(nsError.domain, privacy: .public) error_code=\(nsError.code, privacy: .public)")
             guard let taskId, let backgroundTaskService else { return }
 
             do {
                 try backgroundTaskService.failTask(id: taskId, error: error.localizedDescription)
             } catch {
-                logger.error("[AppCore] Failed to mark background task audit record as failed task_name=\(name, privacy: .public) task_type=\(type, privacy: .public) task_id=\(taskId, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+                let nsError = error as NSError
+                logger.error("[AppCore] Failed to mark background task audit record as failed task_name=\(name, privacy: .public) task_type=\(type, privacy: .public) task_id=\(taskId, privacy: .public) error_domain=\(nsError.domain, privacy: .public) error_code=\(nsError.code, privacy: .public) error=\(error.localizedDescription, privacy: .private)")
             }
             return
         }
@@ -503,7 +506,8 @@ final class AppCore: ObservableObject {
                 itemsProcessed: 0
             )
         } catch {
-            logger.error("[AppCore] Failed to complete background task audit record task_name=\(name, privacy: .public) task_type=\(type, privacy: .public) task_id=\(taskId, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            let nsError = error as NSError
+            logger.error("[AppCore] Failed to complete background task audit record task_name=\(name, privacy: .public) task_type=\(type, privacy: .public) task_id=\(taskId, privacy: .public) error_domain=\(nsError.domain, privacy: .public) error_code=\(nsError.code, privacy: .public) error=\(error.localizedDescription, privacy: .private)")
         }
     }
 

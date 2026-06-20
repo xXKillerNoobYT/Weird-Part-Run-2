@@ -21,6 +21,7 @@ private enum BootstrapAuditTestError: Error {
 private final class MockBootstrapTaskAuditor: AppCoreBackgroundTaskAuditing, @unchecked Sendable {
     var startedNames: [String] = []
     var completedIds: [Int64] = []
+    var completedSummaries: [String?] = []
     var failedIds: [Int64] = []
     var startError: Error?
     var completeError: Error?
@@ -38,6 +39,7 @@ private final class MockBootstrapTaskAuditor: AppCoreBackgroundTaskAuditing, @un
             throw completeError
         }
         completedIds.append(id)
+        completedSummaries.append(summary)
     }
 
     func failTask(id: Int64, error: String) throws {
@@ -166,6 +168,24 @@ struct Weird_Parts_IOSTests {
 
         #expect(operation.ran)
         #expect(auditor.startedNames == ["Test Bootstrap Task"])
+        #expect(auditor.failedIds.isEmpty)
+    }
+
+    @Test func auditedBootstrapTaskCompletesAuditRecordOnSuccess() throws {
+        let auditor = MockBootstrapTaskAuditor()
+
+        AppCore.runAuditedBootstrapTask(
+            name: "Test Bootstrap Task",
+            type: "test",
+            backgroundTaskService: auditor,
+            logger: Logger(subsystem: "com.wiredpart.tests", category: "AppCore")
+        ) {
+            "Test complete"
+        }
+
+        #expect(auditor.startedNames == ["Test Bootstrap Task"])
+        #expect(auditor.completedIds == [42])
+        #expect(auditor.completedSummaries == ["Test complete"])
         #expect(auditor.failedIds.isEmpty)
     }
 
