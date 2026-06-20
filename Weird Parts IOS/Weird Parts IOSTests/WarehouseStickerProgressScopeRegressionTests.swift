@@ -3,6 +3,11 @@ import XCTest
 final class WarehouseStickerProgressScopeRegressionTests: XCTestCase {
     func testStickerChecklistProgressUsesScopedKeyInsteadOfFloorPlanOnlyKey() throws {
         let source = try Self.readSource("WarehouseWizardStep3.swift")
+        // Normalize whitespace so the guard is insensitive to code formatting changes.
+        let normalized = source
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
 
         XCTAssertTrue(
             source.contains("wizard_checked_stickers_v2"),
@@ -29,11 +34,13 @@ final class WarehouseStickerProgressScopeRegressionTests: XCTestCase {
             "The old floorPlanId-only key should be purged instead of used as a fallback."
         )
         XCTAssertFalse(
-            source.contains("UserDefaults.standard.array(\n                forKey: \"wizard_checked_stickers_\\(floorPlanId)\""),
+            normalized.contains("array( forKey: \"wizard_checked_stickers_\\(floorPlanId)\"")
+                || normalized.contains("array(forKey: \"wizard_checked_stickers_\\(floorPlanId)\""),
             "Loading from the old floorPlanId-only key would reintroduce stale sticker progress."
         )
         XCTAssertFalse(
-            source.contains("UserDefaults.standard.set(\n            Array(checkedStickers),\n            forKey: \"wizard_checked_stickers_\\(floorPlanId)\""),
+            normalized.contains("set( Array(checkedStickers), forKey: \"wizard_checked_stickers_\\(floorPlanId)\"")
+                || normalized.contains("set(Array(checkedStickers), forKey: \"wizard_checked_stickers_\\(floorPlanId)\""),
             "Writing to the old floorPlanId-only key would reintroduce cross-reset/profile leakage."
         )
     }

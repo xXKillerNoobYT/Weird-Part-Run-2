@@ -122,13 +122,18 @@ struct WarehouseWizardStep3: View {
             checkedCount += 1
         }
         // Persist progress under the scoped current setup key.
-        let progressKey = stickerProgressKey ?? (try? scopedStickerProgressKey())
-        if let progressKey {
-            stickerProgressKey = progressKey
-            UserDefaults.standard.set(
-                Array(checkedStickers).sorted(),
-                forKey: progressKey
-            )
+        // Errors are surfaced via stepError so progress is never silently dropped.
+        do {
+            let progressKey: String
+            if let existing = stickerProgressKey {
+                progressKey = existing
+            } else {
+                progressKey = try scopedStickerProgressKey()
+                stickerProgressKey = progressKey
+            }
+            UserDefaults.standard.set(Array(checkedStickers).sorted(), forKey: progressKey)
+        } catch {
+            stepError = userFriendlyError(error, context: "save sticker progress")
         }
     }
 
@@ -141,8 +146,7 @@ struct WarehouseWizardStep3: View {
         let businessScope = [
             "business",
             profile?.id.map(String.init) ?? "none",
-            profile?.createdAt ?? "unknown",
-            profile?.companyName ?? "no-company"
+            profile?.createdAt ?? "unknown"
         ].joined(separator: ":")
         let userScope = [
             "user",
