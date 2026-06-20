@@ -28,6 +28,7 @@ struct IOSMovementWizard: View {
     @State private var selectedParts: [WizardPart] = []
     @State private var partSearchText = ""
     @State private var partSearchResults: [PartSearchRow] = []
+    @FocusState private var isPartSearchFocused: Bool
 
     // Step 3: Quantities (stored in selectedParts[].qty)
 
@@ -257,7 +258,13 @@ struct IOSMovementWizard: View {
 
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                     ForEach(locationTypes, id: \.0) { type, label, icon in
-                        locationButton(type: type, label: label, icon: icon, selected: fromLocationType == type) {
+                        locationButton(
+                            type: type,
+                            label: label,
+                            icon: icon,
+                            role: "from",
+                            selected: fromLocationType == type
+                        ) {
                             fromLocationType = type
                             if toLocationType == type { toLocationType = "" }
                         }
@@ -284,6 +291,7 @@ struct IOSMovementWizard: View {
                     ForEach(locationTypes, id: \.0) { type, label, icon in
                         locationButton(
                             type: type, label: label, icon: icon,
+                            role: "to",
                             selected: toLocationType == type,
                             disabled: type == fromLocationType
                         ) {
@@ -316,7 +324,16 @@ struct IOSMovementWizard: View {
     }
 
     @ViewBuilder
-    private func locationButton(type: String, label: String, icon: String, selected: Bool, disabled: Bool = false, action: @escaping () -> Void) -> some View {
+    private func locationButton(
+        type: String,
+        label: String,
+        icon: String,
+        role: String,
+        selected: Bool,
+        disabled: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        let roleLabel = role == "from" ? "From" : "To"
         Button(action: action) {
             VStack(spacing: 6) {
                 Image(systemName: icon)
@@ -339,6 +356,9 @@ struct IOSMovementWizard: View {
         }
         .buttonStyle(.plain)
         .disabled(disabled)
+        .accessibilityIdentifier("movementWizard_\(role)_\(type)")
+        .accessibilityLabel("\(roleLabel) \(label)")
+        .accessibilityHint(disabled ? "Already selected as the other side of this movement" : "Select \(label) as the \(roleLabel.lowercased()) location")
     }
 
     @ViewBuilder
@@ -396,6 +416,7 @@ struct IOSMovementWizard: View {
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             TextField("Search by name or code…", text: $partSearchText)
+                .focused($isPartSearchFocused)
                 .textInputAutocapitalization(.never)
                 .onChange(of: partSearchText) {
                     searchParts(query: partSearchText)
@@ -438,6 +459,7 @@ struct IOSMovementWizard: View {
         let alreadyAdded = selectedParts.contains(where: { $0.partId == part.id })
         Button {
             addPart(part)
+            isPartSearchFocused = false
         } label: {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -849,6 +871,9 @@ struct IOSMovementWizard: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!canAdvance)
+                .accessibilityIdentifier("movement_wizard_next")
+                .accessibilityLabel("Next")
+                .accessibilityHint("Advance to the next movement wizard step")
             } else if !executeSuccess && executeError == nil {
                 Button {
                     executeMovement()
@@ -913,6 +938,9 @@ struct IOSMovementWizard: View {
             qty: 1,
             availableQty: part.availableQty ?? 0
         ))
+        partSearchText = ""
+        partSearchResults = []
+        isPartSearchFocused = false
     }
 
     private func removePart(_ partId: Int64) {
