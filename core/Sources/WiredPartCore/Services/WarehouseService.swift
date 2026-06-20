@@ -4703,6 +4703,10 @@ public final class WarehouseService: Sendable {
         rotation: Int? = nil, frontFace: String? = nil,
         isConfigured: Bool? = nil, zoneId: Int64? = nil
     ) throws {
+        if let name, name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw WarehouseError.requiredFieldEmpty
+        }
+
         try db.writer.write { dbConn in
             guard var unit = try WarehouseStorageUnit.fetchOne(dbConn, key: id),
                   unit.deletedAt == nil else { return }
