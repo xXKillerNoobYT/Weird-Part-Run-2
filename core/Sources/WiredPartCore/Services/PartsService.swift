@@ -6866,10 +6866,18 @@ public final class PartsService: Sendable {
                     guard let name, !name.isEmpty else { return nil }
                     if let existing = try Row.fetchOne(
                         dbConn,
-                        sql: "SELECT id FROM part_styles WHERE category_id = ? AND name = ? AND deleted_at IS NULL",
+                        sql: "SELECT id, deleted_at FROM part_styles WHERE category_id = ? AND name = ?",
                         arguments: [categoryId, name]
                     ) {
-                        return existing["id"]
+                        let rowId: Int64 = existing["id"]
+                        let deletedAt: String? = existing["deleted_at"]
+                        if deletedAt != nil {
+                            try dbConn.execute(
+                                sql: "UPDATE part_styles SET deleted_at = NULL, is_active = 1, updated_at = datetime('now') WHERE id = ?",
+                                arguments: [rowId]
+                            )
+                        }
+                        return rowId
                     }
                     try Validators.requireName(name, field: "Style name")
                     try dbConn.execute(sql: """
@@ -6884,10 +6892,18 @@ public final class PartsService: Sendable {
                     guard let styleId else { return nil }
                     if let existing = try Row.fetchOne(
                         dbConn,
-                        sql: "SELECT id FROM part_types WHERE style_id = ? AND name = ? AND deleted_at IS NULL",
+                        sql: "SELECT id, deleted_at FROM part_types WHERE style_id = ? AND name = ?",
                         arguments: [styleId, name]
                     ) {
-                        return existing["id"]
+                        let rowId: Int64 = existing["id"]
+                        let deletedAt: String? = existing["deleted_at"]
+                        if deletedAt != nil {
+                            try dbConn.execute(
+                                sql: "UPDATE part_types SET deleted_at = NULL, is_active = 1, updated_at = datetime('now') WHERE id = ?",
+                                arguments: [rowId]
+                            )
+                        }
+                        return rowId
                     }
                     try Validators.requireName(name, field: "Type name")
                     try dbConn.execute(sql: """
@@ -6899,8 +6915,16 @@ public final class PartsService: Sendable {
 
                 func findOrCreateColorInTransaction(_ name: String?) throws -> Int64? {
                     guard let name, !name.isEmpty else { return nil }
-                    if let existing = try Row.fetchOne(dbConn, sql: "SELECT id FROM part_colors WHERE name = ? AND deleted_at IS NULL", arguments: [name]) {
-                        return existing["id"]
+                    if let existing = try Row.fetchOne(dbConn, sql: "SELECT id, deleted_at FROM part_colors WHERE name = ?", arguments: [name]) {
+                        let rowId: Int64 = existing["id"]
+                        let deletedAt: String? = existing["deleted_at"]
+                        if deletedAt != nil {
+                            try dbConn.execute(
+                                sql: "UPDATE part_colors SET deleted_at = NULL, is_active = 1 WHERE id = ?",
+                                arguments: [rowId]
+                            )
+                        }
+                        return rowId
                     }
                     try Validators.requireName(name, field: "Color name")
                     try dbConn.execute(sql: """
