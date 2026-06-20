@@ -114,6 +114,17 @@ The runner API requires a GitHub token with permission to read repository Action
 
 This repo is currently under the user's personal GitHub account (`xXKillerNoobYT`), not a GitHub organization. Do not assume organization teams, organization policy pages, organization-level settings, or organization Copilot controls exist. Verify the repo owner before applying GitHub admin instructions. If a requested control is organization-only, document it as not applicable unless/until the user transfers the repo to an organization; use repo-level or user-account-level settings where available. See `docs/github-account-context.md`.
 
+## GitHub Copilot PR Review Gate
+
+Owner direction tracked in Paperclip WEI-3851/WEI-3852 supersedes older attempts to remove GitHub Copilot from the merge path. For every PR before merge:
+
+1. Request a GitHub Copilot PR review/comment through GitHub review tooling the same way you would request a user review.
+2. Do not merge until Copilot has left a review/comment, unless there is explicit owner-approved evidence that Copilot review is unavailable for that PR. Waiting about 30 minutes between review/fix cycles is acceptable.
+3. If Copilot finds issues, route the fix work through the normal Codex/Hermes-local implementation lane or a human. Copilot review comments/suggestions are review input, not permission to use Copilot as a local Paperclip provider/tooling route.
+4. After fixes land, self-review, run required local/CI checks, and re-request/wait for Copilot again when the PR materially changed. Repeat until no blocking issues remain.
+5. Branches of branches and PRs of PRs are allowed when they improve quality or isolate fixes.
+6. Merge readiness now includes: linked Paperclip/GitHub issues resolved, branch current with `main`, required checks green, unresolved review threads resolved, required Copilot review/comment satisfied, and no owner/security/product blocker.
+
 **Rules:**
 
 1. **Find something broken? File it.** Every bug, gap, or missing feature gets a GitHub issue with: title prefix `[Area][Type]`, description of what's wrong, impact, and fix approach.
