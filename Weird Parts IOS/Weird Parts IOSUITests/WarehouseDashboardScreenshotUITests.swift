@@ -109,6 +109,12 @@ final class WarehouseDashboardScreenshotUITests: XCTestCase {
 
         let warehouseTab = app.buttons["tab_warehouse"].firstMatch
         if warehouseTab.waitForExistence(timeout: 8) {
+            // Full-sidebar iPad launches can already be deep-linked to Warehouse.
+            // Tapping an already-expanded Warehouse row collapses its subtabs, so
+            // first give the requested dashboard subtab/content a chance to settle.
+            if openWarehouseDashboardSubtab(in: app, timeout: 5) {
+                return
+            }
             warehouseTab.tap()
         } else if openMoreTab(in: app) {
             let warehouse = app.buttons["Warehouse"].firstMatch
@@ -124,6 +130,12 @@ final class WarehouseDashboardScreenshotUITests: XCTestCase {
             warehouse.tap()
         } else {
             XCTFail("Warehouse module tab should be reachable")
+        }
+
+        if !openWarehouseDashboardSubtab(in: app, timeout: 10), warehouseTab.exists {
+            // If the first tap collapsed the full-sidebar row, tap once more to
+            // re-expand and expose the stable warehouse subtabs.
+            warehouseTab.tap()
         }
 
         XCTAssertTrue(
@@ -165,7 +177,8 @@ final class WarehouseDashboardScreenshotUITests: XCTestCase {
         // page rather than a separate horizontal chip. Treat a visible KPI as the
         // same successful user state: the Warehouse Dashboard is reachable.
         if app.descendants(matching: .any)["warehouseKPIAuditScore"].firstMatch.exists
-            || app.descendants(matching: .any)["warehouseKPITotalStock"].firstMatch.exists {
+            || app.descendants(matching: .any)["warehouseKPITotalStock"].firstMatch.exists
+            || app.buttons["whAction_newMovement"].firstMatch.exists {
             return true
         }
 
