@@ -113,6 +113,8 @@ struct WarehouseMovementsPage: View {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("New movement")
+                .accessibilityIdentifier("whMovements_newMovement")
+                .accessibilityHint("Opens the guided movement wizard")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {

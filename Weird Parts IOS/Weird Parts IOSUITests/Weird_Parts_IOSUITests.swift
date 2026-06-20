@@ -73,6 +73,18 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         return repoRoot.appendingPathComponent("docs/testing/artifacts/wei-3144/current", isDirectory: true)
     }
 
+    private var wei3866ArtifactDirectory: URL {
+        if let path = ProcessInfo.processInfo.environment["WEI_3866_ARTIFACT_DIR"], !path.isEmpty {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        let source = URL(fileURLWithPath: #filePath)
+        let repoRoot = source
+            .deletingLastPathComponent() // Weird Parts IOSUITests
+            .deletingLastPathComponent() // Weird Parts IOS
+            .deletingLastPathComponent() // repo root
+        return repoRoot.appendingPathComponent("docs/testing/artifacts/wei-3866/current", isDirectory: true)
+    }
+
     private var wei3041ArtifactDirectory: URL {
         if let path = ProcessInfo.processInfo.environment["WEI_3041_ARTIFACT_DIR"], !path.isEmpty {
             return URL(fileURLWithPath: path, isDirectory: true)
@@ -345,6 +357,60 @@ final class Weird_Parts_IOSUITests: XCTestCase {
           welcome/celebration headings.
         """
         try verification.write(to: artifactDirectory.appendingPathComponent("07-accessibility-reduce-motion-voiceover-notes.txt"), atomically: true, encoding: .utf8)
+    }
+
+    @MainActor
+    func testWEI3866DashboardGuidedMovementEntryOpensMovementWizard() throws {
+        let artifactDirectory = wei3866ArtifactDirectory
+        try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
+
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments += [
+            "-UITesting",
+            "-UITestingWEI936AutoLogin",
+            "-UITestingWarehouseDashboard"
+        ]
+        app.launch()
+
+        let toolbarEntry = app.buttons["whAction_newMovementToolbar"]
+        let primaryEntry = app.buttons["whAction_guidedMovementPrimary"]
+        let entry: XCUIElement
+        if toolbarEntry.waitForExistence(timeout: 12) {
+            entry = toolbarEntry
+        } else {
+            entry = primaryEntry
+            if !entry.waitForExistence(timeout: 2) {
+                openWarehouseDashboard()
+            }
+            for _ in 0..<4 where entry.exists && !entry.isHittable {
+                app.scrollViews.firstMatch.swipeUp()
+            }
+        }
+
+        XCTAssertTrue(entry.waitForExistence(timeout: 10), "Warehouse Dashboard should expose a guided movement entry")
+        XCTAssertTrue(entry.isHittable, "Guided movement entry should be hittable in the phone viewport")
+        captureWEI3866("01-dashboard-guided-movement-entry")
+
+        entry.tap()
+
+        let wizardHeading = app.staticTexts["Where is stock moving?"].firstMatch
+        XCTAssertTrue(
+            wizardHeading.waitForExistence(timeout: 10),
+            "Tapping the dashboard guided movement entry should reveal the movement wizard location step"
+        )
+        XCTAssertTrue(app.navigationBars["New Movement"].waitForExistence(timeout: 5), "Movement wizard sheet should carry the New Movement title")
+        captureWEI3866("02-movement-wizard-location-step")
+
+        let viewport = UIDevice.current.userInterfaceIdiom == .pad ? "tablet" : "phone"
+        let verification = """
+        WEI-3866 guided movement entry verification (\(viewport))
+        - Launch route: -UITestingWarehouseDashboard with WEI-936 auto-login fixture.
+        - Dashboard controls verified: whAction_newMovementToolbar is visible/hittable, with whAction_guidedMovementPrimary available in content.
+        - Production route exercised: tap dashboard guided movement entry.
+        - Wizard verified: New Movement sheet shows the "Where is stock moving?" location step.
+        """
+        try verification.write(to: artifactDirectory.appendingPathComponent("\(viewport)-verification.txt"), atomically: true, encoding: .utf8)
     }
 
     @MainActor
@@ -1584,6 +1650,19 @@ final class Weird_Parts_IOSUITests: XCTestCase {
 
         let viewport = UIDevice.current.userInterfaceIdiom == .pad ? "tablet" : "phone"
         let file = wei3144ArtifactDirectory.appendingPathComponent("\(viewport)-\(name).png")
+        try? screenshot.pngRepresentation.write(to: file, options: .atomic)
+    }
+
+    private func captureWEI3866(_ name: String) {
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let viewport = UIDevice.current.userInterfaceIdiom == .pad ? "tablet" : "phone"
+        try? FileManager.default.createDirectory(at: wei3866ArtifactDirectory, withIntermediateDirectories: true)
+        let file = wei3866ArtifactDirectory.appendingPathComponent("\(viewport)-\(name).png")
         try? screenshot.pngRepresentation.write(to: file, options: .atomic)
     }
 

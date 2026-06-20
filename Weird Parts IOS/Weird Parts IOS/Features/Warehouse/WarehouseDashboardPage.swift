@@ -83,6 +83,13 @@ struct WarehouseDashboardPage: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 12) {
+                    Button { activeSheet = .newMovement } label: {
+                        Image(systemName: "arrow.left.arrow.right.circle.fill")
+                    }
+                    .accessibilityIdentifier("whAction_newMovementToolbar")
+                    .accessibilityLabel("Start Guided Movement")
+                    .accessibilityHint("Opens the guided movement wizard")
+
                     CartBadgeButton(cartManager: cartManager)
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
@@ -406,6 +413,9 @@ struct WarehouseDashboardPage: View {
                 // KPI Summary
                 kpiRow
 
+                // Stable guided movement entry for field-tech and UI automation flows
+                guidedMovementEntry
+
                 // Quick Actions
                 quickActionsSection
 
@@ -610,6 +620,56 @@ struct WarehouseDashboardPage: View {
             (dynamicTypeSize >= .accessibility1 || UIScreen.main.bounds.width < 360)
     }
 
+    private var guidedMovementEntry: some View {
+        Button {
+            activeSheet = .newMovement
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.left.arrow.right.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(Color.blue)
+                    .clipShape(Circle())
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Start Guided Movement")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text("Move stock between warehouse, staging, trucks, trailers, and jobs.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 68, alignment: .leading)
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(Color.blue.opacity(0.22), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityIdentifier("whAction_guidedMovementPrimary")
+        .accessibilityLabel("Start Guided Movement")
+        .accessibilityHint("Opens the guided movement wizard")
+        .accessibilityAddTraits(.isButton)
+    }
+
     private var quickActions: [WarehouseQuickAction] {
         [
             WarehouseQuickAction(
@@ -709,9 +769,11 @@ struct WarehouseDashboardPage: View {
                 .minimumScaleFactor(0.85)
         }
         .frame(maxWidth: .infinity)
+        .frame(minHeight: 68)
         .padding(.vertical, 16)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .contentShape(RoundedRectangle(cornerRadius: 12))
     }
 
     // MARK: - Sub-page Links
