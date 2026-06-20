@@ -348,6 +348,31 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     }
 
     @MainActor
+    func testWEI3866WarehouseDashboardNewMovementOpensGuidedWizard() throws {
+        app.terminate()
+        app = XCUIApplication()
+        configureUITestingEnvironment(app)
+        app.launchArguments += [
+            "-UITestingWEI936AutoLogin",
+            "-UITestingWarehouseDashboard"
+        ]
+        app.launch()
+
+        openWarehouseDashboard()
+
+        let newMovement = app.buttons["whAction_newMovement"].firstMatch
+        XCTAssertTrue(newMovement.waitForExistence(timeout: 20), "Warehouse Dashboard should expose a stable New Movement quick action")
+        XCTAssertTrue(newMovement.isHittable, "Warehouse Dashboard New Movement action should be immediately hittable on iPhone")
+        newMovement.tap()
+
+        XCTAssertTrue(
+            app.staticTexts["Where is stock moving?"].waitForExistence(timeout: 10) ||
+                app.navigationBars["New Movement"].waitForExistence(timeout: 10),
+            "Tapping the Warehouse Dashboard New Movement action should open the guided movement wizard."
+        )
+    }
+
+    @MainActor
     func testWEI3144JobMaterialsWalkthroughEvidence() throws {
         let artifactDirectory = wei3144ArtifactDirectory
         try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
