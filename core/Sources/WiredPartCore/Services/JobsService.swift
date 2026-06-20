@@ -10,7 +10,7 @@ import GRDB
 ///
 /// Ported from: Jobs & Labor feature area (Phases 4, 4.5, 15)
 public final class JobsService: Sendable {
-    private let db: AppDatabase
+    let db: AppDatabase
     private static let warehouseClockJobNumber = "__SHOP_WAREHOUSE__"
     private static let warehouseClockJobName = "Shop / Warehouse"
 
@@ -858,6 +858,7 @@ public final class JobsService: Sendable {
                 ]
             )
             let jobId = dbConn.lastInsertedRowID
+            try Self.ensureJobStableId(dbConn: dbConn, jobId: jobId)
             if let defaultTemplateId = try Int64.fetchOne(dbConn, sql: """
                 SELECT id FROM job_stage_templates
                 WHERE is_default = 1 AND archived_at IS NULL

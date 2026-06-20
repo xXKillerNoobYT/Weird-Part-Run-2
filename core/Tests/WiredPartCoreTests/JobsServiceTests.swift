@@ -29,6 +29,84 @@ struct JobsServiceTests {
         #expect(jobs.contains(where: { $0.jobNumber == "J-TEST" }))
     }
 
+    @Test("local-first job records create update list and survive service reload")
+    func testLocalFirstJobRecordsCRUDAndReload() throws {
+        let env = try E2ETestHelpers.setUp()
+        let created = try env.jobs.createJobRecord(
+            JobsService.JobRecordDraft(
+                jobNumber: "  J-LOCAL-001  ",
+                jobName: "  Local First Job  ",
+                customerName: "  Alpine Electric  ",
+                siteName: "  Alpine City Hall  ",
+                status: "active",
+                priority: "high",
+                notes: "  First site note  ",
+                createdBy: env.adminUserId
+            )
+        )
+        #expect(created.id > 0)
+        #expect(!created.stableId.isEmpty)
+        #expect(UUID(uuidString: created.stableId) != nil)
+        #expect(created.jobNumber == "J-LOCAL-001")
+        #expect(created.jobName == "Local First Job")
+        #expect(created.customerName == "Alpine Electric")
+        #expect(created.siteName == "Alpine City Hall")
+        #expect(created.notes == "First site note")
+
+        let reloadedService = JobsService(db: env.db)
+        let reloaded = try reloadedService.getJobRecord(id: created.id)
+        #expect(reloaded.stableId == created.stableId)
+
+        let updated = try reloadedService.updateJobRecord(
+            id: created.id,
+            JobsService.JobRecordUpdate(
+                jobName: "  Local First Job - Updated  ",
+                customerName: "  Alpine Public Works  ",
+                siteName: "  Council Chambers  ",
+                status: "in_progress",
+                priority: "critical",
+                notes: "  Updated field note  "
+            )
+        )
+        #expect(updated.stableId == created.stableId)
+        #expect(updated.jobName == "Local First Job - Updated")
+        #expect(updated.customerName == "Alpine Public Works")
+        #expect(updated.siteName == "Council Chambers")
+        #expect(updated.status == "in_progress")
+        #expect(updated.priority == "critical")
+        #expect(updated.notes == "Updated field note")
+
+        let listed = try reloadedService.listJobRecords(status: "in_progress")
+        #expect(listed.contains { $0.id == created.id && $0.stableId == created.stableId })
+    }
+
+    @Test("local-first job records reject invalid input and expose empty state")
+    func testLocalFirstJobRecordsInvalidInputAndEmptyState() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(try env.jobs.listJobRecords(status: "cancelled").isEmpty)
+        #expect(throws: JobsService.JobsError.requiredFieldEmpty) {
+            _ = try env.jobs.createJobRecord(
+                JobsService.JobRecordDraft(jobNumber: " ", jobName: "Blank Number", createdBy: env.adminUserId)
+            )
+        }
+        #expect(throws: JobsService.JobsError.requiredFieldEmpty) {
+            _ = try env.jobs.createJobRecord(
+                JobsService.JobRecordDraft(jobNumber: "J-BLANK-NAME", jobName: " ", createdBy: env.adminUserId)
+            )
+        }
+    }
+
+    @Test("jobs migration backfills stable ids for existing rows")
+    func testJobsMigrationBackfillsStableIds() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BACKFILL", name: "Backfilled Job")
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT stable_id FROM jobs WHERE id = ?", arguments: [jobId])
+        }
+        let stableId = try #require(row?["stable_id"] as String?)
+        #expect(UUID(uuidString: stableId) != nil)
+    }
+
     @Test("createJob creates a linked job notebook")
     func testCreateJobCreatesLinkedNotebook() throws {
         let env = try E2ETestHelpers.setUp()
