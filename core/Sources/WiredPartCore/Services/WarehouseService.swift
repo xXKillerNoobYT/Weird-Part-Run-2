@@ -1229,6 +1229,8 @@ public final class WarehouseService: Sendable {
     /// database transaction.
     @discardableResult
     public func executeGuidedMovement(_ input: GuidedMovementInput) throws -> Int64 {
+        guard input.qty > 0 else { throw WarehouseError.invalidQuantity }
+
         let fromType = input.fromLocationType.rawValue
         let toType = input.toLocationType.rawValue
         let validation = try validateMovement(

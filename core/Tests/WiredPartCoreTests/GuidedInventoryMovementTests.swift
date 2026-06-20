@@ -159,6 +159,32 @@ struct GuidedInventoryMovementTests {
         #expect(try movementCount(env, partId: partId) == beforeCount)
     }
 
+    @Test("guided zero quantity fails as invalid quantity without stock or ledger side effects")
+    func guidedZeroQuantityFailsWithoutSideEffects() throws {
+        let env = try E2ETestHelpers.setUp()
+        let partId = try seedPartWithWarehouseStock(env, qty: 2)
+        let beforeCount = try movementCount(env, partId: partId)
+
+        #expect(throws: WarehouseService.WarehouseError.invalidQuantity) {
+            try env.warehouse.executeGuidedMovement(
+                WarehouseService.GuidedMovementInput(
+                    partId: partId,
+                    qty: 0,
+                    fromLocationType: .warehouse,
+                    fromLocationId: 1,
+                    toLocationType: .truck,
+                    toLocationId: 9,
+                    performedBy: env.adminUserId,
+                    reason: "Should fail before movement commit"
+                )
+            )
+        }
+
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1) == 2)
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "truck", locationId: 9) == 0)
+        #expect(try movementCount(env, partId: partId) == beforeCount)
+    }
+
     private func seedPartWithWarehouseStock(_ env: E2ETestHelpers.TestEnvironment, qty: Int) throws -> Int64 {
         let categoryId = try E2ETestHelpers.seedCategory(env, name: "WEI-3862 Inventory")
         let partId = try E2ETestHelpers.seedPart(env, name: "WEI-3862 Ledger Part", categoryId: categoryId)
