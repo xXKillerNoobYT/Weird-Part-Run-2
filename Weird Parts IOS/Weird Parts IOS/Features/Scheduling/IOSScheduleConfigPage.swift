@@ -730,7 +730,6 @@ struct ShiftTemplateEditSheet: View {
             .confirmationDialog("Delete this template?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
                 Button("Delete Template", role: .destructive) {
                     onDelete?()
-                    dismiss()
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
@@ -842,7 +841,6 @@ struct HolidayEditSheet: View {
             .confirmationDialog("Delete this holiday?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
                 Button("Delete Holiday", role: .destructive) {
                     onDelete?()
-                    dismiss()
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {

@@ -61,6 +61,42 @@ class SchedulingSheetRefreshErrorTests(unittest.TestCase):
                 self.assertNotIn("loadData()", body)
                 self.assertNotIn("activeSheet = nil", catch_block)
 
+    def test_callback_sheet_no_dismiss_after_callback_invocation(self):
+        """CallbackSheet must not call dismiss() after invoking onComplete/onSnooze;
+        the parent controls dismissal via activeSheet = nil on success."""
+        body = function_body(self.pipeline, "private struct CallbackSheet")
+        lines = body.splitlines()
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("onComplete(") or stripped.startswith("onSnooze("):
+                for next_line in lines[i + 1:]:
+                    next_stripped = next_line.strip()
+                    if next_stripped:
+                        self.assertNotEqual(
+                            next_stripped, "dismiss()",
+                            f"dismiss() must not immediately follow {stripped!r} in CallbackSheet",
+                        )
+                        break
+
+    def test_sheet_no_dismiss_after_delete_invocation(self):
+        """ShiftTemplateEditSheet and HolidayEditSheet must not call dismiss()
+        after invoking onDelete; the parent controls dismissal via activeSheet = nil on success."""
+        for struct_name in ("struct ShiftTemplateEditSheet", "struct HolidayEditSheet"):
+            with self.subTest(struct_name=struct_name):
+                body = function_body(self.config, struct_name)
+                lines = body.splitlines()
+                for i, line in enumerate(lines):
+                    stripped = line.strip()
+                    if stripped.startswith("onDelete?()"):
+                        for next_line in lines[i + 1:]:
+                            next_stripped = next_line.strip()
+                            if next_stripped:
+                                self.assertNotEqual(
+                                    next_stripped, "dismiss()",
+                                    f"dismiss() must not immediately follow onDelete?() in {struct_name}",
+                                )
+                                break
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

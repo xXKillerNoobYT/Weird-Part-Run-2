@@ -679,23 +679,19 @@ private struct CallbackSheet: View {
                 Section {
                     Button("Mark Complete") {
                         onComplete(notes.isEmpty ? nil : notes)
-                        dismiss()
                     }
                     .fontWeight(.semibold)
 
                     Button("Snooze 1 Day") {
                         onSnooze(1)
-                        dismiss()
                     }
 
                     Button("Snooze 3 Days") {
                         onSnooze(3)
-                        dismiss()
                     }
 
                     Button("Snooze 1 Week") {
                         onSnooze(7)
-                        dismiss()
                     }
                 }
             }
