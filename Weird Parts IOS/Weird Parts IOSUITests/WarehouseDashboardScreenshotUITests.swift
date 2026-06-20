@@ -139,6 +139,15 @@ final class WarehouseDashboardScreenshotUITests: XCTestCase {
             return true
         }
 
+        // Full-sidebar iPad launches can already be deep-linked to the dashboard,
+        // in which case the dashboard subtab may be represented by the active
+        // page rather than a separate horizontal chip. Treat a visible KPI as the
+        // same successful user state: the Warehouse Dashboard is reachable.
+        if app.descendants(matching: .any)["warehouseKPIAuditScore"].firstMatch.exists
+            || app.descendants(matching: .any)["warehouseKPITotalStock"].firstMatch.exists {
+            return true
+        }
+
         return false
     }
 
