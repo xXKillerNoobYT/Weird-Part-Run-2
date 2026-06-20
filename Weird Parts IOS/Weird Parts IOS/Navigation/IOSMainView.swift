@@ -509,6 +509,11 @@ struct IOSMainView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityIdentifier("tab_\(module.id)")
+        .accessibilityLabel(module.label)
+        .accessibilityHint(tabCount > 1 ? "Show \(module.label) sections" : "Open \(module.label)")
     }
 
     @ViewBuilder
@@ -559,6 +564,11 @@ struct IOSMainView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityIdentifier("subtab_\(tab.id)")
+        .accessibilityLabel(tab.label)
+        .accessibilityHint("Open the \(tab.label) section")
     }
 
     @ViewBuilder
@@ -820,6 +830,11 @@ struct ModuleHostView: View {
                             sidebarRow(tab: tab, selected: tab.id == selectedTabId)
                         }
                         .buttonStyle(.plain)
+                        .contentShape(Rectangle())
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityIdentifier("subtab_\(tab.id)")
+                        .accessibilityLabel(tab.label)
+                        .accessibilityHint("Open the \(tab.label) warehouse section")
                     }
                 }
                 .padding(.vertical, DS.Space.sm)
@@ -890,6 +905,7 @@ struct ModuleHostView: View {
                         // give automation a plain, explicitly-sized hit region.
                         .buttonStyle(.plain)
                         .contentShape(Rectangle())
+                        .accessibilityElement(children: .ignore)
                         .accessibilityIdentifier("subtab_\(tab.id)")
                         .accessibilityLabel(tab.label)
                         .id(tab.id)
