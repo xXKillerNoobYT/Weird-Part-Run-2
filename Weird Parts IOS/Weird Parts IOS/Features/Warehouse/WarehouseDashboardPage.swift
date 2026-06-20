@@ -83,6 +83,13 @@ struct WarehouseDashboardPage: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 12) {
+                    Button { activeSheet = .newMovement } label: {
+                        Image(systemName: "arrow.left.arrow.right.circle.fill")
+                    }
+                    .accessibilityLabel("New Movement")
+                    .accessibilityHint("Opens the guided movement wizard")
+                    .accessibilityIdentifier("whAction_newMovement")
+
                     CartBadgeButton(cartManager: cartManager)
                     Button { activeSheet = .newMovement } label: {
                         Image(systemName: "arrow.left.arrow.right.circle.fill")
