@@ -61,6 +61,27 @@ final class WarehouseDashboardScreenshotUITests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testWarehouseDashboardNewMovementQuickActionOpensWizard() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["WEIRD_PARTS_UI_TEST_PIN"] = Self.uiTestingPIN
+        app.launchArguments += [
+            "-UITesting",
+            "-UITestingWEI936AutoLogin",
+            "-UITestingDispatchBoard",
+            "-UITestingWarehouseDashboard",
+        ]
+        app.launch()
+
+        navigateToWarehouse(in: app)
+        openNewMovementFromDashboard(in: app)
+
+        XCTAssertTrue(
+            app.staticTexts["Where is stock moving?"].waitForExistence(timeout: 10),
+            "Tapping the Warehouse Dashboard New Movement quick action should open the guided movement wizard."
+        )
+    }
+
     private func assertKPIExists(
         in app: XCUIApplication,
         identifier: String,
@@ -149,6 +170,19 @@ final class WarehouseDashboardScreenshotUITests: XCTestCase {
         }
 
         return false
+    }
+
+    private func openNewMovementFromDashboard(in app: XCUIApplication) {
+        let newMovement = app.buttons["whAction_newMovement"].firstMatch
+        XCTAssertTrue(
+            newMovement.waitForExistence(timeout: 10),
+            "Warehouse Dashboard should expose a stable New Movement entry point"
+        )
+        XCTAssertTrue(
+            newMovement.isHittable,
+            "Warehouse Dashboard New Movement entry point should be hittable immediately after opening the dashboard"
+        )
+        newMovement.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
     private func openWarehouseSettingsFromDashboard(in app: XCUIApplication) {

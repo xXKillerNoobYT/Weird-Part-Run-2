@@ -83,6 +83,13 @@ struct WarehouseDashboardPage: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 12) {
+                    Button { activeSheet = .newMovement } label: {
+                        Image(systemName: "arrow.left.arrow.right.circle.fill")
+                    }
+                    .accessibilityLabel("New Movement")
+                    .accessibilityHint("Opens the guided movement wizard")
+                    .accessibilityIdentifier("whAction_newMovement")
+
                     CartBadgeButton(cartManager: cartManager)
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
@@ -121,10 +128,8 @@ struct WarehouseDashboardPage: View {
     private func sheetContent(for sheet: ActiveSheet) -> some View {
         switch sheet {
         case .newMovement:
-            NavigationStack {
-                IOSMovementWizard()
-                    .environmentObject(appCore)
-            }
+            IOSMovementWizard()
+                .environmentObject(appCore)
         case .qrScanner:
             QRScanSheet(expectedType: .bin) { result in
                 activeSheet = nil
