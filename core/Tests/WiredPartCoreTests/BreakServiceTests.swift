@@ -129,6 +129,22 @@ struct BreakServiceTests {
         #expect(active?.breakType == "rest")
     }
 
+    @Test("Start break attaches to active clock entry when laborEntryId is omitted")
+    func testStartBreakAttachesToActiveClockEntryByDefault() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BREAK-ACTIVE", name: "Break Active Job")
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+
+        let record = try breakService.startBreak(
+            userId: env.adminUserId,
+            breakType: "lunch_unpaid",
+            timerMinutes: 30
+        )
+
+        #expect(record.laborEntryId == laborEntryId)
+    }
+
     @Test("Get break records for day")
     func testGetBreakRecordsForDay() throws {
         let env = try freshEnv()
