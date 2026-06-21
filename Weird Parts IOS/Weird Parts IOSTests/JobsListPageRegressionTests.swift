@@ -55,6 +55,69 @@ final class JobsListPageRegressionTests: XCTestCase {
         )
     }
 
+    func testJobDetailEditWorkflowPersistsThroughJobsServiceAndReloads() throws {
+        let source = try Self.readJobDetailPageSource()
+
+        XCTAssertTrue(
+            source.contains("case editJob") && source.contains("jobEditSheet"),
+            "Job detail should expose a real edit sheet instead of only read-only quick-action placeholders."
+        )
+        XCTAssertTrue(
+            source.contains("try service.updateJob(")
+                && source.contains("jobName: editJobName")
+                && source.contains("status: trimmedStatus")
+                && source.contains("priority: trimmedPriority")
+                && source.contains("jobType: trimmedJobType")
+                && source.contains("customerName: editCustomerName.trimmingCharacters")
+                && source.contains("addressLine1: editAddressLine1.trimmingCharacters")
+                && source.contains("notes: editNotes.trimmingCharacters"),
+            "Edit save should persist supported identity, workflow, metadata, and notes fields through JobsService.updateJob."
+        )
+        XCTAssertFalse(
+            source.contains("customerName: editCustomerName.nilIfEmpty")
+                || source.contains("addressLine1: editAddressLine1.nilIfEmpty")
+                || source.contains("notes: editNotes.nilIfEmpty"),
+            "Edit save must pass blank optional fields explicitly so JobsService.updateJob clears existing persisted values instead of treating nil as no change."
+        )
+        XCTAssertTrue(
+            source.contains("validateJobEditForm()") && source.contains("Job name is required") && source.contains("Status is required"),
+            "Edit flow should validate required local-first fields before saving."
+        )
+        XCTAssertTrue(
+            source.contains("loadData()") && source.contains("jobEditSuccessMessage"),
+            "Successful edits should reload persisted local data and announce a saved state."
+        )
+    }
+
+    func testJobDetailShowsStableIdentityMetadataAndAccessibleEditControls() throws {
+        let source = try Self.readJobDetailPageSource()
+
+        XCTAssertTrue(
+            source.contains("labelRow(\"Created\"") && source.contains("labelRow(\"Updated\""),
+            "Job detail should show available created/updated local-first timestamps."
+        )
+        XCTAssertTrue(
+            source.contains("Label(\"Edit Job\", systemImage: \"square.and.pencil\")"),
+            "Detail header should provide an explicit edit entry point."
+        )
+        XCTAssertTrue(
+            source.contains(".accessibilityIdentifier(\"jobDetailEditButton\")")
+                && source.contains(".accessibilityIdentifier(\"jobDetailEditSummaryButton\")")
+                && source.contains(".accessibilityIdentifier(\"jobEditSaveButton\")"),
+            "Edit entry and save controls should have stable, distinct accessibility identifiers for user-like QA."
+        )
+        XCTAssertTrue(
+            source.contains("(\"scheduled\", \"Scheduled\")")
+                && source.contains("(\"pending\", \"Pending\")")
+                && source.contains("(\"in_progress\", \"In Progress\")"),
+            "Edit status picker should include workflow states that core logic can produce."
+        )
+        XCTAssertTrue(
+            source.contains("accessibilityHint(\"Saves changes to this local job record\")"),
+            "Save action should expose an accessibility hint for the persistence boundary."
+        )
+    }
+
     private static func readJobsListPageSource(file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL
@@ -65,6 +128,19 @@ final class JobsListPageRegressionTests: XCTestCase {
             .appendingPathComponent("Features")
             .appendingPathComponent("Jobs")
             .appendingPathComponent("JobsListPage.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private static func readJobDetailPageSource(file: StaticString = #filePath) throws -> String {
+        let testFileURL = URL(fileURLWithPath: "\(file)")
+        let projectRoot = testFileURL
+            .deletingLastPathComponent() // Weird Parts IOSTests
+            .deletingLastPathComponent() // Weird Parts IOS
+        let sourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent("Features")
+            .appendingPathComponent("Jobs")
+            .appendingPathComponent("IOSJobDetailPage.swift")
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }

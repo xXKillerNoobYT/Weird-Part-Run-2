@@ -31,6 +31,20 @@ struct IOSJobDetailPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
+    @State private var editJobName = ""
+    @State private var editStatus = ""
+    @State private var editPriority = ""
+    @State private var editJobType = ""
+    @State private var editCustomerName = ""
+    @State private var editAddressLine1 = ""
+    @State private var editAddressLine2 = ""
+    @State private var editCity = ""
+    @State private var editState = ""
+    @State private var editZip = ""
+    @State private var editNotes = ""
+    @State private var jobEditError: String?
+    @State private var jobEditSuccessMessage: String?
+    @State private var isSavingJobEdit = false
     @State private var materialSuccessMessage: String?
     @State private var materialActionError: String?
     @State private var materialQuantity = 1
@@ -113,6 +127,7 @@ struct IOSJobDetailPage: View {
 
     private enum ActiveSheet: Identifiable {
         case help
+        case editJob
         case weeklyReview
         case stageDetails(String)
         case quickAction(String)
@@ -121,6 +136,7 @@ struct IOSJobDetailPage: View {
         var id: String {
             switch self {
             case .help: "help"
+            case .editJob: "editJob"
             case .weeklyReview: "weeklyReview"
             case .stageDetails(let name): "stage-\(name)"
             case .quickAction(let name): "action-\(name)"
@@ -144,6 +160,15 @@ struct IOSJobDetailPage: View {
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     HStack(spacing: 12) {
+                        if job != nil && appCore.hasPermission("manage_jobs") {
+                            Button {
+                                prepareJobEdit()
+                            } label: {
+                                Label("Edit Job", systemImage: "square.and.pencil")
+                            }
+                            .accessibilityIdentifier("jobDetailEditButton")
+                            .accessibilityHint("Opens editable local job record fields")
+                        }
                         Button { activeSheet = .weeklyReview } label: {
                             Image(systemName: "calendar.badge.clock")
                         }
@@ -167,6 +192,8 @@ struct IOSJobDetailPage: View {
                             ("Weekly Review", "Tap the calendar icon to submit a weekly work review for this job.")
                         ]
                     )
+                case .editJob:
+                    jobEditSheet
                 case .weeklyReview:
                     IOSWeeklyReviewSheet(
                         jobId: jobId,
@@ -213,6 +240,15 @@ struct IOSJobDetailPage: View {
                 VStack(alignment: .leading, spacing: 16) {
                     if isPaymentHold {
                         paymentHoldBanner
+                    }
+                    if let jobEditSuccessMessage {
+                        Label(jobEditSuccessMessage, systemImage: "checkmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.green.opacity(0.12)))
+                            .accessibilityLabel(jobEditSuccessMessage)
                     }
 
                     dashboardHeader(job)
@@ -290,6 +326,22 @@ struct IOSJobDetailPage: View {
                 HStack(spacing: 12) {
                     summaryPill(icon: "person.2.fill", title: "Team", value: "\(teamMembers.count) assigned")
                     summaryPill(icon: "calendar", title: "Due", value: job.dueDate.map(formatDate) ?? "No due date")
+                }
+                labelRow("Created", value: job.createdAt.map(formatDate) ?? "Not recorded", icon: "calendar.badge.plus")
+                labelRow("Updated", value: job.updatedAt.map(formatDate) ?? "Not recorded", icon: "clock.arrow.circlepath")
+                if let notes = job.notes, !notes.isEmpty {
+                    labelRow("Notes", value: notes, icon: "note.text")
+                }
+                if appCore.hasPermission("manage_jobs") {
+                    Button {
+                        prepareJobEdit()
+                    } label: {
+                        Label("Edit Job", systemImage: "square.and.pencil")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("jobDetailEditSummaryButton")
+                    .accessibilityHint("Opens editable local job record fields from the summary card")
                 }
             }
         }
@@ -1029,6 +1081,161 @@ struct IOSJobDetailPage: View {
         .presentationDetents([.medium])
     }
 
+    private var jobEditSheet: some View {
+        NavigationStack {
+            Form {
+                Section("Identity") {
+                    TextField("Job name", text: $editJobName)
+                        .textInputAutocapitalization(.words)
+                        .accessibilityIdentifier("jobEditNameField")
+                    Picker("Status", selection: $editStatus) {
+                        ForEach(Self.jobStatusOptions, id: \.value) { option in
+                            Text(option.label).tag(option.value)
+                        }
+                    }
+                    Picker("Priority", selection: $editPriority) {
+                        ForEach(Self.jobPriorityOptions, id: \.value) { option in
+                            Text(option.label).tag(option.value)
+                        }
+                    }
+                    Picker("Type", selection: $editJobType) {
+                        ForEach(Self.jobTypeOptions, id: \.value) { option in
+                            Text(option.label).tag(option.value)
+                        }
+                    }
+                }
+
+                Section("Customer / Site") {
+                    TextField("Customer", text: $editCustomerName)
+                        .textInputAutocapitalization(.words)
+                    TextField("Address line 1", text: $editAddressLine1)
+                        .textInputAutocapitalization(.words)
+                    TextField("Address line 2", text: $editAddressLine2)
+                        .textInputAutocapitalization(.words)
+                    TextField("City", text: $editCity)
+                        .textInputAutocapitalization(.words)
+                    TextField("State", text: $editState)
+                        .textInputAutocapitalization(.characters)
+                    TextField("ZIP", text: $editZip)
+                        .keyboardType(.numbersAndPunctuation)
+                }
+
+                Section("Notes") {
+                    TextField("Job notes", text: $editNotes, axis: .vertical)
+                        .lineLimit(4...8)
+                        .accessibilityIdentifier("jobEditNotesField")
+                }
+
+                if let job {
+                    Section("Local record") {
+                        labelRow("Job #", value: job.jobNumber, icon: "number")
+                        labelRow("Created", value: job.createdAt.map(formatDate) ?? "Not recorded", icon: "calendar.badge.plus")
+                        labelRow("Updated", value: job.updatedAt.map(formatDate) ?? "Not recorded", icon: "clock.arrow.circlepath")
+                    }
+                    .accessibilityElement(children: .contain)
+                }
+
+                if let jobEditError {
+                    Section {
+                        Label(jobEditError, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .accessibilityIdentifier("jobEditErrorText")
+                    }
+                }
+            }
+            .navigationTitle("Edit Job")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { activeSheet = nil }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        saveJobEdit()
+                    }
+                    .disabled(isSavingJobEdit)
+                    .accessibilityIdentifier("jobEditSaveButton")
+                    .accessibilityHint("Saves changes to this local job record")
+                }
+            }
+        }
+        .presentationDetents([.large])
+    }
+
+    private func prepareJobEdit() {
+        guard let job else { return }
+        editJobName = job.jobName
+        editStatus = job.status
+        editPriority = job.priority
+        editJobType = job.jobType
+        editCustomerName = job.customerName ?? ""
+        editAddressLine1 = job.addressLine1 ?? ""
+        editAddressLine2 = job.addressLine2 ?? ""
+        editCity = job.city ?? ""
+        editState = job.state ?? ""
+        editZip = job.zip ?? ""
+        editNotes = job.notes ?? ""
+        jobEditError = nil
+        jobEditSuccessMessage = nil
+        activeSheet = .editJob
+    }
+
+    private func validateJobEditForm() -> String? {
+        if editJobName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "Job name is required."
+        }
+        if editStatus.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "Status is required."
+        }
+        if editPriority.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "Priority is required."
+        }
+        if editJobType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "Job type is required."
+        }
+        return nil
+    }
+
+    private func saveJobEdit() {
+        guard let service = appCore.jobsService else {
+            jobEditError = "Jobs service unavailable"
+            return
+        }
+        if let validationError = validateJobEditForm() {
+            jobEditError = validationError
+            return
+        }
+        isSavingJobEdit = true
+        defer { isSavingJobEdit = false }
+        do {
+            let trimmedStatus = editStatus.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedPriority = editPriority.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedJobType = editJobType.trimmingCharacters(in: .whitespacesAndNewlines)
+            try service.updateJob(
+                id: jobId,
+                jobName: editJobName.trimmingCharacters(in: .whitespacesAndNewlines),
+                customerName: editCustomerName.trimmingCharacters(in: .whitespacesAndNewlines),
+                addressLine1: editAddressLine1.trimmingCharacters(in: .whitespacesAndNewlines),
+                addressLine2: editAddressLine2.trimmingCharacters(in: .whitespacesAndNewlines),
+                city: editCity.trimmingCharacters(in: .whitespacesAndNewlines),
+                state: editState.trimmingCharacters(in: .whitespacesAndNewlines),
+                zip: editZip.trimmingCharacters(in: .whitespacesAndNewlines),
+                status: trimmedStatus,
+                priority: trimmedPriority,
+                jobType: trimmedJobType,
+                notes: editNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+            jobEditError = nil
+            activeSheet = nil
+            loadData()
+            if loadError == nil {
+                jobEditSuccessMessage = "Job details saved."
+            }
+        } catch {
+            jobEditError = userFriendlyError(error, context: "save job details")
+        }
+    }
+
     private func materialActionSheet(_ action: MaterialAction) -> some View {
         NavigationStack {
             Form {
@@ -1554,6 +1761,34 @@ struct IOSJobDetailPage: View {
     // the current consumed qty to accommodate rounding or re-count adjustments.
     private static let maxPullQty = 999
     private static let maxCorrectionOverage = 100
+    private static let jobStatusOptions: [(value: String, label: String)] = [
+        ("scheduled", "Scheduled"),
+        ("pending", "Pending"),
+        ("active", "Active"),
+        ("in_progress", "In Progress"),
+        ("on_hold", "On Hold"),
+        ("payment_hold", "Payment Hold"),
+        ("warranty", "Warranty"),
+        ("completed", "Completed"),
+        ("continuous", "Continuous"),
+        ("closed", "Closed"),
+        ("cancelled", "Cancelled"),
+    ]
+    private static let jobPriorityOptions: [(value: String, label: String)] = [
+        ("low", "Low"),
+        ("normal", "Normal"),
+        ("medium", "Medium"),
+        ("high", "High"),
+        ("critical", "Critical"),
+    ]
+    private static let jobTypeOptions: [(value: String, label: String)] = [
+        ("standard", "Standard"),
+        ("service", "Service"),
+        ("inspection", "Inspection"),
+        ("internal", "Internal"),
+        ("warranty", "Warranty"),
+        ("continuous", "Continuous"),
+    ]
     private static let pullMaterialSourceLocationTypes: Set<String> = [
         "warehouse",
         "truck",
@@ -1762,16 +1997,16 @@ struct IOSJobDetailPage: View {
     private func postAIContext(_ job: JobsService.JobDetail) {
         let labor = laborSummary
         let context = """
-        Job Detail dashboard. Read-only context.
+        Job Detail dashboard. Local-first editable context.
         Job: \(job.jobNumber) - \(job.jobName) (id \(job.id)), status: \(job.status), priority: \(job.priority), type: \(job.jobType).
-        Customer: \(job.customerName ?? "not set"), lead: \(job.leadUserName ?? "not set"), team members loaded: \(teamMembers.count).
+        Customer: \(job.customerName.nilIfEmpty ?? "not set"), lead: \(job.leadUserName.nilIfEmpty ?? "not set"), team members loaded: \(teamMembers.count).
         Dates: start \(job.startDate ?? "not set"), due \(job.dueDate ?? "not set"), completed \(job.completedDate ?? "not set").
         Stage count: \(stages.count), current stage: \(stages.first(where: { $0.status == "in_progress" })?.name ?? "not set").
         Payment hold active: \(isPaymentHold). Active to-dos: \(activeTodos.count), todo summary: \(todoValue).
         Labor summary: regular \(String(format: "%.1f", labor?.totalRegularHours ?? 0)) hrs, overtime \(String(format: "%.1f", labor?.totalOvertimeHours ?? 0)) hrs, workers \(labor?.uniqueWorkers ?? 0), entries \(labor?.totalEntries ?? 0).
         Budget: \(hasFinancialPermission ? "estimated hours \(String(format: "%.0f", job.estimatedHours ?? 0)), parts cost \(Formatters.formatCurrency(job.partsCost)), budget limit \(job.budgetLimit.map { Formatters.formatCurrency($0) } ?? "not set")" : "restricted for current user").
         Warranty: start \(job.warrantyStartDate ?? "not set"), end \(job.warrantyEndDate ?? "not set"), days remaining \(warrantyDaysRemaining.map { String($0) } ?? "not active").
-        Available guidance: explain job status, stage progress, smart cards, quick actions, tabs, payment hold restrictions, warranty, \(hasFinancialPermission ? "budget fields, and " : "")weekly review entry point. Do not edit the job directly.
+        Available guidance: explain job status, stage progress, smart cards, quick actions, tabs, payment hold restrictions, warranty, \(hasFinancialPermission ? "budget fields, and " : "")weekly review entry point. Managers can edit supported identity, status, priority, type, site, and notes fields through JobsService.updateJob.
         """
         NotificationCenter.default.post(
             name: .jobDetailPageActive,

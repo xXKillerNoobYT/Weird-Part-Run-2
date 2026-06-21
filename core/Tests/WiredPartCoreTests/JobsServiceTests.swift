@@ -310,6 +310,32 @@ struct JobsServiceTests {
         #expect(detail.jobName == "Updated Job")
     }
 
+    @Test("Update job clears optional text fields when blank values are saved")
+    func testUpdateJobClearsOptionalTextFields() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try env.jobs.createJob(
+            jobNumber: "J-CLEAR-OPTIONAL",
+            jobName: "Clear Optional Fields",
+            customerName: "Customer To Clear",
+            addressLine1: "123 Clear St",
+            status: "active",
+            notes: "Notes to clear",
+            createdBy: env.adminUserId
+        )
+
+        try env.jobs.updateJob(
+            id: jobId,
+            customerName: "",
+            addressLine1: "",
+            notes: ""
+        )
+
+        let detail = try env.jobs.getJob(id: jobId)
+        #expect(detail.customerName == "")
+        #expect(detail.addressLine1 == "")
+        #expect(detail.notes == "")
+    }
+
     @Test("Job stats")
     func testJobStats() throws {
         let env = try E2ETestHelpers.setUp()
