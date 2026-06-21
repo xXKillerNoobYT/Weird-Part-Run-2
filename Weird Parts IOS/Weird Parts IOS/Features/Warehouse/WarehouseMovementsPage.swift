@@ -105,14 +105,17 @@ struct WarehouseMovementsPage: View {
                     Image(systemName: "qrcode.viewfinder")
                 }
                 .accessibilityLabel("Scan QR code")
+                .accessibilityIdentifier("whMovement_scanQR")
                 Button { activeSheet = .quickLog } label: {
                     Image(systemName: "square.and.pencil")
                 }
                 .accessibilityLabel("Quick log movement")
+                .accessibilityIdentifier("whMovement_quickLog")
                 Button { activeSheet = .newMovement } label: {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("New movement")
+                .accessibilityIdentifier("whMovement_openWizard")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
@@ -363,7 +366,9 @@ struct WarehouseMovementsPage: View {
             message: searchText.isEmpty && selectedFilter == nil
                 ? "Stock movements will appear here as parts are transferred."
                 : "No movements match your criteria.",
-            actionLabel: "New Movement"
+            actionLabel: "New Movement",
+            actionIcon: "plus",
+            actionAccessibilityIdentifier: "whMovement_emptyNewMovement"
         ) {
             activeSheet = .newMovement
         }

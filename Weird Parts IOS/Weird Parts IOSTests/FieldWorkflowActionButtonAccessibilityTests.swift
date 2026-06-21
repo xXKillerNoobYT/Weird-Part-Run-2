@@ -50,6 +50,9 @@ final class FieldWorkflowActionButtonAccessibilityTests: XCTestCase {
         XCTAssertTrue(readyRow.contains(".accessibilityIdentifier(\"job-ready-material-return-button-\\(material.id)\")"))
         XCTAssertTrue(usedRow.contains(".accessibilityIdentifier(\"job-used-material-return-button-\\(part.id)\")"))
         XCTAssertTrue(usedRow.contains(".accessibilityIdentifier(\"job-used-material-correct-button-\\(part.id)\")"))
+        XCTAssertTrue(usedRow.contains(".accessibilityLabel(\"Correct\")"), "The used material correction button must remain discoverable as app.buttons[\"Correct\"] for phone UI tests.")
+        XCTAssertTrue(usedRow.contains(".accessibilityHint(\"Corrects \\(part.partName) and requires an audit note\")"))
+        XCTAssertFalse(usedRow.contains(".accessibilityLabel(\"Correct \\(part.partName)\")"), "Do not replace the visible Correct action label with part-specific accessibility text.")
         XCTAssertTrue(readyRow.contains(".accessibilityElement(children: .combine)"), "Static ready material summary text can still be grouped separately.")
         XCTAssertTrue(usedRow.contains(".accessibilityElement(children: .combine)"), "Static used material summary text can still be grouped separately.")
     }
