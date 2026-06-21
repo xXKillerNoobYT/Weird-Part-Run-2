@@ -105,12 +105,13 @@ extension JobsService {
             createdBy: draft.createdBy
         )
 
-        try db.writer.write { dbConn in
-            try Self.ensureJobStableId(dbConn: dbConn, jobId: jobId)
-            try dbConn.execute(
-                sql: "UPDATE jobs SET site_name = ?, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
-                arguments: [siteName, jobId]
-            )
+        if siteName != nil {
+            try db.writer.write { dbConn in
+                try dbConn.execute(
+                    sql: "UPDATE jobs SET site_name = ?, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
+                    arguments: [siteName, jobId]
+                )
+            }
         }
         return try getJobRecord(id: jobId)
     }
