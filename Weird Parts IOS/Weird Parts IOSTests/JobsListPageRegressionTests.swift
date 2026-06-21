@@ -67,8 +67,16 @@ final class JobsListPageRegressionTests: XCTestCase {
                 && source.contains("jobName: editJobName")
                 && source.contains("status: editStatus")
                 && source.contains("priority: editPriority")
-                && source.contains("notes: editNotes.nilIfEmpty"),
+                && source.contains("customerName: editCustomerName.trimmingCharacters")
+                && source.contains("addressLine1: editAddressLine1.trimmingCharacters")
+                && source.contains("notes: editNotes.trimmingCharacters"),
             "Edit save should persist supported identity, workflow, metadata, and notes fields through JobsService.updateJob."
+        )
+        XCTAssertFalse(
+            source.contains("customerName: editCustomerName.nilIfEmpty")
+                || source.contains("addressLine1: editAddressLine1.nilIfEmpty")
+                || source.contains("notes: editNotes.nilIfEmpty"),
+            "Edit save must pass blank optional fields explicitly so JobsService.updateJob clears existing persisted values instead of treating nil as no change."
         )
         XCTAssertTrue(
             source.contains("validateJobEditForm()") && source.contains("Job name is required") && source.contains("Status is required"),

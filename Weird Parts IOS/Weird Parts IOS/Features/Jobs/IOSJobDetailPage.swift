@@ -1211,16 +1211,16 @@ struct IOSJobDetailPage: View {
             try service.updateJob(
                 id: jobId,
                 jobName: editJobName.trimmingCharacters(in: .whitespacesAndNewlines),
-                customerName: editCustomerName.nilIfEmpty,
-                addressLine1: editAddressLine1.nilIfEmpty,
-                addressLine2: editAddressLine2.nilIfEmpty,
-                city: editCity.nilIfEmpty,
-                state: editState.nilIfEmpty,
-                zip: editZip.nilIfEmpty,
+                customerName: editCustomerName.trimmingCharacters(in: .whitespacesAndNewlines),
+                addressLine1: editAddressLine1.trimmingCharacters(in: .whitespacesAndNewlines),
+                addressLine2: editAddressLine2.trimmingCharacters(in: .whitespacesAndNewlines),
+                city: editCity.trimmingCharacters(in: .whitespacesAndNewlines),
+                state: editState.trimmingCharacters(in: .whitespacesAndNewlines),
+                zip: editZip.trimmingCharacters(in: .whitespacesAndNewlines),
                 status: editStatus,
                 priority: editPriority,
                 jobType: editJobType,
-                notes: editNotes.nilIfEmpty
+                notes: editNotes.trimmingCharacters(in: .whitespacesAndNewlines)
             )
             jobEditError = nil
             activeSheet = nil
