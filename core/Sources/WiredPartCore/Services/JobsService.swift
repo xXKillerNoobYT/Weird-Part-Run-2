@@ -10,12 +10,20 @@ import GRDB
 ///
 /// Ported from: Jobs & Labor feature area (Phases 4, 4.5, 15)
 public final class JobsService: Sendable {
-    let db: AppDatabase
+    private let db: AppDatabase
     private static let warehouseClockJobNumber = "__SHOP_WAREHOUSE__"
     private static let warehouseClockJobName = "Shop / Warehouse"
 
     public init(db: AppDatabase) {
         self.db = db
+    }
+
+    func readDatabase<T>(_ block: (Database) throws -> T) throws -> T {
+        try db.writer.read(block)
+    }
+
+    func writeDatabase<T>(_ block: (Database) throws -> T) throws -> T {
+        try db.writer.write(block)
     }
 
     // =========================================================================

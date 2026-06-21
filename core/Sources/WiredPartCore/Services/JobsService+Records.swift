@@ -106,7 +106,7 @@ extension JobsService {
         )
 
         if siteName != nil {
-            try db.writer.write { dbConn in
+            try writeDatabase { dbConn in
                 try dbConn.execute(
                     sql: "UPDATE jobs SET site_name = ?, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
                     arguments: [siteName, jobId]
@@ -129,7 +129,7 @@ extension JobsService {
             notes: Self.optionalTrimmed(update.notes)
         )
 
-        try db.writer.write { dbConn in
+        try writeDatabase { dbConn in
             try Self.ensureJobStableId(dbConn: dbConn, jobId: id)
             if update.siteName != nil {
                 let siteName = Self.optionalTrimmed(update.siteName)
@@ -147,7 +147,7 @@ extension JobsService {
     }
 
     public func getJobRecord(id: Int64) throws -> JobRecord {
-        let record = try db.writer.read { dbConn -> JobRecord? in
+        let record = try readDatabase { dbConn -> JobRecord? in
             guard let row = try Row.fetchOne(dbConn, sql: Self.jobRecordSelectSQL + " WHERE id = ? AND deleted_at IS NULL", arguments: [id]) else {
                 return nil
             }
@@ -158,13 +158,13 @@ extension JobsService {
     }
 
     public func listJobRecords(search: String? = nil, status: String? = nil, limit: Int = 50, offset: Int = 0) throws -> [JobRecord] {
-        try db.writer.read { dbConn in
+        try readDatabase { dbConn in
             var clauses = ["deleted_at IS NULL"]
             var args: [DatabaseValueConvertible?] = []
             if let search = Self.optionalTrimmed(search) {
-                clauses.append("(job_name LIKE ? OR job_number LIKE ? OR customer_name LIKE ? OR site_name LIKE ?)")
+                clauses.append("(job_name LIKE ? OR job_number LIKE ? OR customer_name LIKE ? OR site_name LIKE ? OR address_line1 LIKE ?)")
                 let pattern = "%\(search)%"
-                args += [pattern, pattern, pattern, pattern]
+                args += [pattern, pattern, pattern, pattern, pattern]
             }
             if let status = Self.optionalTrimmed(status) {
                 clauses.append("status = ?")
@@ -182,9 +182,9 @@ extension JobsService {
 
     static func ensureJobStableId(dbConn: Database, jobId: Int64) throws {
         guard try dbConn.columns(in: "jobs").contains(where: { $0.name == "stable_id" }) else { return }
-        let existing = try String.fetchOne(dbConn, sql: "SELECT stable_id FROM jobs WHERE id = ?", arguments: [jobId])
+        let existing = try String.fetchOne(dbConn, sql: "SELECT stable_id FROM jobs WHERE id = ? AND deleted_at IS NULL", arguments: [jobId])
         guard Self.optionalTrimmed(existing) == nil else { return }
-        try dbConn.execute(sql: "UPDATE jobs SET stable_id = ? WHERE id = ?", arguments: [UUID().uuidString, jobId])
+        try dbConn.execute(sql: "UPDATE jobs SET stable_id = ? WHERE id = ? AND deleted_at IS NULL", arguments: [UUID().uuidString, jobId])
     }
 
     private static let jobRecordSelectSQL = """
