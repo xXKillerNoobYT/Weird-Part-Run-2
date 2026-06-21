@@ -108,9 +108,9 @@ struct DatabaseTests {
         #expect(tables == ["part_import_row_evidence", "part_import_sessions"])
     }
 
-    @Test("Schema version is 103")
+    @Test("Schema version is 105")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 103)
+        #expect(AppDatabase.schemaVersion == 105)
     }
 
     @Test("Migration 095 normalizes duplicate legacy stage sort orders and category maps")
