@@ -779,8 +779,8 @@ struct IOSJobDetailPage: View {
                     .accessibilityIdentifier("job-used-material-return-button-\(part.id)")
                 Button("Correct") { prepareMaterialAction(.correctUsed(part)) }
                     .buttonStyle(.bordered)
-                    .accessibilityLabel("Correct \(part.partName)")
-                    .accessibilityHint("Requires an audit note")
+                    .accessibilityLabel("Correct")
+                    .accessibilityHint("Corrects \(part.partName) and requires an audit note")
                     .accessibilityIdentifier("job-used-material-correct-button-\(part.id)")
                 Spacer()
             }
