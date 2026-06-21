@@ -11,6 +11,7 @@ import os.log
 final class LocationManager: NSObject, ObservableObject {
     private let manager = CLLocationManager()
     private var continuation: CheckedContinuation<CLLocation?, Never>?
+    private var timeoutTask: Task<Void, Never>?
     nonisolated let logger = Logger(subsystem: "com.wiredpart.ios", category: "LocationManager")
 
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
@@ -44,17 +45,40 @@ final class LocationManager: NSObject, ObservableObject {
     }
 
     /// Get a single location fix. Returns nil if location services
-    /// are unavailable or denied.
-    func getCurrentLocation() async -> CLLocation? {
+    /// are unavailable, denied, or do not produce a fix before `timeout`.
+    ///
+    /// Simulator location requests can otherwise remain outstanding long enough
+    /// for XCTest to treat navigation into the Clock page as a hung event loop.
+    /// Clock data should still load without GPS; GPS only improves job sorting.
+    func getCurrentLocation(timeout: TimeInterval = 2.0) async -> CLLocation? {
         let status = manager.authorizationStatus
         guard status == .authorizedWhenInUse || status == .authorizedAlways else {
             return nil
         }
 
         return await withCheckedContinuation { cont in
+            // Resolve any stale in-flight request before starting a new one so
+            // overlapping refreshes cannot leak or resume the wrong continuation.
+            finishLocationRequest(nil)
             self.continuation = cont
+            timeoutTask = Task { [weak self] in
+                let nanoseconds = UInt64(max(timeout, 0.1) * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: nanoseconds)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    self?.logger.warning("[LocationManager] Location request timed out")
+                    self?.finishLocationRequest(nil)
+                }
+            }
             manager.requestLocation()
         }
+    }
+
+    private func finishLocationRequest(_ location: CLLocation?) {
+        timeoutTask?.cancel()
+        timeoutTask = nil
+        continuation?.resume(returning: location)
+        continuation = nil
     }
 }
 
@@ -64,16 +88,14 @@ extension LocationManager: CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         let location = locations.last
         Task { @MainActor in
-            continuation?.resume(returning: location)
-            continuation = nil
+            finishLocationRequest(location)
         }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         logger.error("[LocationManager] Error: \(error.localizedDescription)")
         Task { @MainActor in
-            continuation?.resume(returning: nil)
-            continuation = nil
+            finishLocationRequest(nil)
         }
     }
 
