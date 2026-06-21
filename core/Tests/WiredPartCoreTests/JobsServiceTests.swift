@@ -78,6 +78,16 @@ struct JobsServiceTests {
 
         let listed = try reloadedService.listJobRecords(status: "in_progress")
         #expect(listed.contains { $0.id == created.id && $0.stableId == created.stableId })
+
+        let clearedSite = try reloadedService.updateJobRecord(
+            id: created.id,
+            JobsService.JobRecordUpdate(siteName: "   ")
+        )
+        #expect(clearedSite.siteName == nil)
+        let addressLine1 = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT address_line1 FROM jobs WHERE id = ?", arguments: [created.id])
+        }
+        #expect(addressLine1 == nil)
     }
 
     @Test("local-first job records reject invalid input and expose empty state")
@@ -336,6 +346,15 @@ struct JobsServiceTests {
         #expect(laborEntryId > 0)
         #expect(active?.id == laborEntryId)
         #expect(active?.jobName == "Shop / Warehouse")
+
+        let stableId = try env.db.writer.read { db in
+            try String.fetchOne(
+                db,
+                sql: "SELECT stable_id FROM jobs WHERE job_number = ? AND deleted_at IS NULL",
+                arguments: ["__SHOP_WAREHOUSE__"]
+            )
+        }
+        #expect(stableId.flatMap(UUID.init(uuidString:)) != nil)
     }
 
     @Test("Labor summary after clock in/out")

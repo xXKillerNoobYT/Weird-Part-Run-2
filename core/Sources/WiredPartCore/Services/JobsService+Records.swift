@@ -117,14 +117,11 @@ extension JobsService {
 
     @discardableResult
     public func updateJobRecord(id: Int64, _ update: JobRecordUpdate) throws -> JobRecord {
-        if let jobName = update.jobName, try Self.requiredTrimmed(jobName).isEmpty { throw JobsError.requiredFieldEmpty }
-        if let status = update.status, try Self.requiredTrimmed(status).isEmpty { throw JobsError.requiredFieldEmpty }
-
         try updateJob(
             id: id,
             jobName: try update.jobName.map(Self.requiredTrimmed(_:)),
             customerName: Self.optionalTrimmed(update.customerName),
-            addressLine1: Self.optionalTrimmed(update.siteName),
+            addressLine1: nil,
             status: try update.status.map(Self.requiredTrimmed(_:)),
             priority: try update.priority.map(Self.requiredTrimmed(_:)),
             jobType: try update.jobType.map(Self.requiredTrimmed(_:)),
@@ -134,9 +131,14 @@ extension JobsService {
         try db.writer.write { dbConn in
             try Self.ensureJobStableId(dbConn: dbConn, jobId: id)
             if update.siteName != nil {
+                let siteName = Self.optionalTrimmed(update.siteName)
                 try dbConn.execute(
-                    sql: "UPDATE jobs SET site_name = ?, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
-                    arguments: [Self.optionalTrimmed(update.siteName), id]
+                    sql: """
+                        UPDATE jobs
+                        SET site_name = ?, address_line1 = ?, updated_at = datetime('now')
+                        WHERE id = ? AND deleted_at IS NULL
+                        """,
+                    arguments: [siteName, siteName, id]
                 )
             }
         }

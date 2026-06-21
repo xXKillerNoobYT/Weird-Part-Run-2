@@ -3290,7 +3290,9 @@ public final class JobsService: Sendable {
                 "Internal time bucket for Shop / Warehouse clock entries."
             ]
         )
-        return dbConn.lastInsertedRowID
+        let jobId = dbConn.lastInsertedRowID
+        try ensureJobStableId(dbConn: dbConn, jobId: jobId)
+        return jobId
     }
 
     /// List active/in-progress jobs, optionally excluding a specific job ID.
