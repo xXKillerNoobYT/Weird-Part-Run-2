@@ -48,6 +48,38 @@ struct ReportsServiceTests {
         #expect(data.count >= 1)
     }
 
+    @Test("Timesheet segments include breaks started from active clock entry")
+    func testTimesheetSegmentsIncludeBreaksStartedFromActiveClockEntry() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-ACTIVE-BREAK", name: "Active Break Summary Job")
+        let breakService = BreakService(db: env.db)
+        let clockIn = try Date("2026-03-05T08:00:00Z", strategy: .iso8601)
+        let clockOut = try Date("2026-03-05T17:00:00Z", strategy: .iso8601)
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId, at: clockIn)
+
+        let breakRecord = try breakService.startBreak(
+            userId: env.adminUserId,
+            breakType: "lunch_unpaid",
+            timerMinutes: 30
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE break_records
+                SET started_at = '2026-03-05T12:00:00Z',
+                    ended_at = '2026-03-05T12:30:00Z',
+                    duration_minutes = 30
+                WHERE id = ?
+                """, arguments: [breakRecord.id])
+        }
+        try env.jobs.clockOut(laborEntryId: laborEntryId, at: clockOut)
+
+        let segments = try env.reports.getTimesheetSegments(startDate: "2026-03-05", endDate: "2026-03-05", userId: env.adminUserId)
+        let segment = segments.first { $0.id == laborEntryId }
+
+        #expect(segment?.unpaidLunchMinutes == 30)
+        #expect(segment?.regularHours == 8.0)
+    }
+
     @Test("Timesheet segments prefer is_paid over break_type for unpaid correction buckets")
     func testTimesheetSegmentsUseIsPaidForContradictoryBreakRows() throws {
         let env = try E2ETestHelpers.setUp()
