@@ -106,8 +106,8 @@ struct JobsServiceTests {
         }
     }
 
-    @Test("jobs migration backfills stable ids for existing rows")
-    func testJobsMigrationBackfillsStableIds() throws {
+    @Test("seeded jobs receive stable ids after local-first schema is available")
+    func testSeededJobsReceiveStableIds() throws {
         let env = try E2ETestHelpers.setUp()
         let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BACKFILL", name: "Backfilled Job")
         let row = try env.db.writer.read { db in
