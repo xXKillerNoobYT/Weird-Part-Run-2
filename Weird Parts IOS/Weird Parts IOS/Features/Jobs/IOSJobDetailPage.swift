@@ -1228,7 +1228,9 @@ struct IOSJobDetailPage: View {
             jobEditError = nil
             activeSheet = nil
             loadData()
-            jobEditSuccessMessage = "Job details saved."
+            if loadError == nil {
+                jobEditSuccessMessage = "Job details saved."
+            }
         } catch {
             jobEditError = userFriendlyError(error, context: "save job details")
         }
@@ -1767,6 +1769,7 @@ struct IOSJobDetailPage: View {
         ("on_hold", "On Hold"),
         ("completed", "Completed"),
         ("continuous", "Continuous"),
+        ("closed", "Closed"),
         ("cancelled", "Cancelled"),
     ]
     private static let jobPriorityOptions: [(value: String, label: String)] = [
@@ -1780,6 +1783,7 @@ struct IOSJobDetailPage: View {
         ("standard", "Standard"),
         ("service", "Service"),
         ("inspection", "Inspection"),
+        ("internal", "Internal"),
         ("warranty", "Warranty"),
         ("continuous", "Continuous"),
     ]
