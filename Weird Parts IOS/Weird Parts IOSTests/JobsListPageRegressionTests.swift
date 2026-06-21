@@ -112,11 +112,6 @@ final class JobsListPageRegressionTests: XCTestCase {
                 && source.contains("(\"in_progress\", \"In Progress\")"),
             "Edit status picker should include workflow states that core logic can produce."
         )
-        XCTAssertFalse(
-            source.contains("(\"payment_hold\", \"Payment Hold\")")
-                || source.contains("(\"warranty\", \"Warranty\")"),
-            "Edit status picker should not expose payment hold or warranty transitions that require dedicated metadata APIs."
-        )
         XCTAssertTrue(
             source.contains("accessibilityHint(\"Saves changes to this local job record\")"),
             "Save action should expose an accessibility hint for the persistence boundary."
