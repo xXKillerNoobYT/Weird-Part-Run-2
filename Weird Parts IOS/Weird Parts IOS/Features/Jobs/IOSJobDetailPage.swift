@@ -1765,9 +1765,7 @@ struct IOSJobDetailPage: View {
         ("active", "Active"),
         ("in_progress", "In Progress"),
         ("on_hold", "On Hold"),
-        ("payment_hold", "Payment Hold"),
         ("completed", "Completed"),
-        ("warranty", "Warranty"),
         ("continuous", "Continuous"),
         ("cancelled", "Cancelled"),
     ]
