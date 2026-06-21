@@ -65,8 +65,9 @@ final class JobsListPageRegressionTests: XCTestCase {
         XCTAssertTrue(
             source.contains("try service.updateJob(")
                 && source.contains("jobName: editJobName")
-                && source.contains("status: editStatus")
-                && source.contains("priority: editPriority")
+                && source.contains("status: trimmedStatus")
+                && source.contains("priority: trimmedPriority")
+                && source.contains("jobType: trimmedJobType")
                 && source.contains("customerName: editCustomerName.trimmingCharacters")
                 && source.contains("addressLine1: editAddressLine1.trimmingCharacters")
                 && source.contains("notes: editNotes.trimmingCharacters"),
@@ -101,8 +102,15 @@ final class JobsListPageRegressionTests: XCTestCase {
         )
         XCTAssertTrue(
             source.contains(".accessibilityIdentifier(\"jobDetailEditButton\")")
+                && source.contains(".accessibilityIdentifier(\"jobDetailEditSummaryButton\")")
                 && source.contains(".accessibilityIdentifier(\"jobEditSaveButton\")"),
-            "Edit entry and save controls should have stable accessibility identifiers for user-like QA."
+            "Edit entry and save controls should have stable, distinct accessibility identifiers for user-like QA."
+        )
+        XCTAssertTrue(
+            source.contains("(\"scheduled\", \"Scheduled\")")
+                && source.contains("(\"pending\", \"Pending\")")
+                && source.contains("(\"in_progress\", \"In Progress\")"),
+            "Edit status picker should include workflow states that core logic can produce."
         )
         XCTAssertTrue(
             source.contains("accessibilityHint(\"Saves changes to this local job record\")"),

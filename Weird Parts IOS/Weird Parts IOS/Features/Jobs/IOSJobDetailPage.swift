@@ -340,8 +340,8 @@ struct IOSJobDetailPage: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
-                    .accessibilityIdentifier("jobDetailEditButton")
-                    .accessibilityHint("Opens editable local job record fields")
+                    .accessibilityIdentifier("jobDetailEditSummaryButton")
+                    .accessibilityHint("Opens editable local job record fields from the summary card")
                 }
             }
         }
@@ -1208,6 +1208,9 @@ struct IOSJobDetailPage: View {
         isSavingJobEdit = true
         defer { isSavingJobEdit = false }
         do {
+            let trimmedStatus = editStatus.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedPriority = editPriority.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedJobType = editJobType.trimmingCharacters(in: .whitespacesAndNewlines)
             try service.updateJob(
                 id: jobId,
                 jobName: editJobName.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -1217,9 +1220,9 @@ struct IOSJobDetailPage: View {
                 city: editCity.trimmingCharacters(in: .whitespacesAndNewlines),
                 state: editState.trimmingCharacters(in: .whitespacesAndNewlines),
                 zip: editZip.trimmingCharacters(in: .whitespacesAndNewlines),
-                status: editStatus,
-                priority: editPriority,
-                jobType: editJobType,
+                status: trimmedStatus,
+                priority: trimmedPriority,
+                jobType: trimmedJobType,
                 notes: editNotes.trimmingCharacters(in: .whitespacesAndNewlines)
             )
             jobEditError = nil
@@ -1757,7 +1760,10 @@ struct IOSJobDetailPage: View {
     private static let maxPullQty = 999
     private static let maxCorrectionOverage = 100
     private static let jobStatusOptions: [(value: String, label: String)] = [
+        ("scheduled", "Scheduled"),
+        ("pending", "Pending"),
         ("active", "Active"),
+        ("in_progress", "In Progress"),
         ("on_hold", "On Hold"),
         ("payment_hold", "Payment Hold"),
         ("completed", "Completed"),
