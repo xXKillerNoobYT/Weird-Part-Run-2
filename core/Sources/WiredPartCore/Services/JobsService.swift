@@ -810,6 +810,7 @@ public final class JobsService: Sendable {
         jobName: String,
         customerName: String? = nil,
         addressLine1: String? = nil,
+        siteName: String? = nil,
         addressLine2: String? = nil,
         city: String? = nil,
         state: String? = nil,
@@ -842,7 +843,7 @@ public final class JobsService: Sendable {
                 sql: """
                     INSERT INTO jobs
                     (job_number, job_name, customer_name,
-                     address_line1, address_line2, city, state, zip,
+                     address_line1, site_name, address_line2, city, state, zip,
                      gps_lat, gps_lng, status, priority, job_type,
                      bill_rate_type_id, billing_rate, estimated_hours,
                      lead_user_id, on_call_type,
@@ -851,11 +852,11 @@ public final class JobsService: Sendable {
                      budget_limit, budget_alert_percent, created_by,
                      job_classification,
                      created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                     """,
                 arguments: [
                     jobNumber, jobName, customerName,
-                    addressLine1, addressLine2, city, state, zip,
+                    addressLine1, siteName, addressLine2, city, state, zip,
                     gpsLat, gpsLng, status, priority, jobType,
                     billRateTypeId, billingRate, estimatedHours,
                     leadUserId, onCallType,

@@ -98,6 +98,7 @@ extension JobsService {
             jobName: jobName,
             customerName: customerName,
             addressLine1: siteName,
+            siteName: siteName,
             status: status,
             priority: priority,
             jobType: jobType,
@@ -105,42 +106,53 @@ extension JobsService {
             createdBy: draft.createdBy
         )
 
-        if siteName != nil {
-            try writeDatabase { dbConn in
-                try dbConn.execute(
-                    sql: "UPDATE jobs SET site_name = ?, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
-                    arguments: [siteName, jobId]
-                )
-            }
-        }
         return try getJobRecord(id: jobId)
     }
 
     @discardableResult
     public func updateJobRecord(id: Int64, _ update: JobRecordUpdate) throws -> JobRecord {
-        try updateJob(
-            id: id,
-            jobName: try update.jobName.map(Self.requiredTrimmed(_:)),
-            customerName: Self.optionalTrimmed(update.customerName),
-            addressLine1: nil,
-            status: try update.status.map(Self.requiredTrimmed(_:)),
-            priority: try update.priority.map(Self.requiredTrimmed(_:)),
-            jobType: try update.jobType.map(Self.requiredTrimmed(_:)),
-            notes: Self.optionalTrimmed(update.notes)
-        )
-
         try writeDatabase { dbConn in
-            try Self.ensureJobStableId(dbConn: dbConn, jobId: id)
+            var setClauses: [String] = []
+            var args: [DatabaseValueConvertible?] = []
+
+            if let jobName = try update.jobName.map(Self.requiredTrimmed(_:)) {
+                setClauses.append("job_name = ?")
+                args.append(jobName)
+            }
+            if update.customerName != nil {
+                setClauses.append("customer_name = ?")
+                args.append(Self.optionalTrimmed(update.customerName))
+            }
+            if let status = try update.status.map(Self.requiredTrimmed(_:)) {
+                setClauses.append("status = ?")
+                args.append(status)
+            }
+            if let priority = try update.priority.map(Self.requiredTrimmed(_:)) {
+                setClauses.append("priority = ?")
+                args.append(priority)
+            }
+            if let jobType = try update.jobType.map(Self.requiredTrimmed(_:)) {
+                setClauses.append("job_type = ?")
+                args.append(jobType)
+            }
+            if update.notes != nil {
+                setClauses.append("notes = ?")
+                args.append(Self.optionalTrimmed(update.notes))
+            }
             if update.siteName != nil {
                 let siteName = Self.optionalTrimmed(update.siteName)
-                try dbConn.execute(
-                    sql: """
-                        UPDATE jobs
-                        SET site_name = ?, address_line1 = ?, updated_at = datetime('now')
-                        WHERE id = ? AND deleted_at IS NULL
-                        """,
-                    arguments: [siteName, siteName, id]
-                )
+                setClauses.append("site_name = ?")
+                args.append(siteName)
+                setClauses.append("address_line1 = ?")
+                args.append(siteName)
+            }
+
+            try Self.ensureJobStableId(dbConn: dbConn, jobId: id)
+            if !setClauses.isEmpty {
+                setClauses.append("updated_at = datetime('now')")
+                args.append(id)
+                let sql = "UPDATE jobs SET \(setClauses.joined(separator: ", ")) WHERE id = ? AND deleted_at IS NULL"
+                try dbConn.execute(sql: sql, arguments: StatementArguments(args))
             }
         }
         return try getJobRecord(id: id)
