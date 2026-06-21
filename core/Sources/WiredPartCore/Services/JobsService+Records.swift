@@ -184,7 +184,7 @@ extension JobsService {
         guard try dbConn.columns(in: "jobs").contains(where: { $0.name == "stable_id" }) else { return }
         let existing = try String.fetchOne(dbConn, sql: "SELECT stable_id FROM jobs WHERE id = ? AND deleted_at IS NULL", arguments: [jobId])
         guard Self.optionalTrimmed(existing) == nil else { return }
-        try dbConn.execute(sql: "UPDATE jobs SET stable_id = ? WHERE id = ? AND deleted_at IS NULL", arguments: [UUID().uuidString, jobId])
+        try dbConn.execute(sql: "UPDATE jobs SET stable_id = ? WHERE id = ? AND deleted_at IS NULL", arguments: [UUID().uuidString.lowercased(), jobId])
     }
 
     private static let jobRecordSelectSQL = """
