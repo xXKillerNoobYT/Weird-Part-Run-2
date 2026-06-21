@@ -1993,7 +1993,7 @@ struct IOSJobDetailPage: View {
         let context = """
         Job Detail dashboard. Local-first editable context.
         Job: \(job.jobNumber) - \(job.jobName) (id \(job.id)), status: \(job.status), priority: \(job.priority), type: \(job.jobType).
-        Customer: \(job.customerName ?? "not set"), lead: \(job.leadUserName ?? "not set"), team members loaded: \(teamMembers.count).
+        Customer: \(job.customerName.nilIfEmpty ?? "not set"), lead: \(job.leadUserName.nilIfEmpty ?? "not set"), team members loaded: \(teamMembers.count).
         Dates: start \(job.startDate ?? "not set"), due \(job.dueDate ?? "not set"), completed \(job.completedDate ?? "not set").
         Stage count: \(stages.count), current stage: \(stages.first(where: { $0.status == "in_progress" })?.name ?? "not set").
         Payment hold active: \(isPaymentHold). Active to-dos: \(activeTodos.count), todo summary: \(todoValue).
