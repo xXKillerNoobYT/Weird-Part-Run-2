@@ -1499,8 +1499,9 @@ struct IOSClockPage: View {
         }
 
         do {
-            if let paidRecordId = activeBreakRecord?.id {
+            if let paidRecord = activeBreakRecord, let paidRecordId = paidRecord.id {
                 try breakSvc.endBreak(recordId: paidRecordId)
+                cancelBreakNotifications(for: paidRecord)
             }
             let unpaidRecord = try breakSvc.startBreak(
                 userId: userId,
@@ -1572,7 +1573,7 @@ struct IOSClockPage: View {
 
             if durationMinutes > 5 {
                 let content = UNMutableNotificationContent()
-                content.title = "\(title): 5 min remain"
+                content.title = "\(title): 5 min remaining"
                 content.body = "Wrap up and head back when this timer ends."
                 content.sound = .default
                 let trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval((durationMinutes - 5) * 60), repeats: false)
@@ -1586,7 +1587,13 @@ struct IOSClockPage: View {
             let endTrigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(durationMinutes * 60), repeats: false)
             requests.append(UNNotificationRequest(identifier: timeReachedIdentifier, content: endContent, trigger: endTrigger))
 
-            for request in requests { UNUserNotificationCenter.current().add(request) }
+            for request in requests {
+                UNUserNotificationCenter.current().add(request) { error in
+                    if let error {
+                        logger.error("Failed to schedule break notification \(request.identifier, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                    }
+                }
+            }
         }
     }
 
