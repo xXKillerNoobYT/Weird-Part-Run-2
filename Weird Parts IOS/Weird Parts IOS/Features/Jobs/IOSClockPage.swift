@@ -34,6 +34,8 @@ struct IOSClockPage: View {
 
     // Activity status (working, supply_run, break, lunch_paid, lunch_unpaid)
     @State private var activityStatus: String = "working"
+    @State private var activeSupplyRunStart: Date?
+    @State private var supplyRunElapsedText: String = ""
 
     // Break/lunch tracking
     @State private var activeBreakRecord: BreakRecord?
@@ -514,6 +516,10 @@ struct IOSClockPage: View {
                     activeBreakBanner(breakRecord)
                 }
 
+                if activityStatus == "supply_run", let activeSupplyRunStart {
+                    activeSupplyRunCard(start: activeSupplyRunStart)
+                }
+
                 // Clock Out + Switch Job (disabled during active break)
                 HStack(spacing: 12) {
                     Button(role: .destructive) {
@@ -626,6 +632,42 @@ struct IOSClockPage: View {
         case "lunch_unpaid": return .red
         default: return .green
         }
+    }
+
+    private func activeSupplyRunCard(start: Date) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Supply Run Active", systemImage: "car.fill")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundStyle(.orange)
+
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Started")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(Formatters.timeFormatter.string(from: start))
+                        .font(.system(.body, design: .monospaced))
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Duration")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(supplyRunElapsedText)
+                        .font(.system(.body, design: .monospaced))
+                }
+                Spacer()
+            }
+        }
+        .padding(10)
+        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Supply run active. Started at \(Formatters.timeFormatter.string(from: start)). Duration \(supplyRunElapsedText). Time remains billable.")
+        .accessibilityIdentifier("clockPage_activeSupplyRunCard")
     }
 
     // MARK: - Active Break Banner
@@ -1666,8 +1708,12 @@ struct IOSClockPage: View {
 
         do {
             let newStatus = try service.toggleSupplyRun(laborEntryId: entryId)
+            let notes = try? service.getLaborEntryNotes(laborEntryId: entryId)
+            let start = JobsService.activeSupplyRunStart(notes: notes)
             await MainActor.run {
                 activityStatus = newStatus
+                activeSupplyRunStart = start
+                updateSupplyRunElapsedText()
                 errorMessage = nil
             }
         } catch {
@@ -1759,10 +1805,12 @@ struct IOSClockPage: View {
 
     private func startElapsedTimer(clockInISO: String) {
         updateElapsedText(clockInISO: clockInISO)
+        updateSupplyRunElapsedText()
         elapsedTimer?.invalidate()
         elapsedTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
             Task { @MainActor in
                 updateElapsedText(clockInISO: clockInISO)
+                updateSupplyRunElapsedText()
             }
         }
     }
@@ -1780,6 +1828,17 @@ struct IOSClockPage: View {
         let hours = Int(elapsed) / 3600
         let minutes = (Int(elapsed) % 3600) / 60
         elapsedText = "\(hours)h \(minutes)m"
+    }
+
+    private func updateSupplyRunElapsedText() {
+        guard let activeSupplyRunStart else {
+            supplyRunElapsedText = ""
+            return
+        }
+        let elapsed = Date().timeIntervalSince(activeSupplyRunStart)
+        let hours = Int(elapsed) / 3600
+        let minutes = (Int(elapsed) % 3600) / 60
+        supplyRunElapsedText = "\(hours)h \(minutes)m"
     }
 
     // MARK: - To-Do Actions
@@ -1936,8 +1995,10 @@ struct IOSClockPage: View {
 
             // Check activity status from notes (supply_run tracking)
             var currentActivity = "working"
+            var currentSupplyRunStart: Date?
             if let entry {
                 let notes = try? service.getLaborEntryNotes(laborEntryId: entry.id)
+                currentSupplyRunStart = JobsService.activeSupplyRunStart(notes: notes)
                 if JobsService.isOnSupplyRun(notes: notes) {
                     currentActivity = "supply_run"
                 }
@@ -1989,6 +2050,8 @@ struct IOSClockPage: View {
                 lunchPaidMinutes = lunchPaid
                 if let brk = currentBreak {
                     activityStatus = brk.breakType
+                    activeSupplyRunStart = nil
+                    supplyRunElapsedText = ""
                     if let timer = brk.timerDurationMinutes, timer > 0 {
                         switch brk.breakType {
                         case "break": breakBudgetMinutes = timer
@@ -1999,6 +2062,8 @@ struct IOSClockPage: View {
                     startBreakTimer()
                 } else {
                     activityStatus = currentActivity
+                    activeSupplyRunStart = currentSupplyRunStart
+                    updateSupplyRunElapsedText()
                     breakTimer?.invalidate()
                     breakTimer = nil
                     breakElapsedText = ""
@@ -2014,6 +2079,8 @@ struct IOSClockPage: View {
                     elapsedTimer?.invalidate()
                     elapsedTimer = nil
                     elapsedText = "0h 0m"
+                    activeSupplyRunStart = nil
+                    supplyRunElapsedText = ""
                     showRecoveredTimerBanner = false
                     recoveredBannerDismissed = false
                 }
