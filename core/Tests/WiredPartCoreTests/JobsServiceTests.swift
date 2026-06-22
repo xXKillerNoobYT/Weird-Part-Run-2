@@ -2004,6 +2004,38 @@ struct JobsServiceTests {
         #expect(!JobsService.isOnSupplyRun(notes: "Regular work notes, no supply run"))
     }
 
+    @Test("activeSupplyRunStart returns the latest unmatched supply run start timestamp")
+    func testActiveSupplyRunStartLatestUnmatchedStart() throws {
+        let notes = "[supply_run_start:2026-04-16T09:00:00Z] [supply_run_end:2026-04-16T09:15:00Z] [supply_run_start:2026-04-16T10:30:00Z]"
+
+        let activeStart = try #require(JobsService.activeSupplyRunStart(notes: notes))
+
+        #expect(CoreFormatters.iso8601.string(from: activeStart) == "2026-04-16T10:30:00Z")
+    }
+
+    @Test("activeSupplyRunStart returns nil when the latest supply run is ended")
+    func testActiveSupplyRunStartEndedRunNil() {
+        let notes = "[supply_run_start:2026-04-16T10:30:00Z] [supply_run_end:2026-04-16T11:00:00Z]"
+
+        #expect(JobsService.activeSupplyRunStart(notes: notes) == nil)
+    }
+
+    @Test("activeSupplyRunStart parses timestamps written by toggleSupplyRun")
+    func testActiveSupplyRunStartFromLaborEntryNotes() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+
+        #expect(try env.jobs.toggleSupplyRun(laborEntryId: laborEntryId) == "supply_run")
+
+        let notes = try env.jobs.getLaborEntryNotes(laborEntryId: laborEntryId) ?? ""
+        #expect(JobsService.activeSupplyRunStart(notes: notes) != nil)
+
+        #expect(try env.jobs.toggleSupplyRun(laborEntryId: laborEntryId) == "working")
+        let endedNotes = try env.jobs.getLaborEntryNotes(laborEntryId: laborEntryId) ?? ""
+        #expect(JobsService.activeSupplyRunStart(notes: endedNotes) == nil)
+    }
+
     // MARK: - computeStageStatuses (pure static)
 
     @Test("computeStageStatuses returns all pending when currentStageId is nil")

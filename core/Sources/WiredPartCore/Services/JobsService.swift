@@ -3661,6 +3661,24 @@ public final class JobsService: Sendable {
         return false
     }
 
+    /// Returns the latest unmatched supply-run start timestamp parsed from labor-entry notes.
+    public static func activeSupplyRunStart(notes: String?) -> Date? {
+        guard let notes, notes.contains("[supply_run_start:") else { return nil }
+        guard let lastStart = notes.range(of: "[supply_run_start:", options: .backwards) else { return nil }
+
+        if let lastEnd = notes.range(of: "[supply_run_end:", options: .backwards),
+           lastEnd.lowerBound > lastStart.lowerBound {
+            return nil
+        }
+
+        let timestampStart = lastStart.upperBound
+        guard let markerEnd = notes[timestampStart...].firstIndex(of: "]") else { return nil }
+        let timestamp = String(notes[timestampStart..<markerEnd])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !timestamp.isEmpty else { return nil }
+        return CoreFormatters.parseDateTime(timestamp)
+    }
+
     // =========================================================================
     // MARK: - Job Stages
     // =========================================================================
