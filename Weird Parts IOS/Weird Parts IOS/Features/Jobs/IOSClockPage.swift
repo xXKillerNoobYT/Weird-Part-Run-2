@@ -1840,7 +1840,7 @@ struct IOSClockPage: View {
             supplyRunElapsedText = ""
             return
         }
-        supplyRunElapsedText = formatDuration(Date().timeIntervalSince(activeSupplyRunStartedAt))
+        supplyRunElapsedText = formatDuration(max(0, Date().timeIntervalSince(activeSupplyRunStartedAt)))
     }
 
     // MARK: - To-Do Actions
