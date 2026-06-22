@@ -159,8 +159,9 @@ public final class BreakService: Sendable {
         let isPaid = (breakType != "lunch_unpaid")
         do {
             return try db.writer.write { dbConn in
+                let resolvedLaborEntryId = try laborEntryId ?? Self.activeClockEntryId(dbConn: dbConn, userId: userId)
                 var record = BreakRecord(
-                    id: nil, userId: userId, laborEntryId: laborEntryId,
+                    id: nil, userId: userId, laborEntryId: resolvedLaborEntryId,
                     breakType: breakType, startedAt: Self.nowString(),
                     endedAt: nil, durationMinutes: nil, isPaid: isPaid,
                     autoFilled: false, timerDurationMinutes: timerMinutes,
@@ -455,6 +456,18 @@ public final class BreakService: Sendable {
 
     private static func parseDateTime(_ str: String) -> Date? {
         CoreFormatters.parseDateTime(str)
+    }
+
+    private static func activeClockEntryId(dbConn: Database, userId: Int64) throws -> Int64? {
+        try Int64.fetchOne(dbConn, sql: """
+            SELECT id
+            FROM labor_entries
+            WHERE user_id = ?
+              AND status = 'clocked_in'
+              AND deleted_at IS NULL
+            ORDER BY clock_in DESC, id DESC
+            LIMIT 1
+            """, arguments: [userId])
     }
 
     /// Add minutes to a time string like "10:00" → "10:15".
