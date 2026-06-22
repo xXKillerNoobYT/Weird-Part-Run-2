@@ -2322,6 +2322,28 @@ struct JobsServiceTests {
             "Soft-deleted labor entry notes must not gain supply_run markers")
     }
 
+    @Test("activeSupplyRunStart returns the latest unmatched supply run start")
+    func testActiveSupplyRunStart_returnsLatestUnmatchedStart() throws {
+        let notes = """
+        [supply_run_start:2026-06-19T12:00:00Z] [supply_run_end:2026-06-19T12:25:00Z] \
+        picked up couplings [supply_run_start:2026-06-19T13:10:00Z]
+        """
+
+        let start = try #require(JobsService.activeSupplyRunStart(notes: notes))
+
+        #expect(CoreFormatters.iso8601.string(from: start) == "2026-06-19T13:10:00Z")
+    }
+
+    @Test("activeSupplyRunStart returns nil when latest supply run is ended")
+    func testActiveSupplyRunStart_returnsNilWhenLatestRunEnded() {
+        let notes = """
+        [supply_run_start:2026-06-19T12:00:00Z] [supply_run_end:2026-06-19T12:25:00Z] \
+        [supply_run_start:2026-06-19T13:10:00Z] [supply_run_end:2026-06-19T13:40:00Z]
+        """
+
+        #expect(JobsService.activeSupplyRunStart(notes: notes) == nil)
+    }
+
     @Test("answerOneTimeQuestion is a no-op on a soft-deleted question")
     func testAnswerOneTimeQuestion_noOpOnSoftDeletedQuestion() throws {
         let env = try E2ETestHelpers.setUp()
