@@ -131,6 +131,23 @@ struct IOSMovementWizard: View {
                         .disabled(isExecuting)
                     }
                 }
+                ToolbarItemGroup(placement: .keyboard) {
+                    if currentStep == 2 && isPartSearchFocused {
+                        Button("Dismiss Keyboard") {
+                            isPartSearchFocused = false
+                        }
+                        .accessibilityIdentifier("movement_wizard_keyboard_dismiss")
+
+                        Spacer()
+
+                        Button("Next") {
+                            isPartSearchFocused = false
+                            withAnimation { currentStep += 1 }
+                        }
+                        .disabled(!canAdvance)
+                        .accessibilityIdentifier("movement_wizard_keyboard_next")
+                    }
+                }
             }
             .task { restoreDraft() }
             .interactiveDismissDisabled(isExecuting)
@@ -418,6 +435,11 @@ struct IOSMovementWizard: View {
             TextField("Search by name or code…", text: $partSearchText)
                 .focused($isPartSearchFocused)
                 .textInputAutocapitalization(.never)
+                .submitLabel(.done)
+                .focused($isPartSearchFocused)
+                .onSubmit {
+                    isPartSearchFocused = false
+                }
                 .onChange(of: partSearchText) {
                     searchParts(query: partSearchText)
                 }
@@ -425,6 +447,7 @@ struct IOSMovementWizard: View {
                 Button {
                     partSearchText = ""
                     partSearchResults = []
+                    isPartSearchFocused = false
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
@@ -487,6 +510,7 @@ struct IOSMovementWizard: View {
         }
         .buttonStyle(.plain)
         .disabled(alreadyAdded)
+        .accessibilityIdentifier("movement_wizard_part_result_\(part.id)")
     }
 
     @ViewBuilder
@@ -522,6 +546,7 @@ struct IOSMovementWizard: View {
                     }
                     .padding(.vertical, 10)
                     .padding(.horizontal, 12)
+                    .accessibilityIdentifier("movement_wizard_selected_part_\(part.partId)")
 
                     if part.id != selectedParts.last?.id {
                         Divider().padding(.leading, 12)
@@ -843,6 +868,7 @@ struct IOSMovementWizard: View {
         HStack {
             if currentStep > 1 && !executeSuccess {
                 Button {
+                    isPartSearchFocused = false
                     withAnimation { currentStep -= 1 }
                 } label: {
                     HStack(spacing: 4) {
@@ -859,6 +885,7 @@ struct IOSMovementWizard: View {
 
             if currentStep < totalSteps {
                 Button {
+                    isPartSearchFocused = false
                     withAnimation { currentStep += 1 }
                 } label: {
                     HStack(spacing: 4) {
@@ -931,6 +958,7 @@ struct IOSMovementWizard: View {
     private func addPart(_ part: PartSearchRow) {
         guard !selectedParts.contains(where: { $0.partId == part.id }) else { return }
         guard selectedParts.count < 20 else { return }
+        isPartSearchFocused = false
         selectedParts.append(WizardPart(
             partId: part.id,
             name: part.name,

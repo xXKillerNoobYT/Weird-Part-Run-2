@@ -14,6 +14,7 @@ struct IOSEditJobSheet: View {
     @State private var jobName: String
     @State private var customerName: String
     @State private var addressLine1: String
+    @State private var addressLine2: String
     @State private var city: String
     @State private var state: String
     @State private var zip: String
@@ -40,6 +41,7 @@ struct IOSEditJobSheet: View {
         _jobName = State(initialValue: job.jobName)
         _customerName = State(initialValue: job.customerName ?? "")
         _addressLine1 = State(initialValue: job.addressLine1 ?? "")
+        _addressLine2 = State(initialValue: job.addressLine2 ?? "")
         _city = State(initialValue: job.city ?? "")
         _state = State(initialValue: job.state ?? "")
         _zip = State(initialValue: job.zip ?? "")
@@ -80,6 +82,7 @@ struct IOSEditJobSheet: View {
                 Section("Customer") {
                     TextField("Customer Name", text: $customerName)
                     TextField("Address", text: $addressLine1)
+                    TextField("Address Line 2", text: $addressLine2)
                     HStack(spacing: 8) {
                         TextField("City", text: $city)
                         TextField("State", text: $state)
@@ -194,16 +197,17 @@ struct IOSEditJobSheet: View {
             try service.updateJob(
                 id: job.id,
                 jobName: jobName.trimmingCharacters(in: .whitespaces),
-                customerName: customerName.isEmpty ? nil : customerName,
-                addressLine1: addressLine1.isEmpty ? nil : addressLine1,
-                city: city.isEmpty ? nil : city,
-                state: state.isEmpty ? nil : state,
-                zip: zip.isEmpty ? nil : zip,
+                customerName: clearableOptionalText(customerName),
+                addressLine1: clearableOptionalText(addressLine1),
+                addressLine2: clearableOptionalText(addressLine2),
+                city: clearableOptionalText(city),
+                state: clearableOptionalText(state),
+                zip: clearableOptionalText(zip),
                 status: status,
                 priority: priority,
                 jobType: jobType,
                 estimatedHours: Double(estimatedHours),
-                notes: notes.isEmpty ? nil : notes,
+                notes: clearableOptionalText(notes),
                 budgetLimit: Double(budgetLimit)
             )
             if applyTemplateChange, let selectedStageTemplateId, selectedStageTemplateId != job.stageTemplateId {
@@ -216,5 +220,12 @@ struct IOSEditJobSheet: View {
             errorMessage = userFriendlyError(error, context: "save job")
         }
         isSaving = false
+    }
+
+    /// JobsService.updateJob uses nil to mean "leave this field unchanged".
+    /// The edit sheet always has a loaded value for these optional fields, so
+    /// an empty string is an intentional clear that must be sent through.
+    private func clearableOptionalText(_ value: String) -> String {
+        value
     }
 }

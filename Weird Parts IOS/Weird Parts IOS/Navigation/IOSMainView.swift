@@ -101,6 +101,13 @@ struct IOSMainView: View {
         return args.contains("-UITesting") && args.contains("-UITestingWarehouseDashboard")
     }
 
+    /// Test-only deep link for clock flow UI QA. Requires `-UITesting` so the
+    /// flag cannot alter production or manual debug navigation.
+    private var isUITestingOpenDashboardClock: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-UITesting") && args.contains("-UITestingOpenDashboardClock")
+    }
+
     private var isUITestingOpenWarehouse: Bool {
         isUITestingOpenWarehouseLocations || isUITestingOpenWarehouseDashboard
     }
@@ -177,6 +184,14 @@ struct IOSMainView: View {
                 moduleNavigationRequests["warehouse"] = ModuleNavigationRequest(
                     moduleId: "warehouse",
                     tabId: "warehouse-dashboard"
+                )
+            } else if isUITestingOpenDashboardClock {
+                selectedModuleId = "dashboard"
+                expandedModuleId = "dashboard"
+                selectedTabPath = "/dashboard/clock"
+                moduleNavigationRequests["dashboard"] = ModuleNavigationRequest(
+                    moduleId: "dashboard",
+                    tabId: "dashboard-clock"
                 )
             }
             badgeManager.refresh()
@@ -754,6 +769,8 @@ struct ModuleHostView: View {
             applyNavigationRequest(navigationRequest)
             if isUITestingOpenPartsCategories, module.id == "parts" {
                 selectedTabId = "parts-categories"
+            } else if isUITestingOpenDashboardClock, module.id == "dashboard" {
+                selectedTabId = "dashboard-clock"
             } else if isUITestingOpenWarehouseDashboard, module.id == "warehouse" {
                 selectedTabId = "warehouse-dashboard"
             } else if isUITestingOpenWarehouseLocations, module.id == "warehouse" {
@@ -783,6 +800,11 @@ struct ModuleHostView: View {
     private var isUITestingOpenWarehouseDashboard: Bool {
         let args = ProcessInfo.processInfo.arguments
         return args.contains("-UITesting") && args.contains("-UITestingWarehouseDashboard")
+    }
+
+    private var isUITestingOpenDashboardClock: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-UITesting") && args.contains("-UITestingOpenDashboardClock")
     }
 
     private var currentPath: String {
