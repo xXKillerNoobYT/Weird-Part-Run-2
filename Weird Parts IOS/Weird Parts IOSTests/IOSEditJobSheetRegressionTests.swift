@@ -13,11 +13,16 @@ final class IOSEditJobSheetRegressionTests: XCTestCase {
             "Edit job sheet should include an address line 2 field in the customer/site section."
         )
         XCTAssertTrue(
-            source.contains("customerName: clearableOptionalText(customerName)")
-                && source.contains("addressLine1: clearableOptionalText(addressLine1)")
-                && source.contains("addressLine2: clearableOptionalText(addressLine2)")
-                && source.contains("notes: clearableOptionalText(notes)"),
-            "Editable optional detail fields must pass an explicit empty string on save so clearing persists instead of being treated as leave-unchanged."
+            source.contains("customerName: changedOptionalText(customerName, original: job.customerName)")
+                && source.contains("addressLine1: changedOptionalText(addressLine1, original: job.addressLine1)")
+                && source.contains("addressLine2: changedOptionalText(addressLine2, original: job.addressLine2)")
+                && source.contains("notes: changedOptionalText(notes, original: job.notes)"),
+            "Editable optional detail fields should only send values that changed; an explicit empty string still persists when clearing a previously populated field."
+        )
+        XCTAssertTrue(
+            source.contains("private func changedOptionalText(_ value: String, original: String?) -> String?")
+                && source.contains("value == (original ?? \"\") ? nil : value"),
+            "Unchanged originally-nil fields should not be converted to empty strings and written back on save."
         )
         XCTAssertFalse(
             source.contains("customerName.isEmpty ? nil : customerName")

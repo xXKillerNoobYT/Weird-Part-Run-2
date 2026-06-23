@@ -436,7 +436,6 @@ struct IOSMovementWizard: View {
                 .focused($isPartSearchFocused)
                 .textInputAutocapitalization(.never)
                 .submitLabel(.done)
-                .focused($isPartSearchFocused)
                 .onSubmit {
                     isPartSearchFocused = false
                 }

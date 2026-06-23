@@ -196,19 +196,19 @@ struct IOSEditJobSheet: View {
         do {
             try service.updateJob(
                 id: job.id,
-                jobName: jobName.trimmingCharacters(in: .whitespaces),
-                customerName: clearableOptionalText(customerName),
-                addressLine1: clearableOptionalText(addressLine1),
-                addressLine2: clearableOptionalText(addressLine2),
-                city: clearableOptionalText(city),
-                state: clearableOptionalText(state),
-                zip: clearableOptionalText(zip),
-                status: status,
-                priority: priority,
-                jobType: jobType,
-                estimatedHours: Double(estimatedHours),
-                notes: clearableOptionalText(notes),
-                budgetLimit: Double(budgetLimit)
+                jobName: changedRequiredText(jobName, original: job.jobName),
+                customerName: changedOptionalText(customerName, original: job.customerName),
+                addressLine1: changedOptionalText(addressLine1, original: job.addressLine1),
+                addressLine2: changedOptionalText(addressLine2, original: job.addressLine2),
+                city: changedOptionalText(city, original: job.city),
+                state: changedOptionalText(state, original: job.state),
+                zip: changedOptionalText(zip, original: job.zip),
+                status: changedRequiredText(status, original: job.status),
+                priority: changedRequiredText(priority, original: job.priority),
+                jobType: changedRequiredText(jobType, original: job.jobType),
+                estimatedHours: changedDouble(estimatedHours, original: job.estimatedHours),
+                notes: changedOptionalText(notes, original: job.notes),
+                budgetLimit: changedDouble(budgetLimit, original: job.budgetLimit)
             )
             if applyTemplateChange, let selectedStageTemplateId, selectedStageTemplateId != job.stageTemplateId {
                 let preview = try service.previewJobStageTemplateAssignment(jobId: job.id, templateId: selectedStageTemplateId)
@@ -222,10 +222,20 @@ struct IOSEditJobSheet: View {
         isSaving = false
     }
 
-    /// JobsService.updateJob uses nil to mean "leave this field unchanged".
-    /// The edit sheet always has a loaded value for these optional fields, so
-    /// an empty string is an intentional clear that must be sent through.
-    private func clearableOptionalText(_ value: String) -> String {
-        value
+    private func changedRequiredText(_ value: String, original: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        return trimmed == original ? nil : trimmed
+    }
+
+    private func changedOptionalText(_ value: String, original: String?) -> String? {
+        value == (original ?? "") ? nil : value
+    }
+
+    private func changedDouble(_ value: String, original: Double?) -> Double? {
+        let originalValue = original.map { String($0) } ?? ""
+        if value == originalValue {
+            return nil
+        }
+        return Double(value)
     }
 }
