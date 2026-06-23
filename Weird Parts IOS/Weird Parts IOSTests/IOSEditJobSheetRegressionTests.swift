@@ -24,6 +24,12 @@ final class IOSEditJobSheetRegressionTests: XCTestCase {
                 && source.contains("value == (original ?? \"\") ? nil : value"),
             "Unchanged originally-nil fields should not be converted to empty strings and written back on save."
         )
+        XCTAssertTrue(
+            source.contains("clearEstimatedHours: shouldClearDouble(estimatedHours, original: job.estimatedHours)")
+                && source.contains("clearBudgetLimit: shouldClearDouble(budgetLimit, original: job.budgetLimit)")
+                && source.contains("private func shouldClearDouble(_ value: String, original: Double?) -> Bool"),
+            "Editable optional numeric fields should distinguish unchanged nil values from explicitly cleared populated values."
+        )
         XCTAssertFalse(
             source.contains("customerName.isEmpty ? nil : customerName")
                 || source.contains("addressLine1.isEmpty ? nil : addressLine1")

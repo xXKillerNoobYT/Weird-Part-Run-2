@@ -208,7 +208,9 @@ struct IOSEditJobSheet: View {
                 jobType: changedRequiredText(jobType, original: job.jobType),
                 estimatedHours: changedDouble(estimatedHours, original: job.estimatedHours),
                 notes: changedOptionalText(notes, original: job.notes),
-                budgetLimit: changedDouble(budgetLimit, original: job.budgetLimit)
+                budgetLimit: changedDouble(budgetLimit, original: job.budgetLimit),
+                clearEstimatedHours: shouldClearDouble(estimatedHours, original: job.estimatedHours),
+                clearBudgetLimit: shouldClearDouble(budgetLimit, original: job.budgetLimit)
             )
             if applyTemplateChange, let selectedStageTemplateId, selectedStageTemplateId != job.stageTemplateId {
                 let preview = try service.previewJobStageTemplateAssignment(jobId: job.id, templateId: selectedStageTemplateId)
@@ -232,10 +234,15 @@ struct IOSEditJobSheet: View {
     }
 
     private func changedDouble(_ value: String, original: Double?) -> Double? {
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
         let originalValue = original.map { String($0) } ?? ""
-        if value == originalValue {
+        if trimmed == originalValue || trimmed.isEmpty {
             return nil
         }
-        return Double(value)
+        return Double(trimmed)
+    }
+
+    private func shouldClearDouble(_ value: String, original: Double?) -> Bool {
+        value.trimmingCharacters(in: .whitespaces).isEmpty && original != nil
     }
 }

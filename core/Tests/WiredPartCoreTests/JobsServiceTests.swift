@@ -348,6 +348,28 @@ struct JobsServiceTests {
         #expect(detail.notes == "")
     }
 
+    @Test("Update job clears optional numeric fields when requested")
+    func testUpdateJobClearsOptionalNumericFields() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try env.jobs.createJob(
+            jobNumber: "J-CLEAR-NUMERIC",
+            jobName: "Clear Numeric Fields",
+            estimatedHours: 12.5,
+            budgetLimit: 4_200,
+            createdBy: env.adminUserId
+        )
+
+        try env.jobs.updateJob(
+            id: jobId,
+            clearEstimatedHours: true,
+            clearBudgetLimit: true
+        )
+
+        let detail = try env.jobs.getJob(id: jobId)
+        #expect(detail.estimatedHours == nil)
+        #expect(detail.budgetLimit == nil)
+    }
+
     @Test("Job stats")
     func testJobStats() throws {
         let env = try E2ETestHelpers.setUp()
