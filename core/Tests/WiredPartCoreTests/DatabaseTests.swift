@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import GRDB
 @testable import WiredPartCore
@@ -342,4 +343,5 @@ struct DatabaseTests {
         #expect(columns.contains("budget_limit"))
         #expect(columns.contains("budget_alert_percent"))
     }
+
 }
