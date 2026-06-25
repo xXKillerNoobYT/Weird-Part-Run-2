@@ -1612,6 +1612,32 @@ struct WarehouseServiceExtTests {
         #expect(areas.count == 4)
     }
 
+    @Test("createStorageUnit rejects non-positive levels and area counts")
+    func testCreateStorageUnit_rejectsNonPositiveDimensions() throws {
+        let env = try E2ETestHelpers.setUp()
+        let plan = try env.warehouse.createFloorPlan(name: "Dimension Guard WH", widthInches: 400, lengthInches: 300)
+
+        for dimensions in [
+            (levels: 0, areasPerLevel: 1),
+            (levels: -1, areasPerLevel: 1),
+            (levels: 1, areasPerLevel: 0),
+            (levels: 1, areasPerLevel: -1)
+        ] {
+            #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+                _ = try env.warehouse.createStorageUnit(
+                    floorPlanId: plan.id!,
+                    name: "Invalid Rack",
+                    unitType: "rack",
+                    levels: dimensions.levels,
+                    areasPerLevel: dimensions.areasPerLevel
+                )
+            }
+        }
+
+        let units = try env.warehouse.listStorageUnits(floorPlanId: plan.id!)
+        #expect(units.isEmpty)
+    }
+
     @Test("deleteStorageLevel soft-deletes the level")
     func testDeleteStorageLevel() throws {
         let env = try E2ETestHelpers.setUp()
