@@ -110,6 +110,19 @@ final class OrdersSessionUnavailableRegressionTests: XCTestCase {
         )
     }
 
+    func testPOSendConfirmationDismissesBeforeParentRefresh() throws {
+        let sendSheetSource = try Self.readOrdersSource(named: "POSendToSupplierSheet.swift")
+
+        XCTAssertFalse(
+            sendSheetSource.contains("isSaving = false\n                    onConfirmedSent()\n                    dismiss()"),
+            "PO sent confirmation must not refresh the parent before dismissing the sheet."
+        )
+        XCTAssertTrue(
+            sendSheetSource.contains("isSaving = false\n                    dismiss()\n                    onConfirmedSent()"),
+            "Successful PO sent confirmation should dismiss the sheet before refreshing the parent presenter."
+        )
+    }
+
     private static func readOrdersSource(named filename: String, file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL

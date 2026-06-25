@@ -663,8 +663,8 @@ struct POSendToSupplierSheet: View {
                 }
                 await MainActor.run {
                     isSaving = false
-                    onConfirmedSent()
                     dismiss()
+                    onConfirmedSent()
                 }
             } catch {
                 await MainActor.run {
