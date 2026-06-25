@@ -4890,6 +4890,10 @@ public final class WarehouseService: Sendable {
         levels: Int,
         areasPerLevel: Int
     ) throws -> WarehouseStorageUnit {
+        guard levels > 0, areasPerLevel > 0 else {
+            throw WarehouseError.invalidDimension
+        }
+
         let existingUnits = try listStorageUnits(floorPlanId: floorPlanId)
         let unitIndex = existingUnits.count + 1
         let rowNumber = String(format: "R%02d", 1)
