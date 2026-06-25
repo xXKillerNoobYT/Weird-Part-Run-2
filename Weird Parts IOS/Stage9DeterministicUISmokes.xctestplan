@@ -20,7 +20,8 @@
       "parallelizable" : false,
       "selectedTests" : [
         "Weird_Parts_IOSUITests/testWEI3144JobMaterialsWalkthroughEvidence()",
-        "Weird_Parts_IOSUITests/testWEI3295Stage8ReportsViewportHarness()"
+        "Weird_Parts_IOSUITests/testWEI3295Stage8ReportsViewportHarness()",
+        "Weird_Parts_IOSUITests/testWEI3988BackupRestoreSmokeEvidence()"
       ],
       "target" : {
         "containerPath" : "container:Weird Parts IOS/Weird Parts.xcodeproj",

@@ -166,7 +166,8 @@ struct IOSBackupsPage: View {
     }
 
     private var dbPath: String? {
-        try? AppCore.databasePath()
+        let isUITesting = ProcessInfo.processInfo.arguments.contains("-UITesting")
+        return try? AppCore.databasePath(isUITesting: isUITesting)
     }
 
     private func formatFileSize(_ bytes: UInt64) -> String {
