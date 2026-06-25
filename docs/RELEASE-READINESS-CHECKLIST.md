@@ -110,7 +110,7 @@
 | 3.2.3 | Conflict resolver handles LWW + field-level merge correctly | Sync Lead | ☐ |
 | 3.2.4 | No orphaned records after cascade deletes | QA Lead | ☐ |
 | 3.2.5 | VACUUM runs periodically without data loss | Backend Lead | ☐ |
-| 3.2.6 | Database backup/restore verified end-to-end | QA Lead | ☐ |
+| 3.2.6 | Database backup/restore candidate evidence recorded ([beta runbook](runbooks/wpr2-backup-restore-upgrade-recovery.md); evidence attached in WEI-3986/WEI-3987/WEI-3988/WEI-3990); release completion remains pending owner beta approval | QA Lead | ☐ |
 | 3.2.7 | In-memory test DB matches production schema exactly | Backend Lead | ☐ |
 
 ### 3.3 Sync & Offline
@@ -479,7 +479,7 @@ Stage 9 beta field-test smoke package: [`docs/testing/wei-3091-stage-9-beta-smok
 | # | Check | Owner | Status |
 |---|-------|-------|--------|
 | 10.3.1 | Incident response playbook (data corruption, sync failure, device compromise) | DevOps | ☐ |
-| 10.3.2 | Backup and restore procedures documented and tested | DevOps | ☐ |
+| 10.3.2 | Backup and restore procedures documented with candidate test evidence ([beta runbook](runbooks/wpr2-backup-restore-upgrade-recovery.md); documentation linked, evidence attached in WEI-3986/WEI-3987/WEI-3988/WEI-3990); release completion remains pending owner beta approval | DevOps | ☐ |
 | 10.3.3 | Database migration rollback procedures | Backend Lead | ☐ |
 | 10.3.4 | Device fleet management procedures (add/remove/revoke devices) | DevOps | ☐ |
 | 10.3.5 | Release process documentation (build, test, submit, monitor) | Release Manager | ☐ |
