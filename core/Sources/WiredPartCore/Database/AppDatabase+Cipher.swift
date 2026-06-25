@@ -38,6 +38,9 @@ extension AppDatabase {
 
         var config = Configuration()
         config.foreignKeysEnabled = true
+        config.qos = .userInitiated
+        // Pin GRDB QoS — see AppDatabase.openDatabase(atPath:) for rationale.
+        config.targetQueue = AppDatabase.makeDatabaseTargetQueue()
         config.prepareDatabase { db in
             // Set the encryption key as a SQLCipher passphrase. Do not use
             // `x'<hex>'` raw-key notation here: raw keys bypass SQLCipher's KDF.

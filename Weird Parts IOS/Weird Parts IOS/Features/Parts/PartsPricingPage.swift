@@ -1082,11 +1082,26 @@ struct PricingEditSheet: View {
     @State private var supplierCosts: [PartsService.PartSupplierCost] = []
     @State private var loadError: String?
 
+    private var pricingValidationMessage: String? {
+        do {
+            if useFixedPrice {
+                _ = try ManualPricingInputValidator.parseMoney(fixedPriceText, fieldName: "Fixed Price")
+            } else if pricingMode == "markup" {
+                _ = try ManualPricingInputValidator.parsePercent(markupText, fieldName: "Markup")
+            } else {
+                _ = try ManualPricingInputValidator.parsePercent(marginText, fieldName: "Margin")
+            }
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
     private var previewSellPrice: Double {
-        if useFixedPrice, let fixed = Double(fixedPriceText), fixed > 0 {
+        if useFixedPrice, let fixed = try? ManualPricingInputValidator.parseMoney(fixedPriceText, fieldName: "Fixed Price") {
             return max(fixed, row.weightedAvgCost) // never below cost
         }
-        let markup = Double(markupText) ?? 0
+        let markup = (try? ManualPricingInputValidator.parsePercent(markupText, fieldName: "Markup")) ?? row.effectiveMarkup
         return row.weightedAvgCost * (1 + max(markup, 0) / 100)
     }
 
@@ -1231,6 +1246,13 @@ struct PricingEditSheet: View {
                             }
                         }
                     }
+
+                    if let pricingValidationMessage {
+                        Label(pricingValidationMessage, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                            .accessibilityIdentifier("manual-pricing-validation-error")
+                    }
                 }
 
                 // Preview
@@ -1293,7 +1315,7 @@ struct PricingEditSheet: View {
                     } label: {
                         if isSaving { ProgressView() } else { Text("Save") }
                     }
-                    .disabled(isSaving)
+                    .disabled(isSaving || pricingValidationMessage != nil)
                 }
             }
             .interactiveDismissDisabled(isSaving)
@@ -1347,13 +1369,13 @@ struct PricingEditSheet: View {
             }
 
             if useFixedPrice {
-                let fixed = Double(fixedPriceText) ?? 0
+                let fixed = try ManualPricingInputValidator.parseMoney(fixedPriceText, fieldName: "Fixed Price")
                 _ = try service.setPricingTier(partId: row.id, fixedSellPrice: max(fixed, row.weightedAvgCost))
             } else if pricingMode == "markup" {
-                let markup = max(Double(markupText) ?? 0, 0)
+                let markup = try ManualPricingInputValidator.parsePercent(markupText, fieldName: "Markup")
                 _ = try service.setPricingTier(partId: row.id, markupPercent: markup)
             } else {
-                let margin = max(Double(marginText) ?? 0, 0)
+                let margin = try ManualPricingInputValidator.parsePercent(marginText, fieldName: "Margin")
                 _ = try service.setPricingTier(partId: row.id, marginPercent: margin)
             }
 
