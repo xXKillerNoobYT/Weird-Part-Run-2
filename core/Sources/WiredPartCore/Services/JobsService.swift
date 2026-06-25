@@ -18,6 +18,14 @@ public final class JobsService: Sendable {
         self.db = db
     }
 
+    func readDatabase<T>(_ block: (Database) throws -> T) throws -> T {
+        try db.writer.read(block)
+    }
+
+    func writeDatabase<T>(_ block: (Database) throws -> T) throws -> T {
+        try db.writer.write(block)
+    }
+
     // =========================================================================
     // MARK: - Error Types
     // =========================================================================
@@ -802,6 +810,7 @@ public final class JobsService: Sendable {
         jobName: String,
         customerName: String? = nil,
         addressLine1: String? = nil,
+        siteName: String? = nil,
         addressLine2: String? = nil,
         city: String? = nil,
         state: String? = nil,
@@ -834,7 +843,7 @@ public final class JobsService: Sendable {
                 sql: """
                     INSERT INTO jobs
                     (job_number, job_name, customer_name,
-                     address_line1, address_line2, city, state, zip,
+                     address_line1, site_name, address_line2, city, state, zip,
                      gps_lat, gps_lng, status, priority, job_type,
                      bill_rate_type_id, billing_rate, estimated_hours,
                      lead_user_id, on_call_type,
@@ -843,11 +852,11 @@ public final class JobsService: Sendable {
                      budget_limit, budget_alert_percent, created_by,
                      job_classification,
                      created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                     """,
                 arguments: [
                     jobNumber, jobName, customerName,
-                    addressLine1, addressLine2, city, state, zip,
+                    addressLine1, siteName, addressLine2, city, state, zip,
                     gpsLat, gpsLng, status, priority, jobType,
                     billRateTypeId, billingRate, estimatedHours,
                     leadUserId, onCallType,
@@ -858,6 +867,7 @@ public final class JobsService: Sendable {
                 ]
             )
             let jobId = dbConn.lastInsertedRowID
+            try Self.ensureJobStableId(dbConn: dbConn, jobId: jobId)
             if let defaultTemplateId = try Int64.fetchOne(dbConn, sql: """
                 SELECT id FROM job_stage_templates
                 WHERE is_default = 1 AND archived_at IS NULL
@@ -900,7 +910,7 @@ public final class JobsService: Sendable {
         }
     }
 
-    /// Update an existing job. Only non-nil fields are updated.
+    /// Update an existing job. Only non-nil fields are updated, except explicit clear flags set supported nullable fields to NULL.
     public func updateJob(
         id: Int64,
         jobName: String? = nil,
@@ -927,7 +937,9 @@ public final class JobsService: Sendable {
         completedDate: String? = nil,
         notes: String? = nil,
         budgetLimit: Double? = nil,
-        budgetAlertPercent: Double? = nil
+        budgetAlertPercent: Double? = nil,
+        clearEstimatedHours: Bool = false,
+        clearBudgetLimit: Bool = false
     ) throws {
         if let jobName, jobName.trimmingCharacters(in: .whitespaces).isEmpty {
             throw JobsError.requiredFieldEmpty
@@ -953,7 +965,8 @@ public final class JobsService: Sendable {
             if let jobType { setClauses.append("job_type = ?"); args.append(jobType) }
             if let billRateTypeId { setClauses.append("bill_rate_type_id = ?"); args.append(billRateTypeId) }
             if let billingRate { setClauses.append("billing_rate = ?"); args.append(billingRate) }
-            if let estimatedHours { setClauses.append("estimated_hours = ?"); args.append(estimatedHours) }
+            if clearEstimatedHours { setClauses.append("estimated_hours = NULL") }
+            else if let estimatedHours { setClauses.append("estimated_hours = ?"); args.append(estimatedHours) }
             if let leadUserId { setClauses.append("lead_user_id = ?"); args.append(leadUserId) }
             if let onCallType { setClauses.append("on_call_type = ?"); args.append(onCallType) }
             if let warrantyStartDate { setClauses.append("warranty_start = ?"); args.append(warrantyStartDate) }
@@ -962,7 +975,8 @@ public final class JobsService: Sendable {
             if let dueDate { setClauses.append("due_date = ?"); args.append(dueDate) }
             if let completedDate { setClauses.append("completed_date = ?"); args.append(completedDate) }
             if let notes { setClauses.append("notes = ?"); args.append(notes) }
-            if let budgetLimit { setClauses.append("budget_limit = ?"); args.append(budgetLimit) }
+            if clearBudgetLimit { setClauses.append("budget_limit = NULL") }
+            else if let budgetLimit { setClauses.append("budget_limit = ?"); args.append(budgetLimit) }
             if let budgetAlertPercent { setClauses.append("budget_alert_percent = ?"); args.append(budgetAlertPercent) }
 
             guard !setClauses.isEmpty else { return }
@@ -3289,7 +3303,9 @@ public final class JobsService: Sendable {
                 "Internal time bucket for Shop / Warehouse clock entries."
             ]
         )
-        return dbConn.lastInsertedRowID
+        let jobId = dbConn.lastInsertedRowID
+        try ensureJobStableId(dbConn: dbConn, jobId: jobId)
+        return jobId
     }
 
     /// List active/in-progress jobs, optionally excluding a specific job ID.

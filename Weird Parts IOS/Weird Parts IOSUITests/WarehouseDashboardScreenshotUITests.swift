@@ -61,6 +61,27 @@ final class WarehouseDashboardScreenshotUITests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testWarehouseDashboardNewMovementQuickActionOpensWizard() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["WEIRD_PARTS_UI_TEST_PIN"] = Self.uiTestingPIN
+        app.launchArguments += [
+            "-UITesting",
+            "-UITestingWEI936AutoLogin",
+            "-UITestingDispatchBoard",
+            "-UITestingWarehouseDashboard",
+        ]
+        app.launch()
+
+        navigateToWarehouse(in: app)
+        openNewMovementFromDashboard(in: app)
+
+        XCTAssertTrue(
+            app.staticTexts["Where is stock moving?"].waitForExistence(timeout: 10),
+            "Tapping the Warehouse Dashboard New Movement quick action should open the guided movement wizard."
+        )
+    }
+
     private func assertKPIExists(
         in app: XCUIApplication,
         identifier: String,
@@ -88,6 +109,12 @@ final class WarehouseDashboardScreenshotUITests: XCTestCase {
 
         let warehouseTab = app.buttons["tab_warehouse"].firstMatch
         if warehouseTab.waitForExistence(timeout: 8) {
+            // Full-sidebar iPad launches can already be deep-linked to Warehouse.
+            // Tapping an already-expanded Warehouse row collapses its subtabs, so
+            // first give the requested dashboard subtab/content a chance to settle.
+            if openWarehouseDashboardSubtab(in: app, timeout: 5) {
+                return
+            }
             warehouseTab.tap()
         } else if openMoreTab(in: app) {
             let warehouse = app.buttons["Warehouse"].firstMatch
@@ -103,6 +130,12 @@ final class WarehouseDashboardScreenshotUITests: XCTestCase {
             warehouse.tap()
         } else {
             XCTFail("Warehouse module tab should be reachable")
+        }
+
+        if !openWarehouseDashboardSubtab(in: app, timeout: 10), warehouseTab.exists {
+            // If the first tap collapsed the full-sidebar row, tap once more to
+            // re-expand and expose the stable warehouse subtabs.
+            warehouseTab.tap()
         }
 
         XCTAssertTrue(
@@ -139,7 +172,30 @@ final class WarehouseDashboardScreenshotUITests: XCTestCase {
             return true
         }
 
+        // Full-sidebar iPad launches can already be deep-linked to the dashboard,
+        // in which case the dashboard subtab may be represented by the active
+        // page rather than a separate horizontal chip. Treat a visible KPI as the
+        // same successful user state: the Warehouse Dashboard is reachable.
+        if app.descendants(matching: .any)["warehouseKPIAuditScore"].firstMatch.exists
+            || app.descendants(matching: .any)["warehouseKPITotalStock"].firstMatch.exists
+            || app.buttons["whAction_newMovement"].firstMatch.exists {
+            return true
+        }
+
         return false
+    }
+
+    private func openNewMovementFromDashboard(in app: XCUIApplication) {
+        let newMovement = app.buttons["whAction_newMovement"].firstMatch
+        XCTAssertTrue(
+            newMovement.waitForExistence(timeout: 10),
+            "Warehouse Dashboard should expose a stable New Movement entry point"
+        )
+        XCTAssertTrue(
+            newMovement.isHittable,
+            "Warehouse Dashboard New Movement entry point should be hittable immediately after opening the dashboard"
+        )
+        newMovement.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
     private func openWarehouseSettingsFromDashboard(in app: XCUIApplication) {

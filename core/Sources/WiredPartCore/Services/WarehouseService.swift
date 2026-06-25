@@ -357,6 +357,8 @@ public final class WarehouseService: Sendable {
         "truck→warehouse", "trailer→warehouse",
         "pulled→warehouse",
         "warehouse→job",
+        "job→return", "truck→return", "trailer→return",
+        "return→warehouse", "return→truck", "return→trailer",
     ]
 
     /// Paths that require a photo.
@@ -862,6 +864,8 @@ public final class WarehouseService: Sendable {
         guard !movementType.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw WarehouseError.requiredFieldEmpty
         }
+        try Self.validateLocationEndpointCompleteness(locationType: fromLocationType, locationId: fromLocationId)
+        try Self.validateLocationEndpointCompleteness(locationType: toLocationType, locationId: toLocationId)
         return try db.writer.write { dbConn in
             // Guard: part must exist and not be tombstoned — otherwise the INSERT
             // would create an orphan stock_movement against a soft-deleted part.
@@ -986,7 +990,7 @@ public final class WarehouseService: Sendable {
         gpsLat: Double? = nil,
         gpsLng: Double? = nil
     ) throws -> Int64 {
-        try createMovement(
+        return try createMovement(
             partId: partId,
             qty: qty,
             fromLocationType: fromLocationType,
@@ -1007,6 +1011,79 @@ public final class WarehouseService: Sendable {
 
     /// Input spec for a single movement in a batch. Mirrors `createMovement` parameters
     /// minus `performedBy` (passed once at the batch level).
+    public enum GuidedMovementLocationType: String, Sendable, CaseIterable {
+        case warehouse
+        case pulled
+        case truck
+        case trailer
+        case job
+        case returnHolding = "return"
+    }
+
+    public struct GuidedMovementInput: Sendable {
+        public let partId: Int64
+        public let qty: Int
+        public let fromLocationType: GuidedMovementLocationType
+        public let fromLocationId: Int64
+        public let toLocationType: GuidedMovementLocationType
+        public let toLocationId: Int64
+        public let performedBy: Int64
+        public let jobId: Int64?
+        public let reason: String?
+        public let notes: String?
+        public let photoPath: String?
+        public let referenceNumber: String?
+        public let unitCostAtMove: Double?
+        public let unitSellAtMove: Double?
+        public let occurredAt: Date?
+        public let verifiedBy: Int64?
+        public let scanConfirmed: Bool
+        public let gpsLat: Double?
+        public let gpsLng: Double?
+
+        public init(
+            partId: Int64,
+            qty: Int,
+            fromLocationType: GuidedMovementLocationType,
+            fromLocationId: Int64,
+            toLocationType: GuidedMovementLocationType,
+            toLocationId: Int64,
+            performedBy: Int64,
+            jobId: Int64? = nil,
+            reason: String? = nil,
+            notes: String? = nil,
+            photoPath: String? = nil,
+            referenceNumber: String? = nil,
+            unitCostAtMove: Double? = nil,
+            unitSellAtMove: Double? = nil,
+            occurredAt: Date? = nil,
+            verifiedBy: Int64? = nil,
+            scanConfirmed: Bool = false,
+            gpsLat: Double? = nil,
+            gpsLng: Double? = nil
+        ) {
+            self.partId = partId
+            self.qty = qty
+            self.fromLocationType = fromLocationType
+            self.fromLocationId = fromLocationId
+            self.toLocationType = toLocationType
+            self.toLocationId = toLocationId
+            self.performedBy = performedBy
+            self.jobId = jobId
+            self.reason = reason
+            self.notes = notes
+            self.photoPath = photoPath
+            self.referenceNumber = referenceNumber
+            self.unitCostAtMove = unitCostAtMove
+            self.unitSellAtMove = unitSellAtMove
+            self.occurredAt = occurredAt
+            self.verifiedBy = verifiedBy
+            self.scanConfirmed = scanConfirmed
+            self.gpsLat = gpsLat
+            self.gpsLng = gpsLng
+        }
+    }
+
     public struct MovementInput: Sendable {
         public let partId: Int64
         public let qty: Int
@@ -1059,6 +1136,8 @@ public final class WarehouseService: Sendable {
             guard !m.movementType.trimmingCharacters(in: .whitespaces).isEmpty else {
                 throw WarehouseError.requiredFieldEmpty
             }
+            try Self.validateLocationEndpointCompleteness(locationType: m.fromLocationType, locationId: m.fromLocationId)
+            try Self.validateLocationEndpointCompleteness(locationType: m.toLocationType, locationId: m.toLocationId)
         }
         return try db.writer.write { dbConn in
             let userExists = (try Int.fetchOne(dbConn, sql: """
@@ -1141,6 +1220,57 @@ public final class WarehouseService: Sendable {
             }
             return ids
         }
+    }
+
+    /// Execute a guided movement wizard commit through the same ledger-backed
+    /// movement writer used by manual warehouse operations. The wizard API keeps
+    /// every warehouse/pulled/truck/job/return transition auditable by deriving
+    /// the movement type from the endpoints and committing stock + history in one
+    /// database transaction.
+    @discardableResult
+    public func executeGuidedMovement(_ input: GuidedMovementInput) throws -> Int64 {
+        guard input.qty > 0 else { throw WarehouseError.invalidQuantity }
+
+        let fromType = input.fromLocationType.rawValue
+        let toType = input.toLocationType.rawValue
+        let validation = try validateMovement(
+            partId: input.partId,
+            qty: input.qty,
+            fromLocationType: fromType,
+            fromLocationId: input.fromLocationId,
+            toLocationType: toType,
+            toLocationId: input.toLocationId
+        )
+        guard validation.isValid else {
+            if let stockMessage = validation.errors.first(where: { $0.hasPrefix("Insufficient stock:") }) {
+                let numbers = stockMessage.split { !$0.isNumber }.compactMap { Int($0) }
+                throw WarehouseError.insufficientStock(available: numbers.first ?? 0, requested: numbers.dropFirst().first ?? input.qty)
+            }
+            throw WarehouseError.invalidMovementPath(from: fromType, to: toType)
+        }
+
+        return try createMovement(
+            partId: input.partId,
+            qty: input.qty,
+            fromLocationType: fromType,
+            fromLocationId: input.fromLocationId,
+            toLocationType: toType,
+            toLocationId: input.toLocationId,
+            movementType: Self.determineMovementType(from: fromType, to: toType),
+            reason: input.reason,
+            notes: input.notes,
+            performedBy: input.performedBy,
+            jobId: input.jobId,
+            photoPath: input.photoPath,
+            referenceNumber: input.referenceNumber,
+            unitCostAtMove: input.unitCostAtMove,
+            unitSellAtMove: input.unitSellAtMove,
+            occurredAt: input.occurredAt,
+            verifiedBy: input.verifiedBy,
+            scanConfirmed: input.scanConfirmed,
+            gpsLat: input.gpsLat,
+            gpsLng: input.gpsLng
+        )
     }
 
     /// Execute a validated movement with automatic type determination.
@@ -2333,7 +2463,11 @@ public final class WarehouseService: Sendable {
         performedBy: Int64,
         isDamaged: Bool = false
     ) throws -> Int64 {
-        try createMovement(
+        try Self.validateReturnMutationPath(
+            fromLocationType: fromLocationType,
+            toLocationType: toLocationType
+        )
+        return try createMovement(
             partId: partId,
             qty: qty,
             fromLocationType: fromLocationType,
@@ -4017,10 +4151,10 @@ public final class WarehouseService: Sendable {
 
     /// Determine the movement_type based on from/to location types.
     private static func determineMovementType(from: String, to: String) -> String {
-        if to == "warehouse" && (from == "truck" || from == "trailer") {
+        if to == "warehouse" && (from == "truck" || from == "trailer" || from == "return") {
             return StockMovement.MovementType.stockReturn.rawValue
         }
-        if from == "job" {
+        if to == "return" || from == "job" || from == "return" {
             return StockMovement.MovementType.stockReturn.rawValue
         }
         return StockMovement.MovementType.transfer.rawValue
@@ -4031,6 +4165,22 @@ public final class WarehouseService: Sendable {
         let pathKey = "\(fromLocationType)→\(toLocationType)"
         guard validPaths.contains(pathKey) else {
             throw WarehouseError.invalidMovementPath(from: fromLocationType, to: toLocationType)
+        }
+    }
+
+    private static func validateReturnMutationPath(fromLocationType: String, toLocationType: String) throws {
+        let allowedSourceTypes = Set(["warehouse", "pulled", "truck", "trailer", "job"])
+        guard toLocationType == "warehouse", allowedSourceTypes.contains(fromLocationType) else {
+            throw WarehouseError.invalidMovementPath(from: fromLocationType, to: toLocationType)
+        }
+    }
+
+    private static func validateLocationEndpointCompleteness(locationType: String?, locationId: Int64?) throws {
+        switch (locationType, locationId) {
+        case (nil, nil), (.some, .some):
+            return
+        case (.some, nil), (nil, .some):
+            throw WarehouseError.requiredFieldEmpty
         }
     }
 
@@ -4047,6 +4197,8 @@ public final class WarehouseService: Sendable {
             return "Job \(id)"
         case "pulled":
             return "Pulled Staging"
+        case "return":
+            return "Return Holding \(id)"
         default:
             return "\(type) #\(id)"
         }
