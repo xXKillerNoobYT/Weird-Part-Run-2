@@ -13,6 +13,7 @@ struct WarehouseWizardStep3: View {
     @State private var allAreas: [WizardAreaInfo] = []
     @State private var checkedStickers: Set<String> = []
     @State private var checkedCount: Int = 0
+    @State private var stickerProgressKey: String?
 
     private var stickerGroups: [(unitName: String, items: [WizardAreaInfo])] {
         Dictionary(grouping: allAreas, by: \.unitName)
@@ -92,11 +93,19 @@ struct WarehouseWizardStep3: View {
         do {
             guard let service = appCore.warehouseService else { stepError = "Warehouse service not available"; return }
             allAreas = try loadAllWizardAreas(floorPlanId: floorPlanId, service: service)
-            // Restore checked stickers from UserDefaults
-            if let saved = UserDefaults.standard.array(
-                forKey: "wizard_checked_stickers_\(floorPlanId)"
-            ) as? [String] {
-                checkedStickers = Set(saved)
+            let progressKey = try scopedStickerProgressKey()
+            stickerProgressKey = progressKey
+
+            // Progress is intentionally scoped to the active database/company/user,
+            // floor plan, and generated sticker set. Do not fall back to the
+            // legacy floorPlanId-only key: that is the stale-state leak tracked by
+            // GitHub #861. Remove it opportunistically once this setup is opened.
+            UserDefaults.standard.removeObject(forKey: legacyStickerProgressKey)
+            if let saved = UserDefaults.standard.array(forKey: progressKey) as? [String] {
+                let validCodes = Set(allAreas.map(\.fullLocationCode))
+                checkedStickers = Set(saved).intersection(validCodes)
+            } else {
+                checkedStickers = []
             }
             checkedCount = allAreas.filter { checkedStickers.contains($0.fullLocationCode) }.count
         } catch {
@@ -112,10 +121,70 @@ struct WarehouseWizardStep3: View {
             checkedStickers.insert(code)
             checkedCount += 1
         }
-        // Persist progress
-        UserDefaults.standard.set(
-            Array(checkedStickers),
-            forKey: "wizard_checked_stickers_\(floorPlanId)"
+        // Persist progress under the scoped current setup key.
+        // Errors are surfaced via stepError so progress is never silently dropped.
+        do {
+            let progressKey: String
+            if let existing = stickerProgressKey {
+                progressKey = existing
+            } else {
+                progressKey = try scopedStickerProgressKey()
+                stickerProgressKey = progressKey
+            }
+            UserDefaults.standard.set(Array(checkedStickers).sorted(), forKey: progressKey)
+        } catch {
+            stepError = userFriendlyError(error, context: "save sticker progress")
+        }
+    }
+
+    private var legacyStickerProgressKey: String {
+        "wizard_checked_stickers_\(floorPlanId)"
+    }
+
+    private func scopedStickerProgressKey() throws -> String {
+        let profile = try appCore.settingsService?.getBusinessProfile()
+        let businessScope = [
+            "business",
+            profile?.id.map(String.init) ?? "none",
+            profile?.createdAt ?? "unknown"
+        ].joined(separator: ":")
+        let userScope = [
+            "user",
+            appCore.currentUser?.id.map(String.init) ?? "none",
+            appCore.currentUser?.createdAt ?? "unknown"
+        ].joined(separator: ":")
+        let stickerSetSignature = deterministicSignature(
+            allAreas
+                .map(\.fullLocationCode)
+                .sorted()
+                .joined(separator: "|")
         )
+
+        return [
+            "wizard_checked_stickers_v2",
+            scopedKeyComponent(businessScope),
+            scopedKeyComponent(userScope),
+            "floorPlan_\(floorPlanId)",
+            "stickers_\(stickerSetSignature)"
+        ].joined(separator: "_")
+    }
+
+    private func scopedKeyComponent(_ value: String) -> String {
+        value
+            .lowercased()
+            .map { character in
+                character.isLetter || character.isNumber ? character : "-"
+            }
+            .reduce(into: "", { $0.append($1) })
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+    }
+
+    private func deterministicSignature(_ value: String) -> String {
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in value.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 0x100000001b3
+        }
+        return String(hash, radix: 16)
     }
 }

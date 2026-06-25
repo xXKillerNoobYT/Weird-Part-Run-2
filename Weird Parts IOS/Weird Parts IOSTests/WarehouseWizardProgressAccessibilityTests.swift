@@ -54,6 +54,85 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
         )
     }
 
+    func testMovementWizardLocationTilesExposeStableFromToAccessibilityTargets() throws {
+        let source = try Self.readWarehouseSource("IOSMovementWizard.swift")
+
+        XCTAssertTrue(
+            source.contains("role: \"from\"") && source.contains("role: \"to\""),
+            "Movement wizard must distinguish FROM and TO location tiles for user-like automation and VoiceOver."
+        )
+        XCTAssertTrue(
+            source.contains(".accessibilityIdentifier(\"movementWizard_\\(role)_\\(type)\")"),
+            "Movement wizard location tiles need stable role+type accessibility identifiers such as movementWizard_from_warehouse."
+        )
+        XCTAssertTrue(
+            source.contains(".accessibilityLabel(\"\\(roleLabel) \\(label)\")"),
+            "Movement wizard location tiles need unique spoken labels such as From Warehouse and To Truck."
+        )
+        XCTAssertTrue(
+            source.contains("Already selected as the other side of this movement"),
+            "Disabled duplicate-location tiles should explain why they cannot be selected."
+        )
+    }
+
+    func testMovementWizardPartSelectionDismissesKeyboardBeforeNextNavigation() throws {
+        let source = try Self.readWarehouseSource("IOSMovementWizard.swift")
+
+        XCTAssertTrue(
+            source.contains("@FocusState private var isPartSearchFocused"),
+            "Movement wizard must track part-search focus so the iOS keyboard can be dismissed after a part is selected."
+        )
+        XCTAssertTrue(
+            source.contains(".focused($isPartSearchFocused)"),
+            "The part search field must bind to focus state for deterministic keyboard dismissal."
+        )
+        XCTAssertTrue(
+            source.contains("isPartSearchFocused = false") && source.contains("partSearchResults = []"),
+            "Selecting a part should dismiss the keyboard and collapse search results so bottom navigation remains reachable."
+        )
+        XCTAssertTrue(
+            source.contains(".accessibilityIdentifier(\"movement_wizard_next\")"),
+            "The Next button needs a stable accessibility identifier for user-like UI verification."
+        )
+    }
+
+    func testModuleSidebarTabsExposeSameStableSubtabIdentifiersAsTopTabs() throws {
+        let source = try Self.readNavigationSource("IOSMainView.swift")
+        let sidebarStart = try XCTUnwrap(source.range(of: "private var sidebarLayout"))
+        let sidebarTail = source[sidebarStart.lowerBound...]
+        let sidebarEnd = sidebarTail.range(of: "/// Sidebar width adapts")?.lowerBound ?? sidebarTail.endIndex
+        let sidebarSource = String(sidebarTail[..<sidebarEnd])
+        let fullSidebarStart = try XCTUnwrap(source.range(of: "private func fullSidebarTabRow"))
+        let fullSidebarTail = source[fullSidebarStart.lowerBound...]
+        let fullSidebarEnd = fullSidebarTail.range(of: "private var fullSidebarActions")?.lowerBound ?? fullSidebarTail.endIndex
+        let fullSidebarSource = String(fullSidebarTail[..<fullSidebarEnd])
+
+        XCTAssertTrue(
+            sidebarSource.contains(".accessibilityElement(children: .ignore)"),
+            "Sidebar module navigation should expose the button itself as the automation target instead of its child label/icon."
+        )
+        XCTAssertTrue(
+            sidebarSource.contains(".accessibilityIdentifier(\"subtab_\\(tab.id)\")"),
+            "iPad/sidebar module navigation must expose the same stable subtab_<id> identifiers as the horizontal sub-tab picker."
+        )
+        XCTAssertTrue(
+            fullSidebarSource.contains(".accessibilityElement(children: .ignore)"),
+            "Full-sidebar module navigation should expose the button itself as the automation target instead of its child label/icon."
+        )
+        XCTAssertTrue(
+            fullSidebarSource.contains(".accessibilityIdentifier(\"subtab_\\(tab.id)\")"),
+            "Full-sidebar iPad navigation must expose the same stable subtab_<id> identifiers as the horizontal sub-tab picker."
+        )
+        XCTAssertTrue(
+            sidebarSource.contains(".accessibilityLabel(tab.label)") && fullSidebarSource.contains(".accessibilityLabel(tab.label)"),
+            "Sidebar module navigation needs the same readable labels as top tabs for VoiceOver and UI tests."
+        )
+        XCTAssertTrue(
+            sidebarSource.contains(".contentShape(Rectangle())") && fullSidebarSource.contains(".contentShape(Rectangle())"),
+            "Sidebar module navigation needs an explicit tappable hit region for user-like tests."
+        )
+    }
+
     private static func progressBarSection(in source: String) throws -> String {
         guard let start = source.range(of: "private var progressBar") else {
             XCTFail("Missing progressBar property")
@@ -76,6 +155,21 @@ final class WarehouseWizardProgressAccessibilityTests: XCTestCase {
             .appendingPathComponent("Weird Parts IOS")
             .appendingPathComponent("Features")
             .appendingPathComponent("Warehouse")
+            .appendingPathComponent(fileName)
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private static func readNavigationSource(
+        _ fileName: String,
+        file: StaticString = #filePath
+    ) throws -> String {
+        let testFileURL = URL(fileURLWithPath: "\(file)")
+        let projectRoot = testFileURL
+            .deletingLastPathComponent() // Weird Parts IOSTests
+            .deletingLastPathComponent() // Weird Parts IOS
+        let sourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent("Navigation")
             .appendingPathComponent(fileName)
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
