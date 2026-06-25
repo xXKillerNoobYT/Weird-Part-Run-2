@@ -2275,6 +2275,9 @@ public final class WarehouseService: Sendable {
             guard let item = try Self.fetchJobReturnHoldingItem(id: intakeItemId, dbConn: dbConn) else {
                 throw WarehouseError.jobReturnItemNotFound(intakeItemId)
             }
+            guard item.status == "holding" else {
+                throw WarehouseError.invalidMovementPath(from: "job_return_\(item.status)", to: "warehouse")
+            }
             guard item.qtyRemaining >= qty else {
                 throw WarehouseError.insufficientStock(available: item.qtyRemaining, requested: qty)
             }
