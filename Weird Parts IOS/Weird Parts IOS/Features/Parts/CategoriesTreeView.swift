@@ -1,5 +1,8 @@
 import SwiftUI
+import OSLog
 import WiredPartCore
+
+private let categoryPriceLog = Logger(subsystem: "com.wiredpart.ios", category: "CategoriesTreeView")
 
 /// Enum representing which node in the hierarchy tree is selected.
 enum TreeSelection: Equatable {
@@ -9,6 +12,23 @@ enum TreeSelection: Equatable {
     case brand(brandId: Int64, typeId: Int64)
     case color(colorId: Int64, typeId: Int64, brandId: Int64?)
     case sku(skuId: Int64, typeId: Int64, brandId: Int64, colorId: Int64)
+}
+
+enum ColorPriceCacheEntry: Equatable {
+    case resolved(Double?)
+    case unavailable
+}
+
+struct ColorPriceCacheKey: Hashable {
+    let colorId: Int64
+    let typeId: Int64
+}
+
+enum ColorPriceChipState: Equatable {
+    case loading
+    case priced(Double)
+    case unpriced
+    case unavailable
 }
 
 /// Left-panel tree browser: 5-level nested hierarchy showing
@@ -29,7 +49,7 @@ struct CategoriesTreeView: View {
     @State private var searchText = ""
 
     /// Cache of effective cost per colorId, loaded alongside hierarchy.
-    @State private var colorPriceCache: [Int64: Double?] = [:]
+    @State private var colorPriceCache: [ColorPriceCacheKey: ColorPriceCacheEntry] = [:]
     @State private var colorPriceError: String?
     @State private var skuCache: [String: [PartsService.ColorBrandSKU]] = [:]
     @State private var skuLoadErrors: [String: String] = [:]
@@ -251,11 +271,14 @@ struct CategoriesTreeView: View {
     /// Load effective cost for every color in the hierarchy into the cache.
     private func loadColorPrices() {
         guard let parts = appCore.partsService else {
-            colorPriceError = "Parts service unavailable"
+            colorPriceError = "Pricing unavailable: parts service is not ready."
+            colorPriceCache = unavailablePriceCache(for: hierarchy)
+            categoryPriceLog.error("Color price cache unavailable: parts service missing")
             return
         }
         colorPriceError = nil
-        var cache: [Int64: Double?] = [:]
+        var cache: [ColorPriceCacheKey: ColorPriceCacheEntry] = [:]
+        var failedLookups = 0
         for catNode in hierarchy.categories {
             for styleNode in catNode.styles {
                 for typeNode in styleNode.types {
@@ -263,18 +286,52 @@ struct CategoriesTreeView: View {
                     for brandNode in typeNode.brandNodes {
                         for color in brandNode.colors {
                             let colorId = color.id ?? 0
+                            let cacheKey = ColorPriceCacheKey(colorId: colorId, typeId: typeId)
                             do {
                                 let resolved = try parts.getEffectivePrice(colorId: colorId, typeId: typeId)
-                                cache[colorId] = resolved.effectiveCost
+                                cache[cacheKey] = .resolved(resolved.effectiveCost)
                             } catch {
-                                // Price resolution failed for this color; skip silently in cache build
+                                cache[cacheKey] = .unavailable
+                                failedLookups += 1
+                                categoryPriceLog.error("Color price resolution failed colorId=\(colorId, privacy: .public) typeId=\(typeId, privacy: .public): \(String(describing: error), privacy: .public)")
                             }
                         }
                     }
                 }
             }
         }
+        colorPriceError = failedLookups > 0 ? "Some color prices could not be resolved." : nil
         colorPriceCache = cache
+    }
+
+    private func unavailablePriceCache(for hierarchy: PartsService.HierarchyTree) -> [ColorPriceCacheKey: ColorPriceCacheEntry] {
+        var cache: [ColorPriceCacheKey: ColorPriceCacheEntry] = [:]
+        for catNode in hierarchy.categories {
+            for styleNode in catNode.styles {
+                for typeNode in styleNode.types {
+                    let typeId = typeNode.type.id ?? 0
+                    for brandNode in typeNode.brandNodes {
+                        for color in brandNode.colors {
+                            if let colorId = color.id {
+                                cache[ColorPriceCacheKey(colorId: colorId, typeId: typeId)] = .unavailable
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return cache
+    }
+
+    static func priceChipState(for colorId: Int64, typeId: Int64, cache: [ColorPriceCacheKey: ColorPriceCacheEntry]) -> ColorPriceChipState {
+        guard let cached = cache[ColorPriceCacheKey(colorId: colorId, typeId: typeId)] else { return .loading }
+        switch cached {
+        case .resolved(let cost):
+            if let cost { return .priced(cost) }
+            return .unpriced
+        case .unavailable:
+            return .unavailable
+        }
     }
 
     // MARK: - Filtered Hierarchy
@@ -795,7 +852,8 @@ struct CategoriesTreeView: View {
             Button {
                 activeSheet = .editColorPrice(colorId: colorId, typeId: typeId)
             } label: {
-                if let cached = colorPriceCache[colorId], let cost = cached {
+                switch Self.priceChipState(for: colorId, typeId: typeId, cache: colorPriceCache) {
+                case .priced(let cost):
                     Text(cost, format: .currency(code: "USD"))
                         .font(.caption)
                         .fontWeight(.medium)
@@ -804,13 +862,29 @@ struct CategoriesTreeView: View {
                         .background(Color.green.opacity(0.15))
                         .foregroundStyle(.green)
                         .clipShape(Capsule())
-                } else {
+                case .unpriced:
                     Text("No price")
                         .font(.caption)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(Color.orange.opacity(0.12))
                         .foregroundStyle(.orange)
+                        .clipShape(Capsule())
+                case .unavailable:
+                    Label("Price unavailable", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.red.opacity(0.10))
+                        .foregroundStyle(.red)
+                        .clipShape(Capsule())
+                case .loading:
+                    Text("Loading price")
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.gray.opacity(0.12))
+                        .foregroundStyle(.secondary)
                         .clipShape(Capsule())
                 }
             }

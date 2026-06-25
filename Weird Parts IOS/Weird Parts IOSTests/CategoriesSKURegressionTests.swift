@@ -35,6 +35,39 @@ final class CategoriesSKURegressionTests: XCTestCase {
         )
     }
 
+    func testColorPriceResolutionFailuresShowUnavailableState() throws {
+        let source = try Self.readPartsSource(named: "CategoriesTreeView.swift")
+
+        XCTAssertTrue(
+            source.contains("enum ColorPriceCacheEntry") && source.contains("case unavailable"),
+            "The color price cache should preserve failed lookups as an explicit unavailable state."
+        )
+        XCTAssertTrue(
+            source.contains("categoryPriceLog.error") && source.contains("colorId=\\(colorId, privacy: .public) typeId=\\(typeId, privacy: .public)"),
+            "Failed price lookups should log colorId and typeId for debugging."
+        )
+        XCTAssertTrue(
+            source.contains("struct ColorPriceCacheKey: Hashable") &&
+            source.contains("let colorId: Int64") &&
+            source.contains("let typeId: Int64"),
+            "The color price cache key should include both colorId and typeId because effective price lookup is type-specific."
+        )
+        XCTAssertTrue(
+            source.contains("cache[cacheKey] = .unavailable") &&
+            source.contains("priceChipState(for colorId: Int64, typeId: Int64") &&
+            source.contains("ColorPriceCacheKey(colorId: colorId, typeId: typeId)"),
+            "Failed lookups should be cached and rendered per color/type pair so one type cannot overwrite another."
+        )
+        XCTAssertTrue(
+            source.contains("Price unavailable"),
+            "Rows with failed price resolution should render a visible unavailable chip instead of falling back to No price."
+        )
+        XCTAssertTrue(
+            source.contains("Pricing unavailable: parts service is not ready.") && source.contains("unavailablePriceCache(for: hierarchy)"),
+            "A missing parts service should create a visible pricing unavailable state for the hierarchy."
+        )
+    }
+
     private static func readPartsSource(named filename: String, file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL
