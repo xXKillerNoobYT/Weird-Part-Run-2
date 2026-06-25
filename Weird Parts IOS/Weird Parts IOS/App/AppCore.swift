@@ -100,6 +100,9 @@ final class AppCore: ObservableObject {
             if uiTestingMode && !shouldPreserveUITestDatabase {
                 try Self.resetUITestDatabase(atPath: path)
             }
+            if uiTestingMode && ProcessInfo.processInfo.arguments.contains("-UITestingWEI3988RestoreLatestBackup") {
+                try Self.restoreLatestUITestBackup(toPath: path)
+            }
 
             // NOTE: resetDatabaseIfNewBuild() was removed (GitHub #101).
             // It compared the binary's mod date and wiped the DB on every
@@ -794,6 +797,18 @@ final class AppCore: ObservableObject {
         }
     }
 
+    nonisolated private static func restoreLatestUITestBackup(toPath path: String) throws {
+        let fm = FileManager.default
+        let backupDir = (path as NSString).deletingLastPathComponent + "/Backups"
+        guard fm.fileExists(atPath: backupDir) else { return }
+        let backupFiles = try fm.contentsOfDirectory(atPath: backupDir)
+            .filter { $0.hasPrefix("wiredpart-backup-") && $0.hasSuffix(".sqlite") }
+            .sorted()
+        guard let latest = backupFiles.last else { return }
+        let backupPath = backupDir + "/" + latest
+        try AppDatabase.restoreDatabase(from: backupPath, to: path)
+    }
+
     nonisolated static func seedUITestingFixtures(db: AppDatabase, authService: AuthService) throws {
         let seedResult = try authService.seedFirstAdmin(displayName: "UITest Owner", pin: "1234")
         let activeUsers = try authService.getActiveUsers()
@@ -1021,10 +1036,16 @@ final class AppCore: ObservableObject {
         guard ProcessInfo.processInfo.arguments.contains("-UITestingWEI3144JobMaterials"),
               let db
         else { return nil }
+        return uiTestingJobId(db: db, jobNumber: "UITEST-MAT-3144")
+    }
+
+    nonisolated static func uiTestingJobId(db: AppDatabase?, jobNumber: String) -> Int64? {
+        guard let db else { return nil }
         return try? db.writer.read { dbConn in
             try Int64.fetchOne(
                 dbConn,
-                sql: "SELECT id FROM jobs WHERE job_number = 'UITEST-MAT-3144' AND deleted_at IS NULL"
+                sql: "SELECT id FROM jobs WHERE job_number = ? AND deleted_at IS NULL",
+                arguments: [jobNumber]
             )
         }
     }

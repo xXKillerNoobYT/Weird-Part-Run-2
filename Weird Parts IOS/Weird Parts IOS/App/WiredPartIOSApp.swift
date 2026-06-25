@@ -42,20 +42,24 @@ struct WiredPartIOSApp: App {
     @AppStorage(OnboardAIFeatureFlag.onboardingMVP) private var onboardAIMVPEnabled = false
 
     init() {
+        Self.migrateLegacyWelcomeFlags()
+    }
+
+    static func migrateLegacyWelcomeFlags(defaults: UserDefaults = .standard) {
         // One-time migration: users who already completed the old welcome flow
         // don't need to re-run the walkthrough or company-setup wizard.
         // Consume hasSeenWelcome immediately so this never re-fires on a
         // subsequent fresh build where the DB is empty but UserDefaults persisted.
-        if UserDefaults.standard.bool(forKey: "hasSeenWelcome") {
-            if !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") {
-                UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+        if defaults.bool(forKey: "hasSeenWelcome") {
+            if !defaults.bool(forKey: "hasCompletedOnboarding") {
+                defaults.set(true, forKey: "hasCompletedOnboarding")
             }
-            if !UserDefaults.standard.bool(forKey: "hasCompletedCompanySetup") {
-                UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
+            if !defaults.bool(forKey: "hasCompletedCompanySetup") {
+                defaults.set(true, forKey: "hasCompletedCompanySetup")
             }
             // Clear the trigger so a future fresh-DB build doesn't re-apply
             // these flags before bootstrap() can detect the empty database.
-            UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+            defaults.removeObject(forKey: "hasSeenWelcome")
         }
     }
 
@@ -90,6 +94,10 @@ struct WiredPartIOSApp: App {
 
     private var stage8ReportsUITestTarget: Stage8ReportsUITestTarget? {
         Stage8ReportsUITestTarget(processArguments: ProcessInfo.processInfo.arguments)
+    }
+
+    private var wei3988BackupRestoreUITestTarget: WEI3988BackupRestoreUITestTarget? {
+        WEI3988BackupRestoreUITestTarget(processArguments: ProcessInfo.processInfo.arguments)
     }
 
     #if DEBUG
@@ -151,6 +159,11 @@ struct WiredPartIOSApp: App {
                     } else if appCore.currentUser == nil {
                         LoginView()
                             .environmentObject(appCore)
+                    } else if let wei3988BackupRestoreUITestTarget {
+                        NavigationStack {
+                            wei3988BackupRestoreUITestTarget.view(appCore: appCore)
+                                .environmentObject(appCore)
+                        }
                     } else if let stage8ReportsUITestTarget {
                         NavigationStack {
                             stage8ReportsUITestTarget.view(appCore: appCore)
@@ -208,6 +221,49 @@ struct WiredPartIOSApp: App {
             }
             .preferredColorScheme(resolvedColorScheme)
             .tint(accentColor)
+        }
+    }
+}
+
+private enum WEI3988BackupRestoreUITestTarget {
+    case backups
+    case partsCatalog
+    case materials
+    case preBilling
+    case bookkeeper
+
+    init?(processArguments: [String]) {
+        guard processArguments.contains("-UITestingWEI3988BackupRestoreSmoke") else { return nil }
+        if processArguments.contains("-UITestingWEI3988PartsCatalog") {
+            self = .partsCatalog
+        } else if processArguments.contains("-UITestingWEI3988Materials") {
+            self = .materials
+        } else if processArguments.contains("-UITestingWEI3988PreBilling") {
+            self = .preBilling
+        } else if processArguments.contains("-UITestingWEI3988Bookkeeper") {
+            self = .bookkeeper
+        } else {
+            self = .backups
+        }
+    }
+
+    @ViewBuilder
+    func view(appCore: AppCore) -> some View {
+        switch self {
+        case .backups:
+            IOSBackupsPage()
+        case .partsCatalog:
+            PartsRouter(tabId: "parts-catalog")
+        case .materials:
+            if let jobId = AppCore.uiTestingJobId(db: appCore.db, jobNumber: "UITEST-MAT-3144") {
+                IOSJobDetailPage(jobId: jobId)
+            } else {
+                ContentUnavailableView("Restored job missing", systemImage: "exclamationmark.triangle")
+            }
+        case .preBilling:
+            IOSPreBillingPage()
+        case .bookkeeper:
+            IOSBookkeeperExportPage()
         }
     }
 }

@@ -68,6 +68,10 @@ private enum CreateNotebookJobPickerTestError: Error {
     case loadFailed
 }
 
+private enum ShortTermPipelineCallbackActionTestError: Error {
+    case operationFailed
+}
+
 struct Weird_Parts_IOSTests {
 
     private func makeJobListItem(id: Int64, name: String, status: String) -> JobsService.JobListItem {
@@ -203,6 +207,48 @@ struct Weird_Parts_IOSTests {
 
         #expect(auditor.completedIds.isEmpty)
         #expect(auditor.failedIds == [42])
+    }
+
+    @MainActor
+    @Test func currentWalkthroughCompletionDoesNotBypassCompanySetupOnRelaunch() throws {
+        let defaults = try temporaryDefaults()
+
+        OnboardingCompletionDefaults.markCompleted(
+            skippedModules: ["dashboard", "settings"],
+            defaults: defaults
+        )
+        WiredPartIOSApp.migrateLegacyWelcomeFlags(defaults: defaults)
+
+        #expect(defaults.bool(forKey: "hasCompletedOnboarding"))
+        #expect(defaults.bool(forKey: "hasSeenModuleTour"))
+        #expect(!defaults.bool(forKey: "hasSeenWelcome"))
+        #expect(!defaults.bool(forKey: "hasCompletedCompanySetup"))
+        #expect(defaults.data(forKey: "onboarding_skipped_modules") != nil)
+    }
+
+    @MainActor
+    @Test func legacyWelcomeMigrationStillCompletesCompanySetupOnce() throws {
+        let defaults = try temporaryDefaults()
+        defaults.set(true, forKey: "hasSeenWelcome")
+
+        WiredPartIOSApp.migrateLegacyWelcomeFlags(defaults: defaults)
+
+        #expect(defaults.bool(forKey: "hasCompletedOnboarding"))
+        #expect(defaults.bool(forKey: "hasCompletedCompanySetup"))
+        #expect(!defaults.bool(forKey: "hasSeenWelcome"))
+    }
+
+    private func temporaryDefaults() throws -> UserDefaults {
+        let suiteName = "WeirdPartsTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            throw TestDefaultsError.unavailable
+        }
+        defaults.removePersistentDomain(forName: suiteName)
+        return defaults
+    }
+
+    private enum TestDefaultsError: Error {
+        case unavailable
     }
 
     @MainActor
@@ -681,6 +727,48 @@ struct Weird_Parts_IOSTests {
         let source = try String(contentsOf: suppliersURL, encoding: .utf8)
 
         #expect(source.contains("loadError = userFriendlyError(error, context: \"create supplier channel\")"))
+    }
+
+    @MainActor
+    @Test func shortTermPipelineCallbackFailurePreservesSheetAndFormatsActionError() {
+        var reloadCount = 0
+
+        let result = IOSShortTermPipelineCallbackActionHandler.perform(
+            context: "complete callback",
+            operation: {
+                throw ShortTermPipelineCallbackActionTestError.operationFailed
+            },
+            reload: {
+                reloadCount += 1
+            },
+            errorFormatter: { _, context in "Could not \(context). Try again." }
+        )
+
+        #expect(result.errorMessage == "Could not complete callback. Try again.")
+        #expect(!result.shouldDismissSheet)
+        #expect(reloadCount == 0)
+    }
+
+    @MainActor
+    @Test func shortTermPipelineCallbackSuccessReloadsAndDismissesSheet() {
+        var reloadCount = 0
+        var operationCount = 0
+
+        let result = IOSShortTermPipelineCallbackActionHandler.perform(
+            context: "snooze callback",
+            operation: {
+                operationCount += 1
+            },
+            reload: {
+                reloadCount += 1
+            },
+            errorFormatter: { _, context in "Could not \(context). Try again." }
+        )
+
+        #expect(result.errorMessage == nil)
+        #expect(result.shouldDismissSheet)
+        #expect(operationCount == 1)
+        #expect(reloadCount == 1)
     }
 
     @MainActor
