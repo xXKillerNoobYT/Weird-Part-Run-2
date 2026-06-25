@@ -474,6 +474,7 @@ struct IOSClockPage: View {
                     todayHoursSection
                 }
             }
+            .accessibilityIdentifier("clockPage_root")
             .listStyle(.insetGrouped)
         }
     }
@@ -487,6 +488,7 @@ struct IOSClockPage: View {
                 Label(statusLabel, systemImage: statusIcon)
                     .font(.headline)
                     .foregroundStyle(statusColor)
+                    .accessibilityIdentifier("clockPage_currentStatus")
 
                 if activityStatus == "supply_run", let activeSupplyRunStartDate {
                     supplyRunStatusCard(startedAt: activeSupplyRunStartDate)
@@ -535,6 +537,7 @@ struct IOSClockPage: View {
                     .disabled(activeBreakRecord != nil)
                     .opacity(activeBreakRecord != nil ? 0.4 : 1.0)
                     .accessibilityLabel("Clock Out — action required")
+                    .accessibilityIdentifier("clockPage_clockOut")
                     .confirmationDialog("Clock Out?", isPresented: $showClockOutConfirmation, titleVisibility: .visible) {
                         Button("Clock Out", role: .destructive) {
                             if let entryId = pendingClockOutEntryId {
@@ -555,6 +558,7 @@ struct IOSClockPage: View {
                     .buttonStyle(.bordered)
                     .controlSize(.large)
                     .tint(.blue)
+                    .accessibilityIdentifier("clockPage_switchJob")
                     .disabled(activeBreakRecord != nil)
                     .opacity(activeBreakRecord != nil ? 0.4 : 1.0)
                 }
@@ -582,6 +586,7 @@ struct IOSClockPage: View {
                     .buttonStyle(.borderedProminent)
                     .tint(.orange)
                     .controlSize(.large)
+                    .accessibilityIdentifier("clockPage_endBreak")
                 } else {
                     Button {
                         activeSheet = .breakStatePicker
@@ -830,6 +835,7 @@ struct IOSClockPage: View {
             .buttonStyle(.plain)
             .disabled(clockInDisabled)
             .opacity(clockInDisabled ? 0.5 : 1.0)
+            .accessibilityIdentifier("clockPage_shopWarehouse")
         } header: {
             Text("Clock In To")
         }
@@ -1096,6 +1102,7 @@ struct IOSClockPage: View {
             }
         } header: {
             Text("Today's Hours")
+                .accessibilityIdentifier("clockPage_todayHours")
         }
     }
 

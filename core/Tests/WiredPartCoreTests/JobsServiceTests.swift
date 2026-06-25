@@ -318,6 +318,10 @@ struct JobsServiceTests {
             jobName: "Clear Optional Fields",
             customerName: "Customer To Clear",
             addressLine1: "123 Clear St",
+            addressLine2: "Suite 4",
+            city: "Alpine",
+            state: "WY",
+            zip: "83128",
             status: "active",
             notes: "Notes to clear",
             createdBy: env.adminUserId
@@ -327,13 +331,43 @@ struct JobsServiceTests {
             id: jobId,
             customerName: "",
             addressLine1: "",
+            addressLine2: "",
+            city: "",
+            state: "",
+            zip: "",
             notes: ""
         )
 
         let detail = try env.jobs.getJob(id: jobId)
         #expect(detail.customerName == "")
         #expect(detail.addressLine1 == "")
+        #expect(detail.addressLine2 == "")
+        #expect(detail.city == "")
+        #expect(detail.state == "")
+        #expect(detail.zip == "")
         #expect(detail.notes == "")
+    }
+
+    @Test("Update job clears optional numeric fields when requested")
+    func testUpdateJobClearsOptionalNumericFields() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try env.jobs.createJob(
+            jobNumber: "J-CLEAR-NUMERIC",
+            jobName: "Clear Numeric Fields",
+            estimatedHours: 12.5,
+            budgetLimit: 4_200,
+            createdBy: env.adminUserId
+        )
+
+        try env.jobs.updateJob(
+            id: jobId,
+            clearEstimatedHours: true,
+            clearBudgetLimit: true
+        )
+
+        let detail = try env.jobs.getJob(id: jobId)
+        #expect(detail.estimatedHours == nil)
+        #expect(detail.budgetLimit == nil)
     }
 
     @Test("Job stats")

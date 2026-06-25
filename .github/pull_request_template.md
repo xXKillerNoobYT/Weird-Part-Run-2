@@ -1,6 +1,7 @@
 ## Summary
 
-- Issue:
+- Issue: <!-- Closes #N -->
+- Paperclip: <!-- WEI-XXXX (additive traceability, does not substitute GitHub #N) -->
 - Scope:
 
 ## Validation

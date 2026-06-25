@@ -118,7 +118,7 @@ try db.fetch(
 | Base branch | `main` |
 | Branch name | `copilot/<short-slug>` or `fix/<short-slug>` |
 | PR title format | `[Area][Type] Short description` |
-| Issue reference | `Closes #N` must appear in the PR body |
+| Issue reference | `Closes #N` (GitHub issue number) **must** appear in the PR body. `WEI-XXXX` (Paperclip) is **additive only** — include it for traceability but it does **not** substitute the GitHub `#N` reference. Example: `Closes #998` + `Related: WEI-3578` |
 | Draft PRs | Open as draft until `swift build && swift test` passes |
 
 **PR title area prefixes:** `[Parts]`, `[Orders]`, `[Jobs]`, `[Warehouse]`, `[Scheduling]`, `[People]`, `[Fleet]`, `[Tools]`, `[Reports]`, `[Auth]`, `[Sync]`, `[Infra]`, `[AI]`.

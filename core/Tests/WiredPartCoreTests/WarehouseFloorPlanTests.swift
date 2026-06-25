@@ -157,6 +157,23 @@ struct WarehouseFloorPlanTests {
         #expect(units[0].isConfigured)
     }
 
+    @Test("Updating a storage unit rejects blank names")
+    func testUpdateStorageUnitRejectsBlankName() throws {
+        let env = try freshEnv()
+
+        let plan = try env.warehouse.createFloorPlan(name: "WH", widthInches: 200, lengthInches: 200)
+        let unit = try env.warehouse.addStorageUnit(
+            floorPlanId: plan.id!, name: "Original Name", unitType: "rack"
+        )
+
+        #expect(throws: WarehouseService.WarehouseError.requiredFieldEmpty) {
+            try env.warehouse.updateStorageUnit(id: unit.id!, name: "   \n\t  ")
+        }
+
+        let units = try env.warehouse.listStorageUnits(floorPlanId: plan.id!)
+        #expect(units[0].name == "Original Name")
+    }
+
     @Test("Delete cascades through storage hierarchy")
     func testDeleteStorageUnit() throws {
         let env = try freshEnv()

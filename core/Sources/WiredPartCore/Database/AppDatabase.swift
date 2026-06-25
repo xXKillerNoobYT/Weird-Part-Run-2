@@ -50,12 +50,31 @@ public final class AppDatabase: Sendable {
     public static func openDatabase(atPath path: String) throws -> AppDatabase {
         var config = Configuration()
         config.foreignKeysEnabled = true
+        config.qos = .userInitiated
+        // Pin all GRDB serialized queues to a concurrent userInitiated target queue.
+        // Without this, `DispatchQueue.sync` from a lower-QoS caller (e.g. a .utility
+        // sync worker) runs the SQLite work on the caller's thread at the caller's
+        // QoS; a user-interactive thread that then waits on the pool's semaphore
+        // trips libdispatch's priority-inversion warning at GRDB Pool.swift line 80.
+        // The target queue must be concurrent for DatabasePool so reader connections
+        // still execute in parallel.
+        config.targetQueue = makeDatabaseTargetQueue()
         config.prepareDatabase { db in
             // Enable WAL mode for better concurrency
             try db.execute(sql: "PRAGMA journal_mode = WAL")
         }
         let pool = try DatabasePool(path: path, configuration: config)
         return try AppDatabase(pool)
+    }
+
+    /// Build a concurrent userInitiated dispatch queue used as the GRDB target
+    /// queue. See `openDatabase(atPath:)` for the rationale.
+    static func makeDatabaseTargetQueue() -> DispatchQueue {
+        DispatchQueue(
+            label: "com.wiredpart.db.target",
+            qos: .userInitiated,
+            attributes: .concurrent
+        )
     }
 
     /// Open an in-memory database for testing.

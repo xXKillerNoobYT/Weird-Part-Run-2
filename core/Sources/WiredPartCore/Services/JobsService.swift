@@ -910,7 +910,7 @@ public final class JobsService: Sendable {
         }
     }
 
-    /// Update an existing job. Only non-nil fields are updated.
+    /// Update an existing job. Only non-nil fields are updated, except explicit clear flags set supported nullable fields to NULL.
     public func updateJob(
         id: Int64,
         jobName: String? = nil,
@@ -937,7 +937,9 @@ public final class JobsService: Sendable {
         completedDate: String? = nil,
         notes: String? = nil,
         budgetLimit: Double? = nil,
-        budgetAlertPercent: Double? = nil
+        budgetAlertPercent: Double? = nil,
+        clearEstimatedHours: Bool = false,
+        clearBudgetLimit: Bool = false
     ) throws {
         if let jobName, jobName.trimmingCharacters(in: .whitespaces).isEmpty {
             throw JobsError.requiredFieldEmpty
@@ -963,7 +965,8 @@ public final class JobsService: Sendable {
             if let jobType { setClauses.append("job_type = ?"); args.append(jobType) }
             if let billRateTypeId { setClauses.append("bill_rate_type_id = ?"); args.append(billRateTypeId) }
             if let billingRate { setClauses.append("billing_rate = ?"); args.append(billingRate) }
-            if let estimatedHours { setClauses.append("estimated_hours = ?"); args.append(estimatedHours) }
+            if clearEstimatedHours { setClauses.append("estimated_hours = NULL") }
+            else if let estimatedHours { setClauses.append("estimated_hours = ?"); args.append(estimatedHours) }
             if let leadUserId { setClauses.append("lead_user_id = ?"); args.append(leadUserId) }
             if let onCallType { setClauses.append("on_call_type = ?"); args.append(onCallType) }
             if let warrantyStartDate { setClauses.append("warranty_start = ?"); args.append(warrantyStartDate) }
@@ -972,7 +975,8 @@ public final class JobsService: Sendable {
             if let dueDate { setClauses.append("due_date = ?"); args.append(dueDate) }
             if let completedDate { setClauses.append("completed_date = ?"); args.append(completedDate) }
             if let notes { setClauses.append("notes = ?"); args.append(notes) }
-            if let budgetLimit { setClauses.append("budget_limit = ?"); args.append(budgetLimit) }
+            if clearBudgetLimit { setClauses.append("budget_limit = NULL") }
+            else if let budgetLimit { setClauses.append("budget_limit = ?"); args.append(budgetLimit) }
             if let budgetAlertPercent { setClauses.append("budget_alert_percent = ?"); args.append(budgetAlertPercent) }
 
             guard !setClauses.isEmpty else { return }
