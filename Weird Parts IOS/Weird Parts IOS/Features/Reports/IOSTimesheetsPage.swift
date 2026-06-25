@@ -99,6 +99,7 @@ struct IOSTimesheetsPage: View {
         .refreshable { loadData() }
         .task { loadData() }
         .onAppear { postPageContext() }
+        .onChange(of: searchText) { postPageContext() }
         .onDisappear {
             NotificationCenter.default.post(name: .reportsTimesheetsPageInactive, object: nil)
         }
@@ -259,20 +260,6 @@ struct IOSTimesheetsPage: View {
                 }
             }
 
-            HStack {
-                Button {
-                    activeSheet = .correction(segment)
-                } label: {
-                    Label("Correct Entry", systemImage: "pencil.and.list.clipboard")
-                }
-                .accessibilityIdentifier("timesheetCorrectEntryButton-\(segment.id)")
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .hideWithoutPermission("manage_labor")
-
-                Spacer()
-            }
-
             let history = correctionHistory.filter { $0.segmentId == segment.id }
             if !history.isEmpty {
                 Divider()
@@ -297,6 +284,20 @@ struct IOSTimesheetsPage: View {
                             .accessibilityIdentifier("timesheetCorrectionHistoryAllocation")
                     }
                 }
+            }
+
+            HStack {
+                Button {
+                    activeSheet = .correction(segment)
+                } label: {
+                    Label("Correct Entry", systemImage: "pencil.and.list.clipboard")
+                }
+                .accessibilityIdentifier("timesheetCorrectEntryButton-\(segment.id)")
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .hideWithoutPermission("manage_labor")
+
+                Spacer()
             }
         }
         .padding(10)

@@ -137,12 +137,16 @@ struct CreateDispatchSheet: View {
     @ViewBuilder
     private func loadFailureRow(message: String, retryLabel: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Unable to load", systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-                .font(.subheadline.weight(.semibold))
-            Text(message)
-                .foregroundStyle(.secondary)
-                .font(.caption)
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Unable to load", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .font(.subheadline.weight(.semibold))
+                Text(message)
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+            .accessibilityElement(children: .combine)
+
             Button {
                 loadData()
             } label: {
@@ -151,7 +155,6 @@ struct CreateDispatchSheet: View {
             .buttonStyle(.bordered)
             .accessibilityLabel(retryLabel)
         }
-        .accessibilityElement(children: .combine)
     }
 
     private func loadData() {

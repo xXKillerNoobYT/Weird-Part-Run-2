@@ -171,6 +171,49 @@ struct WarehouseServiceExtTests {
         #expect(active.first?.movementType == "receiving_staged")
     }
 
+    @Test("Movement date filters apply before limit cap")
+    func testMovementDateFiltersApplyBeforeLimitCap() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let calendar = Calendar(identifier: .gregorian)
+        let oldDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let recentDate = calendar.date(byAdding: .day, value: 30, to: oldDate)!
+
+        for index in 0..<201 {
+            _ = try env.warehouse.createQuickLogMovement(
+                partId: partId,
+                qty: 1,
+                movementType: "received",
+                occurredAt: calendar.date(byAdding: .minute, value: index, to: oldDate)!,
+                toLocationType: "warehouse",
+                toLocationId: 1,
+                reason: "Old capped movement \(index)",
+                performedBy: env.adminUserId
+            )
+        }
+        _ = try env.warehouse.createQuickLogMovement(
+            partId: partId,
+            qty: 2,
+            movementType: "received",
+            occurredAt: recentDate,
+            toLocationType: "warehouse",
+            toLocationId: 1,
+            reason: "Recent filtered movement",
+            performedBy: env.adminUserId
+        )
+
+        let recentMovements = try env.warehouse.listMovements(
+            startDate: calendar.date(byAdding: .day, value: -1, to: recentDate),
+            endDate: calendar.date(byAdding: .day, value: 1, to: recentDate),
+            limit: 200,
+            sortOrder: .oldestFirst
+        )
+
+        #expect(recentMovements.count == 1)
+        #expect(recentMovements.first?.reason == "Recent filtered movement")
+    }
+
     @Test("Quick Log persists happened-at and audit trail fields")
     func testQuickLogPersistence() throws {
         let env = try E2ETestHelpers.setUp()
@@ -314,6 +357,143 @@ struct WarehouseServiceExtTests {
         #expect(try env.warehouse.getStockQty(partId: partId, locationType: "truck", locationId: 42) == 0)
         let ledger = try #require(try env.warehouse.getInventoryLedger(partId: partId))
         #expect(ledger.movements.count == 1)
+    }
+
+    @Test("Guided warehouse pulled truck job route writes durable ledger history")
+    func testGuidedWarehousePulledTruckJobRouteWritesDurableLedgerHistory() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Guided Ledger Part", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 12, locationType: "warehouse", locationId: 1)
+        _ = try env.warehouse.executeMovement(
+            partId: partId,
+            qty: 5,
+            fromLocationType: "warehouse",
+            fromLocationId: 1,
+            toLocationType: "pulled",
+            toLocationId: jobId,
+            reason: "Stage for guided load",
+            performedBy: env.adminUserId,
+            jobId: jobId
+        )
+        _ = try env.warehouse.executeMovement(
+            partId: partId,
+            qty: 5,
+            fromLocationType: "pulled",
+            fromLocationId: jobId,
+            toLocationType: "truck",
+            toLocationId: 42,
+            reason: "Load guided truck",
+            performedBy: env.adminUserId,
+            jobId: jobId
+        )
+        _ = try env.warehouse.executeMovement(
+            partId: partId,
+            qty: 2,
+            fromLocationType: "truck",
+            fromLocationId: 42,
+            toLocationType: "job",
+            toLocationId: jobId,
+            reason: "Install at job",
+            performedBy: env.adminUserId,
+            jobId: jobId
+        )
+
+        let ledger = try #require(try env.warehouse.getInventoryLedger(partId: partId))
+        #expect(ledger.totalQty == 12)
+        #expect(ledger.locations.contains { $0.locationType == "warehouse" && $0.locationId == 1 && $0.qty == 7 })
+        #expect(ledger.locations.contains { $0.locationType == "truck" && $0.locationId == 42 && $0.qty == 3 })
+        #expect(ledger.locations.contains { $0.locationType == "job" && $0.locationId == jobId && $0.qty == 2 })
+        #expect(ledger.movements.count == 4)
+        #expect(ledger.movements.contains { $0.fromLocationType == "warehouse" && $0.toLocationType == "pulled" && $0.qty == 5 })
+        #expect(ledger.movements.contains { $0.fromLocationType == "pulled" && $0.toLocationType == "truck" && $0.qty == 5 })
+        #expect(ledger.movements.contains { $0.fromLocationType == "truck" && $0.toLocationType == "job" && $0.qty == 2 })
+    }
+
+    @Test("Guided movement rejects incomplete locations without mutating stock or history")
+    func testGuidedMovementRejectsIncompleteLocationsWithoutMutation() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 8, locationType: "warehouse", locationId: 1)
+
+        #expect(throws: WarehouseService.WarehouseError.requiredFieldEmpty) {
+            try env.warehouse.createMovement(
+                partId: partId,
+                qty: 3,
+                fromLocationType: "warehouse",
+                fromLocationId: 1,
+                toLocationType: "truck",
+                toLocationId: nil,
+                movementType: "transfer",
+                reason: "Incomplete destination",
+                performedBy: env.adminUserId
+            )
+        }
+
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1) == 8)
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "truck", locationId: 42) == 0)
+        let ledger = try #require(try env.warehouse.getInventoryLedger(partId: partId))
+        #expect(ledger.movements.count == 1)
+        #expect(!ledger.movements.contains { $0.reason == "Incomplete destination" })
+    }
+
+    @Test("Return movement rejects invalid shortcuts and rolls back")
+    func testReturnMovementRejectsInvalidShortcutAndRollsBack() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 4, locationType: "supplier", locationId: 7)
+
+        #expect(throws: WarehouseService.WarehouseError.invalidMovementPath(from: "supplier", to: "warehouse")) {
+            try env.warehouse.processReturn(
+                partId: partId,
+                qty: 2,
+                fromLocationType: "supplier",
+                fromLocationId: 7,
+                toLocationType: "warehouse",
+                toLocationId: 1,
+                reason: "Invalid direct return",
+                performedBy: env.adminUserId
+            )
+        }
+
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "supplier", locationId: 7) == 4)
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1) == 0)
+        let ledger = try #require(try env.warehouse.getInventoryLedger(partId: partId))
+        #expect(ledger.movements.count == 1)
+        #expect(!ledger.movements.contains { $0.reason == "Invalid direct return" })
+    }
+
+    @Test("Return movement from truck to warehouse writes stock and audit history")
+    func testReturnMovementFromTruckToWarehouseWritesStockAndAuditHistory() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 6, locationType: "truck", locationId: 42)
+
+        _ = try env.warehouse.processReturn(
+            partId: partId,
+            qty: 4,
+            fromLocationType: "truck",
+            fromLocationId: 42,
+            toLocationType: "warehouse",
+            toLocationId: 1,
+            reason: "Return unused truck stock",
+            performedBy: env.adminUserId
+        )
+
+        let ledger = try #require(try env.warehouse.getInventoryLedger(partId: partId))
+        #expect(ledger.locations.contains { $0.locationType == "truck" && $0.locationId == 42 && $0.qty == 2 })
+        #expect(ledger.locations.contains { $0.locationType == "warehouse" && $0.locationId == 1 && $0.qty == 4 })
+        #expect(ledger.movements.contains {
+            $0.fromLocationType == "truck" &&
+                $0.toLocationType == "warehouse" &&
+                $0.movementType == StockMovement.MovementType.stockReturn.rawValue &&
+                $0.qty == 4
+        })
     }
 
     @Test("Movement service returns empty defaults when movement table is missing")

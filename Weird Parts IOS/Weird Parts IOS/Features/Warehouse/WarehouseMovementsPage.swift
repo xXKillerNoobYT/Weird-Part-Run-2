@@ -105,14 +105,17 @@ struct WarehouseMovementsPage: View {
                     Image(systemName: "qrcode.viewfinder")
                 }
                 .accessibilityLabel("Scan QR code")
+                .accessibilityIdentifier("whMovement_scanQR")
                 Button { activeSheet = .quickLog } label: {
                     Image(systemName: "square.and.pencil")
                 }
                 .accessibilityLabel("Quick log movement")
+                .accessibilityIdentifier("whMovement_quickLog")
                 Button { activeSheet = .newMovement } label: {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("New movement")
+                .accessibilityIdentifier("whMovement_openWizard")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
@@ -175,7 +178,7 @@ struct WarehouseMovementsPage: View {
     // MARK: - Smart Card Filters
 
     private var smartCardFilters: some View {
-        let countsByType = Dictionary(grouping: dateFilteredMovements, by: \.movementType)
+        let countsByType = Dictionary(grouping: movements, by: \.movementType)
             .mapValues(\.count)
 
         return ScrollView(.horizontal, showsIndicators: false) {
@@ -187,7 +190,7 @@ struct WarehouseMovementsPage: View {
                             rawValues.reduce(0) { total, rawValue in
                                 total + countsByType[rawValue, default: 0]
                             }
-                        } ?? dateFilteredMovements.count
+                        } ?? movements.count
                     )
                 }
             }
@@ -226,7 +229,7 @@ struct WarehouseMovementsPage: View {
     // MARK: - Filtered Movements
 
     private var filteredMovements: [WarehouseService.MovementRow] {
-        var result = dateFilteredMovements
+        var result = movements
         if let filter = selectedFilter, let movementTypes = filter.movementTypes {
             result = result.filter { movementTypes.contains($0.movementType) }
         }
@@ -235,13 +238,6 @@ struct WarehouseMovementsPage: View {
             result = result.filter { $0.partName.lowercased().contains(query) }
         }
         return result.sorted { ($0.createdAt ?? "") < ($1.createdAt ?? "") }
-    }
-
-    private var dateFilteredMovements: [WarehouseService.MovementRow] {
-        movements.filter { movement in
-            guard let date = movementDate(movement) else { return true }
-            return date >= effectiveStart && date <= effectiveEnd
-        }
     }
 
     // MARK: - Movements List
@@ -370,7 +366,9 @@ struct WarehouseMovementsPage: View {
             message: searchText.isEmpty && selectedFilter == nil
                 ? "Stock movements will appear here as parts are transferred."
                 : "No movements match your criteria.",
-            actionLabel: "New Movement"
+            actionLabel: "New Movement",
+            actionIcon: "plus",
+            actionAccessibilityIdentifier: "whMovement_emptyNewMovement"
         ) {
             activeSheet = .newMovement
         }
@@ -387,7 +385,12 @@ struct WarehouseMovementsPage: View {
         isLoading = movements.isEmpty
         loadError = nil
         do {
-            movements = try service.listMovements(limit: 200, sortOrder: .oldestFirst)
+            movements = try service.listMovements(
+                startDate: effectiveStart,
+                endDate: effectiveEnd,
+                limit: 200,
+                sortOrder: .oldestFirst
+            )
             postAIContext()
         } catch {
             loadError = userFriendlyError(error, context: "load movements")

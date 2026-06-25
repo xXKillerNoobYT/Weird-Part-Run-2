@@ -310,6 +310,29 @@ struct PartsServiceAdvancedTests {
         #expect(preview.errors.map(\.rowNumber).contains(5))
     }
 
+    @Test("previewPartsImportCSV preserves escaped quotes, commas, multiline text, empty fields, and numeric-looking text")
+    func testPreviewPartsImportCSVPreservesQuotedTextAndStringTypes() throws {
+        let env = try E2ETestHelpers.setUp()
+        let csv = [
+            "name,code,category,brand,cost_price,markup_percent,description,unit_of_measure,shelf_location,bin_location,part_type",
+            "\"Quoted \"\"Widget\"\"\",\"00123\",Round Trip Category,,12.50,40,\"Line one, with comma\nLine two says \"\"keep quotes\"\"\",ea,,\"007\",\"field-kit\""
+        ].joined(separator: "\n")
+
+        let preview = try env.parts.previewPartsImportCSV(csv)
+        let part = try #require(preview.newParts.first)
+
+        #expect(preview.errors.isEmpty)
+        #expect(preview.totalRows == 1)
+        #expect(part.name == "Quoted \"Widget\"")
+        #expect(part.code == "00123")
+        #expect(part.brand == nil)
+        #expect(part.fields["description"] == "Line one, with comma\nLine two says \"keep quotes\"")
+        #expect(part.fields["unit_of_measure"] == "ea")
+        #expect(part.fields["shelf_location"] == nil)
+        #expect(part.fields["bin_location"] == "007")
+        #expect(part.fields["part_type"] == "field-kit")
+    }
+
     @Test("previewPartsImportCSV reports invalid cost_price and markup_percent values with row and column context")
     func testPreviewPartsImportCSVRejectsInvalidNumericValues() throws {
         let env = try E2ETestHelpers.setUp()
@@ -355,6 +378,23 @@ struct PartsServiceAdvancedTests {
         #expect(preview.newParts.count == 1)
         #expect(preview.newParts.first?.fields["cost_price"] == "12.50")
         #expect(preview.newParts.first?.fields["markup_percent"] == "40")
+    }
+
+    @Test("previewPartsImportCSV validates stock level fields as non-negative whole numbers")
+    func testPreviewPartsImportCSVRejectsInvalidStockLevels() throws {
+        let env = try E2ETestHelpers.setUp()
+        let csv = """
+        name,code,category,min_stock,target_stock,max_stock
+        Bad Stock Part,BAD-STOCK-001,Test,1.5,-2,many
+        """
+
+        let preview = try env.parts.previewPartsImportCSV(csv)
+
+        #expect(preview.newParts.isEmpty)
+        #expect(preview.errors.count == 3)
+        #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid whole number for min_stock: 1.5" })
+        #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "target_stock cannot be negative" })
+        #expect(preview.errors.contains { $0.rowNumber == 2 && $0.message == "Invalid whole number for max_stock: many" })
     }
 
     @Test("commitPartsImportCSV rejects preview errors before writing partial state")
@@ -484,6 +524,90 @@ struct PartsServiceAdvancedTests {
 
         let export = try env.parts.exportPartsCSV(groups: [.pricing])
         #expect(export.contains("Round Trip Cost Part,ROUND-COST-001,18.75,18.75,40.0,26.25"))
+    }
+
+    @Test("commitPartsImportCSV preserves imported stock thresholds for new parts")
+    func testCommitPartsImportCSVImportsStockThresholdsForNewParts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,min_stock,target_stock,max_stock
+        Stock Threshold Part,STOCK-NEW-001,Stock Import,5,20,40
+        """)
+
+        #expect(preview.errors.isEmpty)
+        #expect(preview.newParts.first?.fields["min_stock"] == "5")
+        #expect(preview.newParts.first?.fields["target_stock"] == "20")
+        #expect(preview.newParts.first?.fields["max_stock"] == "40")
+
+        _ = try env.parts.commitPartsImportCSV(preview)
+
+        let imported = try #require(try env.parts.findPartByCode("STOCK-NEW-001"))
+        #expect(imported.minStockLevel == 5)
+        #expect(imported.targetStockLevel == 20)
+        #expect(imported.maxStockLevel == 40)
+    }
+
+    @Test("commitPartsImportCSV updates stock thresholds on conflicting parts")
+    func testCommitPartsImportCSVUpdatesStockThresholdsForExistingParts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Stock Update")
+        _ = try env.parts.createPart(
+            categoryId: categoryId,
+            name: "Existing Stock Part",
+            code: "STOCK-UPD-001",
+            minStockLevel: 1,
+            maxStockLevel: 3,
+            targetStockLevel: 2
+        )
+
+        var preview = try env.parts.previewPartsImportCSV("""
+        name,code,category,min_stock,target_stock,max_stock
+        Existing Stock Part,STOCK-UPD-001,Stock Update,6,24,48
+        """)
+        preview.conflicts = preview.conflicts.map { conflict in
+            var editable = conflict
+            editable.resolution = .update
+            return editable
+        }
+
+        _ = try env.parts.commitPartsImportCSV(preview)
+
+        let updated = try #require(try env.parts.findPartByCode("STOCK-UPD-001"))
+        #expect(updated.minStockLevel == 6)
+        #expect(updated.targetStockLevel == 24)
+        #expect(updated.maxStockLevel == 48)
+    }
+
+    @Test("exportPartsCSV quotes spreadsheet-prone strings so import preserves text types")
+    func testExportPartsCSVQuotesNumericLookingTextForRoundTrip() throws {
+        let env = try E2ETestHelpers.setUp()
+        let categoryId = try E2ETestHelpers.seedCategory(env, name: "Export Round Trip")
+        _ = try env.parts.createPart(
+            categoryId: categoryId,
+            name: "00123",
+            partType: "field-kit",
+            code: "000456",
+            description: "Use \"quoted\" text, commas, and 007 labels",
+            unitOfMeasure: "ea",
+            companyCostPrice: 7.25,
+            companyMarkupPercent: 30,
+            shelfLocation: "001",
+            binLocation: "007"
+        )
+
+        let export = try env.parts.exportPartsCSV(groups: [.hierarchy, .pricing, .details])
+        #expect(export.contains("\"00123\",\"000456\",Export Round Trip"))
+        #expect(export.contains("7.25,,30.0,"))
+        #expect(export.contains("\"Use \"\"quoted\"\" text, commas, and 007 labels\",ea,field-kit,\"001\",\"007\""))
+
+        let preview = try env.parts.previewPartsImportCSV(export)
+        let roundTripped = try #require(preview.conflicts.first?.parsedRow)
+        #expect(roundTripped.name == "00123")
+        #expect(roundTripped.code == "000456")
+        #expect(roundTripped.fields["description"] == "Use \"quoted\" text, commas, and 007 labels")
+        #expect(roundTripped.fields["shelf_location"] == "001")
+        #expect(roundTripped.fields["bin_location"] == "007")
+        #expect(roundTripped.fields["part_type"] == "field-kit")
     }
 
     @Test("previewPartsImportCSV attaches source metadata for audit sessions")

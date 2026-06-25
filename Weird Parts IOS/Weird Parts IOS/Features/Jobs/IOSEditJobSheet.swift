@@ -14,6 +14,7 @@ struct IOSEditJobSheet: View {
     @State private var jobName: String
     @State private var customerName: String
     @State private var addressLine1: String
+    @State private var addressLine2: String
     @State private var city: String
     @State private var state: String
     @State private var zip: String
@@ -40,6 +41,7 @@ struct IOSEditJobSheet: View {
         _jobName = State(initialValue: job.jobName)
         _customerName = State(initialValue: job.customerName ?? "")
         _addressLine1 = State(initialValue: job.addressLine1 ?? "")
+        _addressLine2 = State(initialValue: job.addressLine2 ?? "")
         _city = State(initialValue: job.city ?? "")
         _state = State(initialValue: job.state ?? "")
         _zip = State(initialValue: job.zip ?? "")
@@ -80,6 +82,7 @@ struct IOSEditJobSheet: View {
                 Section("Customer") {
                     TextField("Customer Name", text: $customerName)
                     TextField("Address", text: $addressLine1)
+                    TextField("Address Line 2", text: $addressLine2)
                     HStack(spacing: 8) {
                         TextField("City", text: $city)
                         TextField("State", text: $state)
@@ -193,18 +196,21 @@ struct IOSEditJobSheet: View {
         do {
             try service.updateJob(
                 id: job.id,
-                jobName: jobName.trimmingCharacters(in: .whitespaces),
-                customerName: customerName.isEmpty ? nil : customerName,
-                addressLine1: addressLine1.isEmpty ? nil : addressLine1,
-                city: city.isEmpty ? nil : city,
-                state: state.isEmpty ? nil : state,
-                zip: zip.isEmpty ? nil : zip,
-                status: status,
-                priority: priority,
-                jobType: jobType,
-                estimatedHours: Double(estimatedHours),
-                notes: notes.isEmpty ? nil : notes,
-                budgetLimit: Double(budgetLimit)
+                jobName: changedRequiredText(jobName, original: job.jobName),
+                customerName: changedOptionalText(customerName, original: job.customerName),
+                addressLine1: changedOptionalText(addressLine1, original: job.addressLine1),
+                addressLine2: changedOptionalText(addressLine2, original: job.addressLine2),
+                city: changedOptionalText(city, original: job.city),
+                state: changedOptionalText(state, original: job.state),
+                zip: changedOptionalText(zip, original: job.zip),
+                status: changedRequiredText(status, original: job.status),
+                priority: changedRequiredText(priority, original: job.priority),
+                jobType: changedRequiredText(jobType, original: job.jobType),
+                estimatedHours: changedDouble(estimatedHours, original: job.estimatedHours),
+                notes: changedOptionalText(notes, original: job.notes),
+                budgetLimit: changedDouble(budgetLimit, original: job.budgetLimit),
+                clearEstimatedHours: shouldClearDouble(estimatedHours, original: job.estimatedHours),
+                clearBudgetLimit: shouldClearDouble(budgetLimit, original: job.budgetLimit)
             )
             if applyTemplateChange, let selectedStageTemplateId, selectedStageTemplateId != job.stageTemplateId {
                 let preview = try service.previewJobStageTemplateAssignment(jobId: job.id, templateId: selectedStageTemplateId)
@@ -216,5 +222,27 @@ struct IOSEditJobSheet: View {
             errorMessage = userFriendlyError(error, context: "save job")
         }
         isSaving = false
+    }
+
+    private func changedRequiredText(_ value: String, original: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        return trimmed == original ? nil : trimmed
+    }
+
+    private func changedOptionalText(_ value: String, original: String?) -> String? {
+        value == (original ?? "") ? nil : value
+    }
+
+    private func changedDouble(_ value: String, original: Double?) -> Double? {
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        let originalValue = original.map { String($0) } ?? ""
+        if trimmed == originalValue || trimmed.isEmpty {
+            return nil
+        }
+        return Double(trimmed)
+    }
+
+    private func shouldClearDouble(_ value: String, original: Double?) -> Bool {
+        value.trimmingCharacters(in: .whitespaces).isEmpty && original != nil
     }
 }

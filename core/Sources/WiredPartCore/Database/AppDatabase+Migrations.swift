@@ -144,6 +144,7 @@ extension AppDatabase {
         registerMigration102PartImportSavedMappings(&migrator)
         registerMigration103TimesheetCorrectionAudit(&migrator)
         registerMigration104AuthTokenSessionDeviceId(&migrator)
+        registerMigration105JobRecordsLocalFirst(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -5857,6 +5858,31 @@ extension AppDatabase {
                           on: "auth_token_sessions",
                           columns: ["parent_refresh_id"],
                           ifNotExists: true)
+        }
+    }
+
+    private static func registerMigration105JobRecordsLocalFirst(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("105_job_records_local_first") { db in
+            try addColumnIfMissing(db, table: "jobs", column: "stable_id", type: .text)
+            try addColumnIfMissing(db, table: "jobs", column: "site_name", type: .text)
+            try db.execute(sql: """
+                UPDATE jobs
+                SET stable_id = lower(hex(randomblob(4))) || '-' ||
+                    lower(hex(randomblob(2))) || '-' ||
+                    lower(hex(randomblob(2))) || '-' ||
+                    lower(hex(randomblob(2))) || '-' ||
+                    lower(hex(randomblob(6)))
+                WHERE stable_id IS NULL OR trim(stable_id) = ''
+                """)
+            try db.execute(sql: """
+                UPDATE jobs
+                SET site_name = address_line1
+                WHERE (site_name IS NULL OR trim(site_name) = '')
+                  AND address_line1 IS NOT NULL
+                  AND trim(address_line1) != ''
+                """)
+            try db.create(index: "idx_jobs_stable_id", on: "jobs", columns: ["stable_id"], unique: true, ifNotExists: true)
+            try db.create(index: "idx_jobs_site_name", on: "jobs", columns: ["site_name"], ifNotExists: true)
         }
     }
 }

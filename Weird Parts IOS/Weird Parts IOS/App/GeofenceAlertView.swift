@@ -251,9 +251,16 @@ struct GeofenceAlertView: View {
                 break
 
             case .anotherJob:
-                if let newJobId = targetJobId, let entryId = activeEntryId {
-                    try service.clockOut(laborEntryId: entryId, gpsLat: exitLat, gpsLng: exitLng)
-                    try service.clockIn(userId: userId, jobId: newJobId, gpsLat: exitLat, gpsLng: exitLng)
+                if let newJobId = targetJobId {
+                    try service.switchClockedInJob(
+                        userId: userId,
+                        nextJobId: newJobId,
+                        at: Date(),
+                        clockOutGpsLat: exitLat,
+                        clockOutGpsLng: exitLng,
+                        clockInGpsLat: exitLat,
+                        clockInGpsLng: exitLng
+                    )
                 }
 
             case .lunch, .breakTime, .doneForDay:

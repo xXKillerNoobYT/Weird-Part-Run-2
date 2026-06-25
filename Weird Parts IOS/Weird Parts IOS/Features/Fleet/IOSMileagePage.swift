@@ -40,6 +40,7 @@ struct IOSMileagePage: View {
         }
             .navigationTitle("Mileage Logs")
             .searchable(text: $searchText, prompt: "Search mileage logs...")
+            .onChange(of: searchText) { _, _ in postFleetMileageContext() }
             .refreshable { loadData() }
             .task { loadData() }
             .onChange(of: scenePhase) { _, phase in
@@ -48,13 +49,7 @@ struct IOSMileagePage: View {
             .onChange(of: dateRange) { loadData() }
             .onChange(of: customStart) { loadData() }
             .onChange(of: customEnd) { loadData() }
-            .onAppear {
-                NotificationCenter.default.post(
-                    name: .fleetMileagePageActive,
-                    object: nil,
-                    userInfo: ["context": fleetMileageContext]
-                )
-            }
+            .onAppear { postFleetMileageContext() }
             .onDisappear {
                 NotificationCenter.default.post(name: .fleetMileagePageInactive, object: nil)
             }
@@ -84,6 +79,14 @@ struct IOSMileagePage: View {
     private var fleetMileageContext: String {
         let searchState = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "none" : "active"
         return "page=Fleet Mileage; total_logs=\(mileageLogs.count); visible_logs=\(filteredLogs.count); date_range=\(dateRange.rawValue); search=\(searchState)"
+    }
+
+    private func postFleetMileageContext() {
+        NotificationCenter.default.post(
+            name: .fleetMileagePageActive,
+            object: nil,
+            userInfo: ["context": fleetMileageContext]
+        )
     }
 
     @ViewBuilder

@@ -42,6 +42,7 @@ struct IOSMaintenancePage: View {
             .task { appCore.onboardingManager?.markCompleted("fleet-maintenance-view") }
             .navigationTitle("Maintenance")
             .searchable(text: $searchText, prompt: "Search maintenance records...")
+            .onChange(of: searchText) { _, _ in postFleetMaintenanceContext() }
             .refreshable { loadData() }
             .task { loadData() }
             .onChange(of: scenePhase) { _, phase in
@@ -50,13 +51,7 @@ struct IOSMaintenancePage: View {
             .onChange(of: dateRange) { loadData() }
             .onChange(of: customStart) { loadData() }
             .onChange(of: customEnd) { loadData() }
-            .onAppear {
-                NotificationCenter.default.post(
-                    name: .fleetMaintenancePageActive,
-                    object: nil,
-                    userInfo: ["context": fleetMaintenanceContext]
-                )
-            }
+            .onAppear { postFleetMaintenanceContext() }
             .onDisappear {
                 NotificationCenter.default.post(name: .fleetMaintenancePageInactive, object: nil)
             }
@@ -86,6 +81,14 @@ struct IOSMaintenancePage: View {
     private var fleetMaintenanceContext: String {
         let searchState = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "none" : "active"
         return "page=Fleet Maintenance; total_records=\(records.count); visible_records=\(filteredRecords.count); date_range=\(dateRange.rawValue); search=\(searchState)"
+    }
+
+    private func postFleetMaintenanceContext() {
+        NotificationCenter.default.post(
+            name: .fleetMaintenancePageActive,
+            object: nil,
+            userInfo: ["context": fleetMaintenanceContext]
+        )
     }
 
     @ViewBuilder

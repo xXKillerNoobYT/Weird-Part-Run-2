@@ -340,9 +340,23 @@ public final class ReportsService: Sendable {
                            COALESCE(le.regular_hours, 0) AS regular_hours,
                            COALESCE(le.overtime_hours, 0) AS overtime_hours,
                            COALESCE(le.status, CASE WHEN le.clock_out IS NULL THEN 'open' ELSE 'completed' END) AS status,
-                           COALESCE(SUM(CASE WHEN br.break_type = 'break' THEN COALESCE(br.duration_minutes, 0) ELSE 0 END), 0) AS paid_break_minutes,
-                           COALESCE(SUM(CASE WHEN br.break_type = 'lunch_paid' THEN COALESCE(br.duration_minutes, 0) ELSE 0 END), 0) AS paid_lunch_minutes,
-                           COALESCE(SUM(CASE WHEN br.break_type = 'lunch_unpaid' THEN COALESCE(br.duration_minutes, 0) ELSE 0 END), 0) AS unpaid_lunch_minutes
+                           COALESCE(SUM(CASE
+                               WHEN br.break_type = 'break'
+                                    AND COALESCE(br.is_paid, 1) = 1
+                               THEN COALESCE(br.duration_minutes, 0)
+                               ELSE 0
+                           END), 0) AS paid_break_minutes,
+                           COALESCE(SUM(CASE
+                               WHEN br.break_type IN ('lunch_paid', 'lunch_unpaid')
+                                    AND COALESCE(br.is_paid, CASE WHEN br.break_type = 'lunch_unpaid' THEN 0 ELSE 1 END) = 1
+                               THEN COALESCE(br.duration_minutes, 0)
+                               ELSE 0
+                           END), 0) AS paid_lunch_minutes,
+                           COALESCE(SUM(CASE
+                               WHEN COALESCE(br.is_paid, CASE WHEN br.break_type = 'lunch_unpaid' THEN 0 ELSE 1 END) = 0
+                               THEN COALESCE(br.duration_minutes, 0)
+                               ELSE 0
+                           END), 0) AS unpaid_lunch_minutes
                     FROM labor_entries le
                     LEFT JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
                     LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
@@ -1459,7 +1473,7 @@ public final class ReportsService: Sendable {
                            COALESCE(tc.checkout_condition, '') AS condition_out,
                            COALESCE(tc.return_condition, '') AS condition_in
                     FROM tool_checkouts tc
-                    LEFT JOIN tools t ON t.id = tc.tool_id
+                    LEFT JOIN tools t ON t.id = tc.tool_id AND t.deleted_at IS NULL
                     LEFT JOIN users u ON u.id = tc.checked_out_by AND u.deleted_at IS NULL
                     WHERE tc.deleted_at IS NULL
                       AND date(tc.checked_out_at) >= ? AND date(tc.checked_out_at) <= ?

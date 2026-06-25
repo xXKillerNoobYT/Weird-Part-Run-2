@@ -17,7 +17,7 @@
 # Environment:
 #   GH_TOKEN                         Required in GitHub Actions.
 #   PR_MAINTENANCE_BASE              Base branch. Default: main.
-#   PR_MAINTENANCE_MAX_PRS           PRs to inspect for candidate. Default: 20.
+#   PR_MAINTENANCE_MAX_PRS           Optional explicit safety cap. Default: inspect all open PRs.
 #   PR_MAINTENANCE_DRY_RUN           Set to 1 to log without side effects.
 #   PR_MAINTENANCE_SKIP_LABELS       Comma-separated labels → manual only.
 #   PR_MAINTENANCE_SKIP_TITLE_REGEX  Extended regex for security/manual titles.
@@ -27,7 +27,7 @@ shopt -s nocasematch
 
 REPO="${1:-${GITHUB_REPOSITORY:-}}"
 BASE="${PR_MAINTENANCE_BASE:-main}"
-MAX_PRS="${PR_MAINTENANCE_MAX_PRS:-20}"
+MAX_PRS="${PR_MAINTENANCE_MAX_PRS:-}"
 DRY_RUN="${PR_MAINTENANCE_DRY_RUN:-0}"
 SKIP_LABELS="${PR_MAINTENANCE_SKIP_LABELS:-security,security-sensitive,manual-review,manual-merge,do-not-merge}"
 SKIP_TITLE_REGEX="${PR_MAINTENANCE_SKIP_TITLE_REGEX:-security|sqlcipher|encryption|auth|payment|credential|secret|keychain}"
@@ -62,21 +62,46 @@ run_or_log() {
   "$@"
 }
 
-echo "==> Scanning up to $MAX_PRS open PRs in $REPO targeting $BASE (one-at-a-time mode)"
+total_open="$(gh api --paginate "repos/$REPO/pulls?state=open&base=$BASE&per_page=100" \
+  --jq '.[] | .number' | wc -l | xargs)"
+
+if [[ "$total_open" -eq 0 ]]; then
+  echo "No open PRs targeting $BASE. Nothing to do."
+  exit 0
+fi
+
+if [[ -n "$MAX_PRS" ]]; then
+  if ! [[ "$MAX_PRS" =~ ^[0-9]+$ ]] || [[ "$MAX_PRS" -lt 1 ]]; then
+    echo "error: PR_MAINTENANCE_MAX_PRS must be a positive integer when set, got '$MAX_PRS'" >&2
+    exit 1
+  fi
+  inspect_limit="$MAX_PRS"
+else
+  inspect_limit="$total_open"
+fi
+
+if [[ "$inspect_limit" -lt "$total_open" ]]; then
+  echo "error: incomplete PR scan refused: total_open=$total_open inspected_limit=$inspect_limit targeting $BASE." >&2
+  echo "Set PR_MAINTENANCE_MAX_PRS to at least $total_open or unset it to inspect the full queue." >&2
+  exit 2
+fi
+
+echo "==> Scanning all $total_open open PRs in $REPO targeting $BASE (one-at-a-time mode)"
+echo "PR scan counts: total_open=$total_open inspected_limit=$inspect_limit"
 
 prs_json="$(gh pr list \
   --repo "$REPO" \
   --base "$BASE" \
   --state open \
-  --limit "$MAX_PRS" \
+  --limit "$inspect_limit" \
   --json number,title,isDraft,labels,headRepositoryOwner,mergeStateStatus,mergeable,autoMergeRequest)"
 
-total="$(jq 'length' <<<"$prs_json")"
-if [[ "$total" -eq 0 ]]; then
-  echo "No open PRs targeting $BASE. Nothing to do."
-  exit 0
+inspected="$(jq 'length' <<<"$prs_json")"
+if [[ "$inspected" -ne "$total_open" ]]; then
+  echo "error: incomplete PR scan: total_open=$total_open inspected=$inspected targeting $BASE." >&2
+  exit 2
 fi
-echo "Found $total open PR(s)."
+echo "Found $total_open open PR(s); inspecting $inspected."
 
 repo_owner="${REPO%%/*}"
 

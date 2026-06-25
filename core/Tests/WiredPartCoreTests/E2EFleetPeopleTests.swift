@@ -346,28 +346,55 @@ struct E2EFleetPeopleTests {
         #expect(count == 1)
     }
 
-    @Test("Job-specific notebook via direct insert")
+    @Test("Job creation creates one duplicate-safe linked notebook")
     func testJobNotebook() throws {
         let env = try E2ETestHelpers.setUp()
         let jobId = try E2ETestHelpers.seedJob(env)
 
-        let nbId = try env.db.writer.write { db -> Int64 in
-            try db.execute(sql: """
-                INSERT INTO notebooks (title, job_id, created_by, is_archived, created_at, updated_at)
-                VALUES ('Job Notes', \(jobId), \(env.adminUserId), 0, datetime('now'), datetime('now'))
-                """)
-            return db.lastInsertedRowID
+        let automaticallyCreatedNotebookId = try env.db.writer.read { db in
+            try Int64.fetchOne(
+                db,
+                sql: """
+                    SELECT id FROM notebooks
+                    WHERE job_id = ? AND notebook_type = 'job' AND deleted_at IS NULL
+                    ORDER BY id ASC LIMIT 1
+                    """,
+                arguments: [jobId]
+            )
         }
-        #expect(nbId > 0)
+        #expect(automaticallyCreatedNotebookId != nil)
 
-        let insertedJobNotebookCount = try env.db.writer.read { db in
+        let notebookCountAfterJobCreation = try env.db.writer.read { db in
             try Int.fetchOne(
                 db,
-                sql: "SELECT COUNT(*) FROM notebooks WHERE id = ? AND job_id = ?",
-                arguments: [nbId, jobId]
+                sql: """
+                    SELECT COUNT(*) FROM notebooks
+                    WHERE job_id = ? AND notebook_type = 'job' AND deleted_at IS NULL
+                    """,
+                arguments: [jobId]
             )!
         }
-        #expect(insertedJobNotebookCount == 1)
+        #expect(notebookCountAfterJobCreation == 1)
+
+        let recoveredNotebookId = try env.notebooks.ensureJobNotebook(
+            jobId: jobId,
+            jobName: "Test Job",
+            jobType: nil,
+            createdBy: env.adminUserId
+        )
+        #expect(recoveredNotebookId == automaticallyCreatedNotebookId)
+
+        let notebookCountAfterRecovery = try env.db.writer.read { db in
+            try Int.fetchOne(
+                db,
+                sql: """
+                    SELECT COUNT(*) FROM notebooks
+                    WHERE job_id = ? AND notebook_type = 'job' AND deleted_at IS NULL
+                    """,
+                arguments: [jobId]
+            )!
+        }
+        #expect(notebookCountAfterRecovery == 1)
     }
 
     @Test("Notebook templates listing")

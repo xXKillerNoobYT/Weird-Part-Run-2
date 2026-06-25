@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreLocation
+@preconcurrency import UserNotifications
 import WiredPartCore
 import os.log
 
@@ -111,6 +112,7 @@ struct IOSClockPage: View {
         case todoPicker
         case switchJobPicker
         case lunchUnpaidPrompt
+        case breakStatePicker
 
         var id: String {
             switch self {
@@ -120,6 +122,47 @@ struct IOSClockPage: View {
             case .todoPicker: "todoPicker"
             case .switchJobPicker: "switchJobPicker"
             case .lunchUnpaidPrompt: "lunchUnpaidPrompt"
+            case .breakStatePicker: "breakStatePicker"
+            }
+        }
+    }
+
+    fileprivate enum BreakStateOption: String, CaseIterable, Identifiable {
+        case paidBreak
+        case paidLunch
+        case unpaidLunch
+
+        var id: String { rawValue }
+
+        var breakType: String {
+            switch self {
+            case .paidBreak: return "break"
+            case .paidLunch: return "lunch_paid"
+            case .unpaidLunch: return "lunch_unpaid"
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .paidBreak: return "Paid Break"
+            case .paidLunch: return "Paid Lunch"
+            case .unpaidLunch: return "Unpaid Lunch / Clocked-Out"
+            }
+        }
+
+        var subtitle: String {
+            switch self {
+            case .paidBreak: return "State-required paid rest break; clock stays running."
+            case .paidLunch: return "Paid meal/rest period; clock stays running until the paid timer ends."
+            case .unpaidLunch: return "Unpaid lunch or offered extra break; shows a paused/clocked-out state."
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .paidBreak: return "cup.and.saucer.fill"
+            case .paidLunch: return "fork.knife"
+            case .unpaidLunch: return "pause.circle.fill"
             }
         }
     }
@@ -243,6 +286,29 @@ struct IOSClockPage: View {
                             activeSheet = nil
                             showLunchUnpaidPrompt = false
                             Task { await endCurrentBreak() }
+                        }
+                    )
+                case .breakStatePicker:
+                    BreakStatePickerSheet(
+                        isOnSupplyRun: activityStatus == "supply_run",
+                        onStartTimedState: { option, minutes in
+                            activeSheet = nil
+                            guard let entryId = activeEntry?.id else { return }
+                            Task {
+                                switch option {
+                                case .paidBreak:
+                                    await startPaidBreak(entryId: entryId, minutes: minutes)
+                                case .paidLunch:
+                                    await startLunchBreak(entryId: entryId, minutes: minutes)
+                                case .unpaidLunch:
+                                    await startUnpaidLunch(entryId: entryId, minutes: minutes)
+                                }
+                            }
+                        },
+                        onToggleSupplyRun: {
+                            activeSheet = nil
+                            guard let entryId = activeEntry?.id else { return }
+                            Task { await toggleSupplyRun(entryId: entryId) }
                         }
                     )
                 }
@@ -406,6 +472,7 @@ struct IOSClockPage: View {
                     todayHoursSection
                 }
             }
+            .accessibilityIdentifier("clockPage_root")
             .listStyle(.insetGrouped)
         }
     }
@@ -419,6 +486,7 @@ struct IOSClockPage: View {
                 Label(statusLabel, systemImage: statusIcon)
                     .font(.headline)
                     .foregroundStyle(statusColor)
+                    .accessibilityIdentifier("clockPage_currentStatus")
 
                 // Live elapsed timer — large, readable display
                 VStack(spacing: 2) {
@@ -463,6 +531,7 @@ struct IOSClockPage: View {
                     .disabled(activeBreakRecord != nil)
                     .opacity(activeBreakRecord != nil ? 0.4 : 1.0)
                     .accessibilityLabel("Clock Out — action required")
+                    .accessibilityIdentifier("clockPage_clockOut")
                     .confirmationDialog("Clock Out?", isPresented: $showClockOutConfirmation, titleVisibility: .visible) {
                         Button("Clock Out", role: .destructive) {
                             if let entryId = pendingClockOutEntryId {
@@ -483,6 +552,7 @@ struct IOSClockPage: View {
                     .buttonStyle(.bordered)
                     .controlSize(.large)
                     .tint(.blue)
+                    .accessibilityIdentifier("clockPage_switchJob")
                     .disabled(activeBreakRecord != nil)
                     .opacity(activeBreakRecord != nil ? 0.4 : 1.0)
                 }
@@ -510,43 +580,22 @@ struct IOSClockPage: View {
                     .buttonStyle(.borderedProminent)
                     .tint(.orange)
                     .controlSize(.large)
+                    .accessibilityIdentifier("clockPage_endBreak")
                 } else {
-                    HStack(spacing: 12) {
-                        Button {
-                            Task { await startLunchBreak(entryId: entry.id) }
-                        } label: {
-                            Label("Paid Lunch", systemImage: "fork.knife")
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(activityStatus == "supply_run")
-
-                        Button {
-                            Task { await startPaidBreak(entryId: entry.id) }
-                        } label: {
-                            Label("Paid Break", systemImage: "cup.and.saucer")
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(activityStatus == "supply_run")
-
-                        Button {
-                            Task { await startUnpaidLunch(entryId: entry.id) }
-                        } label: {
-                            Label("Unpaid Lunch", systemImage: "pause.circle")
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(activityStatus == "supply_run")
-
-                        Button {
-                            Task { await toggleSupplyRun(entryId: entry.id) }
-                        } label: {
-                            Label(
-                                activityStatus == "supply_run" ? "End Run" : "Supply Run",
-                                systemImage: activityStatus == "supply_run" ? "checkmark.circle" : "car.fill"
-                            )
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(activityStatus == "supply_run" ? .green : .orange)
+                    Button {
+                        activeSheet = .breakStatePicker
+                    } label: {
+                        Label(
+                            activityStatus == "supply_run" ? "Break / Lunch / End Supply Run" : "Break / Lunch / Supply Run",
+                            systemImage: activityStatus == "supply_run" ? "checkmark.circle" : "timer"
+                        )
+                        .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(activityStatus == "supply_run" ? .green : .orange)
+                    .controlSize(.large)
+                    .accessibilityLabel("Open break, lunch, and supply run state picker")
+                    .accessibilityHint("Choose paid break, paid lunch, unpaid lunch, or supply run with duration options.")
                 }
             }
             .padding(.vertical, 4)
@@ -605,7 +654,7 @@ struct IOSClockPage: View {
 
             // Budget bar
             if breakRecord.breakType == "break" {
-                let budget = breakBudgetMinutes
+                let budget = activeBreakTargetMinutes(breakRecord)
                 let elapsed = breakElapsedMinutes(breakRecord)
                 let progress = min(1.0, Double(elapsed) / Double(max(1, budget)))
                 ProgressView(value: progress)
@@ -614,7 +663,7 @@ struct IOSClockPage: View {
                     .font(.caption2)
                     .foregroundStyle(.white.opacity(0.8))
             } else if breakRecord.breakType == "lunch_paid" {
-                let paidMin = lunchPaidMinutes
+                let paidMin = activeBreakTargetMinutes(breakRecord)
                 let elapsed = breakElapsedMinutes(breakRecord)
                 let progress = min(1.0, Double(elapsed) / Double(max(1, paidMin)))
                 ProgressView(value: progress)
@@ -656,6 +705,8 @@ struct IOSClockPage: View {
                     Text("You are still clocked into \(entry.jobName) since \(formatTime(entry.clockIn)).")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Active timer recovered. You are still clocked into \(entry.jobName) since \(formatTime(entry.clockIn)).")
                     HStack {
                         Button {
                             recoveredBannerDismissed = true
@@ -663,6 +714,9 @@ struct IOSClockPage: View {
                             Label("Continue Timer", systemImage: "play.circle")
                         }
                         .buttonStyle(.borderedProminent)
+                        .accessibilityLabel("Continue Timer")
+                        .accessibilityHint("Dismisses the recovered timer banner and keeps the active timer running.")
+                        .accessibilityIdentifier("clock-recovered-continue-timer-button")
 
                         Button(role: .destructive) {
                             pendingClockOutEntryId = entry.id
@@ -671,9 +725,11 @@ struct IOSClockPage: View {
                             Label("Clock Out", systemImage: "stop.circle")
                         }
                         .buttonStyle(.bordered)
+                        .accessibilityLabel("Clock Out")
+                        .accessibilityHint("Opens confirmation to clock out of \(entry.jobName).")
+                        .accessibilityIdentifier("clock-recovered-clock-out-button")
                     }
                 }
-                .accessibilityElement(children: .combine)
             }
         }
     }
@@ -749,6 +805,7 @@ struct IOSClockPage: View {
             .buttonStyle(.plain)
             .disabled(clockInDisabled)
             .opacity(clockInDisabled ? 0.5 : 1.0)
+            .accessibilityIdentifier("clockPage_shopWarehouse")
         } header: {
             Text("Clock In To")
         }
@@ -1015,6 +1072,7 @@ struct IOSClockPage: View {
             }
         } header: {
             Text("Today's Hours")
+                .accessibilityIdentifier("clockPage_todayHours")
         }
     }
 
@@ -1343,7 +1401,7 @@ struct IOSClockPage: View {
     }
 
     /// Start a paid break — stays clocked in, starts break timer.
-    private func startPaidBreak(entryId: Int64) async {
+    private func startPaidBreak(entryId: Int64, minutes: Int = 15) async {
         guard let breakSvc = appCore.breakService,
               let userId = appCore.currentUser?.id else {
             await MainActor.run { errorMessage = "Break service unavailable" }
@@ -1351,20 +1409,20 @@ struct IOSClockPage: View {
         }
 
         do {
-            let settings = try breakSvc.getCompanyBreakSettings()
             let record = try breakSvc.startBreak(
                 userId: userId,
                 breakType: "break",
                 laborEntryId: entryId,
-                timerMinutes: settings.roundingMinutes > 0 ? 15 : nil
+                timerMinutes: minutes
             )
             await MainActor.run {
                 activeBreakRecord = record
                 activityStatus = "break"
-                breakBudgetMinutes = 15
+                breakBudgetMinutes = minutes
                 errorMessage = nil
                 appCore.onboardingManager?.markCompleted("clock-break")
                 startBreakTimer()
+                scheduleBreakNotifications(for: record, durationMinutes: minutes)
             }
         } catch {
             await MainActor.run {
@@ -1374,7 +1432,7 @@ struct IOSClockPage: View {
     }
 
     /// Start a lunch — first portion is paid, after paid portion prompts for unpaid.
-    private func startLunchBreak(entryId: Int64) async {
+    private func startLunchBreak(entryId: Int64, minutes: Int? = nil) async {
         guard let breakSvc = appCore.breakService,
               let userId = appCore.currentUser?.id else {
             await MainActor.run { errorMessage = "Break service unavailable" }
@@ -1385,7 +1443,7 @@ struct IOSClockPage: View {
             let settings = try breakSvc.getCompanyBreakSettings()
             let policies = try breakSvc.getBreakPolicy(stateCode: settings.stateCode)
             let lunchPolicy = policies.first { $0.policyType == "state_required_paid" }
-            let paidMin = lunchPolicy?.lunchMinutes ?? 30
+            let paidMin = minutes ?? lunchPolicy?.lunchMinutes ?? 30
 
             let record = try breakSvc.startBreak(
                 userId: userId,
@@ -1399,6 +1457,7 @@ struct IOSClockPage: View {
                 lunchPaidMinutes = paidMin
                 errorMessage = nil
                 startBreakTimer()
+                scheduleBreakNotifications(for: record, durationMinutes: paidMin)
             }
         } catch {
             await MainActor.run {
@@ -1408,7 +1467,7 @@ struct IOSClockPage: View {
     }
 
     /// Start an unpaid lunch directly. It remains anchored to the active labor entry.
-    private func startUnpaidLunch(entryId: Int64) async {
+    private func startUnpaidLunch(entryId: Int64, minutes: Int? = nil) async {
         guard let breakSvc = appCore.breakService,
               let userId = appCore.currentUser?.id else {
             await MainActor.run { errorMessage = "Break service unavailable" }
@@ -1420,13 +1479,15 @@ struct IOSClockPage: View {
                 userId: userId,
                 breakType: "lunch_unpaid",
                 laborEntryId: entryId,
-                timerMinutes: nil
+                timerMinutes: minutes
             )
             await MainActor.run {
                 activeBreakRecord = record
                 activityStatus = "lunch_unpaid"
+                if let minutes { lunchPaidMinutes = minutes }
                 errorMessage = nil
                 startBreakTimer()
+                if let minutes { scheduleBreakNotifications(for: record, durationMinutes: minutes) }
             }
         } catch {
             await MainActor.run {
@@ -1445,8 +1506,9 @@ struct IOSClockPage: View {
         }
 
         do {
-            if let paidRecordId = activeBreakRecord?.id {
+            if let paidRecord = activeBreakRecord, let paidRecordId = paidRecord.id {
                 try breakSvc.endBreak(recordId: paidRecordId)
+                cancelBreakNotifications(for: paidRecord)
             }
             let unpaidRecord = try breakSvc.startBreak(
                 userId: userId,
@@ -1480,6 +1542,7 @@ struct IOSClockPage: View {
 
         do {
             try breakSvc.endBreak(recordId: recordId)
+            cancelBreakNotifications(for: record)
             await MainActor.run {
                 breakTimer?.invalidate()
                 breakTimer = nil
@@ -1496,6 +1559,61 @@ struct IOSClockPage: View {
     }
 
     // MARK: - Break Timer
+
+    private func activeBreakTargetMinutes(_ record: BreakRecord) -> Int {
+        if let timer = record.timerDurationMinutes, timer > 0 { return timer }
+        switch record.breakType {
+        case "break": return breakBudgetMinutes
+        case "lunch_paid", "lunch_unpaid": return lunchPaidMinutes
+        default: return breakBudgetMinutes
+        }
+    }
+
+    private func scheduleBreakNotifications(for record: BreakRecord, durationMinutes: Int) {
+        guard durationMinutes > 0 else { return }
+        let title = activeBreakTitle(record)
+        let fiveMinuteIdentifier = breakNotificationIdentifier(record, suffix: "five-minute")
+        let timeReachedIdentifier = breakNotificationIdentifier(record, suffix: "time-reached")
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            var requests: [UNNotificationRequest] = []
+
+            if durationMinutes > 5 {
+                let content = UNMutableNotificationContent()
+                content.title = "\(title): 5 min remaining"
+                content.body = "Wrap up and head back when this timer ends."
+                content.sound = .default
+                let trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval((durationMinutes - 5) * 60), repeats: false)
+                requests.append(UNNotificationRequest(identifier: fiveMinuteIdentifier, content: content, trigger: trigger))
+            }
+
+            let endContent = UNMutableNotificationContent()
+            endContent.title = "\(title): \(durationMinutes) min reached"
+            endContent.body = record.breakType == "lunch_paid" ? "Paid lunch is complete. Continue unpaid lunch or resume work." : "Your timer is complete."
+            endContent.sound = .default
+            let endTrigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(durationMinutes * 60), repeats: false)
+            requests.append(UNNotificationRequest(identifier: timeReachedIdentifier, content: endContent, trigger: endTrigger))
+
+            for request in requests {
+                UNUserNotificationCenter.current().add(request) { error in
+                    if let error {
+                        logger.error("Failed to schedule break notification \(request.identifier, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                    }
+                }
+            }
+        }
+    }
+
+    private func cancelBreakNotifications(for record: BreakRecord) {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [
+            breakNotificationIdentifier(record, suffix: "five-minute"),
+            breakNotificationIdentifier(record, suffix: "time-reached")
+        ])
+    }
+
+    private func breakNotificationIdentifier(_ record: BreakRecord, suffix: String) -> String {
+        "clock-break-\(record.id ?? record.laborEntryId ?? 0)-\(record.breakType)-\(suffix)"
+    }
 
     private func startBreakTimer() {
         breakTimer?.invalidate()
@@ -1533,10 +1651,11 @@ struct IOSClockPage: View {
         guard let record = activeBreakRecord else { return }
         let elapsed = breakElapsedMinutes(record)
 
-        if record.breakType == "break" && elapsed >= breakBudgetMinutes {
+        let target = activeBreakTargetMinutes(record)
+        if record.breakType == "break" && elapsed >= target {
             // Auto-end break at budget limit
             Task { await endCurrentBreak() }
-        } else if record.breakType == "lunch_paid" && elapsed >= lunchPaidMinutes {
+        } else if record.breakType == "lunch_paid" && elapsed >= target {
             // Paid lunch portion complete — prompt for unpaid continuation
             if !showLunchUnpaidPrompt {
                 showLunchUnpaidPrompt = true
@@ -1877,6 +1996,13 @@ struct IOSClockPage: View {
                 lunchPaidMinutes = lunchPaid
                 if let brk = currentBreak {
                     activityStatus = brk.breakType
+                    if let timer = brk.timerDurationMinutes, timer > 0 {
+                        switch brk.breakType {
+                        case "break": breakBudgetMinutes = timer
+                        case "lunch_paid", "lunch_unpaid": lunchPaidMinutes = timer
+                        default: break
+                        }
+                    }
                     startBreakTimer()
                 } else {
                     activityStatus = currentActivity
@@ -2069,6 +2195,83 @@ private struct TodoPickerSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Skip") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Break State Picker Sheet
+
+private struct BreakStatePickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let isOnSupplyRun: Bool
+    let onStartTimedState: (IOSClockPage.BreakStateOption, Int) -> Void
+    let onToggleSupplyRun: () -> Void
+
+    private let durations = [15, 30, 45, 60]
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Choose the field time state before stepping away from the job.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Text("Paid break and paid lunch keep the job clock running. Unpaid lunch is shown as a paused/clocked-out state for audit visibility. Supply runs keep the job clock running and can be ended from this same picker.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                Section("Timed break / lunch") {
+                    ForEach(IOSClockPage.BreakStateOption.allCases) { option in
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label(option.title, systemImage: option.icon)
+                                .font(.headline)
+                            Text(option.subtitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            HStack(spacing: 8) {
+                                ForEach(durations, id: \.self) { minutes in
+                                    Button("\(minutes)m") {
+                                        onStartTimedState(option, minutes)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                    .accessibilityLabel("Start \(option.title) for \(minutes) minutes")
+                                }
+                            }
+                        }
+                        .padding(.vertical, 6)
+                        .opacity(isOnSupplyRun ? 0.45 : 1)
+                        .disabled(isOnSupplyRun)
+                    }
+                }
+
+                Section("Supply run") {
+                    Button {
+                        onToggleSupplyRun()
+                    } label: {
+                        Label(isOnSupplyRun ? "End Supply Run" : "Start Supply Run", systemImage: isOnSupplyRun ? "checkmark.circle.fill" : "car.fill")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(isOnSupplyRun ? .green : .orange)
+
+                    Text("Supply runs are billable/clocked-in travel for parts or supplies. End the run when you return to normal work.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Break / Lunch State")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
                 }
             }
         }

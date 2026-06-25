@@ -1267,9 +1267,21 @@ private struct QuickEditSheet: View {
         costPrice != originalCostPrice || markupPercent != originalMarkup
     }
 
-    private var sellPrice: Double {
-        let cost = Double(costPrice) ?? 0
-        let markup = Double(markupPercent) ?? 0
+    private var pricingValidationMessage: String? {
+        do {
+            _ = try ManualPricingInputValidator.parseMoney(costPrice, fieldName: "Cost")
+            _ = try ManualPricingInputValidator.parsePercent(markupPercent, fieldName: "Markup")
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    private var sellPrice: Double? {
+        guard let cost = try? ManualPricingInputValidator.parseMoney(costPrice, fieldName: "Cost"),
+              let markup = try? ManualPricingInputValidator.parsePercent(markupPercent, fieldName: "Markup") else {
+            return nil
+        }
         return cost * (1 + markup / 100)
     }
 
@@ -1311,8 +1323,14 @@ private struct QuickEditSheet: View {
                         Text("%")
                     }
                     .frame(minHeight: 44)
-                    LabeledContent("Sell Price", value: String(format: "$%.2f", sellPrice))
+                    LabeledContent("Sell Price", value: sellPrice.map { String(format: "$%.2f", $0) } ?? "—")
                         .foregroundStyle(.secondary)
+                    if let pricingValidationMessage {
+                        Label(pricingValidationMessage, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                            .accessibilityIdentifier("manual-pricing-validation-error")
+                    }
                 }
 
                 Section("Stock") {
@@ -1331,7 +1349,7 @@ private struct QuickEditSheet: View {
                     Button("Save") {
                         Task { await save() }
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || pricingValidationMessage != nil || isSaving)
                 }
             }
             .interactiveDismissDisabled(isDirty || isSaving)
@@ -1364,9 +1382,17 @@ private struct QuickEditSheet: View {
             return
         }
 
+        let cost: Double
+        let markup: Double
+        do {
+            cost = try ManualPricingInputValidator.parseMoney(costPrice, fieldName: "Cost")
+            markup = try ManualPricingInputValidator.parsePercent(markupPercent, fieldName: "Markup")
+        } catch {
+            saveError = error.localizedDescription
+            return
+        }
+
         isSaving = true
-        let cost = Double(costPrice) ?? 0
-        let markup = Double(markupPercent) ?? 0
 
         do {
             try service.updatePart(
@@ -1409,6 +1435,16 @@ private struct PartFormSheet: View {
     @State private var isSaving = false
 
     private let partTypes = ["standard", "special_order", "custom"]
+
+    private var pricingValidationMessage: String? {
+        do {
+            _ = try ManualPricingInputValidator.parseMoney(costPrice, fieldName: "Cost Price")
+            _ = try ManualPricingInputValidator.parsePercent(markupPercent, fieldName: "Markup")
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -1456,6 +1492,12 @@ private struct PartFormSheet: View {
                         Text("%")
                     }
                     .frame(minHeight: 44)
+                    if let pricingValidationMessage {
+                        Label(pricingValidationMessage, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                            .accessibilityIdentifier("manual-pricing-validation-error")
+                    }
                 }
 
                 if appCore.hasPermission("edit_parts_catalog") {
@@ -1487,7 +1529,7 @@ private struct PartFormSheet: View {
                                 }
                             }
                         }
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || selectedCategoryId == 0)
+                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || selectedCategoryId == 0 || pricingValidationMessage != nil)
                     }
                 }
             }
@@ -1517,8 +1559,15 @@ private struct PartFormSheet: View {
     private func save() async {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         guard !trimmedName.isEmpty, selectedCategoryId > 0 else { return }
-        let cost = Double(costPrice) ?? 0
-        let markup = Double(markupPercent) ?? 0
+        let cost: Double
+        let markup: Double
+        do {
+            cost = try ManualPricingInputValidator.parseMoney(costPrice, fieldName: "Cost Price")
+            markup = try ManualPricingInputValidator.parsePercent(markupPercent, fieldName: "Markup")
+        } catch {
+            saveError = error.localizedDescription
+            return
+        }
         guard let service = appCore.partsService else {
             saveError = "Service not available"
             return

@@ -39,6 +39,10 @@ struct IOSInventoryGridPage: View {
         }
     }
 
+    private var selectedLocation: LocationOption {
+        LocationOption(locationType: selectedLocationType, locationId: selectedLocationId)
+    }
+
     private enum StockFilter: String, CaseIterable {
         case lowStock = "Low Stock"
         case outOfStock = "Out of Stock"
@@ -122,9 +126,8 @@ struct IOSInventoryGridPage: View {
         } message: {
             Text(actionError ?? "")
         }
-        .onChange(of: selectedLocationId) {
-            lastLocationType = selectedLocationType
-            lastLocationId = Int(selectedLocationId)
+        .onChange(of: selectedLocation) {
+            persistSelectedLocation()
             loadData()
         }
         .task {
@@ -354,6 +357,11 @@ struct IOSInventoryGridPage: View {
     }
 
     // MARK: - Data Loading
+
+    private func persistSelectedLocation() {
+        lastLocationType = selectedLocationType
+        lastLocationId = Int(selectedLocationId)
+    }
 
     private func loadLocations() {
         guard let service = appCore.warehouseService else {

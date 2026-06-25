@@ -28,6 +28,7 @@ struct IOSMovementWizard: View {
     @State private var selectedParts: [WizardPart] = []
     @State private var partSearchText = ""
     @State private var partSearchResults: [PartSearchRow] = []
+    @FocusState private var isPartSearchFocused: Bool
 
     // Step 3: Quantities (stored in selectedParts[].qty)
 
@@ -128,6 +129,23 @@ struct IOSMovementWizard: View {
                             Label("Save & Exit", systemImage: "square.and.arrow.down")
                         }
                         .disabled(isExecuting)
+                    }
+                }
+                ToolbarItemGroup(placement: .keyboard) {
+                    if currentStep == 2 && isPartSearchFocused {
+                        Button("Dismiss Keyboard") {
+                            isPartSearchFocused = false
+                        }
+                        .accessibilityIdentifier("movement_wizard_keyboard_dismiss")
+
+                        Spacer()
+
+                        Button("Next") {
+                            isPartSearchFocused = false
+                            withAnimation { currentStep += 1 }
+                        }
+                        .disabled(!canAdvance)
+                        .accessibilityIdentifier("movement_wizard_keyboard_next")
                     }
                 }
             }
@@ -257,7 +275,13 @@ struct IOSMovementWizard: View {
 
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                     ForEach(locationTypes, id: \.0) { type, label, icon in
-                        locationButton(type: type, label: label, icon: icon, selected: fromLocationType == type) {
+                        locationButton(
+                            type: type,
+                            label: label,
+                            icon: icon,
+                            role: "from",
+                            selected: fromLocationType == type
+                        ) {
                             fromLocationType = type
                             if toLocationType == type { toLocationType = "" }
                         }
@@ -284,6 +308,7 @@ struct IOSMovementWizard: View {
                     ForEach(locationTypes, id: \.0) { type, label, icon in
                         locationButton(
                             type: type, label: label, icon: icon,
+                            role: "to",
                             selected: toLocationType == type,
                             disabled: type == fromLocationType
                         ) {
@@ -316,7 +341,16 @@ struct IOSMovementWizard: View {
     }
 
     @ViewBuilder
-    private func locationButton(type: String, label: String, icon: String, selected: Bool, disabled: Bool = false, action: @escaping () -> Void) -> some View {
+    private func locationButton(
+        type: String,
+        label: String,
+        icon: String,
+        role: String,
+        selected: Bool,
+        disabled: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        let roleLabel = role == "from" ? "From" : "To"
         Button(action: action) {
             VStack(spacing: 6) {
                 Image(systemName: icon)
@@ -339,6 +373,9 @@ struct IOSMovementWizard: View {
         }
         .buttonStyle(.plain)
         .disabled(disabled)
+        .accessibilityIdentifier("movementWizard_\(role)_\(type)")
+        .accessibilityLabel("\(roleLabel) \(label)")
+        .accessibilityHint(disabled ? "Already selected as the other side of this movement" : "Select \(label) as the \(roleLabel.lowercased()) location")
     }
 
     @ViewBuilder
@@ -396,7 +433,12 @@ struct IOSMovementWizard: View {
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             TextField("Search by name or code…", text: $partSearchText)
+                .focused($isPartSearchFocused)
                 .textInputAutocapitalization(.never)
+                .submitLabel(.done)
+                .onSubmit {
+                    isPartSearchFocused = false
+                }
                 .onChange(of: partSearchText) {
                     searchParts(query: partSearchText)
                 }
@@ -404,6 +446,7 @@ struct IOSMovementWizard: View {
                 Button {
                     partSearchText = ""
                     partSearchResults = []
+                    isPartSearchFocused = false
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
@@ -438,6 +481,7 @@ struct IOSMovementWizard: View {
         let alreadyAdded = selectedParts.contains(where: { $0.partId == part.id })
         Button {
             addPart(part)
+            isPartSearchFocused = false
         } label: {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -465,6 +509,7 @@ struct IOSMovementWizard: View {
         }
         .buttonStyle(.plain)
         .disabled(alreadyAdded)
+        .accessibilityIdentifier("movement_wizard_part_result_\(part.id)")
     }
 
     @ViewBuilder
@@ -500,6 +545,7 @@ struct IOSMovementWizard: View {
                     }
                     .padding(.vertical, 10)
                     .padding(.horizontal, 12)
+                    .accessibilityIdentifier("movement_wizard_selected_part_\(part.partId)")
 
                     if part.id != selectedParts.last?.id {
                         Divider().padding(.leading, 12)
@@ -821,6 +867,7 @@ struct IOSMovementWizard: View {
         HStack {
             if currentStep > 1 && !executeSuccess {
                 Button {
+                    isPartSearchFocused = false
                     withAnimation { currentStep -= 1 }
                 } label: {
                     HStack(spacing: 4) {
@@ -837,6 +884,7 @@ struct IOSMovementWizard: View {
 
             if currentStep < totalSteps {
                 Button {
+                    isPartSearchFocused = false
                     withAnimation { currentStep += 1 }
                 } label: {
                     HStack(spacing: 4) {
@@ -849,6 +897,9 @@ struct IOSMovementWizard: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!canAdvance)
+                .accessibilityIdentifier("movement_wizard_next")
+                .accessibilityLabel("Next")
+                .accessibilityHint("Advance to the next movement wizard step")
             } else if !executeSuccess && executeError == nil {
                 Button {
                     executeMovement()
@@ -906,6 +957,7 @@ struct IOSMovementWizard: View {
     private func addPart(_ part: PartSearchRow) {
         guard !selectedParts.contains(where: { $0.partId == part.id }) else { return }
         guard selectedParts.count < 20 else { return }
+        isPartSearchFocused = false
         selectedParts.append(WizardPart(
             partId: part.id,
             name: part.name,
@@ -913,6 +965,9 @@ struct IOSMovementWizard: View {
             qty: 1,
             availableQty: part.availableQty ?? 0
         ))
+        partSearchText = ""
+        partSearchResults = []
+        isPartSearchFocused = false
     }
 
     private func removePart(_ partId: Int64) {
@@ -1009,8 +1064,6 @@ struct IOSMovementWizard: View {
 
     // MARK: - Draft Persistence (#148)
 
-    private static let draftKey = "movementWizardDraft"
-
     private struct WizardDraftPayload: Codable {
         var currentStep: Int
         var fromLocationType: String
@@ -1036,13 +1089,13 @@ struct IOSMovementWizard: View {
             referenceNumber: referenceNumber
         )
         if let data = try? JSONEncoder().encode(draft) {
-            UserDefaults.standard.set(data, forKey: Self.draftKey)
+            MovementWizardDraftStore.save(data, userId: appCore.currentUser?.id)
         }
         dismiss()
     }
 
     private func restoreDraft() {
-        guard let data = UserDefaults.standard.data(forKey: Self.draftKey),
+        guard let data = MovementWizardDraftStore.loadData(userId: appCore.currentUser?.id),
               let draft = try? JSONDecoder().decode(WizardDraftPayload.self, from: data) else { return }
         currentStep = draft.currentStep
         fromLocationType = draft.fromLocationType
@@ -1057,7 +1110,28 @@ struct IOSMovementWizard: View {
     }
 
     private func clearDraft() {
-        UserDefaults.standard.removeObject(forKey: Self.draftKey)
+        MovementWizardDraftStore.clear(userId: appCore.currentUser?.id)
+    }
+}
+
+enum MovementWizardDraftStore {
+    static let baseKey = "movementWizardDraft"
+
+    static func key(userId: Int64?) -> String {
+        guard let userId else { return "\(baseKey)_anonymous" }
+        return "\(baseKey)_user_\(userId)"
+    }
+
+    static func save(_ data: Data, userId: Int64?) {
+        UserDefaults.standard.set(data, forKey: key(userId: userId))
+    }
+
+    static func loadData(userId: Int64?) -> Data? {
+        UserDefaults.standard.data(forKey: key(userId: userId))
+    }
+
+    static func clear(userId: Int64?) {
+        UserDefaults.standard.removeObject(forKey: key(userId: userId))
     }
 }
 
