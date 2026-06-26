@@ -5,6 +5,51 @@ import GRDB
 
 @Suite("Backup Restore Data Safety Tests", .serialized)
 struct BackupRestoreDataSafetyTests {
+    @Test("Restore from a missing backup leaves the current database file untouched")
+    func testRestoreMissingBackupLeavesCurrentDatabaseUntouched() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("wei-1103-restore-missing-backup-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let targetPath = directory.appendingPathComponent("live.sqlite").path
+        let missingBackupPath = directory.appendingPathComponent("missing-backup.sqlite").path
+        let liveBytes = Data("live database bytes".utf8)
+        try liveBytes.write(to: URL(fileURLWithPath: targetPath))
+
+        do {
+            try AppDatabase.restoreDatabase(from: missingBackupPath, to: targetPath)
+            Issue.record("Restore should throw when the backup file is missing")
+        } catch {
+            let preservedBytes = try Data(contentsOf: URL(fileURLWithPath: targetPath))
+            #expect(preservedBytes == liveBytes)
+        }
+    }
+
+    @Test("Repeated rapid backups all create usable snapshots")
+    func testRapidRepeatedBackupsDoNotCollide() throws {
+        let fixture = try Self.makeCriticalFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+
+        let sourceSnapshot = try Self.snapshot(at: fixture.databasePath)
+        var backupPaths: [String] = []
+        for index in 0..<20 {
+            let backupPath = try #require(AppDatabase.backupDatabase(atPath: fixture.databasePath))
+            backupPaths.append(backupPath)
+            #expect(FileManager.default.fileExists(atPath: backupPath))
+
+            let restoredPath = fixture.directory.appendingPathComponent("rapid-restore-\(index).sqlite").path
+            try AppDatabase.restoreDatabase(from: backupPath, to: restoredPath)
+            let restoredSnapshot = try Self.snapshot(at: restoredPath)
+            #expect(restoredSnapshot == sourceSnapshot)
+        }
+
+        #expect(Set(backupPaths).count == backupPaths.count)
+        for backupPath in backupPaths.suffix(5) {
+            #expect(FileManager.default.fileExists(atPath: backupPath))
+        }
+    }
+
     @Test("Production backup and restore preserves critical beta records")
     func testProductionBackupRestorePreservesCriticalBetaRecords() throws {
         let fixture = try Self.makeCriticalFixture()
