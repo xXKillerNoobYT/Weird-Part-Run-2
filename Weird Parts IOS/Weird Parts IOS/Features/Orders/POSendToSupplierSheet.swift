@@ -100,7 +100,13 @@ struct POSendToSupplierSheet: View {
 
     private var includedPOs: [Int64] {
         // primary always included
-        [po.id] + Array(includedSiblingIds)
+        guard groupEnabled else { return [po.id] }
+        return [po.id] + Array(includedSiblingIds)
+    }
+
+    private var includedSiblingPOs: [OrdersService.POListItem] {
+        guard groupEnabled else { return [] }
+        return siblingPOs.filter { includedSiblingIds.contains($0.id) }
     }
 
     private var emailSubject: String {
@@ -126,9 +132,7 @@ struct POSendToSupplierSheet: View {
         lines.append("")
 
         // Summary list of included POs
-        let allPoNums = ([po.poNumber] + siblingPOs
-            .filter { includedSiblingIds.contains($0.id) }
-            .map { $0.poNumber })
+        let allPoNums = [po.poNumber] + includedSiblingPOs.map { $0.poNumber }
         if allPoNums.count > 1 {
             lines.append("Included orders:")
             allPoNums.forEach { lines.append("  • \($0)") }
@@ -263,7 +267,14 @@ struct POSendToSupplierSheet: View {
                 }
             }
             .onChange(of: groupEnabled) { _, on in
-                if on { fetchSiblingPOs() }
+                if on {
+                    fetchSiblingPOs()
+                } else {
+                    includedSiblingIds = []
+                    siblingPDFs = [:]
+                    siblingPOsError = nil
+                    siblingPOsLoading = false
+                }
             }
 
             if groupEnabled && siblingPOsLoading {
@@ -511,7 +522,7 @@ struct POSendToSupplierSheet: View {
         var result: [(data: Data, mimeType: String, fileName: String)] = [
             (primaryPDF, "application/pdf", pdfFileName(for: po.poNumber))
         ]
-        for sibling in siblingPOs where includedSiblingIds.contains(sibling.id) {
+        for sibling in includedSiblingPOs {
             if let pdf = siblingPDFs[sibling.id] {
                 result.append((pdf, "application/pdf", pdfFileName(for: sibling.poNumber)))
             }
@@ -588,7 +599,7 @@ struct POSendToSupplierSheet: View {
                 }
 
                 var failedSiblings: [String] = []
-                for sibling in siblingPOs where includedSiblingIds.contains(sibling.id) {
+                for sibling in includedSiblingPOs {
                     do {
                         let detail = try ordersService.getPODetail(id: sibling.id)
                         let gen = POPDFGenerator(po: detail, supplierEmail: primaryEmail, companyName: "WiredPart")
@@ -619,8 +630,8 @@ struct POSendToSupplierSheet: View {
                     // Share sheet fallback — share all PDFs
                     var urls: [URL] = []
                     let tmp = FileManager.default.temporaryDirectory
-                    let allPDFs = [(primaryPDF, po.poNumber)] + sibPDFs.compactMap { (id, data) in
-                        siblingPOs.first(where: { $0.id == id }).map { (data, $0.poNumber) }
+                    let allPDFs = [(primaryPDF, po.poNumber)] + includedSiblingPOs.compactMap { sibling in
+                        sibPDFs[sibling.id].map { ($0, sibling.poNumber) }
                     }
                     do {
                         for (data, num) in allPDFs {

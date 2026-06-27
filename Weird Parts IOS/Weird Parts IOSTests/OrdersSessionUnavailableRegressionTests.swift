@@ -123,6 +123,32 @@ final class OrdersSessionUnavailableRegressionTests: XCTestCase {
         )
     }
 
+    func testGroupedPOSendToggleOffCannotConfirmSiblingPOs() throws {
+        let sendSheetSource = try Self.readOrdersSource(named: "POSendToSupplierSheet.swift")
+
+        XCTAssertTrue(
+            sendSheetSource.contains("guard groupEnabled else { return [po.id] }"),
+            "When grouped sending is off, confirmSent must only mark the primary PO sent even if stale sibling selections exist."
+        )
+        XCTAssertTrue(
+            sendSheetSource.contains("includedSiblingIds = []") && sendSheetSource.contains("siblingPDFs = [:]"),
+            "Turning grouped sending off should clear stale sibling selections and generated sibling PDFs."
+        )
+        XCTAssertTrue(
+            sendSheetSource.contains("private var includedSiblingPOs: [OrdersService.POListItem]") &&
+            sendSheetSource.contains("guard groupEnabled else { return [] }"),
+            "Email body, attachment, and share-sheet paths should use group-aware sibling inclusion instead of raw stale selected ids."
+        )
+        XCTAssertFalse(
+            sendSheetSource.contains("primary always included\n        [po.id] + Array(includedSiblingIds)"),
+            "includedPOs must not blindly append stale sibling ids after grouped sending has been disabled."
+        )
+        XCTAssertFalse(
+            sendSheetSource.contains("siblingPOs where includedSiblingIds.contains"),
+            "Attachment/PDF generation should use the group-aware includedSiblingPOs helper."
+        )
+    }
+
     private static func readOrdersSource(named filename: String, file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL
