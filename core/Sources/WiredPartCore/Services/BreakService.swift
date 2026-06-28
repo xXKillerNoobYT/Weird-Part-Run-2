@@ -160,6 +160,10 @@ public final class BreakService: Sendable {
         do {
             return try db.writer.write { dbConn in
                 let resolvedLaborEntryId = try laborEntryId ?? Self.activeClockEntryId(dbConn: dbConn, userId: userId)
+                if let activeBreak = try Self.activeBreak(dbConn: dbConn, userId: userId) {
+                    return activeBreak
+                }
+
                 var record = BreakRecord(
                     id: nil, userId: userId, laborEntryId: resolvedLaborEntryId,
                     breakType: breakType, startedAt: Self.nowString(),
@@ -468,6 +472,15 @@ public final class BreakService: Sendable {
             ORDER BY clock_in DESC, id DESC
             LIMIT 1
             """, arguments: [userId])
+    }
+
+    private static func activeBreak(dbConn: Database, userId: Int64) throws -> BreakRecord? {
+        try BreakRecord
+            .filter(Column("user_id") == userId &&
+                    Column("ended_at") == nil &&
+                    Column("deleted_at") == nil)
+            .order(Column("started_at").desc, Column("id").desc)
+            .fetchOne(dbConn)
     }
 
     /// Add minutes to a time string like "10:00" → "10:15".
