@@ -113,7 +113,6 @@ extension AppDatabase {
         }
 
         let tempPath = path + ".encrypted-tmp"
-        let bakPath  = path + ".unencrypted.bak"
 
         // Remove any leftover temp file from a previous failed attempt.
         for p in [tempPath, tempPath + "-wal", tempPath + "-shm"] {
@@ -255,7 +254,23 @@ extension AppDatabase {
 
         // --- Step 5: Atomic rename ---
         // Original → .unencrypted.bak (preserved; deleted after 7 days by cleanupStaleBackup).
-        // Temp encrypted → canonical path.
+        // Temp encrypted → canonical path. If the temp promotion fails after the original
+        // was moved aside, rollback restores `.unencrypted.bak` to the canonical path.
+        try replacePlaintextDatabaseWithEncryptedTemp(atPath: path, tempPath: tempPath)
+    }
+
+    /// Promote an encrypted temp DB over a plaintext canonical DB with rollback.
+    ///
+    /// Internal for regression testing of the narrow failure window after `path` has
+    /// been moved to `.unencrypted.bak` but before `tempPath` reaches `path`.
+    static func replacePlaintextDatabaseWithEncryptedTemp(
+        atPath path: String,
+        tempPath: String,
+        beforePromotingTemp: (() throws -> Void)? = nil
+    ) throws {
+        let fm = FileManager.default
+        let bakPath = path + ".unencrypted.bak"
+
         do {
             for suffix in ["-wal", "-shm"] { try? fm.removeItem(atPath: path + suffix) }
             try? fm.removeItem(atPath: bakPath)      // Remove stale backup if present.
@@ -268,11 +283,16 @@ extension AppDatabase {
             } catch {
                 Self.cipherLogger.warning("Failed to touch backup file (7-day window may be inaccurate): \(error.localizedDescription, privacy: .public)")
             }
+            try beforePromotingTemp?()
             try fm.moveItem(atPath: tempPath, toPath: path)
         } catch {
-            // Rename failed — temp is orphaned; clean it up. Original is still at `path`.
-            for p in [tempPath, tempPath + "-wal", tempPath + "-shm"] {
+            // Rename failed after the original may have been moved aside. Remove any
+            // partial encrypted output and restore the plaintext backup before throwing.
+            for p in [path, path + "-wal", path + "-shm", tempPath, tempPath + "-wal", tempPath + "-shm"] {
                 try? fm.removeItem(atPath: p)
+            }
+            if fm.fileExists(atPath: bakPath) {
+                try? fm.moveItem(atPath: bakPath, toPath: path)
             }
             throw CipherMigrationError.renameFailed(error)
         }

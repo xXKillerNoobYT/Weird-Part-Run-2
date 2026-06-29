@@ -328,4 +328,34 @@ struct AppDatabaseCipherTests {
         #expect(checkCount == origCount, "Row count must be unchanged after failed migration")
         #expect(sentinel == "original_value", "Sentinel row must be intact in original DB")
     }
+
+    @Test("testRenamePromotionFailureRestoresOriginalDB — failed temp promotion rolls back backup")
+    func testRenamePromotionFailureRestoresOriginalDB() throws {
+        let path = tmpPath("rename-promotion-rollback")
+        let tempPath = path + ".encrypted-tmp"
+        defer { cleanup(path) }
+
+        try "original plaintext sentinel".write(toFile: path, atomically: true, encoding: .utf8)
+        try "encrypted temp sentinel".write(toFile: tempPath, atomically: true, encoding: .utf8)
+
+        var didThrow = false
+        do {
+            try AppDatabase.replacePlaintextDatabaseWithEncryptedTemp(
+                atPath: path,
+                tempPath: tempPath,
+                beforePromotingTemp: {
+                    struct SimulatedPromotionFailure: Error {}
+                    throw SimulatedPromotionFailure()
+                }
+            )
+        } catch CipherMigrationError.renameFailed {
+            didThrow = true
+        }
+
+        #expect(didThrow, "Promotion helper must surface a rename failure")
+        #expect(FileManager.default.fileExists(atPath: path), "Canonical DB path must be restored after promotion failure")
+        #expect(!FileManager.default.fileExists(atPath: path + ".unencrypted.bak"), "Rollback should consume the temporary plaintext backup")
+        let restoredContents = try String(contentsOfFile: path, encoding: .utf8)
+        #expect(restoredContents == "original plaintext sentinel")
+    }
 }

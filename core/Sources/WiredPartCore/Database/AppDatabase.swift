@@ -165,18 +165,73 @@ public final class AppDatabase: Sendable {
     /// Restore database from a backup file.
     public static func restoreDatabase(from backupPath: String, to dbPath: String) throws {
         let fileManager = FileManager.default
-        // Remove current DB files
-        try? fileManager.removeItem(atPath: dbPath)
-        try? fileManager.removeItem(atPath: dbPath + "-wal")
-        try? fileManager.removeItem(atPath: dbPath + "-shm")
-        // Copy backup into place
-        try fileManager.copyItem(atPath: backupPath, toPath: dbPath)
-        // Restore WAL/SHM if they exist
-        for suffix in ["-wal", "-shm"] {
-            let src = backupPath + suffix
-            if fileManager.fileExists(atPath: src) {
-                try? fileManager.copyItem(atPath: src, toPath: dbPath + suffix)
+
+        // Stage the backup into the destination directory before touching the live DB.
+        // A missing/unreadable backup must fail here while the current DB is still intact.
+        let stagingPath = dbPath + ".restore-staging-\(UUID().uuidString)"
+        let rollbackPath = dbPath + ".restore-rollback-\(UUID().uuidString)"
+        var stagedPaths = [stagingPath]
+        var rollbackPaths: [(current: String, rollback: String)] = []
+        var promotedStagedMain = false
+
+        do {
+            try fileManager.copyItem(atPath: backupPath, toPath: stagingPath)
+
+            // Stage WAL/SHM before modifying live sidecar files.
+            for suffix in ["-wal", "-shm"] {
+                let src = backupPath + suffix
+                if fileManager.fileExists(atPath: src) {
+                    let staged = stagingPath + suffix
+                    try fileManager.copyItem(atPath: src, toPath: staged)
+                    stagedPaths.append(staged)
+                }
             }
+
+            // Move current files aside so a later promotion failure can roll back.
+            for suffix in ["", "-wal", "-shm"] {
+                let current = dbPath + suffix
+                guard fileManager.fileExists(atPath: current) else { continue }
+                let rollback = rollbackPath + suffix
+                try fileManager.moveItem(atPath: current, toPath: rollback)
+                rollbackPaths.append((current: current, rollback: rollback))
+            }
+
+            // Promote the staged backup files into the canonical paths.
+            try fileManager.moveItem(atPath: stagingPath, toPath: dbPath)
+            promotedStagedMain = true
+            for suffix in ["-wal", "-shm"] {
+                let staged = stagingPath + suffix
+                if fileManager.fileExists(atPath: staged) {
+                    try fileManager.moveItem(atPath: staged, toPath: dbPath + suffix)
+                }
+            }
+
+            // Restore succeeded; remove rollback copies of the former live database.
+            for pair in rollbackPaths {
+                try? fileManager.removeItem(atPath: pair.rollback)
+            }
+        } catch {
+            // Clean up any partial restore output and put the original DB files back.
+            // If staging failed before moving current files aside, do not touch dbPath.
+            if !rollbackPaths.isEmpty || promotedStagedMain {
+                for suffix in ["", "-wal", "-shm"] {
+                    try? fileManager.removeItem(atPath: dbPath + suffix)
+                }
+            }
+            for pair in rollbackPaths.reversed() {
+                if fileManager.fileExists(atPath: pair.rollback) {
+                    try? fileManager.moveItem(atPath: pair.rollback, toPath: pair.current)
+                }
+            }
+            for path in stagedPaths {
+                try? fileManager.removeItem(atPath: path)
+            }
+            throw error
+        }
+
+        // Remove any staged sidecar that was not promoted due to an older backup shape.
+        for suffix in ["-wal", "-shm"] {
+            try? fileManager.removeItem(atPath: stagingPath + suffix)
         }
     }
 }

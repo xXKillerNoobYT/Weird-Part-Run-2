@@ -22,6 +22,27 @@ struct BackupRestoreDataSafetyTests {
         Self.assertCriticalSnapshot(restoredSnapshot)
     }
 
+    @Test("Missing backup restore leaves current database untouched")
+    func testRestoreMissingBackupLeavesCurrentDatabaseUntouched() throws {
+        let fixture = try Self.makeCriticalFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+
+        let beforeSnapshot = try Self.snapshot(at: fixture.databasePath)
+        let missingBackupPath = fixture.directory.appendingPathComponent("missing-backup.sqlite").path
+
+        var didThrow = false
+        do {
+            try AppDatabase.restoreDatabase(from: missingBackupPath, to: fixture.databasePath)
+        } catch {
+            didThrow = true
+        }
+
+        #expect(didThrow, "Restore must report an error when the backup file is missing")
+        #expect(FileManager.default.fileExists(atPath: fixture.databasePath), "Current DB must still exist after failed restore")
+        let afterSnapshot = try Self.snapshot(at: fixture.databasePath)
+        #expect(afterSnapshot == beforeSnapshot, "Current DB contents must be unchanged after failed restore")
+    }
+
     private struct Fixture {
         let directory: URL
         let databasePath: String
