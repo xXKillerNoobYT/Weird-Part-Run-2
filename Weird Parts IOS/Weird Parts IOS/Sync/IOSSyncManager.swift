@@ -553,10 +553,13 @@ final class IOSSyncManager {
             )
         }
 
-        // Merge: replace multipeer entries, keep LAN entries
-        let mpIds = Set(mpPeers.map(\.id))
-        let nonMultipeer = discoveredPeers.filter { !mpIds.contains($0.id) && !isMultipeerDiscoveredPeer($0) }
-        discoveredPeers = nonMultipeer + mpPeers
+        // Merge: keep LAN/addressable entries when the same device is also seen via Multipeer.
+        // Bluetooth-only rows are useful fallbacks, but they must not replace a peer with a
+        // usable Wi-Fi address during onboarding pairing.
+        let nonMultipeer = discoveredPeers.filter { !isMultipeerDiscoveredPeer($0) }
+        let nonMultipeerIds = Set(nonMultipeer.map(\.id))
+        let multipeerOnly = mpPeers.filter { !nonMultipeerIds.contains($0.id) }
+        discoveredPeers = nonMultipeer + multipeerOnly
     }
 
     private func removeMultipeerDiscoveredPeers() {

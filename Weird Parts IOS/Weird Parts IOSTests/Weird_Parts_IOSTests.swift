@@ -458,6 +458,7 @@ struct Weird_Parts_IOSTests {
         #expect(source.contains("address: formattedPeerAddress(host: peer.host, port: Int(peer.port))"))
         #expect(source.contains("host.contains(\":\") && !host.hasPrefix(\"[\") ? \"[\\(host)]\" : host"))
         #expect(source.contains("await pm.stopMultipeerDiscovery()"))
+        #expect(source.contains("let multipeerOnly = mpPeers.filter { !nonMultipeerIds.contains($0.id) }"))
         #expect(pairingSource.contains("guard let address = peer.address else"))
         #expect(pairingSource.contains("syncManager.stopPeerDiscovery()"))
         #expect(pairingSource.contains("shop.address"))
