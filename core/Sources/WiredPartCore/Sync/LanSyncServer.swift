@@ -287,6 +287,7 @@ public actor SyncServerState {
 /// which is then advertised via mDNS.
 public final class LanSyncServer: Sendable {
     static let maxHTTPRequestBodyBytes = 1_048_576
+    private static let contentLengthHeaderPrefix = "content-length:"
 
     enum ContentLengthParseResult: Equatable {
         case missing
@@ -456,10 +457,12 @@ public final class LanSyncServer: Sendable {
 
         for line in headers.components(separatedBy: "\r\n") {
             let lower = line.lowercased()
-            if lower.hasPrefix("content-length:") {
+            if lower.hasPrefix(contentLengthHeaderPrefix) {
                 guard parsedLength == nil else { return .invalid }
 
-                let value = line[line.index(line.startIndex, offsetBy: 15)...].trimmingCharacters(in: .whitespaces)
+                let value = line
+                    .dropFirst(contentLengthHeaderPrefix.count)
+                    .trimmingCharacters(in: .whitespaces)
                 guard !value.isEmpty,
                       value.allSatisfy(\.isNumber),
                       let contentLength = Int(value),
@@ -523,7 +526,8 @@ public final class LanSyncServer: Sendable {
 
         guard let headerString = String(data: headerData, encoding: .utf8) else { return nil }
 
-        guard parseContentLength(from: headerString) != .invalid else { return nil }
+        let contentLengthResult = parseContentLength(from: headerString)
+        guard contentLengthResult != .invalid else { return nil }
 
         var lines = headerString.components(separatedBy: "\r\n")
         guard !lines.isEmpty else { return nil }
@@ -548,7 +552,7 @@ public final class LanSyncServer: Sendable {
 
         // Determine body length from Content-Length header
         var body = Data(bodyData)
-        if case .valid(let contentLength) = parseContentLength(from: headerString) {
+        if case .valid(let contentLength) = contentLengthResult {
             guard bodyData.count >= contentLength else { return nil }
             body = Data(bodyData.prefix(contentLength))
         }
