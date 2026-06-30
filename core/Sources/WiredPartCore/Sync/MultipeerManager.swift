@@ -59,6 +59,8 @@ public struct ReceivedMultipeerMessage: Sendable {
 /// Service type: `"wiredpart-sync"` (matching existing ObjC bridge)
 /// Discovery info: `device_id`, `device_name`, `company_id`
 /// Auto-invite same-company peers, auto-accept same-company invitations.
+/// Join/onboarding discovery can browse any company before the local company ID
+/// is known; pairing still verifies the selected shop before anything is saved.
 /// Uses `MCEncryptionRequired` for all sessions.
 /// @unchecked Sendable: All mutable state is guarded by `syncQueue` (serial DispatchQueue).
 /// Any new mutable property MUST be accessed only from syncQueue. (Fixes #202)
@@ -75,6 +77,9 @@ public final class MultipeerManager: NSObject, @unchecked Sendable {
     private let deviceId: String
     private let deviceName: String
     private let companyId: String
+    private let allowAnyCompanyPeerDiscovery: Bool
+    private let autoInvitePeers: Bool
+    private let advertiseSelf: Bool
 
     /// All mutable state below is GUARDED BY syncQueue — do not access without it.
     private let syncQueue = DispatchQueue(label: "com.wiredpart.multipeer.sync", qos: .utility)
@@ -92,10 +97,20 @@ public final class MultipeerManager: NSObject, @unchecked Sendable {
         let mcPeerId: MCPeerID
     }
 
-    public init(deviceId: String, deviceName: String, companyId: String) {
+    public init(
+        deviceId: String,
+        deviceName: String,
+        companyId: String,
+        allowAnyCompanyPeerDiscovery: Bool = false,
+        autoInvitePeers: Bool = true,
+        advertiseSelf: Bool = true
+    ) {
         self.deviceId = deviceId
         self.deviceName = deviceName
         self.companyId = companyId
+        self.allowAnyCompanyPeerDiscovery = allowAnyCompanyPeerDiscovery
+        self.autoInvitePeers = autoInvitePeers
+        self.advertiseSelf = advertiseSelf
         super.init()
 
         // MCPeerID display name must be 1-63 chars
@@ -114,7 +129,9 @@ public final class MultipeerManager: NSObject, @unchecked Sendable {
         syncQueue.async { [weak self] in
             guard let self, !self.isRunning else { return }
             self.isRunning = true
-            self.startAdvertising()
+            if self.advertiseSelf {
+                self.startAdvertising()
+            }
             self.startBrowsing()
         }
     }
@@ -303,8 +320,10 @@ extension MultipeerManager: MCNearbyServiceBrowserDelegate {
 
             // Skip self
             guard peerDeviceId != self.deviceId else { return }
-            // Same company only
-            guard peerCompanyId == self.companyId else { return }
+            // Configured sync is company-scoped. Onboarding/join discovery can
+            // show shop computers before this device has a local company ID;
+            // the pairing response is still verified before settings are stored.
+            guard self.allowAnyCompanyPeerDiscovery || peerCompanyId == self.companyId else { return }
 
             // Track the peer
             let peerInfo = MultipeerPeerInfo(
@@ -315,6 +334,8 @@ extension MultipeerManager: MCNearbyServiceBrowserDelegate {
             )
             self.peers[peerDeviceId] = PeerEntry(info: peerInfo, mcPeerId: peerID)
             self.notifyPeersChanged()
+
+            guard self.autoInvitePeers else { return }
 
             // Auto-invite same-company peer
             let context: [String: String] = [
