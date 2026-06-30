@@ -281,7 +281,7 @@ extension AppDatabase {
                 try fm.moveItem(atPath: tempPath, toPath: path)
             } catch {
                 if fm.fileExists(atPath: bakPath), !fm.fileExists(atPath: path) {
-                    try? fm.moveItem(atPath: bakPath, toPath: path)
+                    try fm.moveItem(atPath: bakPath, toPath: path)
                 }
                 throw error
             }

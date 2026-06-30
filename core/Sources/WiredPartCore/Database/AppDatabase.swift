@@ -122,6 +122,9 @@ public final class AppDatabase: Sendable {
         }
 
         let dateFormatter = DateFormatter()
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dateFormatter.calendar = Calendar(identifier: .gregorian)
+        dateFormatter.timeZone = TimeZone(secondsFromGMT: 0)
         dateFormatter.dateFormat = "yyyy-MM-dd_HHmmss_SSS"
         let timestamp = dateFormatter.string(from: Date())
         let uniqueId = UUID().uuidString.prefix(8)
@@ -177,6 +180,7 @@ public final class AppDatabase: Sendable {
         let restoreId = UUID().uuidString
         let stagedPath = dbPath + ".restore-\(restoreId).tmp"
         let rollbackPath = dbPath + ".restore-\(restoreId).rollback"
+        var shouldCleanRollback = true
 
         func removeDatabaseFiles(at path: String) {
             try? fileManager.removeItem(atPath: path)
@@ -197,7 +201,9 @@ public final class AppDatabase: Sendable {
         removeDatabaseFiles(at: rollbackPath)
         defer {
             removeDatabaseFiles(at: stagedPath)
-            removeDatabaseFiles(at: rollbackPath)
+            if shouldCleanRollback {
+                removeDatabaseFiles(at: rollbackPath)
+            }
         }
 
         // Stage the backup bundle before touching the live database. This preserves
@@ -219,7 +225,12 @@ public final class AppDatabase: Sendable {
                 || fileManager.fileExists(atPath: rollbackPath + "-wal")
                 || fileManager.fileExists(atPath: rollbackPath + "-shm") {
                 removeDatabaseFiles(at: dbPath)
-                try? moveDatabaseFiles(from: rollbackPath, to: dbPath)
+                do {
+                    try moveDatabaseFiles(from: rollbackPath, to: dbPath)
+                } catch {
+                    shouldCleanRollback = false
+                    throw error
+                }
             }
             throw error
         }
