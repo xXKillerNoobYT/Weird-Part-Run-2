@@ -1744,7 +1744,7 @@ public final class DashboardService: Sendable {
             }
             for row in jpos {
                 let dateStr: String = row["created_at"] ?? ""
-                let created = CoreFormatters.parseISO(dateStr) ?? Date()
+                guard let created = dashboardAttentionCreatedAt(from: dateStr) else { continue }
                 let age = Date().timeIntervalSince(created)
                 items.append(AttentionItem(
                     id: row["id"] ?? 0,
@@ -1870,7 +1870,7 @@ public final class DashboardService: Sendable {
                 """)
             }
             for row in questions {
-                let created = CoreFormatters.parseISO(row["created_at"] as String? ?? "") ?? Date()
+                guard let created = dashboardAttentionCreatedAt(from: row["created_at"] as String? ?? "") else { continue }
                 items.append(AttentionItem(
                     id: row["id"] ?? 0,
                     title: "Open Q&A: \(row["subject"] as String? ?? "Question")",
@@ -2126,6 +2126,16 @@ public final class DashboardService: Sendable {
     }
 
     // MARK: - Internal Helpers
+
+    /// Parse persisted attention timestamps without making malformed rows look brand-new.
+    ///
+    /// Dashboard attention priority depends on row age, so falling back to `Date()` hides
+    /// old SQLite `datetime('now')` strings and malformed persisted values. Use the shared
+    /// core parser for both ISO 8601 and SQLite `yyyy-MM-dd HH:mm:ss` text; callers skip
+    /// rows that cannot be parsed rather than under-prioritizing them as current time.
+    private func dashboardAttentionCreatedAt(from rawValue: String) -> Date? {
+        CoreFormatters.parseDateTime(rawValue)
+    }
 
     /// Execute a `SELECT COUNT(*)` query and return the integer result.
     /// If the table does not exist (e.g., migration hasn't run), returns 0.

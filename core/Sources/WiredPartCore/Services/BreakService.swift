@@ -5,6 +5,17 @@ import GRDB
 public final class BreakService: Sendable {
     private let db: AppDatabase
 
+    public enum BreakError: Error, LocalizedError, Sendable, Equatable {
+        case activeBreakAlreadyInProgress(userId: Int64, activeBreakId: Int64?)
+
+        public var errorDescription: String? {
+            switch self {
+            case .activeBreakAlreadyInProgress:
+                return "An active break is already in progress. End the current break before starting another."
+            }
+        }
+    }
+
     public init(db: AppDatabase) {
         self.db = db
     }
@@ -160,6 +171,13 @@ public final class BreakService: Sendable {
         do {
             return try db.writer.write { dbConn in
                 let resolvedLaborEntryId = try laborEntryId ?? Self.activeClockEntryId(dbConn: dbConn, userId: userId)
+                if let activeBreak = try Self.activeBreak(dbConn: dbConn, userId: userId) {
+                    if activeBreak.breakType == breakType && activeBreak.laborEntryId == resolvedLaborEntryId {
+                        return activeBreak
+                    }
+                    throw BreakError.activeBreakAlreadyInProgress(userId: userId, activeBreakId: activeBreak.id)
+                }
+
                 var record = BreakRecord(
                     id: nil, userId: userId, laborEntryId: resolvedLaborEntryId,
                     breakType: breakType, startedAt: Self.nowString(),
@@ -226,12 +244,7 @@ public final class BreakService: Sendable {
     public func getActiveBreak(userId: Int64) throws -> BreakRecord? {
         do {
             return try db.writer.read { dbConn in
-                try BreakRecord
-                    .filter(Column("user_id") == userId &&
-                            Column("ended_at") == nil &&
-                            Column("deleted_at") == nil)
-                    .order(Column("started_at").desc)
-                    .fetchOne(dbConn)
+                try Self.activeBreak(dbConn: dbConn, userId: userId)
             }
         } catch {
             if isTableNotFoundError(error) { return nil }
@@ -468,6 +481,15 @@ public final class BreakService: Sendable {
             ORDER BY clock_in DESC, id DESC
             LIMIT 1
             """, arguments: [userId])
+    }
+
+    private static func activeBreak(dbConn: Database, userId: Int64) throws -> BreakRecord? {
+        try BreakRecord
+            .filter(Column("user_id") == userId &&
+                    Column("ended_at") == nil &&
+                    Column("deleted_at") == nil)
+            .order(Column("started_at").desc, Column("id").desc)
+            .fetchOne(dbConn)
     }
 
     /// Add minutes to a time string like "10:00" → "10:15".

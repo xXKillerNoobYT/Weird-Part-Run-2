@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import GRDB
 @testable import WiredPartCore
@@ -74,6 +75,7 @@ struct DatabaseTests {
             "estimation_question_accuracy_reviews", // 082
             "warehouse_walking_paths", // 083
             "warehouse_walking_path_stops", // 083
+            "audit_session_events", // 085
             // Tools detail (048-050)
             "tool_checkouts",    // 048
             // Vehicle & trailer (051-053)
@@ -108,9 +110,41 @@ struct DatabaseTests {
         #expect(tables == ["part_import_row_evidence", "part_import_sessions"])
     }
 
+    @Test("Migration 085 creates audit session event table and lookup index")
+    func testMigration085CreatesAuditSessionEvents() throws {
+        var config = Configuration()
+        config.foreignKeysEnabled = true
+        let queue = try DatabaseQueue(configuration: config)
+        var migrator = DatabaseMigrator()
+        AppDatabase.registerMigrations(&migrator)
+        try migrator.migrate(queue, upTo: "085_audit_session_events")
+
+        let result = try queue.read { db -> (tableExists: Bool, indexExists: Bool) in
+            let tableExists = try db.tableExists("audit_session_events")
+            let indexExists = try String.fetchOne(db, sql: """
+                SELECT name FROM sqlite_master
+                WHERE type = 'index' AND name = 'idx_audit_session_events_session'
+                """) != nil
+            return (tableExists, indexExists)
+        }
+
+        #expect(result.tableExists)
+        #expect(result.indexExists)
+    }
+
     @Test("Schema version is 105")
     func testSchemaVersion() throws {
         #expect(AppDatabase.schemaVersion == 105)
+    }
+
+    @Test("Persisted schema version matches AppDatabase schemaVersion")
+    func testPersistedSchemaVersionMatchesAppDatabaseSchemaVersion() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let persistedVersion = try db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT value FROM settings WHERE key = 'db_schema_version'")
+        }
+
+        #expect(persistedVersion == "\(AppDatabase.schemaVersion)")
     }
 
     @Test("Migration 095 normalizes duplicate legacy stage sort orders and category maps")
@@ -342,4 +376,5 @@ struct DatabaseTests {
         #expect(columns.contains("budget_limit"))
         #expect(columns.contains("budget_alert_percent"))
     }
+
 }
