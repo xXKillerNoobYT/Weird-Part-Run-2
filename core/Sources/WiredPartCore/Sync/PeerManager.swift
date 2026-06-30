@@ -390,6 +390,27 @@ public actor PeerManager {
         }
     }
 
+    /// Sync with one currently discovered peer by stable device ID.
+    ///
+    /// Row-level UI actions should use this selector instead of `syncWithAllPeers()`
+    /// so tapping one peer cannot fan out to every known peer.
+    public func syncWithPeer(deviceId: String) async -> PeerSyncResult {
+        mergePeerLists()
+
+        guard let peer = state.peers.first(where: { $0.deviceId == deviceId }) else {
+            let result = PeerSyncResult(
+                peerDeviceId: deviceId,
+                peerName: deviceId,
+                success: false,
+                error: "Peer not found"
+            )
+            state.lastPeerSyncs[deviceId] = result
+            return result
+        }
+
+        return await syncWithPeer(peer)
+    }
+
     /// Sync with all discovered peers sequentially.
     /// Office-like peers first, then by least-recently-synced.
     public func syncWithAllPeers() async -> [PeerSyncResult] {

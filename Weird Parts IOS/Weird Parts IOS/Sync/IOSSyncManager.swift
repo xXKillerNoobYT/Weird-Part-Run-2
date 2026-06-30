@@ -219,6 +219,53 @@ final class IOSSyncManager {
         if syncHistory.count > 20 { syncHistory = Array(syncHistory.prefix(20)) }
     }
 
+    /// Trigger a sync cycle for one selected peer from the Nearby Devices row.
+    ///
+    /// This intentionally bypasses the configured LAN server and `syncWithAllPeers()`
+    /// global fan-out so a row-level Sync tap only touches the peer the user chose.
+    func syncWithPeer(peerId: String) async {
+        guard isSyncAvailable else {
+            syncStatus = .idle
+            errorMessage = "Sync not configured. Set up in Settings → Sync."
+            return
+        }
+        guard syncStatus != .syncing else { return }
+        guard let pm = peerManager else {
+            syncStatus = .error
+            errorMessage = SyncError.noDatabaseAvailable.localizedDescription
+            return
+        }
+
+        syncStatus = .syncing
+        errorMessage = nil
+
+        let result = await pm.syncWithPeer(deviceId: peerId)
+        if !result.success {
+            errorMessage = result.error ?? "Sync failed with \(result.peerName)"
+        }
+
+        let conflictCount = refreshConflictCount()
+        refreshPendingCount()
+        let success = errorMessage == nil
+        if success {
+            syncStatus = .synced
+            lastSyncDate = Formatters.iso8601Basic.string(from: Date())
+        } else {
+            syncStatus = .error
+        }
+
+        let entry = SyncHistoryEntry(
+            date: Date(),
+            changesSent: result.pushed,
+            changesReceived: result.pulled,
+            conflicts: conflictCount,
+            success: success,
+            error: errorMessage
+        )
+        syncHistory.insert(entry, at: 0)
+        if syncHistory.count > 20 { syncHistory = Array(syncHistory.prefix(20)) }
+    }
+
     // MARK: - Peer Discovery
 
     /// Start scanning for nearby peers via Multipeer Connectivity.
