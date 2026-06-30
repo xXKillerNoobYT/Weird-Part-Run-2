@@ -265,15 +265,16 @@ struct PanelScheduleBuilder: View {
     // MARK: - Circuit Management
 
     private func updateCircuit(_ circuit: CircuitEntry) {
-        if let index = schedule.circuits.firstIndex(where: { $0.spaceNumber == circuit.spaceNumber }) {
-            schedule.circuits[index] = circuit
+        let normalized = circuit.normalizedForPersistence()
+        if let index = schedule.circuits.firstIndex(where: { $0.spaceNumber == normalized.spaceNumber }) {
+            schedule.circuits[index] = normalized
         } else {
-            schedule.circuits.append(circuit)
+            schedule.circuits.append(normalized)
         }
     }
 
     private func saveNormalizedSchedule() {
-        let normalized = schedule.pruningCircuitsOutsideTotalSpaces()
+        let normalized = schedule.normalizedForPersistence()
         schedule = normalized
         onSave(normalized)
     }
@@ -329,7 +330,7 @@ struct CircuitEditorSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        onSave(circuit)
+                        onSave(circuit.normalizedForPersistence())
                         dismiss()
                     }
                     .fontWeight(.semibold)

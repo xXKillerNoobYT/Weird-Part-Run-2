@@ -48,6 +48,17 @@ public struct PanelSchedule: Codable, Identifiable, Sendable {
         return normalized
     }
 
+    /// Returns a copy safe to persist after panel builder edits.
+    ///
+    /// A circuit marked spare should not retain active breaker/load metadata that
+    /// will be hidden by the grid and exports. Normalize both the visible panel
+    /// range and the per-circuit spare payload before writing notebook JSON.
+    public func normalizedForPersistence() -> PanelSchedule {
+        var normalized = pruningCircuitsOutsideTotalSpaces()
+        normalized.circuits = normalized.circuits.map { $0.normalizedForPersistence() }
+        return normalized
+    }
+
     /// Circuits that would be removed by `pruningCircuitsOutsideTotalSpaces()`.
     public var circuitsOutsideTotalSpaces: [CircuitEntry] {
         circuits.filter { circuit in
@@ -96,6 +107,21 @@ public struct CircuitEntry: Codable, Identifiable, Sendable {
         self.conduit = conduit
         self.isSpare = isSpare
         self.isFedFrom = isFedFrom
+    }
+
+    /// Returns a persistable copy where spare circuits cannot keep hidden
+    /// active-circuit metadata.
+    public func normalizedForPersistence() -> CircuitEntry {
+        guard isSpare else { return self }
+
+        var normalized = self
+        normalized.breakerAmps = nil
+        normalized.breakerType = .spare
+        normalized.circuitDescription = ""
+        normalized.wire = nil
+        normalized.conduit = nil
+        normalized.isFedFrom = nil
+        return normalized
     }
 }
 
