@@ -760,6 +760,22 @@ struct Weird_Parts_IOSTests {
         #expect(scannerSource.contains("activeContinuation?.finish()"), "Startup failures should finish the scan stream instead of leaving a dead sheet")
     }
 
+    @Test func timesheetCorrectionRejectsMalformedOriginalTimestampsBeforeSave() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let timesheetsURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Reports/IOSTimesheetsPage.swift")
+        let source = try String(contentsOf: timesheetsURL, encoding: .utf8)
+
+        #expect(!source.contains("CoreFormatters.parseDateTime(segment.clockIn) ?? Date()"), "Malformed original clock-in must not default correction pickers to the current time")
+        #expect(source.contains("Original clock-in timestamp is malformed"), "Malformed clock-in needs user-facing data-integrity copy")
+        #expect(source.contains("Original clock-out timestamp is malformed"), "Malformed clock-out needs user-facing data-integrity copy")
+        #expect(source.contains(".disabled(isSaving || originalTimestampError != nil)"), "The correction save action must stay disabled while original timestamps are malformed")
+        #expect(source.contains("if let originalTimestampError"), "The save path needs a guard even if a disabled button is bypassed")
+    }
+
     @Test func dispatchAssignmentConflictCheckFailureShowsActionError() throws {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

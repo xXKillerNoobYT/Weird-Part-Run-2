@@ -435,6 +435,14 @@ public final class ReportsService: Sendable {
                 let originalRegular: Double = original["regular_hours"] ?? 0
                 let originalOvertime: Double = original["overtime_hours"] ?? 0
                 let changedAt = CoreFormatters.nowISO()
+
+                guard CoreFormatters.parseDateTime(originalClockIn) != nil else {
+                    throw ReportsError.invalidTimesheetOriginalTimestamp("clock-in")
+                }
+                if let originalClockOut, CoreFormatters.parseDateTime(originalClockOut) == nil {
+                    throw ReportsError.invalidTimesheetOriginalTimestamp("clock-out")
+                }
+
                 let adjustedTotalHours = try Self.correctedBillableHours(
                     dbConn: dbConn,
                     laborEntryId: request.laborEntryId,
@@ -1782,6 +1790,7 @@ public enum ReportsError: Error, LocalizedError, Equatable {
     case timesheetSegmentNotFound(Int64)
     case invalidTimesheetCorrectionReason
     case invalidTimesheetCorrectionRange
+    case invalidTimesheetOriginalTimestamp(String)
     case timesheetCorrectionAuditUnavailable
 
     public var errorDescription: String? {
@@ -1794,6 +1803,8 @@ public enum ReportsError: Error, LocalizedError, Equatable {
             return "Correction reason is required."
         case .invalidTimesheetCorrectionRange:
             return "Adjusted clock out cannot be before adjusted clock in."
+        case .invalidTimesheetOriginalTimestamp(let field):
+            return "Original \(field) timestamp is malformed. Repair the stored time entry before saving a correction."
         case .timesheetCorrectionAuditUnavailable:
             return "Timesheet correction audit storage is not available."
         }
