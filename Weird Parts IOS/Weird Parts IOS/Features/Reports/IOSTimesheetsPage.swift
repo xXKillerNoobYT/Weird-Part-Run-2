@@ -470,16 +470,21 @@ private struct TimesheetCorrectionSheet: View {
                 }
 
                 Section("Adjusted Values") {
-                    DatePicker("Clock In", selection: $adjustedClockIn)
-                        .disabled(originalTimestampError != nil)
-                    DatePicker("Clock Out", selection: $adjustedClockOut)
-                        .disabled(originalTimestampError != nil)
-                    labeledValue("Paid Time Preview", String(format: "%.1fh", adjustedTotalHours))
-                        .accessibilityIdentifier("timesheetCorrectionPaidTimePreview")
-                    Label("Regular and overtime hours are calculated from the current overtime policy when saved.", systemImage: "clock.badge.exclamationmark")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("timesheetCorrectionPolicyAllocationCopy")
+                    if let originalTimestampError {
+                        Label(originalTimestampError, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("timesheetCorrectionOriginalTimestampError")
+                    } else {
+                        DatePicker("Clock In", selection: $adjustedClockIn)
+                        DatePicker("Clock Out", selection: $adjustedClockOut)
+                        labeledValue("Paid Time Preview", String(format: "%.1fh", adjustedTotalHours))
+                            .accessibilityIdentifier("timesheetCorrectionPaidTimePreview")
+                        Label("Regular and overtime hours are calculated from the current overtime policy when saved.", systemImage: "clock.badge.exclamationmark")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("timesheetCorrectionPolicyAllocationCopy")
+                    }
                 }
 
                 Section {
