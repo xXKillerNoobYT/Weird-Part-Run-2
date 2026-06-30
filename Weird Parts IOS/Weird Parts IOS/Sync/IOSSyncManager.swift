@@ -314,7 +314,7 @@ final class IOSSyncManager {
                 return
             }
         case .onboardingJoin:
-            companyId = "onboarding-join"
+            companyId = "onboarding-join-\(UUID().uuidString)"
         }
 
         isScanning = true
@@ -364,7 +364,8 @@ final class IOSSyncManager {
                         deviceName: deviceName,
                         companyId: companyId,
                         allowAnyCompanyPeerDiscovery: mode == .onboardingJoin,
-                        startMultipeer: mode == .existingCompanySync
+                        startMultipeer: bluetoothDiscoveryEnabled && mode == .existingCompanySync,
+                        startSyncServer: mode == .existingCompanySync
                     )
                 } catch {
                     handleLanPeerDiscoveryStartupFailure(

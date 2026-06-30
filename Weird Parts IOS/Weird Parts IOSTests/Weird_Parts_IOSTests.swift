@@ -436,7 +436,8 @@ struct Weird_Parts_IOSTests {
         )
 
         #expect(source.contains("allowAnyCompanyPeerDiscovery: mode == .onboardingJoin"))
-        #expect(source.contains("startMultipeer: mode == .existingCompanySync"))
+        #expect(source.contains("startMultipeer: bluetoothDiscoveryEnabled && mode == .existingCompanySync"))
+        #expect(source.contains("startSyncServer: mode == .existingCompanySync"))
         #expect(source.contains("if await pm.getState().running"))
         #expect(source.contains("await pm.stopPeerSync()"))
         #expect(source.contains("address: peer.host.isEmpty || peer.port == 0 ? nil : \"\\(peer.host):\\(peer.port)\""))

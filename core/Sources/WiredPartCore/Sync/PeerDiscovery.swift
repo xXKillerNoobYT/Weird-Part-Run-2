@@ -90,6 +90,7 @@ public final class PeerDiscovery: NSObject, @unchecked Sendable {
     private let deviceName: String
     private let port: UInt16
     private let allowAnyCompanyPeerDiscovery: Bool
+    private let advertiseSelf: Bool
 
     private let queue = DispatchQueue(label: "com.wiredpart.peer-discovery", qos: .utility)
     private let logger = Logger(subsystem: "com.wiredpart.core", category: "PeerDiscovery")
@@ -105,13 +106,15 @@ public final class PeerDiscovery: NSObject, @unchecked Sendable {
         companyId: String,
         deviceName: String,
         port: UInt16,
-        allowAnyCompanyPeerDiscovery: Bool = false
+        allowAnyCompanyPeerDiscovery: Bool = false,
+        advertiseSelf: Bool = true
     ) {
         self.deviceId = deviceId
         self.companyId = companyId
         self.deviceName = deviceName
         self.port = port
         self.allowAnyCompanyPeerDiscovery = allowAnyCompanyPeerDiscovery
+        self.advertiseSelf = advertiseSelf
         super.init()
     }
 
@@ -120,7 +123,9 @@ public final class PeerDiscovery: NSObject, @unchecked Sendable {
         queue.async { [weak self] in
             guard let self, !self.isRunning else { return }
             self.isRunning = true
-            self.startAdvertising()
+            if self.advertiseSelf {
+                self.startAdvertising()
+            }
             self.startBrowsing()
         }
     }
@@ -149,6 +154,10 @@ public final class PeerDiscovery: NSObject, @unchecked Sendable {
     /// Test hook for the LAN advertisement ownership contract.
     public func debugUsesDedicatedAdvertisingListener() -> Bool {
         queue.sync { usesDedicatedAdvertisingListener }
+    }
+
+    public func debugIsAdvertising() -> Bool {
+        queue.sync { advertisedService != nil }
     }
     #endif
 

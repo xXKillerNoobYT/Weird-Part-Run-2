@@ -141,7 +141,8 @@ public actor PeerManager {
         deviceName: String,
         companyId: String,
         allowAnyCompanyPeerDiscovery: Bool = false,
-        startMultipeer: Bool = true
+        startMultipeer: Bool = true,
+        startSyncServer: Bool = true
     ) async throws {
         guard !state.running else { return }
 
@@ -152,17 +153,24 @@ public actor PeerManager {
         self.companyId = companyId          // Fix #191: stored for key-exchange requests
         peerKAPublicKeys.removeAll()
 
-        // 1. Start LAN sync server
-        let sState = SyncServerState(
-            deviceId: deviceId,
-            deviceName: deviceName,
-            companyId: companyId
-        )
-        self.serverState = sState
+        // 1. Start LAN sync server unless this is discovery-only onboarding.
+        let port: UInt16
+        if startSyncServer {
+            let sState = SyncServerState(
+                deviceId: deviceId,
+                deviceName: deviceName,
+                companyId: companyId
+            )
+            self.serverState = sState
 
-        let server = LanSyncServer(state: sState)
-        let port = try await server.start()
-        self.syncServer = server
+            let server = LanSyncServer(state: sState)
+            port = try await server.start()
+            self.syncServer = server
+        } else {
+            self.serverState = nil
+            self.syncServer = nil
+            port = 0
+        }
 
         state.running = true
         state.syncPort = port
@@ -174,7 +182,8 @@ public actor PeerManager {
             companyId: companyId,
             deviceName: deviceName,
             port: port,
-            allowAnyCompanyPeerDiscovery: allowAnyCompanyPeerDiscovery
+            allowAnyCompanyPeerDiscovery: allowAnyCompanyPeerDiscovery,
+            advertiseSelf: startSyncServer
         )
         discovery.onPeersChanged = { [weak self] peers in
             guard let self else { return }

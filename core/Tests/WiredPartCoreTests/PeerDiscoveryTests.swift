@@ -75,4 +75,22 @@ struct PeerDiscoveryTests {
 
         discovery.stop()
     }
+
+    @Test("PeerDiscovery can browse without advertising this device")
+    func testBrowseOnlyDiscoveryDoesNotAdvertise() {
+        let discovery = PeerDiscovery(
+            deviceId: "dev-001",
+            companyId: "company-abc",
+            deviceName: "Test Device",
+            port: 0,
+            advertiseSelf: false
+        )
+
+        discovery.start()
+        Thread.sleep(forTimeInterval: 0.1)
+
+        #expect(discovery.debugIsAdvertising() == false)
+
+        discovery.stop()
+    }
 }
