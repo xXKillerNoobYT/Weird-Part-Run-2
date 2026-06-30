@@ -70,11 +70,14 @@ scripts/paperclip-github-tracker-sync.sh --dry-run
 ## Manual Fallback (Do Not Remove Yet)
 If automated sync fails, use the existing snapshot path:
 ```bash
-scripts/github-issue-sync.sh --repo xXKillerNoobYT/Weird-Part-Run-2 --state all
+scripts/github-issue-sync.sh --repo xXKillerNoobYT/Weird-Part-Run-2 --state all --source-issue WEI-N
 ```
+When the sync is launched from a Paperclip heartbeat, `PAPERCLIP_TASK_ID` is also accepted as the default source issue. If neither `--source-issue` nor `PAPERCLIP_TASK_ID` is set, the script uses `GITHUB_ISSUE_SYNC_SOURCE_ISSUE` and then keeps the historical `WEI-44` fallback for older callers.
+
 Artifacts (local only, ignored by git):
 - `.tmp/github-issue-sync/<UTC timestamp>/issues.json`
 - `.tmp/github-issue-sync/latest-sync.md`
+- `.tmp/github-issue-sync/latest-sync.json`
 
 Do not commit generated snapshot artifacts; they are regenerated operational evidence, not project source.
 

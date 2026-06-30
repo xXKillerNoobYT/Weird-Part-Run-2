@@ -19,6 +19,12 @@ private enum BootstrapAuditTestError: Error {
     case operation
 }
 
+private enum MigrationRollbackRetryTestError: Error {
+    case restore
+    case migrate
+    case open
+}
+
 private final class MockBootstrapTaskAuditor: AppCoreBackgroundTaskAuditing, @unchecked Sendable {
     var startedNames: [String] = []
     var completedIds: [Int64] = []
@@ -259,6 +265,50 @@ struct Weird_Parts_IOSTests {
     }
 
     @MainActor
+    @Test func shopServerAddressNormalizationTrimsValidValuesAndRejectsBlankValues() async throws {
+        #expect(IOSSyncManager.normalizedShopServerAddress(nil) == nil)
+        #expect(IOSSyncManager.normalizedShopServerAddress("") == nil)
+        #expect(IOSSyncManager.normalizedShopServerAddress(" \n\t ") == nil)
+        #expect(IOSSyncManager.normalizedShopServerAddress("  http://127.0.0.1:8080\n") == "http://127.0.0.1:8080")
+        #expect(IOSSyncManager.normalizedShopServerAddress("  192.168.1.10:8080  ") == "192.168.1.10:8080")
+    }
+
+    @MainActor
+    @Test func whitespaceOnlyShopServerAddressDoesNotEnableSync() async throws {
+        let previousBluetooth = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
+        UserDefaults.standard.set(false, forKey: "bluetooth_sync_enabled")
+        defer { UserDefaults.standard.set(previousBluetooth, forKey: "bluetooth_sync_enabled") }
+
+        let db = try AppDatabase.openInMemoryDatabase()
+        let settings = SettingsService(db: db)
+        try settings.upsertSetting(key: "shop_server_address", value: " \n\t ", category: "sync")
+        let manager = IOSSyncManager()
+        manager.configure(db: db, settingsService: settings)
+
+        #expect(!manager.isSyncAvailable)
+
+        await manager.syncNow()
+
+        #expect(manager.syncStatus == .idle)
+        #expect(manager.errorMessage == "Sync not configured. Set up in Settings → Sync.")
+    }
+
+    @MainActor
+    @Test func trimmedShopServerAddressStillEnablesSync() async throws {
+        let previousBluetooth = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
+        UserDefaults.standard.set(false, forKey: "bluetooth_sync_enabled")
+        defer { UserDefaults.standard.set(previousBluetooth, forKey: "bluetooth_sync_enabled") }
+
+        let db = try AppDatabase.openInMemoryDatabase()
+        let settings = SettingsService(db: db)
+        try settings.upsertSetting(key: "shop_server_address", value: "  http://127.0.0.1:9\n", category: "sync")
+        let manager = IOSSyncManager()
+        manager.configure(db: db, settingsService: settings)
+
+        #expect(manager.isSyncAvailable)
+    }
+
+    @MainActor
     @Test func partsFlowDraftsAreScopedPerAuthenticatedUser() throws {
         let userA: Int64 = 101
         let userB: Int64 = 202
@@ -403,6 +453,62 @@ struct Weird_Parts_IOSTests {
     }
 
     @MainActor
+    @Test func onboardingPeerDiscoveryDoesNotRequireLocalCompanyId() throws {
+        let previousBluetoothSetting = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
+        defer { UserDefaults.standard.set(previousBluetoothSetting, forKey: "bluetooth_sync_enabled") }
+
+        let manager = IOSSyncManager()
+        defer { manager.stopPeerDiscovery() }
+        manager.setBluetoothEnabled(true, startDiscovery: false)
+
+        manager.startPeerDiscovery()
+        #expect(manager.errorMessage == "Peer discovery unavailable: Company ID is not configured. Open Settings and verify the company profile before starting peer discovery.")
+
+        manager.startOnboardingPeerDiscovery()
+
+        #expect(manager.isScanning)
+        #expect(manager.errorMessage == nil)
+        #expect(manager.syncStatus == .idle)
+    }
+
+    @MainActor
+    @Test func onboardingPeerDiscoveryKeepsLanAddressForPairing() throws {
+        let testFileURL = URL(fileURLWithPath: "\(#filePath)")
+        let projectRoot = testFileURL
+            .deletingLastPathComponent() // Weird Parts IOSTests
+            .deletingLastPathComponent() // Weird Parts IOS
+        let sourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent("Sync")
+            .appendingPathComponent("IOSSyncManager.swift")
+        let pairingSourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent("Auth")
+            .appendingPathComponent("DevicePairingView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let pairingSource = try String(contentsOf: pairingSourceURL, encoding: .utf8)
+
+        #expect(source.contains("allowAnyCompanyPeerDiscovery: mode == .onboardingJoin"))
+        #expect(source.contains("advertiseSelf: mode == .existingCompanySync"))
+        #expect(source.contains("if mode == .existingCompanySync"))
+        #expect(source.contains("Task { await pm.stopPeerSync() }"))
+        #expect(source.contains("if bluetoothDiscoveryEnabled && mode == .onboardingJoin"))
+        #expect(source.contains("startMultipeer: bluetoothDiscoveryEnabled && mode == .existingCompanySync"))
+        #expect(source.contains("startSyncServer: mode == .existingCompanySync"))
+        #expect(source.contains("if await pm.getState().running"))
+        #expect(source.contains("await pm.stopPeerSync()"))
+        #expect(source.contains("state: peer.multipeerState == \"connected\" ? \"connected\" : peer.transport"))
+        #expect(source.contains("peer.state == \"multipeer\" || (peer.state == \"connected\" && peer.address == nil)"))
+        #expect(source.contains("address: formattedPeerAddress(host: peer.host, port: Int(peer.port))"))
+        #expect(source.contains("host.contains(\":\") && !host.hasPrefix(\"[\") ? \"[\\(host)]\" : host"))
+        #expect(source.contains("await pm.stopMultipeerDiscovery()"))
+        #expect(source.contains("let multipeerOnly = mpPeers.filter { !nonMultipeerIds.contains($0.id) }"))
+        #expect(pairingSource.contains("guard let address = peer.address else"))
+        #expect(pairingSource.contains("syncManager.stopPeerDiscovery()"))
+        #expect(pairingSource.contains("shop.address"))
+    }
+
+    @MainActor
     @Test func officeNavigationUsesOfficeOnlyGateAndFinancialRedactionGate() async throws {
         let leadPermissions = ["view_jobs", "manage_jobs", "view_orders"]
         let officePermissions = ["approve_orders", "show_dollar_values", "manage_jobs"]
@@ -473,6 +579,48 @@ struct Weird_Parts_IOSTests {
         #else
         #expect(!AppCore.shouldResetLocalDatabaseAfterCipherOpenFailure(sqlCipherError))
         #endif
+    }
+
+    @Test func migrationRollbackRestoresThenRetriesMigrationAndOpen() throws {
+        var events: [String] = []
+
+        let database = try AppCore.retryOpeningRestoredDatabase(
+            backupPath: "/tmp/wired-part.sqlite.rollback",
+            databasePath: "/tmp/wired-part.sqlite",
+            keyHex: "device-key",
+            restoreDatabase: { backupPath, databasePath in
+                events.append("restore")
+                #expect(backupPath == "/tmp/wired-part.sqlite.rollback")
+                #expect(databasePath == "/tmp/wired-part.sqlite")
+            },
+            migratePlaintextDatabaseIfNeeded: { databasePath, keyHex in
+                events.append("migrate")
+                #expect(databasePath == "/tmp/wired-part.sqlite")
+                #expect(keyHex == "device-key")
+            },
+            openEncryptedDatabase: { databasePath, keyHex in
+                events.append("open")
+                #expect(databasePath == "/tmp/wired-part.sqlite")
+                #expect(keyHex == "device-key")
+                return "opened-restored-database"
+            }
+        )
+
+        #expect(events == ["restore", "migrate", "open"])
+        #expect(database == "opened-restored-database")
+    }
+
+    @Test func migrationRollbackRequiresBackupBeforeRetry() {
+        #expect(throws: AppCore.AppCoreError.self) {
+            _ = try AppCore.retryOpeningRestoredDatabase(
+                backupPath: nil,
+                databasePath: "/tmp/wired-part.sqlite",
+                keyHex: "device-key",
+                restoreDatabase: { _, _ in throw MigrationRollbackRetryTestError.restore },
+                migratePlaintextDatabaseIfNeeded: { _, _ in throw MigrationRollbackRetryTestError.migrate },
+                openEncryptedDatabase: { _, _ in throw MigrationRollbackRetryTestError.open }
+            ) as String
+        }
     }
 
     @MainActor
@@ -610,6 +758,22 @@ struct Weird_Parts_IOSTests {
         #expect(scannerSource.contains("catch {"), "The modal scanner start path needs explicit do/catch error handling")
         #expect(scannerSource.contains("activeContinuation?.yield(.error(errorMessage))"), "Startup failures should emit an actionable QRScanEvent error")
         #expect(scannerSource.contains("activeContinuation?.finish()"), "Startup failures should finish the scan stream instead of leaving a dead sheet")
+    }
+
+    @Test func timesheetCorrectionRejectsMalformedOriginalTimestampsBeforeSave() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let timesheetsURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Reports/IOSTimesheetsPage.swift")
+        let source = try String(contentsOf: timesheetsURL, encoding: .utf8)
+
+        #expect(!source.contains("CoreFormatters.parseDateTime(segment.clockIn) ?? Date()"), "Malformed original clock-in must not default correction pickers to the current time")
+        #expect(source.contains("Original clock-in timestamp is malformed"), "Malformed clock-in needs user-facing data-integrity copy")
+        #expect(source.contains("Original clock-out timestamp is malformed"), "Malformed clock-out needs user-facing data-integrity copy")
+        #expect(source.contains(".disabled(isSaving || originalTimestampError != nil)"), "The correction save action must stay disabled while original timestamps are malformed")
+        #expect(source.contains("if let originalTimestampError"), "The save path needs a guard even if a disabled button is bypassed")
     }
 
     @Test func dispatchAssignmentConflictCheckFailureShowsActionError() throws {
@@ -986,6 +1150,52 @@ struct Weird_Parts_IOSTests {
         #expect(try parts.listParts(search: "UITesting QA", limit: 10).count >= 2)
         #expect(detail.lines.count >= 2)
         #expect(detail.lines.allSatisfy { $0.partId != nil })
+    }
+
+    @MainActor
+    @Test func warehouseMovementDatePartitionKeepsMalformedRowsOutOfActiveQueue() throws {
+        let cutoff = try #require(Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 6, day: 8)))
+        let recent = Self.warehouseMovement(id: 1, reason: "Recent", createdAt: "2026-06-10 08:30:00")
+        let old = Self.warehouseMovement(id: 2, reason: "Old", createdAt: "2026-06-01 08:30:00")
+        let malformed = Self.warehouseMovement(id: 3, reason: "Malformed", createdAt: "not-a-date")
+        let missing = Self.warehouseMovement(id: 4, reason: "Missing", createdAt: nil)
+
+        let movements = [recent, old, malformed, missing]
+        let active = WarehouseMovementDatePartitioning.activeMovements(movements, cutoff: cutoff)
+        let history = WarehouseMovementDatePartitioning.completedHistoryMovements(movements, cutoff: cutoff)
+
+        #expect(active.map(\.id) == [recent.id])
+        #expect(history.map(\.id) == [old.id, malformed.id, missing.id])
+        #expect(WarehouseMovementDatePartitioning.displayDate(malformed.createdAt) == "Unknown date")
+        #expect(WarehouseMovementDatePartitioning.displayDate(missing.createdAt) == "Unknown date")
+    }
+
+    @Test func pricingBulkEditRejectsNegativeOrNonFinitePercentInputs() {
+        #expect(PricingBulkEditSheet.isValidNonNegativePercent("0"))
+        #expect(PricingBulkEditSheet.isValidNonNegativePercent(" 12.5 "))
+        #expect(!PricingBulkEditSheet.isValidNonNegativePercent("-0.01"))
+        #expect(!PricingBulkEditSheet.isValidNonNegativePercent("nan"))
+        #expect(!PricingBulkEditSheet.isValidNonNegativePercent("inf"))
+        #expect(!PricingBulkEditSheet.isValidNonNegativePercent("not a number"))
+    }
+
+    static func warehouseMovement(id: Int64, reason: String, createdAt: String?) -> WarehouseService.MovementRow {
+        WarehouseService.MovementRow(
+            id: id,
+            partId: 10,
+            partName: "QA Part",
+            qty: 1,
+            fromLocationType: nil,
+            fromLocationId: nil,
+            toLocationType: "warehouse",
+            toLocationId: 1,
+            movementType: "received",
+            reason: reason,
+            notes: nil,
+            performedBy: 1,
+            performedByName: "Tester",
+            createdAt: createdAt
+        )
     }
 }
 

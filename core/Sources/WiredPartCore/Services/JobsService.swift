@@ -52,6 +52,12 @@ public final class JobsService: Sendable {
         case stageInUse(Int64)
         case invalidStageTemplate(Int64)
         case invalidClockOutTime(laborEntryId: Int64)
+        case invalidClockTimestamp(laborEntryId: Int64, field: ClockTimestampField)
+    }
+
+    public enum ClockTimestampField: String, Sendable, Equatable {
+        case clockIn = "clock_in"
+        case clockOut = "clock_out"
     }
 
     // =========================================================================
@@ -835,8 +841,8 @@ public final class JobsService: Sendable {
         createdBy: Int64? = nil,
         jobClassification: String = "standard"
     ) throws -> Int64 {
-        guard !jobName.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
-        guard !jobNumber.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
+        guard !jobName.isBlankRequiredText else { throw JobsError.requiredFieldEmpty }
+        guard !jobNumber.isBlankRequiredText else { throw JobsError.requiredFieldEmpty }
         let notebooks = NotebooksService(db: db)
         return try db.writer.write { dbConn in
             try dbConn.execute(
@@ -941,10 +947,10 @@ public final class JobsService: Sendable {
         clearEstimatedHours: Bool = false,
         clearBudgetLimit: Bool = false
     ) throws {
-        if let jobName, jobName.trimmingCharacters(in: .whitespaces).isEmpty {
+        if let jobName, jobName.isBlankRequiredText {
             throw JobsError.requiredFieldEmpty
         }
-        if let status, status.trimmingCharacters(in: .whitespaces).isEmpty {
+        if let status, status.isBlankRequiredText {
             throw JobsError.requiredFieldEmpty
         }
         try db.writer.write { dbConn in
@@ -1863,7 +1869,7 @@ public final class JobsService: Sendable {
 
     /// Set work type for a clock entry ("new_work" or "warranty").
     public func setClockEntryWorkType(clockEntryId: Int64, workType: String) throws {
-        guard !workType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !workType.isBlankRequiredText else {
             throw JobsError.requiredFieldEmpty
         }
         try db.writer.write { dbConn in
@@ -1935,8 +1941,18 @@ public final class JobsService: Sendable {
                 let todoName: String? = row["todo_name"] as String?
                 let wType: String = row["work_type"] ?? "new_work"
 
-                let startDate = Self.parseSQLiteUTCDateTime(clockInStr) ?? Date()
-                let endDate: Date? = clockOutStr.flatMap { Self.parseSQLiteUTCDateTime($0) }
+                guard let startDate = Self.parseSQLiteUTCDateTime(clockInStr) else {
+                    throw JobsError.invalidClockTimestamp(laborEntryId: entryId, field: .clockIn)
+                }
+                let endDate: Date?
+                if let clockOutStr {
+                    guard let parsedEndDate = Self.parseSQLiteUTCDateTime(clockOutStr) else {
+                        throw JobsError.invalidClockTimestamp(laborEntryId: entryId, field: .clockOut)
+                    }
+                    endDate = parsedEndDate
+                } else {
+                    endDate = nil
+                }
 
                 let summary = ClockEntrySummary(
                     id: entryId,
@@ -2048,7 +2064,7 @@ public final class JobsService: Sendable {
             ).map { (row: Row) -> Int64 in row["id"] as Int64 }
             let answeredSet = Set(
                 responses
-                    .filter { !$0.answer.trimmingCharacters(in: .whitespaces).isEmpty }
+                    .filter { !$0.answer.isBlankRequiredText }
                     .map { $0.questionId }
             )
             for reqId in requiredIds {
@@ -2155,7 +2171,7 @@ public final class JobsService: Sendable {
         createdBy: Int64,
         targetUserId: Int64? = nil
     ) throws -> Int64 {
-        guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
+        guard !text.isBlankRequiredText else { throw JobsError.requiredFieldEmpty }
         return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
@@ -2175,7 +2191,7 @@ public final class JobsService: Sendable {
         answerText: String,
         answeredBy: Int64
     ) throws {
-        guard !answerText.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
+        guard !answerText.isBlankRequiredText else { throw JobsError.requiredFieldEmpty }
         try db.writer.write { dbConn in
             let count = try Int.fetchOne(
                 dbConn,
@@ -3671,15 +3687,27 @@ public final class JobsService: Sendable {
     /// Checks if the supply run markers in a notes string indicate an active supply run.
     public static func isOnSupplyRun(notes: String?) -> Bool {
         guard let notes, notes.contains("[supply_run_start:") else { return false }
+        guard let lastStart = notes.range(of: "[supply_run_start:", options: .backwards) else { return false }
+        if let lastEnd = notes.range(of: "[supply_run_end:", options: .backwards) {
+            return lastStart.lowerBound > lastEnd.lowerBound
+        }
+        return true
+    }
+
+    /// Returns the timestamp for the latest unmatched supply run start marker.
+    public static func activeSupplyRunStart(notes: String?) -> Date? {
+        guard let notes, notes.contains("[supply_run_start:") else { return nil }
         let lastStart = notes.range(of: "[supply_run_start:", options: .backwards)
         let lastEnd = notes.range(of: "[supply_run_end:", options: .backwards)
-        if let start = lastStart {
-            if let end = lastEnd {
-                return start.lowerBound > end.lowerBound
-            }
-            return true
+        guard let start = lastStart else { return nil }
+        if let end = lastEnd, end.lowerBound > start.lowerBound {
+            return nil
         }
-        return false
+
+        let timestampStart = start.upperBound
+        guard let closeBracket = notes[timestampStart...].firstIndex(of: "]") else { return nil }
+        let timestamp = String(notes[timestampStart..<closeBracket])
+        return CoreFormatters.parseDateTime(timestamp)
     }
 
     /// Returns the start timestamp for the latest active supply run, if the

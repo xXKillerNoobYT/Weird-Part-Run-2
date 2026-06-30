@@ -1054,10 +1054,10 @@ public final class FleetService: Sendable {
         guard try auth.hasPermission(actorId, permissionKey: "manage_fleet") else {
             throw FleetError.insufficientPermissions(required: "manage_fleet")
         }
-        guard !vehicleNumber.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !vehicleNumber.isBlankRequiredText else {
             throw FleetError.requiredFieldEmpty("vehicleNumber")
         }
-        guard !vehicleName.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !vehicleName.isBlankRequiredText else {
             throw FleetError.requiredFieldEmpty("vehicleName")
         }
         return try db.writer.write { dbConn in
@@ -1090,10 +1090,10 @@ public final class FleetService: Sendable {
         guard try auth.hasPermission(actorId, permissionKey: "manage_fleet") else {
             throw FleetError.insufficientPermissions(required: "manage_fleet")
         }
-        guard !trailerNumber.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !trailerNumber.isBlankRequiredText else {
             throw FleetError.requiredFieldEmpty("trailerNumber")
         }
-        guard !trailerType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !trailerType.isBlankRequiredText else {
             throw FleetError.requiredFieldEmpty("trailerType")
         }
         return try db.writer.write { dbConn in
@@ -1616,7 +1616,7 @@ public final class FleetService: Sendable {
         guard try auth.hasPermission(actorId, permissionKey: "log_fleet") else {
             throw FleetError.insufficientPermissions(required: "log_fleet")
         }
-        guard !partName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !partName.isBlankRequiredText else {
             throw FleetError.requiredFieldEmpty("partName")
         }
         guard quantity > 0 else { throw FleetError.invalidQuantity(quantity) }

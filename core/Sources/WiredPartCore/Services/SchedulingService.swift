@@ -605,10 +605,10 @@ public final class SchedulingService: Sendable {
         endDate: String,
         reason: String? = nil
     ) throws -> Int64 {
-        guard !startDate.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !startDate.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
-        guard !endDate.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !endDate.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
         // Guard: user must exist and not be tombstoned — otherwise the INSERT INTO
@@ -1120,7 +1120,7 @@ public final class SchedulingService: Sendable {
         notes: String? = nil,
         forceCreateDespiteTimeOff: Bool = false
     ) throws -> Int64 {
-        guard !date.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !date.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
         // Service-layer time-off conflict enforcement (fixes #355).
@@ -1389,7 +1389,7 @@ public final class SchedulingService: Sendable {
         timeSlot: String = "full",
         forceCreateDespiteTimeOff: Bool = false
     ) throws -> Int64 {
-        guard !date.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !date.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
         // Service-layer time-off conflict enforcement (consistent with createDispatch).
@@ -1781,7 +1781,7 @@ public final class SchedulingService: Sendable {
 
     /// Snooze a callback to a future date (updates the job's due_date).
     public func snoozeCallback(jobId: Int64, until: String) throws {
-        guard !until.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !until.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
         try db.writer.write { dbConn in
@@ -2255,16 +2255,16 @@ public final class SchedulingService: Sendable {
         breakMinutes: Int = 30, breakPaid: Bool = false,
         overtimeRule: String = "company_default"
     ) throws -> Int64 {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
-        guard !workDays.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !workDays.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
-        guard !startTime.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !startTime.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
-        guard !endTime.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !endTime.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -2350,10 +2350,10 @@ public final class SchedulingService: Sendable {
         id: Int64? = nil, name: String, date: String,
         isPaid: Bool = true, isRecurring: Bool = false
     ) throws -> Int64 {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
-        guard !date.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !date.isBlankRequiredText else {
             throw SchedulingError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in

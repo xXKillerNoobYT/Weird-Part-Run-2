@@ -995,6 +995,30 @@ struct JobsServiceTests {
         }
     }
 
+    @Test("Today's clock entries reject malformed clock-in timestamps")
+    func testGetTodaysClockEntriesRejectsMalformedClockInTimestamp() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CLOCK-BAD", name: "Bad Clock Job")
+        let malformedClockIn = try env.db.writer.read { db in
+            let today = try String.fetchOne(db, sql: "SELECT date('now', 'localtime')")
+            return try #require(today)
+        }
+
+        let laborEntryId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: "DELETE FROM labor_entries")
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, ?, NULL, 0.0, 0.0, 'clocked_in', datetime('now'))
+                """, arguments: [env.adminUserId, jobId, malformedClockIn])
+            return db.lastInsertedRowID
+        }
+
+        #expect(throws: JobsService.JobsError.invalidClockTimestamp(laborEntryId: laborEntryId, field: .clockIn)) {
+            _ = try env.jobs.getTodaysClockEntries(userId: env.adminUserId)
+        }
+    }
+
     // MARK: - Report Detail & Review
 
     @Test("Get report detail and mark reviewed")
@@ -2085,8 +2109,24 @@ struct JobsServiceTests {
     }
 
     @Test("isOnSupplyRun returns false when notes contain no supply run markers")
-    func testIsOnSupplyRunNoMarkers() {
+    func testIsOnSupplyRunWithoutMarkers() {
         #expect(!JobsService.isOnSupplyRun(notes: "Regular work notes, no supply run"))
+    }
+
+    @Test("activeSupplyRunStart returns latest unmatched supply run start date")
+    func testActiveSupplyRunStartReturnsLatestUnmatchedStart() throws {
+        let notes = "[supply_run_start:2026-04-16T09:00:00Z] [supply_run_end:2026-04-16T10:00:00Z] [supply_run_start:2026-04-16T14:30:00Z]"
+
+        let start = try #require(JobsService.activeSupplyRunStart(notes: notes))
+
+        #expect(CoreFormatters.iso8601.string(from: start) == "2026-04-16T14:30:00Z")
+    }
+
+    @Test("activeSupplyRunStart returns nil when latest supply run is ended")
+    func testActiveSupplyRunStartReturnsNilForEndedRun() {
+        let notes = "[supply_run_start:2026-04-16T09:00:00Z] [supply_run_end:2026-04-16T10:00:00Z]"
+
+        #expect(JobsService.activeSupplyRunStart(notes: notes) == nil)
     }
 
     // MARK: - computeStageStatuses (pure static)

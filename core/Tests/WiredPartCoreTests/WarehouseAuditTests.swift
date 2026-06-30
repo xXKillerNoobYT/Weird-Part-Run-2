@@ -137,6 +137,33 @@ struct WarehouseAuditTests {
         #expect(confidence.totalVarianceDollars == 20)
     }
 
+    @Test("Audit counts reject malformed unit costs before variance persistence")
+    func testRecordAuditCountRejectsMalformedUnitCosts() throws {
+        let env = try freshEnv()
+        #expect(throws: WarehouseService.WarehouseError.invalidQuantity) {
+            _ = try env.warehouse.recordAuditCount(
+                sessionId: 999,
+                partId: 999,
+                areaId: 999,
+                systemCount: 10,
+                userCount: 7,
+                countedBy: env.adminUserId,
+                unitCostDollars: -25
+            )
+        }
+        #expect(throws: WarehouseService.WarehouseError.invalidQuantity) {
+            _ = try env.warehouse.recordAuditCount(
+                sessionId: 999,
+                partId: 999,
+                areaId: 999,
+                systemCount: 10,
+                userCount: 7,
+                countedBy: env.adminUserId,
+                unitCostDollars: .infinity
+            )
+        }
+    }
+
     @Test("Audit variance within 5 percent dollar value neutral zone preserves confidence")
     func testAuditVarianceNeutralDollarThreshold() throws {
         let env = try freshEnv()

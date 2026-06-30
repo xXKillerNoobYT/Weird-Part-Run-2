@@ -33,6 +33,7 @@ public final class WarehouseService: Sendable {
         case jobNotFound(Int64)
         case userNotFound(Int64)
         case areaNotFound(Int64)
+        case binNotFound(Int64)
         case unitNotFound(Int64)
         case levelNotFound(Int64)
         case sessionItemNotFound(Int64)
@@ -862,7 +863,7 @@ public final class WarehouseService: Sendable {
         // which of fromLocationType/toLocationType is non-nil, not by sign. A
         // negative qty inverts the stock delta: `qty = qty - (-3)` = qty + 3.
         guard qty > 0 else { throw WarehouseError.invalidQuantity }
-        guard !movementType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !movementType.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         try Self.validateLocationEndpointCompleteness(locationType: fromLocationType, locationId: fromLocationId)
@@ -1134,7 +1135,7 @@ public final class WarehouseService: Sendable {
         guard !movements.isEmpty else { return [] }
         for m in movements {
             guard m.qty > 0 else { throw WarehouseError.invalidQuantity }
-            guard !m.movementType.trimmingCharacters(in: .whitespaces).isEmpty else {
+            guard !m.movementType.isBlankRequiredText else {
                 throw WarehouseError.requiredFieldEmpty
             }
             try Self.validateLocationEndpointCompleteness(locationType: m.fromLocationType, locationId: m.fromLocationId)
@@ -2654,7 +2655,7 @@ public final class WarehouseService: Sendable {
             try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "perform_audit")
         }
 
-        guard !scope.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !scope.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -2864,8 +2865,8 @@ public final class WarehouseService: Sendable {
         status: String = "active",
         notes: String? = nil
     ) throws -> Int64 {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty,
-              !trailerCode.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText,
+              !trailerCode.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -4221,7 +4222,7 @@ public final class WarehouseService: Sendable {
 
     /// Create a new warehouse floor plan.
     public func createFloorPlan(name: String, widthInches: Int, lengthInches: Int) throws -> WarehouseFloorPlan {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         guard widthInches > 0, lengthInches > 0 else {
@@ -4290,10 +4291,18 @@ public final class WarehouseService: Sendable {
         floorPlanId: Int64, featureType: String, label: String?,
         gridX: Int, gridY: Int, gridWidth: Int = 1, gridHeight: Int = 1, rotation: Int = 0
     ) throws -> WarehouseFloorFeature {
-        guard !featureType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !featureType.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
+            let floorPlan = try WarehouseFloorPlan.fetchOne(dbConn, key: floorPlanId)
+            try validateFloorPlanGridPlacement(
+                floorPlan: floorPlan,
+                gridX: gridX,
+                gridY: gridY,
+                gridWidth: gridWidth,
+                gridHeight: gridHeight
+            )
             var feature = WarehouseFloorFeature(
                 floorPlanId: floorPlanId,
                 featureType: featureType,
@@ -4336,7 +4345,7 @@ public final class WarehouseService: Sendable {
         gridX: Int = 0, gridY: Int = 0, gridWidth: Int = 4, gridHeight: Int = 4,
         rotation: Int = 0, zoneOrder: Int = 0
     ) throws -> WarehouseZone {
-        guard !zoneType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !zoneType.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         guard gridX >= 0, gridY >= 0, gridWidth > 0, gridHeight > 0 else {
@@ -4431,13 +4440,13 @@ public final class WarehouseService: Sendable {
         gridHeight: Int,
         dbConn: Database
     ) throws {
-        guard gridX >= 0, gridY >= 0, gridWidth > 0, gridHeight > 0 else {
-            throw WarehouseError.invalidDimension
-        }
-        if let cols = floorPlan?.gridCols, let rows = floorPlan?.gridRows,
-           gridX + gridWidth > cols || gridY + gridHeight > rows {
-            throw WarehouseError.invalidDimension
-        }
+        try validateFloorPlanGridPlacement(
+            floorPlan: floorPlan,
+            gridX: gridX,
+            gridY: gridY,
+            gridWidth: gridWidth,
+            gridHeight: gridHeight
+        )
 
         let existingZones = try WarehouseZone
             .filter(Column("floor_plan_id") == floorPlanId && Column("deleted_at") == nil)
@@ -4456,6 +4465,22 @@ public final class WarehouseService: Sendable {
             )
         }
         if collides {
+            throw WarehouseError.invalidDimension
+        }
+    }
+
+    private func validateFloorPlanGridPlacement(
+        floorPlan: WarehouseFloorPlan?,
+        gridX: Int,
+        gridY: Int,
+        gridWidth: Int,
+        gridHeight: Int
+    ) throws {
+        guard gridX >= 0, gridY >= 0, gridWidth > 0, gridHeight > 0 else {
+            throw WarehouseError.invalidDimension
+        }
+        if let cols = floorPlan?.gridCols, let rows = floorPlan?.gridRows,
+           gridX + gridWidth > cols || gridY + gridHeight > rows {
             throw WarehouseError.invalidDimension
         }
     }
@@ -4819,7 +4844,7 @@ public final class WarehouseService: Sendable {
         rotation: Int = 0, frontFace: String? = "south",
         isMovable: Bool = false, isJobReady: Bool = false
     ) throws -> WarehouseStorageUnit {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -4866,7 +4891,7 @@ public final class WarehouseService: Sendable {
         rotation: Int? = nil, frontFace: String? = nil,
         isConfigured: Bool? = nil, zoneId: Int64? = nil
     ) throws {
-        if let name, name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if let name, name.isBlankRequiredText {
             throw WarehouseError.requiredFieldEmpty
         }
 
@@ -4961,7 +4986,7 @@ public final class WarehouseService: Sendable {
         unitId: Int64, levelCode: String, levelName: String? = nil,
         order: Int = 0, heightInches: Int? = nil, areaCount: Int = 1
     ) throws -> WarehouseStorageLevel {
-        guard !levelCode.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !levelCode.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -5206,12 +5231,25 @@ public final class WarehouseService: Sendable {
 
     /// Move multiple bins to a target area in a single transaction (Cart Mode multi-bin transfer).
     ///
-    /// Updates `area_id` for each bin in `binIds`. Bins not found in the database are silently
-    /// skipped so partial-cart moves don't abort on a stale ID.
+    /// Validates the target area and every selected bin before moving so stale
+    /// cart-mode selections cannot partially move bins or point active bins at
+    /// soft-deleted storage areas.
     public func moveBinsToArea(binIds: [Int64], targetAreaId: Int64) throws {
         guard !binIds.isEmpty else { return }
         try db.writer.write { dbConn in
+            let areaExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM warehouse_storage_areas WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [targetAreaId]) ?? 0) > 0
+            guard areaExists else { throw WarehouseError.areaNotFound(targetAreaId) }
+
             for binId in binIds {
+                let binExists = (try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM warehouse_bins WHERE id = ? AND deleted_at IS NULL
+                    """, arguments: [binId]) ?? 0) > 0
+                guard binExists else { throw WarehouseError.binNotFound(binId) }
+            }
+
+            for binId in Set(binIds) {
                 try dbConn.execute(
                     sql: "UPDATE warehouse_bins SET area_id = ? WHERE id = ? AND deleted_at IS NULL",
                     arguments: [targetAreaId, binId]
@@ -5752,13 +5790,14 @@ public final class WarehouseService: Sendable {
     ) throws -> AuditCount {
         guard userCount >= 0 else { throw WarehouseError.invalidQuantity }
         guard systemCount >= 0 else { throw WarehouseError.invalidQuantity }
+        guard unitCostDollars.isFinite && unitCostDollars >= 0 else { throw WarehouseError.invalidQuantity }
         return try db.writer.write { dbConn in
             let userExists = (try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [countedBy]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(countedBy) }
             let variance = userCount - systemCount
-            let varianceDollars = Double(abs(variance)) * unitCostDollars
+            let varianceDollars = max(0, Double(abs(variance)) * unitCostDollars)
             let variancePercent: Double = systemCount > 0 ? (Double(abs(variance)) / Double(systemCount)) * 100.0 : (variance == 0 ? 0 : 100)
             let result: String
             if variance == 0 { result = "exact" }
@@ -6475,7 +6514,7 @@ public final class WarehouseService: Sendable {
 
     /// Resolve a misplaced part entry.
     public func resolveMisplacedPart(logId: Int64, resolution: String, resolvedBy: Int64) throws {
-        guard !resolution.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !resolution.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         try db.writer.write { dbConn in

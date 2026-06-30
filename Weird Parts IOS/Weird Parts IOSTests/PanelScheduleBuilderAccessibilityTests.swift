@@ -52,6 +52,43 @@ final class PanelScheduleBuilderAccessibilityTests: XCTestCase {
         )
     }
 
+    func testSaveNormalizesHiddenCircuitsAfterPanelShrink() throws {
+        let source = try Self.readNotebookSource("PanelScheduleBuilder.swift")
+
+        XCTAssertTrue(
+            source.contains("let normalized = schedule.normalizedForPersistence()") &&
+                source.contains("schedule = normalized") &&
+                source.contains("onSave(normalized)"),
+            "Saving a panel schedule should persist a normalized copy so hidden circuits and spare-circuit metadata are not left in notebook JSON."
+        )
+        XCTAssertTrue(
+            source.contains("schedule.circuitsOutsideTotalSpaces") &&
+                source.contains("Saving will remove"),
+            "Panel settings should warn when a shrink will prune hidden circuits above the new total space count."
+        )
+        XCTAssertTrue(
+            source.contains("showHiddenCircuitPruneConfirmation") &&
+                source.contains("Remove Hidden Circuits?") &&
+                source.contains("Remove & Save"),
+            "Saving a shrunk panel with hidden circuits should require explicit confirmation before pruning persisted data."
+        )
+    }
+
+    func testSpareCircuitSavesNormalizeHiddenActiveMetadata() throws {
+        let source = try Self.readNotebookSource("PanelScheduleBuilder.swift")
+
+        XCTAssertTrue(
+            source.contains("let normalized = circuit.normalizedForPersistence()") &&
+                source.contains("schedule.circuits[index] = normalized") &&
+                source.contains("schedule.circuits.append(normalized)"),
+            "Updating a circuit should normalize spare entries before they are kept in builder state."
+        )
+        XCTAssertTrue(
+            source.contains("onSave(circuit.normalizedForPersistence())"),
+            "The circuit editor should not hand contradictory spare/active metadata back to the builder."
+        )
+    }
+
     private static func readNotebookSource(_ filename: String, file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL

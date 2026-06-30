@@ -193,7 +193,16 @@ public actor SyncEngine {
                 return false
             }
 
-            let syncBatchId = resultData["sync_batch_id"] as? String ?? UUID().uuidString
+            guard let syncBatchId = resultData["sync_batch_id"] as? String,
+                  !syncBatchId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                updateState(
+                    status: .error,
+                    error: "Invalid push response: missing sync_batch_id",
+                    consecutiveFailures: state.consecutiveFailures + 1
+                )
+                scheduleRetry(deviceId: deviceId, shopUrl: shopUrl, authToken: authToken)
+                return false
+            }
 
             // 3. Apply shop changes to local DB
             if let shopChangesRaw = resultData["shop_changes"] as? [[String: Any]] {
@@ -207,19 +216,58 @@ public actor SyncEngine {
                 }
             }
 
-            // 4. Mark local changes as synced
-            if !pendingChanges.isEmpty {
-                let syncedIds = pendingChanges.compactMap { $0.id }
-                try ChangeTracker.markSynced(db: db, ids: syncedIds, batchId: syncBatchId)
-            }
-
-            // 5. Acknowledge (non-critical)
+            // 4. Acknowledge the batch before declaring local rows fully synced.
+            // The shop/server side may use this ack to close out delivery state, so an
+            // ack failure must remain retryable instead of reporting a clean sync.
             let ackURL = baseURL.appendingPathComponent("api/sync/ack")
             let ackBody: [String: Any] = [
                 "device_id": deviceId,
                 "sync_batch_id": syncBatchId,
             ]
-            _ = try? await httpPost(url: ackURL, body: ackBody, authToken: authToken, timeout: 10)
+            let ackDataAndResponse: (Data, URLResponse)
+            do {
+                ackDataAndResponse = try await httpPost(url: ackURL, body: ackBody, authToken: authToken, timeout: 10)
+            } catch {
+                let pendingCount = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? pendingChanges.count
+                updateState(
+                    status: .error,
+                    pendingCount: pendingCount,
+                    error: "Ack request failed: \(error.localizedDescription)",
+                    consecutiveFailures: state.consecutiveFailures + 1
+                )
+                scheduleRetry(deviceId: deviceId, shopUrl: shopUrl, authToken: authToken)
+                return false
+            }
+            let (_, ackResponse) = ackDataAndResponse
+            guard let ackHTTPResponse = ackResponse as? HTTPURLResponse else {
+                let pendingCount = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? pendingChanges.count
+                updateState(
+                    status: .error,
+                    pendingCount: pendingCount,
+                    error: "Ack failed: non-HTTP response",
+                    consecutiveFailures: state.consecutiveFailures + 1
+                )
+                scheduleRetry(deviceId: deviceId, shopUrl: shopUrl, authToken: authToken)
+                return false
+            }
+            guard (200..<300).contains(ackHTTPResponse.statusCode) else {
+                let statusCode = ackHTTPResponse.statusCode
+                let pendingCount = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? pendingChanges.count
+                updateState(
+                    status: .error,
+                    pendingCount: pendingCount,
+                    error: "Ack failed: \(statusCode)",
+                    consecutiveFailures: state.consecutiveFailures + 1
+                )
+                scheduleRetry(deviceId: deviceId, shopUrl: shopUrl, authToken: authToken)
+                return false
+            }
+
+            // 5. Mark local changes as synced only after push and ack both succeed.
+            if !pendingChanges.isEmpty {
+                let syncedIds = pendingChanges.compactMap { $0.id }
+                try ChangeTracker.markSynced(db: db, ids: syncedIds, batchId: syncBatchId)
+            }
 
             // Success
             let now = currentTimestamp()

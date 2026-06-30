@@ -138,6 +138,102 @@ struct SyncEngineTests {
         let fired = expectation.withLock { $0 }
         #expect(fired == true)
     }
+
+    @Test("Sync ack failure is retryable and does not mark changes synced")
+    func testAckFailureDoesNotReportSynced() async throws {
+        let db = try freshDB()
+        let engine = SyncEngine(db: db)
+
+        try ChangeTracker.trackChange(
+            db: db,
+            tableName: "users",
+            recordId: 1,
+            operation: .insert,
+            deviceId: "dev-001"
+        )
+        #expect(try ChangeTracker.getPendingChangeCount(db: db) == 1)
+
+        let server = try HTTPStubServer { request in
+            switch request.path {
+            case "/api/sync/push":
+                return HTTPStubResponse(
+                    statusCode: 200,
+                    body: #"{"data":{"sync_batch_id":"batch-ack-fails","shop_changes":[]}}"#
+                )
+            case "/api/sync/ack":
+                return HTTPStubResponse(
+                    statusCode: 500,
+                    body: #"{"error":"ack failed"}"#
+                )
+            default:
+                return HTTPStubResponse(statusCode: 404, body: #"{"error":"not found"}"#)
+            }
+        }
+        let port = try await server.start()
+        defer { server.stop() }
+
+        let result = await engine.runSync(
+            deviceId: "dev-001",
+            shopUrl: "http://127.0.0.1:\(port)",
+            authToken: nil
+        )
+
+        #expect(result == false)
+        #expect(try ChangeTracker.getPendingChangeCount(db: db) == 1)
+
+        let state = await engine.getState()
+        #expect(state.status == .error)
+        #expect(state.pendingCount == 1)
+        #expect(state.error == "Ack failed: 500")
+        #expect(state.consecutiveFailures == 1)
+    }
+
+    @Test("Sync rejects push responses without a batch ID before acking")
+    func testMissingBatchIdDoesNotAckOrReportSynced() async throws {
+        let db = try freshDB()
+        let engine = SyncEngine(db: db)
+        let ackCallCount = Mutex(0)
+
+        try ChangeTracker.trackChange(
+            db: db,
+            tableName: "users",
+            recordId: 1,
+            operation: .insert,
+            deviceId: "dev-001"
+        )
+
+        let server = try HTTPStubServer { request in
+            switch request.path {
+            case "/api/sync/push":
+                return HTTPStubResponse(
+                    statusCode: 200,
+                    body: #"{"data":{"shop_changes":[]}}"#
+                )
+            case "/api/sync/ack":
+                ackCallCount.withLock { $0 += 1 }
+                return HTTPStubResponse(statusCode: 200, body: #"{"ok":true}"#)
+            default:
+                return HTTPStubResponse(statusCode: 404, body: #"{"error":"not found"}"#)
+            }
+        }
+        let port = try await server.start()
+        defer { server.stop() }
+
+        let result = await engine.runSync(
+            deviceId: "dev-001",
+            shopUrl: "http://127.0.0.1:\(port)",
+            authToken: nil
+        )
+
+        #expect(result == false)
+        #expect(ackCallCount.withLock { $0 } == 0)
+        #expect(try ChangeTracker.getPendingChangeCount(db: db) == 1)
+
+        let state = await engine.getState()
+        #expect(state.status == .error)
+        #expect(state.error == "Invalid push response: missing sync_batch_id")
+        #expect(state.consecutiveFailures == 1)
+    }
 }
 
 // Simple thread-safe wrapper for test assertions

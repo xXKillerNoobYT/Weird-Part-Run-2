@@ -781,7 +781,7 @@ public final class ToolsService: Sendable {
     public func checkoutToolWithCondition(
         toolId: Int64, userId: Int64, condition: String, notes: String? = nil
     ) throws {
-        guard !condition.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !condition.isBlankRequiredText else {
             throw ToolsError.requiredFieldEmpty("condition")
         }
         try db.writer.write { dbConn in
@@ -827,7 +827,7 @@ public final class ToolsService: Sendable {
     public func returnToolWithCondition(
         toolId: Int64, userId: Int64, condition: String, notes: String? = nil
     ) throws {
-        guard !condition.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !condition.isBlankRequiredText else {
             throw ToolsError.requiredFieldEmpty("condition")
         }
         try db.writer.write { dbConn in
@@ -1098,7 +1098,7 @@ public final class ToolsService: Sendable {
     ) throws -> Int64 {
         // tool_trades.condition_at_send is NOT NULL — a blank string passes the constraint
         // but poisons every downstream UI that shows the "condition at send" column.
-        guard !condition.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !condition.isBlankRequiredText else {
             throw ToolsError.requiredFieldEmpty("condition")
         }
         // A self-trade is nonsensical (tool already assigned to fromUser) and the tool
@@ -1325,7 +1325,7 @@ public final class ToolsService: Sendable {
     ) throws {
         // A blank reportType would silently overwrite tools.status with "" and file
         // a useless audit entry; a blank description makes the audit trail meaningless.
-        guard !reportType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !reportType.isBlankRequiredText else {
             throw ToolsError.requiredFieldEmpty("reportType")
         }
         // Enforce the valid reportType set — the value is written straight into
@@ -1334,7 +1334,7 @@ public final class ToolsService: Sendable {
         guard validReportTypes.contains(reportType) else {
             throw ToolsError.requiredFieldEmpty("reportType")
         }
-        guard !description.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !description.isBlankRequiredText else {
             throw ToolsError.requiredFieldEmpty("description")
         }
         try db.writer.write { dbConn in
@@ -1415,7 +1415,7 @@ public final class ToolsService: Sendable {
         decayFloor: Double? = nil, conditionTriggers: [String]? = nil,
         description: String? = nil
     ) throws -> Int64 {
-        guard !type.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !type.isBlankRequiredText else {
             throw ToolsError.requiredFieldEmpty("type")
         }
         let triggersJSON = conditionTriggers.map { triggers -> String in
