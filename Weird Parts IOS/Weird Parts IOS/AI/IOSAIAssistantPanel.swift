@@ -359,6 +359,9 @@ struct IOSAIAssistantPanel: View {
 
         ))
         .modifier(ActivePageIdTracker(activePageId: $activePageId))
+        .onReceive(NotificationCenter.default.publisher(for: .appDidLogout)) { _ in
+            resetForLogout()
+        }
     }
 
     // MARK: - Availability Header
@@ -586,6 +589,23 @@ struct IOSAIAssistantPanel: View {
         Task { await aiService.clearConversation() }
         conversationId = UUID().uuidString
         messages = [welcomeMessage()]
+    }
+
+    /// Clear volatile assistant state when the app logs out, without deleting persisted history.
+    private func resetForLogout() {
+        clearConversationError = nil
+        clearConversationRetryId = nil
+        isClearingConversation = false
+        Task { await aiService.clearConversation() }
+        conversationId = UUID().uuidString
+        messages.removeAll()
+        activePageId = nil
+        catalogContext = nil
+        pricingContext = nil
+        suppliersContext = nil
+        companionsContext = nil
+        forecastContext = nil
+        settingsContext = nil
     }
 
     /// Delete all messages from the current conversation (UI + DB) but keep the same conversation ID.
