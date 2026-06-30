@@ -139,7 +139,10 @@ public actor PeerManager {
     public func startPeerSync(
         deviceId: String,
         deviceName: String,
-        companyId: String
+        companyId: String,
+        allowAnyCompanyPeerDiscovery: Bool = false,
+        startMultipeer: Bool = true,
+        startSyncServer: Bool = true
     ) async throws {
         guard !state.running else { return }
 
@@ -150,17 +153,24 @@ public actor PeerManager {
         self.companyId = companyId          // Fix #191: stored for key-exchange requests
         peerKAPublicKeys.removeAll()
 
-        // 1. Start LAN sync server
-        let sState = SyncServerState(
-            deviceId: deviceId,
-            deviceName: deviceName,
-            companyId: companyId
-        )
-        self.serverState = sState
+        // 1. Start LAN sync server unless this is discovery-only onboarding.
+        let port: UInt16
+        if startSyncServer {
+            let sState = SyncServerState(
+                deviceId: deviceId,
+                deviceName: deviceName,
+                companyId: companyId
+            )
+            self.serverState = sState
 
-        let server = LanSyncServer(state: sState)
-        let port = try await server.start()
-        self.syncServer = server
+            let server = LanSyncServer(state: sState)
+            port = try await server.start()
+            self.syncServer = server
+        } else {
+            self.serverState = nil
+            self.syncServer = nil
+            port = 0
+        }
 
         state.running = true
         state.syncPort = port
@@ -171,7 +181,9 @@ public actor PeerManager {
             deviceId: deviceId,
             companyId: companyId,
             deviceName: deviceName,
-            port: port
+            port: port,
+            allowAnyCompanyPeerDiscovery: allowAnyCompanyPeerDiscovery,
+            advertiseSelf: startSyncServer
         )
         discovery.onPeersChanged = { [weak self] peers in
             guard let self else { return }
@@ -182,21 +194,26 @@ public actor PeerManager {
 
         // 3. Start Multipeer Connectivity (Apple platforms)
         #if canImport(MultipeerConnectivity)
-        let mpManager = MultipeerManager(
-            deviceId: deviceId,
-            deviceName: deviceName,
-            companyId: companyId
-        )
-        mpManager.onPeersChanged = { [weak self] _ in
-            guard let self else { return }
-            Task { await self.mergePeerLists() }
+        if startMultipeer {
+            let mpManager = MultipeerManager(
+                deviceId: deviceId,
+                deviceName: deviceName,
+                companyId: companyId,
+                allowAnyCompanyPeerDiscovery: allowAnyCompanyPeerDiscovery,
+                autoInvitePeers: startSyncServer,
+                advertiseSelf: startSyncServer
+            )
+            mpManager.onPeersChanged = { [weak self] _ in
+                guard let self else { return }
+                Task { await self.mergePeerLists() }
+            }
+            mpManager.onDataReceived = { [weak self] message in
+                guard let self else { return }
+                Task { await self.handleMultipeerMessage(message) }
+            }
+            mpManager.start()
+            self.multipeerManager = mpManager
         }
-        mpManager.onDataReceived = { [weak self] message in
-            guard let self else { return }
-            Task { await self.handleMultipeerMessage(message) }
-        }
-        mpManager.start()
-        self.multipeerManager = mpManager
         #endif
 
         // 4. Start peer poll loop (every 10 seconds)
@@ -241,6 +258,21 @@ public actor PeerManager {
         serverState = nil
 
         state = PeerManagerState()
+        notifyStateChanged()
+    }
+
+    /// Stop only the Multipeer Connectivity transport while preserving LAN discovery/sync.
+    ///
+    /// Used when the app-level Bluetooth setting is disabled while peer sync is
+    /// already running. LAN discovery and the sync server should continue, but
+    /// Bluetooth/Wi-Fi P2P advertising and browsing must stop immediately.
+    public func stopMultipeerDiscovery() async {
+        #if canImport(MultipeerConnectivity)
+        multipeerManager?.stop()
+        multipeerManager = nil
+        #endif
+
+        state.peers.removeAll { $0.transport == "multipeer" }
         notifyStateChanged()
     }
 

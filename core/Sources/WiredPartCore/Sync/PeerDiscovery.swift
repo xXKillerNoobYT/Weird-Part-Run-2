@@ -57,7 +57,9 @@ public struct DiscoveredPeer: Sendable, Identifiable {
 /// TXT records: `device_id`, `device_name`, `company_id`, `version`, `sync_port`
 /// Instance name: `WiredPart-{device_id[0..<8]}`
 ///
-/// Filtering: Only peers from the same company are reported.
+/// Filtering: Only peers from the same company are reported unless bootstrap
+/// onboarding discovery explicitly allows any company before this device has
+/// received and persisted the verified company ID.
 /// Self-discovery is filtered out by device_id.
 ///
 /// CONCURRENCY INVARIANT (#222 — `@unchecked Sendable` contract):
@@ -87,6 +89,8 @@ public final class PeerDiscovery: NSObject, @unchecked Sendable {
     private let companyId: String
     private let deviceName: String
     private let port: UInt16
+    private let allowAnyCompanyPeerDiscovery: Bool
+    private let advertiseSelf: Bool
 
     private let queue = DispatchQueue(label: "com.wiredpart.peer-discovery", qos: .utility)
     private let logger = Logger(subsystem: "com.wiredpart.core", category: "PeerDiscovery")
@@ -101,12 +105,16 @@ public final class PeerDiscovery: NSObject, @unchecked Sendable {
         deviceId: String,
         companyId: String,
         deviceName: String,
-        port: UInt16
+        port: UInt16,
+        allowAnyCompanyPeerDiscovery: Bool = false,
+        advertiseSelf: Bool = true
     ) {
         self.deviceId = deviceId
         self.companyId = companyId
         self.deviceName = deviceName
         self.port = port
+        self.allowAnyCompanyPeerDiscovery = allowAnyCompanyPeerDiscovery
+        self.advertiseSelf = advertiseSelf
         super.init()
     }
 
@@ -115,7 +123,9 @@ public final class PeerDiscovery: NSObject, @unchecked Sendable {
         queue.async { [weak self] in
             guard let self, !self.isRunning else { return }
             self.isRunning = true
-            self.startAdvertising()
+            if self.advertiseSelf {
+                self.startAdvertising()
+            }
             self.startBrowsing()
         }
     }
@@ -144,6 +154,10 @@ public final class PeerDiscovery: NSObject, @unchecked Sendable {
     /// Test hook for the LAN advertisement ownership contract.
     public func debugUsesDedicatedAdvertisingListener() -> Bool {
         queue.sync { usesDedicatedAdvertisingListener }
+    }
+
+    public func debugIsAdvertising() -> Bool {
+        queue.sync { advertisedService != nil }
     }
     #endif
 
@@ -231,8 +245,8 @@ public final class PeerDiscovery: NSObject, @unchecked Sendable {
 
             // Filter: skip self
             guard peerDeviceId != deviceId else { continue }
-            // Filter: same company only
-            guard peerCompanyId == companyId else { continue }
+            // Filter: same company only unless this is first-run onboarding.
+            guard allowAnyCompanyPeerDiscovery || peerCompanyId == companyId else { continue }
             seenPeerIds.insert(peerDeviceId)
 
             resolveBonjourService(

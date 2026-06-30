@@ -409,6 +409,62 @@ struct Weird_Parts_IOSTests {
     }
 
     @MainActor
+    @Test func onboardingPeerDiscoveryDoesNotRequireLocalCompanyId() throws {
+        let previousBluetoothSetting = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
+        defer { UserDefaults.standard.set(previousBluetoothSetting, forKey: "bluetooth_sync_enabled") }
+
+        let manager = IOSSyncManager()
+        defer { manager.stopPeerDiscovery() }
+        manager.setBluetoothEnabled(true, startDiscovery: false)
+
+        manager.startPeerDiscovery()
+        #expect(manager.errorMessage == "Peer discovery unavailable: Company ID is not configured. Open Settings and verify the company profile before starting peer discovery.")
+
+        manager.startOnboardingPeerDiscovery()
+
+        #expect(manager.isScanning)
+        #expect(manager.errorMessage == nil)
+        #expect(manager.syncStatus == .idle)
+    }
+
+    @MainActor
+    @Test func onboardingPeerDiscoveryKeepsLanAddressForPairing() throws {
+        let testFileURL = URL(fileURLWithPath: "\(#filePath)")
+        let projectRoot = testFileURL
+            .deletingLastPathComponent() // Weird Parts IOSTests
+            .deletingLastPathComponent() // Weird Parts IOS
+        let sourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent("Sync")
+            .appendingPathComponent("IOSSyncManager.swift")
+        let pairingSourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent("Auth")
+            .appendingPathComponent("DevicePairingView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let pairingSource = try String(contentsOf: pairingSourceURL, encoding: .utf8)
+
+        #expect(source.contains("allowAnyCompanyPeerDiscovery: mode == .onboardingJoin"))
+        #expect(source.contains("advertiseSelf: mode == .existingCompanySync"))
+        #expect(source.contains("if mode == .existingCompanySync"))
+        #expect(source.contains("Task { await pm.stopPeerSync() }"))
+        #expect(source.contains("if bluetoothDiscoveryEnabled && mode == .onboardingJoin"))
+        #expect(source.contains("startMultipeer: bluetoothDiscoveryEnabled && mode == .existingCompanySync"))
+        #expect(source.contains("startSyncServer: mode == .existingCompanySync"))
+        #expect(source.contains("if await pm.getState().running"))
+        #expect(source.contains("await pm.stopPeerSync()"))
+        #expect(source.contains("state: peer.multipeerState == \"connected\" ? \"connected\" : peer.transport"))
+        #expect(source.contains("peer.state == \"multipeer\" || (peer.state == \"connected\" && peer.address == nil)"))
+        #expect(source.contains("address: formattedPeerAddress(host: peer.host, port: Int(peer.port))"))
+        #expect(source.contains("host.contains(\":\") && !host.hasPrefix(\"[\") ? \"[\\(host)]\" : host"))
+        #expect(source.contains("await pm.stopMultipeerDiscovery()"))
+        #expect(source.contains("let multipeerOnly = mpPeers.filter { !nonMultipeerIds.contains($0.id) }"))
+        #expect(pairingSource.contains("guard let address = peer.address else"))
+        #expect(pairingSource.contains("syncManager.stopPeerDiscovery()"))
+        #expect(pairingSource.contains("shop.address"))
+    }
+
+    @MainActor
     @Test func officeNavigationUsesOfficeOnlyGateAndFinancialRedactionGate() async throws {
         let leadPermissions = ["view_jobs", "manage_jobs", "view_orders"]
         let officePermissions = ["approve_orders", "show_dollar_values", "manage_jobs"]
