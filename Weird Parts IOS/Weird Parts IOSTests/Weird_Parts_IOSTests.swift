@@ -1085,6 +1085,15 @@ struct Weird_Parts_IOSTests {
         #expect(detail.lines.count >= 2)
         #expect(detail.lines.allSatisfy { $0.partId != nil })
     }
+
+    @Test func pricingBulkEditRejectsNegativeOrNonFinitePercentInputs() {
+        #expect(PricingBulkEditSheet.isValidNonNegativePercent("0"))
+        #expect(PricingBulkEditSheet.isValidNonNegativePercent(" 12.5 "))
+        #expect(!PricingBulkEditSheet.isValidNonNegativePercent("-0.01"))
+        #expect(!PricingBulkEditSheet.isValidNonNegativePercent("nan"))
+        #expect(!PricingBulkEditSheet.isValidNonNegativePercent("inf"))
+        #expect(!PricingBulkEditSheet.isValidNonNegativePercent("not a number"))
+    }
 }
 
 struct PartsFlowDraftStoreTests {
