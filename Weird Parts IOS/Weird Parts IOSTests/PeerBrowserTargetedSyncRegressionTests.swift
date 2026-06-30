@@ -25,6 +25,10 @@ final class PeerBrowserTargetedSyncRegressionTests: XCTestCase {
             source.contains("pm.syncWithPeer(deviceId: peerDeviceId)"),
             "The selected-peer entry point should call PeerManager's device-id selector."
         )
+        XCTAssertTrue(
+            source.contains("errorMessage = \"\\(failureReason) for \\(peerLabel)\""),
+            "Selected-peer failures should include the chosen device ID so row-level sync errors are diagnosable."
+        )
 
         let selectedPeerMethod = try Self.methodBody(named: "syncWithPeer", in: source)
         XCTAssertFalse(

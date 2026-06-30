@@ -241,7 +241,14 @@ final class IOSSyncManager {
 
         let result = await pm.syncWithPeer(deviceId: peerDeviceId)
         if !result.success {
-            errorMessage = result.error ?? "Sync failed with \(result.peerName)"
+            let peerLabel: String
+            if result.peerName == peerDeviceId {
+                peerLabel = peerDeviceId
+            } else {
+                peerLabel = "\(result.peerName) (\(peerDeviceId))"
+            }
+            let failureReason = result.error ?? "Sync failed"
+            errorMessage = "\(failureReason) for \(peerLabel)"
         }
 
         let conflictCount = refreshConflictCount()

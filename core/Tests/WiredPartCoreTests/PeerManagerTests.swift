@@ -151,7 +151,7 @@ struct PeerManagerTests {
 
         #expect(result.success == false)
         #expect(result.peerDeviceId == "missing-peer")
-        #expect(result.error == "Peer not found")
+        #expect(result.error == "Peer not found: missing-peer")
 
         let state = await pm.getState()
         #expect(state.lastPeerSyncs["missing-peer"]?.success == false)

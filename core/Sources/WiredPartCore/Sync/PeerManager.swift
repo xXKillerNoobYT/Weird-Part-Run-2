@@ -402,9 +402,10 @@ public actor PeerManager {
                 peerDeviceId: deviceId,
                 peerName: deviceId,
                 success: false,
-                error: "Peer not found"
+                error: "Peer not found: \(deviceId)"
             )
             state.lastPeerSyncs[deviceId] = result
+            notifyStateChanged()
             return result
         }
 
