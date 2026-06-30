@@ -223,7 +223,7 @@ final class IOSSyncManager {
     ///
     /// This intentionally bypasses the configured LAN server and `syncWithAllPeers()`
     /// global fan-out so a row-level Sync tap only touches the peer the user chose.
-    func syncWithPeer(peerId: String) async {
+    func syncWithPeer(peerDeviceId: String) async {
         guard isSyncAvailable else {
             syncStatus = .idle
             errorMessage = "Sync not configured. Set up in Settings → Sync."
@@ -239,7 +239,7 @@ final class IOSSyncManager {
         syncStatus = .syncing
         errorMessage = nil
 
-        let result = await pm.syncWithPeer(deviceId: peerId)
+        let result = await pm.syncWithPeer(deviceId: peerDeviceId)
         if !result.success {
             errorMessage = result.error ?? "Sync failed with \(result.peerName)"
         }

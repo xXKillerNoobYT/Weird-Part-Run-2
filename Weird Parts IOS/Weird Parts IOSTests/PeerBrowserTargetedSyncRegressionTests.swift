@@ -5,7 +5,7 @@ final class PeerBrowserTargetedSyncRegressionTests: XCTestCase {
         let source = try Self.readPeerBrowserSource()
 
         XCTAssertTrue(
-            source.contains("syncManager.syncWithPeer(peerId: peer.id)"),
+            source.contains("syncManager.syncWithPeer(peerDeviceId: peer.id)"),
             "Each peer row's Sync button must pass the selected peer ID into IOSSyncManager."
         )
         XCTAssertFalse(
@@ -18,11 +18,11 @@ final class PeerBrowserTargetedSyncRegressionTests: XCTestCase {
         let source = try Self.readSyncManagerSource()
 
         XCTAssertTrue(
-            source.contains("func syncWithPeer(peerId: String) async"),
+            source.contains("func syncWithPeer(peerDeviceId: String) async"),
             "IOSSyncManager should expose an explicit selected-peer sync entry point for row-level UI actions."
         )
         XCTAssertTrue(
-            source.contains("pm.syncWithPeer(deviceId: peerId)"),
+            source.contains("pm.syncWithPeer(deviceId: peerDeviceId)"),
             "The selected-peer entry point should call PeerManager's device-id selector."
         )
 
@@ -64,8 +64,8 @@ final class PeerBrowserTargetedSyncRegressionTests: XCTestCase {
     }
 
     private static func methodBody(named methodName: String, in source: String) throws -> String {
-        guard let nameRange = source.range(of: "func \(methodName)(peerId: String) async") else {
-            throw XCTSkip("Expected method \(methodName)(peerId: String) async in source")
+        guard let nameRange = source.range(of: "func \(methodName)(peerDeviceId: String) async") else {
+            throw XCTSkip("Expected method \(methodName)(peerDeviceId: String) async in source")
         }
         guard let openBrace = source[nameRange.upperBound...].firstIndex(of: "{") else {
             throw XCTSkip("Expected opening brace for \(methodName)")

@@ -131,7 +131,7 @@ struct IOSPeerBrowser: View {
 
                         if peer.state == "found" || peer.state == "multipeer" || peer.state == "lan" {
                             Button("Sync") {
-                                Task { await syncManager.syncWithPeer(peerId: peer.id) }
+                                Task { await syncManager.syncWithPeer(peerDeviceId: peer.id) }
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
