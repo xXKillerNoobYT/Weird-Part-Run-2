@@ -409,6 +409,22 @@ struct Weird_Parts_IOSTests {
     }
 
     @MainActor
+    @Test func onboardingPeerDiscoveryDoesNotRequireLocalCompanyId() throws {
+        let previousBluetoothSetting = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
+        defer { UserDefaults.standard.set(previousBluetoothSetting, forKey: "bluetooth_sync_enabled") }
+
+        let manager = IOSSyncManager()
+        defer { manager.stopPeerDiscovery() }
+        manager.setBluetoothEnabled(true, startDiscovery: false)
+
+        manager.startOnboardingPeerDiscovery()
+
+        #expect(manager.isScanning)
+        #expect(manager.errorMessage == nil)
+        #expect(manager.syncStatus != .error)
+    }
+
+    @MainActor
     @Test func officeNavigationUsesOfficeOnlyGateAndFinancialRedactionGate() async throws {
         let leadPermissions = ["view_jobs", "manage_jobs", "view_orders"]
         let officePermissions = ["approve_orders", "show_dollar_values", "manage_jobs"]

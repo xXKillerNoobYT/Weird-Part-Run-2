@@ -100,8 +100,8 @@ struct DevicePairingView: View {
                     .foregroundStyle(.secondary)
 
                 Button {
-                    syncManager.setBluetoothEnabled(true)
-                    syncManager.startPeerDiscovery()
+                    syncManager.setBluetoothEnabled(true, startDiscovery: false)
+                    syncManager.startOnboardingPeerDiscovery()
                 } label: {
                     Label("Scan Again", systemImage: "arrow.clockwise")
                 }
@@ -233,9 +233,11 @@ struct DevicePairingView: View {
     // MARK: - Actions
 
     private func scanForShop() async {
-        // Enable BT and start peer discovery
-        syncManager.setBluetoothEnabled(true)
-        syncManager.startPeerDiscovery()
+        // Enable BT and start first-run join discovery. A brand-new device does
+        // not have a local company ID yet; the pairing response verifies the
+        // selected shop before storing company settings.
+        syncManager.setBluetoothEnabled(true, startDiscovery: false)
+        syncManager.startOnboardingPeerDiscovery()
     }
 
     private func attemptPairing() async {

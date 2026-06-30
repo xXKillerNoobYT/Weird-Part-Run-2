@@ -50,12 +50,18 @@ final class IOSSyncManager {
     private var syncEngine: SyncEngine?
     private var peerManager: PeerManager?
     private var multipeerManager: MultipeerManager?
+    private var multipeerDiscoveryMode: PeerDiscoveryMode?
 
     struct PeerInfo: Identifiable, Sendable {
         let id: String
         let name: String
         let state: String
         let discoveredAt: String
+    }
+
+    enum PeerDiscoveryMode: Equatable {
+        case existingCompanySync
+        case onboardingJoin
     }
 
     /// Whether real sync infrastructure is connected.
@@ -276,7 +282,21 @@ final class IOSSyncManager {
     // MARK: - Peer Discovery
 
     /// Start scanning for nearby peers via Multipeer Connectivity.
+    ///
+    /// Existing sync discovery stays company-scoped and fails closed if the
+    /// stored company ID is missing. First-run onboarding uses
+    /// `startOnboardingPeerDiscovery()` so a brand-new device can find a shop
+    /// computer before it has downloaded and persisted the company settings.
     func startPeerDiscovery() {
+        startPeerDiscovery(mode: .existingCompanySync)
+    }
+
+    /// Start first-run join discovery before this device has a local company ID.
+    func startOnboardingPeerDiscovery() {
+        startPeerDiscovery(mode: .onboardingJoin)
+    }
+
+    private func startPeerDiscovery(mode: PeerDiscoveryMode) {
         guard isSyncAvailable else {
             isScanning = false
             errorMessage = "Sync not configured. Enable Bluetooth sync or set a server address in Settings."
@@ -284,11 +304,16 @@ final class IOSSyncManager {
         }
 
         let companyId: String
-        do {
-            companyId = try peerDiscoveryCompanyId()
-        } catch {
-            handlePeerDiscoveryCompanyIdFailure(error)
-            return
+        switch mode {
+        case .existingCompanySync:
+            do {
+                companyId = try peerDiscoveryCompanyId()
+            } catch {
+                handlePeerDiscoveryCompanyIdFailure(error)
+                return
+            }
+        case .onboardingJoin:
+            companyId = "onboarding-join"
         }
 
         isScanning = true
@@ -296,14 +321,22 @@ final class IOSSyncManager {
         // Start multipeer if BT is enabled
         let bluetoothDiscoveryEnabled = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
         if bluetoothDiscoveryEnabled {
+            if multipeerDiscoveryMode != mode {
+                multipeerManager?.stop()
+                multipeerManager = nil
+                removeMultipeerDiscoveredPeers()
+            }
             if multipeerManager == nil {
                 let deviceId = DeviceIdentity.current
                 let deviceName = UIDevice.current.name
                 multipeerManager = MultipeerManager(
                     deviceId: deviceId,
                     deviceName: deviceName,
-                    companyId: companyId
+                    companyId: companyId,
+                    allowAnyCompanyPeerDiscovery: mode == .onboardingJoin,
+                    autoInvitePeers: mode == .existingCompanySync
                 )
+                multipeerDiscoveryMode = mode
                 multipeerManager?.onPeersChanged = { [weak self] peers in
                     Task { @MainActor [weak self] in
                         self?.handleMultipeerPeersChanged(peers)
@@ -313,8 +346,10 @@ final class IOSSyncManager {
             multipeerManager?.start()
         }
 
-        // Also start LAN peer discovery if we have a peer manager
-        if let pm = peerManager {
+        // Also start LAN peer discovery if we have a peer manager and a stored
+        // company ID. Join/onboarding discovery only browses Multipeer peers;
+        // the selected shop response verifies and persists the company identity.
+        if mode == .existingCompanySync, let pm = peerManager {
             Task {
                 let deviceId = DeviceIdentity.current
                 let deviceName = UIDevice.current.name
@@ -350,6 +385,8 @@ final class IOSSyncManager {
     func stopPeerDiscovery() {
         isScanning = false
         multipeerManager?.stop()
+        multipeerManager = nil
+        multipeerDiscoveryMode = nil
         if let pm = peerManager {
             Task {
                 await pm.stopPeerSync()
@@ -413,15 +450,18 @@ final class IOSSyncManager {
     }
 
     /// Enable or disable Bluetooth/Multipeer sync.
-    func setBluetoothEnabled(_ enabled: Bool) {
+    func setBluetoothEnabled(_ enabled: Bool, startDiscovery: Bool = true) {
         UserDefaults.standard.set(enabled, forKey: "bluetooth_sync_enabled")
         if enabled {
-            startPeerDiscovery()
+            if startDiscovery {
+                startPeerDiscovery()
+            }
         } else {
             multipeerManager?.stop()
             multipeerManager = nil
+            multipeerDiscoveryMode = nil
             // Remove multipeer-only peers
-            discoveredPeers.removeAll { $0.state == "multipeer" }
+            removeMultipeerDiscoveredPeers()
         }
     }
 
@@ -469,7 +509,7 @@ final class IOSSyncManager {
 
         // Keep multipeer-only peers that aren't also in LAN
         let lanIds = Set(lanPeers.map(\.id))
-        let multipeerOnly = discoveredPeers.filter { !lanIds.contains($0.id) && $0.state == "multipeer" }
+        let multipeerOnly = discoveredPeers.filter { !lanIds.contains($0.id) && isMultipeerDiscoveredPeer($0) }
         discoveredPeers = lanPeers + multipeerOnly
     }
 
@@ -485,8 +525,16 @@ final class IOSSyncManager {
 
         // Merge: replace multipeer entries, keep LAN entries
         let mpIds = Set(mpPeers.map(\.id))
-        let nonMultipeer = discoveredPeers.filter { !mpIds.contains($0.id) && $0.state != "multipeer" }
+        let nonMultipeer = discoveredPeers.filter { !mpIds.contains($0.id) && !isMultipeerDiscoveredPeer($0) }
         discoveredPeers = nonMultipeer + mpPeers
+    }
+
+    private func removeMultipeerDiscoveredPeers() {
+        discoveredPeers.removeAll { isMultipeerDiscoveredPeer($0) }
+    }
+
+    private func isMultipeerDiscoveredPeer(_ peer: PeerInfo) -> Bool {
+        peer.state == "multipeer" || peer.state == "connected"
     }
 
     private func refreshPendingCount() {
