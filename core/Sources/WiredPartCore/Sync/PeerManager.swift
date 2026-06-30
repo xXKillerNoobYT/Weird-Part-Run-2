@@ -198,7 +198,10 @@ public actor PeerManager {
             let mpManager = MultipeerManager(
                 deviceId: deviceId,
                 deviceName: deviceName,
-                companyId: companyId
+                companyId: companyId,
+                allowAnyCompanyPeerDiscovery: allowAnyCompanyPeerDiscovery,
+                autoInvitePeers: startSyncServer,
+                advertiseSelf: startSyncServer
             )
             mpManager.onPeersChanged = { [weak self] _ in
                 guard let self else { return }

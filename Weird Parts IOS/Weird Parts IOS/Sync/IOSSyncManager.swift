@@ -485,6 +485,26 @@ final class IOSSyncManager {
             multipeerDiscoveryMode = nil
             // Remove multipeer-only peers
             removeMultipeerDiscoveredPeers()
+            if let pm = peerManager {
+                Task {
+                    let currentState = await pm.getState()
+                    guard currentState.running else { return }
+                    await pm.stopPeerSync()
+                    do {
+                        let companyId = try await MainActor.run { try self.peerDiscoveryCompanyId() }
+                        try await pm.startPeerSync(
+                            deviceId: DeviceIdentity.current,
+                            deviceName: UIDevice.current.name,
+                            companyId: companyId,
+                            startMultipeer: false
+                        )
+                    } catch {
+                        await MainActor.run {
+                            self.handlePeerDiscoveryCompanyIdFailure(error)
+                        }
+                    }
+                }
+            }
         }
     }
 
