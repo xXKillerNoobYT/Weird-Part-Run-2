@@ -206,6 +206,9 @@ extension Notification.Name {
     /// `userInfo` should contain `"moduleId"` (String) and optionally `"tabId"` (String).
     static let navigateToModule = Notification.Name("WiredPart.navigateToModule")
 
+    /// Posted when AppCore logs out the current user so user-scoped UI state can be cleared.
+    static let appDidLogout = Notification.Name("WiredPart.appDidLogout")
+
     /// Posted when the Parts Catalog page appears, with current context for AI.
     static let catalogPageActive = Notification.Name("WiredPart.catalogPageActive")
 
