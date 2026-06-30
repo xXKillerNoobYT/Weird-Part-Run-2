@@ -1268,6 +1268,11 @@ public final class ReportsService: Sendable {
         name: String, type: String, columns: [String],
         filters: [String: String], userId: Int64, isShared: Bool
     ) throws -> Int64 {
+        guard let normalizedName = name.normalizedRequiredText,
+              let normalizedType = type.normalizedRequiredText else {
+            throw ReportsError.requiredFieldEmpty
+        }
+
         try db.writer.read { dbConn in
             try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "view_reports")
         }
@@ -1280,7 +1285,7 @@ public final class ReportsService: Sendable {
             try dbConn.execute(sql: """
                 INSERT INTO saved_reports (name, report_type, columns_json, filters_json, created_by, is_shared)
                 VALUES (?, ?, ?, ?, ?, ?)
-                """, arguments: [name, type, columnsJson, filtersJson, userId, isShared])
+                """, arguments: [normalizedName, normalizedType, columnsJson, filtersJson, userId, isShared])
             return dbConn.lastInsertedRowID
         }
     }
@@ -1773,6 +1778,7 @@ public final class ReportsService: Sendable {
 }
 
 public enum ReportsError: Error, LocalizedError, Equatable {
+    case requiredFieldEmpty
     case timesheetSegmentNotFound(Int64)
     case invalidTimesheetCorrectionReason
     case invalidTimesheetCorrectionRange
@@ -1780,6 +1786,8 @@ public enum ReportsError: Error, LocalizedError, Equatable {
 
     public var errorDescription: String? {
         switch self {
+        case .requiredFieldEmpty:
+            return "Report name and type are required."
         case .timesheetSegmentNotFound:
             return "Timesheet entry was not found."
         case .invalidTimesheetCorrectionReason:

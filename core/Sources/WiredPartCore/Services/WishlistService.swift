@@ -579,7 +579,7 @@ public final class WishlistService: Sendable {
     /// Internal dismiss — called by system paths that bypass the permission gate.
     @discardableResult
     private func _performDismiss(id: Int64, dismissedByName: String, reason: String) throws -> WishlistItem {
-        guard !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !reason.isBlankRequiredText else {
             throw WishlistError.dismissReasonRequired
         }
         return try db.writer.write { dbConn in

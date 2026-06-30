@@ -521,7 +521,7 @@ struct IOSAIAssistantPanel: View {
                     .foregroundStyle(Color.accentColor)
             }
             .accessibilityLabel("Send message")
-            .disabled(query.trimmingCharacters(in: .whitespaces).isEmpty || isProcessing || isClearingConversation)
+            .disabled(query.isBlankRequiredText || isProcessing || isClearingConversation)
         }
         .padding(.horizontal)
         .padding(.vertical, 8)

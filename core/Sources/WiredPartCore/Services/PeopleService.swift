@@ -582,10 +582,10 @@ public final class PeopleService: Sendable {
         expiryDate: String? = nil,
         notes: String? = nil
     ) throws -> Certification {
-        guard !certType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !certType.isBlankRequiredText else {
             throw PeopleError.requiredFieldEmpty("certType")
         }
-        guard !certName.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !certName.isBlankRequiredText else {
             throw PeopleError.requiredFieldEmpty("certName")
         }
         try db.writer.read { dbConn in
@@ -641,10 +641,10 @@ public final class PeopleService: Sendable {
         yearsExperience: Double? = nil,
         verifiedBy: Int64? = nil
     ) throws -> UserSkill {
-        guard !skillName.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !skillName.isBlankRequiredText else {
             throw PeopleError.requiredFieldEmpty("skillName")
         }
-        guard !proficiency.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !proficiency.isBlankRequiredText else {
             throw PeopleError.requiredFieldEmpty("proficiency")
         }
         try db.writer.read { dbConn in
@@ -987,7 +987,7 @@ public final class PeopleService: Sendable {
         zip: String? = nil,
         notes: String? = nil
     ) throws -> Int64 {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText else {
             throw PeopleError.requiredFieldEmpty("name")
         }
         return try db.writer.write { dbConn in
@@ -1016,10 +1016,10 @@ public final class PeopleService: Sendable {
         isPrimary: Bool = false,
         notes: String? = nil
     ) throws -> Int64 {
-        guard !entityType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !entityType.isBlankRequiredText else {
             throw PeopleError.requiredFieldEmpty("entityType")
         }
-        guard !firstName.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !firstName.isBlankRequiredText else {
             throw PeopleError.requiredFieldEmpty("firstName")
         }
         return try db.writer.write { dbConn in
@@ -1043,7 +1043,7 @@ public final class PeopleService: Sendable {
         email: String? = nil,
         role: String? = nil
     ) throws {
-        guard !firstName.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !firstName.isBlankRequiredText else {
             throw PeopleError.requiredFieldEmpty("firstName")
         }
         let encryptedEmail = try encryptSensitiveField(email)
@@ -1070,7 +1070,7 @@ public final class PeopleService: Sendable {
         trade: String? = nil,
         notes: String? = nil
     ) throws -> Int64 {
-        guard !companyName.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !companyName.isBlankRequiredText else {
             throw PeopleError.requiredFieldEmpty("companyName")
         }
         return try db.writer.write { dbConn in
@@ -1088,7 +1088,7 @@ public final class PeopleService: Sendable {
     /// Create a new team. Returns the new team's ID.
     @discardableResult
     public func createTeam(name: String, description: String? = nil) throws -> Int64 {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText else {
             throw PeopleError.requiredFieldEmpty("name")
         }
         return try db.writer.write { dbConn in
@@ -1261,7 +1261,7 @@ public final class PeopleService: Sendable {
 
     /// Update team name and description.
     public func updateTeam(teamId: Int64, name: String, description: String?) throws {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText else {
             throw PeopleError.requiredFieldEmpty("name")
         }
         try db.writer.write { dbConn in
@@ -1326,7 +1326,7 @@ public final class PeopleService: Sendable {
     /// Create a new hat (role). Returns the new hat's ID.
     @discardableResult
     public func createHat(name: String, description: String? = nil, level: Int = 0) throws -> Int64 {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText else {
             throw PeopleError.requiredFieldEmpty("name")
         }
         return try db.writer.write { dbConn in
@@ -1821,10 +1821,10 @@ public final class PeopleService: Sendable {
     /// Add a communication entry for a customer.
     @discardableResult
     public func addCommunicationEntry(customerId: Int64, commType: String, content: String, createdBy: Int64) throws -> Int64 {
-        guard !commType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !commType.isBlankRequiredText else {
             throw PeopleError.requiredFieldEmpty("commType")
         }
-        guard !content.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !content.isBlankRequiredText else {
             throw PeopleError.requiredFieldEmpty("content")
         }
         return try db.writer.write { dbConn in
@@ -1952,7 +1952,7 @@ public final class PeopleService: Sendable {
     /// Add a note to a contractor.
     @discardableResult
     public func addContractorNote(contractorId: Int64, content: String, createdBy: Int64) throws -> Int64 {
-        guard !content.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !content.isBlankRequiredText else {
             throw PeopleError.requiredFieldEmpty("content")
         }
         return try db.writer.write { dbConn in
@@ -2282,7 +2282,7 @@ public final class PeopleService: Sendable {
         }
 
         guard amount > 0 else { throw PeopleError.invalidAmount(amount) }
-        guard !dueDate.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !dueDate.isBlankRequiredText else {
             throw PeopleError.requiredFieldEmpty("dueDate")
         }
         return try db.writer.write { dbConn in
@@ -2313,7 +2313,7 @@ public final class PeopleService: Sendable {
     /// Record a payment against an existing invoice.
     public func recordPayment(recordId: Int64, amount: Double, paidDate: String) throws {
         guard amount > 0 else { throw PeopleError.invalidAmount(amount) }
-        guard !paidDate.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !paidDate.isBlankRequiredText else {
             throw PeopleError.requiredFieldEmpty("paidDate")
         }
         try db.writer.write { dbConn in

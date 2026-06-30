@@ -835,8 +835,8 @@ public final class JobsService: Sendable {
         createdBy: Int64? = nil,
         jobClassification: String = "standard"
     ) throws -> Int64 {
-        guard !jobName.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
-        guard !jobNumber.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
+        guard !jobName.isBlankRequiredText else { throw JobsError.requiredFieldEmpty }
+        guard !jobNumber.isBlankRequiredText else { throw JobsError.requiredFieldEmpty }
         let notebooks = NotebooksService(db: db)
         return try db.writer.write { dbConn in
             try dbConn.execute(
@@ -941,10 +941,10 @@ public final class JobsService: Sendable {
         clearEstimatedHours: Bool = false,
         clearBudgetLimit: Bool = false
     ) throws {
-        if let jobName, jobName.trimmingCharacters(in: .whitespaces).isEmpty {
+        if let jobName, jobName.isBlankRequiredText {
             throw JobsError.requiredFieldEmpty
         }
-        if let status, status.trimmingCharacters(in: .whitespaces).isEmpty {
+        if let status, status.isBlankRequiredText {
             throw JobsError.requiredFieldEmpty
         }
         try db.writer.write { dbConn in
@@ -1863,7 +1863,7 @@ public final class JobsService: Sendable {
 
     /// Set work type for a clock entry ("new_work" or "warranty").
     public func setClockEntryWorkType(clockEntryId: Int64, workType: String) throws {
-        guard !workType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !workType.isBlankRequiredText else {
             throw JobsError.requiredFieldEmpty
         }
         try db.writer.write { dbConn in
@@ -2048,7 +2048,7 @@ public final class JobsService: Sendable {
             ).map { (row: Row) -> Int64 in row["id"] as Int64 }
             let answeredSet = Set(
                 responses
-                    .filter { !$0.answer.trimmingCharacters(in: .whitespaces).isEmpty }
+                    .filter { !$0.answer.isBlankRequiredText }
                     .map { $0.questionId }
             )
             for reqId in requiredIds {
@@ -2155,7 +2155,7 @@ public final class JobsService: Sendable {
         createdBy: Int64,
         targetUserId: Int64? = nil
     ) throws -> Int64 {
-        guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
+        guard !text.isBlankRequiredText else { throw JobsError.requiredFieldEmpty }
         return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
@@ -2175,7 +2175,7 @@ public final class JobsService: Sendable {
         answerText: String,
         answeredBy: Int64
     ) throws {
-        guard !answerText.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
+        guard !answerText.isBlankRequiredText else { throw JobsError.requiredFieldEmpty }
         try db.writer.write { dbConn in
             let count = try Int.fetchOne(
                 dbConn,
