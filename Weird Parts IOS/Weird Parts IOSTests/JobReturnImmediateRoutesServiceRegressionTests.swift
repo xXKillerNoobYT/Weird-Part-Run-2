@@ -12,8 +12,8 @@ final class JobReturnImmediateRoutesServiceRegressionTests: XCTestCase {
             "Immediate route helper should require the already-unwrapped WarehouseService from submitJobReturn."
         )
         XCTAssertFalse(
-            helperSection.contains("guard let warehouseService = appCore.warehouseService else { return }"),
-            "Immediate route helper must not silently return after the return intake has been created."
+            helperSection.contains("appCore.warehouseService"),
+            "Immediate route helper must not re-read appCore.warehouseService or silently return after the return intake has been created."
         )
 
         let submitBody = try Self.extractFunctionBody(named: "submitJobReturn", from: source)
@@ -32,7 +32,7 @@ final class JobReturnImmediateRoutesServiceRegressionTests: XCTestCase {
     }
 
     private static func extractFunctionSection(named functionName: String, from source: String) throws -> String {
-        guard let signatureRange = source.range(of: "private func \(functionName)") else {
+        guard let signatureRange = source.range(of: "func \(functionName)") else {
             XCTFail("Missing function \(functionName)")
             return ""
         }
