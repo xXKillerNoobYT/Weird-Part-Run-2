@@ -130,13 +130,25 @@ final class OrdersSessionUnavailableRegressionTests: XCTestCase {
             sendSheetSource.contains("guard groupEnabled else { return [po.id] }"),
             "When grouped sending is off, confirmSent must only mark the primary PO sent even if stale sibling selections exist."
         )
+        guard let clearStateStart = sendSheetSource.range(of: "private func clearSiblingPOState() {") else {
+            XCTFail("Grouped send state reset helper should exist.")
+            return
+        }
+        guard let clearStateEnd = sendSheetSource[clearStateStart.upperBound...].range(of: "    }") else {
+            XCTFail("Grouped send state reset helper should have a closing brace.")
+            return
+        }
+        let clearStateHelper = String(sendSheetSource[clearStateStart.lowerBound..<clearStateEnd.upperBound])
         XCTAssertTrue(
-            sendSheetSource.contains("includedSiblingIds = []") && sendSheetSource.contains("siblingPDFs = [:]"),
-            "Turning grouped sending off should clear stale sibling selections and generated sibling PDFs."
+            clearStateHelper.contains("siblingPOs = []") &&
+            clearStateHelper.contains("includedSiblingIds = []") &&
+            clearStateHelper.contains("siblingPDFs = [:]") &&
+            clearStateHelper.contains("siblingPOsError = nil") &&
+            clearStateHelper.contains("siblingPOsLoading = false"),
+            "Turning grouped sending off should clear stale sibling rows, selections, generated PDFs, errors, and loading state."
         )
         XCTAssertTrue(
-            sendSheetSource.contains("if on {\n                    clearSiblingPOState()\n                    fetchSiblingPOs()") &&
-            sendSheetSource.contains("siblingPOs = []"),
+            sendSheetSource.contains("clearSiblingPOState()\n                if on {\n                    fetchSiblingPOs()"),
             "Turning grouped sending back on should clear stale sibling rows before the fresh sibling fetch completes."
         )
         XCTAssertTrue(

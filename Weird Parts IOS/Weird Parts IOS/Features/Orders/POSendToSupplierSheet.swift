@@ -267,11 +267,9 @@ struct POSendToSupplierSheet: View {
                 }
             }
             .onChange(of: groupEnabled) { _, on in
+                clearSiblingPOState()
                 if on {
-                    clearSiblingPOState()
                     fetchSiblingPOs()
-                } else {
-                    clearSiblingPOState()
                 }
             }
 
