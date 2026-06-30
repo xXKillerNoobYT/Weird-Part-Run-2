@@ -304,6 +304,13 @@ final class IOSSyncManager {
             return
         }
 
+        if mode == .existingCompanySync {
+            multipeerManager?.stop()
+            multipeerManager = nil
+            multipeerDiscoveryMode = nil
+            removeMultipeerDiscoveredPeers()
+        }
+
         let companyId: String
         switch mode {
         case .existingCompanySync:
@@ -372,7 +379,7 @@ final class IOSSyncManager {
                 } catch {
                     handleLanPeerDiscoveryStartupFailure(
                         error,
-                        hasActiveMultipeerDiscovery: bluetoothDiscoveryEnabled
+                        hasActiveMultipeerDiscovery: bluetoothDiscoveryEnabled && mode == .onboardingJoin
                     )
                 }
             }

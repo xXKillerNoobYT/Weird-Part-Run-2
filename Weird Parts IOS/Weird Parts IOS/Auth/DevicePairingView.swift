@@ -118,6 +118,7 @@ struct DevicePairingView: View {
                         return
                     }
                     errorMessage = nil
+                    syncManager.stopPeerDiscovery()
                     discoveredShop = DiscoveredShop(id: peer.id, name: peer.name, address: address)
                 } label: {
                     HStack(spacing: 10) {
