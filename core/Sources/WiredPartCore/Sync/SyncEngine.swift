@@ -193,7 +193,16 @@ public actor SyncEngine {
                 return false
             }
 
-            let syncBatchId = resultData["sync_batch_id"] as? String ?? UUID().uuidString
+            guard let syncBatchId = resultData["sync_batch_id"] as? String,
+                  !syncBatchId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                updateState(
+                    status: .error,
+                    error: "Invalid push response: missing sync_batch_id",
+                    consecutiveFailures: state.consecutiveFailures + 1
+                )
+                scheduleRetry(deviceId: deviceId, shopUrl: shopUrl, authToken: authToken)
+                return false
+            }
 
             // 3. Apply shop changes to local DB
             if let shopChangesRaw = resultData["shop_changes"] as? [[String: Any]] {

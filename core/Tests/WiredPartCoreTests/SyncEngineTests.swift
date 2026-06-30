@@ -188,6 +188,53 @@ struct SyncEngineTests {
         #expect(state.error == "Ack failed: 500")
         #expect(state.consecutiveFailures == 1)
     }
+
+    @Test("Sync rejects push responses without a batch ID before acking")
+    func testMissingBatchIdDoesNotAckOrReportSynced() async throws {
+        let db = try freshDB()
+        let engine = SyncEngine(db: db)
+        let ackCallCount = Mutex(0)
+
+        try ChangeTracker.trackChange(
+            db: db,
+            tableName: "users",
+            recordId: 1,
+            operation: .insert,
+            deviceId: "dev-001"
+        )
+
+        let server = try SyncEngineHTTPStubServer { request in
+            switch request.path {
+            case "/api/sync/push":
+                return SyncEngineHTTPStubResponse(
+                    statusCode: 200,
+                    body: #"{"data":{"shop_changes":[]}}"#
+                )
+            case "/api/sync/ack":
+                ackCallCount.withLock { $0 += 1 }
+                return SyncEngineHTTPStubResponse(statusCode: 200, body: #"{"ok":true}"#)
+            default:
+                return SyncEngineHTTPStubResponse(statusCode: 404, body: #"{"error":"not found"}"#)
+            }
+        }
+        let port = try await server.start()
+        defer { server.stop() }
+
+        let result = await engine.runSync(
+            deviceId: "dev-001",
+            shopUrl: "http://127.0.0.1:\(port)",
+            authToken: nil
+        )
+
+        #expect(result == false)
+        #expect(ackCallCount.withLock { $0 } == 0)
+        #expect(try ChangeTracker.getPendingChangeCount(db: db) == 1)
+
+        let state = await engine.getState()
+        #expect(state.status == .error)
+        #expect(state.error == "Invalid push response: missing sync_batch_id")
+        #expect(state.consecutiveFailures == 1)
+    }
 }
 
 // Simple thread-safe wrapper for test assertions
@@ -241,8 +288,9 @@ private final class SyncEngineHTTPStubServer: @unchecked Sendable {
             }
             listener.newConnectionHandler = { [handler, queue] connection in
                 connection.start(queue: queue)
-                connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { data, _, _, _ in
-                    let rawRequest = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+
+                @Sendable func sendResponse(for requestData: Data) {
+                    let rawRequest = String(data: requestData, encoding: .utf8) ?? ""
                     let requestLine = rawRequest.components(separatedBy: "\r\n").first ?? ""
                     let path = requestLine.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
                     let stubResponse = handler(SyncEngineHTTPStubRequest(path: path))
@@ -259,6 +307,24 @@ private final class SyncEngineHTTPStubServer: @unchecked Sendable {
                         connection.cancel()
                     })
                 }
+
+                @Sendable func receive(_ buffered: Data) {
+                    connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { data, _, isComplete, _ in
+                        var requestData = buffered
+                        if let data {
+                            requestData.append(data)
+                        }
+
+                        guard requestData.containsCRLF || isComplete else {
+                            receive(requestData)
+                            return
+                        }
+
+                        sendResponse(for: requestData)
+                    }
+                }
+
+                receive(Data())
             }
             listener.start(queue: queue)
         }
@@ -283,6 +349,13 @@ private final class SyncEngineOneShotContinuationBox: @unchecked Sendable {
         self.continuation = nil
         lock.unlock()
         continuation?.resume(with: result)
+    }
+}
+
+private extension Data {
+    var containsCRLF: Bool {
+        guard count >= 2 else { return false }
+        return zip(self, dropFirst()).contains { $0 == 13 && $1 == 10 }
     }
 }
 
