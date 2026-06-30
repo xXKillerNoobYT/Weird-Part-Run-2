@@ -2356,6 +2356,26 @@ struct JobsServiceTests {
             "Soft-deleted labor entry notes must not gain supply_run markers")
     }
 
+    @Test("toggleSupplyRun is a no-op on a completed labor entry")
+    func testToggleSupplyRun_noOpOnCompletedEntry() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let entryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        try env.jobs.clockOut(laborEntryId: entryId)
+
+        // Stale supply-run toggle on a completed entry should not mutate audited time data.
+        let result = try env.jobs.toggleSupplyRun(laborEntryId: entryId)
+        #expect(result == "working",
+            "toggleSupplyRun on completed entry must return 'working' (no-op early exit)")
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT notes FROM labor_entries WHERE id = ?", arguments: [entryId])
+        }
+        let notes: String? = row?["notes"]
+        #expect(notes == nil || (notes?.contains("supply_run_start") == false),
+            "Completed labor entry notes must not gain supply_run markers")
+    }
+
     @Test("activeSupplyRunStart returns the latest unmatched supply run start")
     func testActiveSupplyRunStart_returnsLatestUnmatchedStart() throws {
         let notes = """

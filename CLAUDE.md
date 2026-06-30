@@ -92,7 +92,9 @@ Errors are learning opportunities. When something breaks:
 
 ## GitHub Issues = Master Todo List
 
-**GitHub Issues is the single source of truth** for all bugs, features, and improvements. Every unfixed problem MUST have a GitHub issue. Every fix should reference and close its issue.
+**GitHub Issues is the single source of truth** for all bugs, features, and improvements. Every unfixed problem MUST be tracked in GitHub, but tracking does not always mean opening a brand-new issue. Before creating an issue, search for existing issues with the same root cause, affected area, or fix shape. If a new finding is another instance of an existing defect class, update the existing issue/umbrella with evidence instead of filing a duplicate.
+
+Use one GitHub issue per coherent fix/PR whenever practical. Prefer umbrella issues for cross-cutting bug classes such as shared validation, repeated silent-error handling, common accessibility defects, or scanner findings that can be fixed by one coordinated pass. File separate issues only when the fix owners, risk, acceptance criteria, or release priority are materially different. Every fix should reference and close its issue or update the umbrella checklist it resolves.
 
 ## WPR2 PR CI: Local Mac Actions Runner
 
@@ -127,13 +129,15 @@ Owner direction tracked in Paperclip WEI-3851/WEI-3852 supersedes older attempts
 
 **Rules:**
 
-1. **Find something broken? File it.** Every bug, gap, or missing feature gets a GitHub issue with: title prefix `[Area][Type]`, description of what's wrong, impact, and fix approach.
-2. **Fix something? Close the issue.** When you fix a bug, close the corresponding issue with a comment describing what was done.
-3. **Ask before filing ambiguous issues.** If you're unsure whether something is a bug or intended behavior, ask the user first. Get the right info before filing.
-4. **Keep issues up to date.** As work progresses, update issue descriptions, add comments with progress, and close completed items. Stale issues are worse than no issues.
-5. **Check existing issues first.** Before filing a new issue, search to make sure it's not already tracked. Reference related issues with `#number`.
-6. **Issue format:** Use `[Area]` prefix (e.g., `[Parts]`, `[Orders]`, `[Scheduling]`) and `[Type]` (e.g., `[Bug]`, `[Feature]`, `[UX]`). Include a "Status" line: `OPEN`, `IN PROGRESS`, or `FIXED`.
-7. **Program Review issues (#52-#66)** are the parent tracking issues for each feature area. New issues should reference their parent when applicable.
+1. **Find something broken? Track it without spraying.** Every bug, gap, or missing feature gets GitHub tracking with: title prefix `[Area][Type]`, description of what's wrong, impact, and fix approach. Search first. If the finding shares a root cause/fix with existing issues, comment/update the existing issue or umbrella checklist instead of creating another issue.
+2. **Group duplicate-class findings.** When one PR can reasonably fix multiple findings, create or update one umbrella issue and list the affected files/flows as checklist items. Cross-cutting examples: `.whitespaces` vs `.whitespacesAndNewlines`, repeated silent `try?`/guard-return failures, common accessibility label gaps, repeated empty-state defects, or scanner findings with the same remediation pattern.
+3. **Split only for real independence.** File separate issues only when findings need different owners, plans, risk decisions, release priority, or PRs. Area differences alone are not enough if the same central validator/helper/audit pass will fix them.
+4. **Fix something? Close or check off the tracker.** When you fix a bug, close the corresponding issue with a comment describing what was done, or update the umbrella checklist/comment with the resolved sub-findings.
+5. **Ask before filing ambiguous issues.** If you're unsure whether something is a bug or intended behavior, ask the user first. Get the right info before filing.
+6. **Keep issues up to date.** As work progresses, update issue descriptions, add comments with progress, and close completed items. Stale issues are worse than no issues.
+7. **Check existing issues first.** Before filing a new issue, search to make sure it's not already tracked. Reference related issues with `#number`.
+8. **Issue format:** Use `[Area]` prefix (e.g., `[Parts]`, `[Orders]`, `[Scheduling]`) and `[Type]` (e.g., `[Bug]`, `[Feature]`, `[UX]`). Include a "Status" line: `OPEN`, `IN PROGRESS`, or `FIXED`.
+9. **Program Review issues (#52-#66)** are the parent tracking issues for each feature area. New issues should reference their parent when applicable.
 
 ---
 
