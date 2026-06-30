@@ -3614,7 +3614,13 @@ public final class JobsService: Sendable {
         try db.writer.write { conn in
             guard let row = try Row.fetchOne(
                 conn,
-                sql: "SELECT notes FROM labor_entries WHERE id = ? AND deleted_at IS NULL",
+                sql: """
+                    SELECT notes FROM labor_entries
+                    WHERE id = ?
+                      AND status = 'clocked_in'
+                      AND clock_out IS NULL
+                      AND deleted_at IS NULL
+                    """,
                 arguments: [laborEntryId]
             ) else { return "working" }
 
@@ -3632,7 +3638,14 @@ public final class JobsService: Sendable {
             }
 
             try conn.execute(
-                sql: "UPDATE labor_entries SET notes = ? WHERE id = ? AND deleted_at IS NULL",
+                sql: """
+                    UPDATE labor_entries
+                    SET notes = ?
+                    WHERE id = ?
+                      AND status = 'clocked_in'
+                      AND clock_out IS NULL
+                      AND deleted_at IS NULL
+                    """,
                 arguments: [note, laborEntryId]
             )
 
