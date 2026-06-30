@@ -14,6 +14,14 @@ scripts/github-issue-sync.sh --state all
 
 The default state is `all`, so the snapshot validates both open and closed GitHub issue paths. Use `--state open` or `--state closed` only for targeted diagnostics.
 
+Pass `--source-issue WEI-N` when a Paperclip/GitHub maintenance issue owns the sync run:
+
+```bash
+scripts/github-issue-sync.sh --state all --source-issue WEI-4159
+```
+
+If `--source-issue` is omitted, the script uses `PAPERCLIP_TASK_ID` when present, then `GITHUB_ISSUE_SYNC_SOURCE_ISSUE`, and finally the legacy `WEI-44` fallback for backward compatibility.
+
 ## Output Location
 Generated snapshots are local, ignored run artifacts under `.tmp/github-issue-sync/` by default. They should not be committed.
 
