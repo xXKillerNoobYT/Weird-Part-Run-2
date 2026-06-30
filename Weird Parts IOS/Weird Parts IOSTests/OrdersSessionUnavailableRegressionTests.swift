@@ -170,6 +170,28 @@ final class OrdersSessionUnavailableRegressionTests: XCTestCase {
         )
     }
 
+    func testMailComposerOnlyRevealsConfirmSentAfterSentResult() throws {
+        let sendSheetSource = try Self.readOrdersSource(named: "POSendToSupplierSheet.swift")
+
+        XCTAssertFalse(
+            sendSheetSource.contains(") { _ in\n                showMailComposer = false\n                withAnimation { showConfirmSent = true }"),
+            "Mail composer completion must not ignore MFMailComposeResult and reveal Confirm Sent for cancelled/saved/failed dismissals."
+        )
+        XCTAssertTrue(
+            sendSheetSource.contains(") { result in\n                handleMailComposerFinished(result)"),
+            "The mail composer callback should route the actual result into a focused handler."
+        )
+        XCTAssertTrue(
+            sendSheetSource.contains("private func handleMailComposerFinished(_ result: MFMailComposeResult)") &&
+            sendSheetSource.contains("case .sent:\n            withAnimation { showConfirmSent = true }") &&
+            sendSheetSource.contains("case .cancelled, .saved:\n            break") &&
+            sendSheetSource.contains("case .failed:\n            mailError =") &&
+            sendSheetSource.contains(".alert(\"Mail Error\"") &&
+            sendSheetSource.contains("get: { mailError != nil }, set: { if !$0 { mailError = nil } }"),
+            "Only .sent should reveal Confirm Sent; cancelled/saved should not, and failed sends should surface an error."
+        )
+    }
+
     private static func readOrdersSource(named filename: String, file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL

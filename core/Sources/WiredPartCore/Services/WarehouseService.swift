@@ -4295,6 +4295,14 @@ public final class WarehouseService: Sendable {
             throw WarehouseError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
+            let floorPlan = try WarehouseFloorPlan.fetchOne(dbConn, key: floorPlanId)
+            try validateFloorPlanGridPlacement(
+                floorPlan: floorPlan,
+                gridX: gridX,
+                gridY: gridY,
+                gridWidth: gridWidth,
+                gridHeight: gridHeight
+            )
             var feature = WarehouseFloorFeature(
                 floorPlanId: floorPlanId,
                 featureType: featureType,
@@ -4432,13 +4440,13 @@ public final class WarehouseService: Sendable {
         gridHeight: Int,
         dbConn: Database
     ) throws {
-        guard gridX >= 0, gridY >= 0, gridWidth > 0, gridHeight > 0 else {
-            throw WarehouseError.invalidDimension
-        }
-        if let cols = floorPlan?.gridCols, let rows = floorPlan?.gridRows,
-           gridX + gridWidth > cols || gridY + gridHeight > rows {
-            throw WarehouseError.invalidDimension
-        }
+        try validateFloorPlanGridPlacement(
+            floorPlan: floorPlan,
+            gridX: gridX,
+            gridY: gridY,
+            gridWidth: gridWidth,
+            gridHeight: gridHeight
+        )
 
         let existingZones = try WarehouseZone
             .filter(Column("floor_plan_id") == floorPlanId && Column("deleted_at") == nil)
@@ -4457,6 +4465,22 @@ public final class WarehouseService: Sendable {
             )
         }
         if collides {
+            throw WarehouseError.invalidDimension
+        }
+    }
+
+    private func validateFloorPlanGridPlacement(
+        floorPlan: WarehouseFloorPlan?,
+        gridX: Int,
+        gridY: Int,
+        gridWidth: Int,
+        gridHeight: Int
+    ) throws {
+        guard gridX >= 0, gridY >= 0, gridWidth > 0, gridHeight > 0 else {
+            throw WarehouseError.invalidDimension
+        }
+        if let cols = floorPlan?.gridCols, let rows = floorPlan?.gridRows,
+           gridX + gridWidth > cols || gridY + gridHeight > rows {
             throw WarehouseError.invalidDimension
         }
     }

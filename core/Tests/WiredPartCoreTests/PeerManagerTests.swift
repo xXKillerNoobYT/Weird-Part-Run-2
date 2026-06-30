@@ -142,6 +142,22 @@ struct PeerManagerTests {
         await pm.stopPeerSync()
     }
 
+    @Test("Sync by peer device ID does not fall back to all peers")
+    func testSyncByPeerDeviceIdRequiresSelectedPeer() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+
+        let result = await pm.syncWithPeer(deviceId: "missing-peer")
+
+        #expect(result.success == false)
+        #expect(result.peerDeviceId == "missing-peer")
+        #expect(result.error == "Peer not found: missing-peer")
+
+        let state = await pm.getState()
+        #expect(state.lastPeerSyncs["missing-peer"]?.success == false)
+        #expect(state.lastPeerSyncs.count == 1)
+    }
+
     @Test("LAN sync reports HTTP pull errors as failed peer sync")
     func testLANSyncHTTPPullErrorReturnsFailure() async throws {
         let db = try freshDB()
