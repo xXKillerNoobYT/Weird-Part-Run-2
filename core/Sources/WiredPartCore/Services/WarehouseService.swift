@@ -5790,13 +5790,14 @@ public final class WarehouseService: Sendable {
     ) throws -> AuditCount {
         guard userCount >= 0 else { throw WarehouseError.invalidQuantity }
         guard systemCount >= 0 else { throw WarehouseError.invalidQuantity }
+        guard unitCostDollars.isFinite && unitCostDollars >= 0 else { throw WarehouseError.invalidQuantity }
         return try db.writer.write { dbConn in
             let userExists = (try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [countedBy]) ?? 0) > 0
             guard userExists else { throw WarehouseError.userNotFound(countedBy) }
             let variance = userCount - systemCount
-            let varianceDollars = Double(abs(variance)) * unitCostDollars
+            let varianceDollars = max(0, Double(abs(variance)) * unitCostDollars)
             let variancePercent: Double = systemCount > 0 ? (Double(abs(variance)) / Double(systemCount)) * 100.0 : (variance == 0 ? 0 : 100)
             let result: String
             if variance == 0 { result = "exact" }
