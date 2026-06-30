@@ -80,6 +80,7 @@ struct POSendToSupplierSheet: View {
     @State private var siblingPDFs: [Int64: Data] = [:]  // sibling id → pdf
     @State private var isGeneratingPDF = false
     @State private var pdfError: String?
+    @State private var mailError: String?
     @State private var showMailComposer = false
     @State private var showShareSheet   = false
     @State private var shareItems: [Any] = []
@@ -196,6 +197,9 @@ struct POSendToSupplierSheet: View {
             .alert("PDF Error", isPresented: Binding(
                 get: { pdfError != nil }, set: { if !$0 { pdfError = nil } }
             )) { Button("OK") {} } message: { Text(pdfError ?? "") }
+            .alert("Mail Error", isPresented: Binding(
+                get: { mailError != nil }, set: { if !$0 { mailError = nil } }
+            )) { Button("OK") {} } message: { Text(mailError ?? "") }
             .alert("Save Error", isPresented: Binding(
                 get: { saveError != nil }, set: { if !$0 { saveError = nil } }
             )) { Button("OK") {} } message: { Text(saveError ?? "") }
@@ -507,10 +511,24 @@ struct POSendToSupplierSheet: View {
                 subject: emailSubject,
                 body: emailBody,
                 attachments: attachments
-            ) { _ in
-                showMailComposer = false
-                withAnimation { showConfirmSent = true }
+            ) { result in
+                handleMailComposerFinished(result)
             }
+        }
+    }
+
+    private func handleMailComposerFinished(_ result: MFMailComposeResult) {
+        showMailComposer = false
+
+        switch result {
+        case .sent:
+            withAnimation { showConfirmSent = true }
+        case .cancelled, .saved:
+            break
+        case .failed:
+            mailError = "Mail did not send, so supplier confirmation was not opened automatically. Try sending again, use the share sheet fallback, or confirm manually only after verifying the supplier message was sent."
+        @unknown default:
+            mailError = "Mail finished with an unknown result, so supplier confirmation was not opened automatically. Verify the message was sent before confirming manually."
         }
     }
 
