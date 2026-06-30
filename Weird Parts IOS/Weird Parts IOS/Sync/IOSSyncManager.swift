@@ -322,7 +322,7 @@ final class IOSSyncManager {
 
         // Start multipeer if BT is enabled
         let bluetoothDiscoveryEnabled = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
-        if bluetoothDiscoveryEnabled {
+        if bluetoothDiscoveryEnabled && mode == .onboardingJoin {
             if multipeerDiscoveryMode != mode {
                 multipeerManager?.stop()
                 multipeerManager = nil
@@ -512,7 +512,7 @@ final class IOSSyncManager {
             PeerInfo(
                 id: peer.deviceId,
                 name: peer.deviceName,
-                state: peer.transport,
+                state: peer.multipeerState == "connected" ? "connected" : peer.transport,
                 discoveredAt: peer.discoveredAt,
                 address: peer.host.isEmpty || peer.port == 0 ? nil : "\(peer.host):\(peer.port)"
             )
