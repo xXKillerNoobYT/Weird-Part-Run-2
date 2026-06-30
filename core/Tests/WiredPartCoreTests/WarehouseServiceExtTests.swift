@@ -1801,8 +1801,8 @@ struct WarehouseServiceExtTests {
         }
     }
 
-    @Test("createMovement permission gate rejects inactive performing users without writing movement rows")
-    func testCreateMovement_permissionGateRejectsInactivePerformedByUser() throws {
+    @Test("createMovement rejects inactive performing users before permission checks without writing movement rows")
+    func testCreateMovement_rejectsInactivePerformedByUserBeforePermissionChecks() throws {
         let env = try E2ETestHelpers.setUp()
         let catId = try E2ETestHelpers.seedCategory(env)
         let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
@@ -1815,7 +1815,7 @@ struct WarehouseServiceExtTests {
             try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [inactiveUserId])
         }
 
-        #expect(throws: ServicePermissionGate.GateError.insufficientPermissions(required: "move_stock_warehouse")) {
+        #expect(throws: WarehouseService.WarehouseError.userNotFound(inactiveUserId)) {
             _ = try env.warehouse.createMovement(
                 partId: partId, qty: 1,
                 fromLocationType: nil, fromLocationId: nil,

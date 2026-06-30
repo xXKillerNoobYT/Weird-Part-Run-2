@@ -854,6 +854,7 @@ public final class WarehouseService: Sendable {
         validatePath: Bool = true
     ) throws -> Int64 {
         try db.writer.read { dbConn in
+            try Self.requireActiveUser(performedBy, dbConn: dbConn)
             try ServicePermissionGate.requirePermission(dbConn, userId: performedBy, permissionKey: "move_stock_warehouse")
         }
 
