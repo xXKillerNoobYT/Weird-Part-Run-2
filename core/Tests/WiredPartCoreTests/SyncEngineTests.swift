@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import Network
 @testable import WiredPartCore
 
 @Suite("SyncEngine Tests")
@@ -138,6 +139,55 @@ struct SyncEngineTests {
         let fired = expectation.withLock { $0 }
         #expect(fired == true)
     }
+
+    @Test("Sync ack failure is retryable and does not mark changes synced")
+    func testAckFailureDoesNotReportSynced() async throws {
+        let db = try freshDB()
+        let engine = SyncEngine(db: db)
+
+        try ChangeTracker.trackChange(
+            db: db,
+            tableName: "users",
+            recordId: 1,
+            operation: .insert,
+            deviceId: "dev-001"
+        )
+        #expect(try ChangeTracker.getPendingChangeCount(db: db) == 1)
+
+        let server = try SyncEngineHTTPStubServer { request in
+            switch request.path {
+            case "/api/sync/push":
+                return SyncEngineHTTPStubResponse(
+                    statusCode: 200,
+                    body: #"{"data":{"sync_batch_id":"batch-ack-fails","shop_changes":[]}}"#
+                )
+            case "/api/sync/ack":
+                return SyncEngineHTTPStubResponse(
+                    statusCode: 500,
+                    body: #"{"error":"ack failed"}"#
+                )
+            default:
+                return SyncEngineHTTPStubResponse(statusCode: 404, body: #"{"error":"not found"}"#)
+            }
+        }
+        let port = try await server.start()
+        defer { server.stop() }
+
+        let result = await engine.runSync(
+            deviceId: "dev-001",
+            shopUrl: "http://127.0.0.1:\(port)",
+            authToken: nil
+        )
+
+        #expect(result == false)
+        #expect(try ChangeTracker.getPendingChangeCount(db: db) == 1)
+
+        let state = await engine.getState()
+        #expect(state.status == .error)
+        #expect(state.pendingCount == 1)
+        #expect(state.error == "Ack failed: 500")
+        #expect(state.consecutiveFailures == 1)
+    }
 }
 
 // Simple thread-safe wrapper for test assertions
@@ -149,6 +199,90 @@ private final class Mutex<T>: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return body(&value)
+    }
+}
+
+private struct SyncEngineHTTPStubRequest: Sendable {
+    let path: String
+}
+
+private struct SyncEngineHTTPStubResponse: Sendable {
+    let statusCode: Int
+    let body: String
+}
+
+private final class SyncEngineHTTPStubServer: @unchecked Sendable {
+    private let listener: NWListener
+    private let handler: @Sendable (SyncEngineHTTPStubRequest) -> SyncEngineHTTPStubResponse
+    private let queue = DispatchQueue(label: "com.wiredpart.tests.syncengine.httpstub")
+
+    init(handler: @escaping @Sendable (SyncEngineHTTPStubRequest) -> SyncEngineHTTPStubResponse) throws {
+        self.listener = try NWListener(using: .tcp, on: .any)
+        self.handler = handler
+    }
+
+    func start() async throws -> UInt16 {
+        try await withCheckedThrowingContinuation { continuation in
+            let continuationBox = SyncEngineOneShotContinuationBox(continuation)
+
+            listener.stateUpdateHandler = { [listener] state in
+                switch state {
+                case .ready:
+                    if let port = listener.port {
+                        continuationBox.resume(.success(port.rawValue))
+                    } else {
+                        continuationBox.resume(.failure(URLError(.badServerResponse)))
+                    }
+                case .failed(let error):
+                    continuationBox.resume(.failure(error))
+                default:
+                    break
+                }
+            }
+            listener.newConnectionHandler = { [handler, queue] connection in
+                connection.start(queue: queue)
+                connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { data, _, _, _ in
+                    let rawRequest = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+                    let requestLine = rawRequest.split(separator: "\r\n", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
+                    let path = requestLine.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
+                    let stubResponse = handler(SyncEngineHTTPStubRequest(path: path))
+                    let statusText = (200..<300).contains(stubResponse.statusCode) ? "OK" : "Error"
+                    let response = """
+                    HTTP/1.1 \(stubResponse.statusCode) \(statusText)\r
+                    Content-Type: application/json\r
+                    Content-Length: \(stubResponse.body.utf8.count)\r
+                    Connection: close\r
+                    \r
+                    \(stubResponse.body)
+                    """
+                    connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in
+                        connection.cancel()
+                    })
+                }
+            }
+            listener.start(queue: queue)
+        }
+    }
+
+    func stop() {
+        listener.cancel()
+    }
+}
+
+private final class SyncEngineOneShotContinuationBox: @unchecked Sendable {
+    private var continuation: CheckedContinuation<UInt16, Error>?
+    private let lock = NSLock()
+
+    init(_ continuation: CheckedContinuation<UInt16, Error>) {
+        self.continuation = continuation
+    }
+
+    func resume(_ result: Result<UInt16, Error>) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(with: result)
     }
 }
 

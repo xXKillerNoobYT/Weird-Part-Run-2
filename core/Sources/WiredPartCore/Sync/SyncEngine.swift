@@ -207,19 +207,33 @@ public actor SyncEngine {
                 }
             }
 
-            // 4. Mark local changes as synced
-            if !pendingChanges.isEmpty {
-                let syncedIds = pendingChanges.compactMap { $0.id }
-                try ChangeTracker.markSynced(db: db, ids: syncedIds, batchId: syncBatchId)
-            }
-
-            // 5. Acknowledge (non-critical)
+            // 4. Acknowledge the batch before declaring local rows fully synced.
+            // The shop/server side may use this ack to close out delivery state, so an
+            // ack failure must remain retryable instead of reporting a clean sync.
             let ackURL = baseURL.appendingPathComponent("api/sync/ack")
             let ackBody: [String: Any] = [
                 "device_id": deviceId,
                 "sync_batch_id": syncBatchId,
             ]
-            _ = try? await httpPost(url: ackURL, body: ackBody, authToken: authToken, timeout: 10)
+            let (_, ackResponse) = try await httpPost(url: ackURL, body: ackBody, authToken: authToken, timeout: 10)
+            guard let ackHTTPResponse = ackResponse as? HTTPURLResponse,
+                  (200..<300).contains(ackHTTPResponse.statusCode) else {
+                let statusCode = (ackResponse as? HTTPURLResponse)?.statusCode ?? 0
+                updateState(
+                    status: .error,
+                    pendingCount: pendingChanges.count,
+                    error: "Ack failed: \(statusCode)",
+                    consecutiveFailures: state.consecutiveFailures + 1
+                )
+                scheduleRetry(deviceId: deviceId, shopUrl: shopUrl, authToken: authToken)
+                return false
+            }
+
+            // 5. Mark local changes as synced only after push and ack both succeed.
+            if !pendingChanges.isEmpty {
+                let syncedIds = pendingChanges.compactMap { $0.id }
+                try ChangeTracker.markSynced(db: db, ids: syncedIds, batchId: syncBatchId)
+            }
 
             // Success
             let now = currentTimestamp()
