@@ -178,6 +178,62 @@ struct ReportsServiceTests {
         #expect(updated?["status"] as String? == "completed")
     }
 
+    @Test("Timesheet correction rejects malformed original clock-in")
+    func testTimesheetCorrectionRejectsMalformedOriginalClockIn() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CORR-BAD-IN", name: "Malformed Clock-In Job")
+        let laborEntryId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, 'not-a-date', '2026-03-05T16:00:00Z', 8.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+            return db.lastInsertedRowID
+        }
+
+        #expect(throws: ReportsError.invalidTimesheetOriginalTimestamp("clock-in")) {
+            _ = try env.reports.saveTimesheetCorrection(
+                ReportsService.TimesheetCorrectionRequest(
+                    laborEntryId: laborEntryId,
+                    adjustedClockIn: "2026-03-05T08:15:00Z",
+                    adjustedClockOut: "2026-03-05T17:45:00Z",
+                    clientPreviewRegularHours: 8.0,
+                    clientPreviewOvertimeHours: 1.5,
+                    reason: "Manager correction should not hide malformed original data.",
+                    actorUserId: env.adminUserId
+                )
+            )
+        }
+    }
+
+    @Test("Timesheet correction rejects malformed original clock-out")
+    func testTimesheetCorrectionRejectsMalformedOriginalClockOut() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CORR-BAD-OUT", name: "Malformed Clock-Out Job")
+        let laborEntryId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-03-05T08:00:00Z', 'not-a-date', 8.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+            return db.lastInsertedRowID
+        }
+
+        #expect(throws: ReportsError.invalidTimesheetOriginalTimestamp("clock-out")) {
+            _ = try env.reports.saveTimesheetCorrection(
+                ReportsService.TimesheetCorrectionRequest(
+                    laborEntryId: laborEntryId,
+                    adjustedClockIn: "2026-03-05T08:15:00Z",
+                    adjustedClockOut: "2026-03-05T17:45:00Z",
+                    clientPreviewRegularHours: 8.0,
+                    clientPreviewOvertimeHours: 1.5,
+                    reason: "Manager correction should not hide malformed original data.",
+                    actorUserId: env.adminUserId
+                )
+            )
+        }
+    }
+
     @Test("Timesheet correction allocates weekly overtime from current settings instead of request buckets")
     func testTimesheetCorrectionUsesOvertimeSettingsForAdjustedHours() throws {
         try withDenverTimeZone {
