@@ -135,6 +135,15 @@ final class OrdersSessionUnavailableRegressionTests: XCTestCase {
             "Turning grouped sending off should clear stale sibling selections and generated sibling PDFs."
         )
         XCTAssertTrue(
+            sendSheetSource.contains("if on {\n                    clearSiblingPOState()\n                    fetchSiblingPOs()") &&
+            sendSheetSource.contains("siblingPOs = []"),
+            "Turning grouped sending back on should clear stale sibling rows before the fresh sibling fetch completes."
+        )
+        XCTAssertTrue(
+            sendSheetSource.contains("guard groupEnabled else { return }"),
+            "A stale sibling fetch completing after grouped sending is disabled must not repopulate sibling selections."
+        )
+        XCTAssertTrue(
             sendSheetSource.contains("private var includedSiblingPOs: [OrdersService.POListItem]") &&
             sendSheetSource.contains("guard groupEnabled else { return [] }"),
             "Email body, attachment, and share-sheet paths should use group-aware sibling inclusion instead of raw stale selected ids."

@@ -268,12 +268,10 @@ struct POSendToSupplierSheet: View {
             }
             .onChange(of: groupEnabled) { _, on in
                 if on {
+                    clearSiblingPOState()
                     fetchSiblingPOs()
                 } else {
-                    includedSiblingIds = []
-                    siblingPDFs = [:]
-                    siblingPOsError = nil
-                    siblingPOsLoading = false
+                    clearSiblingPOState()
                 }
             }
 
@@ -539,6 +537,14 @@ struct POSendToSupplierSheet: View {
         }
     }
 
+    private func clearSiblingPOState() {
+        siblingPOs = []
+        includedSiblingIds = []
+        siblingPDFs = [:]
+        siblingPOsError = nil
+        siblingPOsLoading = false
+    }
+
     private func fetchSiblingPOs() {
         let supplierId = po.supplierId
         guard let svc = appCore.ordersService else {
@@ -553,6 +559,7 @@ struct POSendToSupplierSheet: View {
             do {
                 let results = try svc.listSendablePOs(supplierId: supplierId, excludingId: po.id)
                 await MainActor.run {
+                    guard groupEnabled else { return }
                     siblingPOs = results
                     // Default: select all siblings
                     includedSiblingIds = Set(results.map(\.id))
