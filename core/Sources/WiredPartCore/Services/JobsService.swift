@@ -3687,15 +3687,27 @@ public final class JobsService: Sendable {
     /// Checks if the supply run markers in a notes string indicate an active supply run.
     public static func isOnSupplyRun(notes: String?) -> Bool {
         guard let notes, notes.contains("[supply_run_start:") else { return false }
+        guard let lastStart = notes.range(of: "[supply_run_start:", options: .backwards) else { return false }
+        if let lastEnd = notes.range(of: "[supply_run_end:", options: .backwards) {
+            return lastStart.lowerBound > lastEnd.lowerBound
+        }
+        return true
+    }
+
+    /// Returns the timestamp for the latest unmatched supply run start marker.
+    public static func activeSupplyRunStart(notes: String?) -> Date? {
+        guard let notes, notes.contains("[supply_run_start:") else { return nil }
         let lastStart = notes.range(of: "[supply_run_start:", options: .backwards)
         let lastEnd = notes.range(of: "[supply_run_end:", options: .backwards)
-        if let start = lastStart {
-            if let end = lastEnd {
-                return start.lowerBound > end.lowerBound
-            }
-            return true
+        guard let start = lastStart else { return nil }
+        if let end = lastEnd, end.lowerBound > start.lowerBound {
+            return nil
         }
-        return false
+
+        let timestampStart = start.upperBound
+        guard let closeBracket = notes[timestampStart...].firstIndex(of: "]") else { return nil }
+        let timestamp = String(notes[timestampStart..<closeBracket])
+        return CoreFormatters.parseDateTime(timestamp)
     }
 
     /// Returns the start timestamp for the latest active supply run, if the

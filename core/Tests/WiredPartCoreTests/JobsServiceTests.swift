@@ -2109,7 +2109,7 @@ struct JobsServiceTests {
     }
 
     @Test("isOnSupplyRun returns false when notes contain no supply run markers")
-    func testIsOnSupplyRunNoMarkers() {
+    func testIsOnSupplyRunWithoutMarkers() {
         #expect(!JobsService.isOnSupplyRun(notes: "Regular work notes, no supply run"))
     }
 
@@ -2144,7 +2144,6 @@ struct JobsServiceTests {
         let endedNotes = try env.jobs.getLaborEntryNotes(laborEntryId: laborEntryId) ?? ""
         #expect(JobsService.activeSupplyRunStart(notes: endedNotes) == nil)
     }
-
     // MARK: - computeStageStatuses (pure static)
 
     @Test("computeStageStatuses returns all pending when currentStageId is nil")
