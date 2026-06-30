@@ -995,6 +995,30 @@ struct JobsServiceTests {
         }
     }
 
+    @Test("Today's clock entries reject malformed clock-in timestamps")
+    func testGetTodaysClockEntriesRejectsMalformedClockInTimestamp() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CLOCK-BAD", name: "Bad Clock Job")
+        let malformedClockIn = try env.db.writer.read { db in
+            let today = try String.fetchOne(db, sql: "SELECT date('now', 'localtime')")
+            return try #require(today)
+        }
+
+        let laborEntryId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: "DELETE FROM labor_entries")
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, ?, NULL, 0.0, 0.0, 'clocked_in', datetime('now'))
+                """, arguments: [env.adminUserId, jobId, malformedClockIn])
+            return db.lastInsertedRowID
+        }
+
+        #expect(throws: JobsService.JobsError.invalidClockTimestamp(laborEntryId: laborEntryId, field: .clockIn)) {
+            _ = try env.jobs.getTodaysClockEntries(userId: env.adminUserId)
+        }
+    }
+
     // MARK: - Report Detail & Review
 
     @Test("Get report detail and mark reviewed")

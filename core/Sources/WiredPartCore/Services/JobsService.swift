@@ -52,6 +52,12 @@ public final class JobsService: Sendable {
         case stageInUse(Int64)
         case invalidStageTemplate(Int64)
         case invalidClockOutTime(laborEntryId: Int64)
+        case invalidClockTimestamp(laborEntryId: Int64, field: ClockTimestampField)
+    }
+
+    public enum ClockTimestampField: String, Sendable, Equatable {
+        case clockIn = "clock_in"
+        case clockOut = "clock_out"
     }
 
     // =========================================================================
@@ -1935,8 +1941,18 @@ public final class JobsService: Sendable {
                 let todoName: String? = row["todo_name"] as String?
                 let wType: String = row["work_type"] ?? "new_work"
 
-                let startDate = Self.parseSQLiteUTCDateTime(clockInStr) ?? Date()
-                let endDate: Date? = clockOutStr.flatMap { Self.parseSQLiteUTCDateTime($0) }
+                guard let startDate = Self.parseSQLiteUTCDateTime(clockInStr) else {
+                    throw JobsError.invalidClockTimestamp(laborEntryId: entryId, field: .clockIn)
+                }
+                let endDate: Date?
+                if let clockOutStr {
+                    guard let parsedEndDate = Self.parseSQLiteUTCDateTime(clockOutStr) else {
+                        throw JobsError.invalidClockTimestamp(laborEntryId: entryId, field: .clockOut)
+                    }
+                    endDate = parsedEndDate
+                } else {
+                    endDate = nil
+                }
 
                 let summary = ClockEntrySummary(
                     id: entryId,

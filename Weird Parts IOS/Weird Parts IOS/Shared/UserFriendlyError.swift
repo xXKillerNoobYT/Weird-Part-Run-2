@@ -1,4 +1,5 @@
 import Foundation
+import WiredPartCore
 
 /// Wraps a raw error into a user-friendly message for display in loadError states.
 ///
@@ -17,6 +18,11 @@ import Foundation
 ///   "load truck tools", "load vehicle details", "load vehicles",
 ///   "load inspection data", "save inspection"
 func userFriendlyError(_ error: Error, context: String = "load data") -> String {
+    if let jobsError = error as? JobsService.JobsError,
+       case .invalidClockTimestamp = jobsError {
+        return "A saved clock entry has an invalid timestamp. Ask an admin to review the timesheet before using today's hours."
+    }
+
     let raw = error.localizedDescription
     if raw.contains("no such table") {
         return "This feature isn't set up yet. Contact your admin."
