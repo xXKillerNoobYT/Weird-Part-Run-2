@@ -244,12 +244,12 @@ struct WarehouseMovementsPage: View {
 
     private var activeMovements: [WarehouseService.MovementRow] {
         let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-        return filteredMovements.filter { movementDate($0) ?? Date.distantFuture >= cutoff }
+        return WarehouseMovementDatePartitioning.activeMovements(filteredMovements, cutoff: cutoff)
     }
 
     private var completedHistoryMovements: [WarehouseService.MovementRow] {
         let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-        return filteredMovements.filter { movementDate($0) ?? Date.distantFuture < cutoff }
+        return WarehouseMovementDatePartitioning.completedHistoryMovements(filteredMovements, cutoff: cutoff)
     }
 
     @ViewBuilder
@@ -344,7 +344,7 @@ struct WarehouseMovementsPage: View {
                 Text(quantityLabel(for: movement))
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                Text(formatDate(movement.createdAt))
+                Text(WarehouseMovementDatePartitioning.displayDate(movement.createdAt))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
@@ -460,15 +460,38 @@ struct WarehouseMovementsPage: View {
         return movement.qty >= 0 ? "+\(movement.qty)" : "\(movement.qty)"
     }
 
-    private func formatDate(_ dateStr: String?) -> String {
-        guard let dateStr else { return "" }
-        return dateStr.count >= 10 ? String(dateStr.prefix(10)) : dateStr
+}
+
+enum WarehouseMovementDatePartitioning {
+    static func activeMovements(_ movements: [WarehouseService.MovementRow], cutoff: Date) -> [WarehouseService.MovementRow] {
+        movements.filter { movement in
+            guard let movementDate = parsedDate(for: movement) else { return false }
+            return movementDate >= cutoff
+        }
     }
 
-    private func movementDate(_ movement: WarehouseService.MovementRow) -> Date? {
+    static func completedHistoryMovements(_ movements: [WarehouseService.MovementRow], cutoff: Date) -> [WarehouseService.MovementRow] {
+        movements.filter { movement in
+            guard let movementDate = parsedDate(for: movement) else { return true }
+            return movementDate < cutoff
+        }
+    }
+
+    static func displayDate(_ rawDate: String?) -> String {
+        guard let rawDate, !rawDate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return "Unknown date"
+        }
+        guard parsedDate(from: rawDate) != nil else { return "Unknown date" }
+        return rawDate.count >= 10 ? String(rawDate.prefix(10)) : rawDate
+    }
+
+    static func parsedDate(for movement: WarehouseService.MovementRow) -> Date? {
         guard let raw = movement.createdAt else { return nil }
-        return Self.sqliteDateFormatter.date(from: raw)
-            ?? ISO8601DateFormatter().date(from: raw)
+        return parsedDate(from: raw)
+    }
+
+    private static func parsedDate(from raw: String) -> Date? {
+        sqliteDateFormatter.date(from: raw) ?? iso8601DateFormatter.date(from: raw)
     }
 
     private static let sqliteDateFormatter: DateFormatter = {
@@ -477,6 +500,8 @@ struct WarehouseMovementsPage: View {
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         return formatter
     }()
+
+    private static let iso8601DateFormatter = ISO8601DateFormatter()
 }
 
 // MARK: - Quick Log Sheet
