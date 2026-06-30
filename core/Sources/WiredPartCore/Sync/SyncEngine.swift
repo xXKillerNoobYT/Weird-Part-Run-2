@@ -239,9 +239,19 @@ public actor SyncEngine {
                 return false
             }
             let (_, ackResponse) = ackDataAndResponse
-            guard let ackHTTPResponse = ackResponse as? HTTPURLResponse,
-                  (200..<300).contains(ackHTTPResponse.statusCode) else {
-                let statusCode = (ackResponse as? HTTPURLResponse)?.statusCode ?? 0
+            guard let ackHTTPResponse = ackResponse as? HTTPURLResponse else {
+                let pendingCount = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? pendingChanges.count
+                updateState(
+                    status: .error,
+                    pendingCount: pendingCount,
+                    error: "Ack failed: non-HTTP response",
+                    consecutiveFailures: state.consecutiveFailures + 1
+                )
+                scheduleRetry(deviceId: deviceId, shopUrl: shopUrl, authToken: authToken)
+                return false
+            }
+            guard (200..<300).contains(ackHTTPResponse.statusCode) else {
+                let statusCode = ackHTTPResponse.statusCode
                 let pendingCount = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? pendingChanges.count
                 updateState(
                     status: .error,
