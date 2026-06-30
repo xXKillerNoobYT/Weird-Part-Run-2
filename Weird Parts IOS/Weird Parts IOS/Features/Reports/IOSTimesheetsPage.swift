@@ -452,7 +452,6 @@ private struct TimesheetCorrectionSheet: View {
         let fallbackClockIn = parsedClockIn ?? Date(timeIntervalSince1970: 0)
         let fallbackClockOut = parsedClockOut ?? fallbackClockIn.addingTimeInterval(3600)
         _originalTimestampError = State(initialValue: timestampError)
-        _validationMessage = State(initialValue: timestampError)
         _adjustedClockIn = State(initialValue: fallbackClockIn)
         _adjustedClockOut = State(initialValue: fallbackClockOut)
     }
