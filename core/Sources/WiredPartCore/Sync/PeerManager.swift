@@ -261,6 +261,21 @@ public actor PeerManager {
         notifyStateChanged()
     }
 
+    /// Stop only the Multipeer Connectivity transport while preserving LAN discovery/sync.
+    ///
+    /// Used when the app-level Bluetooth setting is disabled while peer sync is
+    /// already running. LAN discovery and the sync server should continue, but
+    /// Bluetooth/Wi-Fi P2P advertising and browsing must stop immediately.
+    public func stopMultipeerDiscovery() async {
+        #if canImport(MultipeerConnectivity)
+        multipeerManager?.stop()
+        multipeerManager = nil
+        #endif
+
+        state.peers.removeAll { $0.transport == "multipeer" }
+        notifyStateChanged()
+    }
+
     // MARK: - Peer Discovery Merging
 
     private func handleLanPeersChanged(_ peers: [DiscoveredPeer]) {

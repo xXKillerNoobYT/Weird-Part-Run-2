@@ -57,6 +57,32 @@ struct PeerManagerTests {
         #expect(stoppedState.syncPort == 0)
     }
 
+    @Test("Stopping Multipeer discovery preserves LAN peer sync")
+    func testStopMultipeerDiscoveryPreservesLanSync() async throws {
+        let db = try freshDB()
+        let pm = PeerManager(db: db)
+
+        try await pm.startPeerSync(
+            deviceId: "dev-001",
+            deviceName: "Test Device",
+            companyId: "test-company",
+            startMultipeer: false
+        )
+
+        let runningState = await pm.getState()
+        #expect(runningState.running)
+        #expect(runningState.syncPort > 0)
+
+        await pm.stopMultipeerDiscovery()
+
+        let lanOnlyState = await pm.getState()
+        #expect(lanOnlyState.running)
+        #expect(lanOnlyState.syncPort == runningState.syncPort)
+        #expect(lanOnlyState.peers.allSatisfy { $0.transport != "multipeer" })
+
+        await pm.stopPeerSync()
+    }
+
     @Test("isOfficePeer detects office-like names")
     func testIsOfficePeer() {
         let office = DiscoveredPeer(
