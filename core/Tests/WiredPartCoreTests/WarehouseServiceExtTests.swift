@@ -1801,6 +1801,38 @@ struct WarehouseServiceExtTests {
         }
     }
 
+    @Test("createMovement permission gate rejects inactive performing users without writing movement rows")
+    func testCreateMovement_permissionGateRejectsInactivePerformedByUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let inactiveUserId = try env.auth.createUser(displayName: "Inactive Warehouse Mover", pin: "6666")
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "INSERT INTO user_hats (user_id, hat_id, is_active) SELECT ?, id, 1 FROM hats WHERE name = 'Admin'",
+                arguments: [inactiveUserId]
+            )
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [inactiveUserId])
+        }
+
+        #expect(throws: ServicePermissionGate.GateError.insufficientPermissions(required: "move_stock_warehouse")) {
+            _ = try env.warehouse.createMovement(
+                partId: partId, qty: 1,
+                fromLocationType: nil, fromLocationId: nil,
+                toLocationType: "warehouse", toLocationId: 1,
+                movementType: "add_stock", performedBy: inactiveUserId
+            )
+        }
+
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM stock_movements
+                WHERE part_id = ? AND performed_by = ? AND deleted_at IS NULL
+                """, arguments: [partId, inactiveUserId]) ?? 0
+        }
+        #expect(count == 0, "Inactive users must not create stock movement audit rows")
+    }
+
     @Test("createStagingBox rejects tombstoned job")
     func testCreateStagingBox_rejectsTombstonedJob() throws {
         let env = try E2ETestHelpers.setUp()

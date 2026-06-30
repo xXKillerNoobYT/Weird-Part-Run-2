@@ -219,6 +219,38 @@ struct FleetServiceTests {
         #expect((previousRow?["end_date"] as String?) != nil, "Previous assignment must have end_date set")
     }
 
+    @Test("assignDriver ignores inactive assignee users")
+    func testAssignDriver_ignoresInactiveAssigneeUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            actorId: env.adminUserId,
+            vehicleNumber: "V-ASGN-INACTIVE",
+            vehicleName: "Inactive Driver Truck",
+            vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let inactiveDriverId = try env.auth.createUser(displayName: "Inactive Fleet Driver", pin: "4444")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [inactiveDriverId])
+        }
+
+        try env.fleet.assignDriver(
+            actorId: env.adminUserId,
+            vehicleId: vehicleId,
+            userId: inactiveDriverId,
+            assignmentType: "primary",
+            isTakeHome: false
+        )
+
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM vehicle_assignments
+                WHERE vehicle_id = ? AND user_id = ? AND deleted_at IS NULL
+                """, arguments: [vehicleId, inactiveDriverId]) ?? 0
+        }
+        #expect(count == 0, "Inactive users must not receive new vehicle assignments")
+    }
+
     @Test("My vehicle stats")
     func testMyVehicleStats() throws {
         let env = try E2ETestHelpers.setUp()
@@ -1127,6 +1159,18 @@ struct FleetServiceTests {
             try env.fleet.reportVehicleIssue(
                 vehicleId: vehicleId, reportedBy: 99_999,
                 severity: "low", description: "fake reporter"
+            )
+        }
+
+        // FK guard: inactive users are treated the same as missing/tombstoned users.
+        let inactiveReporterId = try env.auth.createUser(displayName: "Inactive Fleet Reporter", pin: "5555")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [inactiveReporterId])
+        }
+        #expect(throws: FleetService.FleetError.userNotFound(inactiveReporterId)) {
+            try env.fleet.reportVehicleIssue(
+                vehicleId: vehicleId, reportedBy: inactiveReporterId,
+                severity: "low", description: "inactive reporter"
             )
         }
 
