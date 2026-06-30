@@ -527,7 +527,7 @@ final class IOSSyncManager {
                 name: peer.deviceName,
                 state: peer.multipeerState == "connected" ? "connected" : peer.transport,
                 discoveredAt: peer.discoveredAt,
-                address: peer.host.isEmpty || peer.port == 0 ? nil : "\(peer.host):\(peer.port)"
+                address: formattedPeerAddress(host: peer.host, port: Int(peer.port))
             )
         }
 
@@ -560,6 +560,12 @@ final class IOSSyncManager {
 
     private func isMultipeerDiscoveredPeer(_ peer: PeerInfo) -> Bool {
         peer.state == "multipeer" || (peer.state == "connected" && peer.address == nil)
+    }
+
+    private func formattedPeerAddress(host: String, port: Int) -> String? {
+        guard !host.isEmpty, port > 0 else { return nil }
+        let formattedHost = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
+        return "\(formattedHost):\(port)"
     }
 
     private func refreshPendingCount() {
