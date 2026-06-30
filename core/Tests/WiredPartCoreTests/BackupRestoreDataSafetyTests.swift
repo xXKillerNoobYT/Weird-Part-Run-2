@@ -87,6 +87,40 @@ struct BackupRestoreDataSafetyTests {
         #expect(retainedBackups.count == 5)
     }
 
+    @Test("Backup and restore preserves committed rows that still live in the WAL sidecar")
+    func testBackupRestorePreservesWalOnlyCommittedRows() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("wei-4157-wal-backup-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let databasePath = directory.appendingPathComponent("live.sqlite").path
+        var config = Configuration()
+        config.prepareDatabase { db in
+            try db.execute(sql: "PRAGMA journal_mode = WAL")
+            try db.execute(sql: "PRAGMA wal_autocheckpoint = 0")
+        }
+
+        let queue = try DatabaseQueue(path: databasePath, configuration: config)
+        try queue.write { db in
+            try db.execute(sql: "CREATE TABLE wal_only_records(id INTEGER PRIMARY KEY, value TEXT NOT NULL)")
+            try db.execute(sql: "INSERT INTO wal_only_records(value) VALUES ('committed-only-in-wal')")
+        }
+
+        #expect(FileManager.default.fileExists(atPath: databasePath + "-wal"))
+
+        let backupPath = try #require(AppDatabase.backupDatabase(atPath: databasePath))
+        #expect(FileManager.default.fileExists(atPath: backupPath + "-wal"))
+
+        let restoredPath = directory.appendingPathComponent("restored.sqlite").path
+        try AppDatabase.restoreDatabase(from: backupPath, to: restoredPath)
+
+        let restoredValue = try DatabaseQueue(path: restoredPath).read { db in
+            try String.fetchOne(db, sql: "SELECT value FROM wal_only_records WHERE id = 1")
+        }
+        #expect(restoredValue == "committed-only-in-wal")
+    }
+
     @Test("Production backup and restore preserves critical beta records")
     func testProductionBackupRestorePreservesCriticalBetaRecords() throws {
         let fixture = try Self.makeCriticalFixture()

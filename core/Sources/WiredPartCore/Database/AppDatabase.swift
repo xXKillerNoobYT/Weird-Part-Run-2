@@ -136,12 +136,14 @@ public final class AppDatabase: Sendable {
 
             try fileManager.copyItem(atPath: path, toPath: backupPath)
 
-            // Also copy WAL and SHM files if they exist
+            // Also copy WAL and SHM files if they exist. These sidecars are part
+            // of the durable SQLite snapshot while WAL mode is enabled; silently
+            // skipping one can make the pre-migration rollback backup stale.
             for suffix in ["-wal", "-shm"] {
                 let src = path + suffix
                 let dst = backupPath + suffix
                 if fileManager.fileExists(atPath: src) {
-                    try? fileManager.copyItem(atPath: src, toPath: dst)
+                    try fileManager.copyItem(atPath: src, toPath: dst)
                 }
             }
 
