@@ -243,7 +243,7 @@ private final class SyncEngineHTTPStubServer: @unchecked Sendable {
                 connection.start(queue: queue)
                 connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { data, _, _, _ in
                     let rawRequest = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-                    let requestLine = rawRequest.split(separator: "\r\n", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
+                    let requestLine = rawRequest.components(separatedBy: "\r\n").first ?? ""
                     let path = requestLine.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
                     let stubResponse = handler(SyncEngineHTTPStubRequest(path: path))
                     let statusText = (200..<300).contains(stubResponse.statusCode) ? "OK" : "Error"
