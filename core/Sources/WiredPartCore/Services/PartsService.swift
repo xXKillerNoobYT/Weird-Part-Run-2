@@ -3134,8 +3134,7 @@ public final class PartsService: Sendable {
     /// Update a company cost setting.
     public func updateCompanyCostSetting(key: String, value: String, updatedBy: Int64? = nil) throws {
         if key == "default_markup_percent" {
-            let markup = try ManualPricingInputValidator.parsePercent(value, fieldName: "Default markup percent")
-            try Validators.requireNonNegative(markup, field: "Default markup percent")
+            _ = try ManualPricingInputValidator.parsePercent(value, fieldName: "Default markup percent")
         }
 
         if let updatedBy {

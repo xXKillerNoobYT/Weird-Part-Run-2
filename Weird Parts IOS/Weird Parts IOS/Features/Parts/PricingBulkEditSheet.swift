@@ -395,7 +395,7 @@ struct PricingBulkEditSheet: View {
 
             // Set tier at the appropriate level
             if scope == .category, let catId = categoryId {
-                _ = try service.setPricingTier(categoryId: catId, markupPercent: markup, marginPercent: margin)
+                _ = try service.setPricingTier(categoryId: catId, markupPercent: markup, marginPercent: margin, setBy: userId)
             } else {
                 // "All" scope — update default markup in company settings
                 if let m = markup {
