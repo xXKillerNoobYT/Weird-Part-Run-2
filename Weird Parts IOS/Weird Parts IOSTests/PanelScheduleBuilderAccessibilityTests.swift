@@ -52,6 +52,28 @@ final class PanelScheduleBuilderAccessibilityTests: XCTestCase {
         )
     }
 
+    func testSaveNormalizesHiddenCircuitsAfterPanelShrink() throws {
+        let source = try Self.readNotebookSource("PanelScheduleBuilder.swift")
+
+        XCTAssertTrue(
+            source.contains("let normalized = schedule.pruningCircuitsOutsideTotalSpaces()") &&
+                source.contains("schedule = normalized") &&
+                source.contains("onSave(normalized)"),
+            "Saving a shrunk panel schedule should persist a normalized copy so hidden circuits above totalSpaces are not left in notebook JSON."
+        )
+        XCTAssertTrue(
+            source.contains("schedule.circuitsOutsideTotalSpaces") &&
+                source.contains("Saving will remove"),
+            "Panel settings should warn when a shrink will prune hidden circuits above the new total space count."
+        )
+        XCTAssertTrue(
+            source.contains("showHiddenCircuitPruneConfirmation") &&
+                source.contains("Remove Hidden Circuits?") &&
+                source.contains("Remove & Save"),
+            "Saving a shrunk panel with hidden circuits should require explicit confirmation before pruning persisted data."
+        )
+    }
+
     private static func readNotebookSource(_ filename: String, file: StaticString = #filePath) throws -> String {
         let testFileURL = URL(fileURLWithPath: "\(file)")
         let projectRoot = testFileURL
