@@ -443,9 +443,9 @@ private struct TimesheetCorrectionSheet: View {
         let parsedClockOut = segment.clockOut.flatMap(CoreFormatters.parseDateTime)
         let timestampError: String?
         if parsedClockIn == nil {
-            timestampError = "Original clock-in timestamp is malformed. Repair the stored time entry before saving a correction."
+            timestampError = ReportsError.invalidTimesheetOriginalTimestamp("clock-in").localizedDescription
         } else if segment.clockOut != nil && parsedClockOut == nil {
-            timestampError = "Original clock-out timestamp is malformed. Repair the stored time entry before saving a correction."
+            timestampError = ReportsError.invalidTimesheetOriginalTimestamp("clock-out").localizedDescription
         } else {
             timestampError = nil
         }
