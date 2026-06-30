@@ -222,8 +222,8 @@ struct DashboardServiceTests {
                 INSERT INTO break_records
                     (user_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
                 VALUES
-                    (?, 'break', date('now','localtime') || 'T09:00:00', date('now','localtime') || 'T09:15:00', 15, 1, 0),
-                    (?, 'lunch_unpaid', date('now','localtime') || 'T12:00:00', date('now','localtime') || 'T12:30:00', 30, 0, 0)
+                    (?, 'break', date('now') || 'T12:00:00Z', date('now') || 'T12:15:00Z', 15, 1, 0),
+                    (?, 'lunch_unpaid', date('now') || 'T14:00:00Z', date('now') || 'T14:30:00Z', 30, 0, 0)
                 """, arguments: [env.adminUserId, env.adminUserId])
         }
 

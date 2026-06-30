@@ -163,14 +163,14 @@ public final class BreakService: Sendable {
         let isPaid = (breakType != "lunch_unpaid")
         do {
             return try db.writer.write { dbConn in
+                let resolvedLaborEntryId = try laborEntryId ?? Self.activeClockEntryId(dbConn: dbConn, userId: userId)
                 if let activeBreak = try Self.activeBreak(dbConn: dbConn, userId: userId) {
-                    if activeBreak.breakType == breakType && (laborEntryId == nil || activeBreak.laborEntryId == laborEntryId) {
+                    if activeBreak.breakType == breakType && activeBreak.laborEntryId == resolvedLaborEntryId {
                         return activeBreak
                     }
                     throw BreakError.activeBreakAlreadyInProgress(userId: userId, activeBreakId: activeBreak.id)
                 }
 
-                let resolvedLaborEntryId = try laborEntryId ?? Self.activeClockEntryId(dbConn: dbConn, userId: userId)
                 var record = BreakRecord(
                     id: nil, userId: userId, laborEntryId: resolvedLaborEntryId,
                     breakType: breakType, startedAt: Self.nowString(),
