@@ -1370,6 +1370,8 @@ public final class JobsService: Sendable {
     ) throws -> Int64 {
         let clockInTimestamp = Self.sqliteTimestamp(clockInAt)
         return try db.writer.write { dbConn in
+            try Self.requireActiveUser(dbConn, userId: userId)
+
             let existing = try Int.fetchOne(
                 dbConn,
                 sql: """
@@ -3386,6 +3388,8 @@ public final class JobsService: Sendable {
         gpsLat: Double?,
         gpsLng: Double?
     ) throws -> Int64 {
+        try requireActiveUser(dbConn, userId: userId)
+
         guard let jobRow = try Row.fetchOne(
             dbConn,
             sql: "SELECT status FROM jobs WHERE id = ? AND deleted_at IS NULL",
