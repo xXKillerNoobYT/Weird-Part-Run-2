@@ -96,16 +96,39 @@ LATEST_JSON="$OUT_DIR/latest-sync.json"
 LATEST_MD="$OUT_DIR/latest-sync.md"
 TMP_JSON="$OUT_DIR/.issues-${STAMP_DIR}.json.tmp"
 
-# Pull up to 200 issues and exclude pull requests.
+# Pull all repository issues through the paginated REST API and exclude pull requests.
+# `gh issue list` defaults to a capped result set; use `gh api --paginate` so
+# canonical all-state snapshots cannot silently truncate above 200 issues.
 mkdir -p "$RUN_DIR"
 
-gh issue list \
-  --repo "$REPO" \
-  --state "$ISSUE_STATE" \
-  --limit 200 \
-  --json number,title,state,labels,assignees,author,createdAt,updatedAt,url > "$TMP_JSON"
+gh api \
+  --method GET \
+  --paginate \
+  --slurp \
+  -f state="$ISSUE_STATE" \
+  -f per_page=100 \
+  "repos/$REPO/issues" > "$TMP_JSON"
 
-jq 'map(select(.url | contains("/pull/") | not))' "$TMP_JSON" > "$JSON_PATH"
+jq '
+  def issue_pages:
+    if type == "array" and (length == 0 or (.[0] | type) == "array") then .[] else . end;
+
+  [
+    issue_pages[]
+    | select(has("pull_request") | not)
+    | {
+        number,
+        title,
+        state: (.state | ascii_upcase),
+        labels,
+        assignees,
+        author: .user,
+        createdAt: .created_at,
+        updatedAt: .updated_at,
+        url: .html_url
+      }
+  ]
+' "$TMP_JSON" > "$JSON_PATH"
 rm -f "$TMP_JSON"
 
 TOTAL="$(jq 'length' "$JSON_PATH")"
