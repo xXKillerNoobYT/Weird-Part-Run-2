@@ -19,6 +19,12 @@ private enum BootstrapAuditTestError: Error {
     case operation
 }
 
+private enum MigrationRollbackRetryTestError: Error {
+    case restore
+    case migrate
+    case open
+}
+
 private final class MockBootstrapTaskAuditor: AppCoreBackgroundTaskAuditing, @unchecked Sendable {
     var startedNames: [String] = []
     var completedIds: [Int64] = []
@@ -473,6 +479,48 @@ struct Weird_Parts_IOSTests {
         #else
         #expect(!AppCore.shouldResetLocalDatabaseAfterCipherOpenFailure(sqlCipherError))
         #endif
+    }
+
+    @Test func migrationRollbackRestoresThenRetriesMigrationAndOpen() throws {
+        var events: [String] = []
+
+        let database = try AppCore.retryOpeningRestoredDatabase(
+            backupPath: "/tmp/wired-part.sqlite.rollback",
+            databasePath: "/tmp/wired-part.sqlite",
+            keyHex: "device-key",
+            restoreDatabase: { backupPath, databasePath in
+                events.append("restore")
+                #expect(backupPath == "/tmp/wired-part.sqlite.rollback")
+                #expect(databasePath == "/tmp/wired-part.sqlite")
+            },
+            migratePlaintextDatabaseIfNeeded: { databasePath, keyHex in
+                events.append("migrate")
+                #expect(databasePath == "/tmp/wired-part.sqlite")
+                #expect(keyHex == "device-key")
+            },
+            openEncryptedDatabase: { databasePath, keyHex in
+                events.append("open")
+                #expect(databasePath == "/tmp/wired-part.sqlite")
+                #expect(keyHex == "device-key")
+                return "opened-restored-database"
+            }
+        )
+
+        #expect(events == ["restore", "migrate", "open"])
+        #expect(database == "opened-restored-database")
+    }
+
+    @Test func migrationRollbackRequiresBackupBeforeRetry() {
+        #expect(throws: AppCore.AppCoreError.self) {
+            _ = try AppCore.retryOpeningRestoredDatabase(
+                backupPath: nil,
+                databasePath: "/tmp/wired-part.sqlite",
+                keyHex: "device-key",
+                restoreDatabase: { _, _ in throw MigrationRollbackRetryTestError.restore },
+                migratePlaintextDatabaseIfNeeded: { _, _ in throw MigrationRollbackRetryTestError.migrate },
+                openEncryptedDatabase: { _, _ in throw MigrationRollbackRetryTestError.open }
+            ) as String
+        }
     }
 
     @MainActor

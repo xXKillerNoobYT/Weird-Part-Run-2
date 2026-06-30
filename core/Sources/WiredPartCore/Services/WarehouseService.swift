@@ -33,6 +33,7 @@ public final class WarehouseService: Sendable {
         case jobNotFound(Int64)
         case userNotFound(Int64)
         case areaNotFound(Int64)
+        case binNotFound(Int64)
         case unitNotFound(Int64)
         case levelNotFound(Int64)
         case sessionItemNotFound(Int64)
@@ -5206,12 +5207,25 @@ public final class WarehouseService: Sendable {
 
     /// Move multiple bins to a target area in a single transaction (Cart Mode multi-bin transfer).
     ///
-    /// Updates `area_id` for each bin in `binIds`. Bins not found in the database are silently
-    /// skipped so partial-cart moves don't abort on a stale ID.
+    /// Validates the target area and every selected bin before moving so stale
+    /// cart-mode selections cannot partially move bins or point active bins at
+    /// soft-deleted storage areas.
     public func moveBinsToArea(binIds: [Int64], targetAreaId: Int64) throws {
         guard !binIds.isEmpty else { return }
         try db.writer.write { dbConn in
+            let areaExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM warehouse_storage_areas WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [targetAreaId]) ?? 0) > 0
+            guard areaExists else { throw WarehouseError.areaNotFound(targetAreaId) }
+
             for binId in binIds {
+                let binExists = (try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM warehouse_bins WHERE id = ? AND deleted_at IS NULL
+                    """, arguments: [binId]) ?? 0) > 0
+                guard binExists else { throw WarehouseError.binNotFound(binId) }
+            }
+
+            for binId in Set(binIds) {
                 try dbConn.execute(
                     sql: "UPDATE warehouse_bins SET area_id = ? WHERE id = ? AND deleted_at IS NULL",
                     arguments: [targetAreaId, binId]

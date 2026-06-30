@@ -4,12 +4,12 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/github-issue-sync.sh [--repo owner/repo] [--output-dir path] [--state open|closed|all]
+  scripts/github-issue-sync.sh [--repo owner/repo] [--output-dir path] [--state open|closed|all] [--source-issue WEI-123]
   scripts/github-issue-sync.sh [owner/repo] [output-dir]
 
 Examples:
   scripts/github-issue-sync.sh
-  scripts/github-issue-sync.sh --repo xXKillerNoobYT/Weird-Part-Run-2 --state all
+  scripts/github-issue-sync.sh --repo xXKillerNoobYT/Weird-Part-Run-2 --state all --source-issue WEI-4159
   scripts/github-issue-sync.sh xXKillerNoobYT/Weird-Part-Run-2 .tmp/github-issue-sync
 EOF
 }
@@ -32,6 +32,7 @@ fi
 REPO_ARG=""
 OUT_DIR_ARG=""
 STATE_ARG=""
+SOURCE_ISSUE_ARG=""
 POSITIONAL=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -45,6 +46,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --state)
       STATE_ARG="${2:?error: --state requires open, closed, or all}"
+      shift 2
+      ;;
+    --source-issue)
+      SOURCE_ISSUE_ARG="${2:?error: --source-issue requires an issue identifier}"
       shift 2
       ;;
     --)
@@ -69,6 +74,7 @@ done
 REPO="${REPO_ARG:-${POSITIONAL[0]:-${GITHUB_REPO:-xXKillerNoobYT/Weird-Part-Run-2}}}"
 OUT_DIR="${OUT_DIR_ARG:-${POSITIONAL[1]:-.tmp/github-issue-sync}}"
 ISSUE_STATE="${STATE_ARG:-${GITHUB_ISSUE_SYNC_STATE:-all}}"
+SOURCE_ISSUE="${SOURCE_ISSUE_ARG:-${PAPERCLIP_TASK_ID:-${GITHUB_ISSUE_SYNC_SOURCE_ISSUE:-WEI-44}}}"
 STAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 STAMP_DIR="${STAMP//:/-}"
 mkdir -p "$OUT_DIR"
@@ -83,7 +89,6 @@ if [[ ! "$ISSUE_STATE" =~ ^(open|closed|all)$ ]]; then
   usage >&2
   exit 1
 fi
-
 RUN_DIR="$OUT_DIR/$STAMP_DIR"
 JSON_PATH="$RUN_DIR/issues.json"
 MD_PATH="$RUN_DIR/summary.md"
@@ -91,16 +96,39 @@ LATEST_JSON="$OUT_DIR/latest-sync.json"
 LATEST_MD="$OUT_DIR/latest-sync.md"
 TMP_JSON="$OUT_DIR/.issues-${STAMP_DIR}.json.tmp"
 
-# Pull up to 200 issues and exclude pull requests.
+# Pull all repository issues through the paginated REST API and exclude pull requests.
+# `gh issue list` defaults to a capped result set; use `gh api --paginate` so
+# canonical all-state snapshots cannot silently truncate above 200 issues.
 mkdir -p "$RUN_DIR"
 
-gh issue list \
-  --repo "$REPO" \
-  --state "$ISSUE_STATE" \
-  --limit 200 \
-  --json number,title,state,labels,assignees,author,createdAt,updatedAt,url > "$TMP_JSON"
+gh api \
+  --method GET \
+  --paginate \
+  --slurp \
+  -f state="$ISSUE_STATE" \
+  -f per_page=100 \
+  "repos/$REPO/issues" > "$TMP_JSON"
 
-jq 'map(select(.url | contains("/pull/") | not))' "$TMP_JSON" > "$JSON_PATH"
+jq '
+  def issue_pages:
+    if type == "array" and (length == 0 or (.[0] | type) == "array") then .[] else . end;
+
+  [
+    issue_pages[]
+    | select(has("pull_request") | not)
+    | {
+        number,
+        title,
+        state: (.state | ascii_upcase),
+        labels,
+        assignees,
+        author: .user,
+        createdAt: .created_at,
+        updatedAt: .updated_at,
+        url: .html_url
+      }
+  ]
+' "$TMP_JSON" > "$JSON_PATH"
 rm -f "$TMP_JSON"
 
 TOTAL="$(jq 'length' "$JSON_PATH")"
@@ -112,7 +140,7 @@ CLOSED_TOTAL="$(jq 'map(select(.state == "CLOSED")) | length' "$JSON_PATH")"
   echo
   printf -- "- Repository: \`%s\`\n" "$REPO"
   printf -- "- Run timestamp (UTC): \`%s\`\n" "$STAMP"
-  printf -- "- Source issue: \`WEI-44\`\n"
+  printf -- "- Source issue: \`%s\`\n" "$SOURCE_ISSUE"
   printf -- "- Requested state: \`%s\`\n" "$ISSUE_STATE"
   printf -- "- Issues (non-PR): \`%s\`\n" "$TOTAL"
   printf -- "- Open issues: \`%s\`\n" "$OPEN_TOTAL"
@@ -129,7 +157,7 @@ CLOSED_TOTAL="$(jq 'map(select(.state == "CLOSED")) | length' "$JSON_PATH")"
 jq -n \
   --arg repository "$REPO" \
   --arg runTimestampUtc "$STAMP" \
-  --arg sourceIssue "WEI-44" \
+  --arg sourceIssue "$SOURCE_ISSUE" \
   --arg requestedState "$ISSUE_STATE" \
   --argjson issueCount "$TOTAL" \
   --argjson openCount "$OPEN_TOTAL" \
