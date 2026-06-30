@@ -421,6 +421,39 @@ struct WarehouseAuditTests {
         #expect(boxes.isEmpty)
     }
 
+    @Test("Staging box numbers do not reuse soft-deleted labels")
+    func testStagingBoxNumberAdvancesAfterSoftDelete() throws {
+        let env = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-719", name: "Soft Delete Box Job")
+
+        let first = try env.warehouse.createStagingBox(jobId: jobId)
+        let second = try env.warehouse.createStagingBox(jobId: jobId)
+        try env.warehouse.deleteStagingBox(boxId: first.id)
+
+        let third = try env.warehouse.createStagingBox(jobId: jobId)
+        let activeBoxNumbers = try env.warehouse.listStagingBoxes(jobId: jobId).map(\.boxNumber)
+
+        #expect(second.boxNumber == "J-719-02")
+        #expect(third.boxNumber == "J-719-03")
+        #expect(Set(activeBoxNumbers).count == activeBoxNumbers.count)
+    }
+
+    @Test("Marking full creates the next historical staging box number")
+    func testMarkBoxFullAdvancesAfterSoftDelete() throws {
+        let env = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-719-FULL", name: "Full Box Job")
+
+        let first = try env.warehouse.createStagingBox(jobId: jobId)
+        let second = try env.warehouse.createStagingBox(jobId: jobId)
+        try env.warehouse.deleteStagingBox(boxId: first.id)
+
+        let next = try env.warehouse.markBoxFull(boxId: second.id)
+        let activeBoxNumbers = try env.warehouse.listStagingBoxes(jobId: jobId).map(\.boxNumber)
+
+        #expect(next.boxNumber == "J-719-FULL-03")
+        #expect(Set(activeBoxNumbers).count == activeBoxNumbers.count)
+    }
+
     // MARK: - Trailers
 
     @Test("Trailer lifecycle: create, update, list")

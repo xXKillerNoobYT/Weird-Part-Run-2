@@ -3049,17 +3049,10 @@ public final class WarehouseService: Sendable {
             let jobNumber = (jobRow["job_number"] as String?) ?? "\(jobId)"
             let jobName = (jobRow["job_name"] as String?) ?? ""
 
-            // Count existing boxes for this job to determine sequence
-            let existingCount = try Int.fetchOne(
-                dbConn,
-                sql: """
-                    SELECT COUNT(*) FROM staging_boxes
-                    WHERE job_id = ? AND deleted_at IS NULL
-                    """,
-                arguments: [jobId]
-            ) ?? 0
-
-            let seq = existingCount + 1
+            // Generate a monotonic per-job sequence from all historical boxes,
+            // including soft-deleted rows. Physical box labels must never be
+            // reused just because an old row was tombstoned.
+            let seq = try nextStagingBoxSequence(dbConn: dbConn, jobId: jobId, jobNumber: jobNumber)
             let seqStr = String(format: "%02d", seq)
             let boxNumber = "\(jobNumber)-\(seqStr)"
 
@@ -3189,14 +3182,10 @@ public final class WarehouseService: Sendable {
                 arguments: [boxId]
             )
 
-            // Create next box (inlined for atomicity — no nested db.writer.write)
-            let existingCount = try Int.fetchOne(
-                dbConn,
-                sql: "SELECT COUNT(*) FROM staging_boxes WHERE job_id = ? AND deleted_at IS NULL",
-                arguments: [jobId]
-            ) ?? 0
-
-            let seq = existingCount + 1
+            // Create next box (inlined for atomicity — no nested db.writer.write).
+            // Use all historical rows so soft-deleted physical box numbers are
+            // not reused.
+            let seq = try nextStagingBoxSequence(dbConn: dbConn, jobId: jobId, jobNumber: jobNumber)
             let seqStr = String(format: "%02d", seq)
             let boxNumber = "\(jobNumber)-\(seqStr)"
             let shortName = buildShortLabel(jobName: jobName)
@@ -3476,6 +3465,24 @@ public final class WarehouseService: Sendable {
             label = candidate
         }
         return label.uppercased()
+    }
+
+    /// Return the next staging-box sequence for a job from every historical
+    /// box number, including soft-deleted rows.
+    private func nextStagingBoxSequence(dbConn: Database, jobId: Int64, jobNumber: String) throws -> Int {
+        let prefix = "\(jobNumber)-"
+        let suffixStart = prefix.count + 1 // SQLite SUBSTR is 1-indexed.
+        let highestSequence = try Int.fetchOne(
+            dbConn,
+            sql: """
+                SELECT MAX(CAST(SUBSTR(box_number, ?) AS INTEGER))
+                FROM staging_boxes
+                WHERE job_id = ? AND SUBSTR(box_number, 1, ?) = ?
+                """,
+            arguments: [suffixStart, jobId, prefix.count, prefix]
+        ) ?? 0
+
+        return highestSequence + 1
     }
 
     // =========================================================================
