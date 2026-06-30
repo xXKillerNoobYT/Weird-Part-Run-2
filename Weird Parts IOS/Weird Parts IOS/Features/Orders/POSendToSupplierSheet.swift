@@ -568,6 +568,7 @@ struct POSendToSupplierSheet: View {
                 }
             } catch {
                 await MainActor.run {
+                    guard groupEnabled else { return }
                     let message = "Could not check for other POs for this supplier. Grouped sending is blocked until the sibling lookup succeeds. Error: \(error.localizedDescription)"
                     siblingPOs = []
                     includedSiblingIds = []

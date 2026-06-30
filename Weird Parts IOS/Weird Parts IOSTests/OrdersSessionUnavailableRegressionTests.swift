@@ -140,8 +140,8 @@ final class OrdersSessionUnavailableRegressionTests: XCTestCase {
             "Turning grouped sending back on should clear stale sibling rows before the fresh sibling fetch completes."
         )
         XCTAssertTrue(
-            sendSheetSource.contains("guard groupEnabled else { return }"),
-            "A stale sibling fetch completing after grouped sending is disabled must not repopulate sibling selections."
+            sendSheetSource.components(separatedBy: "guard groupEnabled else { return }").count >= 3,
+            "A stale sibling fetch completing after grouped sending is disabled must not repopulate sibling selections or surface stale errors."
         )
         XCTAssertTrue(
             sendSheetSource.contains("private var includedSiblingPOs: [OrdersService.POListItem]") &&
