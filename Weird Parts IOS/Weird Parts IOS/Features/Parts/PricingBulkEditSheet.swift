@@ -346,8 +346,13 @@ struct PricingBulkEditSheet: View {
     // MARK: - Logic
 
     private var hasValidInput: Bool {
-        if pricingMode == "markup" { return Double(markupText) != nil }
-        return Double(marginText) != nil
+        if pricingMode == "markup" { return Self.isValidNonNegativePercent(markupText) }
+        return Self.isValidNonNegativePercent(marginText)
+    }
+
+    static func isValidNonNegativePercent(_ text: String) -> Bool {
+        guard let value = Double(text.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
+        return value.isFinite && value >= 0
     }
 
     private func loadPreview() async {
@@ -357,8 +362,8 @@ struct PricingBulkEditSheet: View {
         }
         saveError = nil
         do {
-            let markup = pricingMode == "markup" ? Double(markupText) : nil
-            let margin = pricingMode == "margin" ? Double(marginText) : nil
+            let markup = pricingMode == "markup" ? Self.nonNegativePercent(markupText) : nil
+            let margin = pricingMode == "margin" ? Self.nonNegativePercent(marginText) : nil
 
             previewParts = try service.getPreviewParts(
                 categoryId: scope == .category ? categoryId : nil,
@@ -381,8 +386,8 @@ struct PricingBulkEditSheet: View {
                 return
             }
 
-            let markup = pricingMode == "markup" ? Double(markupText) : nil
-            let margin = pricingMode == "margin" ? Double(marginText) : nil
+            let markup = pricingMode == "markup" ? Self.nonNegativePercent(markupText) : nil
+            let margin = pricingMode == "margin" ? Self.nonNegativePercent(marginText) : nil
 
             // Set tier at the appropriate level
             if scope == .category, let catId = categoryId {
@@ -404,5 +409,14 @@ struct PricingBulkEditSheet: View {
             saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
+    }
+
+    private static func nonNegativePercent(_ text: String) -> Double? {
+        guard let value = Double(text.trimmingCharacters(in: .whitespacesAndNewlines)),
+              value.isFinite,
+              value >= 0 else {
+            return nil
+        }
+        return value
     }
 }

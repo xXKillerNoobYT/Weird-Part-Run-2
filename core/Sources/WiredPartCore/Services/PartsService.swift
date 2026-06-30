@@ -2760,7 +2760,7 @@ public final class PartsService: Sendable {
 
             let weightedAvg: Double = part.weightedAvgCost ?? 0
             let pricingMode = try self.getCompanySetting(dbConn: dbConn, key: "pricing_mode") ?? "markup"
-            let defaultMarkup = Double(try self.getCompanySetting(dbConn: dbConn, key: "default_markup_percent") ?? "50") ?? 50
+            let defaultMarkup = try self.getDefaultMarkupPercent(dbConn: dbConn)
 
             // Check each level from most specific to least
             // 1. Part-level tier
@@ -2810,7 +2810,7 @@ public final class PartsService: Sendable {
             }
 
             // 6. Company default
-            let sell = weightedAvg * (1 + defaultMarkup / 100)
+            let sell = max(weightedAvg * (1 + defaultMarkup / 100), weightedAvg)
             let margin = sell > 0 ? ((sell - weightedAvg) / sell) * 100 : 0
             return ResolvedPricing(partId: partId, weightedAvgCost: weightedAvg, effectiveMarkup: defaultMarkup, effectiveMargin: margin, sellPrice: sell, tierLevel: "Default", tierId: nil, isInherited: true, isDirectOverride: false)
         }
@@ -2941,7 +2941,7 @@ public final class PartsService: Sendable {
     ) throws -> [OverrideConflict] {
         try db.writer.read { dbConn in
             let pricingMode = try self.getCompanySetting(dbConn: dbConn, key: "pricing_mode") ?? "markup"
-            let defaultMarkup = Double(try self.getCompanySetting(dbConn: dbConn, key: "default_markup_percent") ?? "50") ?? 50
+            let defaultMarkup = try self.getDefaultMarkupPercent(dbConn: dbConn)
 
             // Build a temporary tier for calculation
             let proposedTier = PricingTier(
@@ -3057,7 +3057,7 @@ public final class PartsService: Sendable {
     ) throws -> [PricingPreviewPart] {
         try db.writer.read { dbConn in
             let pricingMode = try self.getCompanySetting(dbConn: dbConn, key: "pricing_mode") ?? "markup"
-            let defaultMarkup = Double(try self.getCompanySetting(dbConn: dbConn, key: "default_markup_percent") ?? "50") ?? 50
+            let defaultMarkup = try self.getDefaultMarkupPercent(dbConn: dbConn)
 
             // Find parts in the target scope that have stock
             var conditions: [String] = ["p.deleted_at IS NULL"]
@@ -3122,8 +3122,23 @@ public final class PartsService: Sendable {
         return row?["setting_value"] as? String
     }
 
+    /// Company default markup is a pricing boundary: persisted corrupt/legacy
+    /// negative values must never allow below-cost default sell prices.
+    private func getDefaultMarkupPercent(dbConn: Database) throws -> Double {
+        let rawValue = try getCompanySetting(dbConn: dbConn, key: "default_markup_percent") ?? "50"
+        guard let parsed = Double(rawValue), parsed.isFinite else { return 50 }
+        return max(parsed, 0)
+    }
+
     /// Update a company cost setting.
     public func updateCompanyCostSetting(key: String, value: String, updatedBy: Int64? = nil) throws {
+        if key == "default_markup_percent" {
+            guard let markup = Double(value), markup.isFinite else {
+                throw ValidationError.emptyRequired(field: "Default markup percent")
+            }
+            try Validators.requireNonNegative(markup, field: "Default markup percent")
+        }
+
         if let updatedBy {
             try db.writer.read { dbConn in
                 try ServicePermissionGate.requirePermission(dbConn, userId: updatedBy, permissionKey: "parts.manage_company_costs")
