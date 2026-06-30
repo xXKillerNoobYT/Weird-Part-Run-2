@@ -3,22 +3,38 @@ import WiredPartCore
 import GRDB
 
 enum IOSDatabaseExportSnapshotter {
-    nonisolated static func exportSQLiteSnapshot(from source: any DatabaseWriter, to destURL: URL) throws {
+    nonisolated static func exportSQLiteSnapshot(from source: any DatabaseWriter, sourceURL: URL, to destURL: URL) throws {
         for url in [destURL, URL(fileURLWithPath: destURL.path + "-wal"), URL(fileURLWithPath: destURL.path + "-shm")] {
             if FileManager.default.fileExists(atPath: url.path) {
                 try FileManager.default.removeItem(at: url)
             }
         }
 
-        let destination = try DatabaseQueue(path: destURL.path)
-        try source.backup(to: destination)
+        // Keep the exported artifact encrypted by preserving the live database file bytes.
+        // First force committed WAL pages into the main database so a single-file copy is
+        // complete, then copy only the checkpointed SQLite file into the share-sheet temp path.
+        try source.write { db in
+            guard let checkpoint = try Row.fetchOne(db, sql: "PRAGMA wal_checkpoint(TRUNCATE)") else {
+                throw NSError(domain: "IOSDatabaseExportSnapshotter", code: 1, userInfo: [
+                    NSLocalizedDescriptionKey: "Database checkpoint did not return a result."
+                ])
+            }
+            let busy: Int = checkpoint[0]
+            guard busy == 0 else {
+                throw NSError(domain: "IOSDatabaseExportSnapshotter", code: 2, userInfo: [
+                    NSLocalizedDescriptionKey: "Database is busy. Try again in a moment."
+                ])
+            }
+            try FileManager.default.copyItem(at: sourceURL, to: destURL)
+        }
     }
 
     nonisolated static func userFriendlyExportError(raw: String) -> String {
-        if raw.contains("database is locked") {
+        let normalized = raw.lowercased()
+        if normalized.contains("database is locked") || normalized.contains("database is busy") {
             return "The database is busy. Please try again in a moment."
         }
-        if raw.contains("disk I/O error") || raw.contains("disk full") {
+        if normalized.contains("disk i/o error") || normalized.contains("disk full") {
             return "Storage problem. Check your device has enough space."
         }
         return "Couldn't export data. Pull down to retry."
@@ -309,7 +325,14 @@ struct IOSDataExportPage: View {
             isExporting = false
             return
         }
+        let uiTestingMode = ProcessInfo.processInfo.arguments.contains("-UITesting")
+        guard let dbPath = try? AppCore.databasePath(isUITesting: uiTestingMode) else {
+            errorMessage = "Cannot locate database."
+            isExporting = false
+            return
+        }
 
+        let sourceURL = URL(fileURLWithPath: dbPath)
         let tmpDir = FileManager.default.temporaryDirectory
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
@@ -318,7 +341,11 @@ struct IOSDataExportPage: View {
 
         Task.detached(priority: .userInitiated) {
             do {
-                try IOSDatabaseExportSnapshotter.exportSQLiteSnapshot(from: database.writer, to: destURL)
+                try IOSDatabaseExportSnapshotter.exportSQLiteSnapshot(
+                    from: database.writer,
+                    sourceURL: sourceURL,
+                    to: destURL
+                )
                 await MainActor.run {
                     exportURLs = [destURL]
                     exportSuccess = true

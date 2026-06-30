@@ -772,7 +772,7 @@ struct Weird_Parts_IOSTests {
         #expect(snapshotCall.lowerBound < successState.lowerBound, "Success state must only be set after all database sidecars are copied")
     }
 
-    @Test func fullDatabaseExportUsesGRDBSnapshotAndIncludesWALChanges() throws {
+    @Test func fullDatabaseExportCheckpointsAndIncludesWALChanges() throws {
         let tempRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("IOSDatabaseExportSnapshotterTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
@@ -790,7 +790,7 @@ struct Weird_Parts_IOSTests {
 
         #expect(FileManager.default.fileExists(atPath: sourceURL.path + "-wal"), "Test fixture should keep committed data in a WAL sidecar")
 
-        try IOSDatabaseExportSnapshotter.exportSQLiteSnapshot(from: source, to: destinationURL)
+        try IOSDatabaseExportSnapshotter.exportSQLiteSnapshot(from: source, sourceURL: sourceURL, to: destinationURL)
 
         let exported = try DatabaseQueue(path: destinationURL.path)
         let exportedValue = try exported.read { db in
@@ -809,7 +809,11 @@ struct Weird_Parts_IOSTests {
         let source = try String(contentsOf: exportPageURL, encoding: .utf8)
 
         #expect(!source.contains("copyItem(at: URL(fileURLWithPath: dbPath), to: destURL)"), "Full database export must not copy only the main SQLite file")
-        #expect(source.contains("try IOSDatabaseExportSnapshotter.exportSQLiteSnapshot"), "Full database export should use the GRDB snapshot helper")
+        #expect(source.contains("try IOSDatabaseExportSnapshotter.exportSQLiteSnapshot"), "Full database export should use the WAL-checkpoint snapshot helper")
+        #expect(source.contains("PRAGMA wal_checkpoint(TRUNCATE)"), "Full database export should checkpoint WAL pages before copying the encrypted SQLite file")
+        #expect(source.contains("let busy: Int = checkpoint[0]"), "Full database export should inspect checkpoint busy status before copying")
+        #expect(source.contains("try FileManager.default.copyItem(at: sourceURL, to: destURL)\n        }"), "Full database export should preserve encrypted database bytes while still under the writer lock")
+        #expect(source.contains("AppCore.databasePath(isUITesting: uiTestingMode)"), "Full database export should resolve the same UI-testing database path that bootstrap used")
         #expect(source.contains("Task.detached(priority: .userInitiated)"), "Full database export should run the snapshot off the main actor so large exports do not freeze Settings")
         #expect(source.contains("await MainActor.run"), "Full database export should return success and error state updates to the main actor")
         let snapshotCall = try #require(source.range(of: "try IOSDatabaseExportSnapshotter.exportSQLiteSnapshot"))
