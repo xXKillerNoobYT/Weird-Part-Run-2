@@ -384,6 +384,11 @@ struct PricingBulkEditSheet: View {
                 isSaving = false
                 return
             }
+            guard let userId = appCore.currentUser?.id else {
+                saveError = "Please sign in before changing company pricing defaults."
+                isSaving = false
+                return
+            }
 
             let markup = pricingMode == "markup" ? Self.nonNegativePercent(markupText) : nil
             let margin = pricingMode == "margin" ? Self.nonNegativePercent(marginText) : nil
@@ -394,12 +399,12 @@ struct PricingBulkEditSheet: View {
             } else {
                 // "All" scope — update default markup in company settings
                 if let m = markup {
-                    try service.updateCompanyCostSetting(key: "default_markup_percent", value: String(format: "%.5f", m))
+                    try service.updateCompanyCostSetting(key: "default_markup_percent", value: String(format: "%.5f", m), updatedBy: userId)
                 }
                 if let m = margin {
                     // Convert margin to markup for default setting
                     let convertedMarkup = m < 100 ? (m / (100 - m)) * 100 : 100
-                    try service.updateCompanyCostSetting(key: "default_markup_percent", value: String(format: "%.5f", convertedMarkup))
+                    try service.updateCompanyCostSetting(key: "default_markup_percent", value: String(format: "%.5f", convertedMarkup), updatedBy: userId)
                 }
             }
 
