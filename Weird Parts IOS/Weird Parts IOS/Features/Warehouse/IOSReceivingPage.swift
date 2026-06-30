@@ -1082,7 +1082,12 @@ private struct IOSJobReturnSortingPage: View {
 
             let holdingItems = try warehouseService.getJobReturnHoldingItems(jobId: job.id, includeRouted: false)
                 .filter { $0.intakeId == intakeId }
-            try applyImmediateRoutes(holdingItems: holdingItems, userId: userId, jobId: job.id)
+            try applyImmediateRoutes(
+                holdingItems: holdingItems,
+                warehouseService: warehouseService,
+                userId: userId,
+                jobId: job.id
+            )
 
             await MainActor.run {
                 completionMessage = completionSummary()
@@ -1109,10 +1114,10 @@ private struct IOSJobReturnSortingPage: View {
 
     private func applyImmediateRoutes(
         holdingItems: [WarehouseService.JobReturnHoldingItem],
+        warehouseService: WarehouseService,
         userId: Int64,
         jobId: Int64
     ) throws {
-        guard let warehouseService = appCore.warehouseService else { return }
         // Holding items are fetched newest-first, but createJobReturnIntake inserts
         // items in draft-line order. Route oldest-first so duplicate same-part
         // lines stay paired with the line the user sorted.
