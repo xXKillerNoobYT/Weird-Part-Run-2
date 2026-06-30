@@ -156,7 +156,7 @@ struct QRScanSheet: View {
 
                 Button("Look Up") { processManualEntry() }
                     .buttonStyle(.bordered)
-                    .disabled(manualCode.trimmingCharacters(in: .whitespaces).isEmpty || isProcessing)
+                    .disabled(manualCode.isBlankRequiredText || isProcessing)
             }
             .padding(.horizontal)
             .padding(.bottom, 12)
@@ -187,7 +187,7 @@ struct QRScanSheet: View {
 
                 Button("Look Up") { processManualEntry() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(manualCode.isEmpty || isProcessing)
+                    .disabled(manualCode.isBlankRequiredText || isProcessing)
             }
             .padding(.horizontal, 24)
 
@@ -249,10 +249,8 @@ struct QRScanSheet: View {
     }
 
     // MARK: - Processing
-
     private func processManualEntry() {
-        let code = manualCode.trimmingCharacters(in: .whitespaces)
-        guard !code.isEmpty else { return }
+        guard let code = manualCode.normalizedRequiredText else { return }
         Task {
             await processPayload(code)
             await MainActor.run { manualCode = "" }

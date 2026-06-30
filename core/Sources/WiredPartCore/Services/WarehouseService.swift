@@ -863,7 +863,7 @@ public final class WarehouseService: Sendable {
         // which of fromLocationType/toLocationType is non-nil, not by sign. A
         // negative qty inverts the stock delta: `qty = qty - (-3)` = qty + 3.
         guard qty > 0 else { throw WarehouseError.invalidQuantity }
-        guard !movementType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !movementType.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         try Self.validateLocationEndpointCompleteness(locationType: fromLocationType, locationId: fromLocationId)
@@ -1135,7 +1135,7 @@ public final class WarehouseService: Sendable {
         guard !movements.isEmpty else { return [] }
         for m in movements {
             guard m.qty > 0 else { throw WarehouseError.invalidQuantity }
-            guard !m.movementType.trimmingCharacters(in: .whitespaces).isEmpty else {
+            guard !m.movementType.isBlankRequiredText else {
                 throw WarehouseError.requiredFieldEmpty
             }
             try Self.validateLocationEndpointCompleteness(locationType: m.fromLocationType, locationId: m.fromLocationId)
@@ -2655,7 +2655,7 @@ public final class WarehouseService: Sendable {
             try ServicePermissionGate.requirePermission(dbConn, userId: userId, permissionKey: "perform_audit")
         }
 
-        guard !scope.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !scope.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -2865,8 +2865,8 @@ public final class WarehouseService: Sendable {
         status: String = "active",
         notes: String? = nil
     ) throws -> Int64 {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty,
-              !trailerCode.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText,
+              !trailerCode.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -4222,7 +4222,7 @@ public final class WarehouseService: Sendable {
 
     /// Create a new warehouse floor plan.
     public func createFloorPlan(name: String, widthInches: Int, lengthInches: Int) throws -> WarehouseFloorPlan {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         guard widthInches > 0, lengthInches > 0 else {
@@ -4291,7 +4291,7 @@ public final class WarehouseService: Sendable {
         floorPlanId: Int64, featureType: String, label: String?,
         gridX: Int, gridY: Int, gridWidth: Int = 1, gridHeight: Int = 1, rotation: Int = 0
     ) throws -> WarehouseFloorFeature {
-        guard !featureType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !featureType.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -4345,7 +4345,7 @@ public final class WarehouseService: Sendable {
         gridX: Int = 0, gridY: Int = 0, gridWidth: Int = 4, gridHeight: Int = 4,
         rotation: Int = 0, zoneOrder: Int = 0
     ) throws -> WarehouseZone {
-        guard !zoneType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !zoneType.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         guard gridX >= 0, gridY >= 0, gridWidth > 0, gridHeight > 0 else {
@@ -4844,7 +4844,7 @@ public final class WarehouseService: Sendable {
         rotation: Int = 0, frontFace: String? = "south",
         isMovable: Bool = false, isJobReady: Bool = false
     ) throws -> WarehouseStorageUnit {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !name.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -4891,7 +4891,7 @@ public final class WarehouseService: Sendable {
         rotation: Int? = nil, frontFace: String? = nil,
         isConfigured: Bool? = nil, zoneId: Int64? = nil
     ) throws {
-        if let name, name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if let name, name.isBlankRequiredText {
             throw WarehouseError.requiredFieldEmpty
         }
 
@@ -4986,7 +4986,7 @@ public final class WarehouseService: Sendable {
         unitId: Int64, levelCode: String, levelName: String? = nil,
         order: Int = 0, heightInches: Int? = nil, areaCount: Int = 1
     ) throws -> WarehouseStorageLevel {
-        guard !levelCode.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !levelCode.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in
@@ -6513,7 +6513,7 @@ public final class WarehouseService: Sendable {
 
     /// Resolve a misplaced part entry.
     public func resolveMisplacedPart(logId: Int64, resolution: String, resolvedBy: Int64) throws {
-        guard !resolution.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !resolution.isBlankRequiredText else {
             throw WarehouseError.requiredFieldEmpty
         }
         try db.writer.write { dbConn in

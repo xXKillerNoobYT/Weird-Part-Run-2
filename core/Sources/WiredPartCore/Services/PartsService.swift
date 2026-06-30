@@ -4358,7 +4358,7 @@ public final class PartsService: Sendable {
         guard try auth.hasPermission(byUserId, permissionKey: "forecasting.dismiss_recommendation") else {
             throw PartsError.insufficientPermissions(required: "forecasting.dismiss_recommendation")
         }
-        guard !reason.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !reason.isBlankRequiredText else {
             throw PartsError.invalidInput("Dismiss reason is required")
         }
         try db.writer.write { dbConn in
@@ -7214,7 +7214,7 @@ public final class PartsService: Sendable {
             let hash = service.importSourceHash(Data(csv.utf8))
             let records = service.parseImportCSVRecords(csv)
             let rows = records.compactMap { record -> PartsImportDraftRow? in
-                guard record.fields.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+                guard record.fields.contains(where: { !$0.isBlankRequiredText }) else {
                     return nil
                 }
                 return PartsImportDraftRow(
