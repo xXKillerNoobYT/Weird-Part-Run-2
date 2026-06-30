@@ -1787,7 +1787,7 @@ public enum ReportsError: Error, LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case .requiredFieldEmpty:
-            return "Required report text is missing."
+            return "Report name and type are required."
         case .timesheetSegmentNotFound:
             return "Timesheet entry was not found."
         case .invalidTimesheetCorrectionReason:
