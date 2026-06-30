@@ -823,6 +823,53 @@ struct WarehouseAuditTests {
         #expect((row?["status"] as String?) == "completed")
     }
 
+    @Test("startAuditSession rejects inactive users")
+    func testStartAuditSessionRejectsInactiveUser() throws {
+        let env = try freshEnv()
+        let inactiveUserId = try env.auth.createUser(displayName: "Inactive Audit Starter", pin: "6666")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [inactiveUserId])
+        }
+
+        #expect(throws: WarehouseService.WarehouseError.userNotFound(inactiveUserId)) {
+            _ = try env.warehouse.startAuditSession(startedBy: inactiveUserId)
+        }
+
+        let sessionCount = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM audit_sessions_v2
+                WHERE started_by = ? AND deleted_at IS NULL
+                """, arguments: [inactiveUserId]) ?? 0
+        }
+        #expect(sessionCount == 0, "Inactive users must not start warehouse audit sessions")
+    }
+
+    @Test("adjustAuditCount rejects inactive performers without stock mutation")
+    func testAdjustAuditCountRejectsInactivePerformer() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
+        let inactiveUserId = try env.auth.createUser(displayName: "Inactive Audit Adjuster", pin: "7777")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [inactiveUserId])
+        }
+
+        #expect(throws: WarehouseService.WarehouseError.userNotFound(inactiveUserId)) {
+            try env.warehouse.adjustAuditCount(
+                partId: partId,
+                locationType: "warehouse",
+                locationId: 1,
+                newQty: 7,
+                reason: "Physical count",
+                performedBy: inactiveUserId
+            )
+        }
+
+        let qty = try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1)
+        #expect(qty == 10, "Inactive-user audit adjustment must not mutate stock")
+    }
+
     @Test("adjustAuditCount updates stock qty and records negative delta adjustment movement")
     func testAdjustAuditCount() throws {
         let env = try freshEnv()
