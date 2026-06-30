@@ -1236,6 +1236,42 @@ struct SchedulingServiceTests {
         #expect(jobs.count == 1)
     }
 
+    @Test("fetchFlexPool excludes jobs with malformed user filter JSON")
+    func testFlexPoolMalformedUserFilterFailsClosed() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-FLEX-BAD-U", name: "Bad User Filter")
+
+        try env.scheduling.markJobFlexPool(jobId: jobId, isFlexPool: true)
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE jobs
+                SET flex_pool_user_filter = '[123'
+                WHERE id = ?
+                """, arguments: [jobId])
+        }
+
+        let jobs = try env.scheduling.fetchFlexPool(userId: env.adminUserId)
+        #expect(!jobs.contains(where: { $0.id == jobId }))
+    }
+
+    @Test("fetchFlexPool excludes jobs with malformed team filter JSON")
+    func testFlexPoolMalformedTeamFilterFailsClosed() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-FLEX-BAD-T", name: "Bad Team Filter")
+
+        try env.scheduling.markJobFlexPool(jobId: jobId, isFlexPool: true)
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE jobs
+                SET flex_pool_team_filter = '[123'
+                WHERE id = ?
+                """, arguments: [jobId])
+        }
+
+        let jobs = try env.scheduling.fetchFlexPool(userId: env.adminUserId)
+        #expect(!jobs.contains(where: { $0.id == jobId }))
+    }
+
     @Test("claimFlexJob sets worker as lead and removes job from flex pool")
     func testClaimFlexJob() throws {
         let env = try E2ETestHelpers.setUp()
