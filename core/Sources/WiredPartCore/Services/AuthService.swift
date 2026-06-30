@@ -472,7 +472,7 @@ public final class AuthService: Sendable {
 
     /// Add a permission key to a hat.
     public func addHatPermission(hatId: Int64, permissionKey: String) throws {
-        guard !permissionKey.isBlankRequiredText else {
+        guard !permissionKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw AuthError.requiredFieldEmpty("permissionKey")
         }
         try db.writer.write { dbConnection in
@@ -790,7 +790,7 @@ public final class AuthService: Sendable {
         // Validate inputs: display name must be non-blank; PIN must be 4–8 digits.
         // Previously a blank displayName would create a login-screen entry the user
         // couldn't select, and a too-short PIN bypassed lockout timing.
-        guard !displayName.isBlankRequiredText else {
+        guard !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw AuthError.requiredFieldEmpty("displayName")
         }
         let trimmedPin = pin.trimmingCharacters(in: .whitespacesAndNewlines)
