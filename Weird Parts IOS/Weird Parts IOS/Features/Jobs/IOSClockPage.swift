@@ -20,7 +20,6 @@ struct IOSClockPage: View {
     // MARK: - State
 
     @State private var activeEntry: JobsService.LaborEntryRow?
-    @State private var todayEntries: [JobsService.LaborEntryRow] = []
     @State private var todayHours: Double = 0.0
     @State private var isLoading = true
     @State private var errorMessage: String?
@@ -1907,7 +1906,7 @@ struct IOSClockPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        isLoading = activeEntry == nil && todayEntries.isEmpty
+        isLoading = activeEntry == nil && todayJobGroups.isEmpty
         // Don't clear errorMessage here — let it persist until the load
         // succeeds so users can read the error during a refresh attempt.
 
@@ -1937,12 +1936,6 @@ struct IOSClockPage: View {
 
             // Load active clock entry
             let entry = try service.getActiveClockEntry(userId: userId)
-
-            // Load today's entries
-            let entries = try service.listLaborEntries(userId: userId, limit: 50)
-            let todayPrefix = Formatters.localDateFormatter.string(from: Date())
-            let todayE = entries.filter { $0.clockIn.hasPrefix(String(todayPrefix)) }
-            let todayH = todayE.reduce(0.0) { $0 + $1.regularHours + $1.overtimeHours }
 
             // Load active jobs via JobsService (avoids raw SQL column issues)
             let clockJobs = try service.listActiveJobsForClock()
@@ -2020,10 +2013,12 @@ struct IOSClockPage: View {
 
             // Load today's grouped clock entries
             let groups = try service.getTodaysClockEntries(userId: userId)
+            let todayH = groups.reduce(0.0) { total, group in
+                total + group.totalDuration / 3600.0
+            }
 
             await MainActor.run {
                 activeEntry = entry
-                todayEntries = todayE
                 todayHours = todayH
                 todayJobGroups = groups
                 sortedJobs = jobsWithDist
