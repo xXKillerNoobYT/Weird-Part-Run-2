@@ -398,6 +398,7 @@ final class AppCore: ObservableObject {
         permissions = []
         onboardingManager = nil
         badgeCountManager.setUserId(nil)
+        NotificationCenter.default.post(name: .appDidLogout, object: self)
     }
 
     /// Run the first-device bootstrap, creating the admin user and default data.

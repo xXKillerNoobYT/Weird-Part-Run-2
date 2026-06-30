@@ -128,6 +128,64 @@ struct FoundationModelsServiceTests {
         #expect(history.isEmpty)
     }
 
+    @Test("chat session identity covers user permissions database and navigation context")
+    func testChatSessionIdentity_coversSecurityAndContextInputs() throws {
+        let env = try E2ETestHelpers.setUp()
+        let otherEnv = try E2ETestHelpers.setUp()
+        let baseline = AIChatSessionIdentity(
+            conversationId: "conversation-1",
+            db: env.db,
+            permissions: ["view_jobs", "admin", "view_jobs"],
+            userId: 42,
+            navigationContext: "Page A"
+        )
+
+        let reorderedPermissions = AIChatSessionIdentity(
+            conversationId: "conversation-1",
+            db: env.db,
+            permissions: ["admin", "view_jobs"],
+            userId: 42,
+            navigationContext: "Page A"
+        )
+        #expect(baseline == reorderedPermissions)
+
+        #expect(baseline != AIChatSessionIdentity(
+            conversationId: "conversation-2",
+            db: env.db,
+            permissions: ["view_jobs", "admin"],
+            userId: 42,
+            navigationContext: "Page A"
+        ))
+        #expect(baseline != AIChatSessionIdentity(
+            conversationId: "conversation-1",
+            db: otherEnv.db,
+            permissions: ["view_jobs", "admin"],
+            userId: 42,
+            navigationContext: "Page A"
+        ))
+        #expect(baseline != AIChatSessionIdentity(
+            conversationId: "conversation-1",
+            db: env.db,
+            permissions: ["view_jobs"],
+            userId: 42,
+            navigationContext: "Page A"
+        ))
+        #expect(baseline != AIChatSessionIdentity(
+            conversationId: "conversation-1",
+            db: env.db,
+            permissions: ["view_jobs", "admin"],
+            userId: 43,
+            navigationContext: "Page A"
+        ))
+        #expect(baseline != AIChatSessionIdentity(
+            conversationId: "conversation-1",
+            db: env.db,
+            permissions: ["view_jobs", "admin"],
+            userId: 42,
+            navigationContext: "Page B"
+        ))
+    }
+
     // MARK: - DB Persistence (static methods, fully testable)
 
     @Test("saveMessage then loadConversation round-trips message content")

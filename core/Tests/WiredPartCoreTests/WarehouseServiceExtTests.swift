@@ -1543,6 +1543,50 @@ struct WarehouseServiceExtTests {
         #expect(try env.warehouse.getStockQty(partId: wrongPartId, locationType: "warehouse", locationId: 1) == 0)
     }
 
+    @Test("Job Return duplicate same-part mixed outcomes do not shelf review items")
+    func testJobReturnDuplicateSamePartMixedOutcomesDoNotShelfReviewItem() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Duplicate Mixed Return Part", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        _ = try env.warehouse.createJobReturnIntake(
+            sourceJobId: jobId,
+            returnSource: "crew_return",
+            returnedBy: env.adminUserId,
+            lines: [
+                .init(partId: partId, qty: 1, condition: "usable", notes: "should shelf"),
+                .init(partId: partId, qty: 1, condition: "damaged", notes: "must stay review"),
+            ]
+        )
+
+        let holdingItems = try env.warehouse.getJobReturnHoldingItems(jobId: jobId, includeRouted: false)
+        guard let damagedReview = holdingItems.first(where: { $0.partId == partId && $0.status == "damaged_review" }),
+              let usableHolding = holdingItems.first(where: { $0.partId == partId && $0.status == "holding" })
+        else {
+            Issue.record("Expected duplicate same-part return to create separate holding and review items")
+            return
+        }
+
+        #expect(throws: WarehouseService.WarehouseError.invalidMovementPath(from: "job_return_damaged_review", to: "warehouse")) {
+            _ = try env.warehouse.confirmJobReturnShelfRoute(
+                intakeItemId: damagedReview.id,
+                qty: 1,
+                performedBy: env.adminUserId
+            )
+        }
+
+        _ = try env.warehouse.confirmJobReturnShelfRoute(
+            intakeItemId: usableHolding.id,
+            qty: 1,
+            performedBy: env.adminUserId
+        )
+
+        let remainingReviewItems = try env.warehouse.getJobReturnHoldingItems(jobId: jobId, includeRouted: false)
+        #expect(remainingReviewItems.contains { $0.id == damagedReview.id && $0.status == "damaged_review" && $0.qtyRemaining == 1 })
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1) == 1)
+    }
+
     @Test("Job Return staging and write-off routes do not affect shelf stock")
     func testJobReturnStagingAndWriteOffDoNotAffectShelfStock() throws {
         let env = try E2ETestHelpers.setUp()

@@ -417,6 +417,57 @@ struct JobsServiceTests {
         #expect(stableId.flatMap(UUID.init(uuidString:)) != nil)
     }
 
+    @Test("Inactive users cannot clock into jobs")
+    func testInactiveUsersCannotClockIntoJobs() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-INACTIVE", name: "Inactive User Job")
+        let inactiveUserId = try env.auth.createUser(displayName: "Inactive Clock User", pin: "7788")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [inactiveUserId])
+        }
+
+        #expect(throws: JobsService.JobsError.userNotActive(inactiveUserId)) {
+            _ = try env.jobs.clockIn(userId: inactiveUserId, jobId: jobId)
+        }
+
+        let openEntryCount = try env.db.writer.read { db in
+            try Int.fetchOne(
+                db,
+                sql: """
+                    SELECT COUNT(*) FROM labor_entries
+                    WHERE user_id = ? AND status = 'clocked_in' AND deleted_at IS NULL
+                    """,
+                arguments: [inactiveUserId]
+            ) ?? 0
+        }
+        #expect(openEntryCount == 0)
+    }
+
+    @Test("Inactive users cannot clock into shop warehouse")
+    func testInactiveUsersCannotClockIntoShopWarehouse() throws {
+        let env = try E2ETestHelpers.setUp()
+        let inactiveUserId = try env.auth.createUser(displayName: "Inactive Shop User", pin: "7789")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [inactiveUserId])
+        }
+
+        #expect(throws: JobsService.JobsError.userNotActive(inactiveUserId)) {
+            _ = try env.jobs.clockInToWarehouse(userId: inactiveUserId)
+        }
+
+        let openEntryCount = try env.db.writer.read { db in
+            try Int.fetchOne(
+                db,
+                sql: """
+                    SELECT COUNT(*) FROM labor_entries
+                    WHERE user_id = ? AND status = 'clocked_in' AND deleted_at IS NULL
+                    """,
+                arguments: [inactiveUserId]
+            ) ?? 0
+        }
+        #expect(openEntryCount == 0)
+    }
+
     @Test("Labor summary after clock in/out")
     func testLaborSummary() throws {
         let env = try E2ETestHelpers.setUp()
@@ -2354,6 +2405,26 @@ struct JobsServiceTests {
         let notes: String? = row?["notes"]
         #expect(notes == nil || (notes?.contains("supply_run_start") == false),
             "Soft-deleted labor entry notes must not gain supply_run markers")
+    }
+
+    @Test("toggleSupplyRun is a no-op on a completed labor entry")
+    func testToggleSupplyRun_noOpOnCompletedEntry() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let entryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        try env.jobs.clockOut(laborEntryId: entryId)
+
+        // Stale supply-run toggle on a completed entry should not mutate audited time data.
+        let result = try env.jobs.toggleSupplyRun(laborEntryId: entryId)
+        #expect(result == "working",
+            "toggleSupplyRun on completed entry must return 'working' (no-op early exit)")
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT notes FROM labor_entries WHERE id = ?", arguments: [entryId])
+        }
+        let notes: String? = row?["notes"]
+        #expect(notes == nil || (notes?.contains("supply_run_start") == false),
+            "Completed labor entry notes must not gain supply_run markers")
     }
 
     @Test("activeSupplyRunStart returns the latest unmatched supply run start")

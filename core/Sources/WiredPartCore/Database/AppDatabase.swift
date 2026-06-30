@@ -122,9 +122,13 @@ public final class AppDatabase: Sendable {
         }
 
         let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd_HHmmss"
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dateFormatter.calendar = Calendar(identifier: .gregorian)
+        dateFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+        dateFormatter.dateFormat = "yyyy-MM-dd_HHmmss_SSS"
         let timestamp = dateFormatter.string(from: Date())
-        let backupPath = backupDir + "/pre-migration-\(timestamp).sqlite"
+        let uniqueId = UUID().uuidString.prefix(8)
+        let backupPath = backupDir + "/pre-migration-\(timestamp)-\(uniqueId).sqlite"
 
         do {
             // Only back up if the source file exists
@@ -164,19 +168,80 @@ public final class AppDatabase: Sendable {
 
     /// Restore database from a backup file.
     public static func restoreDatabase(from backupPath: String, to dbPath: String) throws {
+        try restoreDatabase(from: backupPath, to: dbPath, willPromoteStagedBackup: nil)
+    }
+
+    static func restoreDatabase(
+        from backupPath: String,
+        to dbPath: String,
+        willPromoteStagedBackup: (() throws -> Void)?
+    ) throws {
         let fileManager = FileManager.default
-        // Remove current DB files
-        try? fileManager.removeItem(atPath: dbPath)
-        try? fileManager.removeItem(atPath: dbPath + "-wal")
-        try? fileManager.removeItem(atPath: dbPath + "-shm")
-        // Copy backup into place
-        try fileManager.copyItem(atPath: backupPath, toPath: dbPath)
-        // Restore WAL/SHM if they exist
+        let restoreId = UUID().uuidString
+        let stagedPath = dbPath + ".restore-\(restoreId).tmp"
+        let rollbackPath = dbPath + ".restore-\(restoreId).rollback"
+        var shouldCleanRollback = true
+
+        func removeDatabaseFiles(at path: String) {
+            try? fileManager.removeItem(atPath: path)
+            try? fileManager.removeItem(atPath: path + "-wal")
+            try? fileManager.removeItem(atPath: path + "-shm")
+        }
+
+        func moveDatabaseFiles(from source: String, to destination: String) throws {
+            if fileManager.fileExists(atPath: source) {
+                try fileManager.moveItem(atPath: source, toPath: destination)
+            }
+            for suffix in ["-wal", "-shm"] where fileManager.fileExists(atPath: source + suffix) {
+                try fileManager.moveItem(atPath: source + suffix, toPath: destination + suffix)
+            }
+        }
+
+        func removeDestinationFilesForRollbackBundle() {
+            if fileManager.fileExists(atPath: rollbackPath) {
+                try? fileManager.removeItem(atPath: dbPath)
+            }
+            for suffix in ["-wal", "-shm"] where fileManager.fileExists(atPath: rollbackPath + suffix) {
+                try? fileManager.removeItem(atPath: dbPath + suffix)
+            }
+        }
+
+        removeDatabaseFiles(at: stagedPath)
+        removeDatabaseFiles(at: rollbackPath)
+        defer {
+            removeDatabaseFiles(at: stagedPath)
+            if shouldCleanRollback {
+                removeDatabaseFiles(at: rollbackPath)
+            }
+        }
+
+        // Stage the backup bundle before touching the live database. This preserves
+        // the current DB when the backup path is stale, missing, or unreadable.
+        try fileManager.copyItem(atPath: backupPath, toPath: stagedPath)
         for suffix in ["-wal", "-shm"] {
             let src = backupPath + suffix
             if fileManager.fileExists(atPath: src) {
-                try? fileManager.copyItem(atPath: src, toPath: dbPath + suffix)
+                try fileManager.copyItem(atPath: src, toPath: stagedPath + suffix)
             }
+        }
+
+        do {
+            try moveDatabaseFiles(from: dbPath, to: rollbackPath)
+            try willPromoteStagedBackup?()
+            try moveDatabaseFiles(from: stagedPath, to: dbPath)
+        } catch {
+            if fileManager.fileExists(atPath: rollbackPath)
+                || fileManager.fileExists(atPath: rollbackPath + "-wal")
+                || fileManager.fileExists(atPath: rollbackPath + "-shm") {
+                removeDestinationFilesForRollbackBundle()
+                do {
+                    try moveDatabaseFiles(from: rollbackPath, to: dbPath)
+                } catch {
+                    shouldCleanRollback = false
+                    throw error
+                }
+            }
+            throw error
         }
     }
 }

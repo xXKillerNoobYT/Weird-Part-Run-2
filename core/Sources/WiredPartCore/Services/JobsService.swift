@@ -1370,6 +1370,8 @@ public final class JobsService: Sendable {
     ) throws -> Int64 {
         let clockInTimestamp = Self.sqliteTimestamp(clockInAt)
         return try db.writer.write { dbConn in
+            try Self.requireActiveUser(dbConn, userId: userId)
+
             let existing = try Int.fetchOne(
                 dbConn,
                 sql: """
@@ -3386,6 +3388,8 @@ public final class JobsService: Sendable {
         gpsLat: Double?,
         gpsLng: Double?
     ) throws -> Int64 {
+        try requireActiveUser(dbConn, userId: userId)
+
         guard let jobRow = try Row.fetchOne(
             dbConn,
             sql: "SELECT status FROM jobs WHERE id = ? AND deleted_at IS NULL",
@@ -3614,7 +3618,13 @@ public final class JobsService: Sendable {
         try db.writer.write { conn in
             guard let row = try Row.fetchOne(
                 conn,
-                sql: "SELECT notes FROM labor_entries WHERE id = ? AND deleted_at IS NULL",
+                sql: """
+                    SELECT notes FROM labor_entries
+                    WHERE id = ?
+                      AND status = 'clocked_in'
+                      AND clock_out IS NULL
+                      AND deleted_at IS NULL
+                    """,
                 arguments: [laborEntryId]
             ) else { return "working" }
 
@@ -3632,7 +3642,14 @@ public final class JobsService: Sendable {
             }
 
             try conn.execute(
-                sql: "UPDATE labor_entries SET notes = ? WHERE id = ? AND deleted_at IS NULL",
+                sql: """
+                    UPDATE labor_entries
+                    SET notes = ?
+                    WHERE id = ?
+                      AND status = 'clocked_in'
+                      AND clock_out IS NULL
+                      AND deleted_at IS NULL
+                    """,
                 arguments: [note, laborEntryId]
             )
 
