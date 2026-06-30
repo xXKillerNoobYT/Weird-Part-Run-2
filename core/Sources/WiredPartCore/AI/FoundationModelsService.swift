@@ -305,8 +305,8 @@ public actor FoundationModelsService {
         remoteText: String,
         context: String? = nil
     ) async -> AIResult {
-        guard !localText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-              !remoteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !localText.isBlankRequiredText ||
+              !remoteText.isBlankRequiredText else {
             return .fail("No text to merge")
         }
 
@@ -369,7 +369,7 @@ public actor FoundationModelsService {
     /// - Parameter query: The user's question.
     /// - Returns: An `AIResult` containing the assistant's response.
     public func chat(query: String) async -> AIResult {
-        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !query.isBlankRequiredText else {
             return .fail("Empty query")
         }
 
@@ -410,7 +410,7 @@ public actor FoundationModelsService {
         navigationContext: String,
         conversationId: String = "default"
     ) async -> AIResult {
-        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !query.isBlankRequiredText else {
             return .fail("Empty query")
         }
 

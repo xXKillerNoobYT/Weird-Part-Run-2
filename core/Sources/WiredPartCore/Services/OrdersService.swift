@@ -966,7 +966,7 @@ public final class OrdersService: Sendable {
         partName: String,
         jpoId: Int64
     ) throws -> Int64 {
-        guard !holdReason.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !holdReason.isBlankRequiredText else {
             throw OrdersError.requiredFieldEmpty("holdReason")
         }
 
@@ -3351,7 +3351,7 @@ public final class OrdersService: Sendable {
         supplierId: Int64,
         notes: String? = nil
     ) throws -> Int64 {
-        guard !poNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !poNumber.isBlankRequiredText else {
             throw OrdersError.requiredFieldEmpty("poNumber")
         }
 
@@ -3447,10 +3447,10 @@ public final class OrdersService: Sendable {
 
     /// Append a timestamped note to a purchase order's notes field.
     public func addPONote(poId: Int64, note: String, author: String) throws {
-        guard !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !note.isBlankRequiredText else {
             throw OrdersError.requiredFieldEmpty("note")
         }
-        guard !author.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !author.isBlankRequiredText else {
             throw OrdersError.requiredFieldEmpty("author")
         }
         try db.writer.write { dbConn in
@@ -3886,10 +3886,10 @@ public final class OrdersService: Sendable {
         jobId: Int64? = nil,
         initiatedBy: Int64
     ) throws -> Int64 {
-        guard !returnType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !returnType.isBlankRequiredText else {
             throw OrdersError.requiredFieldEmpty("returnType")
         }
-        guard !reason.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !reason.isBlankRequiredText else {
             throw OrdersError.requiredFieldEmpty("reason")
         }
 
@@ -3930,7 +3930,7 @@ public final class OrdersService: Sendable {
 
     /// Update the status of a return.
     public func updateReturnStatus(returnId: Int64, status: String) throws {
-        guard !status.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !status.isBlankRequiredText else {
             throw OrdersError.requiredFieldEmpty("status")
         }
 

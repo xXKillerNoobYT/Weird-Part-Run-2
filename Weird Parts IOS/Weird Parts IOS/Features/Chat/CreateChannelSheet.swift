@@ -82,7 +82,7 @@ struct CreateChannelSheet: View {
 
     private var isCreateDisabled: Bool {
         if isSupplier { return selectedSupplierId == 0 }
-        return channelName.isEmpty
+        return channelName.isBlankRequiredText
     }
 
     private func saveChannel() {
@@ -97,7 +97,7 @@ struct CreateChannelSheet: View {
             if isSupplier {
                 let supplier = suppliers.first(where: { ($0.supplier.id ?? 0) == selectedSupplierId })
                 let displayName = supplier?.supplier.contactName ?? supplier?.supplier.name ?? "Supplier"
-                let name = channelName.isEmpty ? "Channel: \(supplier?.supplier.name ?? "Supplier")" : channelName
+                let name = channelName.normalizedRequiredText ?? "Channel: \(supplier?.supplier.name ?? "Supplier")"
                 _ = try service.createSupplierChannel(
                     name: name,
                     supplierId: selectedSupplierId,
@@ -107,8 +107,13 @@ struct CreateChannelSheet: View {
                     createdBy: userId
                 )
             } else {
+                guard let name = channelName.normalizedRequiredText else {
+                    saveError = "Channel name is required"
+                    isSaving = false
+                    return
+                }
                 _ = try service.createChannel(
-                    name: channelName,
+                    name: name,
                     channelType: channelType,
                     createdBy: userId
                 )
