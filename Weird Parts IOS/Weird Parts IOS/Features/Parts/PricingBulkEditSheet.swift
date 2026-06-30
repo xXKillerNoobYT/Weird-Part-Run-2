@@ -385,7 +385,7 @@ struct PricingBulkEditSheet: View {
                 return
             }
             guard let userId = appCore.currentUser?.id else {
-                saveError = "Please sign in before changing company pricing defaults."
+                saveError = "Please sign in before changing pricing."
                 isSaving = false
                 return
             }
