@@ -356,7 +356,7 @@ final class IOSSyncManager {
                 let deviceId = DeviceIdentity.current
                 let deviceName = UIDevice.current.name
                 do {
-                    if mode == .onboardingJoin {
+                    if await pm.getState().running {
                         await pm.stopPeerSync()
                     }
                     try await pm.startPeerSync(
