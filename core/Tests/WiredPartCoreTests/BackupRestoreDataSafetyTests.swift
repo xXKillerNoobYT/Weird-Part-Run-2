@@ -26,6 +26,42 @@ struct BackupRestoreDataSafetyTests {
         }
     }
 
+    @Test("Restore rolls back the whole live bundle when staged sidecar promotion fails")
+    func testRestoreRollbackAfterPartialStagedPromotionFailure() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("wei-1103-restore-partial-promotion-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let targetPath = directory.appendingPathComponent("live.sqlite").path
+        let backupPath = directory.appendingPathComponent("backup.sqlite").path
+        let liveBytes = Data("live database bytes".utf8)
+        let liveWalBytes = Data("live wal bytes".utf8)
+        let liveShmBytes = Data("live shm bytes".utf8)
+        let backupBytes = Data("backup database bytes".utf8)
+        let backupWalBytes = Data("backup wal bytes".utf8)
+
+        try liveBytes.write(to: URL(fileURLWithPath: targetPath))
+        try liveWalBytes.write(to: URL(fileURLWithPath: targetPath + "-wal"))
+        try liveShmBytes.write(to: URL(fileURLWithPath: targetPath + "-shm"))
+        try backupBytes.write(to: URL(fileURLWithPath: backupPath))
+        try backupWalBytes.write(to: URL(fileURLWithPath: backupPath + "-wal"))
+
+        do {
+            try AppDatabase.restoreDatabase(from: backupPath, to: targetPath) {
+                // The live bundle has already been moved to rollback storage. Place
+                // an incompatible item at the WAL destination so the staged base DB
+                // can be promoted first, then sidecar promotion throws.
+                try FileManager.default.createDirectory(atPath: targetPath + "-wal", withIntermediateDirectories: false)
+            }
+            Issue.record("Restore should throw when staged sidecar promotion fails")
+        } catch {
+            #expect(try Data(contentsOf: URL(fileURLWithPath: targetPath)) == liveBytes)
+            #expect(try Data(contentsOf: URL(fileURLWithPath: targetPath + "-wal")) == liveWalBytes)
+            #expect(try Data(contentsOf: URL(fileURLWithPath: targetPath + "-shm")) == liveShmBytes)
+        }
+    }
+
     @Test("Repeated rapid backups all create usable snapshots")
     func testRapidRepeatedBackupsDoNotCollide() throws {
         let fixture = try Self.makeCriticalFixture()

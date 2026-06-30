@@ -165,6 +165,14 @@ public final class AppDatabase: Sendable {
 
     /// Restore database from a backup file.
     public static func restoreDatabase(from backupPath: String, to dbPath: String) throws {
+        try restoreDatabase(from: backupPath, to: dbPath, willPromoteStagedBackup: nil)
+    }
+
+    static func restoreDatabase(
+        from backupPath: String,
+        to dbPath: String,
+        willPromoteStagedBackup: (() throws -> Void)?
+    ) throws {
         let fileManager = FileManager.default
         let restoreId = UUID().uuidString
         let stagedPath = dbPath + ".restore-\(restoreId).tmp"
@@ -204,9 +212,13 @@ public final class AppDatabase: Sendable {
 
         do {
             try moveDatabaseFiles(from: dbPath, to: rollbackPath)
+            try willPromoteStagedBackup?()
             try moveDatabaseFiles(from: stagedPath, to: dbPath)
         } catch {
-            if !fileManager.fileExists(atPath: dbPath), fileManager.fileExists(atPath: rollbackPath) {
+            if fileManager.fileExists(atPath: rollbackPath)
+                || fileManager.fileExists(atPath: rollbackPath + "-wal")
+                || fileManager.fileExists(atPath: rollbackPath + "-shm") {
+                removeDatabaseFiles(at: dbPath)
                 try? moveDatabaseFiles(from: rollbackPath, to: dbPath)
             }
             throw error
