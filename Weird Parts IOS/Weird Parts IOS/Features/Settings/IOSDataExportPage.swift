@@ -20,12 +20,24 @@ enum IOSDatabaseExportSnapshotter {
                 ])
             }
             let busy: Int = checkpoint[0]
+            let log: Int = checkpoint[1]
+            let checkpointed: Int = checkpoint[2]
             guard busy == 0 else {
                 throw NSError(domain: "IOSDatabaseExportSnapshotter", code: 2, userInfo: [
                     NSLocalizedDescriptionKey: "Database is busy. Try again in a moment."
                 ])
             }
-            try FileManager.default.copyItem(at: sourceURL, to: destURL)
+            guard checkpointed == log else {
+                throw NSError(domain: "IOSDatabaseExportSnapshotter", code: 3, userInfo: [
+                    NSLocalizedDescriptionKey: "Database is busy. Try again in a moment."
+                ])
+            }
+            do {
+                try FileManager.default.copyItem(at: sourceURL, to: destURL)
+            } catch {
+                try? FileManager.default.removeItem(at: destURL)
+                throw error
+            }
         }
     }
 
