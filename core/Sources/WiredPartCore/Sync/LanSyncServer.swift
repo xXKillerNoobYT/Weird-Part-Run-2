@@ -452,9 +452,13 @@ public final class LanSyncServer: Sendable {
 
     /// Extract Content-Length value from raw HTTP header string.
     static func parseContentLength(from headers: String) -> ContentLengthParseResult {
+        var parsedLength: Int?
+
         for line in headers.components(separatedBy: "\r\n") {
             let lower = line.lowercased()
             if lower.hasPrefix("content-length:") {
+                guard parsedLength == nil else { return .invalid }
+
                 let value = line[line.index(line.startIndex, offsetBy: 15)...].trimmingCharacters(in: .whitespaces)
                 guard !value.isEmpty,
                       value.allSatisfy(\.isNumber),
@@ -462,8 +466,12 @@ public final class LanSyncServer: Sendable {
                       contentLength <= maxHTTPRequestBodyBytes else {
                     return .invalid
                 }
-                return .valid(contentLength)
+                parsedLength = contentLength
             }
+        }
+
+        if let parsedLength {
+            return .valid(parsedLength)
         }
         return .missing
     }
@@ -541,6 +549,7 @@ public final class LanSyncServer: Sendable {
         // Determine body length from Content-Length header
         var body = Data(bodyData)
         if case .valid(let contentLength) = parseContentLength(from: headerString) {
+            guard bodyData.count >= contentLength else { return nil }
             body = Data(bodyData.prefix(contentLength))
         }
 

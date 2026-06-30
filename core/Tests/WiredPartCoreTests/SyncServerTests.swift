@@ -28,6 +28,7 @@ struct SyncServerTests {
         #expect(LanSyncServer.parseContentLength(from: "POST /sync/push HTTP/1.1\r\nContent-Length: abc") == .invalid)
         #expect(LanSyncServer.parseContentLength(from: "POST /sync/push HTTP/1.1\r\nContent-Length: -1") == .invalid)
         #expect(LanSyncServer.parseContentLength(from: "POST /sync/push HTTP/1.1\r\nContent-Length: ") == .invalid)
+        #expect(LanSyncServer.parseContentLength(from: "POST /sync/push HTTP/1.1\r\nContent-Length: 1\r\nContent-Length: 2") == .invalid)
     }
 
     @Test("Malformed Content-Length returns bad request before routing")
@@ -60,6 +61,25 @@ struct SyncServerTests {
             + "Content-Length: -1\r\n"
             + "\r\n"
             + "{\"device_id\":\"remote-dev\",\"company_id\":\"co-1\",\"changes\":[]}"
+
+        let (status, _) = await LanSyncServer.routeHTTPRequest(
+            data: Data(rawRequest.utf8),
+            state: state,
+            logger: Logger(subsystem: "com.wiredpart.core.tests", category: "SyncServerTests")
+        )
+
+        #expect(status == 400)
+    }
+
+    @Test("Incomplete body returns bad request before routing")
+    func testIncompleteContentLengthBodyReturnsBadRequest() async throws {
+        let state = makeState(companyId: "co-1")
+        let rawRequest = "POST /sync/push HTTP/1.1\r\n"
+            + "Host: 127.0.0.1\r\n"
+            + "Content-Type: application/json\r\n"
+            + "Content-Length: 999\r\n"
+            + "\r\n"
+            + "{\"device_id\":\"remote-dev\"}"
 
         let (status, _) = await LanSyncServer.routeHTTPRequest(
             data: Data(rawRequest.utf8),
