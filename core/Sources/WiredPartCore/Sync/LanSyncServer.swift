@@ -286,6 +286,14 @@ public actor SyncServerState {
 /// Binds to `0.0.0.0:0` so the OS assigns a random available port,
 /// which is then advertised via mDNS.
 public final class LanSyncServer: Sendable {
+    static let maxHTTPRequestBodyBytes = 1_048_576
+
+    enum ContentLengthParseResult: Equatable {
+        case missing
+        case valid(Int)
+        case invalid
+    }
+
     private let state: SyncServerState
     private let listenerLock = OSAllocatedUnfairLock<NWListener?>(initialState: nil)
     private let logger = Logger(subsystem: "com.wiredpart.core", category: "LanSyncServer")
@@ -415,11 +423,19 @@ public final class LanSyncServer: Sendable {
                 let currentBodyLength = buffer.count - bodyStart
 
                 if let headerString = String(data: headerData, encoding: .utf8) {
-                    let contentLength = Self.parseContentLength(from: headerString)
-                    if currentBodyLength >= contentLength {
+                    switch Self.parseContentLength(from: headerString) {
+                    case .missing:
+                        completion(buffer)
+                        return
+                    case .invalid:
+                        completion(buffer)
+                        return
+                    case .valid(let contentLength) where currentBodyLength >= contentLength:
                         // We have the full request
                         completion(buffer)
                         return
+                    case .valid:
+                        break
                     }
                 }
             }
@@ -435,21 +451,27 @@ public final class LanSyncServer: Sendable {
     }
 
     /// Extract Content-Length value from raw HTTP header string.
-    private static func parseContentLength(from headers: String) -> Int {
+    static func parseContentLength(from headers: String) -> ContentLengthParseResult {
         for line in headers.components(separatedBy: "\r\n") {
             let lower = line.lowercased()
             if lower.hasPrefix("content-length:") {
                 let value = line[line.index(line.startIndex, offsetBy: 15)...].trimmingCharacters(in: .whitespaces)
-                return Int(value) ?? 0
+                guard !value.isEmpty,
+                      value.allSatisfy(\.isNumber),
+                      let contentLength = Int(value),
+                      contentLength <= maxHTTPRequestBodyBytes else {
+                    return .invalid
+                }
+                return .valid(contentLength)
             }
         }
-        return 0
+        return .missing
     }
 
     // MARK: - HTTP Parsing & Routing
 
     /// Parse a raw HTTP/1.1 request and route it to the appropriate handler.
-    private static func routeHTTPRequest(
+    static func routeHTTPRequest(
         data: Data,
         state: SyncServerState,
         logger: Logger
@@ -492,6 +514,9 @@ public final class LanSyncServer: Sendable {
         let bodyData = data[separatorRange.upperBound...]
 
         guard let headerString = String(data: headerData, encoding: .utf8) else { return nil }
+
+        guard parseContentLength(from: headerString) != .invalid else { return nil }
+
         var lines = headerString.components(separatedBy: "\r\n")
         guard !lines.isEmpty else { return nil }
 
@@ -515,8 +540,7 @@ public final class LanSyncServer: Sendable {
 
         // Determine body length from Content-Length header
         var body = Data(bodyData)
-        if let contentLengthStr = headers["content-length"],
-           let contentLength = Int(contentLengthStr) {
+        if case .valid(let contentLength) = parseContentLength(from: headerString) {
             body = Data(bodyData.prefix(contentLength))
         }
 
