@@ -1086,6 +1086,24 @@ struct Weird_Parts_IOSTests {
         #expect(detail.lines.allSatisfy { $0.partId != nil })
     }
 
+    @MainActor
+    @Test func warehouseMovementDatePartitionKeepsMalformedRowsOutOfActiveQueue() throws {
+        let cutoff = try #require(Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 6, day: 8)))
+        let recent = Self.warehouseMovement(id: 1, reason: "Recent", createdAt: "2026-06-10 08:30:00")
+        let old = Self.warehouseMovement(id: 2, reason: "Old", createdAt: "2026-06-01 08:30:00")
+        let malformed = Self.warehouseMovement(id: 3, reason: "Malformed", createdAt: "not-a-date")
+        let missing = Self.warehouseMovement(id: 4, reason: "Missing", createdAt: nil)
+
+        let movements = [recent, old, malformed, missing]
+        let active = WarehouseMovementDatePartitioning.activeMovements(movements, cutoff: cutoff)
+        let history = WarehouseMovementDatePartitioning.completedHistoryMovements(movements, cutoff: cutoff)
+
+        #expect(active.map(\.id) == [recent.id])
+        #expect(history.map(\.id) == [old.id, malformed.id, missing.id])
+        #expect(WarehouseMovementDatePartitioning.displayDate(malformed.createdAt) == "Unknown date")
+        #expect(WarehouseMovementDatePartitioning.displayDate(missing.createdAt) == "Unknown date")
+    }
+
     @Test func pricingBulkEditRejectsNegativeOrNonFinitePercentInputs() {
         #expect(PricingBulkEditSheet.isValidNonNegativePercent("0"))
         #expect(PricingBulkEditSheet.isValidNonNegativePercent(" 12.5 "))
@@ -1093,6 +1111,25 @@ struct Weird_Parts_IOSTests {
         #expect(!PricingBulkEditSheet.isValidNonNegativePercent("nan"))
         #expect(!PricingBulkEditSheet.isValidNonNegativePercent("inf"))
         #expect(!PricingBulkEditSheet.isValidNonNegativePercent("not a number"))
+    }
+
+    static func warehouseMovement(id: Int64, reason: String, createdAt: String?) -> WarehouseService.MovementRow {
+        WarehouseService.MovementRow(
+            id: id,
+            partId: 10,
+            partName: "QA Part",
+            qty: 1,
+            fromLocationType: nil,
+            fromLocationId: nil,
+            toLocationType: "warehouse",
+            toLocationId: 1,
+            movementType: "received",
+            reason: reason,
+            notes: nil,
+            performedBy: 1,
+            performedByName: "Tester",
+            createdAt: createdAt
+        )
     }
 }
 
