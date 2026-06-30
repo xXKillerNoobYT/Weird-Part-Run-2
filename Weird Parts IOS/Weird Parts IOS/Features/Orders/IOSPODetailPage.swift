@@ -1119,9 +1119,13 @@ struct IOSPODetailPage: View {
             isLoading = false
             return
         }
-
         let remainingLines = po.lines.filter { $0.quantityOrdered > $0.quantityReceived }
         guard !remainingLines.isEmpty else { return }
+
+        guard let author = currentPONoteAuthor() else {
+            actionMessage = "User session unavailable. Sign in again."
+            return
+        }
 
         do {
             // Generate a new PO number
@@ -1149,7 +1153,6 @@ struct IOSPODetailPage: View {
             }
 
             // Add a note to the original PO
-            let author = appCore.currentUser?.displayName ?? "System"
             try service.addPONote(
                 poId: poId,
                 note: "Double order created: \(poNumber) with alternate supplier for \(remainingLines.count) remaining items.",
@@ -1172,8 +1175,11 @@ struct IOSPODetailPage: View {
         }
         let description = issueDescription.trimmingCharacters(in: .whitespaces)
         guard !description.isEmpty else { return }
+        guard let author = currentPONoteAuthor() else {
+            actionMessage = "User session unavailable. Sign in again."
+            return
+        }
 
-        let author = appCore.currentUser?.displayName ?? "System"
         let noteText = "ISSUE REPORT [\(issueSeverity.uppercased())]: \(description)"
 
         do {
@@ -2180,7 +2186,10 @@ struct IOSPODetailPage: View {
             actionMessage = "Service not available"
             return
         }
-        let author = appCore.currentUser?.displayName ?? "Unknown"
+        guard let author = currentPONoteAuthor() else {
+            actionMessage = "User session unavailable. Sign in again."
+            return
+        }
         do {
             try service.addPONote(poId: poId, note: newNoteText, author: author)
             newNoteText = ""
@@ -2188,6 +2197,13 @@ struct IOSPODetailPage: View {
         } catch {
             actionMessage = userFriendlyError(error, context: "add note")
         }
+    }
+
+    private func currentPONoteAuthor() -> String? {
+        guard appCore.currentUser?.id != nil else { return nil }
+        let displayName = appCore.currentUser?.displayName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !displayName.isEmpty else { return nil }
+        return displayName
     }
 
     // MARK: - Receipt History Helpers (62P)

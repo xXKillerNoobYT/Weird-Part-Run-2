@@ -28,6 +28,10 @@ struct DevicePairingView: View {
         SyncCrypto.normalizedPairingCode(pairingCode) != nil
     }
 
+    private var normalizedManualAddress: String? {
+        IOSSyncManager.normalizedShopServerAddress(manualAddress)
+    }
+
     var body: some View {
         VStack(spacing: 24) {
             Spacer()
@@ -100,8 +104,8 @@ struct DevicePairingView: View {
                     .foregroundStyle(.secondary)
 
                 Button {
-                    syncManager.setBluetoothEnabled(true)
-                    syncManager.startPeerDiscovery()
+                    syncManager.setBluetoothEnabled(true, startDiscovery: false)
+                    syncManager.startOnboardingPeerDiscovery()
                 } label: {
                     Label("Scan Again", systemImage: "arrow.clockwise")
                 }
@@ -113,13 +117,24 @@ struct DevicePairingView: View {
             // Show discovered peers as potential shops
             ForEach(syncManager.discoveredPeers) { peer in
                 Button {
-                    discoveredShop = DiscoveredShop(id: peer.id, name: peer.name, address: peer.id)
+                    guard let address = IOSSyncManager.normalizedShopServerAddress(peer.address) else {
+                        errorMessage = "This device was found over Bluetooth only. Keep both devices on the same Wi-Fi network or enter the shop address manually."
+                        return
+                    }
+                    errorMessage = nil
+                    syncManager.stopPeerDiscovery()
+                    discoveredShop = DiscoveredShop(id: peer.id, name: peer.name, address: address)
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "desktopcomputer")
                             .foregroundStyle(.green)
                         Text(peer.name)
                             .fontWeight(.medium)
+                        if peer.address == nil {
+                            Text("Needs Wi-Fi address")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.caption)
@@ -150,16 +165,16 @@ struct DevicePairingView: View {
                     .autocorrectionDisabled()
 
                 Button("Connect") {
-                    guard !manualAddress.isEmpty else { return }
+                    guard let address = normalizedManualAddress else { return }
                     discoveredShop = DiscoveredShop(
-                        id: manualAddress,
-                        name: manualAddress,
-                        address: manualAddress
+                        id: address,
+                        name: address,
+                        address: address
                     )
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .disabled(manualAddress.isEmpty)
+                .disabled(normalizedManualAddress == nil)
             }
             .padding(.horizontal, 32)
         }
@@ -233,9 +248,11 @@ struct DevicePairingView: View {
     // MARK: - Actions
 
     private func scanForShop() async {
-        // Enable BT and start peer discovery
-        syncManager.setBluetoothEnabled(true)
-        syncManager.startPeerDiscovery()
+        // Enable BT and start first-run join discovery. A brand-new device does
+        // not have a local company ID yet; the pairing response verifies the
+        // selected shop before storing company settings.
+        syncManager.setBluetoothEnabled(true, startDiscovery: false)
+        syncManager.startOnboardingPeerDiscovery()
     }
 
     private func attemptPairing() async {

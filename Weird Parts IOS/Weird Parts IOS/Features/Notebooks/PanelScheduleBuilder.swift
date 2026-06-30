@@ -7,6 +7,7 @@ struct PanelScheduleBuilder: View {
     let onSave: (PanelSchedule) -> Void
 
     @State private var selectedCircuit: CircuitEntry?
+    @State private var showHiddenCircuitPruneConfirmation = false
 
     private enum ActiveSheet: Identifiable {
         case circuitEditor
@@ -41,6 +42,14 @@ struct PanelScheduleBuilder: View {
             case .panelSettings:
                 PanelSettingsSheet(schedule: $schedule)
             }
+        }
+        .alert("Remove Hidden Circuits?", isPresented: $showHiddenCircuitPruneConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Remove & Save", role: .destructive) {
+                saveNormalizedSchedule()
+            }
+        } message: {
+            Text("Saving will permanently remove \(schedule.circuitsOutsideTotalSpaces.count) hidden circuit\(schedule.circuitsOutsideTotalSpaces.count == 1 ? "" : "s") outside the visible 1–\(schedule.totalSpaces) panel range.")
         }
     }
 
@@ -231,7 +240,11 @@ struct PanelScheduleBuilder: View {
             Spacer()
 
             Button {
-                onSave(schedule)
+                if schedule.circuitsOutsideTotalSpaces.isEmpty {
+                    saveNormalizedSchedule()
+                } else {
+                    showHiddenCircuitPruneConfirmation = true
+                }
             } label: {
                 Label("Save", systemImage: "checkmark.circle")
                     .font(.caption)
@@ -252,11 +265,18 @@ struct PanelScheduleBuilder: View {
     // MARK: - Circuit Management
 
     private func updateCircuit(_ circuit: CircuitEntry) {
-        if let index = schedule.circuits.firstIndex(where: { $0.spaceNumber == circuit.spaceNumber }) {
-            schedule.circuits[index] = circuit
+        let normalized = circuit.normalizedForPersistence()
+        if let index = schedule.circuits.firstIndex(where: { $0.spaceNumber == normalized.spaceNumber }) {
+            schedule.circuits[index] = normalized
         } else {
-            schedule.circuits.append(circuit)
+            schedule.circuits.append(normalized)
         }
+    }
+
+    private func saveNormalizedSchedule() {
+        let normalized = schedule.normalizedForPersistence()
+        schedule = normalized
+        onSave(normalized)
     }
 }
 
@@ -310,7 +330,7 @@ struct CircuitEditorSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        onSave(circuit)
+                        onSave(circuit.normalizedForPersistence())
                         dismiss()
                     }
                     .fontWeight(.semibold)
@@ -349,6 +369,14 @@ private struct PanelSettingsSheet: View {
                         ForEach(spaceOptions, id: \.self) { size in
                             Text("\(size) spaces").tag(size)
                         }
+                    }
+                    if !schedule.circuitsOutsideTotalSpaces.isEmpty {
+                        Label(
+                            "Saving will remove \(schedule.circuitsOutsideTotalSpaces.count) hidden circuit\(schedule.circuitsOutsideTotalSpaces.count == 1 ? "" : "s") outside the visible 1–\(schedule.totalSpaces) panel range.",
+                            systemImage: "exclamationmark.triangle"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.orange)
                     }
                     Picker("Main Breaker", selection: $schedule.mainBreakerAmps) {
                         Text("None / MLO").tag(nil as Int?)

@@ -328,4 +328,39 @@ struct AppDatabaseCipherTests {
         #expect(checkCount == origCount, "Row count must be unchanged after failed migration")
         #expect(sentinel == "original_value", "Sentinel row must be intact in original DB")
     }
+
+    @Test("testRenamePromotionFailureRestoresOriginalDB — failed encrypted temp promotion rolls plaintext DB back")
+    func testRenamePromotionFailureRestoresOriginalDB() throws {
+        let path = tmpPath("promotion-rollback")
+        let missingTempPath = path + ".encrypted-tmp"
+        defer { cleanup(path) }
+
+        let plainDB = try AppDatabase.openDatabase(atPath: path)
+        try plainDB.writer.write { db in
+            try db.execute(sql: """
+                INSERT OR REPLACE INTO settings (key, value, category)
+                VALUES ('promotion_rollback_sentinel', 'original_value', 'test')
+            """)
+        }
+        try (plainDB.writer as? DatabasePool)?.close()
+
+        do {
+            try AppDatabase.replacePlaintextDatabaseWithEncryptedTemp(
+                atPath: path,
+                tempPath: missingTempPath,
+                backupPath: path + ".unencrypted.bak"
+            )
+            Issue.record("Promotion should throw when the encrypted temp database is missing")
+        } catch {
+            #expect(FileManager.default.fileExists(atPath: path), "Original plaintext DB must be restored to the canonical path")
+            #expect(!FileManager.default.fileExists(atPath: path + ".unencrypted.bak"), "Rollback should not leave the only good copy stranded at the backup path")
+
+            let checkPool = try DatabasePool(path: path)
+            let sentinel: String? = try checkPool.read { db in
+                try String.fetchOne(db, sql: "SELECT value FROM settings WHERE key = 'promotion_rollback_sentinel'")
+            }
+            try checkPool.close()
+            #expect(sentinel == "original_value", "Sentinel row must survive failed promotion rollback")
+        }
+    }
 }

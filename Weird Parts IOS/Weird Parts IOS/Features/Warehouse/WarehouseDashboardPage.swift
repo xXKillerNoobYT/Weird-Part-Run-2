@@ -83,7 +83,19 @@ struct WarehouseDashboardPage: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 12) {
+                    Button { activeSheet = .newMovement } label: {
+                        Image(systemName: "arrow.left.arrow.right.circle.fill")
+                    }
+                    .accessibilityLabel("New Movement")
+                    .accessibilityHint("Opens the guided movement wizard")
+                    .accessibilityIdentifier("whAction_newMovement")
+
                     CartBadgeButton(cartManager: cartManager)
+                    Button { activeSheet = .newMovement } label: {
+                        Image(systemName: "arrow.left.arrow.right.circle.fill")
+                    }
+                    .accessibilityLabel("New Movement")
+                    .accessibilityIdentifier("whAction_newMovement")
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
@@ -121,10 +133,8 @@ struct WarehouseDashboardPage: View {
     private func sheetContent(for sheet: ActiveSheet) -> some View {
         switch sheet {
         case .newMovement:
-            NavigationStack {
-                IOSMovementWizard()
-                    .environmentObject(appCore)
-            }
+            IOSMovementWizard()
+                .environmentObject(appCore)
         case .qrScanner:
             QRScanSheet(expectedType: .bin) { result in
                 activeSheet = nil
@@ -667,6 +677,8 @@ struct WarehouseDashboardPage: View {
             quickActionButton(title: action.title, icon: action.icon, color: action.color)
         }
             .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(Rectangle())
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(action.title)
             .accessibilityAddTraits(.isButton)
@@ -709,7 +721,9 @@ struct WarehouseDashboardPage: View {
                 .minimumScaleFactor(0.85)
         }
         .frame(maxWidth: .infinity)
+        .frame(minHeight: 44)
         .padding(.vertical, 16)
+        .contentShape(Rectangle())
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }

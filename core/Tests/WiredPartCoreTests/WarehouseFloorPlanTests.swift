@@ -81,6 +81,93 @@ struct WarehouseFloorPlanTests {
         #expect(features.isEmpty)
     }
 
+    @Test("Floor features reject negative grid coordinates")
+    func testAddFloorFeatureRejectsNegativeGridCoordinates() throws {
+        let env = try freshEnv()
+        let plan = try env.warehouse.createFloorPlan(name: "Feature Bounds", widthInches: 200, lengthInches: 200)
+
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            _ = try env.warehouse.addFloorFeature(
+                floorPlanId: plan.id!,
+                featureType: "door",
+                label: "Bad X",
+                gridX: -1,
+                gridY: 0
+            )
+        }
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            _ = try env.warehouse.addFloorFeature(
+                floorPlanId: plan.id!,
+                featureType: "door",
+                label: "Bad Y",
+                gridX: 0,
+                gridY: -1
+            )
+        }
+    }
+
+    @Test("Floor features reject zero or negative grid dimensions")
+    func testAddFloorFeatureRejectsNonPositiveGridDimensions() throws {
+        let env = try freshEnv()
+        let plan = try env.warehouse.createFloorPlan(name: "Feature Dimensions", widthInches: 200, lengthInches: 200)
+
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            _ = try env.warehouse.addFloorFeature(
+                floorPlanId: plan.id!,
+                featureType: "walkway",
+                label: "Zero Width",
+                gridX: 0,
+                gridY: 0,
+                gridWidth: 0,
+                gridHeight: 1
+            )
+        }
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            _ = try env.warehouse.addFloorFeature(
+                floorPlanId: plan.id!,
+                featureType: "walkway",
+                label: "Negative Height",
+                gridX: 0,
+                gridY: 0,
+                gridWidth: 1,
+                gridHeight: -1
+            )
+        }
+    }
+
+    @Test("Floor features reject placements beyond configured floor plan grid")
+    func testAddFloorFeatureRejectsOutOfBoundsGridPlacement() throws {
+        let env = try freshEnv()
+        let plan = try env.warehouse.createFloorPlan(name: "Feature Grid", widthInches: 200, lengthInches: 200)
+        try env.warehouse.updateFloorPlanGrid(floorPlanId: plan.id!, rows: 3, cols: 4)
+
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            _ = try env.warehouse.addFloorFeature(
+                floorPlanId: plan.id!,
+                featureType: "office",
+                label: "Too Wide",
+                gridX: 3,
+                gridY: 0,
+                gridWidth: 2,
+                gridHeight: 1
+            )
+        }
+        #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+            _ = try env.warehouse.addFloorFeature(
+                floorPlanId: plan.id!,
+                featureType: "office",
+                label: "Too Tall",
+                gridX: 0,
+                gridY: 2,
+                gridWidth: 1,
+                gridHeight: 2
+            )
+        }
+
+        let features = try env.warehouse.listFloorFeatures(floorPlanId: plan.id!)
+        #expect(features.isEmpty)
+    }
+
     // MARK: - Storage Unit Hierarchy
 
     @Test("Full storage hierarchy: unit → level → area → bin")
@@ -155,6 +242,23 @@ struct WarehouseFloorPlanTests {
         let units = try env.warehouse.listStorageUnits(floorPlanId: plan.id!)
         #expect(units[0].name == "New Name")
         #expect(units[0].isConfigured)
+    }
+
+    @Test("Updating a storage unit rejects blank names")
+    func testUpdateStorageUnitRejectsBlankName() throws {
+        let env = try freshEnv()
+
+        let plan = try env.warehouse.createFloorPlan(name: "WH", widthInches: 200, lengthInches: 200)
+        let unit = try env.warehouse.addStorageUnit(
+            floorPlanId: plan.id!, name: "Original Name", unitType: "rack"
+        )
+
+        #expect(throws: WarehouseService.WarehouseError.requiredFieldEmpty) {
+            try env.warehouse.updateStorageUnit(id: unit.id!, name: "   \n\t  ")
+        }
+
+        let units = try env.warehouse.listStorageUnits(floorPlanId: plan.id!)
+        #expect(units[0].name == "Original Name")
     }
 
     @Test("Delete cascades through storage hierarchy")

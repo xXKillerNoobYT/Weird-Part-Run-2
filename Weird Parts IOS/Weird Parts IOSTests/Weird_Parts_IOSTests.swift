@@ -6,10 +6,57 @@
 //
 
 import Foundation
+import GRDB
 import Security
 import Testing
 import WiredPartCore
+import os.log
 @testable import Weird_Parts
+
+private enum BootstrapAuditTestError: Error {
+    case start
+    case complete
+    case operation
+}
+
+private enum MigrationRollbackRetryTestError: Error {
+    case restore
+    case migrate
+    case open
+}
+
+private final class MockBootstrapTaskAuditor: AppCoreBackgroundTaskAuditing, @unchecked Sendable {
+    var startedNames: [String] = []
+    var completedIds: [Int64] = []
+    var completedSummaries: [String?] = []
+    var failedIds: [Int64] = []
+    var startError: Error?
+    var completeError: Error?
+
+    func startTask(name: String, type: String, deviceId: String?) throws -> Int64 {
+        if let startError {
+            throw startError
+        }
+        startedNames.append(name)
+        return 42
+    }
+
+    func completeTask(id: Int64, summary: String?, itemsProcessed: Int) throws {
+        if let completeError {
+            throw completeError
+        }
+        completedIds.append(id)
+        completedSummaries.append(summary)
+    }
+
+    func failTask(id: Int64, error: String) throws {
+        failedIds.append(id)
+    }
+}
+
+private final class OperationProbe: @unchecked Sendable {
+    var ran = false
+}
 
 private enum QuestionnaireBreakTestError: Error {
     case autoFillFailed
@@ -26,6 +73,10 @@ private enum DispatchSheetLoadTestError: Error {
 
 private enum CreateNotebookJobPickerTestError: Error {
     case loadFailed
+}
+
+private enum ShortTermPipelineCallbackActionTestError: Error {
+    case operationFailed
 }
 
 struct Weird_Parts_IOSTests {
@@ -91,10 +142,170 @@ struct Weird_Parts_IOSTests {
         #expect(!QAThreadStatusBuckets.isResolved("escalated"))
     }
 
+    @Test func auditedBootstrapTaskStillRunsWhenAuditStartFails() throws {
+        let auditor = MockBootstrapTaskAuditor()
+        auditor.startError = BootstrapAuditTestError.start
+        let operation = OperationProbe()
+
+        AppCore.runAuditedBootstrapTask(
+            name: "Test Bootstrap Task",
+            type: "test",
+            backgroundTaskService: auditor,
+            logger: Logger(subsystem: "com.wiredpart.tests", category: "AppCore")
+        ) {
+            operation.ran = true
+            return "Test complete"
+        }
+
+        #expect(operation.ran)
+        #expect(auditor.completedIds.isEmpty)
+        #expect(auditor.failedIds.isEmpty)
+    }
+
+    @Test func auditedBootstrapTaskDoesNotThrowWhenAuditCompletionFails() throws {
+        let auditor = MockBootstrapTaskAuditor()
+        auditor.completeError = BootstrapAuditTestError.complete
+        let operation = OperationProbe()
+
+        AppCore.runAuditedBootstrapTask(
+            name: "Test Bootstrap Task",
+            type: "test",
+            backgroundTaskService: auditor,
+            logger: Logger(subsystem: "com.wiredpart.tests", category: "AppCore")
+        ) {
+            operation.ran = true
+            return "Test complete"
+        }
+
+        #expect(operation.ran)
+        #expect(auditor.startedNames == ["Test Bootstrap Task"])
+        #expect(auditor.failedIds.isEmpty)
+    }
+
+    @Test func auditedBootstrapTaskCompletesAuditRecordOnSuccess() throws {
+        let auditor = MockBootstrapTaskAuditor()
+
+        AppCore.runAuditedBootstrapTask(
+            name: "Test Bootstrap Task",
+            type: "test",
+            backgroundTaskService: auditor,
+            logger: Logger(subsystem: "com.wiredpart.tests", category: "AppCore")
+        ) {
+            "Test complete"
+        }
+
+        #expect(auditor.startedNames == ["Test Bootstrap Task"])
+        #expect(auditor.completedIds == [42])
+        #expect(auditor.completedSummaries == ["Test complete"])
+        #expect(auditor.failedIds.isEmpty)
+    }
+
+    @Test func auditedBootstrapTaskRecordsOperationFailureWhenPossible() throws {
+        let auditor = MockBootstrapTaskAuditor()
+
+        AppCore.runAuditedBootstrapTask(
+            name: "Test Bootstrap Task",
+            type: "test",
+            backgroundTaskService: auditor,
+            logger: Logger(subsystem: "com.wiredpart.tests", category: "AppCore")
+        ) {
+            throw BootstrapAuditTestError.operation
+        }
+
+        #expect(auditor.completedIds.isEmpty)
+        #expect(auditor.failedIds == [42])
+    }
+
+    @MainActor
+    @Test func currentWalkthroughCompletionDoesNotBypassCompanySetupOnRelaunch() throws {
+        let defaults = try temporaryDefaults()
+
+        OnboardingCompletionDefaults.markCompleted(
+            skippedModules: ["dashboard", "settings"],
+            defaults: defaults
+        )
+        WiredPartIOSApp.migrateLegacyWelcomeFlags(defaults: defaults)
+
+        #expect(defaults.bool(forKey: "hasCompletedOnboarding"))
+        #expect(defaults.bool(forKey: "hasSeenModuleTour"))
+        #expect(!defaults.bool(forKey: "hasSeenWelcome"))
+        #expect(!defaults.bool(forKey: "hasCompletedCompanySetup"))
+        #expect(defaults.data(forKey: "onboarding_skipped_modules") != nil)
+    }
+
+    @MainActor
+    @Test func legacyWelcomeMigrationStillCompletesCompanySetupOnce() throws {
+        let defaults = try temporaryDefaults()
+        defaults.set(true, forKey: "hasSeenWelcome")
+
+        WiredPartIOSApp.migrateLegacyWelcomeFlags(defaults: defaults)
+
+        #expect(defaults.bool(forKey: "hasCompletedOnboarding"))
+        #expect(defaults.bool(forKey: "hasCompletedCompanySetup"))
+        #expect(!defaults.bool(forKey: "hasSeenWelcome"))
+    }
+
+    private func temporaryDefaults() throws -> UserDefaults {
+        let suiteName = "WeirdPartsTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            throw TestDefaultsError.unavailable
+        }
+        defaults.removePersistentDomain(forName: suiteName)
+        return defaults
+    }
+
+    private enum TestDefaultsError: Error {
+        case unavailable
+    }
+
     @MainActor
     @Test func shopServerAddressSettingsAreDeviceScoped() async throws {
         #expect(IOSSyncManager.settingSyncScope(for: "sync_server_address") == .device)
         #expect(IOSSyncManager.settingSyncScope(for: "shop_server_address") == .device)
+    }
+
+    @MainActor
+    @Test func shopServerAddressNormalizationTrimsValidValuesAndRejectsBlankValues() async throws {
+        #expect(IOSSyncManager.normalizedShopServerAddress(nil) == nil)
+        #expect(IOSSyncManager.normalizedShopServerAddress("") == nil)
+        #expect(IOSSyncManager.normalizedShopServerAddress(" \n\t ") == nil)
+        #expect(IOSSyncManager.normalizedShopServerAddress("  http://127.0.0.1:8080\n") == "http://127.0.0.1:8080")
+        #expect(IOSSyncManager.normalizedShopServerAddress("  192.168.1.10:8080  ") == "192.168.1.10:8080")
+    }
+
+    @MainActor
+    @Test func whitespaceOnlyShopServerAddressDoesNotEnableSync() async throws {
+        let previousBluetooth = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
+        UserDefaults.standard.set(false, forKey: "bluetooth_sync_enabled")
+        defer { UserDefaults.standard.set(previousBluetooth, forKey: "bluetooth_sync_enabled") }
+
+        let db = try AppDatabase.openInMemoryDatabase()
+        let settings = SettingsService(db: db)
+        try settings.upsertSetting(key: "shop_server_address", value: " \n\t ", category: "sync")
+        let manager = IOSSyncManager()
+        manager.configure(db: db, settingsService: settings)
+
+        #expect(!manager.isSyncAvailable)
+
+        await manager.syncNow()
+
+        #expect(manager.syncStatus == .idle)
+        #expect(manager.errorMessage == "Sync not configured. Set up in Settings → Sync.")
+    }
+
+    @MainActor
+    @Test func trimmedShopServerAddressStillEnablesSync() async throws {
+        let previousBluetooth = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
+        UserDefaults.standard.set(false, forKey: "bluetooth_sync_enabled")
+        defer { UserDefaults.standard.set(previousBluetooth, forKey: "bluetooth_sync_enabled") }
+
+        let db = try AppDatabase.openInMemoryDatabase()
+        let settings = SettingsService(db: db)
+        try settings.upsertSetting(key: "shop_server_address", value: "  http://127.0.0.1:9\n", category: "sync")
+        let manager = IOSSyncManager()
+        manager.configure(db: db, settingsService: settings)
+
+        #expect(manager.isSyncAvailable)
     }
 
     @MainActor
@@ -242,6 +453,62 @@ struct Weird_Parts_IOSTests {
     }
 
     @MainActor
+    @Test func onboardingPeerDiscoveryDoesNotRequireLocalCompanyId() throws {
+        let previousBluetoothSetting = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
+        defer { UserDefaults.standard.set(previousBluetoothSetting, forKey: "bluetooth_sync_enabled") }
+
+        let manager = IOSSyncManager()
+        defer { manager.stopPeerDiscovery() }
+        manager.setBluetoothEnabled(true, startDiscovery: false)
+
+        manager.startPeerDiscovery()
+        #expect(manager.errorMessage == "Peer discovery unavailable: Company ID is not configured. Open Settings and verify the company profile before starting peer discovery.")
+
+        manager.startOnboardingPeerDiscovery()
+
+        #expect(manager.isScanning)
+        #expect(manager.errorMessage == nil)
+        #expect(manager.syncStatus == .idle)
+    }
+
+    @MainActor
+    @Test func onboardingPeerDiscoveryKeepsLanAddressForPairing() throws {
+        let testFileURL = URL(fileURLWithPath: "\(#filePath)")
+        let projectRoot = testFileURL
+            .deletingLastPathComponent() // Weird Parts IOSTests
+            .deletingLastPathComponent() // Weird Parts IOS
+        let sourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent("Sync")
+            .appendingPathComponent("IOSSyncManager.swift")
+        let pairingSourceURL = projectRoot
+            .appendingPathComponent("Weird Parts IOS")
+            .appendingPathComponent("Auth")
+            .appendingPathComponent("DevicePairingView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let pairingSource = try String(contentsOf: pairingSourceURL, encoding: .utf8)
+
+        #expect(source.contains("allowAnyCompanyPeerDiscovery: mode == .onboardingJoin"))
+        #expect(source.contains("advertiseSelf: mode == .existingCompanySync"))
+        #expect(source.contains("if mode == .existingCompanySync"))
+        #expect(source.contains("Task { await pm.stopPeerSync() }"))
+        #expect(source.contains("if bluetoothDiscoveryEnabled && mode == .onboardingJoin"))
+        #expect(source.contains("startMultipeer: bluetoothDiscoveryEnabled && mode == .existingCompanySync"))
+        #expect(source.contains("startSyncServer: mode == .existingCompanySync"))
+        #expect(source.contains("if await pm.getState().running"))
+        #expect(source.contains("await pm.stopPeerSync()"))
+        #expect(source.contains("state: peer.multipeerState == \"connected\" ? \"connected\" : peer.transport"))
+        #expect(source.contains("peer.state == \"multipeer\" || (peer.state == \"connected\" && peer.address == nil)"))
+        #expect(source.contains("address: formattedPeerAddress(host: peer.host, port: Int(peer.port))"))
+        #expect(source.contains("host.contains(\":\") && !host.hasPrefix(\"[\") ? \"[\\(host)]\" : host"))
+        #expect(source.contains("await pm.stopMultipeerDiscovery()"))
+        #expect(source.contains("let multipeerOnly = mpPeers.filter { !nonMultipeerIds.contains($0.id) }"))
+        #expect(pairingSource.contains("guard let address = peer.address else"))
+        #expect(pairingSource.contains("syncManager.stopPeerDiscovery()"))
+        #expect(pairingSource.contains("shop.address"))
+    }
+
+    @MainActor
     @Test func officeNavigationUsesOfficeOnlyGateAndFinancialRedactionGate() async throws {
         let leadPermissions = ["view_jobs", "manage_jobs", "view_orders"]
         let officePermissions = ["approve_orders", "show_dollar_values", "manage_jobs"]
@@ -312,6 +579,48 @@ struct Weird_Parts_IOSTests {
         #else
         #expect(!AppCore.shouldResetLocalDatabaseAfterCipherOpenFailure(sqlCipherError))
         #endif
+    }
+
+    @Test func migrationRollbackRestoresThenRetriesMigrationAndOpen() throws {
+        var events: [String] = []
+
+        let database = try AppCore.retryOpeningRestoredDatabase(
+            backupPath: "/tmp/wired-part.sqlite.rollback",
+            databasePath: "/tmp/wired-part.sqlite",
+            keyHex: "device-key",
+            restoreDatabase: { backupPath, databasePath in
+                events.append("restore")
+                #expect(backupPath == "/tmp/wired-part.sqlite.rollback")
+                #expect(databasePath == "/tmp/wired-part.sqlite")
+            },
+            migratePlaintextDatabaseIfNeeded: { databasePath, keyHex in
+                events.append("migrate")
+                #expect(databasePath == "/tmp/wired-part.sqlite")
+                #expect(keyHex == "device-key")
+            },
+            openEncryptedDatabase: { databasePath, keyHex in
+                events.append("open")
+                #expect(databasePath == "/tmp/wired-part.sqlite")
+                #expect(keyHex == "device-key")
+                return "opened-restored-database"
+            }
+        )
+
+        #expect(events == ["restore", "migrate", "open"])
+        #expect(database == "opened-restored-database")
+    }
+
+    @Test func migrationRollbackRequiresBackupBeforeRetry() {
+        #expect(throws: AppCore.AppCoreError.self) {
+            _ = try AppCore.retryOpeningRestoredDatabase(
+                backupPath: nil,
+                databasePath: "/tmp/wired-part.sqlite",
+                keyHex: "device-key",
+                restoreDatabase: { _, _ in throw MigrationRollbackRetryTestError.restore },
+                migratePlaintextDatabaseIfNeeded: { _, _ in throw MigrationRollbackRetryTestError.migrate },
+                openEncryptedDatabase: { _, _ in throw MigrationRollbackRetryTestError.open }
+            ) as String
+        }
     }
 
     @MainActor
@@ -451,6 +760,22 @@ struct Weird_Parts_IOSTests {
         #expect(scannerSource.contains("activeContinuation?.finish()"), "Startup failures should finish the scan stream instead of leaving a dead sheet")
     }
 
+    @Test func timesheetCorrectionRejectsMalformedOriginalTimestampsBeforeSave() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let timesheetsURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Reports/IOSTimesheetsPage.swift")
+        let source = try String(contentsOf: timesheetsURL, encoding: .utf8)
+
+        #expect(!source.contains("CoreFormatters.parseDateTime(segment.clockIn) ?? Date()"), "Malformed original clock-in must not default correction pickers to the current time")
+        #expect(source.contains("Original clock-in timestamp is malformed"), "Malformed clock-in needs user-facing data-integrity copy")
+        #expect(source.contains("Original clock-out timestamp is malformed"), "Malformed clock-out needs user-facing data-integrity copy")
+        #expect(source.contains(".disabled(isSaving || originalTimestampError != nil)"), "The correction save action must stay disabled while original timestamps are malformed")
+        #expect(source.contains("if let originalTimestampError"), "The save path needs a guard even if a disabled button is bypassed")
+    }
+
     @Test func dispatchAssignmentConflictCheckFailureShowsActionError() throws {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -567,6 +892,135 @@ struct Weird_Parts_IOSTests {
         let source = try String(contentsOf: suppliersURL, encoding: .utf8)
 
         #expect(source.contains("loadError = userFriendlyError(error, context: \"create supplier channel\")"))
+    }
+
+    @Test func manualBackupSidecarCopyFailureIsReportedAndCleanedUp() throws {
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("IOSBackupFileCopierTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let sourceURL = tempRoot.appendingPathComponent("wiredpart.sqlite")
+        let sourceWALURL = URL(fileURLWithPath: sourceURL.path + "-wal")
+        let destinationURL = tempRoot.appendingPathComponent("wiredpart-backup.sqlite")
+        let destinationWALURL = URL(fileURLWithPath: destinationURL.path + "-wal")
+
+        try Data("main database".utf8).write(to: sourceURL)
+        try Data("wal sidecar".utf8).write(to: sourceWALURL)
+        try Data("pre-existing destination blocks copy".utf8).write(to: destinationWALURL)
+
+        do {
+            try IOSBackupFileCopier.copySQLiteSnapshot(from: sourceURL, to: destinationURL)
+            Issue.record("Expected WAL copy failure to propagate instead of reporting backup success")
+        } catch {
+            #expect(!FileManager.default.fileExists(atPath: destinationURL.path), "Failed sidecar backups must remove the partial main database copy")
+            #expect(FileManager.default.fileExists(atPath: destinationWALURL.path), "Existing destination files unrelated to this attempt should not be removed")
+        }
+    }
+
+    @Test func manualBackupSidecarCopiesAreNotSwallowedBeforeSuccessState() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let backupsPageURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSBackupsPage.swift")
+        let source = try String(contentsOf: backupsPageURL, encoding: .utf8)
+
+        #expect(!source.contains("try? FileManager.default.copyItem"), "Manual backup WAL/SHM copy failures must not be swallowed")
+        #expect(!source.contains("try? FileManager.default.removeItem"), "Failed manual backups must not swallow cleanup failures")
+        #expect(source.contains("try IOSBackupFileCopier.copySQLiteSnapshot"), "Manual backup creation should use the throwing SQLite snapshot copier")
+        #expect(source.contains("createdURLs.reversed()"), "Partial backup cleanup should remove sidecars before the main database")
+        let snapshotCall = try #require(source.range(of: "try IOSBackupFileCopier.copySQLiteSnapshot"))
+        let successState = try #require(source.range(of: "backupSuccess = true"))
+        #expect(snapshotCall.lowerBound < successState.lowerBound, "Success state must only be set after all database sidecars are copied")
+    }
+
+    @Test func fullDatabaseExportUsesGRDBSnapshotAndIncludesWALChanges() throws {
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("IOSDatabaseExportSnapshotterTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let sourceURL = tempRoot.appendingPathComponent("wiredpart-live.sqlite")
+        let destinationURL = tempRoot.appendingPathComponent("wiredpart-export.sqlite")
+        let source = try DatabasePool(path: sourceURL.path)
+        try source.write { db in
+            try db.execute(sql: "PRAGMA journal_mode = WAL")
+            try db.execute(sql: "PRAGMA wal_autocheckpoint = 0")
+            try db.execute(sql: "CREATE TABLE export_probe(id INTEGER PRIMARY KEY, value TEXT NOT NULL)")
+            try db.execute(sql: "INSERT INTO export_probe(value) VALUES (?)", arguments: ["committed-in-wal"])
+        }
+
+        #expect(FileManager.default.fileExists(atPath: sourceURL.path + "-wal"), "Test fixture should keep committed data in a WAL sidecar")
+
+        try IOSDatabaseExportSnapshotter.exportSQLiteSnapshot(from: source, to: destinationURL)
+
+        let exported = try DatabaseQueue(path: destinationURL.path)
+        let exportedValue = try exported.read { db in
+            try String.fetchOne(db, sql: "SELECT value FROM export_probe WHERE id = 1")
+        }
+        #expect(exportedValue == "committed-in-wal")
+    }
+
+    @Test func fullDatabaseExportDoesNotCopyMainDatabaseFileDirectly() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let exportPageURL = repoRoot
+            .appendingPathComponent("Weird Parts IOS/Weird Parts IOS/Features/Settings/IOSDataExportPage.swift")
+        let source = try String(contentsOf: exportPageURL, encoding: .utf8)
+
+        #expect(!source.contains("copyItem(at: URL(fileURLWithPath: dbPath), to: destURL)"), "Full database export must not copy only the main SQLite file")
+        #expect(source.contains("try IOSDatabaseExportSnapshotter.exportSQLiteSnapshot"), "Full database export should use the GRDB snapshot helper")
+        #expect(source.contains("Task.detached(priority: .userInitiated)"), "Full database export should run the snapshot off the main actor so large exports do not freeze Settings")
+        #expect(source.contains("await MainActor.run"), "Full database export should return success and error state updates to the main actor")
+        let snapshotCall = try #require(source.range(of: "try IOSDatabaseExportSnapshotter.exportSQLiteSnapshot"))
+        let successState = try #require(source.range(of: "exportSuccess = true", range: snapshotCall.lowerBound..<source.endIndex))
+        #expect(snapshotCall.lowerBound < successState.lowerBound, "Success state must only be set after the GRDB snapshot is complete")
+    }
+
+    @MainActor
+    @Test func shortTermPipelineCallbackFailurePreservesSheetAndFormatsActionError() {
+        var reloadCount = 0
+
+        let result = IOSShortTermPipelineCallbackActionHandler.perform(
+            context: "complete callback",
+            operation: {
+                throw ShortTermPipelineCallbackActionTestError.operationFailed
+            },
+            reload: {
+                reloadCount += 1
+            },
+            errorFormatter: { _, context in "Could not \(context). Try again." }
+        )
+
+        #expect(result.errorMessage == "Could not complete callback. Try again.")
+        #expect(!result.shouldDismissSheet)
+        #expect(reloadCount == 0)
+    }
+
+    @MainActor
+    @Test func shortTermPipelineCallbackSuccessReloadsAndDismissesSheet() {
+        var reloadCount = 0
+        var operationCount = 0
+
+        let result = IOSShortTermPipelineCallbackActionHandler.perform(
+            context: "snooze callback",
+            operation: {
+                operationCount += 1
+            },
+            reload: {
+                reloadCount += 1
+            },
+            errorFormatter: { _, context in "Could not \(context). Try again." }
+        )
+
+        #expect(result.errorMessage == nil)
+        #expect(result.shouldDismissSheet)
+        #expect(operationCount == 1)
+        #expect(reloadCount == 1)
     }
 
     @MainActor
@@ -690,6 +1144,52 @@ struct Weird_Parts_IOSTests {
         #expect(try parts.listParts(search: "UITesting QA", limit: 10).count >= 2)
         #expect(detail.lines.count >= 2)
         #expect(detail.lines.allSatisfy { $0.partId != nil })
+    }
+
+    @MainActor
+    @Test func warehouseMovementDatePartitionKeepsMalformedRowsOutOfActiveQueue() throws {
+        let cutoff = try #require(Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 6, day: 8)))
+        let recent = Self.warehouseMovement(id: 1, reason: "Recent", createdAt: "2026-06-10 08:30:00")
+        let old = Self.warehouseMovement(id: 2, reason: "Old", createdAt: "2026-06-01 08:30:00")
+        let malformed = Self.warehouseMovement(id: 3, reason: "Malformed", createdAt: "not-a-date")
+        let missing = Self.warehouseMovement(id: 4, reason: "Missing", createdAt: nil)
+
+        let movements = [recent, old, malformed, missing]
+        let active = WarehouseMovementDatePartitioning.activeMovements(movements, cutoff: cutoff)
+        let history = WarehouseMovementDatePartitioning.completedHistoryMovements(movements, cutoff: cutoff)
+
+        #expect(active.map(\.id) == [recent.id])
+        #expect(history.map(\.id) == [old.id, malformed.id, missing.id])
+        #expect(WarehouseMovementDatePartitioning.displayDate(malformed.createdAt) == "Unknown date")
+        #expect(WarehouseMovementDatePartitioning.displayDate(missing.createdAt) == "Unknown date")
+    }
+
+    @Test func pricingBulkEditRejectsNegativeOrNonFinitePercentInputs() {
+        #expect(PricingBulkEditSheet.isValidNonNegativePercent("0"))
+        #expect(PricingBulkEditSheet.isValidNonNegativePercent(" 12.5 "))
+        #expect(!PricingBulkEditSheet.isValidNonNegativePercent("-0.01"))
+        #expect(!PricingBulkEditSheet.isValidNonNegativePercent("nan"))
+        #expect(!PricingBulkEditSheet.isValidNonNegativePercent("inf"))
+        #expect(!PricingBulkEditSheet.isValidNonNegativePercent("not a number"))
+    }
+
+    static func warehouseMovement(id: Int64, reason: String, createdAt: String?) -> WarehouseService.MovementRow {
+        WarehouseService.MovementRow(
+            id: id,
+            partId: 10,
+            partName: "QA Part",
+            qty: 1,
+            fromLocationType: nil,
+            fromLocationId: nil,
+            toLocationType: "warehouse",
+            toLocationId: 1,
+            movementType: "received",
+            reason: reason,
+            notes: nil,
+            performedBy: 1,
+            performedByName: "Tester",
+            createdAt: createdAt
+        )
     }
 }
 

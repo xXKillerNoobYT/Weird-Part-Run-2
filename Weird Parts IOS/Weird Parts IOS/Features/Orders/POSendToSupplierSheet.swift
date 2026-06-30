@@ -80,6 +80,7 @@ struct POSendToSupplierSheet: View {
     @State private var siblingPDFs: [Int64: Data] = [:]  // sibling id → pdf
     @State private var isGeneratingPDF = false
     @State private var pdfError: String?
+    @State private var mailError: String?
     @State private var showMailComposer = false
     @State private var showShareSheet   = false
     @State private var shareItems: [Any] = []
@@ -100,7 +101,13 @@ struct POSendToSupplierSheet: View {
 
     private var includedPOs: [Int64] {
         // primary always included
-        [po.id] + Array(includedSiblingIds)
+        guard groupEnabled else { return [po.id] }
+        return [po.id] + Array(includedSiblingIds)
+    }
+
+    private var includedSiblingPOs: [OrdersService.POListItem] {
+        guard groupEnabled else { return [] }
+        return siblingPOs.filter { includedSiblingIds.contains($0.id) }
     }
 
     private var emailSubject: String {
@@ -126,9 +133,7 @@ struct POSendToSupplierSheet: View {
         lines.append("")
 
         // Summary list of included POs
-        let allPoNums = ([po.poNumber] + siblingPOs
-            .filter { includedSiblingIds.contains($0.id) }
-            .map { $0.poNumber })
+        let allPoNums = [po.poNumber] + includedSiblingPOs.map { $0.poNumber }
         if allPoNums.count > 1 {
             lines.append("Included orders:")
             allPoNums.forEach { lines.append("  • \($0)") }
@@ -192,6 +197,9 @@ struct POSendToSupplierSheet: View {
             .alert("PDF Error", isPresented: Binding(
                 get: { pdfError != nil }, set: { if !$0 { pdfError = nil } }
             )) { Button("OK") {} } message: { Text(pdfError ?? "") }
+            .alert("Mail Error", isPresented: Binding(
+                get: { mailError != nil }, set: { if !$0 { mailError = nil } }
+            )) { Button("OK") {} } message: { Text(mailError ?? "") }
             .alert("Save Error", isPresented: Binding(
                 get: { saveError != nil }, set: { if !$0 { saveError = nil } }
             )) { Button("OK") {} } message: { Text(saveError ?? "") }
@@ -263,7 +271,10 @@ struct POSendToSupplierSheet: View {
                 }
             }
             .onChange(of: groupEnabled) { _, on in
-                if on { fetchSiblingPOs() }
+                clearSiblingPOState()
+                if on {
+                    fetchSiblingPOs()
+                }
             }
 
             if groupEnabled && siblingPOsLoading {
@@ -500,10 +511,24 @@ struct POSendToSupplierSheet: View {
                 subject: emailSubject,
                 body: emailBody,
                 attachments: attachments
-            ) { _ in
-                showMailComposer = false
-                withAnimation { showConfirmSent = true }
+            ) { result in
+                handleMailComposerFinished(result)
             }
+        }
+    }
+
+    private func handleMailComposerFinished(_ result: MFMailComposeResult) {
+        showMailComposer = false
+
+        switch result {
+        case .sent:
+            withAnimation { showConfirmSent = true }
+        case .cancelled, .saved:
+            break
+        case .failed:
+            mailError = "Mail did not send, so supplier confirmation was not opened automatically. Try sending again, use the share sheet fallback, or confirm manually only after verifying the supplier message was sent."
+        @unknown default:
+            mailError = "Mail finished with an unknown result, so supplier confirmation was not opened automatically. Verify the message was sent before confirming manually."
         }
     }
 
@@ -511,7 +536,7 @@ struct POSendToSupplierSheet: View {
         var result: [(data: Data, mimeType: String, fileName: String)] = [
             (primaryPDF, "application/pdf", pdfFileName(for: po.poNumber))
         ]
-        for sibling in siblingPOs where includedSiblingIds.contains(sibling.id) {
+        for sibling in includedSiblingPOs {
             if let pdf = siblingPDFs[sibling.id] {
                 result.append((pdf, "application/pdf", pdfFileName(for: sibling.poNumber)))
             }
@@ -528,6 +553,14 @@ struct POSendToSupplierSheet: View {
         }
     }
 
+    private func clearSiblingPOState() {
+        siblingPOs = []
+        includedSiblingIds = []
+        siblingPDFs = [:]
+        siblingPOsError = nil
+        siblingPOsLoading = false
+    }
+
     private func fetchSiblingPOs() {
         let supplierId = po.supplierId
         guard let svc = appCore.ordersService else {
@@ -542,6 +575,7 @@ struct POSendToSupplierSheet: View {
             do {
                 let results = try svc.listSendablePOs(supplierId: supplierId, excludingId: po.id)
                 await MainActor.run {
+                    guard groupEnabled else { return }
                     siblingPOs = results
                     // Default: select all siblings
                     includedSiblingIds = Set(results.map(\.id))
@@ -550,6 +584,7 @@ struct POSendToSupplierSheet: View {
                 }
             } catch {
                 await MainActor.run {
+                    guard groupEnabled else { return }
                     let message = "Could not check for other POs for this supplier. Grouped sending is blocked until the sibling lookup succeeds. Error: \(error.localizedDescription)"
                     siblingPOs = []
                     includedSiblingIds = []
@@ -588,7 +623,7 @@ struct POSendToSupplierSheet: View {
                 }
 
                 var failedSiblings: [String] = []
-                for sibling in siblingPOs where includedSiblingIds.contains(sibling.id) {
+                for sibling in includedSiblingPOs {
                     do {
                         let detail = try ordersService.getPODetail(id: sibling.id)
                         let gen = POPDFGenerator(po: detail, supplierEmail: primaryEmail, companyName: "WiredPart")
@@ -619,8 +654,8 @@ struct POSendToSupplierSheet: View {
                     // Share sheet fallback — share all PDFs
                     var urls: [URL] = []
                     let tmp = FileManager.default.temporaryDirectory
-                    let allPDFs = [(primaryPDF, po.poNumber)] + sibPDFs.compactMap { (id, data) in
-                        siblingPOs.first(where: { $0.id == id }).map { (data, $0.poNumber) }
+                    let allPDFs = [(primaryPDF, po.poNumber)] + includedSiblingPOs.compactMap { sibling in
+                        sibPDFs[sibling.id].map { ($0, sibling.poNumber) }
                     }
                     do {
                         for (data, num) in allPDFs {
@@ -652,19 +687,17 @@ struct POSendToSupplierSheet: View {
 
         Task {
             do {
-                for poId in includedPOs {
-                    try svc.markPOSentToSupplier(
-                        id: poId,
-                        sentByUserId: userId,
-                        confirmationNumber: confNum,
-                        emailRequestType: reqType,
-                        sendGroupId: groupId
-                    )
-                }
+                try svc.markPOsSentToSupplier(
+                    ids: includedPOs,
+                    sentByUserId: userId,
+                    confirmationNumber: confNum,
+                    emailRequestType: reqType,
+                    sendGroupId: groupId
+                )
                 await MainActor.run {
                     isSaving = false
-                    onConfirmedSent()
                     dismiss()
+                    onConfirmedSent()
                 }
             } catch {
                 await MainActor.run {

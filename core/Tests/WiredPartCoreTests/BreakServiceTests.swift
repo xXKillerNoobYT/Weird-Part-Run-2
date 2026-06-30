@@ -129,6 +129,86 @@ struct BreakServiceTests {
         #expect(active?.breakType == "rest")
     }
 
+    @Test("Start break attaches to active clock entry when laborEntryId is omitted")
+    func testStartBreakAttachesToActiveClockEntryByDefault() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BREAK-ACTIVE", name: "Break Active Job")
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+
+        let record = try breakService.startBreak(
+            userId: env.adminUserId,
+            breakType: "lunch_unpaid",
+            timerMinutes: 30
+        )
+
+        #expect(record.laborEntryId == laborEntryId)
+    }
+
+    @Test("Start break is idempotent for an identical active break request")
+    func testStartBreakReturnsExistingMatchingActiveBreak() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BREAK-OVERLAP", name: "Break Overlap Job")
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+
+        let first = try breakService.startBreak(
+            userId: env.adminUserId,
+            breakType: "break",
+            laborEntryId: laborEntryId,
+            timerMinutes: 15
+        )
+        let second = try breakService.startBreak(
+            userId: env.adminUserId,
+            breakType: "break",
+            laborEntryId: laborEntryId,
+            timerMinutes: 15
+        )
+
+        let activeBreaks = try env.db.writer.read { db in
+            try BreakRecord
+                .filter(sql: "user_id = ? AND ended_at IS NULL AND deleted_at IS NULL", arguments: [env.adminUserId])
+                .fetchAll(db)
+        }
+
+        #expect(second.id == first.id)
+        #expect(activeBreaks.count == 1)
+        #expect(activeBreaks.first?.breakType == "break")
+    }
+
+    @Test("Start break rejects a different break while one is active")
+    func testStartBreakRejectsDifferentActiveBreakRequest() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BREAK-CONFLICT", name: "Break Conflict Job")
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+
+        let first = try breakService.startBreak(
+            userId: env.adminUserId,
+            breakType: "break",
+            laborEntryId: laborEntryId,
+            timerMinutes: 15
+        )
+
+        #expect(throws: BreakService.BreakError.activeBreakAlreadyInProgress(userId: env.adminUserId, activeBreakId: first.id)) {
+            try breakService.startBreak(
+                userId: env.adminUserId,
+                breakType: "lunch_paid",
+                laborEntryId: laborEntryId,
+                timerMinutes: 30
+            )
+        }
+
+        let activeBreaks = try env.db.writer.read { db in
+            try BreakRecord
+                .filter(sql: "user_id = ? AND ended_at IS NULL AND deleted_at IS NULL", arguments: [env.adminUserId])
+                .fetchAll(db)
+        }
+
+        #expect(activeBreaks.count == 1)
+        #expect(activeBreaks.first?.breakType == "break")
+    }
+
     @Test("Get break records for day")
     func testGetBreakRecordsForDay() throws {
         let env = try freshEnv()

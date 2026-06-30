@@ -1054,10 +1054,10 @@ public final class FleetService: Sendable {
         guard try auth.hasPermission(actorId, permissionKey: "manage_fleet") else {
             throw FleetError.insufficientPermissions(required: "manage_fleet")
         }
-        guard !vehicleNumber.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !vehicleNumber.isBlankRequiredText else {
             throw FleetError.requiredFieldEmpty("vehicleNumber")
         }
-        guard !vehicleName.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !vehicleName.isBlankRequiredText else {
             throw FleetError.requiredFieldEmpty("vehicleName")
         }
         return try db.writer.write { dbConn in
@@ -1090,10 +1090,10 @@ public final class FleetService: Sendable {
         guard try auth.hasPermission(actorId, permissionKey: "manage_fleet") else {
             throw FleetError.insufficientPermissions(required: "manage_fleet")
         }
-        guard !trailerNumber.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !trailerNumber.isBlankRequiredText else {
             throw FleetError.requiredFieldEmpty("trailerNumber")
         }
-        guard !trailerType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !trailerType.isBlankRequiredText else {
             throw FleetError.requiredFieldEmpty("trailerType")
         }
         return try db.writer.write { dbConn in
@@ -1132,7 +1132,7 @@ public final class FleetService: Sendable {
                 """, arguments: [vehicleId]) ?? 0) > 0
             guard vehicleExists else { return }
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [userId]) ?? 0) > 0
             guard userExists else { return }
 
@@ -1616,7 +1616,7 @@ public final class FleetService: Sendable {
         guard try auth.hasPermission(actorId, permissionKey: "log_fleet") else {
             throw FleetError.insufficientPermissions(required: "log_fleet")
         }
-        guard !partName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !partName.isBlankRequiredText else {
             throw FleetError.requiredFieldEmpty("partName")
         }
         guard quantity > 0 else { throw FleetError.invalidQuantity(quantity) }
@@ -1704,7 +1704,7 @@ public final class FleetService: Sendable {
                 """, arguments: [vehicleId]) ?? 0) > 0
             guard vehicleExists else { throw FleetError.vehicleNotFound(vehicleId) }
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [reportedBy]) ?? 0) > 0
             guard userExists else { throw FleetError.userNotFound(reportedBy) }
 
@@ -1969,7 +1969,7 @@ public final class FleetService: Sendable {
             // Guard: recording user must exist and not be tombstoned — otherwise
             // a spoofed/wrong recordedBy would land in the audit trail unchecked.
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [recordedBy]) ?? 0) > 0
             guard userExists else { throw FleetError.userNotFound(recordedBy) }
 
@@ -2133,7 +2133,7 @@ public final class FleetService: Sendable {
                 """, arguments: [vehicleId]) ?? 0) > 0
             guard vehicleExists else { throw FleetError.vehicleNotFound(vehicleId) }
             let inspectorExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [inspectorId]) ?? 0) > 0
             guard inspectorExists else { throw FleetError.userNotFound(inspectorId) }
             if let tid = trailerId {

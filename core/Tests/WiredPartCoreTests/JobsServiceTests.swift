@@ -29,6 +29,94 @@ struct JobsServiceTests {
         #expect(jobs.contains(where: { $0.jobNumber == "J-TEST" }))
     }
 
+    @Test("local-first job records create update list and survive service reload")
+    func testLocalFirstJobRecordsCRUDAndReload() throws {
+        let env = try E2ETestHelpers.setUp()
+        let created = try env.jobs.createJobRecord(
+            JobsService.JobRecordDraft(
+                jobNumber: "  J-LOCAL-001  ",
+                jobName: "  Local First Job  ",
+                customerName: "  Alpine Electric  ",
+                siteName: "  Alpine City Hall  ",
+                status: "active",
+                priority: "high",
+                notes: "  First site note  ",
+                createdBy: env.adminUserId
+            )
+        )
+        #expect(created.id > 0)
+        #expect(!created.stableId.isEmpty)
+        #expect(UUID(uuidString: created.stableId) != nil)
+        #expect(created.jobNumber == "J-LOCAL-001")
+        #expect(created.jobName == "Local First Job")
+        #expect(created.customerName == "Alpine Electric")
+        #expect(created.siteName == "Alpine City Hall")
+        #expect(created.notes == "First site note")
+
+        let reloadedService = JobsService(db: env.db)
+        let reloaded = try reloadedService.getJobRecord(id: created.id)
+        #expect(reloaded.stableId == created.stableId)
+
+        let updated = try reloadedService.updateJobRecord(
+            id: created.id,
+            JobsService.JobRecordUpdate(
+                jobName: "  Local First Job - Updated  ",
+                customerName: "  Alpine Public Works  ",
+                siteName: "  Council Chambers  ",
+                status: "in_progress",
+                priority: "critical",
+                notes: "  Updated field note  "
+            )
+        )
+        #expect(updated.stableId == created.stableId)
+        #expect(updated.jobName == "Local First Job - Updated")
+        #expect(updated.customerName == "Alpine Public Works")
+        #expect(updated.siteName == "Council Chambers")
+        #expect(updated.status == "in_progress")
+        #expect(updated.priority == "critical")
+        #expect(updated.notes == "Updated field note")
+
+        let listed = try reloadedService.listJobRecords(status: "in_progress")
+        #expect(listed.contains { $0.id == created.id && $0.stableId == created.stableId })
+
+        let clearedSite = try reloadedService.updateJobRecord(
+            id: created.id,
+            JobsService.JobRecordUpdate(siteName: "   ")
+        )
+        #expect(clearedSite.siteName == nil)
+        let addressLine1 = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT address_line1 FROM jobs WHERE id = ?", arguments: [created.id])
+        }
+        #expect(addressLine1 == nil)
+    }
+
+    @Test("local-first job records reject invalid input and expose empty state")
+    func testLocalFirstJobRecordsInvalidInputAndEmptyState() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(try env.jobs.listJobRecords(status: "cancelled").isEmpty)
+        #expect(throws: JobsService.JobsError.requiredFieldEmpty) {
+            _ = try env.jobs.createJobRecord(
+                JobsService.JobRecordDraft(jobNumber: " ", jobName: "Blank Number", createdBy: env.adminUserId)
+            )
+        }
+        #expect(throws: JobsService.JobsError.requiredFieldEmpty) {
+            _ = try env.jobs.createJobRecord(
+                JobsService.JobRecordDraft(jobNumber: "J-BLANK-NAME", jobName: " ", createdBy: env.adminUserId)
+            )
+        }
+    }
+
+    @Test("seeded jobs receive stable ids after local-first schema is available")
+    func testSeededJobsReceiveStableIds() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BACKFILL", name: "Backfilled Job")
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT stable_id FROM jobs WHERE id = ?", arguments: [jobId])
+        }
+        let stableId = try #require(row?["stable_id"] as String?)
+        #expect(UUID(uuidString: stableId) != nil)
+    }
+
     @Test("createJob creates a linked job notebook")
     func testCreateJobCreatesLinkedNotebook() throws {
         let env = try E2ETestHelpers.setUp()
@@ -222,6 +310,66 @@ struct JobsServiceTests {
         #expect(detail.jobName == "Updated Job")
     }
 
+    @Test("Update job clears optional text fields when blank values are saved")
+    func testUpdateJobClearsOptionalTextFields() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try env.jobs.createJob(
+            jobNumber: "J-CLEAR-OPTIONAL",
+            jobName: "Clear Optional Fields",
+            customerName: "Customer To Clear",
+            addressLine1: "123 Clear St",
+            addressLine2: "Suite 4",
+            city: "Alpine",
+            state: "WY",
+            zip: "83128",
+            status: "active",
+            notes: "Notes to clear",
+            createdBy: env.adminUserId
+        )
+
+        try env.jobs.updateJob(
+            id: jobId,
+            customerName: "",
+            addressLine1: "",
+            addressLine2: "",
+            city: "",
+            state: "",
+            zip: "",
+            notes: ""
+        )
+
+        let detail = try env.jobs.getJob(id: jobId)
+        #expect(detail.customerName == "")
+        #expect(detail.addressLine1 == "")
+        #expect(detail.addressLine2 == "")
+        #expect(detail.city == "")
+        #expect(detail.state == "")
+        #expect(detail.zip == "")
+        #expect(detail.notes == "")
+    }
+
+    @Test("Update job clears optional numeric fields when requested")
+    func testUpdateJobClearsOptionalNumericFields() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try env.jobs.createJob(
+            jobNumber: "J-CLEAR-NUMERIC",
+            jobName: "Clear Numeric Fields",
+            estimatedHours: 12.5,
+            budgetLimit: 4_200,
+            createdBy: env.adminUserId
+        )
+
+        try env.jobs.updateJob(
+            id: jobId,
+            clearEstimatedHours: true,
+            clearBudgetLimit: true
+        )
+
+        let detail = try env.jobs.getJob(id: jobId)
+        #expect(detail.estimatedHours == nil)
+        #expect(detail.budgetLimit == nil)
+    }
+
     @Test("Job stats")
     func testJobStats() throws {
         let env = try E2ETestHelpers.setUp()
@@ -258,6 +406,66 @@ struct JobsServiceTests {
         #expect(laborEntryId > 0)
         #expect(active?.id == laborEntryId)
         #expect(active?.jobName == "Shop / Warehouse")
+
+        let stableId = try env.db.writer.read { db in
+            try String.fetchOne(
+                db,
+                sql: "SELECT stable_id FROM jobs WHERE job_number = ? AND deleted_at IS NULL",
+                arguments: ["__SHOP_WAREHOUSE__"]
+            )
+        }
+        #expect(stableId.flatMap(UUID.init(uuidString:)) != nil)
+    }
+
+    @Test("Inactive users cannot clock into jobs")
+    func testInactiveUsersCannotClockIntoJobs() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-INACTIVE", name: "Inactive User Job")
+        let inactiveUserId = try env.auth.createUser(displayName: "Inactive Clock User", pin: "7788")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [inactiveUserId])
+        }
+
+        #expect(throws: JobsService.JobsError.userNotActive(inactiveUserId)) {
+            _ = try env.jobs.clockIn(userId: inactiveUserId, jobId: jobId)
+        }
+
+        let openEntryCount = try env.db.writer.read { db in
+            try Int.fetchOne(
+                db,
+                sql: """
+                    SELECT COUNT(*) FROM labor_entries
+                    WHERE user_id = ? AND status = 'clocked_in' AND deleted_at IS NULL
+                    """,
+                arguments: [inactiveUserId]
+            ) ?? 0
+        }
+        #expect(openEntryCount == 0)
+    }
+
+    @Test("Inactive users cannot clock into shop warehouse")
+    func testInactiveUsersCannotClockIntoShopWarehouse() throws {
+        let env = try E2ETestHelpers.setUp()
+        let inactiveUserId = try env.auth.createUser(displayName: "Inactive Shop User", pin: "7789")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [inactiveUserId])
+        }
+
+        #expect(throws: JobsService.JobsError.userNotActive(inactiveUserId)) {
+            _ = try env.jobs.clockInToWarehouse(userId: inactiveUserId)
+        }
+
+        let openEntryCount = try env.db.writer.read { db in
+            try Int.fetchOne(
+                db,
+                sql: """
+                    SELECT COUNT(*) FROM labor_entries
+                    WHERE user_id = ? AND status = 'clocked_in' AND deleted_at IS NULL
+                    """,
+                arguments: [inactiveUserId]
+            ) ?? 0
+        }
+        #expect(openEntryCount == 0)
     }
 
     @Test("Labor summary after clock in/out")
@@ -784,6 +992,30 @@ struct JobsServiceTests {
             #expect(group.jobName == "Local Clock Job")
             #expect(group.entries.count == 1)
             #expect(abs(group.totalDuration - 3600) < 1)
+        }
+    }
+
+    @Test("Today's clock entries reject malformed clock-in timestamps")
+    func testGetTodaysClockEntriesRejectsMalformedClockInTimestamp() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CLOCK-BAD", name: "Bad Clock Job")
+        let malformedClockIn = try env.db.writer.read { db in
+            let today = try String.fetchOne(db, sql: "SELECT date('now', 'localtime')")
+            return try #require(today)
+        }
+
+        let laborEntryId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: "DELETE FROM labor_entries")
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, ?, NULL, 0.0, 0.0, 'clocked_in', datetime('now'))
+                """, arguments: [env.adminUserId, jobId, malformedClockIn])
+            return db.lastInsertedRowID
+        }
+
+        #expect(throws: JobsService.JobsError.invalidClockTimestamp(laborEntryId: laborEntryId, field: .clockIn)) {
+            _ = try env.jobs.getTodaysClockEntries(userId: env.adminUserId)
         }
     }
 
@@ -2197,6 +2429,48 @@ struct JobsServiceTests {
         let notes: String? = row?["notes"]
         #expect(notes == nil || (notes?.contains("supply_run_start") == false),
             "Soft-deleted labor entry notes must not gain supply_run markers")
+    }
+
+    @Test("toggleSupplyRun is a no-op on a completed labor entry")
+    func testToggleSupplyRun_noOpOnCompletedEntry() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let entryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        try env.jobs.clockOut(laborEntryId: entryId)
+
+        // Stale supply-run toggle on a completed entry should not mutate audited time data.
+        let result = try env.jobs.toggleSupplyRun(laborEntryId: entryId)
+        #expect(result == "working",
+            "toggleSupplyRun on completed entry must return 'working' (no-op early exit)")
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT notes FROM labor_entries WHERE id = ?", arguments: [entryId])
+        }
+        let notes: String? = row?["notes"]
+        #expect(notes == nil || (notes?.contains("supply_run_start") == false),
+            "Completed labor entry notes must not gain supply_run markers")
+    }
+
+    @Test("activeSupplyRunStart returns the latest unmatched supply run start")
+    func testActiveSupplyRunStart_returnsLatestUnmatchedStart() throws {
+        let notes = """
+        [supply_run_start:2026-06-19T12:00:00Z] [supply_run_end:2026-06-19T12:25:00Z] \
+        picked up couplings [supply_run_start:2026-06-19T13:10:00Z]
+        """
+
+        let start = try #require(JobsService.activeSupplyRunStart(notes: notes))
+
+        #expect(CoreFormatters.iso8601.string(from: start) == "2026-06-19T13:10:00Z")
+    }
+
+    @Test("activeSupplyRunStart returns nil when latest supply run is ended")
+    func testActiveSupplyRunStart_returnsNilWhenLatestRunEnded() {
+        let notes = """
+        [supply_run_start:2026-06-19T12:00:00Z] [supply_run_end:2026-06-19T12:25:00Z] \
+        [supply_run_start:2026-06-19T13:10:00Z] [supply_run_end:2026-06-19T13:40:00Z]
+        """
+
+        #expect(JobsService.activeSupplyRunStart(notes: notes) == nil)
     }
 
     @Test("answerOneTimeQuestion is a no-op on a soft-deleted question")

@@ -440,7 +440,7 @@ struct ReportBuilderView: View {
                         Label("Save Configuration", systemImage: "square.and.arrow.down")
                     }
                     .buttonStyle(.bordered)
-                    .disabled(reportName.isEmpty)
+                    .disabled(reportName.isBlankRequiredText)
 
                     Spacer()
 
@@ -506,9 +506,13 @@ struct ReportBuilderView: View {
             saveError = "Not logged in"
             return
         }
+        guard let normalizedName = reportName.normalizedRequiredText else {
+            saveError = "Report name is required"
+            return
+        }
         do {
             try service.saveReportConfig(
-                name: reportName,
+                name: normalizedName,
                 type: selectedType.rawValue,
                 columns: selectedColumnKeys,
                 filters: [:],

@@ -222,8 +222,8 @@ struct DashboardServiceTests {
                 INSERT INTO break_records
                     (user_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
                 VALUES
-                    (?, 'break', datetime('now','-3 hours'), datetime('now','-2 hours','-45 minutes'), 15, 1, 0),
-                    (?, 'lunch_unpaid', datetime('now','-2 hours'), datetime('now','-1 hours','-30 minutes'), 30, 0, 0)
+                    (?, 'break', strftime('%Y-%m-%dT%H:%M:%SZ', 'now', 'localtime', 'start of day', '+12 hours', 'utc'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now', 'localtime', 'start of day', '+12 hours', '+15 minutes', 'utc'), 15, 1, 0),
+                    (?, 'lunch_unpaid', strftime('%Y-%m-%dT%H:%M:%SZ', 'now', 'localtime', 'start of day', '+14 hours', 'utc'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now', 'localtime', 'start of day', '+14 hours', '+30 minutes', 'utc'), 30, 0, 0)
                 """, arguments: [env.adminUserId, env.adminUserId])
         }
 
@@ -698,6 +698,73 @@ struct DashboardServiceTests {
         #expect(itemTypes.contains("maintenance_due"))
         #expect(itemTypes.contains("expiring_cert"))
         #expect(itemTypes.contains("warranty_expiring"))
+    }
+
+    @Test("Attention items parse SQLite timestamp text without resetting age")
+    func testAttentionItemsParseSQLiteCreatedAtTimestamps() throws {
+        let (env, dash) = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-ATTENTION-DATES", name: "Attention Date Job")
+        let oldDate = Date().addingTimeInterval(-5 * 86400)
+        let sqliteFormatter = DateFormatter()
+        sqliteFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let sqliteCreatedAt = sqliteFormatter.string(from: oldDate)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO job_parts_orders (job_id, order_number, status, order_type, requested_by, created_at)
+                VALUES (?, 'JPO-ATTENTION-SQLITE', 'submitted', 'job', ?, ?)
+                """, arguments: [jobId, env.adminUserId, sqliteCreatedAt])
+            try db.execute(sql: """
+                INSERT INTO qa_threads (job_id, asked_by, subject, status, priority, created_at)
+                VALUES (?, ?, 'SQLite timestamp question', 'open', 'normal', ?)
+                """, arguments: [jobId, env.adminUserId, sqliteCreatedAt])
+        }
+
+        let items = try dash.getAttentionItems()
+        let jpo = try #require(items.first { $0.itemType == "jpo_approval" && $0.title.contains("Attention Date Job") })
+        let qa = try #require(items.first { $0.itemType == "open_qa" && $0.title.contains("SQLite timestamp question") })
+
+        #expect(jpo.priority == .overdue)
+        #expect(qa.priority == .overdue)
+        #expect(abs(jpo.createdAt.timeIntervalSince(oldDate)) < 1)
+        #expect(abs(qa.createdAt.timeIntervalSince(oldDate)) < 1)
+    }
+
+    @Test("Attention items parse ISO timestamps and skip malformed persisted timestamps")
+    func testAttentionItemsParseISOAndSkipMalformedCreatedAt() throws {
+        let (env, dash) = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-ATTENTION-ISO", name: "Attention ISO Job")
+        let malformedJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-ATTENTION-BAD-DATE", name: "Malformed Date Job")
+        let oldDate = Date().addingTimeInterval(-5 * 86400)
+        let isoCreatedAt = CoreFormatters.iso8601.string(from: oldDate)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO job_parts_orders (job_id, order_number, status, order_type, requested_by, created_at)
+                VALUES (?, 'JPO-ATTENTION-ISO', 'submitted', 'job', ?, ?)
+                """, arguments: [jobId, env.adminUserId, isoCreatedAt])
+            try db.execute(sql: """
+                INSERT INTO job_parts_orders (job_id, order_number, status, order_type, requested_by, created_at)
+                VALUES (?, 'JPO-ATTENTION-BAD-DATE', 'submitted', 'job', ?, 'not-a-date')
+                """, arguments: [malformedJobId, env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO qa_threads (job_id, asked_by, subject, status, priority, created_at)
+                VALUES (?, ?, 'ISO timestamp question', 'open', 'normal', ?)
+                """, arguments: [jobId, env.adminUserId, isoCreatedAt])
+            try db.execute(sql: """
+                INSERT INTO qa_threads (job_id, asked_by, subject, status, priority, created_at)
+                VALUES (?, ?, 'Malformed timestamp question', 'open', 'normal', 'not-a-date')
+                """, arguments: [jobId, env.adminUserId])
+        }
+
+        let items = try dash.getAttentionItems()
+        let jpo = try #require(items.first { $0.itemType == "jpo_approval" && $0.title.contains("Attention ISO Job") })
+        let qa = try #require(items.first { $0.itemType == "open_qa" && $0.title.contains("ISO timestamp question") })
+
+        #expect(jpo.priority == .overdue)
+        #expect(qa.priority == .overdue)
+        #expect(items.contains { $0.title.contains("Malformed timestamp question") } == false)
+        #expect(items.contains { $0.title.contains("Malformed Date Job") } == false)
     }
 
     // MARK: - Financial Snapshot

@@ -1,6 +1,49 @@
 import SwiftUI
 import WiredPartCore
 
+enum IOSBackupFileCopier {
+    struct CleanupFailure: LocalizedError {
+        let copyError: Error
+        let cleanupError: Error
+
+        var errorDescription: String? {
+            "Backup failed and the partial backup could not be cleaned up: \(cleanupError.localizedDescription). Original backup error: \(copyError.localizedDescription)"
+        }
+    }
+
+    nonisolated static func copySQLiteSnapshot(from sourceURL: URL, to destURL: URL) throws {
+        var createdURLs: [URL] = []
+
+        do {
+            try FileManager.default.copyItem(at: sourceURL, to: destURL)
+            createdURLs.append(destURL)
+
+            for suffix in ["-wal", "-shm"] {
+                let sourceSidecar = URL(fileURLWithPath: sourceURL.path + suffix)
+                guard FileManager.default.fileExists(atPath: sourceSidecar.path) else { continue }
+
+                let destinationSidecar = URL(fileURLWithPath: destURL.path + suffix)
+                try FileManager.default.copyItem(at: sourceSidecar, to: destinationSidecar)
+                createdURLs.append(destinationSidecar)
+            }
+        } catch {
+            var cleanupError: Error?
+            for createdURL in createdURLs.reversed() {
+                do {
+                    try FileManager.default.removeItem(at: createdURL)
+                } catch let removalError {
+                    cleanupError = removalError
+                }
+            }
+
+            if let cleanupError {
+                throw CleanupFailure(copyError: error, cleanupError: cleanupError)
+            }
+            throw error
+        }
+    }
+}
+
 /// Backup management page for iOS.
 ///
 /// Displays the last backup timestamp, estimated backup size, and
@@ -166,7 +209,8 @@ struct IOSBackupsPage: View {
     }
 
     private var dbPath: String? {
-        try? AppCore.databasePath()
+        let isUITesting = ProcessInfo.processInfo.arguments.contains("-UITesting")
+        return try? AppCore.databasePath(isUITesting: isUITesting)
     }
 
     private func formatFileSize(_ bytes: UInt64) -> String {
@@ -235,23 +279,7 @@ struct IOSBackupsPage: View {
 
         do {
             let sourceURL = URL(fileURLWithPath: sourcePath)
-            try FileManager.default.copyItem(at: sourceURL, to: destURL)
-
-            // Copy WAL/SHM if they exist
-            let walPath = sourcePath + "-wal"
-            if FileManager.default.fileExists(atPath: walPath) {
-                try? FileManager.default.copyItem(
-                    at: URL(fileURLWithPath: walPath),
-                    to: dir.appendingPathComponent(backupName + "-wal")
-                )
-            }
-            let shmPath = sourcePath + "-shm"
-            if FileManager.default.fileExists(atPath: shmPath) {
-                try? FileManager.default.copyItem(
-                    at: URL(fileURLWithPath: shmPath),
-                    to: dir.appendingPathComponent(backupName + "-shm")
-                )
-            }
+            try IOSBackupFileCopier.copySQLiteSnapshot(from: sourceURL, to: destURL)
 
             backupSuccess = true
             loadData()

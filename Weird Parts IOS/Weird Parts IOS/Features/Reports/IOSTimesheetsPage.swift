@@ -260,20 +260,6 @@ struct IOSTimesheetsPage: View {
                 }
             }
 
-            HStack {
-                Button {
-                    activeSheet = .correction(segment)
-                } label: {
-                    Label("Correct Entry", systemImage: "pencil.and.list.clipboard")
-                }
-                .accessibilityIdentifier("timesheetCorrectEntryButton-\(segment.id)")
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .hideWithoutPermission("manage_labor")
-
-                Spacer()
-            }
-
             let history = correctionHistory.filter { $0.segmentId == segment.id }
             if !history.isEmpty {
                 Divider()
@@ -298,6 +284,20 @@ struct IOSTimesheetsPage: View {
                             .accessibilityIdentifier("timesheetCorrectionHistoryAllocation")
                     }
                 }
+            }
+
+            HStack {
+                Button {
+                    activeSheet = .correction(segment)
+                } label: {
+                    Label("Correct Entry", systemImage: "pencil.and.list.clipboard")
+                }
+                .accessibilityIdentifier("timesheetCorrectEntryButton-\(segment.id)")
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .hideWithoutPermission("manage_labor")
+
+                Spacer()
             }
         }
         .padding(10)
@@ -424,6 +424,7 @@ private struct TimesheetCorrectionSheet: View {
     @State private var adjustedClockOut: Date
     @State private var reason = ""
     @State private var validationMessage: String?
+    @State private var originalTimestampError: String?
     @State private var isSaving = false
 
     init(
@@ -438,10 +439,21 @@ private struct TimesheetCorrectionSheet: View {
         self.actorName = actorName
         self.reportsService = reportsService
         self.onSave = onSave
-        let clockIn = CoreFormatters.parseDateTime(segment.clockIn) ?? Date()
-        let clockOut = segment.clockOut.flatMap(CoreFormatters.parseDateTime) ?? clockIn.addingTimeInterval(3600)
-        _adjustedClockIn = State(initialValue: clockIn)
-        _adjustedClockOut = State(initialValue: clockOut)
+        let parsedClockIn = CoreFormatters.parseDateTime(segment.clockIn)
+        let parsedClockOut = segment.clockOut.flatMap(CoreFormatters.parseDateTime)
+        let timestampError: String?
+        if parsedClockIn == nil {
+            timestampError = ReportsError.invalidTimesheetOriginalTimestamp("clock-in").localizedDescription
+        } else if segment.clockOut != nil && parsedClockOut == nil {
+            timestampError = ReportsError.invalidTimesheetOriginalTimestamp("clock-out").localizedDescription
+        } else {
+            timestampError = nil
+        }
+        let fallbackClockIn = parsedClockIn ?? Date(timeIntervalSince1970: 0)
+        let fallbackClockOut = parsedClockOut ?? fallbackClockIn.addingTimeInterval(3600)
+        _originalTimestampError = State(initialValue: timestampError)
+        _adjustedClockIn = State(initialValue: fallbackClockIn)
+        _adjustedClockOut = State(initialValue: fallbackClockOut)
     }
 
     var body: some View {
@@ -457,14 +469,21 @@ private struct TimesheetCorrectionSheet: View {
                 }
 
                 Section("Adjusted Values") {
-                    DatePicker("Clock In", selection: $adjustedClockIn)
-                    DatePicker("Clock Out", selection: $adjustedClockOut)
-                    labeledValue("Paid Time Preview", String(format: "%.1fh", adjustedTotalHours))
-                        .accessibilityIdentifier("timesheetCorrectionPaidTimePreview")
-                    Label("Regular and overtime hours are calculated from the current overtime policy when saved.", systemImage: "clock.badge.exclamationmark")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("timesheetCorrectionPolicyAllocationCopy")
+                    if let originalTimestampError {
+                        Label(originalTimestampError, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("timesheetCorrectionOriginalTimestampError")
+                    } else {
+                        DatePicker("Clock In", selection: $adjustedClockIn)
+                        DatePicker("Clock Out", selection: $adjustedClockOut)
+                        labeledValue("Paid Time Preview", String(format: "%.1fh", adjustedTotalHours))
+                            .accessibilityIdentifier("timesheetCorrectionPaidTimePreview")
+                        Label("Regular and overtime hours are calculated from the current overtime policy when saved.", systemImage: "clock.badge.exclamationmark")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("timesheetCorrectionPolicyAllocationCopy")
+                    }
                 }
 
                 Section {
@@ -501,7 +520,7 @@ private struct TimesheetCorrectionSheet: View {
                         }
                     }
                     .accessibilityIdentifier("timesheetCorrectionSaveButton")
-                    .disabled(isSaving)
+                    .disabled(isSaving || originalTimestampError != nil)
                 }
             }
         }
@@ -526,6 +545,11 @@ private struct TimesheetCorrectionSheet: View {
     }
 
     private func save() {
+        if let originalTimestampError {
+            validationMessage = originalTimestampError
+            return
+        }
+
         let trimmedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedReason.isEmpty else {
             validationMessage = "Reason is required before save."

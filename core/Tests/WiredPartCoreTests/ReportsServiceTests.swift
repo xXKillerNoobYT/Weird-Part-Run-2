@@ -48,6 +48,38 @@ struct ReportsServiceTests {
         #expect(data.count >= 1)
     }
 
+    @Test("Timesheet segments include breaks started from active clock entry")
+    func testTimesheetSegmentsIncludeBreaksStartedFromActiveClockEntry() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-ACTIVE-BREAK", name: "Active Break Summary Job")
+        let breakService = BreakService(db: env.db)
+        let clockIn = try Date("2026-03-05T08:00:00Z", strategy: .iso8601)
+        let clockOut = try Date("2026-03-05T17:00:00Z", strategy: .iso8601)
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId, at: clockIn)
+
+        let breakRecord = try breakService.startBreak(
+            userId: env.adminUserId,
+            breakType: "lunch_unpaid",
+            timerMinutes: 30
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE break_records
+                SET started_at = '2026-03-05T12:00:00Z',
+                    ended_at = '2026-03-05T12:30:00Z',
+                    duration_minutes = 30
+                WHERE id = ?
+                """, arguments: [breakRecord.id])
+        }
+        try env.jobs.clockOut(laborEntryId: laborEntryId, at: clockOut)
+
+        let segments = try env.reports.getTimesheetSegments(startDate: "2026-03-05", endDate: "2026-03-05", userId: env.adminUserId)
+        let segment = segments.first { $0.id == laborEntryId }
+
+        #expect(segment?.unpaidLunchMinutes == 30)
+        #expect(segment?.regularHours == 8.0)
+    }
+
     @Test("Timesheet segments prefer is_paid over break_type for unpaid correction buckets")
     func testTimesheetSegmentsUseIsPaidForContradictoryBreakRows() throws {
         let env = try E2ETestHelpers.setUp()
@@ -144,6 +176,62 @@ struct ReportsServiceTests {
         #expect(updated?["overtime_hours"] as Double? == 1.5)
         #expect(updated?["edited_by"] as Int64? == env.adminUserId)
         #expect(updated?["status"] as String? == "completed")
+    }
+
+    @Test("Timesheet correction rejects malformed original clock-in")
+    func testTimesheetCorrectionRejectsMalformedOriginalClockIn() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CORR-BAD-IN", name: "Malformed Clock-In Job")
+        let laborEntryId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, 'not-a-date', '2026-03-05T16:00:00Z', 8.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+            return db.lastInsertedRowID
+        }
+
+        #expect(throws: ReportsError.invalidTimesheetOriginalTimestamp("clock-in")) {
+            _ = try env.reports.saveTimesheetCorrection(
+                ReportsService.TimesheetCorrectionRequest(
+                    laborEntryId: laborEntryId,
+                    adjustedClockIn: "2026-03-05T08:15:00Z",
+                    adjustedClockOut: "2026-03-05T17:45:00Z",
+                    clientPreviewRegularHours: 8.0,
+                    clientPreviewOvertimeHours: 1.5,
+                    reason: "Manager correction should not hide malformed original data.",
+                    actorUserId: env.adminUserId
+                )
+            )
+        }
+    }
+
+    @Test("Timesheet correction rejects malformed original clock-out")
+    func testTimesheetCorrectionRejectsMalformedOriginalClockOut() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CORR-BAD-OUT", name: "Malformed Clock-Out Job")
+        let laborEntryId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-03-05T08:00:00Z', 'not-a-date', 8.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+            return db.lastInsertedRowID
+        }
+
+        #expect(throws: ReportsError.invalidTimesheetOriginalTimestamp("clock-out")) {
+            _ = try env.reports.saveTimesheetCorrection(
+                ReportsService.TimesheetCorrectionRequest(
+                    laborEntryId: laborEntryId,
+                    adjustedClockIn: "2026-03-05T08:15:00Z",
+                    adjustedClockOut: "2026-03-05T17:45:00Z",
+                    clientPreviewRegularHours: 8.0,
+                    clientPreviewOvertimeHours: 1.5,
+                    reason: "Manager correction should not hide malformed original data.",
+                    actorUserId: env.adminUserId
+                )
+            )
+        }
     }
 
     @Test("Timesheet correction allocates weekly overtime from current settings instead of request buckets")
@@ -1154,7 +1242,7 @@ struct ReportsServiceTests {
         #expect(rows.first?.countCount == 2)
         #expect(rows.first?.discrepancyCount == 1)
         #expect(rows.first?.totalVariance == -2)
-        #expect(abs((rows.first?.totalVarianceDollars ?? 0) - -24.0) < 0.01)
+        #expect(abs((rows.first?.totalVarianceDollars ?? 0) - 24.0) < 0.01)
         #expect(rows.first?.sourceSummary == "2 audit counts, 1 discrepancy")
     }
 

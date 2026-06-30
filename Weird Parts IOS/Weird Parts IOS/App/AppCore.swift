@@ -5,6 +5,14 @@ import Security
 import GRDB
 import os.log
 
+protocol AppCoreBackgroundTaskAuditing: Sendable {
+    nonisolated func startTask(name: String, type: String, deviceId: String?) throws -> Int64
+    nonisolated func completeTask(id: Int64, summary: String?, itemsProcessed: Int) throws
+    nonisolated func failTask(id: Int64, error: String) throws
+}
+
+extension BackgroundTaskService: AppCoreBackgroundTaskAuditing {}
+
 /// Shared application state that owns the database and all services.
 ///
 /// Published as an `@EnvironmentObject` so every view in the tree
@@ -92,6 +100,9 @@ final class AppCore: ObservableObject {
             if uiTestingMode && !shouldPreserveUITestDatabase {
                 try Self.resetUITestDatabase(atPath: path)
             }
+            if uiTestingMode && ProcessInfo.processInfo.arguments.contains("-UITestingWEI3988RestoreLatestBackup") {
+                try Self.restoreLatestUITestBackup(toPath: path)
+            }
 
             // NOTE: resetDatabaseIfNewBuild() was removed (GitHub #101).
             // It compared the binary's mod date and wiped the DB on every
@@ -131,14 +142,27 @@ final class AppCore: ObservableObject {
                     }
                     #else
                     #if !DEBUG
-                    // Migration failed — try to restore from backup
-                    if let backup = backupPath {
-                        try? AppDatabase.restoreDatabase(from: backup, to: path)
-                        // Retry with restored DB (old schema, but data preserved)
-                        self.logger.error("[AppCore] Migration failed, restored from backup. Error: \(error.localizedDescription)")
+                    // Migration failed — restore the pre-migration backup and retry once.
+                    // A successful restore leaves the old schema/data on disk; reopening it
+                    // lets normal startup migrations run again instead of surfacing the
+                    // original, now-recovered failure to the user.
+                    do {
+                        database = try Self.retryOpeningRestoredDatabase(
+                            backupPath: backupPath,
+                            databasePath: path,
+                            keyHex: try Self.deviceBootstrapKeyHex(),
+                            restoreDatabase: AppDatabase.restoreDatabase(from:to:),
+                            migratePlaintextDatabaseIfNeeded: AppDatabase.migratePlaintextDBIfNeeded(atPath:keyHex:),
+                            openEncryptedDatabase: AppDatabase.openEncryptedDatabase(atPath:keyHex:)
+                        )
+                        self.logger.error("[AppCore] Migration failed, restored from backup, and retry open succeeded. Original error: \(error.localizedDescription)")
+                    } catch {
+                        self.logger.error("[AppCore] Migration failed; restore/retry also failed. Retry error: \(error.localizedDescription)")
+                        throw error
                     }
-                    #endif
+                    #else
                     throw error
+                    #endif
                     #endif
                 }
 
@@ -274,76 +298,43 @@ final class AppCore: ObservableObject {
 
             // Run scheduled Tools maintenance on launch so expired trades and
             // confidence-score decay are handled even when users do not open a tool detail page.
-            Task.detached { [toolsService, backgroundTaskService] in
-                let taskId = try? backgroundTaskService?.startTask(
+            Task.detached { [toolsService, backgroundTaskService, logger] in
+                Self.runAuditedBootstrapTask(
                     name: "Tools Scheduled Maintenance",
-                    type: "tools_maintenance"
-                )
-                do {
+                    type: "tools_maintenance",
+                    backgroundTaskService: backgroundTaskService,
+                    logger: logger
+                ) {
                     let result = try toolsService?.runScheduledMaintenance()
-                    if let taskId {
-                        let expiredTrades = result?.expiredTrades ?? 0
-                        let updatedScores = result?.updatedConfidenceScores ?? 0
-                        try? backgroundTaskService?.completeTask(
-                            id: taskId,
-                            summary: "Expired \(expiredTrades) trade(s); updated \(updatedScores) confidence score(s)"
-                        )
-                    }
-                } catch {
-                    if let taskId {
-                        try? backgroundTaskService?.failTask(
-                            id: taskId,
-                            error: error.localizedDescription
-                        )
-                    }
+                    let expiredTrades = result?.expiredTrades ?? 0
+                    let updatedScores = result?.updatedConfidenceScores ?? 0
+                    return "Expired \(expiredTrades) trade(s); updated \(updatedScores) confidence score(s)"
                 }
             }
 
             // Run companion auto-discovery cycle in the background (logged)
-            Task.detached { [partsService, backgroundTaskService] in
-                let taskId = try? backgroundTaskService?.startTask(
+            Task.detached { [partsService, backgroundTaskService, logger] in
+                Self.runAuditedBootstrapTask(
                     name: "Companion Auto-Discovery",
-                    type: "companion_discovery"
-                )
-                do {
+                    type: "companion_discovery",
+                    backgroundTaskService: backgroundTaskService,
+                    logger: logger
+                ) {
                     try partsService?.runAutoDiscoveryCycle()
-                    if let taskId {
-                        try? backgroundTaskService?.completeTask(
-                            id: taskId,
-                            summary: "Discovery cycle completed"
-                        )
-                    }
-                } catch {
-                    if let taskId {
-                        try? backgroundTaskService?.failTask(
-                            id: taskId,
-                            error: error.localizedDescription
-                        )
-                    }
+                    return "Discovery cycle completed"
                 }
             }
 
             // Ensure Office chat channel exists (auto-created system channel)
-            Task.detached { [chatService, backgroundTaskService] in
-                let taskId = try? backgroundTaskService?.startTask(
+            Task.detached { [chatService, backgroundTaskService, logger] in
+                Self.runAuditedBootstrapTask(
                     name: "Office Channel Setup",
-                    type: "system_setup"
-                )
-                do {
+                    type: "system_setup",
+                    backgroundTaskService: backgroundTaskService,
+                    logger: logger
+                ) {
                     try chatService?.ensureOfficeChannel()
-                    if let taskId {
-                        try? backgroundTaskService?.completeTask(
-                            id: taskId,
-                            summary: "Office channel ready"
-                        )
-                    }
-                } catch {
-                    if let taskId {
-                        try? backgroundTaskService?.failTask(
-                            id: taskId,
-                            error: error.localizedDescription
-                        )
-                    }
+                    return "Office channel ready"
                 }
             }
         } catch {
@@ -379,6 +370,23 @@ final class AppCore: ObservableObject {
         #else
         return false
         #endif
+    }
+
+    nonisolated static func retryOpeningRestoredDatabase<Database>(
+        backupPath: String?,
+        databasePath: String,
+        keyHex: String,
+        restoreDatabase: (String, String) throws -> Void,
+        migratePlaintextDatabaseIfNeeded: (String, String) throws -> Void,
+        openEncryptedDatabase: (String, String) throws -> Database
+    ) throws -> Database {
+        guard let backupPath else {
+            throw AppCoreError.missingMigrationRollbackBackup
+        }
+
+        try restoreDatabase(backupPath, databasePath)
+        try migratePlaintextDatabaseIfNeeded(databasePath, keyHex)
+        return try openEncryptedDatabase(databasePath, keyHex)
     }
 
     // MARK: - Auth Actions
@@ -420,6 +428,7 @@ final class AppCore: ObservableObject {
         permissions = []
         onboardingManager = nil
         badgeCountManager.setUserId(nil)
+        NotificationCenter.default.post(name: .appDidLogout, object: self)
     }
 
     /// Run the first-device bootstrap, creating the admin user and default data.
@@ -482,6 +491,58 @@ final class AppCore: ObservableObject {
         logger.info(
             "[OnboardAI] bootstrap route=\(result.route.rawValue, privacy: .public) latency_ms=\(latencyMs, privacy: .public) availability=\(result.availabilityLabel, privacy: .public) timeout_budget_ms=\(result.timeoutBudgetMs, privacy: .public) did_timeout=\(result.didTimeout, privacy: .public) fallback_model_unavailable=\(result.usedModelUnavailableFallback, privacy: .public) fallback_low_resource=\(result.usedLowResourceFallback, privacy: .public)"
         )
+    }
+
+    nonisolated static func runAuditedBootstrapTask(
+        name: String,
+        type: String,
+        backgroundTaskService: AppCoreBackgroundTaskAuditing?,
+        logger: Logger,
+        operation: @Sendable () throws -> String
+    ) {
+        var taskId: Int64?
+
+        if let backgroundTaskService {
+            do {
+                taskId = try backgroundTaskService.startTask(
+                    name: name,
+                    type: type,
+                    deviceId: nil
+                )
+            } catch {
+                let nsError = error as NSError
+                logger.error("[AppCore] Failed to start background task audit record task_name=\(name, privacy: .public) task_type=\(type, privacy: .public) error_domain=\(nsError.domain, privacy: .public) error_code=\(nsError.code, privacy: .public) error=\(error.localizedDescription, privacy: .private)")
+            }
+        }
+
+        let successSummary: String
+        do {
+            successSummary = try operation()
+        } catch {
+            let nsError = error as NSError
+            logger.error("[AppCore] Bootstrap background task failed task_name=\(name, privacy: .public) task_type=\(type, privacy: .public) error=\(error.localizedDescription, privacy: .private) error_domain=\(nsError.domain, privacy: .public) error_code=\(nsError.code, privacy: .public)")
+            guard let taskId, let backgroundTaskService else { return }
+
+            do {
+                try backgroundTaskService.failTask(id: taskId, error: error.localizedDescription)
+            } catch {
+                let nsError = error as NSError
+                logger.error("[AppCore] Failed to mark background task audit record as failed task_name=\(name, privacy: .public) task_type=\(type, privacy: .public) task_id=\(taskId, privacy: .public) error_domain=\(nsError.domain, privacy: .public) error_code=\(nsError.code, privacy: .public) error=\(error.localizedDescription, privacy: .private)")
+            }
+            return
+        }
+
+        guard let taskId, let backgroundTaskService else { return }
+        do {
+            try backgroundTaskService.completeTask(
+                id: taskId,
+                summary: successSummary,
+                itemsProcessed: 0
+            )
+        } catch {
+            let nsError = error as NSError
+            logger.error("[AppCore] Failed to complete background task audit record task_name=\(name, privacy: .public) task_type=\(type, privacy: .public) task_id=\(taskId, privacy: .public) error_domain=\(nsError.domain, privacy: .public) error_code=\(nsError.code, privacy: .public) error=\(error.localizedDescription, privacy: .private)")
+        }
     }
 
     /// Reload theme settings from the database and apply them.
@@ -725,8 +786,15 @@ final class AppCore: ObservableObject {
 
     enum AppCoreError: LocalizedError {
         case noDocumentsDirectory
+        case missingMigrationRollbackBackup
+
         var errorDescription: String? {
-            "Unable to locate app storage directory. Please restart the app."
+            switch self {
+            case .noDocumentsDirectory:
+                return "Unable to locate app storage directory. Please restart the app."
+            case .missingMigrationRollbackBackup:
+                return "Unable to restore the app database because no migration rollback backup is available."
+            }
         }
     }
 
@@ -765,6 +833,18 @@ final class AppCore: ObservableObject {
                 try fm.removeItem(atPath: file)
             }
         }
+    }
+
+    nonisolated private static func restoreLatestUITestBackup(toPath path: String) throws {
+        let fm = FileManager.default
+        let backupDir = (path as NSString).deletingLastPathComponent + "/Backups"
+        guard fm.fileExists(atPath: backupDir) else { return }
+        let backupFiles = try fm.contentsOfDirectory(atPath: backupDir)
+            .filter { $0.hasPrefix("wiredpart-backup-") && $0.hasSuffix(".sqlite") }
+            .sorted()
+        guard let latest = backupFiles.last else { return }
+        let backupPath = backupDir + "/" + latest
+        try AppDatabase.restoreDatabase(from: backupPath, to: path)
     }
 
     nonisolated static func seedUITestingFixtures(db: AppDatabase, authService: AuthService) throws {
@@ -994,10 +1074,16 @@ final class AppCore: ObservableObject {
         guard ProcessInfo.processInfo.arguments.contains("-UITestingWEI3144JobMaterials"),
               let db
         else { return nil }
+        return uiTestingJobId(db: db, jobNumber: "UITEST-MAT-3144")
+    }
+
+    nonisolated static func uiTestingJobId(db: AppDatabase?, jobNumber: String) -> Int64? {
+        guard let db else { return nil }
         return try? db.writer.read { dbConn in
             try Int64.fetchOne(
                 dbConn,
-                sql: "SELECT id FROM jobs WHERE job_number = 'UITEST-MAT-3144' AND deleted_at IS NULL"
+                sql: "SELECT id FROM jobs WHERE job_number = ? AND deleted_at IS NULL",
+                arguments: [jobNumber]
             )
         }
     }

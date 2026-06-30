@@ -966,7 +966,7 @@ public final class OrdersService: Sendable {
         partName: String,
         jpoId: Int64
     ) throws -> Int64 {
-        guard !holdReason.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !holdReason.isBlankRequiredText else {
             throw OrdersError.requiredFieldEmpty("holdReason")
         }
 
@@ -3238,51 +3238,108 @@ public final class OrdersService: Sendable {
         emailRequestType: String = "order",
         sendGroupId: String? = nil
     ) throws {
+        try markPOsSentToSupplier(
+            ids: [id],
+            sentByUserId: sentByUserId,
+            confirmationNumber: confirmationNumber,
+            emailRequestType: emailRequestType,
+            sendGroupId: sendGroupId
+        )
+    }
+
+    /// Atomically mark a supplier-send group as sent.
+    ///
+    /// All selected POs are validated before any row is updated so grouped sends
+    /// cannot leave earlier POs ordered/sent when a later selected PO has become
+    /// invalid after mail/share preparation.
+    public func markPOsSentToSupplier(
+        ids: [Int64],
+        sentByUserId: Int64,
+        confirmationNumber: String? = nil,
+        emailRequestType: String = "order",
+        sendGroupId: String? = nil
+    ) throws {
         try db.writer.write { dbConn in
             guard emailRequestType == "order" || emailRequestType == "pricing" else {
                 throw OrdersError.invalidSupplierTransmission("Supplier transmission type must be 'order' or 'pricing'")
             }
 
-            guard let row = try Row.fetchOne(
-                dbConn,
-                sql: "SELECT status FROM purchase_orders WHERE id = ? AND deleted_at IS NULL",
-                arguments: [id]
-            ) else {
-                throw OrdersError.purchaseOrderNotFound(id)
+            var uniqueIds: [Int64] = []
+            var seenIds = Set<Int64>()
+            for id in ids {
+                if seenIds.insert(id).inserted {
+                    uniqueIds.append(id)
+                }
             }
 
-            let oldStatus: String = row["status"] ?? "draft"
-            guard oldStatus == "draft" || oldStatus == "submitted" else {
+            guard !uniqueIds.isEmpty else {
+                throw OrdersError.invalidSupplierTransmission("At least one purchase order is required for supplier transmission")
+            }
+
+            var validatedPOs: [(id: Int64, oldStatus: String)] = []
+            var invalidPODescriptions: [String] = []
+
+            for id in uniqueIds {
+                guard let row = try Row.fetchOne(
+                    dbConn,
+                    sql: "SELECT po_number, status FROM purchase_orders WHERE id = ? AND deleted_at IS NULL",
+                    arguments: [id]
+                ) else {
+                    if uniqueIds.count == 1 {
+                        throw OrdersError.purchaseOrderNotFound(id)
+                    }
+                    invalidPODescriptions.append("PO #\(id) not found")
+                    continue
+                }
+
+                let poNumber: String = row["po_number"] ?? "#\(id)"
+                let oldStatus: String = row["status"] ?? "draft"
+                guard oldStatus == "draft" || oldStatus == "submitted" else {
+                    if uniqueIds.count == 1 {
+                        throw OrdersError.invalidSupplierTransmission(
+                            "Cannot send supplier \(emailRequestType) for PO in \(oldStatus) status"
+                        )
+                    }
+                    invalidPODescriptions.append("\(poNumber) is in \(oldStatus) status")
+                    continue
+                }
+
+                validatedPOs.append((id: id, oldStatus: oldStatus))
+            }
+
+            guard invalidPODescriptions.isEmpty else {
                 throw OrdersError.invalidSupplierTransmission(
-                    "Cannot send supplier \(emailRequestType) for PO in \(oldStatus) status"
+                    "Cannot send supplier \(emailRequestType) for every selected PO: \(invalidPODescriptions.joined(separator: "; "))"
                 )
             }
-            let newStatus = emailRequestType == "order" ? "ordered" : oldStatus
 
             let now = ISO8601DateFormatter().string(from: Date())
-            try dbConn.execute(
-                sql: """
-                    UPDATE purchase_orders
-                    SET sent_to_supplier_at       = ?,
-                        sent_by_user_id           = ?,
-                        supplier_confirmation_num = ?,
-                        email_request_type        = ?,
-                        send_group_id             = COALESCE(?, send_group_id),
-                        status                    = ?,
-                        updated_at                = ?
-                    WHERE id = ? AND deleted_at IS NULL
-                    """,
-                arguments: [now, sentByUserId, confirmationNumber, emailRequestType, sendGroupId, newStatus, now, id]
-            )
-
-            if oldStatus != newStatus {
+            for po in validatedPOs {
+                let newStatus = emailRequestType == "order" ? "ordered" : po.oldStatus
                 try dbConn.execute(
                     sql: """
-                        INSERT INTO order_status_history (entity_type, entity_id, old_status, new_status, changed_by, created_at)
-                        VALUES ('purchase_order', ?, ?, ?, ?, datetime('now'))
+                        UPDATE purchase_orders
+                        SET sent_to_supplier_at       = ?,
+                            sent_by_user_id           = ?,
+                            supplier_confirmation_num = ?,
+                            email_request_type        = ?,
+                            send_group_id             = COALESCE(?, send_group_id),
+                            status                    = ?,
+                            updated_at                = ?
+                        WHERE id = ? AND deleted_at IS NULL
                         """,
-                    arguments: [id, oldStatus, newStatus, sentByUserId]
+                    arguments: [now, sentByUserId, confirmationNumber, emailRequestType, sendGroupId, newStatus, now, po.id]
                 )
+
+                if po.oldStatus != newStatus {
+                    try dbConn.execute(
+                        sql: """
+                            INSERT INTO order_status_history (entity_type, entity_id, old_status, new_status, changed_by, created_at)
+                            VALUES ('purchase_order', ?, ?, ?, ?, datetime('now'))
+                            """,
+                        arguments: [po.id, po.oldStatus, newStatus, sentByUserId]
+                    )
+                }
             }
         }
     }
@@ -3294,7 +3351,7 @@ public final class OrdersService: Sendable {
         supplierId: Int64,
         notes: String? = nil
     ) throws -> Int64 {
-        guard !poNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !poNumber.isBlankRequiredText else {
             throw OrdersError.requiredFieldEmpty("poNumber")
         }
 
@@ -3390,10 +3447,10 @@ public final class OrdersService: Sendable {
 
     /// Append a timestamped note to a purchase order's notes field.
     public func addPONote(poId: Int64, note: String, author: String) throws {
-        guard !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !note.isBlankRequiredText else {
             throw OrdersError.requiredFieldEmpty("note")
         }
-        guard !author.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !author.isBlankRequiredText else {
             throw OrdersError.requiredFieldEmpty("author")
         }
         try db.writer.write { dbConn in
@@ -3829,10 +3886,10 @@ public final class OrdersService: Sendable {
         jobId: Int64? = nil,
         initiatedBy: Int64
     ) throws -> Int64 {
-        guard !returnType.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !returnType.isBlankRequiredText else {
             throw OrdersError.requiredFieldEmpty("returnType")
         }
-        guard !reason.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !reason.isBlankRequiredText else {
             throw OrdersError.requiredFieldEmpty("reason")
         }
 
@@ -3873,7 +3930,7 @@ public final class OrdersService: Sendable {
 
     /// Update the status of a return.
     public func updateReturnStatus(returnId: Int64, status: String) throws {
-        guard !status.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !status.isBlankRequiredText else {
             throw OrdersError.requiredFieldEmpty("status")
         }
 
