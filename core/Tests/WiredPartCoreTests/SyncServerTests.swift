@@ -25,6 +25,7 @@ struct SyncServerTests {
         #expect(LanSyncServer.parseContentLength(from: "GET /sync/status HTTP/1.1\r\nHost: localhost") == .missing)
         #expect(LanSyncServer.parseContentLength(from: "POST /sync/push HTTP/1.1\r\nContent-Length: 42") == .valid(42))
         #expect(LanSyncServer.parseContentLength(from: "POST /sync/push HTTP/1.1\r\ncontent-length: 0") == .valid(0))
+        #expect(LanSyncServer.parseContentLength(from: "POST /sync/push HTTP/1.1\r\n Content-Length: 7") == .valid(7))
         #expect(LanSyncServer.parseContentLength(from: "POST /sync/push HTTP/1.1\r\nContent-Length: abc") == .invalid)
         #expect(LanSyncServer.parseContentLength(from: "POST /sync/push HTTP/1.1\r\nContent-Length: -1") == .invalid)
         #expect(LanSyncServer.parseContentLength(from: "POST /sync/push HTTP/1.1\r\nContent-Length: ") == .invalid)

@@ -456,11 +456,12 @@ public final class LanSyncServer: Sendable {
         var parsedLength: Int?
 
         for line in headers.components(separatedBy: "\r\n") {
-            let lower = line.lowercased()
+            let normalizedLine = line.trimmingCharacters(in: .whitespaces)
+            let lower = normalizedLine.lowercased()
             if lower.hasPrefix(contentLengthHeaderPrefix) {
                 guard parsedLength == nil else { return .invalid }
 
-                let value = line
+                let value = normalizedLine
                     .dropFirst(contentLengthHeaderPrefix.count)
                     .trimmingCharacters(in: .whitespaces)
                 guard !value.isEmpty,
