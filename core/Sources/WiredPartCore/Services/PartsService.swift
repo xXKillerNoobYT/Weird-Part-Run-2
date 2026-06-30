@@ -3125,7 +3125,8 @@ public final class PartsService: Sendable {
     /// Company default markup is a pricing boundary: persisted corrupt/legacy
     /// negative values must never allow below-cost default sell prices.
     private func getDefaultMarkupPercent(dbConn: Database) throws -> Double {
-        let rawValue = try getCompanySetting(dbConn: dbConn, key: "default_markup_percent") ?? "50"
+        let rawValue = (try getCompanySetting(dbConn: dbConn, key: "default_markup_percent") ?? "50")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         guard let parsed = Double(rawValue), parsed.isFinite else { return 50 }
         return max(parsed, 0)
     }
@@ -3133,9 +3134,7 @@ public final class PartsService: Sendable {
     /// Update a company cost setting.
     public func updateCompanyCostSetting(key: String, value: String, updatedBy: Int64? = nil) throws {
         if key == "default_markup_percent" {
-            guard let markup = Double(value), markup.isFinite else {
-                throw ValidationError.emptyRequired(field: "Default markup percent")
-            }
+            let markup = try ManualPricingInputValidator.parsePercent(value, fieldName: "Default markup percent")
             try Validators.requireNonNegative(markup, field: "Default markup percent")
         }
 

@@ -351,8 +351,7 @@ struct PricingBulkEditSheet: View {
     }
 
     static func isValidNonNegativePercent(_ text: String) -> Bool {
-        guard let value = Double(text.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
-        return value.isFinite && value >= 0
+        nonNegativePercent(text) != nil
     }
 
     private func loadPreview() async {
