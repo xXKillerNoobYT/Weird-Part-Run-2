@@ -224,7 +224,21 @@ public actor SyncEngine {
                 "device_id": deviceId,
                 "sync_batch_id": syncBatchId,
             ]
-            let (_, ackResponse) = try await httpPost(url: ackURL, body: ackBody, authToken: authToken, timeout: 10)
+            let ackDataAndResponse: (Data, URLResponse)
+            do {
+                ackDataAndResponse = try await httpPost(url: ackURL, body: ackBody, authToken: authToken, timeout: 10)
+            } catch {
+                let pendingCount = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? pendingChanges.count
+                updateState(
+                    status: .error,
+                    pendingCount: pendingCount,
+                    error: "Ack request failed: \(error.localizedDescription)",
+                    consecutiveFailures: state.consecutiveFailures + 1
+                )
+                scheduleRetry(deviceId: deviceId, shopUrl: shopUrl, authToken: authToken)
+                return false
+            }
+            let (_, ackResponse) = ackDataAndResponse
             guard let ackHTTPResponse = ackResponse as? HTTPURLResponse,
                   (200..<300).contains(ackHTTPResponse.statusCode) else {
                 let statusCode = (ackResponse as? HTTPURLResponse)?.statusCode ?? 0
