@@ -5,8 +5,15 @@ import GRDB
 public final class BreakService: Sendable {
     private let db: AppDatabase
 
-    public enum BreakError: Error, Sendable, Equatable {
+    public enum BreakError: Error, LocalizedError, Sendable, Equatable {
         case activeBreakAlreadyInProgress(userId: Int64, activeBreakId: Int64?)
+
+        public var errorDescription: String? {
+            switch self {
+            case .activeBreakAlreadyInProgress:
+                return "An active break is already in progress. End the current break before starting another."
+            }
+        }
     }
 
     public init(db: AppDatabase) {
