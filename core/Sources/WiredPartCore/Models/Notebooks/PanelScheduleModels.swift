@@ -33,6 +33,38 @@ public struct PanelSchedule: Codable, Identifiable, Sendable {
         self.location = location
         self.circuits = circuits
     }
+
+    /// Returns a copy safe to persist for the current panel size.
+    ///
+    /// Users can shrink `totalSpaces` from the builder settings while stale circuit
+    /// entries remain in memory. Persisting the schedule unchanged would hide those
+    /// circuits in the UI while keeping them in the saved JSON payload. Normalizing
+    /// before save makes the persisted circuit list match the visible panel range.
+    public func pruningCircuitsOutsideTotalSpaces() -> PanelSchedule {
+        var normalized = self
+        normalized.circuits = circuits.filter { circuit in
+            circuit.spaceNumber >= 1 && circuit.spaceNumber <= totalSpaces
+        }
+        return normalized
+    }
+
+    /// Returns a copy safe to persist after panel builder edits.
+    ///
+    /// A circuit marked spare should not retain active breaker/load metadata that
+    /// will be hidden by the grid and exports. Normalize both the visible panel
+    /// range and the per-circuit spare payload before writing notebook JSON.
+    public func normalizedForPersistence() -> PanelSchedule {
+        var normalized = pruningCircuitsOutsideTotalSpaces()
+        normalized.circuits = normalized.circuits.map { $0.normalizedForPersistence() }
+        return normalized
+    }
+
+    /// Circuits that would be removed by `pruningCircuitsOutsideTotalSpaces()`.
+    public var circuitsOutsideTotalSpaces: [CircuitEntry] {
+        circuits.filter { circuit in
+            circuit.spaceNumber < 1 || circuit.spaceNumber > totalSpaces
+        }
+    }
 }
 
 /// Panel types in electrical installations.
@@ -75,6 +107,21 @@ public struct CircuitEntry: Codable, Identifiable, Sendable {
         self.conduit = conduit
         self.isSpare = isSpare
         self.isFedFrom = isFedFrom
+    }
+
+    /// Returns a persistable copy where spare circuits cannot keep hidden
+    /// active-circuit metadata.
+    public func normalizedForPersistence() -> CircuitEntry {
+        guard isSpare else { return self }
+
+        var normalized = self
+        normalized.breakerAmps = nil
+        normalized.breakerType = .spare
+        normalized.circuitDescription = ""
+        normalized.wire = nil
+        normalized.conduit = nil
+        normalized.isFedFrom = nil
+        return normalized
     }
 }
 

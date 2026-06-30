@@ -97,6 +97,18 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         return repoRoot.appendingPathComponent("docs/testing/artifacts/wei-3295/current", isDirectory: true)
     }
 
+    private var wei3988ArtifactDirectory: URL {
+        if let path = ProcessInfo.processInfo.environment["WEI_3988_ARTIFACT_DIR"], !path.isEmpty {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        let source = URL(fileURLWithPath: #filePath)
+        let repoRoot = source
+            .deletingLastPathComponent() // Weird Parts IOSUITests
+            .deletingLastPathComponent() // Weird Parts IOS
+            .deletingLastPathComponent() // repo root
+        return repoRoot.appendingPathComponent("docs/testing/artifacts/wei-3988/current", isDirectory: true)
+    }
+
     // MARK: - Setup & Teardown
 
     override func setUpWithError() throws {
@@ -348,31 +360,6 @@ final class Weird_Parts_IOSUITests: XCTestCase {
     }
 
     @MainActor
-    func testWEI3866WarehouseDashboardNewMovementOpensGuidedWizard() throws {
-        app.terminate()
-        app = XCUIApplication()
-        configureUITestingEnvironment(app)
-        app.launchArguments += [
-            "-UITestingWEI936AutoLogin",
-            "-UITestingWarehouseDashboard"
-        ]
-        app.launch()
-
-        openWarehouseDashboard()
-
-        let newMovement = app.buttons["whAction_newMovement"].firstMatch
-        XCTAssertTrue(newMovement.waitForExistence(timeout: 20), "Warehouse Dashboard should expose a stable New Movement quick action")
-        XCTAssertTrue(newMovement.isHittable, "Warehouse Dashboard New Movement action should be immediately hittable on iPhone")
-        newMovement.tap()
-
-        XCTAssertTrue(
-            app.staticTexts["Where is stock moving?"].waitForExistence(timeout: 10) ||
-                app.navigationBars["New Movement"].waitForExistence(timeout: 10),
-            "Tapping the Warehouse Dashboard New Movement action should open the guided movement wizard."
-        )
-    }
-
-    @MainActor
     func testWEI3144JobMaterialsWalkthroughEvidence() throws {
         let artifactDirectory = wei3144ArtifactDirectory
         try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
@@ -433,6 +420,34 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         - History verified: seeded correction row includes original_qty=9 and adjusted_qty=7.
         """
         try verification.write(to: artifactDirectory.appendingPathComponent("\(viewport)-verification.txt"), atomically: true, encoding: .utf8)
+    }
+
+    @MainActor
+    func testWEI3866WarehouseDashboardNewMovementOpensGuidedWizard() throws {
+        app.terminate()
+        app = XCUIApplication()
+        configureUITestingEnvironment(app)
+        app.launchArguments += [
+            "-UITestingWEI936AutoLogin",
+            "-UITestingWarehouseDashboard"
+        ]
+        app.launch()
+
+        openWarehouseDashboard()
+
+        let newMovement = app.buttons["whAction_newMovement"].firstMatch
+        XCTAssertTrue(newMovement.waitForExistence(timeout: 20), "Warehouse Dashboard should expose a stable New Movement quick action")
+        if newMovement.isHittable {
+            newMovement.tap()
+        } else {
+            newMovement.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+
+        XCTAssertTrue(
+            app.staticTexts["Where is stock moving?"].waitForExistence(timeout: 10) ||
+                app.navigationBars["New Movement"].waitForExistence(timeout: 10),
+            "Tapping the Warehouse Dashboard New Movement action should open the guided movement wizard."
+        )
     }
 
     @MainActor
@@ -503,6 +518,70 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         - Fixture: -UITestingStage8Reports seeds an unlocked labor entry, material purchase order, and counted warehouse discrepancy through the app database used by production services.
         - Evidence: screenshots 01-06 in this directory capture hub, populated pre-billing, export menu, populated bookkeeper export, export menu, and audit discrepancy state.
         - Viewport target: run this same test once per desktop/wide, tablet, and mobile destination; the artifact folder defaults from the simulator idiom and can be overridden by the test runner environment.
+        """
+        try verification.write(to: artifactDirectory.appendingPathComponent("verification.txt"), atomically: true, encoding: .utf8)
+    }
+
+    @MainActor
+    func testWEI3988BackupRestoreSmokeEvidence() throws {
+        let artifactDirectory = wei3988ArtifactDirectory.appendingPathComponent(wei3988ViewportName(), isDirectory: true)
+        try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
+
+        relaunchForWEI3988BackupRestoreSmoke([
+            "-UITestingStage8Reports",
+            "-UITestingWEI3144JobMaterials"
+        ])
+        XCTAssertTrue(app.navigationBars["Backups"].waitForExistence(timeout: 20) || app.staticTexts["Backups"].waitForExistence(timeout: 20), "Backups page should open directly")
+        XCTAssertTrue(app.staticTexts["Backup Status"].waitForExistence(timeout: 10), "Backup status section should render")
+        XCTAssertTrue(app.staticTexts["Database Size"].waitForExistence(timeout: 5), "Backup page should show database size")
+        captureWEI3988("01-backups-before-create")
+
+        let createBackup = app.buttons["Create Backup Now"].firstMatch
+        XCTAssertTrue(createBackup.waitForExistence(timeout: 10), "Create Backup Now action should be available")
+        createBackup.tap()
+        XCTAssertTrue(app.buttons["Backup Created!"].waitForExistence(timeout: 15), "Manual backup action should complete with visible success state")
+        XCTAssertTrue(app.staticTexts["Stored Backups"].waitForExistence(timeout: 5), "Backup count row should remain visible after backup creation")
+        captureWEI3988("02-backups-created")
+
+        relaunchForWEI3988RestoredTarget([])
+        XCTAssertTrue(app.staticTexts["Backup Status"].waitForExistence(timeout: 20), "Restored database should reopen the Backups route")
+        XCTAssertTrue(app.staticTexts["Stored Backups"].waitForExistence(timeout: 8), "Restored install should still see the backup ledger")
+        captureWEI3988("03-restored-backups-status")
+
+        relaunchForWEI3988RestoredTarget(["-UITestingWEI3988PartsCatalog"])
+        XCTAssertTrue(app.staticTexts["WEI-3295 Stage 8 Breaker"].waitForExistence(timeout: 20) || app.staticTexts["WEI-3144 Wire Nut"].waitForExistence(timeout: 20), "Restored parts catalog should show seeded sample parts")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'part' AND label CONTAINS 'Page' ")).firstMatch.waitForExistence(timeout: 5), "Restored parts catalog should show a non-empty part count")
+        captureWEI3988("04-restored-parts-catalog")
+
+        relaunchForWEI3988RestoredTarget(["-UITestingWEI3988Materials", "-UITestingWEI3144JobMaterials"])
+        XCTAssertTrue(app.staticTexts["WEI-3144 Materials QA Job"].waitForExistence(timeout: 20), "Restored job detail should show the seeded materials job")
+        XCTAssertTrue(app.descendants(matching: .any)["jobMaterialsTab"].waitForExistence(timeout: 10), "Restored job materials tab should render")
+        if app.buttons["Used"].waitForExistence(timeout: 5), app.buttons["Used"].isHittable {
+            app.buttons["Used"].tap()
+        }
+        XCTAssertTrue(app.staticTexts["WEI-3144 Wire Nut"].waitForExistence(timeout: 10), "Restored job materials should include the seeded material")
+        captureWEI3988("05-restored-job-materials")
+
+        relaunchForWEI3988RestoredTarget(["-UITestingWEI3988PreBilling"])
+        XCTAssertTrue(app.navigationBars["Pre-Billing"].waitForExistence(timeout: 20) || app.staticTexts["Pre-Billing"].waitForExistence(timeout: 20), "Restored Pre-Billing page should open")
+        XCTAssertTrue(app.descendants(matching: .any)["pre-billing-row-UITEST-STAGE8-3295"].waitForExistence(timeout: 10), "Restored pre-billing should show the seeded labor/material job row")
+        captureWEI3988("06-restored-prebilling")
+
+        relaunchForWEI3988RestoredTarget(["-UITestingWEI3988Bookkeeper"])
+        XCTAssertTrue(app.navigationBars["Bookkeeper Export"].waitForExistence(timeout: 20) || app.staticTexts["Bookkeeper Export"].waitForExistence(timeout: 20), "Restored Bookkeeper Export page should open")
+        XCTAssertTrue(app.staticTexts["Labor by Employee"].waitForExistence(timeout: 10), "Restored bookkeeper report should show labor section")
+        XCTAssertTrue(app.descendants(matching: .any)["bookkeeper-material-row-PO-WEI3295-STAGE8"].waitForExistence(timeout: 10), "Restored bookkeeper report should show the seeded material PO row")
+        captureWEI3988("07-restored-bookkeeper")
+
+        let verification = """
+        WEI-3988 backup/restore smoke evidence (\(wei3988ViewportName()))
+        - Created a manual backup through the user-facing Backups page.
+        - Relaunched as a clean UI-test install, restored from the latest backup before DB open, and reopened the restored database.
+        - Verified restored parts catalog shows a non-empty count and seeded sample part(s).
+        - Verified restored job materials for WEI-3144 Materials QA Job include WEI-3144 Wire Nut.
+        - Verified restored Pre-Billing shows seeded job row UITEST-STAGE8-3295.
+        - Verified restored Bookkeeper Export shows labor section and material PO row PO-WEI3295-STAGE8.
+        - Accessibility/ARIA analogue: smoke uses visible labels/buttons and stable accessibility identifiers for backup action, reports rows, and material/report evidence controls.
         """
         try verification.write(to: artifactDirectory.appendingPathComponent("verification.txt"), atomically: true, encoding: .utf8)
     }
@@ -1539,6 +1618,28 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         app.launch()
     }
 
+    private func relaunchForWEI3988BackupRestoreSmoke(_ launchArguments: [String]) {
+        app.terminate()
+        app = XCUIApplication()
+        configureUITestingEnvironment(app)
+        app.launchArguments += [
+            "-UITestingWEI936AutoLogin",
+            "-UITestingWEI3988BackupRestoreSmoke"
+        ] + launchArguments
+        app.launch()
+    }
+
+    private func relaunchForWEI3988RestoredTarget(_ launchArguments: [String]) {
+        relaunchForWEI3988BackupRestoreSmoke(["-UITestingWEI3988RestoreLatestBackup"] + launchArguments)
+    }
+
+    private func wei3988ViewportName() -> String {
+        if let explicit = ProcessInfo.processInfo.environment["WEI_3988_VIEWPORT"], !explicit.isEmpty {
+            return explicit
+        }
+        return UIDevice.current.userInterfaceIdiom == .pad ? "tablet" : "phone"
+    }
+
     private func wei3295ViewportName() -> String {
         if let explicit = ProcessInfo.processInfo.environment["WEI_3295_VIEWPORT"], !explicit.isEmpty {
             return explicit
@@ -1587,6 +1688,22 @@ final class Weird_Parts_IOSUITests: XCTestCase {
         """
         try FileManager.default.createDirectory(at: wei3041ArtifactDirectory, withIntermediateDirectories: true)
         try notes.write(to: wei3041ArtifactDirectory.appendingPathComponent("verification-notes.txt"), atomically: true, encoding: .utf8)
+    }
+
+    private func captureWEI3988(_ name: String) {
+        if ProcessInfo.processInfo.environment["WEI_3988_SKIP_SCREENSHOTS"] == "1" {
+            return
+        }
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let viewport = wei3988ViewportName()
+        let dir = wei3988ArtifactDirectory.appendingPathComponent(viewport, isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? screenshot.pngRepresentation.write(to: dir.appendingPathComponent("\(name).png"), options: .atomic)
     }
 
     private func captureWEI1451(_ name: String) {

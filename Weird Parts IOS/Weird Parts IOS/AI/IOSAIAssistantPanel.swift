@@ -359,6 +359,9 @@ struct IOSAIAssistantPanel: View {
 
         ))
         .modifier(ActivePageIdTracker(activePageId: $activePageId))
+        .onReceive(NotificationCenter.default.publisher(for: .appDidLogout)) { _ in
+            resetForLogout()
+        }
     }
 
     // MARK: - Availability Header
@@ -518,7 +521,7 @@ struct IOSAIAssistantPanel: View {
                     .foregroundStyle(Color.accentColor)
             }
             .accessibilityLabel("Send message")
-            .disabled(query.trimmingCharacters(in: .whitespaces).isEmpty || isProcessing || isClearingConversation)
+            .disabled(query.isBlankRequiredText || isProcessing || isClearingConversation)
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
@@ -586,6 +589,96 @@ struct IOSAIAssistantPanel: View {
         Task { await aiService.clearConversation() }
         conversationId = UUID().uuidString
         messages = [welcomeMessage()]
+    }
+
+    /// Clear volatile assistant state when the app logs out, without deleting persisted history.
+    private func resetForLogout() {
+        clearConversationError = nil
+        clearConversationRetryId = nil
+        isClearingConversation = false
+        Task { await aiService.clearConversation() }
+        conversationId = UUID().uuidString
+        messages.removeAll()
+        clearVolatilePageContext()
+    }
+
+    /// Drop all page-scoped context captured from notifications.
+    ///
+    /// These strings may include user-visible page data. A logout must clear every
+    /// cached context before the next user can create a fresh Foundation Models
+    /// session, otherwise the new session instructions could still include the
+    /// previous user's page state.
+    private func clearVolatilePageContext() {
+        activePageId = nil
+        catalogContext = nil
+        pricingContext = nil
+        suppliersContext = nil
+        companionsContext = nil
+        forecastContext = nil
+        dashboardContext = nil
+        jobsListContext = nil
+        clockContext = nil
+        jobDetailContext = nil
+        laborContext = nil
+        dailyReportsContext = nil
+        questionnaireContext = nil
+        estimationQuestionnaireContext = nil
+        estimationReviewContext = nil
+        jobReportsContext = nil
+        jposContext = nil
+        purchaseOrdersContext = nil
+        poDetailContext = nil
+        receiveShipmentContext = nil
+        procurementContext = nil
+        returnsContext = nil
+        jpoCreationContext = nil
+        jpoDetailContext = nil
+        orderStagingContext = nil
+        partsOrderManagementContext = nil
+        ordersWishlistContext = nil
+        unifiedOrderContext = nil
+        warehouseDashboardContext = nil
+        inventoryGridContext = nil
+        warehouseLocationsContext = nil
+        warehouseMovementsContext = nil
+        warehouseReceivingContext = nil
+        warehouseStagingContext = nil
+        warehouseAuditContext = nil
+        warehouseReturnsContext = nil
+        warehouseToolsContext = nil
+        warehouseNetworkContext = nil
+        warehouseSettingsContext = nil
+        warehouseOrganizationAuditContext = nil
+        warehouseLeaderboardContext = nil
+        dispatchContext = nil
+        scheduleCalendarContext = nil
+        employeesContext = nil
+        peopleDashboardContext = nil
+        customersContext = nil
+        contactsContext = nil
+        officeDashboardContext = nil
+        officeApprovalsContext = nil
+        officeSpendingContext = nil
+        reportsLaborContext = nil
+        reportsSpendingContext = nil
+        reportsProfitabilityContext = nil
+        reportsTimesheetsContext = nil
+        reportsPrebillingContext = nil
+        reportsBookkeeperContext = nil
+        reportsDailySummaryContext = nil
+        vehiclesContext = nil
+        fleetDashboardContext = nil
+        fleetTrailersContext = nil
+        fleetMaintenanceContext = nil
+        fleetMileageContext = nil
+        fleetFuelContext = nil
+        fleetInspectionsContext = nil
+        fleetTrackingContext = nil
+        fleetTelematicsContext = nil
+        fleetMyTruckContext = nil
+        toolRegistryContext = nil
+        notebooksListContext = nil
+        settingsContext = nil
     }
 
     /// Delete all messages from the current conversation (UI + DB) but keep the same conversation ID.

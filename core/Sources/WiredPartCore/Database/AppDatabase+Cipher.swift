@@ -38,6 +38,9 @@ extension AppDatabase {
 
         var config = Configuration()
         config.foreignKeysEnabled = true
+        config.qos = .userInitiated
+        // Pin GRDB QoS — see AppDatabase.openDatabase(atPath:) for rationale.
+        config.targetQueue = AppDatabase.makeDatabaseTargetQueue()
         config.prepareDatabase { db in
             // Set the encryption key as a SQLCipher passphrase. Do not use
             // `x'<hex>'` raw-key notation here: raw keys bypass SQLCipher's KDF.
@@ -253,9 +256,18 @@ extension AppDatabase {
         // --- Step 5: Atomic rename ---
         // Original → .unencrypted.bak (preserved; deleted after 7 days by cleanupStaleBackup).
         // Temp encrypted → canonical path.
+        try replacePlaintextDatabaseWithEncryptedTemp(atPath: path, tempPath: tempPath, backupPath: bakPath)
+    }
+
+    static func replacePlaintextDatabaseWithEncryptedTemp(
+        atPath path: String,
+        tempPath: String,
+        backupPath bakPath: String,
+        fileManager fm: FileManager = .default
+    ) throws {
         do {
             for suffix in ["-wal", "-shm"] { try? fm.removeItem(atPath: path + suffix) }
-            try? fm.removeItem(atPath: bakPath)      // Remove stale backup if present.
+            for suffix in ["", "-wal", "-shm"] { try? fm.removeItem(atPath: bakPath + suffix) }
             try fm.moveItem(atPath: path, toPath: bakPath)
             // Touch the backup so the 7-day retention window is measured from the time
             // of migration, not from the original DB file's last-modified timestamp.
@@ -265,9 +277,15 @@ extension AppDatabase {
             } catch {
                 Self.cipherLogger.warning("Failed to touch backup file (7-day window may be inaccurate): \(error.localizedDescription, privacy: .public)")
             }
-            try fm.moveItem(atPath: tempPath, toPath: path)
+            do {
+                try fm.moveItem(atPath: tempPath, toPath: path)
+            } catch {
+                if fm.fileExists(atPath: bakPath), !fm.fileExists(atPath: path) {
+                    try fm.moveItem(atPath: bakPath, toPath: path)
+                }
+                throw error
+            }
         } catch {
-            // Rename failed — temp is orphaned; clean it up. Original is still at `path`.
             for p in [tempPath, tempPath + "-wal", tempPath + "-shm"] {
                 try? fm.removeItem(atPath: p)
             }

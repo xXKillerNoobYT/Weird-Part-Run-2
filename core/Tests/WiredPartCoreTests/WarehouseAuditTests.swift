@@ -137,6 +137,33 @@ struct WarehouseAuditTests {
         #expect(confidence.totalVarianceDollars == 20)
     }
 
+    @Test("Audit counts reject malformed unit costs before variance persistence")
+    func testRecordAuditCountRejectsMalformedUnitCosts() throws {
+        let env = try freshEnv()
+        #expect(throws: WarehouseService.WarehouseError.invalidQuantity) {
+            _ = try env.warehouse.recordAuditCount(
+                sessionId: 999,
+                partId: 999,
+                areaId: 999,
+                systemCount: 10,
+                userCount: 7,
+                countedBy: env.adminUserId,
+                unitCostDollars: -25
+            )
+        }
+        #expect(throws: WarehouseService.WarehouseError.invalidQuantity) {
+            _ = try env.warehouse.recordAuditCount(
+                sessionId: 999,
+                partId: 999,
+                areaId: 999,
+                systemCount: 10,
+                userCount: 7,
+                countedBy: env.adminUserId,
+                unitCostDollars: .infinity
+            )
+        }
+    }
+
     @Test("Audit variance within 5 percent dollar value neutral zone preserves confidence")
     func testAuditVarianceNeutralDollarThreshold() throws {
         let env = try freshEnv()
@@ -419,6 +446,39 @@ struct WarehouseAuditTests {
 
         let boxes = try env.warehouse.listStagingBoxes(jobId: jobId)
         #expect(boxes.isEmpty)
+    }
+
+    @Test("Staging box numbers do not reuse soft-deleted labels")
+    func testStagingBoxNumberAdvancesAfterSoftDelete() throws {
+        let env = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-719", name: "Soft Delete Box Job")
+
+        let first = try env.warehouse.createStagingBox(jobId: jobId)
+        let second = try env.warehouse.createStagingBox(jobId: jobId)
+        try env.warehouse.deleteStagingBox(boxId: first.id)
+
+        let third = try env.warehouse.createStagingBox(jobId: jobId)
+        let activeBoxNumbers = try env.warehouse.listStagingBoxes(jobId: jobId).map(\.boxNumber)
+
+        #expect(second.boxNumber == "J-719-02")
+        #expect(third.boxNumber == "J-719-03")
+        #expect(Set(activeBoxNumbers).count == activeBoxNumbers.count)
+    }
+
+    @Test("Marking full creates the next historical staging box number")
+    func testMarkBoxFullAdvancesAfterSoftDelete() throws {
+        let env = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-719-FULL", name: "Full Box Job")
+
+        let first = try env.warehouse.createStagingBox(jobId: jobId)
+        let second = try env.warehouse.createStagingBox(jobId: jobId)
+        try env.warehouse.deleteStagingBox(boxId: first.id)
+
+        let next = try env.warehouse.markBoxFull(boxId: second.id)
+        let activeBoxNumbers = try env.warehouse.listStagingBoxes(jobId: jobId).map(\.boxNumber)
+
+        #expect(next.boxNumber == "J-719-FULL-03")
+        #expect(Set(activeBoxNumbers).count == activeBoxNumbers.count)
     }
 
     // MARK: - Trailers
@@ -788,6 +848,53 @@ struct WarehouseAuditTests {
             try Row.fetchOne(db, sql: "SELECT status FROM audit_sessions_v2 WHERE id = ?", arguments: [session.id!])
         }
         #expect((row?["status"] as String?) == "completed")
+    }
+
+    @Test("startAuditSession rejects inactive users")
+    func testStartAuditSessionRejectsInactiveUser() throws {
+        let env = try freshEnv()
+        let inactiveUserId = try env.auth.createUser(displayName: "Inactive Audit Starter", pin: "6666")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [inactiveUserId])
+        }
+
+        #expect(throws: WarehouseService.WarehouseError.userNotFound(inactiveUserId)) {
+            _ = try env.warehouse.startAuditSession(startedBy: inactiveUserId)
+        }
+
+        let sessionCount = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM audit_sessions_v2
+                WHERE started_by = ? AND deleted_at IS NULL
+                """, arguments: [inactiveUserId]) ?? 0
+        }
+        #expect(sessionCount == 0, "Inactive users must not start warehouse audit sessions")
+    }
+
+    @Test("adjustAuditCount rejects inactive performers without stock mutation")
+    func testAdjustAuditCountRejectsInactivePerformer() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
+        let inactiveUserId = try env.auth.createUser(displayName: "Inactive Audit Adjuster", pin: "7777")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [inactiveUserId])
+        }
+
+        #expect(throws: WarehouseService.WarehouseError.userNotFound(inactiveUserId)) {
+            try env.warehouse.adjustAuditCount(
+                partId: partId,
+                locationType: "warehouse",
+                locationId: 1,
+                newQty: 7,
+                reason: "Physical count",
+                performedBy: inactiveUserId
+            )
+        }
+
+        let qty = try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1)
+        #expect(qty == 10, "Inactive-user audit adjustment must not mutate stock")
     }
 
     @Test("adjustAuditCount updates stock qty and records negative delta adjustment movement")

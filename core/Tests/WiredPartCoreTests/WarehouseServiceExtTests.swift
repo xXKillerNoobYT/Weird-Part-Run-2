@@ -1543,6 +1543,50 @@ struct WarehouseServiceExtTests {
         #expect(try env.warehouse.getStockQty(partId: wrongPartId, locationType: "warehouse", locationId: 1) == 0)
     }
 
+    @Test("Job Return duplicate same-part mixed outcomes do not shelf review items")
+    func testJobReturnDuplicateSamePartMixedOutcomesDoNotShelfReviewItem() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Duplicate Mixed Return Part", categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        _ = try env.warehouse.createJobReturnIntake(
+            sourceJobId: jobId,
+            returnSource: "crew_return",
+            returnedBy: env.adminUserId,
+            lines: [
+                .init(partId: partId, qty: 1, condition: "usable", notes: "should shelf"),
+                .init(partId: partId, qty: 1, condition: "damaged", notes: "must stay review"),
+            ]
+        )
+
+        let holdingItems = try env.warehouse.getJobReturnHoldingItems(jobId: jobId, includeRouted: false)
+        guard let damagedReview = holdingItems.first(where: { $0.partId == partId && $0.status == "damaged_review" }),
+              let usableHolding = holdingItems.first(where: { $0.partId == partId && $0.status == "holding" })
+        else {
+            Issue.record("Expected duplicate same-part return to create separate holding and review items")
+            return
+        }
+
+        #expect(throws: WarehouseService.WarehouseError.invalidMovementPath(from: "job_return_damaged_review", to: "warehouse")) {
+            _ = try env.warehouse.confirmJobReturnShelfRoute(
+                intakeItemId: damagedReview.id,
+                qty: 1,
+                performedBy: env.adminUserId
+            )
+        }
+
+        _ = try env.warehouse.confirmJobReturnShelfRoute(
+            intakeItemId: usableHolding.id,
+            qty: 1,
+            performedBy: env.adminUserId
+        )
+
+        let remainingReviewItems = try env.warehouse.getJobReturnHoldingItems(jobId: jobId, includeRouted: false)
+        #expect(remainingReviewItems.contains { $0.id == damagedReview.id && $0.status == "damaged_review" && $0.qtyRemaining == 1 })
+        #expect(try env.warehouse.getStockQty(partId: partId, locationType: "warehouse", locationId: 1) == 1)
+    }
+
     @Test("Job Return staging and write-off routes do not affect shelf stock")
     func testJobReturnStagingAndWriteOffDoNotAffectShelfStock() throws {
         let env = try E2ETestHelpers.setUp()
@@ -1610,6 +1654,32 @@ struct WarehouseServiceExtTests {
         // Verify areas under the first level
         let areas = try env.warehouse.listAreasForLevel(levelId: levels[0].id!)
         #expect(areas.count == 4)
+    }
+
+    @Test("createStorageUnit rejects non-positive levels and area counts")
+    func testCreateStorageUnit_rejectsNonPositiveDimensions() throws {
+        let env = try E2ETestHelpers.setUp()
+        let plan = try env.warehouse.createFloorPlan(name: "Dimension Guard WH", widthInches: 400, lengthInches: 300)
+
+        for dimensions in [
+            (levels: 0, areasPerLevel: 1),
+            (levels: -1, areasPerLevel: 1),
+            (levels: 1, areasPerLevel: 0),
+            (levels: 1, areasPerLevel: -1)
+        ] {
+            #expect(throws: WarehouseService.WarehouseError.invalidDimension) {
+                _ = try env.warehouse.createStorageUnit(
+                    floorPlanId: plan.id!,
+                    name: "Invalid Rack",
+                    unitType: "rack",
+                    levels: dimensions.levels,
+                    areasPerLevel: dimensions.areasPerLevel
+                )
+            }
+        }
+
+        let units = try env.warehouse.listStorageUnits(floorPlanId: plan.id!)
+        #expect(units.isEmpty)
     }
 
     @Test("deleteStorageLevel soft-deletes the level")
@@ -1697,6 +1767,56 @@ struct WarehouseServiceExtTests {
         try env.warehouse.moveBinsToArea(binIds: [], targetAreaId: 999)
     }
 
+    @Test("moveBinsToArea rejects soft-deleted target areas without moving bins")
+    func testMoveBinsToArea_rejectsSoftDeletedTargetArea() throws {
+        let env = try E2ETestHelpers.setUp()
+        let plan = try env.warehouse.createFloorPlan(name: "WH", widthInches: 300, lengthInches: 300)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "Cart", unitType: "cart")
+        let level = try env.warehouse.addStorageLevel(unitId: unit.id!, levelCode: "L1")
+        let sourceArea = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: 1)
+        let targetArea = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: 2)
+        let bin = try env.warehouse.addBin(areaId: sourceArea.id!, binNumber: 1)
+
+        try env.warehouse.deleteStorageArea(id: targetArea.id!)
+
+        #expect(throws: WarehouseService.WarehouseError.areaNotFound(targetArea.id!)) {
+            try env.warehouse.moveBinsToArea(binIds: [bin.id!], targetAreaId: targetArea.id!)
+        }
+
+        let sourceBins = try env.warehouse.listBinsForArea(areaId: sourceArea.id!)
+        #expect(sourceBins.compactMap { $0.id }.contains(bin.id!))
+        let deletedTargetBins = try env.warehouse.listBinsForArea(areaId: targetArea.id!)
+        #expect(deletedTargetBins.isEmpty)
+    }
+
+    @Test("moveBinsToArea rejects stale bin IDs atomically")
+    func testMoveBinsToArea_rejectsStaleBinIdsAtomically() throws {
+        let env = try E2ETestHelpers.setUp()
+        let plan = try env.warehouse.createFloorPlan(name: "WH", widthInches: 300, lengthInches: 300)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "Cart", unitType: "cart")
+        let level = try env.warehouse.addStorageLevel(unitId: unit.id!, levelCode: "L1")
+        let sourceArea = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: 1)
+        let targetArea = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: 2)
+        let activeBin = try env.warehouse.addBin(areaId: sourceArea.id!, binNumber: 1)
+        let staleBin = try env.warehouse.addBin(areaId: sourceArea.id!, binNumber: 2)
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE warehouse_bins SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [staleBin.id!]
+            )
+        }
+
+        #expect(throws: WarehouseService.WarehouseError.binNotFound(staleBin.id!)) {
+            try env.warehouse.moveBinsToArea(binIds: [activeBin.id!, staleBin.id!], targetAreaId: targetArea.id!)
+        }
+
+        let sourceBins = try env.warehouse.listBinsForArea(areaId: sourceArea.id!)
+        #expect(sourceBins.compactMap { $0.id }.contains(activeBin.id!))
+        let targetBins = try env.warehouse.listBinsForArea(areaId: targetArea.id!)
+        #expect(targetBins.isEmpty)
+    }
+
     @Test("saveUnitPlacement updates grid position and zone for a storage unit")
     func testSaveUnitPlacement_updatesGridAndZone() throws {
         let env = try E2ETestHelpers.setUp()
@@ -1729,6 +1849,38 @@ struct WarehouseServiceExtTests {
                 movementType: "add_stock", performedBy: env.adminUserId
             )
         }
+    }
+
+    @Test("createMovement rejects inactive performing users before permission checks without writing movement rows")
+    func testCreateMovement_rejectsInactivePerformedByUserBeforePermissionChecks() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let inactiveUserId = try env.auth.createUser(displayName: "Inactive Warehouse Mover", pin: "6666")
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "INSERT INTO user_hats (user_id, hat_id, is_active) SELECT ?, id, 1 FROM hats WHERE name = 'Admin'",
+                arguments: [inactiveUserId]
+            )
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?", arguments: [inactiveUserId])
+        }
+
+        #expect(throws: WarehouseService.WarehouseError.userNotFound(inactiveUserId)) {
+            _ = try env.warehouse.createMovement(
+                partId: partId, qty: 1,
+                fromLocationType: nil, fromLocationId: nil,
+                toLocationType: "warehouse", toLocationId: 1,
+                movementType: "add_stock", performedBy: inactiveUserId
+            )
+        }
+
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM stock_movements
+                WHERE part_id = ? AND performed_by = ? AND deleted_at IS NULL
+                """, arguments: [partId, inactiveUserId]) ?? 0
+        }
+        #expect(count == 0, "Inactive users must not create stock movement audit rows")
     }
 
     @Test("createStagingBox rejects tombstoned job")
