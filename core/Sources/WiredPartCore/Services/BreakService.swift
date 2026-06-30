@@ -5,6 +5,10 @@ import GRDB
 public final class BreakService: Sendable {
     private let db: AppDatabase
 
+    public enum BreakError: Error, Sendable, Equatable {
+        case activeBreakAlreadyInProgress(userId: Int64, activeBreakId: Int64?)
+    }
+
     public init(db: AppDatabase) {
         self.db = db
     }
@@ -160,7 +164,10 @@ public final class BreakService: Sendable {
         do {
             return try db.writer.write { dbConn in
                 if let activeBreak = try Self.activeBreak(dbConn: dbConn, userId: userId) {
-                    return activeBreak
+                    if activeBreak.breakType == breakType && (laborEntryId == nil || activeBreak.laborEntryId == laborEntryId) {
+                        return activeBreak
+                    }
+                    throw BreakError.activeBreakAlreadyInProgress(userId: userId, activeBreakId: activeBreak.id)
                 }
 
                 let resolvedLaborEntryId = try laborEntryId ?? Self.activeClockEntryId(dbConn: dbConn, userId: userId)
