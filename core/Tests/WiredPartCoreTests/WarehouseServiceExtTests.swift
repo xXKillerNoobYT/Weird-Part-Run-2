@@ -1767,6 +1767,56 @@ struct WarehouseServiceExtTests {
         try env.warehouse.moveBinsToArea(binIds: [], targetAreaId: 999)
     }
 
+    @Test("moveBinsToArea rejects soft-deleted target areas without moving bins")
+    func testMoveBinsToArea_rejectsSoftDeletedTargetArea() throws {
+        let env = try E2ETestHelpers.setUp()
+        let plan = try env.warehouse.createFloorPlan(name: "WH", widthInches: 300, lengthInches: 300)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "Cart", unitType: "cart")
+        let level = try env.warehouse.addStorageLevel(unitId: unit.id!, levelCode: "L1")
+        let sourceArea = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: 1)
+        let targetArea = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: 2)
+        let bin = try env.warehouse.addBin(areaId: sourceArea.id!, binNumber: 1)
+
+        try env.warehouse.deleteStorageArea(id: targetArea.id!)
+
+        #expect(throws: WarehouseService.WarehouseError.areaNotFound(targetArea.id!)) {
+            try env.warehouse.moveBinsToArea(binIds: [bin.id!], targetAreaId: targetArea.id!)
+        }
+
+        let sourceBins = try env.warehouse.listBinsForArea(areaId: sourceArea.id!)
+        #expect(sourceBins.compactMap { $0.id }.contains(bin.id!))
+        let deletedTargetBins = try env.warehouse.listBinsForArea(areaId: targetArea.id!)
+        #expect(deletedTargetBins.isEmpty)
+    }
+
+    @Test("moveBinsToArea rejects stale bin IDs atomically")
+    func testMoveBinsToArea_rejectsStaleBinIdsAtomically() throws {
+        let env = try E2ETestHelpers.setUp()
+        let plan = try env.warehouse.createFloorPlan(name: "WH", widthInches: 300, lengthInches: 300)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "Cart", unitType: "cart")
+        let level = try env.warehouse.addStorageLevel(unitId: unit.id!, levelCode: "L1")
+        let sourceArea = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: 1)
+        let targetArea = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: 2)
+        let activeBin = try env.warehouse.addBin(areaId: sourceArea.id!, binNumber: 1)
+        let staleBin = try env.warehouse.addBin(areaId: sourceArea.id!, binNumber: 2)
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE warehouse_bins SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [staleBin.id!]
+            )
+        }
+
+        #expect(throws: WarehouseService.WarehouseError.binNotFound(staleBin.id!)) {
+            try env.warehouse.moveBinsToArea(binIds: [activeBin.id!, staleBin.id!], targetAreaId: targetArea.id!)
+        }
+
+        let sourceBins = try env.warehouse.listBinsForArea(areaId: sourceArea.id!)
+        #expect(sourceBins.compactMap { $0.id }.contains(activeBin.id!))
+        let targetBins = try env.warehouse.listBinsForArea(areaId: targetArea.id!)
+        #expect(targetBins.isEmpty)
+    }
+
     @Test("saveUnitPlacement updates grid position and zone for a storage unit")
     func testSaveUnitPlacement_updatesGridAndZone() throws {
         let env = try E2ETestHelpers.setUp()
